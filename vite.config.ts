@@ -2,6 +2,28 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
+export default defineConfig({
+  plugins: [
+    react(),
+    runtimeErrorOverlay(),
+    // ...rest of your plugins
+  ],
+
+  // ⬇️ ADD THIS
+  base: '/JIE-mastery-tutor/',
+
+  define: {
+    __USE_CONVAI__: JSON.stringify(process.env.USE_CONVAI === "true"),
+    // ...
+  },
+  resolve: { /* ... */ },
+  root: path.resolve(import.meta.dirname, "client"),
+  build: {
+    outDir: path.resolve(import.meta.dirname, "dist/public"),
+    emptyOutDir: true,
+  },
+  server: { /* ... */ }
+})
 
 export default defineConfig({
   plugins: [
