@@ -66,6 +66,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Debug routes for monitoring and troubleshooting
   app.use("/api/debug", debugRoutes);
   
+  // Document and context routes for RAG system
+  const { default: documentRoutes } = await import('./routes/documents');
+  const { default: contextRoutes } = await import('./routes/context');
+  app.use("/api/documents", documentRoutes);
+  app.use("/api/context", contextRoutes);
+  
 
   // Legacy voice API routes (for compatibility)
   // Note: live-token endpoint is now handled in voiceRoutes

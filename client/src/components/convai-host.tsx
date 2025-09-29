@@ -4,7 +4,7 @@ import { usePerformanceMonitor } from "@/hooks/use-performance-monitor";
 type Props = {
   agentId: string;
   firstUserMessage?: string;
-  metadata?: Record<string, string>;
+  metadata?: Record<string, any>;
   onMounted?: () => void;
   onUnmounted?: () => void;
 };
@@ -57,7 +57,7 @@ export default function ConvaiHost({
     el.setAttribute("agent-id", agentId);
     if (firstUserMessage) el.setAttribute("first-user-message", firstUserMessage);
     for (const [k, v] of Object.entries(metadata)) {
-      el.setAttribute(`metadata-${k}`, v);
+      el.setAttribute(`metadata-${k}`, typeof v === 'string' ? v : JSON.stringify(v));
     }
 
     // Add event listeners for performance monitoring

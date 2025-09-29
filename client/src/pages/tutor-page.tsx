@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { TutorErrorBoundary } from "@/components/tutor-error-boundary";
 import { NetworkAwareWrapper } from "@/components/network-aware-wrapper";
 import ConvaiHost from "@/components/convai-host";
+import { AssignmentsPanel } from "@/components/AssignmentsPanel";
 import { AGENTS, GREETINGS, type AgentLevel } from "@/agents";
 import jieLogo from "@/assets/jie-mastery-logo.png";
 
@@ -41,6 +42,8 @@ export default function TutorPage() {
   const [gradeText, setGradeText] = useState("");
   const [mounted, setMounted] = useState(false);
   const [lastSummary, setLastSummary] = useState(memo.lastSummary || "");
+  const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
+  const [showAssignments, setShowAssignments] = useState(false);
 
   // Load ConvAI script
   useEffect(() => {
@@ -255,13 +258,34 @@ export default function TutorPage() {
             <div className="text-base text-foreground italic">"{greetingPreview}"</div>
           </div>
 
+          {/* Study Materials Toggle */}
+          <div className="mb-4">
+            <button 
+              onClick={() => setShowAssignments(!showAssignments)}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              data-testid="button-toggle-assignments"
+            >
+              {showAssignments ? 'Hide' : 'Show'} Study Materials ({selectedDocuments.length} selected)
+            </button>
+          </div>
+
+          {/* Study Materials Panel */}
+          {showAssignments && user && (
+            <div className="mb-6">
+              <AssignmentsPanel 
+                userId={user.id}
+                onSelectionChange={setSelectedDocuments}
+              />
+            </div>
+          )}
+
           {/* ConvAI Widget */}
           {mounted && (
             <div className="mt-6">
               <ConvaiHost
                 agentId={agentId}
                 firstUserMessage={firstUserMessage}
-                metadata={metadata}
+                metadata={{...metadata, selectedDocuments}}
               />
             </div>
           )}
