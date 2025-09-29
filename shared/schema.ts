@@ -8,7 +8,8 @@ import {
   decimal, 
   boolean, 
   jsonb,
-  index 
+  index,
+  uniqueIndex 
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
@@ -242,7 +243,9 @@ export const documentChunks = pgTable("document_chunks", {
   tokenCount: integer("token_count"), // estimated tokens
   metadata: jsonb("metadata"), // page number, section, etc
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (table) => [
+  uniqueIndex("idx_chunks_document_index").on(table.documentId, table.chunkIndex),
+]);
 
 export const documentEmbeddings = pgTable("document_embeddings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -251,7 +254,7 @@ export const documentEmbeddings = pgTable("document_embeddings", {
   embeddingModel: text("embedding_model").default('text-embedding-3-small'),
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => [
-  index("idx_embeddings_chunk").on(table.chunkId),
+  uniqueIndex("idx_embeddings_chunk_unique").on(table.chunkId),
 ]);
 
 // Update learning sessions to include document context

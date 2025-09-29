@@ -75,11 +75,13 @@ export interface IStorage {
   getDocument(documentId: string, userId: string): Promise<UserDocument | undefined>;
   deleteDocument(documentId: string, userId: string): Promise<void>;
   updateDocument(documentId: string, userId: string, updates: Partial<UserDocument>): Promise<UserDocument>;
+  updateDocumentById(documentId: string, updates: Partial<UserDocument>): Promise<UserDocument | null>;
   getAllDocumentsForProcessing(): Promise<UserDocument[]>;
   
   // Document processing operations
   createDocumentChunk(chunk: InsertDocumentChunk): Promise<DocumentChunk>;
   createDocumentEmbedding(embedding: InsertDocumentEmbedding): Promise<DocumentEmbedding>;
+  deleteDocumentChunks(documentId: string): Promise<void>;
   searchSimilarContent(userId: string, queryEmbedding: number[], topK: number, threshold: number): Promise<Array<{chunk: DocumentChunk, document: UserDocument, similarity: number}>>;
   getDocumentContext(userId: string, documentIds: string[]): Promise<{chunks: DocumentChunk[], documents: UserDocument[]}>;
 
@@ -944,16 +946,25 @@ export class DatabaseStorage implements IStorage {
   async updateDocument(documentId: string, userId: string, updates: Partial<UserDocument>): Promise<UserDocument> {
     const isTestMode = process.env.AUTH_TEST_MODE === 'true' || process.env.NODE_ENV === 'development';
     if (isTestMode) {
-      const docIndex = this.testDocuments.findIndex(doc => doc.id === documentId && (userId === '' || doc.userId === userId));
+      const docIndex = this.testDocuments.findIndex(doc => doc.id === documentId && doc.userId === userId);
       if (docIndex === -1) throw new Error('Document not found');
       this.testDocuments[docIndex] = { ...this.testDocuments[docIndex], ...updates, updatedAt: new Date() };
       return this.testDocuments[docIndex];
     }
-    const whereClause = userId === '' 
-      ? eq(userDocuments.id, documentId)
-      : and(eq(userDocuments.id, documentId), eq(userDocuments.userId, userId));
-    const [updated] = await db.update(userDocuments).set({...updates, updatedAt: new Date()}).where(whereClause).returning();
+    const [updated] = await db.update(userDocuments).set({...updates, updatedAt: new Date()}).where(and(eq(userDocuments.id, documentId), eq(userDocuments.userId, userId))).returning();
     return updated;
+  }
+
+  async updateDocumentById(documentId: string, updates: Partial<UserDocument>): Promise<UserDocument | null> {
+    const isTestMode = process.env.AUTH_TEST_MODE === 'true' || process.env.NODE_ENV === 'development';
+    if (isTestMode) {
+      const docIndex = this.testDocuments.findIndex(doc => doc.id === documentId);
+      if (docIndex === -1) return null;
+      this.testDocuments[docIndex] = { ...this.testDocuments[docIndex], ...updates, updatedAt: new Date() };
+      return this.testDocuments[docIndex];
+    }
+    const [updated] = await db.update(userDocuments).set({...updates, updatedAt: new Date()}).where(eq(userDocuments.id, documentId)).returning();
+    return updated || null;
   }
 
   async createDocumentChunk(chunk: InsertDocumentChunk): Promise<DocumentChunk> {
@@ -986,6 +997,21 @@ export class DatabaseStorage implements IStorage {
     }
     const [created] = await db.insert(documentEmbeddings).values(embedding).returning();
     return created;
+  }
+
+  async deleteDocumentChunks(documentId: string): Promise<void> {
+    const isTestMode = process.env.AUTH_TEST_MODE === 'true' || process.env.NODE_ENV === 'development';
+    if (isTestMode) {
+      // Get chunk IDs for this document
+      const chunkIds = this.testChunks.filter(c => c.documentId === documentId).map(c => c.id);
+      // Delete embeddings for these chunks
+      this.testEmbeddings = this.testEmbeddings.filter(e => !chunkIds.includes(e.chunkId));
+      // Delete chunks
+      this.testChunks = this.testChunks.filter(c => c.documentId !== documentId);
+      return;
+    }
+    // Delete chunks (will cascade delete embeddings due to foreign key)
+    await db.delete(documentChunks).where(eq(documentChunks.documentId, documentId));
   }
 
   async searchSimilarContent(userId: string, queryEmbedding: number[], topK: number, threshold: number): Promise<Array<{chunk: DocumentChunk, document: UserDocument, similarity: number}>> {

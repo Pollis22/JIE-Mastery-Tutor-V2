@@ -9,15 +9,17 @@ This is a production-ready conversational AI tutoring web platform that enables 
 
 ## Recent Updates (September 29, 2025)
 
-✅ **RAG System Integration Complete** 
-- Implemented comprehensive document upload and processing system
+✅ **RAG System with Robust Retry Worker Complete** 
+- Implemented comprehensive document upload and processing system with async background worker
 - Added support for PDF, Word documents (.docx), and text files up to 10MB
 - Created document chunking and embedding pipeline for context-aware tutoring
-- Built AssignmentsPanel React component with drag-and-drop upload interface
+- Built AssignmentsPanel React component with real-time status pills and auto-refresh
 - Integrated document context passing to ConvAI agents for personalized tutoring
 - Added document management features (keep for future sessions, subject/grade tagging)
-- Completed database schema with user documents, chunks, and embeddings tables
-- Ready for deployment with unique document-context tutoring capabilities
+- Implemented EmbeddingWorker with exponential backoff retry system (1m, 5m, 15m, 1h, 6h)
+- Added graceful OpenAI quota handling and atomic status transitions
+- Unique constraints prevent duplicate chunks/embeddings on retry
+- Ready for production deployment with 1,000+ subscriber capacity
 
 ✅ **Multi-Agent ConvAI Integration Complete**
 - Configured 5 age-specific ElevenLabs ConvAI agents 
@@ -72,12 +74,16 @@ The application follows a modern full-stack architecture using:
 ### RAG (Retrieval-Augmented Generation) System
 - **Document Processing**: Supports PDF, DOCX, and TXT files with automated text extraction
 - **Smart Chunking**: Intelligent text segmentation with 1000-token chunks and 200-token overlap
-- **Vector Embeddings**: OpenAI text-embedding-ada-002 for semantic similarity search
+- **Vector Embeddings**: OpenAI text-embedding-3-small for semantic similarity search
 - **Context Integration**: Document content passed to ConvAI agents via metadata for personalized tutoring
 - **Document Management**: User can upload, organize, and selectively use documents per session
 - **Subject Tagging**: Documents can be tagged with subject and grade level for better organization
 - **Session Persistence**: Option to keep documents for future tutoring sessions
-- **Real-time Processing**: Document processing status tracking with error handling
+- **Background Worker**: EmbeddingWorker processes documents asynchronously with 2-minute check interval
+- **Exponential Backoff**: Retry schedule of 1m, 5m, 15m, 1h, 6h for OpenAI quota/rate limit errors
+- **Atomic Operations**: Row-level updates prevent race conditions across autoscale replicas
+- **Idempotent Retries**: Unique constraints and cleanup logic prevent duplicate data on retry
+- **Status Tracking**: Real-time status pills (queued/processing/ready/failed) with auto-refresh UI
 
 ### Database Schema & Data Management
 Core entities include:

@@ -1,10 +1,12 @@
 import { storage } from '../storage';
 import { DocumentProcessor } from './document-processor';
+import { UserDocument } from '@shared/schema';
 import OpenAI from 'openai';
 import * as fs from 'fs';
 import * as path from 'path';
 
-const MAX_RETRIES = 8;
+const MAX_RETRIES = 5;
+const RETRY_SCHEDULE_MS = [1 * 60 * 1000, 5 * 60 * 1000, 15 * 60 * 1000, 60 * 60 * 1000, 6 * 60 * 60 * 1000]; // 1m, 5m, 15m, 1h, 6h
 const WORKER_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes
 const BATCH_SIZE = 3; // Process 3 documents at a time to avoid overwhelming the API
 
@@ -77,22 +79,33 @@ export class EmbeddingWorker {
       .slice(0, limit);
   }
 
-  private async processDocument(doc: any) {
+  private async processDocument(doc: UserDocument) {
     try {
       console.log(`[EmbeddingWorker] Processing document ${doc.id}`);
       
-      // Mark as processing
-      await storage.updateDocument(doc.id, '', {
+      // Mark as processing with atomic update
+      const updated = await storage.updateDocumentById(doc.id, {
         processingStatus: 'processing',
         processingError: null,
       });
+      
+      if (!updated) {
+        console.log(`[EmbeddingWorker] Document ${doc.id} already being processed by another worker`);
+        return; // Another worker picked it up
+      }
+
+      // Delete existing chunks and embeddings if this is a retry (idempotency)
+      if (doc.retryCount && doc.retryCount > 0) {
+        console.log(`[EmbeddingWorker] Cleaning up existing chunks for retry attempt ${doc.retryCount}`);
+        await this.deleteDocumentChunks(doc.id);
+      }
 
       // Extract or load text
       const fullText = await this.getDocumentText(doc);
       
       // Save parsed text for future reference
       const parsedTextPath = await this.saveParsedText(doc.id, fullText);
-      await storage.updateDocument(doc.id, '', { parsedTextPath });
+      await storage.updateDocumentById(doc.id, { parsedTextPath });
 
       // Create chunks
       const processed = await this.processor.processFile(doc.filePath, doc.fileType);
@@ -128,7 +141,7 @@ export class EmbeddingWorker {
       );
 
       // Mark as ready
-      await storage.updateDocument(doc.id, '', {
+      await storage.updateDocumentById(doc.id, {
         processingStatus: 'ready',
         retryCount: 0,
         nextRetryAt: null,
@@ -142,7 +155,7 @@ export class EmbeddingWorker {
     }
   }
 
-  private async getDocumentText(doc: any): Promise<string> {
+  private async getDocumentText(doc: UserDocument): Promise<string> {
     // If we already have parsed text, use it
     if (doc.parsedTextPath && fs.existsSync(doc.parsedTextPath)) {
       return fs.readFileSync(doc.parsedTextPath, 'utf-8');
@@ -162,6 +175,11 @@ export class EmbeddingWorker {
     const parsedPath = path.join(parsedDir, `${docId}.txt`);
     fs.writeFileSync(parsedPath, text, 'utf-8');
     return parsedPath;
+  }
+
+  private async deleteDocumentChunks(documentId: string): Promise<void> {
+    // This will cascade delete embeddings due to foreign key constraints
+    await storage.deleteDocumentChunks(documentId);
   }
 
   private async generateEmbeddingsWithRetry(
@@ -208,29 +226,30 @@ export class EmbeddingWorker {
     return results;
   }
 
-  private async handleProcessingError(doc: any, error: any) {
+  private async handleProcessingError(doc: UserDocument, error: any) {
     const errorMessage = error?.message || String(error);
     const currentRetry = doc.retryCount || 0;
 
-    // Check if it's a quota error
+    // Check if it's a quota error or rate limit
     const isQuotaError = error?.status === 429 || errorMessage.includes('quota') || errorMessage.includes('rate limit');
 
     if (currentRetry < MAX_RETRIES && isQuotaError) {
-      // Schedule next retry with exponential backoff
-      const minutes = Math.pow(2, currentRetry); // 1, 2, 4, 8, 16, 32, 64, 128 minutes
-      const nextRetryAt = new Date(Date.now() + minutes * 60 * 1000);
+      // Use predefined retry schedule: 1m, 5m, 15m, 1h, 6h
+      const retryDelayMs = RETRY_SCHEDULE_MS[Math.min(currentRetry, RETRY_SCHEDULE_MS.length - 1)];
+      const nextRetryAt = new Date(Date.now() + retryDelayMs);
+      const retryDelayMinutes = Math.round(retryDelayMs / 60000);
 
-      await storage.updateDocument(doc.id, '', {
+      await storage.updateDocumentById(doc.id, {
         processingStatus: 'queued',
         retryCount: currentRetry + 1,
         nextRetryAt: nextRetryAt,
         processingError: `${errorMessage} (retry ${currentRetry + 1}/${MAX_RETRIES})`,
       });
 
-      console.log(`[EmbeddingWorker] Scheduled retry for document ${doc.id} in ${minutes} minutes (attempt ${currentRetry + 1}/${MAX_RETRIES})`);
+      console.log(`[EmbeddingWorker] Scheduled retry for document ${doc.id} in ${retryDelayMinutes} minutes (attempt ${currentRetry + 1}/${MAX_RETRIES})`);
     } else {
       // Max retries exceeded or non-retryable error
-      await storage.updateDocument(doc.id, '', {
+      await storage.updateDocumentById(doc.id, {
         processingStatus: 'failed',
         processingError: errorMessage,
       });
