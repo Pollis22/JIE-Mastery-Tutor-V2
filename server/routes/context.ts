@@ -8,7 +8,6 @@ const processor = new DocumentProcessor();
 
 // Request schemas
 const sessionStartSchema = z.object({
-  userId: z.string(),
   subject: z.string().optional(),
   grade: z.string().optional(),
   includeDocIds: z.array(z.string()).default([]),
@@ -16,7 +15,6 @@ const sessionStartSchema = z.object({
 });
 
 const queryContextSchema = z.object({
-  userId: z.string(),
   query: z.string(),
   documentIds: z.array(z.string()).optional(),
   maxResults: z.number().min(1).max(10).default(3)
@@ -26,15 +24,20 @@ const queryContextSchema = z.object({
  * Prepare context for session start
  */
 router.post('/session-start', async (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  
   try {
     const request = sessionStartSchema.parse(req.body);
+    const userId = (req.user as any).id;
     
     // Get user documents for context
     let documentsToUse = request.includeDocIds;
     
     // If no specific documents selected, get "keep for future sessions" docs
     if (documentsToUse.length === 0) {
-      const userDocs = await storage.getUserDocuments(request.userId);
+      const userDocs = await storage.getUserDocuments(userId);
       documentsToUse = userDocs
         .filter(doc => doc.keepForFutureSessions && doc.processingStatus === 'completed')
         .map(doc => doc.id);
@@ -50,7 +53,7 @@ router.post('/session-start', async (req, res) => {
     }
 
     // Get document context
-    const contextData = await storage.getDocumentContext(request.userId, documentsToUse);
+    const contextData = await storage.getDocumentContext(userId, documentsToUse);
     
     if (contextData.documents.length === 0) {
       return res.json({

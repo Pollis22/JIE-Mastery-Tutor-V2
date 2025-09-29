@@ -7,7 +7,17 @@
 
 This is a production-ready conversational AI tutoring web platform that enables students to learn Math, English, and Spanish through interactive voice conversations, personalized quizzes, and adaptive learning paths. The platform features a **fully functional multi-agent ElevenLabs ConvAI system** with five age-specific AI tutors (K-2, Grades 3-5, 6-8, 9-12, College/Adult), each optimized for their target age group with appropriate complexity, vocabulary, and teaching approaches.
 
-## Recent Updates (September 28, 2025)
+## Recent Updates (September 29, 2025)
+
+✅ **RAG System Integration Complete** 
+- Implemented comprehensive document upload and processing system
+- Added support for PDF, Word documents (.docx), and text files up to 10MB
+- Created document chunking and embedding pipeline for context-aware tutoring
+- Built AssignmentsPanel React component with drag-and-drop upload interface
+- Integrated document context passing to ConvAI agents for personalized tutoring
+- Added document management features (keep for future sessions, subject/grade tagging)
+- Completed database schema with user documents, chunks, and embeddings tables
+- Ready for deployment with unique document-context tutoring capabilities
 
 ✅ **Multi-Agent ConvAI Integration Complete**
 - Configured 5 age-specific ElevenLabs ConvAI agents 
@@ -59,6 +69,16 @@ The application follows a modern full-stack architecture using:
 - **Adaptive Learning**: AI adapts responses based on user progress, energy levels, and learning patterns
 - **Voice-Optimized Responses**: Conversation flow designed for natural speech patterns and turn-taking
 
+### RAG (Retrieval-Augmented Generation) System
+- **Document Processing**: Supports PDF, DOCX, and TXT files with automated text extraction
+- **Smart Chunking**: Intelligent text segmentation with 1000-token chunks and 200-token overlap
+- **Vector Embeddings**: OpenAI text-embedding-ada-002 for semantic similarity search
+- **Context Integration**: Document content passed to ConvAI agents via metadata for personalized tutoring
+- **Document Management**: User can upload, organize, and selectively use documents per session
+- **Subject Tagging**: Documents can be tagged with subject and grade level for better organization
+- **Session Persistence**: Option to keep documents for future tutoring sessions
+- **Real-time Processing**: Document processing status tracking with error handling
+
 ### Database Schema & Data Management
 Core entities include:
 - **Users**: Authentication, subscription info, learning preferences, voice usage tracking
@@ -67,6 +87,12 @@ Core entities include:
 - **User Progress**: Tracks completion status, scores, and time spent per lesson
 - **Learning Sessions**: Records of voice/text sessions with transcripts
 - **Quiz Attempts**: Detailed quiz performance and scoring data
+
+### RAG Database Schema
+- **User Documents**: Stores uploaded files with metadata (title, subject, grade, processing status)
+- **Document Chunks**: Text chunks from processed documents with position tracking
+- **Document Embeddings**: Vector embeddings for semantic search and context matching
+- **Processing Pipeline**: Background processing with status tracking and error handling
 
 ### Payment & Subscription System
 - **Stripe Integration**: Handles subscription management and payments

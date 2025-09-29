@@ -87,8 +87,12 @@ export class DocumentProcessor {
    * Extract text from PDF
    */
   private async extractPdfText(filePath: string): Promise<string> {
+    const parser = await loadPdfParse();
+    if (!parser) {
+      throw new Error('PDF parsing is not available');
+    }
     const dataBuffer = fs.readFileSync(filePath);
-    const pdfData = await pdfParse(dataBuffer);
+    const pdfData = await parser(dataBuffer);
     return pdfData.text;
   }
 
@@ -220,7 +224,7 @@ export class DocumentProcessor {
   async generateEmbedding(text: string): Promise<number[]> {
     try {
       const response = await this.openai.embeddings.create({
-        model: 'text-embedding-ada-002',
+        model: 'text-embedding-3-small',
         input: text,
       });
 

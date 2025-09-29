@@ -56,8 +56,16 @@ export default function ConvaiHost({
     const el = document.createElement("elevenlabs-convai");
     el.setAttribute("agent-id", agentId);
     if (firstUserMessage) el.setAttribute("first-user-message", firstUserMessage);
+    
+    // Handle system prompt override if available
+    if (metadata.systemPrompt) {
+      el.setAttribute("system-prompt", metadata.systemPrompt);
+    }
+    
     for (const [k, v] of Object.entries(metadata)) {
-      el.setAttribute(`metadata-${k}`, typeof v === 'string' ? v : JSON.stringify(v));
+      if (k !== 'systemPrompt') { // Don't duplicate systemPrompt in metadata
+        el.setAttribute(`metadata-${k}`, typeof v === 'string' ? v : JSON.stringify(v));
+      }
     }
 
     // Add event listeners for performance monitoring

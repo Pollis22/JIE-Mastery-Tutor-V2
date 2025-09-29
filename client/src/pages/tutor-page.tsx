@@ -44,6 +44,7 @@ export default function TutorPage() {
   const [lastSummary, setLastSummary] = useState(memo.lastSummary || "");
   const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
   const [showAssignments, setShowAssignments] = useState(false);
+  const [sessionContext, setSessionContext] = useState<any>(null);
 
   // Load ConvAI script
   useEffect(() => {
@@ -284,8 +285,14 @@ export default function TutorPage() {
             <div className="mt-6">
               <ConvaiHost
                 agentId={agentId}
-                firstUserMessage={firstUserMessage}
-                metadata={{...metadata, selectedDocuments}}
+                firstUserMessage={sessionContext?.firstMessage || firstUserMessage}
+                metadata={{
+                  ...metadata, 
+                  selectedDocuments,
+                  systemPrompt: sessionContext?.systemPrompt,
+                  hasDocuments: selectedDocuments.length > 0,
+                  documentContext: sessionContext?.summary
+                }}
               />
             </div>
           )}
