@@ -89,7 +89,7 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       return res.status(400).json({ error: 'Unsupported file type' });
     }
 
-    // Save document record
+    // Save document record - queued for background processing by the embedding worker
     const document = await storage.uploadDocument(userId, {
       originalName: req.file.originalname,
       fileName: req.file.filename,
@@ -101,11 +101,12 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       title: metadata.title || req.file.originalname,
       description: metadata.description,
       keepForFutureSessions: metadata.keepForFutureSessions,
-      processingStatus: 'processing'
+      processingStatus: 'queued',
+      retryCount: 0
     });
 
-    // Process document in background
-    processDocumentAsync(document.id, req.file.path, fileExtension);
+    // The embedding worker will automatically process this document in the background
+    console.log(`Document ${document.id} queued for processing`);
 
     res.json({
       id: document.id,
@@ -154,6 +155,8 @@ router.get('/list', async (req, res) => {
         keepForFutureSessions: doc.keepForFutureSessions,
         processingStatus: doc.processingStatus,
         processingError: doc.processingError,
+        retryCount: doc.retryCount,
+        nextRetryAt: doc.nextRetryAt,
         createdAt: doc.createdAt
       }))
     });

@@ -56,6 +56,11 @@ app.use((req, res, next) => {
 (async () => {
   const server = await registerRoutes(app);
 
+  // Start embedding worker for background document processing
+  const { startEmbeddingWorker } = await import('./services/embedding-worker');
+  startEmbeddingWorker();
+  log('Embedding worker started for background document processing');
+
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";

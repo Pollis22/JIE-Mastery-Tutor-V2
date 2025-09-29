@@ -222,11 +222,17 @@ export const userDocuments = pgTable("user_documents", {
   title: text("title"), // user-provided title
   description: text("description"), // user description
   keepForFutureSessions: boolean("keep_for_future_sessions").default(false),
-  processingStatus: text("processing_status").$type<'pending' | 'processing' | 'completed' | 'failed'>().default('pending'),
+  processingStatus: text("processing_status").$type<'queued' | 'processing' | 'ready' | 'failed'>().default('queued'),
   processingError: text("processing_error"),
+  retryCount: integer("retry_count").default(0),
+  nextRetryAt: timestamp("next_retry_at"),
+  parsedTextPath: text("parsed_text_path"), // path to extracted plain text file
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_user_docs_status").on(table.processingStatus),
+  index("idx_user_docs_retry").on(table.nextRetryAt),
+]);
 
 export const documentChunks = pgTable("document_chunks", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -242,9 +248,11 @@ export const documentEmbeddings = pgTable("document_embeddings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   chunkId: varchar("chunk_id").notNull().references(() => documentChunks.id, { onDelete: 'cascade' }),
   embedding: text("embedding").notNull(), // JSON array of floats
-  embeddingModel: text("embedding_model").default('text-embedding-ada-002'),
+  embeddingModel: text("embedding_model").default('text-embedding-3-small'),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_embeddings_chunk").on(table.chunkId),
+]);
 
 // Update learning sessions to include document context
 export const updatedLearningSessions = pgTable("learning_sessions", {

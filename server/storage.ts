@@ -75,6 +75,7 @@ export interface IStorage {
   getDocument(documentId: string, userId: string): Promise<UserDocument | undefined>;
   deleteDocument(documentId: string, userId: string): Promise<void>;
   updateDocument(documentId: string, userId: string, updates: Partial<UserDocument>): Promise<UserDocument>;
+  getAllDocumentsForProcessing(): Promise<UserDocument[]>;
   
   // Document processing operations
   createDocumentChunk(chunk: InsertDocumentChunk): Promise<DocumentChunk>;
@@ -887,7 +888,10 @@ export class DatabaseStorage implements IStorage {
         id: `doc-${Date.now()}`,
         userId,
         ...document,
-        processingStatus: document.processingStatus || 'pending',
+        processingStatus: document.processingStatus || 'queued',
+        retryCount: document.retryCount ?? 0,
+        nextRetryAt: document.nextRetryAt ?? null,
+        parsedTextPath: document.parsedTextPath ?? null,
         createdAt: new Date(),
         updatedAt: new Date(),
         processingError: null
@@ -895,7 +899,7 @@ export class DatabaseStorage implements IStorage {
       this.testDocuments.push(doc);
       return doc;
     }
-    const [created] = await db.insert(userDocuments).values({userId, ...document}).returning();
+    const [created] = await db.insert(userDocuments).values({...document, userId}).returning();
     return created;
   }
 
@@ -905,6 +909,14 @@ export class DatabaseStorage implements IStorage {
       return this.testDocuments.filter(doc => doc.userId === userId);
     }
     return await db.select().from(userDocuments).where(eq(userDocuments.userId, userId)).orderBy(desc(userDocuments.createdAt));
+  }
+
+  async getAllDocumentsForProcessing(): Promise<UserDocument[]> {
+    const isTestMode = process.env.AUTH_TEST_MODE === 'true' || process.env.NODE_ENV === 'development';
+    if (isTestMode) {
+      return this.testDocuments;
+    }
+    return await db.select().from(userDocuments).orderBy(desc(userDocuments.createdAt));
   }
 
   async getDocument(documentId: string, userId: string): Promise<UserDocument | undefined> {
@@ -950,6 +962,7 @@ export class DatabaseStorage implements IStorage {
       const chunkObj: DocumentChunk = {
         id: `chunk-${Date.now()}-${chunk.chunkIndex}`,
         ...chunk,
+        metadata: chunk.metadata ?? null,
         createdAt: new Date()
       };
       this.testChunks.push(chunkObj);

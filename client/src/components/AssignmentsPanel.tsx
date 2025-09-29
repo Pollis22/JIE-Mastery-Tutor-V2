@@ -1,5 +1,5 @@
 import { useState, useRef, ChangeEvent } from 'react';
-import { Upload, FileText, Trash2, Edit2, Check, X } from 'lucide-react';
+import { Upload, FileText, Trash2, Edit2, Check, X, Clock, CheckCircle, AlertCircle, Loader } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
@@ -14,14 +14,39 @@ interface Document {
   grade?: string;
   description?: string;
   keepForFutureSessions: boolean;
-  processingStatus: 'pending' | 'processing' | 'completed' | 'failed';
+  processingStatus: 'queued' | 'processing' | 'ready' | 'failed';
   processingError?: string;
+  retryCount?: number;
+  nextRetryAt?: string | null;
   createdAt: string;
 }
 
 interface AssignmentsPanelProps {
   userId: string;
   onSelectionChange: (selectedIds: string[]) => void;
+}
+
+function StatusPill({ status, error, retryCount }: { status: Document['processingStatus']; error?: string; retryCount?: number }) {
+  const statusConfig = {
+    ready: { label: 'Ready', icon: CheckCircle, className: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 border border-green-300 dark:border-green-700' },
+    processing: { label: 'Processing', icon: Loader, className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 border border-yellow-300 dark:border-yellow-700 animate-pulse' },
+    queued: { label: retryCount ? `Queued (retry ${retryCount})` : 'Queued', icon: Clock, className: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 border border-blue-300 dark:border-blue-700' },
+    failed: { label: 'Failed', icon: AlertCircle, className: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200 border border-red-300 dark:border-red-700' },
+  };
+
+  const config = statusConfig[status];
+  const Icon = config.icon;
+
+  return (
+    <span 
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${config.className}`}
+      title={error || config.label}
+      data-testid={`status-${status}`}
+    >
+      <Icon className="w-3.5 h-3.5" />
+      {config.label}
+    </span>
+  );
 }
 
 export function AssignmentsPanel({ userId, onSelectionChange }: AssignmentsPanelProps) {
@@ -38,13 +63,18 @@ export function AssignmentsPanel({ userId, onSelectionChange }: AssignmentsPanel
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  // Fetch user documents
+  // Fetch user documents - refetch periodically if there are processing/queued documents
   const { data: documents = [], isLoading } = useQuery({
     queryKey: ['documents', userId],
     queryFn: async () => {
       const response = await apiRequest('GET', '/api/documents/list');
       const data = await response.json();
       return data.documents as Document[];
+    },
+    refetchInterval: (query) => {
+      const docs = query.state.data as Document[] | undefined;
+      const hasProcessingDocs = docs?.some(d => d.processingStatus === 'queued' || d.processingStatus === 'processing');
+      return hasProcessingDocs ? 5000 : false; // Refetch every 5s if documents are processing
     },
   });
 
@@ -181,15 +211,6 @@ export function AssignmentsPanel({ userId, onSelectionChange }: AssignmentsPanel
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'completed': return <Check className="w-4 h-4 text-green-500" />;
-      case 'processing': return <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />;
-      case 'failed': return <X className="w-4 h-4 text-red-500" />;
-      default: return <div className="w-4 h-4 border-2 border-gray-300 border-t-transparent rounded-full animate-spin" />;
-    }
-  };
-
   return (
     <div className="assignments-panel bg-white dark:bg-gray-800 rounded-lg p-6 shadow-sm border border-gray-200 dark:border-gray-700" data-testid="assignments-panel">
       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
@@ -303,8 +324,9 @@ export function AssignmentsPanel({ userId, onSelectionChange }: AssignmentsPanel
                           type="checkbox"
                           checked={selectedDocuments.includes(document.id)}
                           onChange={(e) => handleSelectionChange(document.id, e.target.checked)}
-                          disabled={document.processingStatus !== 'completed'}
-                          className="rounded border-gray-300 dark:border-gray-600"
+                          disabled={document.processingStatus !== 'ready'}
+                          className="rounded border-gray-300 dark:border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                          title={document.processingStatus !== 'ready' ? `Document must be ready to use (current: ${document.processingStatus})` : 'Use this document in tutoring session'}
                           data-testid={`checkbox-use-${document.id}`}
                         />
                       </td>
@@ -322,12 +344,17 @@ export function AssignmentsPanel({ userId, onSelectionChange }: AssignmentsPanel
                       </td>
                       <td className="p-3 text-sm text-gray-500 dark:text-gray-400">{formatFileSize(document.fileSize)}</td>
                       <td className="p-3">
-                        <div className="flex items-center gap-2">
-                          {getStatusIcon(document.processingStatus)}
-                          <span className="text-sm capitalize">{document.processingStatus}</span>
-                        </div>
+                        <StatusPill 
+                          status={document.processingStatus} 
+                          error={document.processingError}
+                          retryCount={document.retryCount}
+                        />
                         {document.processingError && (
-                          <div className="text-xs text-red-500 mt-1">{document.processingError}</div>
+                          <div className="text-xs text-red-600 dark:text-red-400 mt-1" title={document.processingError}>
+                            {document.processingError.length > 50 
+                              ? document.processingError.substring(0, 50) + '...' 
+                              : document.processingError}
+                          </div>
                         )}
                       </td>
                       <td className="p-3">
