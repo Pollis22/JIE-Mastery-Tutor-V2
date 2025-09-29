@@ -42,8 +42,9 @@ export function AssignmentsPanel({ userId, onSelectionChange }: AssignmentsPanel
   const { data: documents = [], isLoading } = useQuery({
     queryKey: ['documents', userId],
     queryFn: async () => {
-      const response = await apiRequest('/api/documents/list');
-      return response.documents as Document[];
+      const response = await apiRequest('GET', '/api/documents/list');
+      const data = await response.json();
+      return data.documents as Document[];
     },
   });
 
@@ -81,7 +82,7 @@ export function AssignmentsPanel({ userId, onSelectionChange }: AssignmentsPanel
   // Delete mutation
   const deleteMutation = useMutation({
     mutationFn: async (documentId: string) => {
-      await apiRequest(`/api/documents/${documentId}`, { method: 'DELETE' });
+      await apiRequest('DELETE', `/api/documents/${documentId}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['documents', userId] });
@@ -95,10 +96,7 @@ export function AssignmentsPanel({ userId, onSelectionChange }: AssignmentsPanel
   // Update mutation
   const updateMutation = useMutation({
     mutationFn: async ({ id, updates }: { id: string; updates: Partial<Document> }) => {
-      return apiRequest(`/api/documents/${id}`, {
-        method: 'PUT',
-        body: JSON.stringify(updates),
-      });
+      return apiRequest('PUT', `/api/documents/${id}`, updates);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['documents', userId] });
