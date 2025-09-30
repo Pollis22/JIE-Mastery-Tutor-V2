@@ -82,7 +82,7 @@ export default function AuthPage() {
                   />
                 </div>
                 <CardTitle className="text-2xl font-bold text-foreground">JIE Mastery Tutor</CardTitle>
-                <p className="text-muted-foreground">Sign in to continue your learning journey<br/><span className="text-sm">Test login: test@example.com / TestPass123!</span></p>
+                <p className="text-muted-foreground">Sign in to continue your learning journey</p>
               </CardHeader>
               
               <CardContent>
