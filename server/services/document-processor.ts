@@ -1,21 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import mammoth from 'mammoth';
-
-// Lazy load pdf-parse to avoid initialization issues
-let pdfParse: any = null;
-const loadPdfParse = async () => {
-  if (!pdfParse) {
-    try {
-      pdfParse = (await import('pdf-parse')).default;
-    } catch (error) {
-      console.warn('Failed to load pdf-parse:', error);
-      return null;
-    }
-  }
-  return pdfParse;
-};
 import OpenAI from 'openai';
+import { PdfJsTextExtractor } from './pdf-extractor';
 
 export interface ProcessedDocument {
   chunks: Array<{
@@ -30,6 +17,7 @@ export interface ProcessedDocument {
 
 export class DocumentProcessor {
   private openai: OpenAI;
+  private pdfExtractor: PdfJsTextExtractor;
   private readonly maxChunkSize = 1000; // tokens per chunk
   private readonly chunkOverlap = 200; // token overlap between chunks
 
@@ -37,6 +25,7 @@ export class DocumentProcessor {
     this.openai = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
     });
+    this.pdfExtractor = new PdfJsTextExtractor();
   }
 
   /**
@@ -84,16 +73,10 @@ export class DocumentProcessor {
   }
 
   /**
-   * Extract text from PDF
+   * Extract text from PDF using PDF.js
    */
   private async extractPdfText(filePath: string): Promise<string> {
-    const parser = await loadPdfParse();
-    if (!parser) {
-      throw new Error('PDF parsing is not available');
-    }
-    const dataBuffer = fs.readFileSync(filePath);
-    const pdfData = await parser(dataBuffer);
-    return pdfData.text;
+    return this.pdfExtractor.extractText(filePath);
   }
 
   /**
