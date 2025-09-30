@@ -19,7 +19,8 @@ type AuthContextType = {
 
 type LoginData = Pick<InsertUser, "username" | "password">;
 
-export const AuthContext = createContext<AuthContextType | null>(null);
+const AuthContext = createContext<AuthContextType | null>(null);
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
   const {
@@ -33,13 +34,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginMutation = useMutation({
     mutationFn: async (credentials: LoginData) => {
+      console.log('[Auth] Calling login API with:', credentials.username);
       const res = await apiRequest("POST", "/api/login", credentials);
-      return await res.json();
+      const data = await res.json();
+      console.log('[Auth] Login successful:', data.username);
+      return data;
     },
     onSuccess: (user: SelectUser) => {
+      console.log('[Auth] Login onSuccess:', user.username);
       queryClient.setQueryData(["/api/user"], user);
     },
     onError: (error: Error) => {
+      console.error('[Auth] Login error:', error.message);
       toast({
         title: "Login failed",
         description: error.message,
@@ -50,13 +56,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const registerMutation = useMutation({
     mutationFn: async (credentials: InsertUser) => {
+      console.log('[Auth] Calling register API with:', credentials.username, credentials.email);
       const res = await apiRequest("POST", "/api/register", credentials);
-      return await res.json();
+      const data = await res.json();
+      console.log('[Auth] Registration successful:', data.username);
+      return data;
     },
     onSuccess: (user: SelectUser) => {
+      console.log('[Auth] Register onSuccess:', user.username);
       queryClient.setQueryData(["/api/user"], user);
     },
     onError: (error: Error) => {
+      console.error('[Auth] Register error:', error.message);
       toast({
         title: "Registration failed",
         description: error.message,

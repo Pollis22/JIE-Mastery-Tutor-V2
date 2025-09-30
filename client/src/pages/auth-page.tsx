@@ -58,10 +58,12 @@ export default function AuthPage() {
   }, [user, setLocation]);
 
   const handleLogin = (data: LoginForm) => {
+    console.log('[Auth] Login form submitted:', { username: data.username });
     loginMutation.mutate(data);
   };
 
   const handleRegister = (data: RegisterForm) => {
+    console.log('[Auth] Register form submitted:', { username: data.username, email: data.email });
     registerMutation.mutate(data);
   };
 
