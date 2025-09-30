@@ -46,7 +46,7 @@ export function setupAuth(app: Express) {
     cookie: {
       httpOnly: true,
       secure: false, // Set to false for development (HTTP)
-      sameSite: 'none', // Allow cookies in cross-origin iframe
+      sameSite: 'lax', // Changed from 'none' - lax works with secure: false
       maxAge: 24 * 60 * 60 * 1000 // 24 hours
     }
   };
