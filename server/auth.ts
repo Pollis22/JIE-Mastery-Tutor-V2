@@ -163,10 +163,34 @@ export function setupAuth(app: Express) {
     });
   });
 
-  app.post("/api/login", passport.authenticate("local"), (req, res) => {
-    // Sanitize user response to exclude sensitive fields
-    const { password, ...safeUser } = req.user as any;
-    res.status(200).json(safeUser);
+  app.post("/api/login", (req, res, next) => {
+    console.log('🔍 /api/login POST request received:', { 
+      body: req.body,
+      hasUsername: !!req.body.username, 
+      hasPassword: !!req.body.password 
+    });
+    
+    passport.authenticate("local", (err: any, user: any, info: any) => {
+      if (err) {
+        console.error('❌ Login error:', err);
+        return res.status(500).json({ error: 'Authentication error', details: err.message });
+      }
+      if (!user) {
+        console.log('❌ Login failed: Invalid credentials');
+        return res.status(401).json({ error: 'Invalid credentials' });
+      }
+      
+      req.login(user, (err) => {
+        if (err) {
+          console.error('❌ Session login error:', err);
+          return res.status(500).json({ error: 'Session error', details: err.message });
+        }
+        // Sanitize user response to exclude sensitive fields
+        const { password, ...safeUser } = user as any;
+        console.log('✅ Login successful:', safeUser.username);
+        res.status(200).json(safeUser);
+      });
+    })(req, res, next);
   });
 
   app.post("/api/logout", (req, res, next) => {
