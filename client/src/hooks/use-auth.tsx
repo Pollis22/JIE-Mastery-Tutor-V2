@@ -34,31 +34,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginMutation = useMutation({
     mutationFn: async (credentials: LoginData) => {
-      console.log('🌐 loginMutation: Starting API request to /api/login');
-      console.log('📤 Credentials:', { username: credentials.username, passwordLength: credentials.password?.length });
-      try {
-        const res = await apiRequest("POST", "/api/login", credentials);
-        const data = await res.json();
-        console.log('✅ Login API success:', { username: data.username });
-        return data;
-      } catch (error) {
-        console.error('❌ Login API error:', error);
-        throw error;
-      }
+      console.log('Making login request with:', credentials);
+      const res = await apiRequest("POST", "/api/login", credentials);
+      const data = await res.json();
+      console.log('Login response:', data);
+      return data;
     },
     onSuccess: (user: SelectUser) => {
-      console.log('🎉 loginMutation onSuccess:', user.username);
       queryClient.setQueryData(["/api/user"], user);
+      toast({
+        title: "Welcome back!",
+        description: `Logged in as ${user.username}`,
+      });
     },
     onError: (error: Error) => {
-      console.error('💥 loginMutation onError:', error.message);
-      console.log('📢 Calling toast with:', { title: "Login failed", description: error.message });
       toast({
         title: "Login failed",
-        description: error.message,
+        description: error.message || "Invalid credentials",
         variant: "destructive",
       });
-      console.log('📢 Toast called');
     },
   });
 

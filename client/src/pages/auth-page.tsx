@@ -29,14 +29,7 @@ type LoginForm = z.infer<typeof loginSchema>;
 type RegisterForm = z.infer<typeof registerSchema>;
 
 export default function AuthPage() {
-  const authContext = useAuth();
-  console.log('🔍 AuthPage: Auth context loaded:', {
-    hasUser: !!authContext.user,
-    hasLoginMutation: !!authContext.loginMutation,
-    loginPending: authContext.loginMutation?.isPending
-  });
-  
-  const { user, loginMutation, registerMutation } = authContext;
+  const { user, loginMutation, registerMutation } = useAuth();
   const [, setLocation] = useLocation();
 
   const loginForm = useForm<LoginForm>({
@@ -64,25 +57,23 @@ export default function AuthPage() {
     }
   }, [user, setLocation]);
 
-  const handleLogin = (data: LoginForm) => {
-    console.log('🚀 handleLogin called with:', { username: data.username, passwordLength: data.password?.length });
-    console.log('🔍 Form errors:', loginForm.formState.errors);
-    console.log('🔍 loginMutation state:', { isPending: loginMutation.isPending, isError: loginMutation.isError });
-    loginMutation.mutate(data);
-    console.log('✅ loginMutation.mutate() called');
+  const handleLogin = async (data: LoginForm) => {
+    console.log('handleLogin called with data:', data);
+    try {
+      await loginMutation.mutateAsync(data);
+    } catch (error) {
+      // Error is handled by mutation's onError
+      console.error('Login error:', error);
+    }
   };
-  
-  // Debug: Log when form state changes
-  console.log('📋 Login form state:', {
-    isValid: loginForm.formState.isValid,
-    isSubmitting: loginForm.formState.isSubmitting,
-    errors: loginForm.formState.errors
-  });
 
-  const handleRegister = (data: RegisterForm) => {
-    console.log('🚀 handleRegister called with:', { username: data.username, email: data.email });
-    registerMutation.mutate(data);
-    console.log('✅ registerMutation.mutate() called');
+  const handleRegister = async (data: RegisterForm) => {
+    try {
+      await registerMutation.mutateAsync(data);
+    } catch (error) {
+      // Error is handled by mutation's onError
+      console.error('Register error:', error);
+    }
   };
 
   return (
@@ -114,7 +105,13 @@ export default function AuthPage() {
                   
                   <TabsContent value="login" className="space-y-4">
                     <Form {...loginForm}>
-                      <form onSubmit={loginForm.handleSubmit(handleLogin)} className="space-y-4">
+                      <form 
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          console.log('Form submitted!', loginForm.getValues());
+                          loginForm.handleSubmit(handleLogin)(e);
+                        }} 
+                        className="space-y-4">
                         <FormField
                           control={loginForm.control}
                           name="username"
@@ -148,7 +145,6 @@ export default function AuthPage() {
                           className="w-full" 
                           disabled={loginMutation.isPending}
                           data-testid="button-login"
-                          onClick={() => console.log('🖱️ Sign In button clicked!')}
                         >
                           {loginMutation.isPending ? "Signing in..." : "Sign In"}
                         </Button>
