@@ -22,8 +22,10 @@ export default function ConvaiHost({
 
   // Load embed script once
   useEffect(() => {
+    console.log("[ConvAI Debug] Starting script load...");
     const existing = document.querySelector('script[data-elevenlabs-convai]');
     if (existing) {
+      console.log("[ConvAI Debug] Script already exists, marking ready");
       setReady(true);
       perf.markScriptLoaded();
       return;
@@ -34,64 +36,85 @@ export default function ConvaiHost({
     s.type = "text/javascript";
     s.setAttribute("data-elevenlabs-convai", "1");
     s.onload = () => {
+      console.log("[ConvAI Debug] ✅ Script loaded successfully");
       setReady(true);
       perf.markScriptLoaded();
     };
-    s.onerror = () => {
+    s.onerror = (err) => {
+      console.error("[ConvAI Debug] ❌ Failed to load script:", err);
       perf.incrementError();
-      console.error('Failed to load ElevenLabs ConvAI script');
     };
     document.body.appendChild(s);
   }, [perf]);
 
   // Mount on agentId change
   useEffect(() => {
-    if (!ready || !containerRef.current) return;
-
-    if (!containerRef.current) return;
+    console.log("[ConvAI Debug] Mount effect triggered. Ready:", ready, "Container:", !!containerRef.current);
     
-    containerRef.current.setAttribute("aria-busy", "true"); // accessibility hint
+    if (!ready || !containerRef.current) {
+      console.log("[ConvAI Debug] Skipping mount - not ready or no container");
+      return;
+    }
+    
+    console.log("[ConvAI Debug] 🎤 Creating widget element for agent:", agentId);
+    console.log("[ConvAI Debug] First message:", firstUserMessage);
+    console.log("[ConvAI Debug] Metadata:", metadata);
+    console.log("[ConvAI Debug] Protocol:", window.location.protocol);
+    console.log("[ConvAI Debug] Browser:", navigator.userAgent.substring(0, 50) + "...");
+    
+    containerRef.current.setAttribute("aria-busy", "true");
     containerRef.current.innerHTML = "";
 
     const el = document.createElement("elevenlabs-convai");
     el.setAttribute("agent-id", agentId);
-    if (firstUserMessage) el.setAttribute("first-user-message", firstUserMessage);
+    if (firstUserMessage) {
+      console.log("[ConvAI Debug] Setting first-user-message:", firstUserMessage);
+      el.setAttribute("first-user-message", firstUserMessage);
+    }
     
-    // Handle system prompt override if available
     if (metadata.systemPrompt) {
+      console.log("[ConvAI Debug] Setting system-prompt");
       el.setAttribute("system-prompt", metadata.systemPrompt);
     }
     
     for (const [k, v] of Object.entries(metadata)) {
-      if (k !== 'systemPrompt') { // Don't duplicate systemPrompt in metadata
-        el.setAttribute(`metadata-${k}`, typeof v === 'string' ? v : JSON.stringify(v));
+      if (k !== 'systemPrompt') {
+        const value = typeof v === 'string' ? v : JSON.stringify(v);
+        console.log(`[ConvAI Debug] Setting metadata-${k}:`, value);
+        el.setAttribute(`metadata-${k}`, value);
       }
     }
 
-    // Add event listeners for performance monitoring
+    // Add event listeners for performance monitoring and debugging
     el.addEventListener("widget-ready", () => {
-      console.log("[ConvAI] Widget ready for agent:", agentId);
+      console.log("[ConvAI Debug] ✅ Widget ready event fired for agent:", agentId);
       perf.markFirstInteraction();
     });
 
-    el.addEventListener("user-spoke", () => {
-      console.log("[ConvAI] User speaking");
+    el.addEventListener("user-spoke", (e: any) => {
+      console.log("[ConvAI Debug] 🗣️ User spoke:", e.detail);
       perf.incrementTurn();
     });
 
-    el.addEventListener("agent-spoke", () => {
-      console.log("[ConvAI] Agent responding");
+    el.addEventListener("agent-spoke", (e: any) => {
+      console.log("[ConvAI Debug] 🤖 Agent spoke:", e.detail);
       perf.incrementTurn();
     });
 
     el.addEventListener("error", (e: any) => {
-      console.error("[ConvAI] Widget error:", e.detail || e);
+      console.error("[ConvAI Debug] ❌ Widget error:", e.detail || e);
       perf.incrementError();
     });
+    
+    el.addEventListener("connection-status", (e: any) => {
+      console.log("[ConvAI Debug] 🔌 Connection status:", e.detail);
+    });
 
+    console.log("[ConvAI Debug] Appending widget to container...");
     if (containerRef.current) {
       containerRef.current.appendChild(el);
       containerRef.current.removeAttribute("aria-busy");
+      console.log("[ConvAI Debug] ✅ Widget appended to DOM");
     }
     perf.markWidgetMounted();
     onMounted?.();
