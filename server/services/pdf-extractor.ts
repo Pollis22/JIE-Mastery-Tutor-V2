@@ -13,11 +13,9 @@ export class PdfJsTextExtractor {
   private async loadPdfJs() {
     if (!this.pdfjsLib) {
       try {
-        this.pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
-        
-        // Set up worker - required for PDF.js to function
-        const workerPath = require.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs');
-        this.pdfjsLib.GlobalWorkerOptions.workerSrc = workerPath;
+        // Use legacy ES module build for Node.js compatibility
+        const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+        this.pdfjsLib = pdfjs;
       } catch (error) {
         console.error('Failed to load pdfjs-dist:', error);
         throw new Error('PDF.js library failed to initialize');
@@ -37,10 +35,12 @@ export class PdfJsTextExtractor {
       const dataBuffer = fs.readFileSync(filePath);
       const typedArray = new Uint8Array(dataBuffer);
 
-      // Load PDF document
+      // Load PDF document without worker (Node.js compatibility)
       const loadingTask = pdfjs.getDocument({
         data: typedArray,
         verbosity: 0, // Suppress console logs
+        useSystemFonts: true,
+        disableWorker: true, // Disable worker for Node.js compatibility
       });
       
       const pdf = await loadingTask.promise;
