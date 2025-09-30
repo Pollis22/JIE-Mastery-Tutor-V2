@@ -13,14 +13,13 @@ import { setupSecurityHeaders, setupCORS } from "./middleware/security";
 import Stripe from "stripe";
 import { z } from "zod";
 
-// Temporary bypass for development and testing - will use provided secrets once configured
-if (!process.env.STRIPE_SECRET_KEY && process.env.NODE_ENV === 'production') {
-  throw new Error('Missing required Stripe secret: STRIPE_SECRET_KEY');
-}
-
-// Use provided Stripe key or disable Stripe functionality in development
+// Stripe is optional - if not configured, subscription features will be disabled
 const stripeKey = process.env.STRIPE_SECRET_KEY;
 const isStripeEnabled = !!stripeKey;
+
+if (!isStripeEnabled) {
+  console.log('[Stripe] Not configured - subscription features disabled');
+}
 
 const stripe = isStripeEnabled ? new Stripe(stripeKey, {
   apiVersion: "2025-08-27.basil",
