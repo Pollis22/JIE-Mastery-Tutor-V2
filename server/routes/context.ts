@@ -53,7 +53,7 @@ router.post('/session-start', async (req, res) => {
     // If student has pinned docs, use those
     if (documentsToUse.length === 0 && pinnedDocs.length > 0) {
       documentsToUse = pinnedDocs
-        .filter(doc => doc.processingStatus === 'ready' || doc.processingStatus === 'completed')
+        .filter(doc => doc.processingStatus === 'ready')
         .map(doc => doc.id);
     }
     
@@ -61,7 +61,7 @@ router.post('/session-start', async (req, res) => {
     if (documentsToUse.length === 0) {
       const userDocs = await storage.getUserDocuments(userId);
       documentsToUse = userDocs
-        .filter(doc => doc.keepForFutureSessions && (doc.processingStatus === 'ready' || doc.processingStatus === 'completed'))
+        .filter(doc => doc.keepForFutureSessions && doc.processingStatus === 'ready')
         .map(doc => doc.id);
     }
 
@@ -179,7 +179,7 @@ router.post('/query', async (req, res) => {
       source: {
         title: result.document.title,
         type: result.document.fileType,
-        page: result.chunk.metadata?.page || null
+        page: (result.chunk.metadata as any)?.page || null
       },
       relevance: result.similarity > 0.85 ? 'high' : result.similarity > 0.7 ? 'medium' : 'low'
     }));

@@ -7,7 +7,7 @@ import * as path from 'path';
 
 const MAX_RETRIES = 5;
 const RETRY_SCHEDULE_MS = [1 * 60 * 1000, 5 * 60 * 1000, 15 * 60 * 1000, 60 * 60 * 1000, 6 * 60 * 60 * 1000]; // 1m, 5m, 15m, 1h, 6h
-const WORKER_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes
+const WORKER_INTERVAL_MS = 15 * 1000; // 15 seconds for faster processing
 const BATCH_SIZE = 3; // Process 3 documents at a time to avoid overwhelming the API
 
 export class EmbeddingWorker {
