@@ -276,9 +276,10 @@ export default function TutorPage() {
 
             <input 
               id="student-name" 
-              placeholder="Student name (optional)" 
+              placeholder="Student name (required)" 
               value={studentName} 
               onChange={e => setStudentName(e.target.value)}
+              required
               className="px-3 py-2 border border-input bg-background text-foreground rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
               data-testid="input-student-name"
             />
@@ -295,11 +296,12 @@ export default function TutorPage() {
             <button 
               id="start-btn" 
               onClick={startTutor} 
-              disabled={!scriptReady}
+              disabled={!scriptReady || !studentName.trim()}
               className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary"
               data-testid="button-start-tutor"
+              title={!studentName.trim() ? "Please enter student name to connect" : ""}
             >
-              Start Learning
+              Connect to Tutor
             </button>
             
             <button 
@@ -323,10 +325,18 @@ export default function TutorPage() {
             </button>
           </div>
 
-          {/* Greeting Preview */}
-          <div className="bg-muted p-3 rounded-md">
-            <div className="text-sm text-muted-foreground mb-1">Your Tutor Will Say:</div>
-            <div className="text-base text-foreground italic">"{greetingPreview}"</div>
+          {/* Getting Started Instructions */}
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-4 rounded-md">
+            <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-2">📚 How to Use JIE Mastery Tutor</h3>
+            <ol className="text-sm text-blue-800 dark:text-blue-200 space-y-1.5 list-decimal list-inside">
+              <li><strong>Enter your name</strong> above (required for a personalized experience)</li>
+              <li><strong>Select your grade level and subject</strong> you want help with</li>
+              <li><strong>Upload your study materials</strong> (optional) - Click "Upload Study Materials Here" below to add homework, notes, or assignments</li>
+              <li><strong>Check the "Use" box</strong> next to documents you want the tutor to reference</li>
+              <li><strong>Click "Connect to Tutor"</strong> to start your personalized learning session</li>
+              <li><strong>Ask questions</strong> about your materials or the subject - the tutor will help you understand!</li>
+            </ol>
+            <p className="text-xs text-blue-700 dark:text-blue-300 mt-3 italic">💡 Tip: Upload documents before connecting for the best personalized tutoring experience</p>
           </div>
 
           {/* Study Materials Toggle */}
