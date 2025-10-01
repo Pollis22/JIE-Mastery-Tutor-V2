@@ -4,6 +4,8 @@ import { TutorErrorBoundary } from "@/components/tutor-error-boundary";
 import { NetworkAwareWrapper } from "@/components/network-aware-wrapper";
 import ConvaiHost from "@/components/convai-host";
 import { AssignmentsPanel } from "@/components/AssignmentsPanel";
+import { StudentSwitcher } from "@/components/StudentSwitcher";
+import { StudentProfilePanel } from "@/components/StudentProfilePanel";
 import { AGENTS, GREETINGS, type AgentLevel } from "@/agents";
 import jieLogo from "@/assets/jie-mastery-logo.png";
 
@@ -45,6 +47,9 @@ export default function TutorPage() {
   const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
   const [showAssignments, setShowAssignments] = useState(false);
   const [sessionContext, setSessionContext] = useState<any>(null);
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+  const [profileDrawerOpen, setProfileDrawerOpen] = useState(false);
+  const [editingStudentId, setEditingStudentId] = useState<string | undefined>();
 
   // Load ConvAI script
   useEffect(() => {
@@ -153,24 +158,39 @@ export default function TutorPage() {
     }
   }, [level, subject]);
 
+  const handleOpenProfile = (studentId?: string) => {
+    setEditingStudentId(studentId);
+    setProfileDrawerOpen(true);
+  };
+
   return (
     <NetworkAwareWrapper>
       <TutorErrorBoundary>
         <div className="tutor-page max-w-3xl mx-auto p-4 space-y-4">
-          {/* Header with Logo */}
-          <div className="text-center mb-6">
-            <div className="flex items-center justify-center gap-3 mb-2">
-              <img 
-                src={jieLogo} 
-                alt="JIE Mastery Logo" 
-                className="h-12 w-auto"
-                data-testid="img-jie-logo"
-              />
-              <h1 id="page-title" className="text-2xl font-bold text-foreground">
-                JIE Mastery Tutor — Multi-Agent
-              </h1>
+          {/* Header with Logo and Student Switcher */}
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex-1" />
+              <div className="flex items-center gap-3">
+                <img 
+                  src={jieLogo} 
+                  alt="JIE Mastery Logo" 
+                  className="h-12 w-auto"
+                  data-testid="img-jie-logo"
+                />
+                <h1 id="page-title" className="text-2xl font-bold text-foreground">
+                  JIE Mastery Tutor — Multi-Agent
+                </h1>
+              </div>
+              <div className="flex-1 flex justify-end">
+                <StudentSwitcher
+                  selectedStudentId={selectedStudentId || undefined}
+                  onSelectStudent={setSelectedStudentId}
+                  onOpenProfile={handleOpenProfile}
+                />
+              </div>
             </div>
-            <p className="text-muted-foreground">
+            <p className="text-muted-foreground text-center">
               Age-appropriate AI tutoring with voice conversation
             </p>
           </div>
@@ -297,6 +317,22 @@ export default function TutorPage() {
             </div>
           )}
         </div>
+
+        {/* Student Profile Panel */}
+        <StudentProfilePanel
+          open={profileDrawerOpen}
+          onOpenChange={setProfileDrawerOpen}
+          studentId={editingStudentId}
+          onStudentSaved={(studentId) => {
+            setSelectedStudentId(studentId);
+            setProfileDrawerOpen(false);
+          }}
+          onStudentDeleted={(deletedId) => {
+            if (selectedStudentId === deletedId) {
+              setSelectedStudentId(null);
+            }
+          }}
+        />
       </TutorErrorBoundary>
     </NetworkAwareWrapper>
   );
