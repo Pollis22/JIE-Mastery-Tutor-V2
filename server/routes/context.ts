@@ -89,8 +89,8 @@ router.post('/session-start', async (req, res) => {
       });
     }
 
-    // Build enhanced context
-    const documentSummaries = contextData.documents.map(doc => {
+    // Build enhanced context with actual content
+    const documentsWithContent = contextData.documents.map(doc => {
       const docChunks = contextData.chunks.filter(chunk => chunk.documentId === doc.id);
       return {
         title: doc.title,
@@ -98,13 +98,14 @@ router.post('/session-start', async (req, res) => {
         subject: doc.subject,
         grade: doc.grade,
         chunkCount: docChunks.length,
-        description: doc.description
+        description: doc.description,
+        chunks: docChunks.map(chunk => chunk.content)
       };
     });
 
-    // Create comprehensive system prompt with student memory
+    // Create comprehensive system prompt with student memory and document content
     const systemPrompt = buildSystemPrompt(
-      documentSummaries, 
+      documentsWithContent, 
       request.subject, 
       request.grade,
       student,
@@ -113,7 +114,7 @@ router.post('/session-start', async (req, res) => {
     
     // Create engaging first message with student personalization
     const firstMessage = buildFirstMessage(
-      documentSummaries, 
+      documentsWithContent, 
       request.subject,
       student,
       lastSession
@@ -128,7 +129,7 @@ router.post('/session-start', async (req, res) => {
       hasContext: true,
       documentCount: contextData.documents.length,
       chunkCount: contextData.chunks.length,
-      documents: documentSummaries,
+      documents: documentsWithContent.map(d => ({ title: d.title, type: d.type, subject: d.subject, grade: d.grade, chunkCount: d.chunkCount })),
       student: student ? {
         name: student.name,
         gradeBand: student.gradeBand,
@@ -243,20 +244,31 @@ function buildSystemPrompt(
     prompt += `\nBuild on this previous session naturally, but don't constantly reference it unless relevant.\n\n`;
   }
   
-  // Document context
+  // Document context with actual content
   if (documents.length > 0) {
-    const docList = documents.map(doc => 
-      `- "${doc.title}" (${doc.type.toUpperCase()}${doc.subject ? `, ${doc.subject}` : ''})`
-    ).join('\n');
+    prompt += `STUDY MATERIALS PROVIDED BY STUDENT:\n\n`;
     
-    prompt += `The student has provided specific study materials for this session:\n\n${docList}\n\n`;
-    prompt += `IMPORTANT GUIDELINES:\n`;
-    prompt += `1. **Reference their materials**: When answering questions, prioritize information from their uploaded documents\n`;
-    prompt += `2. **Be specific**: Mention which document you're referencing (e.g., "According to your uploaded assignment...")\n`;
-    prompt += `3. **Stay grounded**: If asked about content not in their materials, acknowledge this and offer to help with what's available\n`;
-    prompt += `4. **Adapt your level**: Match your explanations to their grade level and the complexity of their materials\n`;
-    prompt += `5. **Encourage engagement**: Ask follow-up questions about their assignments and help them think through problems\n\n`;
-    prompt += `You have access to ${documents.reduce((sum, doc) => sum + doc.chunkCount, 0)} sections of content from their materials. Use this context to provide personalized, relevant tutoring.`;
+    documents.forEach((doc, index) => {
+      prompt += `[Document ${index + 1}: ${doc.title}]\n`;
+      if (doc.subject) prompt += `Subject: ${doc.subject}\n`;
+      if (doc.grade) prompt += `Grade Level: ${doc.grade}\n`;
+      prompt += `Type: ${doc.type.toUpperCase()}\n\n`;
+      
+      if (doc.chunks && doc.chunks.length > 0) {
+        // Include actual content, limiting to first 2000 chars per doc to avoid token limits
+        const contentPreview = doc.chunks.join('\n\n').slice(0, 2000);
+        prompt += `Content:\n${contentPreview}${contentPreview.length >= 2000 ? '...[content continues]' : ''}\n\n`;
+      }
+      
+      prompt += `---\n\n`;
+    });
+    
+    prompt += `IMPORTANT TUTORING GUIDELINES:\n`;
+    prompt += `1. Use ONLY the content from these study materials when answering content-specific questions\n`;
+    prompt += `2. Reference which document you're using (e.g., "According to Document 1: ${documents[0].title}...")\n`;
+    prompt += `3. If asked about content not in the materials, say "I don't see that in your uploaded materials, but I can help you with..."\n`;
+    prompt += `4. Help the student understand and apply the concepts from their materials\n`;
+    prompt += `5. Ask follow-up questions to check understanding\n\n`;
   }
   
   return prompt;
