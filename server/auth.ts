@@ -58,7 +58,7 @@ export function setupAuth(app: Express) {
 
   passport.use(
     new LocalStrategy(
-      { usernameField: 'email', passwordField: 'password' },
+      { usernameField: 'username', passwordField: 'password' },
       async (username, password, done) => {
         // Test mode authentication - completely DB-independent
         const isTestMode = process.env.AUTH_TEST_MODE === 'true' || process.env.NODE_ENV === 'development';
