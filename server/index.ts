@@ -16,19 +16,6 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-// Log ALL POST requests after body parsing
-app.use((req, res, next) => {
-  if (req.method === 'POST') {
-    console.log('🌐 POST REQUEST:', {
-      method: req.method,
-      path: req.path,
-      body: req.body,
-      contentType: req.headers['content-type']
-    });
-  }
-  next();
-});
-
 // Explicitly set headers to indicate this is a web application for deployment
 app.use((req, res, next) => {
   res.setHeader('X-Application-Type', 'web-app');
@@ -75,22 +62,13 @@ app.use((req, res, next) => {
   startEmbeddingWorker();
   log('Embedding worker started for background document processing');
 
-  app.use((err: any, req: Request, res: Response, _next: NextFunction) => {
+  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
-    
-    console.error('❌ ERROR HANDLER:', {
-      path: req.path,
-      method: req.method,
-      status,
-      message,
-      stack: err.stack
-    });
 
     if (!res.headersSent) {
       res.status(status).json({ message });
     }
-    // Don't throw - just log
   });
 
   // importantly only setup vite in development and after
