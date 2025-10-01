@@ -12,7 +12,8 @@ const sessionStartSchema = z.object({
   grade: z.string().optional(),
   includeDocIds: z.array(z.string()).default([]),
   sessionId: z.string().optional(),
-  studentId: z.string().optional() // For student memory integration
+  studentId: z.string().optional(), // For student memory integration
+  studentName: z.string().optional() // For basic name personalization without profile
 });
 
 const queryContextSchema = z.object({
@@ -65,7 +66,8 @@ router.post('/session-start', async (req, res) => {
         .map(doc => doc.id);
     }
 
-    if (documentsToUse.length === 0 && !student) {
+    // Early return only if no documents, no student, AND no student name
+    if (documentsToUse.length === 0 && !student && !request.studentName) {
       return res.json({
         systemPrompt: null,
         firstMessage: null,
@@ -79,8 +81,8 @@ router.post('/session-start', async (req, res) => {
       ? await storage.getDocumentContext(userId, documentsToUse)
       : { documents: [], chunks: [] };
     
-    // Only return early if no documents AND no student
-    if (contextData.documents.length === 0 && !student) {
+    // Only return early if no documents AND no student AND no student name
+    if (contextData.documents.length === 0 && !student && !request.studentName) {
       return res.json({
         systemPrompt: null,
         firstMessage: null,
@@ -113,11 +115,13 @@ router.post('/session-start', async (req, res) => {
     );
     
     // Create engaging first message with student personalization
+    // Pass basic name if no student profile exists
     const firstMessage = buildFirstMessage(
       documentsWithContent, 
       request.subject,
       student,
-      lastSession
+      lastSession,
+      request.studentName // Pass the typed name for basic personalization
     );
 
     res.json({
@@ -276,39 +280,110 @@ function buildSystemPrompt(
 
 /**
  * Build engaging first message with student personalization
+ * NOTE: ElevenLabs ConvAI doesn't support custom system-prompt attributes,
+ * so we must include ALL context in the first-user-message
  */
 function buildFirstMessage(
   documents: any[], 
   subject?: string,
   student?: any,
-  lastSession?: any
+  lastSession?: any,
+  studentName?: string
 ): string {
-  const greeting = student ? `Hi ${student.name}!` : 'Hi!';
+  let message = '';
+  
+  // PART 1: Context Instructions (acts as system prompt)
+  message += '[CONTEXT FOR THIS SESSION]\n\n';
+  
+  // Student profile
+  if (student) {
+    const paceMap: Record<string, string> = {
+      slow: 'a slower, more deliberate',
+      normal: 'a balanced',
+      fast: 'a quicker'
+    };
+    const encouragementMap: Record<string, string> = {
+      low: 'minimal',
+      medium: 'moderate',
+      high: 'frequent'
+    };
+    
+    message += `Student Name: ${student.name}\n`;
+    message += `Grade Band: ${student.gradeBand}\n`;
+    message += `Teaching Pace: Use ${paceMap[student.pace] || 'a balanced'} pace\n`;
+    message += `Encouragement Style: Provide ${encouragementMap[student.encouragement] || 'moderate'} encouragement\n`;
+    
+    if (student.goals && student.goals.length > 0) {
+      message += `Learning Goals: ${student.goals.join(', ')}\n`;
+    }
+    message += '\n';
+  }
+  
+  // Last session context
+  if (lastSession && lastSession.summary) {
+    message += 'PREVIOUS SESSION:\n';
+    if (lastSession.summary) message += `- We covered: ${lastSession.summary}\n`;
+    if (lastSession.misconceptions) message += `- Areas to review: ${lastSession.misconceptions}\n`;
+    if (lastSession.nextSteps) message += `- Next steps: ${lastSession.nextSteps}\n`;
+    message += '\n';
+  }
+  
+  // Document context with content
+  if (documents.length > 0) {
+    message += 'STUDY MATERIALS PROVIDED:\n\n';
+    
+    documents.forEach((doc, index) => {
+      message += `[Document ${index + 1}: "${doc.title}"]\n`;
+      if (doc.subject) message += `Subject: ${doc.subject}\n`;
+      if (doc.grade) message += `Grade: ${doc.grade}\n`;
+      message += `Type: ${doc.type.toUpperCase()}\n\n`;
+      
+      if (doc.chunks && doc.chunks.length > 0) {
+        // Include actual content (limited to avoid token limits)
+        const contentPreview = doc.chunks.join('\n\n').slice(0, 1500);
+        message += `Content Preview:\n${contentPreview}${contentPreview.length >= 1500 ? '...[continues]' : ''}\n\n`;
+      }
+      message += '---\n\n';
+    });
+    
+    message += 'IMPORTANT INSTRUCTIONS:\n';
+    message += '1. Reference these documents when answering questions\n';
+    message += '2. Say which document you\'re using (e.g., "In your ' + documents[0].title + '...")\n';
+    message += '3. If content isn\'t in the materials, say so politely\n';
+    message += '4. Help the student understand their materials deeply\n\n';
+  }
+  
+  message += '[END CONTEXT]\n\n';
+  
+  // PART 2: Conversational greeting (what the tutor actually says)
+  const name = student?.name || studentName || 'there';
+  const greeting = `Hi ${name}!`;
   
   // Reference last session if available
   if (lastSession && lastSession.nextSteps) {
-    return `${greeting} Welcome back! Last time we worked on ${lastSession.subject || 'your studies'}. ${lastSession.nextSteps} ${documents.length > 0 ? `I can see you've brought materials today - ready to dive in?` : 'Ready to continue?'}`;
+    message += `${greeting} Welcome back! Last time we worked on ${lastSession.subject || 'your studies'}. ${documents.length > 0 ? `I can see you've brought your materials today - ready to continue?` : 'Ready to pick up where we left off?'}`;
+    return message;
   }
   
   // Document-based greeting
   if (documents.length === 1) {
     const doc = documents[0];
     const subjectHint = doc.subject || subject;
-    return `${greeting} I can see you've brought "${doc.title}" to work on today${subjectHint ? ` for ${subjectHint}` : ''}. I've reviewed the material and I'm ready to help you understand it better. What specific part would you like to start with, or do you have any questions about the content?`;
+    message += `${greeting} I can see you've brought "${doc.title}" to work on today${subjectHint ? ` for ${subjectHint}` : ''}. I've reviewed your material and I'm ready to help you understand it. What specific part would you like to start with?`;
   } else if (documents.length > 1) {
     const titles = documents.slice(0, 2).map(d => `"${d.title}"`).join(' and ');
-    const remaining = documents.length > 2 ? ` and ${documents.length - 2} other document${documents.length > 3 ? 's' : ''}` : '';
-    return `${greeting} I can see you've brought several materials to work with today: ${titles}${remaining}. I've reviewed all your documents and I'm ready to help you tackle any questions or problems you have. What would you like to focus on first?`;
-  }
-  
-  // Student but no documents
-  if (student) {
+    const remaining = documents.length > 2 ? ` plus ${documents.length - 2} more` : '';
+    message += `${greeting} I can see you've brought several materials: ${titles}${remaining}. I've reviewed everything and I'm ready to help. What would you like to focus on first?`;
+  } else if (student) {
+    // Student profile but no documents
     const goalHint = student.goals && student.goals.length > 0 ? ` We're working towards: ${student.goals[0]}.` : '';
-    return `${greeting} Ready to learn today?${goalHint} What would you like to work on?`;
+    message += `${greeting} Ready to learn today?${goalHint} What would you like to work on?`;
+  } else {
+    // Fallback - just name provided (no profile, no documents)
+    message += `${greeting} I'm ready to help you learn today. What would you like to work on?`;
   }
   
-  // Fallback
-  return `${greeting} I'm ready to help you learn today. What would you like to work on?`;
+  return message;
 }
 
 export default router;

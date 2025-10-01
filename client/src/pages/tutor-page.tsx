@@ -141,8 +141,22 @@ export default function TutorPage() {
           variant: "default",
         });
       }
+    } else if (selectedDocuments.length > 0 || studentName.trim()) {
+      // Fetch context even without student profile if documents selected or name entered
+      try {
+        const contextRes = await apiRequest('POST', '/api/context/session-start', {
+          subject,
+          includeDocIds: selectedDocuments.length > 0 ? selectedDocuments : undefined,
+          studentName: studentName.trim() || undefined, // Pass the typed name to backend
+        });
+        const context = await contextRes.json();
+        setSessionContext(context);
+      } catch (error: any) {
+        console.error('Failed to fetch context:', error);
+        setSessionContext(null);
+      }
     } else {
-      // Clear context if no student selected
+      // Clear context if no student selected and no documents
       setSessionContext(null);
     }
 

@@ -9,6 +9,16 @@ This is a production-ready conversational AI tutoring web platform that enables 
 
 ## Recent Updates (October 1, 2025)
 
+✅ **CRITICAL FIX: ElevenLabs ConvAI Context Integration** (October 1, 2025 - 8:20 PM)
+- **ROOT CAUSE**: ElevenLabs ConvAI doesn't support `system-prompt` or custom `metadata-*` attributes
+- **SOLUTION**: All context (student name, document content, instructions) now embedded in `first-user-message`
+- Completely rebuilt `buildFirstMessage()` to include structured context section + conversational greeting
+- Student name properly passed to agent in all scenarios (with/without student profile)
+- Document content (up to 1500 chars per doc) now included in first message for agent awareness
+- Updated UI with step-by-step instructions and made student name required field
+- Button text changed to "Connect to Tutor" for clarity
+- **RESULT**: Tutor now recognizes documents, addresses students by name, and references uploaded materials
+
 ✅ **Authentication System Fixed - Fully Functional**
 - Fixed field name mismatch: Passport LocalStrategy now correctly reads `email` field from login form
 - Corrected authentication logic flow: Normal auth now properly executes after test mode check
