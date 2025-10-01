@@ -12,6 +12,20 @@ if (process.env.NODE_ENV === 'development' && !process.env.AUTH_TEST_MODE) {
 }
 
 const app = express();
+
+// Log ALL incoming requests to debug routing issues
+app.use((req, res, next) => {
+  if (req.method === 'POST' && req.path.includes('/login')) {
+    console.log('🌐 INCOMING REQUEST:', {
+      method: req.method,
+      path: req.path,
+      headers: req.headers,
+      hasBody: !!req.body
+    });
+  }
+  next();
+});
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
@@ -61,12 +75,22 @@ app.use((req, res, next) => {
   startEmbeddingWorker();
   log('Embedding worker started for background document processing');
 
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+  app.use((err: any, req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
+    
+    console.error('❌ ERROR HANDLER:', {
+      path: req.path,
+      method: req.method,
+      status,
+      message,
+      stack: err.stack
+    });
 
-    res.status(status).json({ message });
-    throw err;
+    if (!res.headersSent) {
+      res.status(status).json({ message });
+    }
+    // Don't throw - just log
   });
 
   // importantly only setup vite in development and after
