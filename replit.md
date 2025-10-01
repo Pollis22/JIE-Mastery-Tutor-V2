@@ -10,10 +10,12 @@ This is a production-ready conversational AI tutoring web platform that enables 
 ## Recent Updates (October 1, 2025)
 
 ✅ **Authentication System Fixed - Fully Functional**
-- Identified root cause: Vite middleware was intercepting `/api/*` routes before auth handlers
-- Implemented middleware wrapper to skip API routes in Vite processing chain
-- Session-based authentication now working correctly in development and production
-- Login/registration flow tested and verified with curl and browser
+- Fixed field name mismatch: Passport LocalStrategy now correctly reads `email` field from login form
+- Corrected authentication logic flow: Normal auth now properly executes after test mode check
+- Updated frontend form to send `email` instead of `username` for consistency
+- Wrapped Vite middleware to skip API routes, preventing route interception
+- Session-based authentication working correctly in development
+- Login/registration flow tested and verified
 
 ✅ **PDF Processing Fixed - Production Ready** (September 30, 2025)
 - Replaced unreliable `pdf-parse` library with Mozilla's `pdfjs-dist` (PDF.js)
