@@ -71,6 +71,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/api/documents", documentRoutes);
   app.use("/api/context", contextRoutes);
   
+  // Student memory routes
+  const { default: studentRoutes } = await import('./routes/students');
+  app.use("/api/students", studentRoutes);
+  
 
   // Legacy voice API routes (for compatibility)
   // Note: live-token endpoint is now handled in voiceRoutes
