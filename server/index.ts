@@ -13,21 +13,21 @@ if (process.env.NODE_ENV === 'development' && !process.env.AUTH_TEST_MODE) {
 
 const app = express();
 
-// Log ALL incoming requests to debug routing issues
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
+
+// Log ALL POST requests after body parsing
 app.use((req, res, next) => {
-  if (req.method === 'POST' && req.path.includes('/login')) {
-    console.log('🌐 INCOMING REQUEST:', {
+  if (req.method === 'POST') {
+    console.log('🌐 POST REQUEST:', {
       method: req.method,
       path: req.path,
-      headers: req.headers,
-      hasBody: !!req.body
+      body: req.body,
+      contentType: req.headers['content-type']
     });
   }
   next();
 });
-
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
 
 // Explicitly set headers to indicate this is a web application for deployment
 app.use((req, res, next) => {
