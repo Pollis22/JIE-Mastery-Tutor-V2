@@ -17,7 +17,7 @@ type AuthContextType = {
   registerMutation: UseMutationResult<SelectUser, Error, InsertUser>;
 };
 
-type LoginData = Pick<InsertUser, "username" | "password">;
+type LoginData = { email: string; password: string };
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
@@ -35,7 +35,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loginMutation = useMutation({
     mutationFn: async (credentials: LoginData) => {
       console.log('[AUTH] Making login request with:', credentials);
-      const res = await apiRequest("POST", "/api/test-login", credentials);
+      const res = await apiRequest("POST", "/api/login", credentials);
       const data = await res.json();
       console.log('[AUTH] Login response:', data);
       return data;

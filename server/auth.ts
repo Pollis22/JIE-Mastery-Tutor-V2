@@ -58,17 +58,14 @@ export function setupAuth(app: Express) {
 
   passport.use(
     new LocalStrategy(
-      { usernameField: 'username', passwordField: 'password' },
-      async (username, password, done) => {
-        // Test mode authentication - completely DB-independent
+      { usernameField: 'email', passwordField: 'password' },
+      async (email, password, done) => {
+        // Test mode authentication
         const isTestMode = process.env.AUTH_TEST_MODE === 'true' || process.env.NODE_ENV === 'development';
         const testEmail = process.env.TEST_USER_EMAIL || 'test@example.com';
         const testPassword = process.env.TEST_USER_PASSWORD || 'TestPass123!';
         
-        if (isTestMode) {
-          // Check if test credentials match (case-insensitive for email)
-          if ((username ?? '').toLowerCase() === testEmail.toLowerCase() && password === testPassword) {
-          // Return hardcoded test user without DB interaction
+        if (isTestMode && (email ?? '').toLowerCase() === testEmail.toLowerCase() && password === testPassword) {
           const testUser = {
             id: 'test-user-id',
             username: testEmail,
@@ -92,22 +89,19 @@ export function setupAuth(app: Express) {
           };
           return done(null, testUser);
         }
-        // If test credentials don't match, fail authentication
-        return done(null, false);
-      }
-      
-      // Normal authentication flow
-      try {
-        const user = await storage.getUserByUsername(username);
-        if (!user || !(await comparePasswords(password, user.password))) {
-          return done(null, false);
-        } else {
+        
+        // Normal authentication flow
+        try {
+          const user = await storage.getUserByUsername(email);
+          if (!user || !(await comparePasswords(password, user.password))) {
+            return done(null, false);
+          }
           return done(null, user);
+        } catch (error) {
+          return done(error);
         }
-      } catch (error) {
-        return done(error);
       }
-    }),
+    ),
   );
 
   passport.serializeUser((user, done) => done(null, user.id));

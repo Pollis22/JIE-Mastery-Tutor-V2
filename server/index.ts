@@ -2,7 +2,6 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import * as dotenv from "dotenv";
-import testLoginRouter from './routes/test-login';
 
 // Load environment variables from .env file
 dotenv.config();
@@ -57,9 +56,6 @@ app.use((req, res, next) => {
 
 (async () => {
   const server = await registerRoutes(app);
-  
-  // Add minimal test login endpoint
-  app.use('/api', testLoginRouter);
 
   // Start embedding worker for background document processing
   const { startEmbeddingWorker } = await import('./services/embedding-worker');

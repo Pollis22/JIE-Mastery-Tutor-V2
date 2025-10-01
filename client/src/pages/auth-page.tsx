@@ -13,7 +13,7 @@ import { useEffect } from "react";
 import jieLogo from "@/assets/jie-mastery-logo.png";
 
 const loginSchema = z.object({
-  username: z.string().min(1, "Email or username is required"),
+  email: z.string().min(1, "Email or username is required"),
   password: z.string().min(1, "Password is required"),
 });
 
@@ -35,7 +35,7 @@ export default function AuthPage() {
   const loginForm = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
-      username: "",
+      email: "",
       password: "",
     },
   });
@@ -58,7 +58,7 @@ export default function AuthPage() {
   }, [user, setLocation]);
 
   const handleLogin = async (data: LoginForm) => {
-    console.log('[FORM] handleLogin called with:', { username: data.username, hasPassword: !!data.password });
+    console.log('[FORM] handleLogin called with:', { email: data.email, hasPassword: !!data.password });
     try {
       console.log('[FORM] Calling mutateAsync...');
       await loginMutation.mutateAsync(data);
@@ -110,12 +110,12 @@ export default function AuthPage() {
                       <form onSubmit={loginForm.handleSubmit(handleLogin)} className="space-y-4">
                         <FormField
                           control={loginForm.control}
-                          name="username"
+                          name="email"
                           render={({ field }) => (
                             <FormItem>
                               <FormLabel>Email or Username</FormLabel>
                               <FormControl>
-                                <Input {...field} placeholder="test@example.com" data-testid="input-username" />
+                                <Input {...field} placeholder="test@example.com" data-testid="input-email" />
                               </FormControl>
                               <FormMessage />
                             </FormItem>
