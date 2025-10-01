@@ -8,6 +8,9 @@ import {
   userDocuments,
   documentChunks,
   documentEmbeddings,
+  students,
+  studentDocPins,
+  tutorSessions,
   type User,
   type InsertUser,
   type Subject,
@@ -23,6 +26,12 @@ import {
   type InsertDocumentChunk,
   type DocumentEmbedding,
   type InsertDocumentEmbedding,
+  type Student,
+  type InsertStudent,
+  type StudentDocPin,
+  type InsertStudentDocPin,
+  type TutorSession,
+  type InsertTutorSession,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, asc, count, sum, sql, like, or } from "drizzle-orm";
@@ -84,6 +93,28 @@ export interface IStorage {
   deleteDocumentChunks(documentId: string): Promise<void>;
   searchSimilarContent(userId: string, queryEmbedding: number[], topK: number, threshold: number): Promise<Array<{chunk: DocumentChunk, document: UserDocument, similarity: number}>>;
   getDocumentContext(userId: string, documentIds: string[]): Promise<{chunks: DocumentChunk[], documents: UserDocument[]}>;
+
+  // Student memory operations
+  createStudent(student: InsertStudent): Promise<Student>;
+  getStudentsByOwner(userId: string): Promise<Student[]>;
+  getStudent(studentId: string, userId: string): Promise<Student | undefined>;
+  updateStudent(studentId: string, userId: string, updates: Partial<Student>): Promise<Student>;
+  deleteStudent(studentId: string, userId: string): Promise<void>;
+  
+  // Student document pins
+  pinDocument(studentId: string, docId: string, userId: string): Promise<StudentDocPin>;
+  unpinDocument(pinId: string, userId: string): Promise<void>;
+  getStudentPinnedDocs(studentId: string, userId: string): Promise<Array<{ pin: StudentDocPin, document: UserDocument }>>;
+  
+  // Tutor sessions
+  createTutorSession(session: Omit<InsertTutorSession, 'userId'>, userId: string): Promise<TutorSession>;
+  updateTutorSession(sessionId: string, userId: string, updates: Partial<TutorSession>): Promise<TutorSession>;
+  getStudentSessions(studentId: string, userId: string, limit?: number): Promise<TutorSession[]>;
+  getLastStudentSession(studentId: string, userId: string, daysLimit?: number): Promise<TutorSession | undefined>;
+  
+  // Memory export/delete
+  exportStudentMemory(studentId: string, userId: string): Promise<{ student: Student, pinnedDocs: Array<{ pin: StudentDocPin, document: UserDocument }>, sessions: TutorSession[] }>;
+  deleteStudentMemory(studentId: string, userId: string, deleteProfile: boolean): Promise<void>;
 
   // Session store
   sessionStore: session.Store;
@@ -1058,6 +1089,143 @@ export class DatabaseStorage implements IStorage {
       .orderBy(asc(documentChunks.chunkIndex));
     
     return { chunks, documents };
+  }
+
+  async createStudent(student: InsertStudent): Promise<Student> {
+    const [created] = await db.insert(students).values(student).returning();
+    return created;
+  }
+
+  async getStudentsByOwner(userId: string): Promise<Student[]> {
+    return await db.select().from(students).where(eq(students.ownerUserId, userId)).orderBy(desc(students.createdAt));
+  }
+
+  async getStudent(studentId: string, userId: string): Promise<Student | undefined> {
+    const [student] = await db.select().from(students).where(and(eq(students.id, studentId), eq(students.ownerUserId, userId)));
+    return student;
+  }
+
+  async updateStudent(studentId: string, userId: string, updates: Partial<Student>): Promise<Student> {
+    const [updated] = await db.update(students)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(and(eq(students.id, studentId), eq(students.ownerUserId, userId)))
+      .returning();
+    if (!updated) throw new Error('Student not found or unauthorized');
+    return updated;
+  }
+
+  async deleteStudent(studentId: string, userId: string): Promise<void> {
+    await db.delete(students).where(and(eq(students.id, studentId), eq(students.ownerUserId, userId)));
+  }
+
+  async pinDocument(studentId: string, docId: string, userId: string): Promise<StudentDocPin> {
+    const student = await this.getStudent(studentId, userId);
+    if (!student) throw new Error('Student not found or unauthorized');
+    
+    const doc = await this.getDocument(docId, userId);
+    if (!doc) throw new Error('Document not found or unauthorized');
+    
+    try {
+      const [pin] = await db.insert(studentDocPins).values({ studentId, docId }).returning();
+      return pin;
+    } catch (error: any) {
+      if (error.code === '23505') {
+        const [existing] = await db.select().from(studentDocPins).where(and(eq(studentDocPins.studentId, studentId), eq(studentDocPins.docId, docId)));
+        return existing;
+      }
+      throw error;
+    }
+  }
+
+  async unpinDocument(pinId: string, userId: string): Promise<void> {
+    await db.delete(studentDocPins)
+      .where(and(
+        eq(studentDocPins.id, pinId),
+        sql`${studentDocPins.studentId} IN (SELECT id FROM ${students} WHERE ${students.ownerUserId} = ${userId})`
+      ));
+  }
+
+  async getStudentPinnedDocs(studentId: string, userId: string): Promise<Array<{ pin: StudentDocPin, document: UserDocument }>> {
+    const student = await this.getStudent(studentId, userId);
+    if (!student) return [];
+    
+    const pins = await db.select().from(studentDocPins).where(eq(studentDocPins.studentId, studentId));
+    const results: Array<{ pin: StudentDocPin, document: UserDocument }> = [];
+    
+    for (const pin of pins) {
+      const [doc] = await db.select().from(userDocuments).where(eq(userDocuments.id, pin.docId));
+      if (doc) {
+        results.push({ pin, document: doc });
+      }
+    }
+    
+    return results;
+  }
+
+  async createTutorSession(session: Omit<InsertTutorSession, 'userId'>, userId: string): Promise<TutorSession> {
+    const student = await this.getStudent(session.studentId, userId);
+    if (!student) throw new Error('Student not found or unauthorized');
+    
+    const [created] = await db.insert(tutorSessions).values({ ...session, userId }).returning();
+    return created;
+  }
+
+  async updateTutorSession(sessionId: string, userId: string, updates: Partial<TutorSession>): Promise<TutorSession> {
+    const [updated] = await db.update(tutorSessions)
+      .set(updates)
+      .where(and(eq(tutorSessions.id, sessionId), eq(tutorSessions.userId, userId)))
+      .returning();
+    if (!updated) throw new Error('Session not found or unauthorized');
+    return updated;
+  }
+
+  async getStudentSessions(studentId: string, userId: string, limit: number = 10): Promise<TutorSession[]> {
+    const student = await this.getStudent(studentId, userId);
+    if (!student) return [];
+    
+    return await db.select().from(tutorSessions)
+      .where(eq(tutorSessions.studentId, studentId))
+      .orderBy(desc(tutorSessions.startedAt))
+      .limit(limit);
+  }
+
+  async getLastStudentSession(studentId: string, userId: string, daysLimit: number = 30): Promise<TutorSession | undefined> {
+    const student = await this.getStudent(studentId, userId);
+    if (!student) return undefined;
+    
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - daysLimit);
+    
+    const [lastSession] = await db.select().from(tutorSessions)
+      .where(and(
+        eq(tutorSessions.studentId, studentId),
+        sql`${tutorSessions.startedAt} >= ${cutoffDate}`
+      ))
+      .orderBy(desc(tutorSessions.startedAt))
+      .limit(1);
+    
+    return lastSession;
+  }
+
+  async exportStudentMemory(studentId: string, userId: string): Promise<{ student: Student, pinnedDocs: Array<{ pin: StudentDocPin, document: UserDocument }>, sessions: TutorSession[] }> {
+    const student = await this.getStudent(studentId, userId);
+    if (!student) throw new Error('Student not found');
+    
+    const pinnedDocs = await this.getStudentPinnedDocs(studentId, userId);
+    const sessions = await this.getStudentSessions(studentId, userId, 100);
+    
+    return { student, pinnedDocs, sessions };
+  }
+
+  async deleteStudentMemory(studentId: string, userId: string, deleteProfile: boolean): Promise<void> {
+    const student = await this.getStudent(studentId, userId);
+    if (!student) throw new Error('Student not found');
+    
+    if (deleteProfile) {
+      await this.deleteStudent(studentId, userId);
+    } else {
+      await db.delete(tutorSessions).where(eq(tutorSessions.studentId, studentId));
+    }
   }
 }
 
