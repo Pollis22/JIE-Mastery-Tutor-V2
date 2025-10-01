@@ -91,22 +91,23 @@ export function setupSecurityHeaders(req: Request, res: Response, next: NextFunc
 }
 
 export function setupCORS(req: Request, res: Response, next: NextFunction) {
+  // Build allowed origins list - support both REPLIT_DEV_DOMAIN and custom domains
   const allowedOrigins = [
     'http://localhost:5000',
     'http://localhost:3000',
-    process.env.REPLIT_DOMAIN || '',
+    process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : '',
     process.env.CUSTOM_DOMAIN || ''
   ].filter(Boolean);
 
   const origin = req.headers.origin;
-  if (origin && allowedOrigins.includes(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
+  
+  // For same-origin requests (no origin header) or matching origin, allow with credentials
+  if (!origin || allowedOrigins.includes(origin)) {
+    // Allow the request origin or same-origin
+    res.setHeader('Access-Control-Allow-Origin', origin || '*');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
-  } else if (!origin) {
-    // Same-origin requests (no origin header)
-    res.setHeader('Access-Control-Allow-Origin', '*');
   }
-  // Don't set CORS headers for disallowed origins
+  // For non-matching origins, still set basic headers but without credentials
   
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
