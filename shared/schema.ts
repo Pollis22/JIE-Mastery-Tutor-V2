@@ -313,6 +313,99 @@ export const insertDocumentEmbeddingSchema = createInsertSchema(documentEmbeddin
   createdAt: true,
 });
 
+// Student Memory Tables
+export const students = pgTable("students", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  ownerUserId: varchar("owner_user_id").notNull().references(() => users.id),
+  name: text("name").notNull(),
+  gradeBand: text("grade_band").notNull(), // 'k-2', '3-5', '6-8', '9-12', 'college'
+  pace: text("pace").$type<'slow' | 'normal' | 'fast'>().default('normal'),
+  encouragement: text("encouragement").$type<'low' | 'medium' | 'high'>().default('medium'),
+  goals: text("goals").array().default(sql`ARRAY[]::text[]`), // learning goals as array
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_students_owner").on(table.ownerUserId),
+]);
+
+export const studentDocPins = pgTable("student_doc_pins", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: varchar("student_id").notNull().references(() => students.id, { onDelete: 'cascade' }),
+  docId: varchar("doc_id").notNull().references(() => userDocuments.id, { onDelete: 'cascade' }),
+  pinnedAt: timestamp("pinned_at").defaultNow(),
+}, (table) => [
+  uniqueIndex("idx_student_doc_unique").on(table.studentId, table.docId),
+  index("idx_student_pins").on(table.studentId),
+]);
+
+export const tutorSessions = pgTable("tutor_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: varchar("student_id").notNull().references(() => students.id, { onDelete: 'cascade' }),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  subject: text("subject"), // math, english, spanish
+  startedAt: timestamp("started_at").defaultNow(),
+  endedAt: timestamp("ended_at"),
+  minutesUsed: integer("minutes_used").default(0),
+  summary: text("summary"), // what was taught
+  misconceptions: text("misconceptions"), // what student struggled with
+  nextSteps: text("next_steps"), // recommended next actions
+  contextDocuments: jsonb("context_documents"), // array of doc IDs used in this session
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_tutor_sessions_student").on(table.studentId),
+  index("idx_tutor_sessions_user").on(table.userId),
+  index("idx_tutor_sessions_latest").on(table.studentId, table.startedAt),
+]);
+
+// Student relations
+export const studentsRelations = relations(students, ({ one, many }) => ({
+  owner: one(users, {
+    fields: [students.ownerUserId],
+    references: [users.id],
+  }),
+  pinnedDocs: many(studentDocPins),
+  sessions: many(tutorSessions),
+}));
+
+export const studentDocPinsRelations = relations(studentDocPins, ({ one }) => ({
+  student: one(students, {
+    fields: [studentDocPins.studentId],
+    references: [students.id],
+  }),
+  document: one(userDocuments, {
+    fields: [studentDocPins.docId],
+    references: [userDocuments.id],
+  }),
+}));
+
+export const tutorSessionsRelations = relations(tutorSessions, ({ one }) => ({
+  student: one(students, {
+    fields: [tutorSessions.studentId],
+    references: [students.id],
+  }),
+  user: one(users, {
+    fields: [tutorSessions.userId],
+    references: [users.id],
+  }),
+}));
+
+// Insert schemas for student memory
+export const insertStudentSchema = createInsertSchema(students).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertStudentDocPinSchema = createInsertSchema(studentDocPins).omit({
+  id: true,
+  pinnedAt: true,
+});
+
+export const insertTutorSessionSchema = createInsertSchema(tutorSessions).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -334,3 +427,11 @@ export type DocumentChunk = typeof documentChunks.$inferSelect;
 export type InsertDocumentChunk = z.infer<typeof insertDocumentChunkSchema>;
 export type DocumentEmbedding = typeof documentEmbeddings.$inferSelect;
 export type InsertDocumentEmbedding = z.infer<typeof insertDocumentEmbeddingSchema>;
+
+// Student memory types
+export type Student = typeof students.$inferSelect;
+export type InsertStudent = z.infer<typeof insertStudentSchema>;
+export type StudentDocPin = typeof studentDocPins.$inferSelect;
+export type InsertStudentDocPin = z.infer<typeof insertStudentDocPinSchema>;
+export type TutorSession = typeof tutorSessions.$inferSelect;
+export type InsertTutorSession = z.infer<typeof insertTutorSessionSchema>;
