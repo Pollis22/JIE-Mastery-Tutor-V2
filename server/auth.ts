@@ -57,15 +57,17 @@ export function setupAuth(app: Express) {
   app.use(passport.session());
 
   passport.use(
-    new LocalStrategy(async (username, password, done) => {
-      // Test mode authentication - completely DB-independent
-      const isTestMode = process.env.AUTH_TEST_MODE === 'true' || process.env.NODE_ENV === 'development';
-      const testEmail = process.env.TEST_USER_EMAIL || 'test@example.com';
-      const testPassword = process.env.TEST_USER_PASSWORD || 'TestPass123!';
-      
-      if (isTestMode) {
-        // Check if test credentials match (case-insensitive for email)
-        if (username.toLowerCase() === testEmail.toLowerCase() && password === testPassword) {
+    new LocalStrategy(
+      { usernameField: 'email', passwordField: 'password' },
+      async (username, password, done) => {
+        // Test mode authentication - completely DB-independent
+        const isTestMode = process.env.AUTH_TEST_MODE === 'true' || process.env.NODE_ENV === 'development';
+        const testEmail = process.env.TEST_USER_EMAIL || 'test@example.com';
+        const testPassword = process.env.TEST_USER_PASSWORD || 'TestPass123!';
+        
+        if (isTestMode) {
+          // Check if test credentials match (case-insensitive for email)
+          if ((username ?? '').toLowerCase() === testEmail.toLowerCase() && password === testPassword) {
           // Return hardcoded test user without DB interaction
           const testUser = {
             id: 'test-user-id',
