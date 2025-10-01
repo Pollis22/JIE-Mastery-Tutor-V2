@@ -58,12 +58,14 @@ export default function AuthPage() {
   }, [user, setLocation]);
 
   const handleLogin = async (data: LoginForm) => {
-    console.log('handleLogin called with data:', data);
+    console.log('[FORM] handleLogin called with:', { username: data.username, hasPassword: !!data.password });
     try {
+      console.log('[FORM] Calling mutateAsync...');
       await loginMutation.mutateAsync(data);
+      console.log('[FORM] mutateAsync completed successfully');
     } catch (error) {
       // Error is handled by mutation's onError
-      console.error('Login error:', error);
+      console.error('[FORM] Login error:', error);
     }
   };
 
@@ -105,13 +107,7 @@ export default function AuthPage() {
                   
                   <TabsContent value="login" className="space-y-4">
                     <Form {...loginForm}>
-                      <form 
-                        onSubmit={(e) => {
-                          e.preventDefault();
-                          console.log('Form submitted!', loginForm.getValues());
-                          loginForm.handleSubmit(handleLogin)(e);
-                        }} 
-                        className="space-y-4">
+                      <form onSubmit={loginForm.handleSubmit(handleLogin)} className="space-y-4">
                         <FormField
                           control={loginForm.control}
                           name="username"

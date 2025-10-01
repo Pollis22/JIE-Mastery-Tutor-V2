@@ -34,13 +34,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginMutation = useMutation({
     mutationFn: async (credentials: LoginData) => {
-      console.log('Making login request with:', credentials);
+      console.log('[AUTH] Making login request with:', credentials);
       const res = await apiRequest("POST", "/api/login", credentials);
       const data = await res.json();
-      console.log('Login response:', data);
+      console.log('[AUTH] Login response:', data);
       return data;
     },
     onSuccess: (user: SelectUser) => {
+      console.log('[AUTH] Login successful, setting user data');
       queryClient.setQueryData(["/api/user"], user);
       toast({
         title: "Welcome back!",
@@ -48,6 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
     },
     onError: (error: Error) => {
+      console.error('[AUTH] Login error:', error);
       toast({
         title: "Login failed",
         description: error.message || "Invalid credentials",
