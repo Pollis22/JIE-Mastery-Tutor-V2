@@ -101,13 +101,14 @@ export function setupCORS(req: Request, res: Response, next: NextFunction) {
 
   const origin = req.headers.origin;
   
-  // For same-origin requests (no origin header) or matching origin, allow with credentials
-  if (!origin || allowedOrigins.includes(origin)) {
-    // Allow the request origin or same-origin
-    res.setHeader('Access-Control-Allow-Origin', origin || '*');
+  // For requests with origin header that matches allowed origins, set CORS headers
+  if (origin && allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
+  } else if (!origin) {
+    // Same-origin requests don't need CORS headers
+    // Don't set any Access-Control headers for same-origin
   }
-  // For non-matching origins, still set basic headers but without credentials
   
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
