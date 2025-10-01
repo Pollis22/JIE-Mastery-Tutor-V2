@@ -6,7 +6,11 @@ import ConvaiHost from "@/components/convai-host";
 import { AssignmentsPanel } from "@/components/AssignmentsPanel";
 import { StudentSwitcher } from "@/components/StudentSwitcher";
 import { StudentProfilePanel } from "@/components/StudentProfilePanel";
+import { SessionSummaryModal } from "@/components/SessionSummaryModal";
 import { AGENTS, GREETINGS, type AgentLevel } from "@/agents";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useQuery } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
 import jieLogo from "@/assets/jie-mastery-logo.png";
 
 interface ProgressData {
@@ -35,6 +39,7 @@ const saveProgress = (data: ProgressData) => {
 
 export default function TutorPage() {
   const { user } = useAuth();
+  const { toast } = useToast();
   const [scriptReady, setScriptReady] = useState(false);
 
   const memo = loadProgress();
@@ -50,6 +55,14 @@ export default function TutorPage() {
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [profileDrawerOpen, setProfileDrawerOpen] = useState(false);
   const [editingStudentId, setEditingStudentId] = useState<string | undefined>();
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [summaryModalOpen, setSummaryModalOpen] = useState(false);
+
+  // Fetch selected student data
+  const { data: selectedStudent } = useQuery<{ id: string; name: string }>({
+    queryKey: ['/api/students', selectedStudentId],
+    enabled: !!selectedStudentId,
+  });
 
   // Load ConvAI script
   useEffect(() => {
@@ -87,7 +100,7 @@ export default function TutorPage() {
     document.body.appendChild(s);
   }, []);
 
-  const startTutor = () => {
+  const startTutor = async () => {
     if (!scriptReady) return;
     
     setMounted(true);
@@ -101,13 +114,45 @@ export default function TutorPage() {
       updatedAt: new Date().toISOString(),
     });
 
+    // Create session and fetch context if student is selected
+    if (selectedStudentId) {
+      try {
+        // Create session
+        const sessionRes = await apiRequest('POST', `/api/students/${selectedStudentId}/sessions`, {
+          subject,
+          contextDocuments: selectedDocuments.length > 0 ? selectedDocuments : undefined,
+        });
+        const session = await sessionRes.json();
+        setCurrentSessionId(session.id);
+
+        // Fetch context for personalized tutoring
+        const contextRes = await apiRequest('POST', '/api/context/session-start', {
+          studentId: selectedStudentId,
+          subject,
+          includeDocIds: selectedDocuments.length > 0 ? selectedDocuments : undefined,
+        });
+        const context = await contextRes.json();
+        setSessionContext(context);
+      } catch (error: any) {
+        console.error('Failed to create session or fetch context:', error);
+        toast({
+          title: "Note",
+          description: "Session memory won't be saved automatically. You can still use the tutor!",
+          variant: "default",
+        });
+      }
+    } else {
+      // Clear context if no student selected
+      setSessionContext(null);
+    }
+
     // Analytics
     if (typeof window !== 'undefined' && (window as any).gtag) {
       (window as any).gtag('event', 'tutor_session_start', {
         event_category: 'tutoring',
         custom_parameter_1: level,
         custom_parameter_2: subject,
-        custom_parameter_3: studentName || 'anonymous'
+        custom_parameter_3: studentName || selectedStudent?.name || 'anonymous'
       });
     }
   };
@@ -119,6 +164,11 @@ export default function TutorPage() {
 
   const stop = () => {
     setMounted(false);
+    
+    // Show summary modal if we have a session to save
+    if (currentSessionId && selectedStudentId) {
+      setSummaryModalOpen(true);
+    }
     
     // Analytics
     if (typeof window !== 'undefined' && (window as any).gtag) {
@@ -331,6 +381,31 @@ export default function TutorPage() {
             if (selectedStudentId === deletedId) {
               setSelectedStudentId(null);
             }
+          }}
+        />
+
+        {/* Session Summary Modal */}
+        <SessionSummaryModal
+          open={summaryModalOpen}
+          onOpenChange={async (open) => {
+            // If closing without saving, still end the session
+            if (!open && currentSessionId) {
+              try {
+                await apiRequest('PUT', `/api/sessions/${currentSessionId}`, {
+                  endedAt: new Date().toISOString(),
+                });
+                queryClient.invalidateQueries({ queryKey: ['/api/students', selectedStudentId] });
+              } catch (error) {
+                console.error('Failed to end session:', error);
+              }
+              setCurrentSessionId(null);
+            }
+            setSummaryModalOpen(open);
+          }}
+          sessionId={currentSessionId || undefined}
+          studentName={selectedStudent?.name}
+          onSaved={() => {
+            setCurrentSessionId(null);
           }}
         />
       </TutorErrorBoundary>
