@@ -1285,19 +1285,31 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getDocumentContent(documentId: string): Promise<Buffer | undefined> {
+    console.log(`[Storage] Getting content for document ${documentId}`);
     const [doc] = await db.select().from(userDocuments)
       .where(eq(userDocuments.id, documentId))
       .limit(1);
     
-    if (!doc || !doc.filePath) return undefined;
+    if (!doc) {
+      console.log(`[Storage] Document ${documentId} not found in database`);
+      return undefined;
+    }
+    
+    if (!doc.filePath) {
+      console.log(`[Storage] Document ${documentId} has no filePath: ${JSON.stringify(doc)}`);
+      return undefined;
+    }
+    
+    console.log(`[Storage] Reading file from: ${doc.filePath}`);
     
     // Read the file from disk
     try {
       const fs = await import('fs/promises');
       const content = await fs.readFile(doc.filePath);
+      console.log(`[Storage] Successfully read ${content.length} bytes from ${doc.filePath}`);
       return content;
     } catch (error) {
-      console.error(`Failed to read document ${documentId} from ${doc.filePath}:`, error);
+      console.error(`[Storage] Failed to read document ${documentId} from ${doc.filePath}:`, error);
       return undefined;
     }
   }
