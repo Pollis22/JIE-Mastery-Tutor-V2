@@ -51,6 +51,7 @@ export default function TutorPage() {
   const [lastSummary, setLastSummary] = useState(memo.lastSummary || "");
   const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
   const [showAssignments, setShowAssignments] = useState(false);
+  const [wantToUploadDocs, setWantToUploadDocs] = useState<boolean | null>(null);
   const [sessionContext, setSessionContext] = useState<any>(null);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [profileDrawerOpen, setProfileDrawerOpen] = useState(false);
@@ -342,10 +343,16 @@ export default function TutorPage() {
             <button 
               id="start-btn" 
               onClick={startTutor} 
-              disabled={!scriptReady || !studentName.trim()}
+              disabled={!scriptReady || !studentName.trim() || wantToUploadDocs === null}
               className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary"
               data-testid="button-start-tutor"
-              title={!studentName.trim() ? "Please enter student name to connect" : ""}
+              title={
+                !studentName.trim() 
+                  ? "Please enter student name to connect" 
+                  : wantToUploadDocs === null 
+                  ? "Please choose whether to upload documents" 
+                  : ""
+              }
             >
               Connect to Tutor
             </button>
@@ -371,33 +378,67 @@ export default function TutorPage() {
             </button>
           </div>
 
+          {/* Document Upload Choice */}
+          <div className="bg-yellow-50 dark:bg-yellow-900/20 border-2 border-yellow-400 dark:border-yellow-600 p-4 rounded-md">
+            <h3 className="font-semibold text-yellow-900 dark:text-yellow-100 mb-3">📄 Do you want to upload study materials?</h3>
+            <div className="flex gap-6 items-center">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input 
+                  type="radio" 
+                  name="upload-choice"
+                  checked={wantToUploadDocs === true}
+                  onChange={() => {
+                    setWantToUploadDocs(true);
+                    setShowAssignments(true);
+                  }}
+                  className="w-4 h-4 text-primary focus:ring-2 focus:ring-primary"
+                  data-testid="radio-upload-yes"
+                />
+                <span className="text-sm font-medium text-yellow-900 dark:text-yellow-100">
+                  Yes - I want to upload homework, notes, or assignments
+                </span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input 
+                  type="radio" 
+                  name="upload-choice"
+                  checked={wantToUploadDocs === false}
+                  onChange={() => {
+                    setWantToUploadDocs(false);
+                    setShowAssignments(false);
+                    setSelectedDocuments([]);
+                  }}
+                  className="w-4 h-4 text-primary focus:ring-2 focus:ring-primary"
+                  data-testid="radio-upload-no"
+                />
+                <span className="text-sm font-medium text-yellow-900 dark:text-yellow-100">
+                  No - Connect directly without uploading
+                </span>
+              </label>
+            </div>
+            {wantToUploadDocs === null && (
+              <p className="text-xs text-yellow-700 dark:text-yellow-300 mt-2 font-semibold">
+                ⚠️ Please make a selection before connecting to the tutor
+              </p>
+            )}
+          </div>
+
           {/* Getting Started Instructions */}
           <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-4 rounded-md">
             <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-2">📚 How to Use JIE Mastery Tutor</h3>
             <ol className="text-sm text-blue-800 dark:text-blue-200 space-y-1.5 list-decimal list-inside">
               <li><strong>Enter your name</strong> above (required for a personalized experience)</li>
               <li><strong>Select your grade level and subject</strong> you want help with</li>
-              <li><strong>Upload your study materials</strong> (optional) - Click "Upload Study Materials Here" below to add homework, notes, or assignments</li>
-              <li><strong>Check the "Use" box</strong> next to documents you want the tutor to reference</li>
+              <li><strong>Choose document upload</strong> - Select "Yes" if you want to upload homework/notes, or "No" to connect directly</li>
+              <li><strong>Upload materials</strong> (if you selected Yes) - Add your homework, notes, or assignments and check the "Use" box for documents you want referenced</li>
               <li><strong>Click "Connect to Tutor"</strong> to start your personalized learning session</li>
               <li><strong>Ask questions</strong> about your materials or the subject - the tutor will help you understand!</li>
             </ol>
-            <p className="text-xs text-blue-700 dark:text-blue-300 mt-3 italic">💡 Tip: Upload documents before connecting for the best personalized tutoring experience</p>
+            <p className="text-xs text-blue-700 dark:text-blue-300 mt-3 italic">💡 Tip: Uploading documents before connecting provides the best personalized tutoring experience</p>
           </div>
 
-          {/* Study Materials Toggle */}
-          <div className="mb-4">
-            <button 
-              onClick={() => setShowAssignments(!showAssignments)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              data-testid="button-toggle-assignments"
-            >
-              {showAssignments ? 'Hide Study Materials' : 'Upload Study Materials Here'}
-            </button>
-          </div>
-
-          {/* Study Materials Panel */}
-          {showAssignments && user && (
+          {/* Study Materials Panel (shown only if user wants to upload) */}
+          {wantToUploadDocs === true && user && (
             <div className="mb-6">
               <AssignmentsPanel 
                 userId={user.id}
