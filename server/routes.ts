@@ -75,6 +75,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const { default: studentRoutes } = await import('./routes/students');
   app.use("/api/students", studentRoutes);
   
+  // Session agent routes (dynamic agent creation)
+  const { sessionRouter } = await import('./routes/session');
+  app.use("/api/session", sessionRouter);
 
   // Legacy voice API routes (for compatibility)
   // Note: live-token endpoint is now handled in voiceRoutes
