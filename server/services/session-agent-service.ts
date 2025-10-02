@@ -60,10 +60,19 @@ export class SessionAgentService {
       
       // Upload document - any failure will throw and trigger rollback
       try {
+        // Map file extension to proper MIME type
+        const mimeTypeMap: Record<string, string> = {
+          'pdf': 'application/pdf',
+          'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          'txt': 'text/plain',
+          'html': 'text/html'
+        };
+        const mimeType = mimeTypeMap[doc.fileType || ''] || 'application/octet-stream';
+        
         const result = await elevenlabs.uploadDocument({
           name: doc.originalName || doc.fileName,
           content,
-          mimeType: doc.fileType || 'application/octet-stream'
+          mimeType
         });
         docIds.push(result.id);
         console.log(`[SessionAgent] Successfully uploaded document ${docId} to ElevenLabs as ${result.id}`);
