@@ -39,26 +39,41 @@ export class SessionAgentService {
   private async uploadDocumentsToElevenLabs(userId: string, documentIds: string[]): Promise<string[]> {
     const docIds: string[] = [];
     
+    // Handle empty document list gracefully
+    if (!documentIds || documentIds.length === 0) {
+      console.log('[SessionAgent] No documents to upload, proceeding without documents');
+      return docIds;
+    }
+    
     for (const docId of documentIds) {
       const content = await storage.getDocumentContent(docId);
       if (!content) {
-        throw new Error(`Document ${docId} not found - cannot proceed with session creation`);
+        console.warn(`[SessionAgent] Document ${docId} content not found, skipping`);
+        continue; // Skip this document instead of failing
       }
       
       const doc = await storage.getDocument(docId, userId);
       if (!doc) {
-        throw new Error(`Document ${docId} metadata not found - cannot proceed with session creation`);
+        console.warn(`[SessionAgent] Document ${docId} metadata not found, skipping`);
+        continue; // Skip this document instead of failing
       }
       
       // Upload document - any failure will throw and trigger rollback
-      const result = await elevenlabs.uploadDocument({
-        name: doc.originalName || doc.fileName,
-        content,
-        mimeType: doc.fileType || 'application/octet-stream'
-      });
-      docIds.push(result.id);
+      try {
+        const result = await elevenlabs.uploadDocument({
+          name: doc.originalName || doc.fileName,
+          content,
+          mimeType: doc.fileType || 'application/octet-stream'
+        });
+        docIds.push(result.id);
+        console.log(`[SessionAgent] Successfully uploaded document ${docId} to ElevenLabs as ${result.id}`);
+      } catch (error) {
+        console.error(`[SessionAgent] Failed to upload document ${docId}:`, error);
+        // Continue with other documents instead of failing completely
+      }
     }
     
+    console.log(`[SessionAgent] Uploaded ${docIds.length}/${documentIds.length} documents successfully`);
     return docIds;
   }
 

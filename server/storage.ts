@@ -1289,8 +1289,17 @@ export class DatabaseStorage implements IStorage {
       .where(eq(userDocuments.id, documentId))
       .limit(1);
     
-    if (!doc || !doc.content) return undefined;
-    return Buffer.from(doc.content);
+    if (!doc || !doc.filePath) return undefined;
+    
+    // Read the file from disk
+    try {
+      const fs = await import('fs/promises');
+      const content = await fs.readFile(doc.filePath);
+      return content;
+    } catch (error) {
+      console.error(`Failed to read document ${documentId} from ${doc.filePath}:`, error);
+      return undefined;
+    }
   }
 }
 
