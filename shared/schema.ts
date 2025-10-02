@@ -361,11 +361,16 @@ export const tutorSessions = pgTable("tutor_sessions", {
 export const agentSessions = pgTable("agent_sessions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id),
-  agentId: text("agent_id").notNull(), // ElevenLabs agent ID
-  gradeLevel: text("grade_level").notNull(), // 'k-2', '3-5', '6-8', '9-12', 'college'
+  studentId: varchar("student_id"), // Optional: reference to student profile
+  agentId: text("agent_id"), // ElevenLabs agent ID (NULL until agent is created)
+  conversationId: text("conversation_id"),
+  baseAgentId: text("base_agent_id"), // Template agent ID used for creation
+  knowledgeBaseId: text("knowledge_base_id"),
+  studentName: text("student_name").notNull(),
+  gradeBand: text("grade_band").notNull(), // 'K-2', '3-5', '6-8', '9-12', 'College/Adult'
   subject: text("subject").notNull(),
-  documentIds: text("document_ids").array().default(sql`ARRAY[]::text[]`), // user doc IDs
-  elevenLabsDocIds: text("elevenlabs_doc_ids").array().default(sql`ARRAY[]::text[]`), // ElevenLabs KB doc IDs
+  documentIds: text("document_ids").array(), // user doc IDs
+  fileIds: text("file_ids").array(), // ElevenLabs KB doc IDs
   createdAt: timestamp("created_at").defaultNow(),
   expiresAt: timestamp("expires_at").notNull(),
   endedAt: timestamp("ended_at"),
