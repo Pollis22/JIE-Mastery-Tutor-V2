@@ -357,6 +357,24 @@ export const tutorSessions = pgTable("tutor_sessions", {
   index("idx_tutor_sessions_latest").on(table.studentId, table.startedAt),
 ]);
 
+// Dynamic agent sessions (for ElevenLabs agent creation)
+export const agentSessions = pgTable("agent_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  agentId: text("agent_id").notNull(), // ElevenLabs agent ID
+  gradeLevel: text("grade_level").notNull(), // 'k-2', '3-5', '6-8', '9-12', 'college'
+  subject: text("subject").notNull(),
+  documentIds: text("document_ids").array().default(sql`ARRAY[]::text[]`), // user doc IDs
+  elevenLabsDocIds: text("elevenlabs_doc_ids").array().default(sql`ARRAY[]::text[]`), // ElevenLabs KB doc IDs
+  createdAt: timestamp("created_at").defaultNow(),
+  expiresAt: timestamp("expires_at").notNull(),
+  endedAt: timestamp("ended_at"),
+}, (table) => [
+  index("idx_agent_sessions_user").on(table.userId),
+  index("idx_agent_sessions_agent").on(table.agentId),
+  index("idx_agent_sessions_expires").on(table.expiresAt),
+]);
+
 // Student relations
 export const studentsRelations = relations(students, ({ one, many }) => ({
   owner: one(users, {
@@ -402,6 +420,11 @@ export const insertStudentDocPinSchema = createInsertSchema(studentDocPins).omit
 });
 
 export const insertTutorSessionSchema = createInsertSchema(tutorSessions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertAgentSessionSchema = createInsertSchema(agentSessions).omit({
   id: true,
   createdAt: true,
 });

@@ -1,5 +1,3 @@
-import FormData from 'form-data';
-
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
 const ELEVENLABS_API_BASE = 'https://api.elevenlabs.io/v1';
 
@@ -52,18 +50,16 @@ export class ElevenLabsClient {
 
   // Upload document to knowledge base
   async uploadDocument(file: UploadDocumentFile) {
-    const formData = new FormData();
+    // Use global FormData (available in Node 18+)
+    const formData = new (globalThis as any).FormData();
+    const blob = new Blob([file.content], { type: file.mimeType });
     formData.append('name', file.name);
-    formData.append('file', file.content, {
-      filename: file.name,
-      contentType: file.mimeType,
-    });
+    formData.append('file', blob, file.name);
 
     const response = await fetch(`${ELEVENLABS_API_BASE}/convai/knowledge-base`, {
       method: 'POST',
       headers: {
         'xi-api-key': ELEVENLABS_API_KEY!,
-        ...formData.getHeaders(),
       },
       body: formData,
     });
