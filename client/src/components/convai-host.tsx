@@ -1,12 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 import { usePerformanceMonitor } from "@/hooks/use-performance-monitor";
 
+export interface ConvaiMessage {
+  type: 'user' | 'agent' | 'system';
+  content: string;
+  timestamp: Date;
+}
+
 type Props = {
   agentId: string;
   firstUserMessage?: string;
   metadata?: Record<string, any>;
   onMounted?: () => void;
   onUnmounted?: () => void;
+  onMessage?: (message: ConvaiMessage) => void;
+  onConnectionStatus?: (connected: boolean) => void;
 };
 
 export default function ConvaiHost({
@@ -15,6 +23,8 @@ export default function ConvaiHost({
   metadata = {},
   onMounted,
   onUnmounted,
+  onMessage,
+  onConnectionStatus,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(false);
@@ -81,28 +91,67 @@ export default function ConvaiHost({
     console.log("[ConvAI Debug] Skipping metadata (not supported by ElevenLabs)");
 
     // Add event listeners for performance monitoring and debugging
-    el.addEventListener("widget-ready", () => {
-      console.log("[ConvAI Debug] ✅ Widget ready event fired for agent:", agentId);
-      perf.markFirstInteraction();
-    });
-
-    el.addEventListener("user-spoke", (e: any) => {
-      console.log("[ConvAI Debug] 🗣️ User spoke:", e.detail);
-      perf.incrementTurn();
-    });
-
-    el.addEventListener("agent-spoke", (e: any) => {
-      console.log("[ConvAI Debug] 🤖 Agent spoke:", e.detail);
-      perf.incrementTurn();
-    });
-
-    el.addEventListener("error", (e: any) => {
-      console.error("[ConvAI Debug] ❌ Widget error:", e.detail || e);
-      perf.incrementError();
-    });
-    
-    el.addEventListener("connection-status", (e: any) => {
-      console.log("[ConvAI Debug] 🔌 Connection status:", e.detail);
+    el.addEventListener("message", (e: any) => {
+      const messageData = e.detail;
+      console.log("[ConvAI Debug] 📩 Message received:", messageData);
+      
+      // Handle different message types
+      switch (messageData?.type) {
+        case 'user_transcript':
+          // User finished speaking
+          console.log("[ConvAI Debug] 🗣️ User transcript:", messageData.transcript);
+          perf.incrementTurn();
+          if (messageData.transcript) {
+            onMessage?.({
+              type: 'user',
+              content: messageData.transcript,
+              timestamp: new Date()
+            });
+          }
+          break;
+          
+        case 'agent_response':
+          // Agent sent a complete message
+          console.log("[ConvAI Debug] 🤖 Agent response:", messageData.response);
+          perf.incrementTurn();
+          if (messageData.response) {
+            onMessage?.({
+              type: 'agent',
+              content: messageData.response,
+              timestamp: new Date()
+            });
+          }
+          break;
+          
+        case 'connection':
+          // Connection status changed
+          console.log("[ConvAI Debug] 🔌 Connection:", messageData.status);
+          const isConnected = messageData.status === 'connected';
+          onConnectionStatus?.(isConnected);
+          if (isConnected) {
+            perf.markFirstInteraction();
+            onMessage?.({
+              type: 'system',
+              content: '✅ Connected to AI Tutor',
+              timestamp: new Date()
+            });
+          }
+          break;
+          
+        case 'error':
+          console.error("[ConvAI Debug] ❌ Error:", messageData);
+          perf.incrementError();
+          onMessage?.({
+            type: 'system',
+            content: `❌ Error: ${messageData.message || 'Connection error'}`,
+            timestamp: new Date()
+          });
+          break;
+          
+        default:
+          // Log unknown message types for debugging
+          console.log("[ConvAI Debug] Unknown message type:", messageData?.type, messageData);
+      }
     });
 
     console.log("[ConvAI Debug] Appending widget to container...");
@@ -123,7 +172,7 @@ export default function ConvaiHost({
       }
       onUnmounted?.();
     };
-  }, [ready, agentId, firstUserMessage, metadata, onMounted, onUnmounted, perf]);
+  }, [ready, agentId, firstUserMessage, onMounted, onUnmounted, perf]);
 
   return <div ref={containerRef} className="convai-container" data-testid="convai-widget-container" />;
 }

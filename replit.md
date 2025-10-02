@@ -9,6 +9,22 @@ This is a production-ready conversational AI tutoring web platform that enables 
 
 ## Recent Updates (October 2, 2025)
 
+✅ **REAL-TIME TRANSCRIPT DISPLAY IMPLEMENTED** (October 2, 2025 - 9:00 PM)
+- **FEATURE**: Added real-time conversation transcript that displays alongside ConvAI widget
+- **Implementation**:
+  - Created ConvaiTranscript component with auto-scrolling message display
+  - ConvAI host now captures ElevenLabs message events (user_transcript, agent_response, connection, error)
+  - Integrated transcript into tutor page with proper state management
+  - Fixed critical lifecycle bug where widget was remounting on every message
+- **Event Handling**: Uses correct ElevenLabs ConvAI event structure from their documentation
+- **User Experience**: 
+  - Shows connection status and system messages
+  - Displays user messages in blue (right-aligned)
+  - Displays agent messages in gray (left-aligned)
+  - Auto-scrolls to latest message
+  - Shows timestamps for all messages
+- **RESULT**: Users can now see full conversation history in real-time while talking to the AI tutor
+
 ✅ **SYSTEM FULLY OPERATIONAL - Dynamic Agent Sessions Working** (October 2, 2025 - 8:30 PM)
 - **FIXED**: Database schema column name mismatch causing 502 Bad Gateway errors
 - **FIXED**: Missing `document_ids` column added to `agent_sessions` table

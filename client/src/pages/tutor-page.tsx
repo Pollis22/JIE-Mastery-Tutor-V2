@@ -2,7 +2,8 @@ import { useAuth } from "@/hooks/use-auth";
 import { useEffect, useState } from "react";
 import { TutorErrorBoundary } from "@/components/tutor-error-boundary";
 import { NetworkAwareWrapper } from "@/components/network-aware-wrapper";
-import ConvaiHost from "@/components/convai-host";
+import ConvaiHost, { type ConvaiMessage } from "@/components/convai-host";
+import { ConvaiTranscript } from "@/components/convai-transcript";
 import { AssignmentsPanel } from "@/components/AssignmentsPanel";
 import { StudentSwitcher } from "@/components/StudentSwitcher";
 import { StudentProfilePanel } from "@/components/StudentProfilePanel";
@@ -60,6 +61,8 @@ export default function TutorPage() {
   const [summaryModalOpen, setSummaryModalOpen] = useState(false);
   const [dynamicAgentId, setDynamicAgentId] = useState<string | null>(null);
   const [dynamicConversationId, setDynamicConversationId] = useState<string | null>(null);
+  const [transcriptMessages, setTranscriptMessages] = useState<ConvaiMessage[]>([]);
+  const [isTranscriptConnected, setIsTranscriptConnected] = useState(false);
 
   // Fetch selected student data
   const { data: selectedStudent } = useQuery<{ id: string; name: string }>({
@@ -208,6 +211,8 @@ export default function TutorPage() {
     setCurrentSessionId(null);
     setDynamicAgentId(null);
     setDynamicConversationId(null);
+    setTranscriptMessages([]);
+    setIsTranscriptConnected(false);
     
     // Show summary modal if we have a student profile
     if (selectedStudentId) {
@@ -449,9 +454,21 @@ export default function TutorPage() {
 
           {/* ConvAI Widget */}
           {mounted && dynamicAgentId && (
-            <div className="mt-6">
+            <div className="mt-6 space-y-4">
               <ConvaiHost
                 agentId={dynamicAgentId}
+                onMessage={(message) => {
+                  setTranscriptMessages(prev => [...prev, message]);
+                }}
+                onConnectionStatus={(connected) => {
+                  setIsTranscriptConnected(connected);
+                }}
+              />
+              
+              {/* Real-time Transcript */}
+              <ConvaiTranscript 
+                messages={transcriptMessages}
+                isConnected={isTranscriptConnected}
               />
             </div>
           )}
