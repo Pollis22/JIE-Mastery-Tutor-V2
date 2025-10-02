@@ -7,7 +7,24 @@
 
 This is a production-ready conversational AI tutoring web platform that enables students to learn Math, English, and Spanish through interactive voice conversations, personalized quizzes, and adaptive learning paths. The platform features a **fully functional multi-agent ElevenLabs ConvAI system** with five age-specific AI tutors (K-2, Grades 3-5, 6-8, 9-12, College/Adult), each optimized for their target age group with appropriate complexity, vocabulary, and teaching approaches.
 
-## Recent Updates (October 1, 2025)
+## Recent Updates (October 2, 2025)
+
+✅ **MAJOR PIVOT: Dynamic Per-Session Agent Architecture** (October 2, 2025)
+- **ROOT CAUSE**: ElevenLabs ConvAI widget ignores first-user-message context beyond ~2K characters, causing document recognition failures
+- **SOLUTION**: Complete architectural pivot to create unique temporary agents per session with native knowledge base integration
+- **Implementation**: 
+  - Created ElevenLabsClient service with agent and document management APIs
+  - Built SessionAgentService with transactional rollback on failures (prevents document leaks)
+  - Added agentSessions database table to track lifecycle of dynamic agents
+  - Frontend now calls /api/session/create → uploads docs to ElevenLabs → creates agent → attaches knowledge base → returns unique agent ID
+  - Session cleanup endpoint deletes agent, documents, and marks session complete
+- **Transactional Safety**: 
+  - Creates pending session record first (anchor for cleanup)
+  - Tracks uploaded doc IDs and agent ID locally
+  - On failure: deletes uploaded docs, deletes agent, marks session ended
+  - Only commits final state after all operations succeed
+- **Scale Ready**: Designed for 1,000+ subscribers with proper resource cleanup and error handling
+- **RESULT**: Each student gets isolated agent with their specific materials in native ElevenLabs knowledge base
 
 ✅ **CRITICAL FIX: ElevenLabs ConvAI Context Integration** (October 1, 2025 - 8:20 PM)
 - **ROOT CAUSE**: ElevenLabs ConvAI doesn't support `system-prompt` or custom `metadata-*` attributes
