@@ -57,6 +57,8 @@ export default function TutorPage() {
   const [editingStudentId, setEditingStudentId] = useState<string | undefined>();
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [summaryModalOpen, setSummaryModalOpen] = useState(false);
+  const [dynamicAgentId, setDynamicAgentId] = useState<string | null>(null);
+  const [dynamicConversationId, setDynamicConversationId] = useState<string | null>(null);
 
   // Fetch selected student data
   const { data: selectedStudent } = useQuery<{ id: string; name: string }>({
@@ -102,8 +104,14 @@ export default function TutorPage() {
 
   const startTutor = async () => {
     if (!scriptReady) return;
-    
-    setMounted(true);
+    if (!studentName.trim()) {
+      toast({
+        title: "Student name required",
+        description: "Please enter a student name before connecting to the tutor.",
+        variant: "destructive",
+      });
+      return;
+    }
     
     // Save progress
     const currentProgress = loadProgress();
@@ -114,60 +122,55 @@ export default function TutorPage() {
       updatedAt: new Date().toISOString(),
     });
 
-    // Create session and fetch context if student is selected
-    if (selectedStudentId) {
-      try {
-        // Create session
-        const sessionRes = await apiRequest('POST', `/api/students/${selectedStudentId}/sessions`, {
-          subject,
-          contextDocuments: selectedDocuments.length > 0 ? selectedDocuments : undefined,
-        });
-        const session = await sessionRes.json();
-        setCurrentSessionId(session.id);
+    // Map level to gradeBand for API
+    const gradeBandMap: Record<string, string> = {
+      'k2': 'K-2',
+      'g3_5': '3-5',
+      'g6_8': '6-8',
+      'g9_12': '9-12',
+      'college': 'College/Adult'
+    };
+    const gradeBand = gradeBandMap[level];
 
-        // Fetch context for personalized tutoring
-        const contextRes = await apiRequest('POST', '/api/context/session-start', {
-          studentId: selectedStudentId,
-          subject,
-          includeDocIds: selectedDocuments.length > 0 ? selectedDocuments : undefined,
-        });
-        const context = await contextRes.json();
-        console.log('[TutorPage] Session context received:', {
-          hasContext: context.hasContext,
-          firstMessageLength: context.firstMessage?.length,
-          documentCount: context.documentCount
-        });
-        setSessionContext(context);
-      } catch (error: any) {
-        console.error('Failed to create session or fetch context:', error);
-        toast({
-          title: "Note",
-          description: "Session memory won't be saved automatically. You can still use the tutor!",
-          variant: "default",
-        });
-      }
-    } else if (selectedDocuments.length > 0 || studentName.trim()) {
-      // Fetch context even without student profile if documents selected or name entered
-      try {
-        const contextRes = await apiRequest('POST', '/api/context/session-start', {
-          subject,
-          includeDocIds: selectedDocuments.length > 0 ? selectedDocuments : undefined,
-          studentName: studentName.trim() || undefined, // Pass the typed name to backend
-        });
-        const context = await contextRes.json();
-        console.log('[TutorPage] Session context received (no profile):', {
-          hasContext: context.hasContext,
-          firstMessageLength: context.firstMessage?.length,
-          documentCount: context.documentCount
-        });
-        setSessionContext(context);
-      } catch (error: any) {
-        console.error('Failed to fetch context:', error);
-        setSessionContext(null);
-      }
-    } else {
-      // Clear context if no student selected and no documents
-      setSessionContext(null);
+    try {
+      // Create dynamic agent session with documents
+      toast({
+        title: "Creating your session...",
+        description: "Setting up your personalized tutor with your materials",
+      });
+
+      const sessionRes = await apiRequest('POST', '/api/session/create', {
+        studentId: selectedStudentId || undefined,
+        studentName: studentName.trim(),
+        gradeBand,
+        subject,
+        documentIds: selectedDocuments
+      });
+      const sessionData = await sessionRes.json();
+      
+      console.log('[TutorPage] Dynamic agent created:', {
+        sessionId: sessionData.sessionId,
+        agentId: sessionData.agentId,
+        documentCount: selectedDocuments.length
+      });
+
+      setCurrentSessionId(sessionData.sessionId);
+      setDynamicAgentId(sessionData.agentId);
+      setDynamicConversationId(sessionData.conversationId);
+      setMounted(true);
+
+      toast({
+        title: "Ready to learn!",
+        description: `Your ${gradeBand} ${subject} tutor is ready with your ${selectedDocuments.length} uploaded materials.`,
+      });
+
+    } catch (error: any) {
+      console.error('Failed to create session agent:', error);
+      toast({
+        title: "Failed to start session",
+        description: error.message || "Unable to create your personalized tutor. Please try again.",
+        variant: "destructive",
+      });
     }
 
     // Analytics
@@ -176,7 +179,8 @@ export default function TutorPage() {
         event_category: 'tutoring',
         custom_parameter_1: level,
         custom_parameter_2: subject,
-        custom_parameter_3: studentName || selectedStudent?.name || 'anonymous'
+        custom_parameter_3: studentName || selectedStudent?.name || 'anonymous',
+        custom_parameter_4: selectedDocuments.length
       });
     }
   };
@@ -186,11 +190,26 @@ export default function TutorPage() {
     setTimeout(() => setMounted(true), 100);
   };
 
-  const stop = () => {
+  const stop = async () => {
     setMounted(false);
     
-    // Show summary modal if we have a session to save
-    if (currentSessionId && selectedStudentId) {
+    // Cleanup dynamic agent session
+    if (currentSessionId) {
+      try {
+        await apiRequest('POST', `/api/session/${currentSessionId}/end`, {});
+        console.log('[TutorPage] Session ended and cleaned up');
+      } catch (error) {
+        console.error('Failed to cleanup session:', error);
+      }
+    }
+    
+    // Reset session state
+    setCurrentSessionId(null);
+    setDynamicAgentId(null);
+    setDynamicConversationId(null);
+    
+    // Show summary modal if we have a student profile
+    if (selectedStudentId) {
       setSummaryModalOpen(true);
     }
     
@@ -202,7 +221,10 @@ export default function TutorPage() {
     }
   };
 
-  const agentId = AGENTS[level as keyof typeof AGENTS];
+  // Use dynamic agent ID if available, otherwise fall back to static agent
+  const staticAgentId = AGENTS[level as keyof typeof AGENTS];
+  const agentId = dynamicAgentId || staticAgentId;
+  
   const levelGreetings = GREETINGS[level as keyof typeof GREETINGS];
   const greetingPreview = (levelGreetings as any)?.[subject] || 
                          (levelGreetings as any)?.["general"] || 
@@ -385,18 +407,10 @@ export default function TutorPage() {
           )}
 
           {/* ConvAI Widget */}
-          {mounted && (
+          {mounted && dynamicAgentId && (
             <div className="mt-6">
               <ConvaiHost
-                agentId={agentId}
-                firstUserMessage={sessionContext?.firstMessage || firstUserMessage}
-                metadata={{
-                  ...metadata, 
-                  selectedDocuments,
-                  systemPrompt: sessionContext?.systemPrompt,
-                  hasDocuments: selectedDocuments.length > 0,
-                  documentContext: sessionContext?.summary
-                }}
+                agentId={dynamicAgentId}
               />
             </div>
           )}

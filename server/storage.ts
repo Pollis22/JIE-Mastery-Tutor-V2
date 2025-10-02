@@ -120,6 +120,7 @@ export interface IStorage {
   // Agent session operations (for dynamic agent creation)
   createAgentSession(session: any): Promise<any>;
   getAgentSession(sessionId: string): Promise<any | undefined>;
+  updateAgentSession(sessionId: string, updates: any): Promise<void>;
   endAgentSession(sessionId: string): Promise<void>;
   getExpiredAgentSessions(hoursOld: number): Promise<any[]>;
   getDocumentContent(documentId: string): Promise<Buffer | undefined>;
@@ -1247,6 +1248,12 @@ export class DatabaseStorage implements IStorage {
       .where(eq(agentSessions.id, sessionId))
       .limit(1);
     return session;
+  }
+
+  async updateAgentSession(sessionId: string, updates: any): Promise<void> {
+    await db.update(agentSessions)
+      .set(updates)
+      .where(eq(agentSessions.id, sessionId));
   }
 
   async endAgentSession(sessionId: string): Promise<void> {

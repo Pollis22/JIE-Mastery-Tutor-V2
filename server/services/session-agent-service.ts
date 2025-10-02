@@ -69,45 +69,100 @@ export class SessionAgentService {
     
     const baseAgentId = this.getBaseAgentId(gradeBand);
     
-    const elevenLabsDocIds = await this.uploadDocumentsToElevenLabs(userId, documentIds);
-    
     const sessionId = uuidv4();
     const conversationId = uuidv4();
     
-    const agentName = `${studentName} - ${gradeBand} - ${subject}`;
-    const agentPrompt = this.buildAgentPrompt(studentName, gradeBand, subject);
-    const firstMessage = `Hi ${studentName}! I'm your ${gradeBand} ${subject} tutor. I've reviewed your materials and I'm ready to help you learn. What would you like to work on today?`;
+    // Track uploaded resources for cleanup on failure
+    const uploadedDocIds: string[] = [];
+    let createdAgentId: string | null = null;
     
-    const agentResult = await elevenlabs.createAgent({
-      name: agentName,
-      prompt: agentPrompt,
-      firstMessage
-    });
-    
-    const agentId = agentResult.agent_id;
-    
-    if (elevenLabsDocIds.length > 0) {
-      await elevenlabs.updateAgentKnowledgeBase(agentId, elevenLabsDocIds);
+    try {
+      // 1. Create pending session record first (transactional anchor)
+      await storage.createAgentSession({
+        id: sessionId,
+        userId,
+        studentId: studentId || null,
+        agentId: null, // Will be updated after agent creation
+        conversationId,
+        baseAgentId,
+        knowledgeBaseId: null,
+        studentName,
+        gradeBand,
+        subject,
+        documentIds: documentIds.length > 0 ? documentIds : null,
+        fileIds: null, // Will be updated after upload
+        createdAt: new Date(),
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
+      });
+      
+      // 2. Upload documents to ElevenLabs
+      if (documentIds.length > 0) {
+        const docIds = await this.uploadDocumentsToElevenLabs(userId, documentIds);
+        uploadedDocIds.push(...docIds);
+      }
+      
+      // 3. Create agent
+      const agentName = `${studentName} - ${gradeBand} - ${subject}`;
+      const agentPrompt = this.buildAgentPrompt(studentName, gradeBand, subject);
+      const firstMessage = `Hi ${studentName}! I'm your ${gradeBand} ${subject} tutor. I've reviewed your materials and I'm ready to help you learn. What would you like to work on today?`;
+      
+      const agentResult = await elevenlabs.createAgent({
+        name: agentName,
+        prompt: agentPrompt,
+        firstMessage
+      });
+      
+      createdAgentId = agentResult.agent_id;
+      
+      // 4. Attach knowledge base if documents were uploaded
+      if (uploadedDocIds.length > 0 && createdAgentId) {
+        await elevenlabs.updateAgentKnowledgeBase(createdAgentId, uploadedDocIds);
+      }
+      
+      // 5. Update session with agent ID and file IDs (commit transaction)
+      if (!createdAgentId) {
+        throw new Error('Agent creation failed: no agent ID returned');
+      }
+      
+      await storage.updateAgentSession(sessionId, {
+        agentId: createdAgentId,
+        fileIds: uploadedDocIds.length > 0 ? uploadedDocIds : null
+      });
+      
+      return { sessionId, agentId: createdAgentId, conversationId };
+      
+    } catch (error) {
+      console.error(`[SessionAgent] Failed to create session ${sessionId}, rolling back:`, error);
+      
+      // Cleanup: delete uploaded documents
+      for (const docId of uploadedDocIds) {
+        try {
+          await elevenlabs.deleteDocument(docId);
+          console.log(`[SessionAgent] Cleaned up document ${docId}`);
+        } catch (cleanupError) {
+          console.error(`[SessionAgent] Failed to cleanup document ${docId}:`, cleanupError);
+        }
+      }
+      
+      // Cleanup: delete agent if created
+      if (createdAgentId) {
+        try {
+          await elevenlabs.deleteAgent(createdAgentId);
+          console.log(`[SessionAgent] Cleaned up agent ${createdAgentId}`);
+        } catch (cleanupError) {
+          console.error(`[SessionAgent] Failed to cleanup agent ${createdAgentId}:`, cleanupError);
+        }
+      }
+      
+      // Cleanup: mark session as failed (don't delete, keep for audit)
+      try {
+        await storage.endAgentSession(sessionId);
+      } catch (cleanupError) {
+        console.error(`[SessionAgent] Failed to end session ${sessionId}:`, cleanupError);
+      }
+      
+      throw error;
     }
-    
-    await storage.createAgentSession({
-      id: sessionId,
-      userId,
-      studentId: studentId || null,
-      agentId,
-      conversationId,
-      baseAgentId,
-      knowledgeBaseId: null,
-      studentName,
-      gradeBand,
-      subject,
-      documentIds: documentIds.length > 0 ? documentIds : null,
-      fileIds: elevenLabsDocIds.length > 0 ? elevenLabsDocIds : null,
-      createdAt: new Date(),
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
-    });
-    
-    return { sessionId, agentId, conversationId };
   }
 
   async endSession(sessionId: string): Promise<void> {
