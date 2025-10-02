@@ -67,23 +67,18 @@ export default function ConvaiHost({
 
     const el = document.createElement("elevenlabs-convai");
     el.setAttribute("agent-id", agentId);
+    
     if (firstUserMessage) {
-      console.log("[ConvAI Debug] Setting first-user-message:", firstUserMessage);
+      console.log("[ConvAI Debug] ✅ Setting first-user-message (length:", firstUserMessage.length, ")");
+      console.log("[ConvAI Debug] First message preview:", firstUserMessage.substring(0, 200) + "...");
       el.setAttribute("first-user-message", firstUserMessage);
+    } else {
+      console.warn("[ConvAI Debug] ⚠️ No firstUserMessage provided!");
     }
     
-    if (metadata.systemPrompt) {
-      console.log("[ConvAI Debug] Setting system-prompt");
-      el.setAttribute("system-prompt", metadata.systemPrompt);
-    }
-    
-    for (const [k, v] of Object.entries(metadata)) {
-      if (k !== 'systemPrompt') {
-        const value = typeof v === 'string' ? v : JSON.stringify(v);
-        console.log(`[ConvAI Debug] Setting metadata-${k}:`, value);
-        el.setAttribute(`metadata-${k}`, value);
-      }
-    }
+    // Note: ElevenLabs ConvAI does NOT support system-prompt or metadata-* attributes
+    // All context must be in the first-user-message
+    console.log("[ConvAI Debug] Skipping metadata (not supported by ElevenLabs)");
 
     // Add event listeners for performance monitoring and debugging
     el.addEventListener("widget-ready", () => {

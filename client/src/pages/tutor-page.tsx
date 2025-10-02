@@ -132,6 +132,11 @@ export default function TutorPage() {
           includeDocIds: selectedDocuments.length > 0 ? selectedDocuments : undefined,
         });
         const context = await contextRes.json();
+        console.log('[TutorPage] Session context received:', {
+          hasContext: context.hasContext,
+          firstMessageLength: context.firstMessage?.length,
+          documentCount: context.documentCount
+        });
         setSessionContext(context);
       } catch (error: any) {
         console.error('Failed to create session or fetch context:', error);
@@ -150,6 +155,11 @@ export default function TutorPage() {
           studentName: studentName.trim() || undefined, // Pass the typed name to backend
         });
         const context = await contextRes.json();
+        console.log('[TutorPage] Session context received (no profile):', {
+          hasContext: context.hasContext,
+          firstMessageLength: context.firstMessage?.length,
+          documentCount: context.documentCount
+        });
         setSessionContext(context);
       } catch (error: any) {
         console.error('Failed to fetch context:', error);
