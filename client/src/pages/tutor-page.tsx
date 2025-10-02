@@ -152,16 +152,27 @@ export default function TutorPage() {
       });
       const sessionData = await sessionRes.json();
       
+      console.log('[TutorPage] Session response received:', sessionData);
       console.log('[TutorPage] Dynamic agent created:', {
         sessionId: sessionData.sessionId,
         agentId: sessionData.agentId,
         documentCount: selectedDocuments.length
       });
 
+      if (!sessionData.agentId) {
+        console.error('[TutorPage] No agent ID in response!', sessionData);
+        throw new Error('No agent ID returned from session creation');
+      }
+
       setCurrentSessionId(sessionData.sessionId);
       setDynamicAgentId(sessionData.agentId);
       setDynamicConversationId(sessionData.conversationId);
       setMounted(true);
+      
+      console.log('[TutorPage] State updated:', {
+        dynamicAgentId: sessionData.agentId,
+        mounted: true
+      });
 
       toast({
         title: "Ready to learn!",
