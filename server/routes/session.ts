@@ -62,10 +62,11 @@ sessionRouter.post('/cleanup', async (req, res) => {
   }
 
   try {
-    // Only allow cleanup for now (remove admin check since role doesn't exist)
+    // Clean up both expired and orphaned sessions
     await sessionAgentService.cleanupExpiredSessions();
+    await sessionAgentService.cleanupOrphanedSessions();
     
-    res.json({ success: true, message: 'Expired sessions cleaned up' });
+    res.json({ success: true, message: 'Expired and orphaned sessions cleaned up' });
   } catch (error) {
     console.error('Error cleaning up sessions:', error);
     res.status(500).json({ 

@@ -123,6 +123,7 @@ export interface IStorage {
   updateAgentSession(sessionId: string, updates: any): Promise<void>;
   endAgentSession(sessionId: string): Promise<void>;
   getExpiredAgentSessions(hoursOld: number): Promise<any[]>;
+  getOrphanedAgentSessions(cutoffDate: Date): Promise<any[]>;
   getDocumentContent(documentId: string): Promise<Buffer | undefined>;
 
   // Session store
@@ -1270,6 +1271,17 @@ export class DatabaseStorage implements IStorage {
         sql`${agentSessions.endedAt} IS NULL`
       ));
     return expired;
+  }
+
+  async getOrphanedAgentSessions(cutoffDate: Date): Promise<any[]> {
+    // Find sessions older than cutoffDate with no agentId (failed creations)
+    const orphaned = await db.select().from(agentSessions)
+      .where(and(
+        sql`${agentSessions.endedAt} IS NULL`,
+        sql`${agentSessions.agentId} IS NULL`,
+        sql`${agentSessions.createdAt} < ${cutoffDate}`
+      ));
+    return orphaned;
   }
 
   async getDocumentContent(documentId: string): Promise<Buffer | undefined> {

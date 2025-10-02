@@ -42,23 +42,21 @@ export class SessionAgentService {
     for (const docId of documentIds) {
       const content = await storage.getDocumentContent(docId);
       if (!content) {
-        console.warn(`Document ${docId} not found, skipping...`);
-        continue;
+        throw new Error(`Document ${docId} not found - cannot proceed with session creation`);
       }
       
       const doc = await storage.getDocument(docId, userId);
-      if (!doc) continue;
-      
-      try {
-        const result = await elevenlabs.uploadDocument({
-          name: doc.originalName || doc.fileName,
-          content,
-          mimeType: doc.fileType || 'application/octet-stream'
-        });
-        docIds.push(result.id);
-      } catch (error) {
-        console.error(`Failed to upload document ${docId}:`, error);
+      if (!doc) {
+        throw new Error(`Document ${docId} metadata not found - cannot proceed with session creation`);
       }
+      
+      // Upload document - any failure will throw and trigger rollback
+      const result = await elevenlabs.uploadDocument({
+        name: doc.originalName || doc.fileName,
+        content,
+        mimeType: doc.fileType || 'application/octet-stream'
+      });
+      docIds.push(result.id);
     }
     
     return docIds;
@@ -200,6 +198,36 @@ export class SessionAgentService {
         await this.endSession(session.id);
       } catch (error) {
         console.error(`Failed to cleanup session ${session.id}:`, error);
+      }
+    }
+  }
+
+  async cleanupOrphanedSessions(): Promise<void> {
+    // Clean up sessions that are older than 1 hour with no agent ID (failed creations)
+    const cutoffDate = new Date(Date.now() - 60 * 60 * 1000); // 1 hour ago
+    const orphanedSessions = await storage.getOrphanedAgentSessions(cutoffDate);
+    
+    console.log(`[SessionAgent] Found ${orphanedSessions.length} orphaned sessions to clean up`);
+    
+    for (const session of orphanedSessions) {
+      try {
+        // Clean up any uploaded documents
+        if (session.fileIds && Array.isArray(session.fileIds)) {
+          for (const docId of session.fileIds) {
+            try {
+              await elevenlabs.deleteDocument(docId);
+              console.log(`[SessionAgent] Cleaned up orphaned document ${docId}`);
+            } catch (error) {
+              console.error(`Failed to delete orphaned document ${docId}:`, error);
+            }
+          }
+        }
+        
+        // Mark session as ended
+        await storage.endAgentSession(session.id);
+        console.log(`[SessionAgent] Cleaned up orphaned session ${session.id}`);
+      } catch (error) {
+        console.error(`Failed to cleanup orphaned session ${session.id}:`, error);
       }
     }
   }
