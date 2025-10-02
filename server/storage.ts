@@ -135,9 +135,6 @@ export class DatabaseStorage implements IStorage {
   private testSessions: LearningSession[] = [];
   private testQuizAttempts: QuizAttempt[] = [];
   private testUserProgress: Map<string, UserProgress> = new Map();
-  private testDocuments: UserDocument[] = [];
-  private testChunks: DocumentChunk[] = [];
-  private testEmbeddings: DocumentEmbedding[] = [];
 
   constructor() {
     // Use MemoryStore for development testing when database is not available
@@ -925,169 +922,58 @@ export class DatabaseStorage implements IStorage {
 
   // Document operations implementation
   async uploadDocument(userId: string, document: InsertUserDocument): Promise<UserDocument> {
-    const isTestMode = process.env.AUTH_TEST_MODE === 'true' || process.env.NODE_ENV === 'development';
-    if (isTestMode) {
-      const doc: UserDocument = {
-        id: `doc-${Date.now()}`,
-        userId,
-        ...document,
-        processingStatus: document.processingStatus || 'queued',
-        retryCount: document.retryCount ?? 0,
-        nextRetryAt: document.nextRetryAt ?? null,
-        parsedTextPath: document.parsedTextPath ?? null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        processingError: null
-      };
-      this.testDocuments.push(doc);
-      return doc;
-    }
     const [created] = await db.insert(userDocuments).values({...document, userId}).returning();
     return created;
   }
 
   async getUserDocuments(userId: string): Promise<UserDocument[]> {
-    const isTestMode = process.env.AUTH_TEST_MODE === 'true' || process.env.NODE_ENV === 'development';
-    if (isTestMode) {
-      return this.testDocuments.filter(doc => doc.userId === userId);
-    }
     return await db.select().from(userDocuments).where(eq(userDocuments.userId, userId)).orderBy(desc(userDocuments.createdAt));
   }
 
   async getAllDocumentsForProcessing(): Promise<UserDocument[]> {
-    const isTestMode = process.env.AUTH_TEST_MODE === 'true' || process.env.NODE_ENV === 'development';
-    if (isTestMode) {
-      return this.testDocuments;
-    }
     return await db.select().from(userDocuments).orderBy(desc(userDocuments.createdAt));
   }
 
   async getDocument(documentId: string, userId: string): Promise<UserDocument | undefined> {
-    const isTestMode = process.env.AUTH_TEST_MODE === 'true' || process.env.NODE_ENV === 'development';
-    if (isTestMode) {
-      return this.testDocuments.find(doc => doc.id === documentId && doc.userId === userId);
-    }
     const [doc] = await db.select().from(userDocuments).where(and(eq(userDocuments.id, documentId), eq(userDocuments.userId, userId)));
     return doc || undefined;
   }
 
   async deleteDocument(documentId: string, userId: string): Promise<void> {
-    const isTestMode = process.env.AUTH_TEST_MODE === 'true' || process.env.NODE_ENV === 'development';
-    if (isTestMode) {
-      this.testDocuments = this.testDocuments.filter(doc => !(doc.id === documentId && doc.userId === userId));
-      this.testChunks = this.testChunks.filter(chunk => {
-        const doc = this.testDocuments.find(d => d.id === chunk.documentId);
-        return doc ? doc.userId !== userId : true;
-      });
-      return;
-    }
     await db.delete(userDocuments).where(and(eq(userDocuments.id, documentId), eq(userDocuments.userId, userId)));
   }
 
   async updateDocument(documentId: string, userId: string, updates: Partial<UserDocument>): Promise<UserDocument> {
-    const isTestMode = process.env.AUTH_TEST_MODE === 'true' || process.env.NODE_ENV === 'development';
-    if (isTestMode) {
-      const docIndex = this.testDocuments.findIndex(doc => doc.id === documentId && doc.userId === userId);
-      if (docIndex === -1) throw new Error('Document not found');
-      this.testDocuments[docIndex] = { ...this.testDocuments[docIndex], ...updates, updatedAt: new Date() };
-      return this.testDocuments[docIndex];
-    }
     const [updated] = await db.update(userDocuments).set({...updates, updatedAt: new Date()}).where(and(eq(userDocuments.id, documentId), eq(userDocuments.userId, userId))).returning();
     return updated;
   }
 
   async updateDocumentById(documentId: string, updates: Partial<UserDocument>): Promise<UserDocument | null> {
-    const isTestMode = process.env.AUTH_TEST_MODE === 'true' || process.env.NODE_ENV === 'development';
-    if (isTestMode) {
-      const docIndex = this.testDocuments.findIndex(doc => doc.id === documentId);
-      if (docIndex === -1) return null;
-      this.testDocuments[docIndex] = { ...this.testDocuments[docIndex], ...updates, updatedAt: new Date() };
-      return this.testDocuments[docIndex];
-    }
     const [updated] = await db.update(userDocuments).set({...updates, updatedAt: new Date()}).where(eq(userDocuments.id, documentId)).returning();
     return updated || null;
   }
 
   async createDocumentChunk(chunk: InsertDocumentChunk): Promise<DocumentChunk> {
-    const isTestMode = process.env.AUTH_TEST_MODE === 'true' || process.env.NODE_ENV === 'development';
-    if (isTestMode) {
-      const chunkObj: DocumentChunk = {
-        id: `chunk-${Date.now()}-${chunk.chunkIndex}`,
-        ...chunk,
-        metadata: chunk.metadata ?? null,
-        createdAt: new Date()
-      };
-      this.testChunks.push(chunkObj);
-      return chunkObj;
-    }
     const [created] = await db.insert(documentChunks).values(chunk).returning();
     return created;
   }
 
   async createDocumentEmbedding(embedding: InsertDocumentEmbedding): Promise<DocumentEmbedding> {
-    const isTestMode = process.env.AUTH_TEST_MODE === 'true' || process.env.NODE_ENV === 'development';
-    if (isTestMode) {
-      const embeddingObj: DocumentEmbedding = {
-        id: `embedding-${Date.now()}`,
-        ...embedding,
-        embeddingModel: embedding.embeddingModel || 'text-embedding-ada-002',
-        createdAt: new Date()
-      };
-      this.testEmbeddings.push(embeddingObj);
-      return embeddingObj;
-    }
     const [created] = await db.insert(documentEmbeddings).values(embedding).returning();
     return created;
   }
 
   async deleteDocumentChunks(documentId: string): Promise<void> {
-    const isTestMode = process.env.AUTH_TEST_MODE === 'true' || process.env.NODE_ENV === 'development';
-    if (isTestMode) {
-      // Get chunk IDs for this document
-      const chunkIds = this.testChunks.filter(c => c.documentId === documentId).map(c => c.id);
-      // Delete embeddings for these chunks
-      this.testEmbeddings = this.testEmbeddings.filter(e => !chunkIds.includes(e.chunkId));
-      // Delete chunks
-      this.testChunks = this.testChunks.filter(c => c.documentId !== documentId);
-      return;
-    }
-    // Delete chunks (will cascade delete embeddings due to foreign key)
     await db.delete(documentChunks).where(eq(documentChunks.documentId, documentId));
   }
 
   async searchSimilarContent(userId: string, queryEmbedding: number[], topK: number, threshold: number): Promise<Array<{chunk: DocumentChunk, document: UserDocument, similarity: number}>> {
-    const isTestMode = process.env.AUTH_TEST_MODE === 'true' || process.env.NODE_ENV === 'development';
-    if (isTestMode) {
-      // Mock similarity search for test mode
-      const userDocs = this.testDocuments.filter(doc => doc.userId === userId);
-      const results: Array<{chunk: DocumentChunk, document: UserDocument, similarity: number}> = [];
-      
-      for (const doc of userDocs.slice(0, topK)) {
-        const docChunks = this.testChunks.filter(chunk => chunk.documentId === doc.id);
-        for (const chunk of docChunks.slice(0, 2)) {
-          results.push({
-            chunk,
-            document: doc,
-            similarity: 0.8 + Math.random() * 0.15 // Mock similarity between 0.8-0.95
-          });
-        }
-      }
-      return results.slice(0, topK);
-    }
-    
     // In a real implementation, this would use vector similarity search
-    // For now, return empty array for production
+    // For now, return empty array
     return [];
   }
 
   async getDocumentContext(userId: string, documentIds: string[]): Promise<{chunks: DocumentChunk[], documents: UserDocument[]}> {
-    const isTestMode = process.env.AUTH_TEST_MODE === 'true' || process.env.NODE_ENV === 'development';
-    if (isTestMode) {
-      const documents = this.testDocuments.filter(doc => doc.userId === userId && documentIds.includes(doc.id));
-      const chunks = this.testChunks.filter(chunk => documents.some(doc => doc.id === chunk.documentId));
-      return { chunks, documents };
-    }
-    
     const documents = await db.select().from(userDocuments)
       .where(and(
         eq(userDocuments.userId, userId),
