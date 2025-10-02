@@ -11,6 +11,7 @@ import {
   students,
   studentDocPins,
   tutorSessions,
+  agentSessions,
   type User,
   type InsertUser,
   type Subject,
@@ -115,6 +116,13 @@ export interface IStorage {
   // Memory export/delete
   exportStudentMemory(studentId: string, userId: string): Promise<{ student: Student, pinnedDocs: Array<{ pin: StudentDocPin, document: UserDocument }>, sessions: TutorSession[] }>;
   deleteStudentMemory(studentId: string, userId: string, deleteProfile: boolean): Promise<void>;
+
+  // Agent session operations (for dynamic agent creation)
+  createAgentSession(session: any): Promise<any>;
+  getAgentSession(sessionId: string): Promise<any | undefined>;
+  endAgentSession(sessionId: string): Promise<void>;
+  getExpiredAgentSessions(hoursOld: number): Promise<any[]>;
+  getDocumentContent(documentId: string): Promise<Buffer | undefined>;
 
   // Session store
   sessionStore: session.Store;
@@ -1226,6 +1234,44 @@ export class DatabaseStorage implements IStorage {
     } else {
       await db.delete(tutorSessions).where(eq(tutorSessions.studentId, studentId));
     }
+  }
+
+  // Agent session operations (for dynamic agent creation)
+  async createAgentSession(session: any): Promise<any> {
+    const [newSession] = await db.insert(agentSessions).values(session).returning();
+    return newSession;
+  }
+
+  async getAgentSession(sessionId: string): Promise<any | undefined> {
+    const [session] = await db.select().from(agentSessions)
+      .where(eq(agentSessions.id, sessionId))
+      .limit(1);
+    return session;
+  }
+
+  async endAgentSession(sessionId: string): Promise<void> {
+    await db.update(agentSessions)
+      .set({ endedAt: new Date() })
+      .where(eq(agentSessions.id, sessionId));
+  }
+
+  async getExpiredAgentSessions(hoursOld: number): Promise<any[]> {
+    const cutoffDate = new Date(Date.now() - hoursOld * 60 * 60 * 1000);
+    const expired = await db.select().from(agentSessions)
+      .where(and(
+        sql`${agentSessions.expiresAt} < ${cutoffDate}`,
+        sql`${agentSessions.endedAt} IS NULL`
+      ));
+    return expired;
+  }
+
+  async getDocumentContent(documentId: string): Promise<Buffer | undefined> {
+    const [doc] = await db.select().from(userDocuments)
+      .where(eq(userDocuments.id, documentId))
+      .limit(1);
+    
+    if (!doc || !doc.content) return undefined;
+    return Buffer.from(doc.content);
   }
 }
 
