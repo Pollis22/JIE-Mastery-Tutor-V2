@@ -275,7 +275,7 @@ export default function AuthPage() {
                   Master Every Subject with <span className="text-primary">JIE Mastery Tutor</span>
                 </h1>
                 <p className="text-xl text-muted-foreground max-w-md">
-                  Experience personalized AI tutoring for Math, English, and Spanish with interactive voice conversations and adaptive learning paths.
+                  Experience personalized AI tutoring for Math, English, Science, Spanish and More with interactive voice conversations and adaptive learning paths.
                 </p>
               </div>
 

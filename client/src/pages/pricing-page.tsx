@@ -14,7 +14,7 @@ const plans = [
     minutes: 60,
     features: [
       '60 voice minutes per month',
-      'Math, English & Spanish tutoring',
+      'Math, English, Science, Spanish & More tutoring',
       'AI-powered learning',
       'Real-time transcripts',
       'Progress tracking'
@@ -28,7 +28,7 @@ const plans = [
     minutes: 240,
     features: [
       '240 voice minutes per month',
-      'Math, English & Spanish tutoring',
+      'Math, English, Science, Spanish & More tutoring',
       'AI-powered learning',
       'Real-time transcripts',
       'Progress tracking',
@@ -43,7 +43,7 @@ const plans = [
     minutes: 600,
     features: [
       '600 voice minutes per month',
-      'Math, English & Spanish tutoring',
+      'Math, English, Science, Spanish & More tutoring',
       'AI-powered learning',
       'Real-time transcripts',
       'Progress tracking',
@@ -118,7 +118,7 @@ export default function PricingPage() {
               Learn with Your Personal AI Tutor
             </h1>
             <p className="text-xl text-muted-foreground mb-8 max-w-3xl mx-auto">
-              Master Math, English, and Spanish with interactive voice lessons, personalized quizzes, and progress tracking. 
+              Master Math, English, Science, Spanish and More with interactive voice lessons, personalized quizzes, and progress tracking. 
               Your AI tutor adapts to your learning style.
             </p>
             

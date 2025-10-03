@@ -137,7 +137,7 @@ export default function SubscribePage() {
       name: 'Single Subject',
       price: '$99.99',
       features: [
-        'Choose Math, English, or Spanish',
+        'Choose Math, English, Science, Spanish & More',
         '60 minutes of voice learning per week',
         'Interactive quizzes & progress tracking',
         'Session transcripts & resume feature',
@@ -148,7 +148,7 @@ export default function SubscribePage() {
       name: 'All Subjects',
       price: '$199.00',
       features: [
-        'Math, English, AND Spanish',
+        'Math, English, Science, Spanish & More',
         '90 minutes of voice learning per week',
         'Cross-subject learning insights',
         'Advanced progress analytics',

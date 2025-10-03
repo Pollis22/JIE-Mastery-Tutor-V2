@@ -210,7 +210,7 @@ export default function SettingsPage() {
                       <p className="font-medium text-foreground">Current Plan</p>
                       <p className="text-sm text-muted-foreground">
                         {user?.subscriptionPlan === 'all' 
-                          ? 'Access to Math, English, and Spanish' 
+                          ? 'Access to Math, English, Science, Spanish & More' 
                           : 'Access to one subject'
                         }
                       </p>

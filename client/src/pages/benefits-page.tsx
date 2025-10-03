@@ -119,9 +119,9 @@ export default function BenefitsPage() {
                   <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
                     <BookOpen className="w-6 h-6 text-orange-600" />
                   </div>
-                  <h3 className="text-xl font-semibold text-foreground">Math, English & Spanish</h3>
+                  <h3 className="text-xl font-semibold text-foreground">Math, English, Science, Spanish & More</h3>
                   <p className="text-muted-foreground">
-                    Get help across multiple subjects without hiring separate tutors. Whether you're struggling with algebra, essay writing, or Spanish conjugations, we've got you covered.
+                    Get help across multiple subjects without hiring separate tutors. Whether you're struggling with algebra, essay writing, science concepts, or Spanish conjugations, we've got you covered.
                   </p>
                 </CardContent>
               </Card>
@@ -284,7 +284,7 @@ export default function BenefitsPage() {
                     </li>
                     <li className="flex items-center space-x-2">
                       <span className="text-green-500">✓</span>
-                      <span>Math, English & Spanish</span>
+                      <span>Math, English, Science, Spanish & More</span>
                     </li>
                   </ul>
                 </CardContent>
