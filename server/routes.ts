@@ -439,6 +439,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Usage tracking endpoint
+  app.post('/api/usage/log', async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const { minutesUsed, sessionStart, sessionEnd, sessionId } = req.body;
+      const userId = (req.user as any).id;
+
+      if (!minutesUsed || minutesUsed <= 0) {
+        return res.status(400).json({ message: "Invalid minutes used" });
+      }
+
+      // Log the usage
+      await storage.createUsageLog(userId, minutesUsed, 'voice', sessionId);
+
+      // Update user's voice usage counter
+      await storage.updateUserVoiceUsage(userId, minutesUsed);
+
+      res.json({ success: true, minutesUsed });
+    } catch (error: any) {
+      console.error('[Usage Log] Error:', error);
+      res.status(500).json({ message: "Error logging usage: " + error.message });
+    }
+  });
+
   // Admin routes
   app.get("/api/admin/users", async (req, res) => {
     if (!req.isAuthenticated()) {
