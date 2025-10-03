@@ -69,7 +69,9 @@ export class ElevenLabsClient {
       throw new Error(`Failed to upload document: ${response.status} - ${error}`);
     }
 
-    return await response.json(); // Returns { id: "doc_xyz123" }
+    const result = await response.json();
+    // ElevenLabs returns { document_id: "..." } not { id: "..." }
+    return { id: result.document_id || result.id };
   }
 
   // Update agent to include knowledge base documents

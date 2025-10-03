@@ -30,25 +30,35 @@ export default function ConvaiHost({
   const [ready, setReady] = useState(false);
   const perf = usePerformanceMonitor(agentId);
 
-  // Load embed script once
+  // Load embed script once and wait for custom element definition
   useEffect(() => {
     console.log("[ConvAI Debug] Starting script load...");
     const existing = document.querySelector('script[data-elevenlabs-convai]');
+    
+    const waitForElement = async () => {
+      // Wait for custom element to be fully defined
+      if (typeof customElements !== 'undefined') {
+        await customElements.whenDefined('elevenlabs-convai');
+        console.log("[ConvAI Debug] ✅ Custom element 'elevenlabs-convai' is defined");
+        setReady(true);
+        perf.markScriptLoaded();
+      }
+    };
+    
     if (existing) {
-      console.log("[ConvAI Debug] Script already exists, marking ready");
-      setReady(true);
-      perf.markScriptLoaded();
+      console.log("[ConvAI Debug] Script already exists, waiting for element definition");
+      waitForElement();
       return;
     }
+    
     const s = document.createElement("script");
     s.src = "https://unpkg.com/@elevenlabs/convai-widget-embed";
     s.async = true;
     s.type = "text/javascript";
     s.setAttribute("data-elevenlabs-convai", "1");
     s.onload = () => {
-      console.log("[ConvAI Debug] ✅ Script loaded successfully");
-      setReady(true);
-      perf.markScriptLoaded();
+      console.log("[ConvAI Debug] ✅ Script loaded, waiting for custom element");
+      waitForElement();
     };
     s.onerror = (err) => {
       console.error("[ConvAI Debug] ❌ Failed to load script:", err);
@@ -92,19 +102,23 @@ export default function ConvaiHost({
 
     // Add event listeners for performance monitoring and debugging
     el.addEventListener("message", (e: any) => {
-      const messageData = e.detail;
-      console.log("[ConvAI Debug] 📩 Message received:", messageData);
+      // Normalize ElevenLabs payload structure (they emit nested e.detail.message or flat e.detail)
+      const detail = e.detail?.message ?? e.detail;
+      console.log("[ConvAI Debug] 📩 Message received:", detail);
+      
+      // Extract message content (could be 'text', 'transcript', or 'response')
+      const messageText = detail?.text ?? detail?.transcript ?? detail?.response;
       
       // Handle different message types
-      switch (messageData?.type) {
+      switch (detail?.type) {
         case 'user_transcript':
           // User finished speaking
-          console.log("[ConvAI Debug] 🗣️ User transcript:", messageData.transcript);
+          console.log("[ConvAI Debug] 🗣️ User transcript:", messageText);
           perf.incrementTurn();
-          if (messageData.transcript) {
+          if (messageText) {
             onMessage?.({
               type: 'user',
-              content: messageData.transcript,
+              content: messageText,
               timestamp: new Date()
             });
           }
@@ -112,12 +126,12 @@ export default function ConvaiHost({
           
         case 'agent_response':
           // Agent sent a complete message
-          console.log("[ConvAI Debug] 🤖 Agent response:", messageData.response);
+          console.log("[ConvAI Debug] 🤖 Agent response:", messageText);
           perf.incrementTurn();
-          if (messageData.response) {
+          if (messageText) {
             onMessage?.({
               type: 'agent',
-              content: messageData.response,
+              content: messageText,
               timestamp: new Date()
             });
           }
@@ -125,8 +139,8 @@ export default function ConvaiHost({
           
         case 'connection':
           // Connection status changed
-          console.log("[ConvAI Debug] 🔌 Connection:", messageData.status);
-          const isConnected = messageData.status === 'connected';
+          console.log("[ConvAI Debug] 🔌 Connection:", detail.status);
+          const isConnected = detail.status === 'connected';
           onConnectionStatus?.(isConnected);
           if (isConnected) {
             perf.markFirstInteraction();
@@ -139,18 +153,18 @@ export default function ConvaiHost({
           break;
           
         case 'error':
-          console.error("[ConvAI Debug] ❌ Error:", messageData);
+          console.error("[ConvAI Debug] ❌ Error:", detail);
           perf.incrementError();
           onMessage?.({
             type: 'system',
-            content: `❌ Error: ${messageData.message || 'Connection error'}`,
+            content: `❌ Error: ${detail.message || 'Connection error'}`,
             timestamp: new Date()
           });
           break;
           
         default:
           // Log unknown message types for debugging
-          console.log("[ConvAI Debug] Unknown message type:", messageData?.type, messageData);
+          console.log("[ConvAI Debug] Unknown message type:", detail?.type, detail);
       }
     });
 
