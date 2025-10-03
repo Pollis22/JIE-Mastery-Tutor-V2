@@ -227,7 +227,7 @@ export default function SubscribePage() {
 
                 <div className="bg-secondary/5 rounded-lg p-4">
                   <p className="text-sm text-secondary-foreground">
-                    <strong>7-day free trial</strong> - Cancel anytime during your trial period with no charges.
+                    Cancel your subscription anytime with no long-term commitment.
                   </p>
                 </div>
               </CardContent>

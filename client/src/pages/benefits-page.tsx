@@ -228,7 +228,7 @@ export default function BenefitsPage() {
                 <Card className="shadow-lg">
                   <CardContent className="p-6">
                     <div className="space-y-4">
-                      <h3 className="text-2xl font-bold text-foreground text-center">Start Your Free Trial</h3>
+                      <h3 className="text-2xl font-bold text-foreground text-center">Get Started</h3>
                       <p className="text-muted-foreground text-center">
                         Experience the difference AI tutoring makes. Sign up now and get access to all features.
                       </p>
@@ -236,12 +236,12 @@ export default function BenefitsPage() {
                         size="lg" 
                         className="w-full text-lg"
                         onClick={() => setLocation("/auth")}
-                        data-testid="button-start-trial"
+                        data-testid="button-get-started"
                       >
                         Create Your Account
                       </Button>
                       <p className="text-xs text-center text-muted-foreground">
-                        No credit card required for trial. Cancel anytime.
+                        Choose your plan and start learning today.
                       </p>
                     </div>
                   </CardContent>
@@ -345,7 +345,7 @@ export default function BenefitsPage() {
                 className="text-lg px-8 py-6"
                 data-testid="button-signup-cta"
               >
-                Get Started Free
+                Get Started
               </Button>
               <Button 
                 size="lg" 
