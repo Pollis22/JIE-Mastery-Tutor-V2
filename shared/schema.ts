@@ -40,6 +40,7 @@ export const users = pgTable("users", {
   subscriptionStatus: text("subscription_status").$type<'active' | 'canceled' | 'paused'>(),
   monthlyVoiceMinutes: integer("monthly_voice_minutes").default(60), // Monthly allowance
   monthlyVoiceMinutesUsed: integer("monthly_voice_minutes_used").default(0), // Usage counter
+  bonusMinutes: integer("bonus_minutes").default(0), // Minutes purchased as top-ups
   monthlyResetDate: timestamp("monthly_reset_date").defaultNow(), // Next reset date
   weeklyVoiceMinutesUsed: integer("weekly_voice_minutes_used").default(0), // Keep for backward compatibility
   weeklyResetDate: timestamp("weekly_reset_date").defaultNow(), // Keep for backward compatibility

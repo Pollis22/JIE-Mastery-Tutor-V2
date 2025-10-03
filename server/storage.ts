@@ -5,6 +5,7 @@ import {
   userProgress,
   learningSessions,
   quizAttempts,
+  usageLogs,
   userDocuments,
   documentChunks,
   documentEmbeddings,
@@ -55,6 +56,9 @@ export interface IStorage {
   updateUserVoiceUsage(userId: string, minutesUsed: number): Promise<void>;
   resetUserVoiceUsage(userId: string): Promise<void>;
   canUserUseVoice(userId: string): Promise<boolean>;
+  getAvailableMinutes(userId: string): Promise<{ total: number; used: number; remaining: number; bonusMinutes: number }>;
+  addBonusMinutes(userId: string, minutes: number): Promise<User>;
+  createUsageLog(userId: string, minutesUsed: number, sessionType: 'voice' | 'text', sessionId?: string): Promise<void>;
 
   // Dashboard operations
   getUserDashboard(userId: string): Promise<any>;
@@ -317,6 +321,50 @@ export class DatabaseStorage implements IStorage {
     const monthlyUsed = user.monthlyVoiceMinutesUsed || 0;
     
     return monthlyUsed < monthlyLimit;
+  }
+
+  async getAvailableMinutes(userId: string): Promise<{ total: number; used: number; remaining: number; bonusMinutes: number }> {
+    const user = await this.getUser(userId);
+    if (!user) throw new Error("User not found");
+
+    const monthlyMinutes = user.monthlyVoiceMinutes || 60;
+    const bonusMinutes = user.bonusMinutes || 0;
+    const totalMinutes = monthlyMinutes + bonusMinutes;
+    const usedMinutes = user.monthlyVoiceMinutesUsed || 0;
+    const remainingMinutes = Math.max(0, totalMinutes - usedMinutes);
+
+    return {
+      total: totalMinutes,
+      used: usedMinutes,
+      remaining: remainingMinutes,
+      bonusMinutes: bonusMinutes,
+    };
+  }
+
+  async addBonusMinutes(userId: string, minutes: number): Promise<User> {
+    const user = await this.getUser(userId);
+    if (!user) throw new Error("User not found");
+
+    const currentBonus = user.bonusMinutes || 0;
+    const [updatedUser] = await db
+      .update(users)
+      .set({
+        bonusMinutes: currentBonus + minutes,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId))
+      .returning();
+    
+    return updatedUser;
+  }
+
+  async createUsageLog(userId: string, minutesUsed: number, sessionType: 'voice' | 'text', sessionId?: string): Promise<void> {
+    await db.insert(usageLogs).values({
+      userId,
+      minutesUsed,
+      sessionType,
+      sessionId,
+    });
   }
 
   async getUserDashboard(userId: string): Promise<any> {
