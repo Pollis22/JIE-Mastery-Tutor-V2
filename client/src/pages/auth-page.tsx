@@ -110,10 +110,10 @@ export default function AuthPage() {
       </nav>
 
       <div className="container mx-auto px-4 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 max-w-6xl mx-auto">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 max-w-6xl mx-auto items-start">
           
           {/* Auth Forms */}
-          <div className="flex items-center justify-center">
+          <div className="flex justify-center">
             <Card className="w-full max-w-md">
               <CardHeader className="text-center">
                 <div className="flex items-center justify-center mb-4">
@@ -269,7 +269,7 @@ export default function AuthPage() {
           </div>
 
           {/* Hero Section */}
-          <div className="flex items-center justify-center">
+          <div className="flex justify-center">
             <div className="text-center lg:text-left space-y-6">
               <div className="space-y-4">
                 <h1 className="text-4xl lg:text-5xl font-bold text-foreground leading-tight">
