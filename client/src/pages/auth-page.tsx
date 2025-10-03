@@ -80,6 +80,34 @@ export default function AuthPage() {
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Navigation Bar */}
+      <nav className="border-b border-border bg-card">
+        <div className="container mx-auto px-4">
+          <div className="flex items-center justify-between h-16">
+            <div className="flex items-center space-x-3">
+              <img src={jieLogo} alt="JIE Mastery" className="h-10 w-auto" />
+              <span className="text-xl font-bold text-foreground">JIE Mastery Tutor</span>
+            </div>
+            <div className="flex items-center space-x-4">
+              <Button 
+                variant="ghost" 
+                onClick={() => setLocation("/benefits")} 
+                data-testid="button-nav-benefits"
+              >
+                Why JIE Mastery AI Tutors
+              </Button>
+              <Button 
+                variant="ghost" 
+                onClick={() => setLocation("/pricing")} 
+                data-testid="button-nav-pricing"
+              >
+                Pricing
+              </Button>
+            </div>
+          </div>
+        </div>
+      </nav>
+
       <div className="container mx-auto px-4 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 max-w-6xl mx-auto">
           
@@ -292,6 +320,19 @@ export default function AuthPage() {
                   <span>•</span>
                   <span>🏆 Track progress</span>
                 </div>
+              </div>
+
+              {/* CTA Button */}
+              <div className="pt-4">
+                <Button 
+                  variant="outline" 
+                  size="lg"
+                  className="w-full"
+                  onClick={() => setLocation("/benefits")}
+                  data-testid="button-why-jie"
+                >
+                  Why Choose JIE Mastery AI Tutors?
+                </Button>
               </div>
             </div>
           </div>
