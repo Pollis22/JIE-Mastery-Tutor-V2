@@ -326,25 +326,10 @@ export default function TutorPage() {
               <li><strong>Select your grade level and subject</strong> you want help with</li>
               <li><strong>Click "Start Tutoring Session"</strong> to connect with your AI tutor</li>
               <li><strong>Start speaking</strong> - the tutor will help you learn and answer your questions!</li>
+              <li><strong>You may copy and paste your homework into the message box</strong> if there is something specific you want to cover</li>
               <li><strong>View the transcript</strong> below to see your conversation in real-time</li>
             </ol>
-            <p className="text-xs text-blue-700 dark:text-blue-300 mt-3 italic">💡 Tip: The tutor provides general subject help. You can upload documents for your records using the panel below.</p>
           </div>
-
-          {/* Study Materials Panel - For user records only */}
-          {user && (
-            <div className="mb-6">
-              <div className="bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800 p-3 rounded-md mb-2">
-                <p className="text-sm text-gray-700 dark:text-gray-300">
-                  📄 <strong>Document Upload:</strong> Documents are saved for your records. The tutor provides general subject help and cannot access uploaded files.
-                </p>
-              </div>
-              <AssignmentsPanel 
-                userId={user.id}
-                onSelectionChange={() => {}}
-              />
-            </div>
-          )}
 
           {/* ConvAI Widget */}
           {mounted && (
