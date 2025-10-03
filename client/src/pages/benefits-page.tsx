@@ -3,6 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useLocation } from "wouter";
 import jieLogo from "@/assets/jie-mastery-logo.png";
 import aiTutorImage from "@assets/Create_an_image_of_an_AI_robot_tutoring_a_real_tee-1759438453563_1759521545083.png";
+import aiTutorImage2 from "@assets/Create_an_image_of_an_AI_robot_tutoring_a_real_tee-1759521647218_1759521666544.png";
 import { Clock, DollarSign, Target, Calendar, BookOpen, TrendingUp } from "lucide-react";
 
 export default function BenefitsPage() {
@@ -31,24 +32,43 @@ export default function BenefitsPage() {
       </nav>
 
       {/* Hero Section */}
-      <section className="bg-gradient-to-r from-primary to-primary/80 text-white py-20">
+      <section className="bg-gradient-to-r from-primary to-primary/80 text-white py-16">
         <div className="container mx-auto px-4">
-          <div className="max-w-4xl mx-auto text-center space-y-6">
-            <h1 className="text-5xl font-bold leading-tight" data-testid="heading-benefits">
-              Why JIE Mastery AI Tutors?
-            </h1>
-            <p className="text-2xl text-primary-foreground/90 max-w-2xl mx-auto">
-              Experience the future of personalized learning with AI-powered tutoring that adapts to your schedule, pace, and learning style.
-            </p>
-            <Button 
-              size="lg" 
-              variant="secondary"
-              onClick={() => setLocation("/auth")}
-              className="text-lg px-8 py-6"
-              data-testid="button-get-started-hero"
-            >
-              Start Learning Today
-            </Button>
+          <div className="max-w-7xl mx-auto">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+              {/* Text Content */}
+              <div className="space-y-6 text-center lg:text-left">
+                <h1 className="text-5xl font-bold leading-tight" data-testid="heading-benefits">
+                  Why JIE Mastery AI Tutors?
+                </h1>
+                <p className="text-2xl text-primary-foreground/90">
+                  Experience the future of personalized learning with AI-powered tutoring that adapts to your schedule, pace, and learning style.
+                </p>
+                <Button 
+                  size="lg" 
+                  variant="secondary"
+                  onClick={() => setLocation("/auth")}
+                  className="text-lg px-8 py-6"
+                  data-testid="button-get-started-hero"
+                >
+                  Start Learning Today
+                </Button>
+              </div>
+
+              {/* Hero Image */}
+              <div className="relative">
+                <Card className="shadow-2xl overflow-hidden border-4 border-white/20 transform hover:scale-105 transition-transform duration-300">
+                  <CardContent className="p-0">
+                    <img 
+                      src={aiTutorImage2} 
+                      alt="Student learning with AI tutor assistant" 
+                      className="w-full h-auto object-cover"
+                      data-testid="img-hero-ai-tutor"
+                    />
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
           </div>
         </div>
       </section>
