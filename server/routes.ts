@@ -411,6 +411,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Minute top-up checkout (one-time payment)
+  app.post('/api/checkout/buy-minutes', async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    if (!isStripeEnabled) {
+      return res.status(503).json({ message: "Checkout temporarily unavailable - Stripe not configured" });
+    }
+
+    try {
+      const { minutePackage } = req.body;
+      const user = req.user as any;
+
+      // Define available minute packages
+      const packages: Record<string, { price: number; minutes: number; priceId: string }> = {
+        '60': { 
+          price: 1999, // $19.99 in cents
+          minutes: 60, 
+          priceId: process.env.STRIPE_PRICE_TOPUP_60 || 'price_topup_60_placeholder'
+        }
+      };
+
+      const pkg = packages[minutePackage];
+      if (!pkg) {
+        return res.status(400).json({ message: "Invalid minute package" });
+      }
+
+      // Create or retrieve Stripe customer
+      let customerId = user.stripeCustomerId;
+      if (!customerId) {
+        const customer = await stripe!.customers.create({
+          email: user.email,
+          name: `${user.firstName} ${user.lastName}`.trim() || user.username,
+          metadata: {
+            userId: user.id,
+          },
+        });
+        customerId = customer.id;
+        await storage.updateUserStripeInfo(user.id, customerId, null);
+      }
+
+      // Create one-time payment checkout session
+      const baseUrl = `${req.protocol}://${req.get('host')}`;
+      const session = await stripe!.checkout.sessions.create({
+        customer: customerId,
+        mode: 'payment', // One-time payment, not subscription
+        line_items: [{ price: pkg.priceId, quantity: 1 }],
+        success_url: `${baseUrl}/tutor?topup=success`,
+        cancel_url: `${baseUrl}/tutor`,
+        metadata: { 
+          userId: user.id,
+          minutesToAdd: pkg.minutes.toString(),
+          type: 'minute_topup'
+        },
+      });
+
+      res.json({ url: session.url });
+    } catch (error: any) {
+      console.error('[Minute Top-up] Error:', error);
+      res.status(500).json({ message: "Error creating checkout: " + error.message });
+    }
+  });
+
   // Stripe customer portal
   app.post('/api/customer-portal', async (req, res) => {
     if (!req.isAuthenticated()) {

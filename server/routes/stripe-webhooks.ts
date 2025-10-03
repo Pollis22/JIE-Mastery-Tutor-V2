@@ -53,10 +53,28 @@ router.post(
         case 'checkout.session.completed': {
           const session = event.data.object as Stripe.Checkout.Session;
           const userId = session.metadata?.userId;
-          const plan = session.metadata?.plan;
+          const type = session.metadata?.type;
 
-          if (!userId || !plan) {
-            console.error('[Stripe Webhook] Missing metadata in checkout session');
+          if (!userId) {
+            console.error('[Stripe Webhook] Missing userId in checkout session');
+            break;
+          }
+
+          // Handle minute top-up purchases
+          if (type === 'minute_topup') {
+            const minutesToAdd = parseInt(session.metadata?.minutesToAdd || '0');
+            
+            if (minutesToAdd > 0) {
+              await storage.addBonusMinutes(userId, minutesToAdd);
+              console.log(`[Stripe Webhook] Added ${minutesToAdd} bonus minutes to user ${userId}`);
+            }
+            break;
+          }
+
+          // Handle subscription checkout
+          const plan = session.metadata?.plan;
+          if (!plan) {
+            console.error('[Stripe Webhook] Missing plan in subscription checkout');
             break;
           }
 
