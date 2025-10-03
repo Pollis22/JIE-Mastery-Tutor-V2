@@ -50,17 +50,10 @@ export default function TutorPage() {
   const [gradeText, setGradeText] = useState("");
   const [mounted, setMounted] = useState(false);
   const [lastSummary, setLastSummary] = useState(memo.lastSummary || "");
-  const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
-  const [showAssignments, setShowAssignments] = useState(false);
-  const [wantToUploadDocs, setWantToUploadDocs] = useState<boolean | null>(null);
-  const [sessionContext, setSessionContext] = useState<any>(null);
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [profileDrawerOpen, setProfileDrawerOpen] = useState(false);
   const [editingStudentId, setEditingStudentId] = useState<string | undefined>();
-  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [summaryModalOpen, setSummaryModalOpen] = useState(false);
-  const [dynamicAgentId, setDynamicAgentId] = useState<string | null>(null);
-  const [dynamicConversationId, setDynamicConversationId] = useState<string | null>(null);
   const [transcriptMessages, setTranscriptMessages] = useState<ConvaiMessage[]>([]);
   const [isTranscriptConnected, setIsTranscriptConnected] = useState(false);
 
@@ -126,67 +119,17 @@ export default function TutorPage() {
       updatedAt: new Date().toISOString(),
     });
 
-    // Map level to gradeBand for API
-    const gradeBandMap: Record<string, string> = {
-      'k2': 'K-2',
-      'g3_5': '3-5',
-      'g6_8': '6-8',
-      'g9_12': '9-12',
-      'college': 'College/Adult'
-    };
-    const gradeBand = gradeBandMap[level];
-
-    try {
-      // Create dynamic agent session with documents
-      toast({
-        title: "Creating your session...",
-        description: "Setting up your personalized tutor with your materials",
-      });
-
-      const sessionRes = await apiRequest('POST', '/api/session/create', {
-        studentId: selectedStudentId || undefined,
-        studentName: studentName.trim(),
-        gradeBand,
-        subject,
-        documentIds: selectedDocuments
-      });
-      const sessionData = await sessionRes.json();
-      
-      console.log('[TutorPage] Session response received:', sessionData);
-      console.log('[TutorPage] Dynamic agent created:', {
-        sessionId: sessionData.sessionId,
-        agentId: sessionData.agentId,
-        documentCount: selectedDocuments.length
-      });
-
-      if (!sessionData.agentId) {
-        console.error('[TutorPage] No agent ID in response!', sessionData);
-        throw new Error('No agent ID returned from session creation');
-      }
-
-      setCurrentSessionId(sessionData.sessionId);
-      setDynamicAgentId(sessionData.agentId);
-      setDynamicConversationId(sessionData.conversationId);
-      setMounted(true);
-      
-      console.log('[TutorPage] State updated:', {
-        dynamicAgentId: sessionData.agentId,
-        mounted: true
-      });
-
-      toast({
-        title: "Ready to learn!",
-        description: `Your ${gradeBand} ${subject} tutor is ready with your ${selectedDocuments.length} uploaded materials.`,
-      });
-
-    } catch (error: any) {
-      console.error('Failed to create session agent:', error);
-      toast({
-        title: "Failed to start session",
-        description: error.message || "Unable to create your personalized tutor. Please try again.",
-        variant: "destructive",
-      });
-    }
+    // Reset transcript and connection state for fresh session
+    setTranscriptMessages([]);
+    setIsTranscriptConnected(false);
+    
+    // Simple static agent connection - no dynamic session creation
+    setMounted(true);
+    
+    toast({
+      title: "Connected!",
+      description: `Your ${level} ${subject} tutor is ready to help.`,
+    });
 
     // Analytics
     if (typeof window !== 'undefined' && (window as any).gtag) {
@@ -194,34 +137,22 @@ export default function TutorPage() {
         event_category: 'tutoring',
         custom_parameter_1: level,
         custom_parameter_2: subject,
-        custom_parameter_3: studentName || selectedStudent?.name || 'anonymous',
-        custom_parameter_4: selectedDocuments.length
+        custom_parameter_3: studentName || selectedStudent?.name || 'anonymous'
       });
     }
   };
 
   const switchAgent = () => {
+    // Reset transcript for new agent
+    setTranscriptMessages([]);
+    setIsTranscriptConnected(false);
+    // Remount widget
     setMounted(false);
     setTimeout(() => setMounted(true), 100);
   };
 
   const stop = async () => {
     setMounted(false);
-    
-    // Cleanup dynamic agent session
-    if (currentSessionId) {
-      try {
-        await apiRequest('POST', `/api/session/${currentSessionId}/end`, {});
-        console.log('[TutorPage] Session ended and cleaned up');
-      } catch (error) {
-        console.error('Failed to cleanup session:', error);
-      }
-    }
-    
-    // Reset session state
-    setCurrentSessionId(null);
-    setDynamicAgentId(null);
-    setDynamicConversationId(null);
     setTranscriptMessages([]);
     setIsTranscriptConnected(false);
     
@@ -238,9 +169,8 @@ export default function TutorPage() {
     }
   };
 
-  // Use dynamic agent ID if available, otherwise fall back to static agent
-  const staticAgentId = AGENTS[level as keyof typeof AGENTS];
-  const agentId = dynamicAgentId || staticAgentId;
+  // Use static agent ID based on selected level
+  const agentId = AGENTS[level as keyof typeof AGENTS];
   
   const levelGreetings = GREETINGS[level as keyof typeof GREETINGS];
   const greetingPreview = (levelGreetings as any)?.[subject] || 
@@ -359,18 +289,12 @@ export default function TutorPage() {
             <button 
               id="start-btn" 
               onClick={startTutor} 
-              disabled={!scriptReady || !studentName.trim() || wantToUploadDocs === null}
+              disabled={!scriptReady || !studentName.trim()}
               className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary"
               data-testid="button-start-tutor"
-              title={
-                !studentName.trim() 
-                  ? "Please enter student name to connect" 
-                  : wantToUploadDocs === null 
-                  ? "Please choose whether to upload documents" 
-                  : ""
-              }
+              title={!studentName.trim() ? "Please enter student name to connect" : ""}
             >
-              Connect to Tutor
+              Start Tutoring Session
             </button>
             
             <button 
@@ -394,80 +318,39 @@ export default function TutorPage() {
             </button>
           </div>
 
-          {/* Document Upload Choice */}
-          <div className="bg-yellow-50 dark:bg-yellow-900/20 border-2 border-yellow-400 dark:border-yellow-600 p-4 rounded-md">
-            <h3 className="font-semibold text-yellow-900 dark:text-yellow-100 mb-3">📄 Do you want to upload study materials?</h3>
-            <div className="flex gap-6 items-center">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input 
-                  type="radio" 
-                  name="upload-choice"
-                  checked={wantToUploadDocs === true}
-                  onChange={() => {
-                    setWantToUploadDocs(true);
-                    setShowAssignments(true);
-                  }}
-                  className="w-4 h-4 text-primary focus:ring-2 focus:ring-primary"
-                  data-testid="radio-upload-yes"
-                />
-                <span className="text-sm font-medium text-yellow-900 dark:text-yellow-100">
-                  Yes - I want to upload homework, notes, or assignments
-                </span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input 
-                  type="radio" 
-                  name="upload-choice"
-                  checked={wantToUploadDocs === false}
-                  onChange={() => {
-                    setWantToUploadDocs(false);
-                    setShowAssignments(false);
-                    setSelectedDocuments([]);
-                  }}
-                  className="w-4 h-4 text-primary focus:ring-2 focus:ring-primary"
-                  data-testid="radio-upload-no"
-                />
-                <span className="text-sm font-medium text-yellow-900 dark:text-yellow-100">
-                  No - Connect directly without uploading
-                </span>
-              </label>
-            </div>
-            {wantToUploadDocs === null && (
-              <p className="text-xs text-yellow-700 dark:text-yellow-300 mt-2 font-semibold">
-                ⚠️ Please make a selection before connecting to the tutor
-              </p>
-            )}
-          </div>
-
           {/* Getting Started Instructions */}
           <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-4 rounded-md">
             <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-2">📚 How to Use JIE Mastery Tutor</h3>
             <ol className="text-sm text-blue-800 dark:text-blue-200 space-y-1.5 list-decimal list-inside">
               <li><strong>Enter your name</strong> above (required for a personalized experience)</li>
               <li><strong>Select your grade level and subject</strong> you want help with</li>
-              <li><strong>Choose document upload</strong> - Select "Yes" if you want to upload homework/notes, or "No" to connect directly</li>
-              <li><strong>Upload materials</strong> (if you selected Yes) - Add your homework, notes, or assignments and check the "Use" box for documents you want referenced</li>
-              <li><strong>Click "Connect to Tutor"</strong> to start your personalized learning session</li>
-              <li><strong>Ask questions</strong> about your materials or the subject - the tutor will help you understand!</li>
+              <li><strong>Click "Start Tutoring Session"</strong> to connect with your AI tutor</li>
+              <li><strong>Start speaking</strong> - the tutor will help you learn and answer your questions!</li>
+              <li><strong>View the transcript</strong> below to see your conversation in real-time</li>
             </ol>
-            <p className="text-xs text-blue-700 dark:text-blue-300 mt-3 italic">💡 Tip: Uploading documents before connecting provides the best personalized tutoring experience</p>
+            <p className="text-xs text-blue-700 dark:text-blue-300 mt-3 italic">💡 Tip: The tutor provides general subject help. You can upload documents for your records using the panel below.</p>
           </div>
 
-          {/* Study Materials Panel (shown only if user wants to upload) */}
-          {wantToUploadDocs === true && user && (
+          {/* Study Materials Panel - For user records only */}
+          {user && (
             <div className="mb-6">
+              <div className="bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800 p-3 rounded-md mb-2">
+                <p className="text-sm text-gray-700 dark:text-gray-300">
+                  📄 <strong>Document Upload:</strong> Documents are saved for your records. The tutor provides general subject help and cannot access uploaded files.
+                </p>
+              </div>
               <AssignmentsPanel 
                 userId={user.id}
-                onSelectionChange={setSelectedDocuments}
+                onSelectionChange={() => {}}
               />
             </div>
           )}
 
           {/* ConvAI Widget */}
-          {mounted && dynamicAgentId && (
+          {mounted && (
             <div className="mt-6 space-y-4">
               <ConvaiHost
-                agentId={dynamicAgentId}
+                agentId={agentId}
                 onMessage={(message) => {
                   setTranscriptMessages(prev => [...prev, message]);
                 }}
@@ -504,25 +387,13 @@ export default function TutorPage() {
         {/* Session Summary Modal */}
         <SessionSummaryModal
           open={summaryModalOpen}
-          onOpenChange={async (open) => {
-            // If closing without saving, still end the session
-            if (!open && currentSessionId) {
-              try {
-                await apiRequest('PUT', `/api/sessions/${currentSessionId}`, {
-                  endedAt: new Date().toISOString(),
-                });
-                queryClient.invalidateQueries({ queryKey: ['/api/students', selectedStudentId] });
-              } catch (error) {
-                console.error('Failed to end session:', error);
-              }
-              setCurrentSessionId(null);
-            }
+          onOpenChange={(open) => {
             setSummaryModalOpen(open);
           }}
-          sessionId={currentSessionId || undefined}
+          sessionId={undefined}
           studentName={selectedStudent?.name}
           onSaved={() => {
-            setCurrentSessionId(null);
+            // No session cleanup needed with static agents
           }}
         />
       </TutorErrorBoundary>
