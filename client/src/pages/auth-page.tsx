@@ -5,10 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { useEffect } from "react";
 import jieLogo from "@/assets/jie-mastery-logo.png";
 import authHeroImage from "@assets/Create_an_image_of_an_AI_robot_tutoring_a_real_tee-1759437278109_1759521800759.png";
@@ -21,9 +23,19 @@ const loginSchema = z.object({
 const registerSchema = z.object({
   username: z.string().min(3, "Username must be at least 3 characters"),
   email: z.string().email("Please enter a valid email"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
   firstName: z.string().optional(),
   lastName: z.string().optional(),
+  parentName: z.string().min(1, "Parent/Guardian name is required"),
+  studentName: z.string().min(1, "Student name is required"),
+  studentAge: z.coerce.number().min(5, "Student must be at least 5 years old").max(99, "Please enter a valid age"),
+  gradeLevel: z.enum(['kindergarten-2', 'grades-3-5', 'grades-6-8', 'grades-9-12', 'college-adult'], {
+    required_error: "Please select a grade level"
+  }),
+  primarySubject: z.enum(['math', 'english', 'science', 'spanish', 'general'], {
+    required_error: "Please select a primary subject"
+  }),
+  marketingOptIn: z.boolean().default(false),
 });
 
 type LoginForm = z.infer<typeof loginSchema>;
@@ -49,6 +61,12 @@ export default function AuthPage() {
       password: "",
       firstName: "",
       lastName: "",
+      parentName: "",
+      studentName: "",
+      studentAge: 10,
+      gradeLevel: undefined,
+      primarySubject: undefined,
+      marketingOptIn: false,
     },
   });
 
@@ -180,15 +198,43 @@ export default function AuthPage() {
                   <TabsContent value="register" className="space-y-4">
                     <Form {...registerForm}>
                       <form onSubmit={registerForm.handleSubmit(handleRegister)} className="space-y-4">
+                        <FormField
+                          control={registerForm.control}
+                          name="parentName"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Parent/Guardian Name</FormLabel>
+                              <FormControl>
+                                <Input {...field} placeholder="Your full name" data-testid="input-parent-name" />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        
+                        <FormField
+                          control={registerForm.control}
+                          name="studentName"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Student Name</FormLabel>
+                              <FormControl>
+                                <Input {...field} placeholder="Student's full name" data-testid="input-student-name" />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        
                         <div className="grid grid-cols-2 gap-4">
                           <FormField
                             control={registerForm.control}
-                            name="firstName"
+                            name="studentAge"
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel>First Name</FormLabel>
+                                <FormLabel>Student Age</FormLabel>
                                 <FormControl>
-                                  <Input {...field} data-testid="input-firstname" />
+                                  <Input type="number" min={5} max={99} {...field} data-testid="input-student-age" />
                                 </FormControl>
                                 <FormMessage />
                               </FormItem>
@@ -197,18 +243,54 @@ export default function AuthPage() {
                           
                           <FormField
                             control={registerForm.control}
-                            name="lastName"
+                            name="gradeLevel"
                             render={({ field }) => (
                               <FormItem>
-                                <FormLabel>Last Name</FormLabel>
-                                <FormControl>
-                                  <Input {...field} data-testid="input-lastname" />
-                                </FormControl>
+                                <FormLabel>Grade Level</FormLabel>
+                                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                  <FormControl>
+                                    <SelectTrigger data-testid="select-grade-level">
+                                      <SelectValue placeholder="Select grade" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    <SelectItem value="kindergarten-2">K-2</SelectItem>
+                                    <SelectItem value="grades-3-5">Grades 3-5</SelectItem>
+                                    <SelectItem value="grades-6-8">Grades 6-8</SelectItem>
+                                    <SelectItem value="grades-9-12">Grades 9-12</SelectItem>
+                                    <SelectItem value="college-adult">College/Adult</SelectItem>
+                                  </SelectContent>
+                                </Select>
                                 <FormMessage />
                               </FormItem>
                             )}
                           />
                         </div>
+                        
+                        <FormField
+                          control={registerForm.control}
+                          name="primarySubject"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Primary Subject Interest</FormLabel>
+                              <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                <FormControl>
+                                  <SelectTrigger data-testid="select-primary-subject">
+                                    <SelectValue placeholder="Select a subject" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  <SelectItem value="math">Math</SelectItem>
+                                  <SelectItem value="english">English</SelectItem>
+                                  <SelectItem value="science">Science</SelectItem>
+                                  <SelectItem value="spanish">Spanish</SelectItem>
+                                  <SelectItem value="general">General (Multiple Subjects)</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
                         
                         <FormField
                           control={registerForm.control}
@@ -247,7 +329,29 @@ export default function AuthPage() {
                               <FormControl>
                                 <Input type="password" {...field} data-testid="input-register-password" />
                               </FormControl>
+                              <FormDescription>Must be at least 8 characters</FormDescription>
                               <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        
+                        <FormField
+                          control={registerForm.control}
+                          name="marketingOptIn"
+                          render={({ field }) => (
+                            <FormItem className="flex flex-row items-start space-x-3 space-y-0">
+                              <FormControl>
+                                <Checkbox 
+                                  checked={field.value}
+                                  onCheckedChange={field.onChange}
+                                  data-testid="checkbox-marketing-opt-in"
+                                />
+                              </FormControl>
+                              <div className="space-y-1 leading-none">
+                                <FormLabel className="text-sm font-normal">
+                                  Send me updates, tips, and promotional emails
+                                </FormLabel>
+                              </div>
                             </FormItem>
                           )}
                         />
