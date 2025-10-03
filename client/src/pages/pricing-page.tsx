@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { useAuth } from "@/hooks/use-auth";
 
 const plans = [
   {
@@ -57,9 +58,16 @@ const plans = [
 export default function PricingPage() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { user } = useAuth();
   const [loading, setLoading] = useState<string | null>(null);
 
   const handleSelectPlan = async (planId: string) => {
+    // If user is not logged in, redirect to auth page
+    if (!user) {
+      setLocation("/auth");
+      return;
+    }
+
     setLoading(planId);
     try {
       const response = await apiRequest('POST', '/api/create-checkout-session', {
