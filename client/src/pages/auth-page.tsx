@@ -11,6 +11,7 @@ import { z } from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useEffect } from "react";
 import jieLogo from "@/assets/jie-mastery-logo.png";
+import authHeroImage from "@assets/Create_an_image_of_an_AI_robot_tutoring_a_real_tee-1759437278109_1759521800759.png";
 
 const loginSchema = z.object({
   email: z.string().min(1, "Email or username is required"),
@@ -278,6 +279,18 @@ export default function AuthPage() {
                   Experience personalized AI tutoring for Math, English, Science, Spanish and More with interactive voice conversations and adaptive learning paths.
                 </p>
               </div>
+
+              {/* Featured Image */}
+              <Card className="shadow-2xl overflow-hidden border-2 border-primary/20 transform hover:scale-105 transition-transform duration-300">
+                <CardContent className="p-0">
+                  <img 
+                    src={authHeroImage} 
+                    alt="AI tutor helping student with personalized learning" 
+                    className="w-full h-auto object-cover"
+                    data-testid="img-auth-hero"
+                  />
+                </CardContent>
+              </Card>
 
               <div className="space-y-4">
                 <div className="flex items-center space-x-3">
