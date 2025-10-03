@@ -126,7 +126,15 @@ export class SessionAgentService {
       // 3. Create agent
       const agentName = `${studentName} - ${gradeBand} - ${subject}`;
       const agentPrompt = this.buildAgentPrompt(studentName, gradeBand, subject);
-      const firstMessage = `Hi ${studentName}! I'm your ${gradeBand} ${subject} tutor. I've reviewed your materials and I'm ready to help you learn. What would you like to work on today?`;
+      
+      // Build personalized first greeting
+      let firstMessage = `Hi ${studentName}! I'm your ${gradeBand} ${subject} tutor. `;
+      if (uploadedDocIds.length > 0) {
+        const docCount = uploadedDocIds.length;
+        const docText = docCount === 1 ? 'document' : 'documents';
+        firstMessage += `I've reviewed your ${docCount} ${docText} and I'm ready to help you learn. `;
+      }
+      firstMessage += `What would you like to work on today?`;
       
       const agentResult = await elevenlabs.createAgent({
         name: agentName,
