@@ -75,6 +75,10 @@ export default function TutorPage() {
     bonusMinutes: number;
   }>({
     queryKey: ['/api/session/check-availability'],
+    queryFn: async () => {
+      const response = await apiRequest('POST', '/api/session/check-availability', {});
+      return response.json();
+    },
     enabled: !!user,
     refetchInterval: 30000, // Refresh every 30 seconds
   });
