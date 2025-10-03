@@ -30,6 +30,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(setupCORS);
   app.use(setupSecurityHeaders);
   
+  // Stripe webhooks must be registered BEFORE body parsing middleware
+  // because they need raw body for signature verification
+  const stripeWebhookRoutes = await import('./routes/stripe-webhooks');
+  app.use('/api/stripe', stripeWebhookRoutes.default);
+  
   // Health check endpoint
   app.get("/api/health", (req, res) => {
     const testMode = process.env.VOICE_TEST_MODE !== '0';
@@ -337,6 +342,72 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error: any) {
       return res.status(400).send({ error: { message: error.message } });
+    }
+  });
+
+  // Stripe checkout session (new subscription flow)
+  app.post('/api/create-checkout-session', async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.sendStatus(401);
+    }
+
+    if (!isStripeEnabled || !stripe) {
+      return res.status(503).json({ message: "Checkout service temporarily unavailable - Stripe not configured" });
+    }
+
+    const user = req.user as any;
+    const { plan } = req.body;
+
+    // Map plan IDs to Stripe price IDs
+    const priceMap: Record<string, string> = {
+      'starter': process.env.STRIPE_PRICE_STARTER || '',
+      'standard': process.env.STRIPE_PRICE_STANDARD || '',
+      'pro': process.env.STRIPE_PRICE_PRO || '',
+    };
+
+    const priceId = priceMap[plan];
+
+    if (!priceId) {
+      return res.status(400).json({ message: `Invalid plan: ${plan}` });
+    }
+
+    try {
+      // Create or retrieve Stripe customer
+      let customerId = user.stripeCustomerId;
+      
+      if (!customerId) {
+        const customer = await stripe.customers.create({
+          email: user.email,
+          name: `${user.firstName} ${user.lastName}`.trim() || user.username,
+          metadata: {
+            userId: user.id,
+          },
+        });
+        customerId = customer.id;
+        await storage.updateUserStripeInfo(user.id, customerId, null);
+      }
+
+      // Create checkout session
+      const baseUrl = `${req.protocol}://${req.get('host')}`;
+      const session = await stripe.checkout.sessions.create({
+        customer: customerId,
+        mode: 'subscription',
+        line_items: [{
+          price: priceId,
+          quantity: 1,
+        }],
+        success_url: `${baseUrl}/dashboard?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${baseUrl}/pricing`,
+        metadata: {
+          userId: user.id,
+          plan,
+        },
+      });
+
+      res.json({ url: session.url });
+    } catch (error: any) {
+      console.error('[Stripe Checkout] Error:', error);
+      res.status(500).json({ message: "Error creating checkout session: " + error.message });
     }
   });
 

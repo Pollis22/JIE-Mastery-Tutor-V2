@@ -47,11 +47,13 @@ export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
+  getUserByStripeCustomerId(customerId: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUserSettings(userId: string, settings: Partial<User>): Promise<User>;
   updateUserStripeInfo(userId: string, customerId: string, subscriptionId?: string | null): Promise<User>;
-  updateUserSubscription(userId: string, plan: 'single' | 'all', status: 'active' | 'canceled' | 'paused'): Promise<User>;
+  updateUserSubscription(userId: string, plan: 'starter' | 'standard' | 'pro' | 'single' | 'all', status: 'active' | 'canceled' | 'paused', monthlyMinutes?: number): Promise<User>;
   updateUserVoiceUsage(userId: string, minutesUsed: number): Promise<void>;
+  resetUserVoiceUsage(userId: string): Promise<void>;
   canUserUseVoice(userId: string): Promise<boolean>;
 
   // Dashboard operations
@@ -193,6 +195,11 @@ export class DatabaseStorage implements IStorage {
     return user || undefined;
   }
 
+  async getUserByStripeCustomerId(customerId: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.stripeCustomerId, customerId));
+    return user || undefined;
+  }
+
   async createUser(insertUser: InsertUser): Promise<User> {
     const [user] = await db
       .insert(users)
@@ -223,34 +230,58 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  async updateUserSubscription(userId: string, plan: 'single' | 'all', status: 'active' | 'canceled' | 'paused'): Promise<User> {
+  async updateUserSubscription(userId: string, plan: 'starter' | 'standard' | 'pro' | 'single' | 'all', status: 'active' | 'canceled' | 'paused', monthlyMinutes?: number): Promise<User> {
+    const updateData: any = {
+      subscriptionPlan: plan,
+      subscriptionStatus: status,
+      updatedAt: new Date(),
+    };
+
+    // Set monthly allowance if provided
+    if (monthlyMinutes !== undefined) {
+      updateData.monthlyVoiceMinutes = monthlyMinutes;
+    }
+
     const [user] = await db
       .update(users)
-      .set({
-        subscriptionPlan: plan,
-        subscriptionStatus: status,
-        updatedAt: new Date(),
-      })
+      .set(updateData)
       .where(eq(users.id, userId))
       .returning();
     return user;
+  }
+
+  async resetUserVoiceUsage(userId: string): Promise<void> {
+    // Reset monthly usage counter and set next reset date to 30 days from now
+    const nextResetDate = new Date();
+    nextResetDate.setDate(nextResetDate.getDate() + 30);
+
+    await db
+      .update(users)
+      .set({
+        monthlyVoiceMinutesUsed: 0,
+        monthlyResetDate: nextResetDate,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId));
   }
 
   async updateUserVoiceUsage(userId: string, minutesUsed: number): Promise<void> {
     const user = await this.getUser(userId);
     if (!user) throw new Error("User not found");
 
-    // Check if we need to reset weekly usage
+    // Check if we need to reset monthly usage based on reset date
     const now = new Date();
-    const weeksSinceReset = Math.floor((now.getTime() - new Date(user.weeklyResetDate!).getTime()) / (7 * 24 * 60 * 60 * 1000));
+    const resetDate = user.monthlyResetDate ? new Date(user.monthlyResetDate) : now;
     
-    if (weeksSinceReset >= 1) {
-      // Reset weekly usage
+    if (now >= resetDate) {
+      // Auto-reset if past reset date
+      await this.resetUserVoiceUsage(userId);
+      
+      // Then add the new usage
       await db
         .update(users)
         .set({
-          weeklyVoiceMinutesUsed: minutesUsed,
-          weeklyResetDate: now,
+          monthlyVoiceMinutesUsed: minutesUsed,
           updatedAt: new Date(),
         })
         .where(eq(users.id, userId));
@@ -259,7 +290,7 @@ export class DatabaseStorage implements IStorage {
       await db
         .update(users)
         .set({
-          weeklyVoiceMinutesUsed: (user.weeklyVoiceMinutesUsed || 0) + minutesUsed,
+          monthlyVoiceMinutesUsed: (user.monthlyVoiceMinutesUsed || 0) + minutesUsed,
           updatedAt: new Date(),
         })
         .where(eq(users.id, userId));
@@ -276,8 +307,16 @@ export class DatabaseStorage implements IStorage {
     const user = await this.getUser(userId);
     if (!user) return false;
 
-    const weeklyLimit = user.subscriptionPlan === 'all' ? 90 : 60;
-    return (user.weeklyVoiceMinutesUsed || 0) < weeklyLimit;
+    // Check subscription status
+    if (!user.subscriptionStatus || user.subscriptionStatus !== 'active') {
+      return false;
+    }
+
+    // Check monthly allowance vs usage
+    const monthlyLimit = user.monthlyVoiceMinutes || 60;
+    const monthlyUsed = user.monthlyVoiceMinutesUsed || 0;
+    
+    return monthlyUsed < monthlyLimit;
   }
 
   async getUserDashboard(userId: string): Promise<any> {

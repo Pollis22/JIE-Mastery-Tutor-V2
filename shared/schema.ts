@@ -36,10 +36,13 @@ export const users = pgTable("users", {
   lastName: text("last_name"),
   stripeCustomerId: text("stripe_customer_id"),
   stripeSubscriptionId: text("stripe_subscription_id"),
-  subscriptionPlan: text("subscription_plan").$type<'single' | 'all'>(),
+  subscriptionPlan: text("subscription_plan").$type<'starter' | 'standard' | 'pro' | 'single' | 'all'>(),
   subscriptionStatus: text("subscription_status").$type<'active' | 'canceled' | 'paused'>(),
-  weeklyVoiceMinutesUsed: integer("weekly_voice_minutes_used").default(0),
-  weeklyResetDate: timestamp("weekly_reset_date").defaultNow(),
+  monthlyVoiceMinutes: integer("monthly_voice_minutes").default(60), // Monthly allowance
+  monthlyVoiceMinutesUsed: integer("monthly_voice_minutes_used").default(0), // Usage counter
+  monthlyResetDate: timestamp("monthly_reset_date").defaultNow(), // Next reset date
+  weeklyVoiceMinutesUsed: integer("weekly_voice_minutes_used").default(0), // Keep for backward compatibility
+  weeklyResetDate: timestamp("weekly_reset_date").defaultNow(), // Keep for backward compatibility
   preferredLanguage: text("preferred_language").default('english'),
   voiceStyle: text("voice_style").default('cheerful'),
   speechSpeed: decimal("speech_speed").default('1.0'),
@@ -115,6 +118,17 @@ export const quizAttempts = pgTable("quiz_attempts", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Usage logs table for tracking voice minutes per session
+export const usageLogs = pgTable("usage_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  sessionId: varchar("session_id").references(() => learningSessions.id),
+  minutesUsed: integer("minutes_used").notNull(),
+  sessionType: text("session_type").$type<'voice' | 'text'>().notNull(),
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   progress: many(userProgress),
@@ -174,6 +188,17 @@ export const quizAttemptsRelations = relations(quizAttempts, ({ one }) => ({
   }),
 }));
 
+export const usageLogsRelations = relations(usageLogs, ({ one }) => ({
+  user: one(users, {
+    fields: [usageLogs.userId],
+    references: [users.id],
+  }),
+  session: one(learningSessions, {
+    fields: [usageLogs.sessionId],
+    references: [learningSessions.id],
+  }),
+}));
+
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
@@ -207,6 +232,12 @@ export const insertLearningSessionSchema = createInsertSchema(learningSessions).
 export const insertQuizAttemptSchema = createInsertSchema(quizAttempts).omit({
   id: true,
   createdAt: true,
+});
+
+export const insertUsageLogSchema = createInsertSchema(usageLogs).omit({
+  id: true,
+  createdAt: true,
+  timestamp: true,
 });
 
 // Document management tables

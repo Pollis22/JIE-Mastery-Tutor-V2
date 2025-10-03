@@ -1,13 +1,86 @@
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useLocation } from "wouter";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
+
+const plans = [
+  {
+    id: 'starter',
+    name: 'Starter',
+    price: 19,
+    minutes: 60,
+    features: [
+      '60 voice minutes per month',
+      'Math, English & Spanish tutoring',
+      'AI-powered learning',
+      'Real-time transcripts',
+      'Progress tracking'
+    ],
+    popular: false,
+  },
+  {
+    id: 'standard',
+    name: 'Standard',
+    price: 59,
+    minutes: 240,
+    features: [
+      '240 voice minutes per month',
+      'Math, English & Spanish tutoring',
+      'AI-powered learning',
+      'Real-time transcripts',
+      'Progress tracking',
+      'Priority support'
+    ],
+    popular: true,
+  },
+  {
+    id: 'pro',
+    name: 'Pro',
+    price: 99,
+    minutes: 600,
+    features: [
+      '600 voice minutes per month',
+      'Math, English & Spanish tutoring',
+      'AI-powered learning',
+      'Real-time transcripts',
+      'Progress tracking',
+      'Priority support',
+      'Custom learning paths'
+    ],
+    popular: false,
+  },
+];
 
 export default function PricingPage() {
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
+  const [loading, setLoading] = useState<string | null>(null);
 
-  const handleSelectPlan = (plan: 'single' | 'all') => {
-    setLocation(`/subscribe?plan=${plan}`);
+  const handleSelectPlan = async (planId: string) => {
+    setLoading(planId);
+    try {
+      const response = await apiRequest('POST', '/api/create-checkout-session', {
+        plan: planId,
+      });
+      
+      const data = await response.json();
+      
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        throw new Error('No checkout URL returned');
+      }
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to start checkout',
+        variant: 'destructive',
+      });
+      setLoading(null);
+    }
   };
 
   return (
@@ -79,137 +152,72 @@ export default function PricingPage() {
           </div>
 
           {/* Pricing Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-16">
-            
-            {/* Single Subject Plan */}
-            <Card className="shadow-lg relative" data-testid="card-single-plan">
-              <CardContent className="p-8">
-                <div className="mb-8">
-                  <h3 className="text-2xl font-bold text-foreground mb-2">Single Subject</h3>
-                  <p className="text-muted-foreground">Perfect for focused learning in one area</p>
-                </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-16">
+            {plans.map((plan) => (
+              <Card
+                key={plan.id}
+                className={`shadow-lg relative ${
+                  plan.popular ? 'border-2 border-primary shadow-xl' : ''
+                }`}
+                data-testid={`card-${plan.id}-plan`}
+              >
+                {plan.popular && (
+                  <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
+                    <Badge className="bg-primary text-primary-foreground px-4 py-2">Most Popular</Badge>
+                  </div>
+                )}
                 
-                <div className="mb-8">
-                  <div className="flex items-baseline">
-                    <span className="text-5xl font-bold text-foreground">$99</span>
-                    <span className="text-xl text-muted-foreground ml-2">.99/month</span>
+                <CardContent className="p-8">
+                  <div className="mb-8">
+                    <h3 className="text-2xl font-bold text-foreground mb-2">{plan.name}</h3>
+                    <p className="text-muted-foreground">
+                      {plan.id === 'starter' && 'Perfect for getting started'}
+                      {plan.id === 'standard' && 'Best value for regular learners'}
+                      {plan.id === 'pro' && 'Maximum learning time'}
+                    </p>
                   </div>
-                </div>
+                  
+                  <div className="mb-8">
+                    <div className="flex items-baseline">
+                      <span className="text-5xl font-bold text-foreground">${plan.price}</span>
+                      <span className="text-xl text-muted-foreground ml-2">/month</span>
+                    </div>
+                    <p className="text-sm text-muted-foreground mt-2">
+                      {plan.minutes} minutes of voice tutoring
+                    </p>
+                  </div>
 
-                <div className="space-y-4 mb-8">
-                  <div className="flex items-center space-x-3">
-                    <svg className="w-5 h-5 text-secondary" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
-                    </svg>
-                    <span className="text-foreground">Choose Math, English, or Spanish</span>
+                  <div className="space-y-4 mb-8">
+                    {plan.features.map((feature, idx) => (
+                      <div key={idx} className="flex items-center space-x-3" data-testid={`feature-${plan.id}-${idx}`}>
+                        <svg className="w-5 h-5 text-secondary flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
+                        </svg>
+                        <span className="text-foreground">{feature}</span>
+                      </div>
+                    ))}
                   </div>
-                  <div className="flex items-center space-x-3">
-                    <svg className="w-5 h-5 text-secondary" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
-                    </svg>
-                    <span className="text-foreground">60 minutes of voice learning/week</span>
-                  </div>
-                  <div className="flex items-center space-x-3">
-                    <svg className="w-5 h-5 text-secondary" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
-                    </svg>
-                    <span className="text-foreground">Interactive quizzes & progress tracking</span>
-                  </div>
-                  <div className="flex items-center space-x-3">
-                    <svg className="w-5 h-5 text-secondary" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
-                    </svg>
-                    <span className="text-foreground">Session transcripts & resume feature</span>
-                  </div>
-                  <div className="flex items-center space-x-3">
-                    <svg className="w-5 h-5 text-secondary" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
-                    </svg>
-                    <span className="text-foreground">Email support</span>
-                  </div>
-                </div>
 
-                <Button 
-                  className="w-full py-4 text-lg font-semibold"
-                  onClick={() => handleSelectPlan('single')}
-                  data-testid="button-select-single"
-                >
-                  Start Learning Today
-                </Button>
-              </CardContent>
-            </Card>
-
-            {/* All Subjects Plan */}
-            <Card className="shadow-xl border-2 border-secondary relative" data-testid="card-all-plan">
-              <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
-                <Badge className="bg-secondary text-secondary-foreground px-4 py-2">Most Popular</Badge>
-              </div>
-              
-              <CardContent className="p-8">
-                <div className="mb-8">
-                  <h3 className="text-2xl font-bold text-foreground mb-2">All Subjects</h3>
-                  <p className="text-muted-foreground">Complete learning package for maximum growth</p>
-                </div>
-                
-                <div className="mb-8">
-                  <div className="flex items-baseline">
-                    <span className="text-5xl font-bold text-foreground">$199</span>
-                    <span className="text-xl text-muted-foreground ml-2">/month</span>
-                  </div>
-                  <div className="mt-2">
-                    <span className="text-sm text-muted-foreground line-through">$299.97 if purchased separately</span>
-                    <Badge variant="secondary" className="ml-2">Save $100</Badge>
-                  </div>
-                </div>
-
-                <div className="space-y-4 mb-8">
-                  <div className="flex items-center space-x-3">
-                    <svg className="w-5 h-5 text-secondary" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
-                    </svg>
-                    <span className="text-foreground font-medium">Math, English, AND Spanish</span>
-                  </div>
-                  <div className="flex items-center space-x-3">
-                    <svg className="w-5 h-5 text-secondary" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
-                    </svg>
-                    <span className="text-foreground font-medium">90 minutes of voice learning/week</span>
-                  </div>
-                  <div className="flex items-center space-x-3">
-                    <svg className="w-5 h-5 text-secondary" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
-                    </svg>
-                    <span className="text-foreground">Cross-subject learning insights</span>
-                  </div>
-                  <div className="flex items-center space-x-3">
-                    <svg className="w-5 h-5 text-secondary" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
-                    </svg>
-                    <span className="text-foreground">Advanced progress analytics</span>
-                  </div>
-                  <div className="flex items-center space-x-3">
-                    <svg className="w-5 h-5 text-secondary" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
-                    </svg>
-                    <span className="text-foreground">Priority support</span>
-                  </div>
-                  <div className="flex items-center space-x-3">
-                    <svg className="w-5 h-5 text-secondary" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
-                    </svg>
-                    <span className="text-foreground">Early access to new subjects</span>
-                  </div>
-                </div>
-
-                <Button 
-                  className="w-full bg-secondary hover:bg-secondary/90 text-secondary-foreground py-4 text-lg font-semibold"
-                  onClick={() => handleSelectPlan('all')}
-                  data-testid="button-select-all"
-                >
-                  Get All Subjects Plan
-                </Button>
-              </CardContent>
-            </Card>
+                  <Button 
+                    className={`w-full py-4 text-lg font-semibold ${
+                      plan.popular ? 'bg-primary hover:bg-primary/90 text-primary-foreground' : ''
+                    }`}
+                    onClick={() => handleSelectPlan(plan.id)}
+                    disabled={loading === plan.id}
+                    data-testid={`button-select-${plan.id}`}
+                  >
+                    {loading === plan.id ? (
+                      <div className="flex items-center justify-center">
+                        <div className="animate-spin w-5 h-5 border-2 border-current border-t-transparent rounded-full mr-2" />
+                        Processing...
+                      </div>
+                    ) : (
+                      'Subscribe Now'
+                    )}
+                  </Button>
+                </CardContent>
+              </Card>
+            ))}
           </div>
 
           {/* FAQ Section */}
@@ -218,10 +226,10 @@ export default function PricingPage() {
               <h3 className="text-2xl font-bold text-foreground text-center mb-8">Frequently Asked Questions</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <h4 className="font-semibold text-foreground mb-2">How does voice learning work?</h4>
+                  <h4 className="font-semibold text-foreground mb-2">How do voice minutes work?</h4>
                   <p className="text-muted-foreground text-sm">
-                    Your AI tutor uses advanced speech recognition to have natural conversations with you, 
-                    adapting to your pace and learning style.
+                    Each plan includes a monthly allocation of voice minutes for AI tutoring sessions. 
+                    Minutes reset at the beginning of each billing cycle.
                   </p>
                 </div>
                 <div>
@@ -231,16 +239,17 @@ export default function PricingPage() {
                   </p>
                 </div>
                 <div>
-                  <h4 className="font-semibold text-foreground mb-2">What if I exceed my weekly minutes?</h4>
+                  <h4 className="font-semibold text-foreground mb-2">What if I run out of minutes?</h4>
                   <p className="text-muted-foreground text-sm">
-                    The system automatically switches to text-based learning to ensure you can continue your progress 
-                    without interruption.
+                    If you use all your monthly minutes, you can upgrade to a higher plan. 
+                    We'll notify you when you're close to your limit.
                   </p>
                 </div>
                 <div>
-                  <h4 className="font-semibold text-foreground mb-2">Is there a free trial?</h4>
+                  <h4 className="font-semibold text-foreground mb-2">Can I upgrade or downgrade?</h4>
                   <p className="text-muted-foreground text-sm">
-                    We offer a 7-day free trial so you can experience the full power of AI tutoring before committing.
+                    Yes! You can change your plan at any time through your account settings. 
+                    Changes take effect at the start of your next billing cycle.
                   </p>
                 </div>
               </div>
