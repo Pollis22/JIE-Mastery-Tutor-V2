@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useLocation } from "wouter";
 import jieLogo from "@/assets/jie-mastery-logo.png";
+import aiTutorImage from "@assets/Create_an_image_of_an_AI_robot_tutoring_a_real_tee-1759438453563_1759521545083.png";
 import { Clock, DollarSign, Target, Calendar, BookOpen, TrendingUp } from "lucide-react";
 
 export default function BenefitsPage() {
@@ -192,34 +193,40 @@ export default function BenefitsPage() {
                 </ul>
               </div>
               
-              <Card className="shadow-lg">
-                <CardContent className="p-8">
-                  <div className="space-y-6">
-                    <div className="text-center space-y-4">
-                      <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto">
-                        <svg className="w-10 h-10 text-primary" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clipRule="evenodd"/>
-                        </svg>
-                      </div>
-                      <h3 className="text-2xl font-bold text-foreground">Start Your Free Trial</h3>
-                      <p className="text-muted-foreground">
+              <div className="space-y-6">
+                <Card className="shadow-xl overflow-hidden border-2 border-primary/20">
+                  <CardContent className="p-0">
+                    <img 
+                      src={aiTutorImage} 
+                      alt="AI robot tutor helping a student with homework" 
+                      className="w-full h-auto object-cover"
+                      data-testid="img-ai-tutor-hero"
+                    />
+                  </CardContent>
+                </Card>
+                
+                <Card className="shadow-lg">
+                  <CardContent className="p-6">
+                    <div className="space-y-4">
+                      <h3 className="text-2xl font-bold text-foreground text-center">Start Your Free Trial</h3>
+                      <p className="text-muted-foreground text-center">
                         Experience the difference AI tutoring makes. Sign up now and get access to all features.
                       </p>
+                      <Button 
+                        size="lg" 
+                        className="w-full text-lg"
+                        onClick={() => setLocation("/auth")}
+                        data-testid="button-start-trial"
+                      >
+                        Create Your Account
+                      </Button>
+                      <p className="text-xs text-center text-muted-foreground">
+                        No credit card required for trial. Cancel anytime.
+                      </p>
                     </div>
-                    <Button 
-                      size="lg" 
-                      className="w-full text-lg"
-                      onClick={() => setLocation("/auth")}
-                      data-testid="button-start-trial"
-                    >
-                      Create Your Account
-                    </Button>
-                    <p className="text-xs text-center text-muted-foreground">
-                      No credit card required for trial. Cancel anytime.
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+              </div>
             </div>
           </div>
         </div>
