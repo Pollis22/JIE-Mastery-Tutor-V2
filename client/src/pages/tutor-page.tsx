@@ -8,10 +8,15 @@ import { AssignmentsPanel } from "@/components/AssignmentsPanel";
 import { StudentSwitcher } from "@/components/StudentSwitcher";
 import { StudentProfilePanel } from "@/components/StudentProfilePanel";
 import { SessionSummaryModal } from "@/components/SessionSummaryModal";
+import { TopUpModal } from "@/components/TopUpModal";
 import { AGENTS, GREETINGS, type AgentLevel } from "@/agents";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { useLocation } from "wouter";
+import { Clock, AlertCircle } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 import jieLogo from "@/assets/jie-mastery-logo.png";
 
 interface ProgressData {
@@ -41,6 +46,7 @@ const saveProgress = (data: ProgressData) => {
 export default function TutorPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
   const [scriptReady, setScriptReady] = useState(false);
 
   const memo = loadProgress();
@@ -56,6 +62,22 @@ export default function TutorPage() {
   const [summaryModalOpen, setSummaryModalOpen] = useState(false);
   const [transcriptMessages, setTranscriptMessages] = useState<ConvaiMessage[]>([]);
   const [isTranscriptConnected, setIsTranscriptConnected] = useState(false);
+  
+  // Session tracking state
+  const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
+  const [showTopUpModal, setShowTopUpModal] = useState(false);
+
+  // Fetch available minutes
+  const { data: minutesData } = useQuery<{
+    total: number;
+    used: number;
+    remaining: number;
+    bonusMinutes: number;
+  }>({
+    queryKey: ['/api/session/check-availability'],
+    enabled: !!user,
+    refetchInterval: 30000, // Refresh every 30 seconds
+  });
 
   // Fetch selected student data
   const { data: selectedStudent } = useQuery<{ id: string; name: string }>({
@@ -109,6 +131,48 @@ export default function TutorPage() {
       });
       return;
     }
+
+    // Check session availability
+    try {
+      const response = await apiRequest('POST', '/api/session/check-availability', {});
+      const availabilityData = await response.json();
+
+      if (!availabilityData.allowed) {
+        if (availabilityData.reason === 'no_subscription') {
+          toast({
+            title: "Subscription Required",
+            description: availabilityData.message,
+            variant: "destructive",
+          });
+          setLocation('/pricing');
+          return;
+        } else if (availabilityData.reason === 'no_minutes') {
+          toast({
+            title: "Out of Minutes",
+            description: availabilityData.message,
+            variant: "destructive",
+          });
+          setShowTopUpModal(true);
+          return;
+        }
+      }
+
+      // Show warning if running low on minutes
+      if (availabilityData.warningThreshold && availabilityData.remainingMinutes < 10) {
+        toast({
+          title: "Low Minutes",
+          description: `Only ${availabilityData.remainingMinutes} minutes remaining`,
+          variant: "default",
+        });
+      }
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: "Failed to check session availability. Please try again.",
+        variant: "destructive",
+      });
+      return;
+    }
     
     // Save progress
     const currentProgress = loadProgress();
@@ -122,6 +186,9 @@ export default function TutorPage() {
     // Reset transcript and connection state for fresh session
     setTranscriptMessages([]);
     setIsTranscriptConnected(false);
+    
+    // Start session tracking
+    setSessionStartTime(new Date());
     
     // Simple static agent connection - no dynamic session creation
     setMounted(true);
@@ -152,6 +219,35 @@ export default function TutorPage() {
   };
 
   const stop = async () => {
+    // Log usage if session was active
+    if (sessionStartTime) {
+      const endTime = new Date();
+      const durationMs = endTime.getTime() - sessionStartTime.getTime();
+      const minutesUsed = Math.ceil(durationMs / 60000);
+
+      if (minutesUsed > 0) {
+        try {
+          await apiRequest('POST', '/api/usage/log', {
+            minutesUsed,
+            sessionStart: sessionStartTime.toISOString(),
+            sessionEnd: endTime.toISOString(),
+          });
+          
+          // Refresh minutes data
+          queryClient.invalidateQueries({ queryKey: ['/api/session/check-availability'] });
+          
+          toast({
+            title: "Session Ended",
+            description: `${minutesUsed} minute${minutesUsed === 1 ? '' : 's'} logged`,
+          });
+        } catch (error: any) {
+          console.error('Failed to log usage:', error);
+        }
+      }
+      
+      setSessionStartTime(null);
+    }
+
     setMounted(false);
     setTranscriptMessages([]);
     setIsTranscriptConnected(false);
@@ -206,6 +302,31 @@ export default function TutorPage() {
     setProfileDrawerOpen(true);
   };
 
+  // Handle page close/refresh to log minutes
+  useEffect(() => {
+    const handleBeforeUnload = async () => {
+      if (sessionStartTime) {
+        const endTime = new Date();
+        const durationMs = endTime.getTime() - sessionStartTime.getTime();
+        const minutesUsed = Math.ceil(durationMs / 60000);
+
+        if (minutesUsed > 0) {
+          // Use sendBeacon for reliable logging during page unload
+          const data = JSON.stringify({
+            minutesUsed,
+            sessionStart: sessionStartTime.toISOString(),
+            sessionEnd: endTime.toISOString(),
+          });
+          
+          navigator.sendBeacon('/api/usage/log', data);
+        }
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [sessionStartTime]);
+
   return (
     <NetworkAwareWrapper>
       <TutorErrorBoundary>
@@ -237,6 +358,49 @@ export default function TutorPage() {
               Age-appropriate AI tutoring with voice conversation
             </p>
           </div>
+
+          {/* Usage Display */}
+          {minutesData && (
+            <Card className="shadow-sm" data-testid="card-usage-display">
+              <CardContent className="pt-6">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-5 h-5 text-primary" />
+                    <h3 className="font-semibold text-foreground">Voice Minutes</h3>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-2xl font-bold text-foreground" data-testid="text-remaining-minutes">
+                      {minutesData.remaining}
+                    </p>
+                    <p className="text-xs text-muted-foreground">of {minutesData.total} remaining</p>
+                  </div>
+                </div>
+
+                <Progress 
+                  value={(minutesData.used / minutesData.total) * 100} 
+                  className="h-2 mb-3"
+                  data-testid="progress-usage"
+                />
+
+                <div className="flex items-center justify-between text-sm">
+                  <p className="text-muted-foreground">
+                    {minutesData.used} used · {minutesData.bonusMinutes > 0 && `${minutesData.bonusMinutes} bonus`}
+                  </p>
+                  
+                  {minutesData.remaining < 10 && (
+                    <button
+                      onClick={() => setShowTopUpModal(true)}
+                      className="text-primary hover:underline font-medium flex items-center gap-1"
+                      data-testid="button-buy-more-minutes"
+                    >
+                      <AlertCircle className="w-4 h-4" />
+                      Buy More
+                    </button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Controls */}
           <div className="flex flex-wrap gap-3 items-center justify-center">
@@ -380,6 +544,13 @@ export default function TutorPage() {
           onSaved={() => {
             // No session cleanup needed with static agents
           }}
+        />
+
+        {/* Minute Top-Up Modal */}
+        <TopUpModal
+          isOpen={showTopUpModal}
+          onClose={() => setShowTopUpModal(false)}
+          remainingMinutes={minutesData?.remaining}
         />
       </TutorErrorBoundary>
     </NetworkAwareWrapper>
