@@ -8,7 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Switch } from "@/components/ui/switch";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -23,6 +24,7 @@ const settingsSchema = z.object({
   voiceStyle: z.string(),
   speechSpeed: z.string(),
   volumeLevel: z.number().min(0).max(100),
+  marketingOptIn: z.boolean(),
 });
 
 type SettingsForm = z.infer<typeof settingsSchema>;
@@ -41,6 +43,7 @@ export default function SettingsPage() {
       voiceStyle: user?.voiceStyle || "cheerful",
       speechSpeed: user?.speechSpeed || "1.0",
       volumeLevel: user?.volumeLevel || 75,
+      marketingOptIn: user?.marketingOptIn || false,
     },
   });
 
@@ -99,6 +102,7 @@ export default function SettingsPage() {
       voiceStyle: "cheerful",
       speechSpeed: "1.0",
       volumeLevel: 75,
+      marketingOptIn: user?.marketingOptIn || false,
     });
   };
 
@@ -360,6 +364,38 @@ export default function SettingsPage() {
                       )}
                     />
                   </div>
+                </CardContent>
+              </Card>
+
+              {/* Email Preferences */}
+              <Card className="shadow-sm">
+                <CardHeader>
+                  <CardTitle>Email Preferences</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <FormField
+                    control={form.control}
+                    name="marketingOptIn"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-row items-center justify-between rounded-lg border border-border p-4">
+                        <div className="space-y-0.5">
+                          <FormLabel className="text-base">
+                            Marketing Communications
+                          </FormLabel>
+                          <FormDescription>
+                            Receive updates about new features, learning tips, and special offers
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                            data-testid="switch-marketing-opt-in"
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
                 </CardContent>
               </Card>
 

@@ -655,7 +655,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const user = req.user as any;
       const updates = req.body;
 
-      const updatedUser = await storage.updateUserSettings(user.id, updates);
+      // Handle marketing preferences separately to ensure proper date tracking
+      if ('marketingOptIn' in updates) {
+        const marketingOptIn = updates.marketingOptIn;
+        delete updates.marketingOptIn;
+        
+        // Update marketing preferences with proper date tracking
+        await storage.updateUserMarketingPreferences(user.id, marketingOptIn);
+      }
+
+      // Update other settings
+      if (Object.keys(updates).length > 0) {
+        await storage.updateUserSettings(user.id, updates);
+      }
+
+      // Fetch and return updated user
+      const updatedUser = await storage.getUser(user.id);
       res.json(updatedUser);
     } catch (error: any) {
       res.status(500).json({ message: "Error updating settings: " + error.message });
