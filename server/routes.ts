@@ -63,12 +63,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Unsubscribe endpoint (public - no authentication required)
   app.post("/api/unsubscribe", async (req, res) => {
     try {
-      const { email } = req.body;
+      // Validate email format with Zod
+      const unsubscribeSchema = z.object({
+        email: z.string().email("Invalid email address"),
+      });
+
+      const validation = unsubscribeSchema.safeParse(req.body);
       
-      if (!email) {
-        return res.status(400).json({ error: "Email is required" });
+      if (!validation.success) {
+        return res.status(400).json({ error: "Invalid email address" });
       }
 
+      const { email } = validation.data;
       const user = await storage.getUserByEmail(email);
       
       if (!user) {
