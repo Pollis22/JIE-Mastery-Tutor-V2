@@ -10,6 +10,7 @@ import conversationRoutes from "./routes/conversationRoutes";
 import streamingRoutes from "./routes/streamingRoutes";
 import { debugRoutes } from "./routes/debugRoutes";
 import { setupSecurityHeaders, setupCORS } from "./middleware/security";
+import { requireAdmin } from "./middleware/admin-auth";
 import Stripe from "stripe";
 import { z } from "zod";
 
@@ -562,16 +563,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin routes
-  app.get("/api/admin/users", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
-
-    const user = req.user as any;
-    if (!user.isAdmin) {
-      return res.status(403).json({ message: "Admin access required" });
-    }
-
+  app.get("/api/admin/users", requireAdmin, async (req, res) => {
     try {
       const { page = 1, limit = 10, search = '' } = req.query;
       const users = await storage.getAdminUsers({
@@ -585,16 +577,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/admin/stats", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
-
-    const user = req.user as any;
-    if (!user.isAdmin) {
-      return res.status(403).json({ message: "Admin access required" });
-    }
-
+  app.get("/api/admin/stats", requireAdmin, async (req, res) => {
     try {
       const stats = await storage.getAdminStats();
       res.json(stats);
@@ -603,16 +586,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/admin/export", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
-
-    const user = req.user as any;
-    if (!user.isAdmin) {
-      return res.status(403).json({ message: "Admin access required" });
-    }
-
+  app.get("/api/admin/export", requireAdmin, async (req, res) => {
     try {
       const csvData = await storage.exportUsersCSV();
       res.setHeader('Content-Type', 'text/csv');
@@ -624,16 +598,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin: Add/remove bonus minutes
-  app.post("/api/admin/users/:id/minutes", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
-
-    const user = req.user as any;
-    if (!user.isAdmin) {
-      return res.status(403).json({ message: "Admin access required" });
-    }
-
+  app.post("/api/admin/users/:id/minutes", requireAdmin, async (req, res) => {
     try {
       const { id } = req.params;
       const { minutes } = req.body;
@@ -650,16 +615,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin: Get subscriptions data
-  app.get("/api/admin/subscriptions", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
-
-    const user = req.user as any;
-    if (!user.isAdmin) {
-      return res.status(403).json({ message: "Admin access required" });
-    }
-
+  app.get("/api/admin/subscriptions", requireAdmin, async (req, res) => {
     try {
       const users = await storage.getAdminUsers({ page: 1, limit: 1000, search: '' });
       const activeSubscriptions = users.filter((u: any) => u.subscriptionStatus === 'active');
@@ -670,7 +626,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return sum + (planRevenue[u.subscriptionPlan] || 0);
         }, 0),
         active: activeSubscriptions.length,
-        growth: 0, // Could calculate from historical data
+        growth: 0,
         upcomingRenewals: activeSubscriptions.length,
       };
 
@@ -681,16 +637,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin: Get documents data
-  app.get("/api/admin/documents", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
-
-    const user = req.user as any;
-    if (!user.isAdmin) {
-      return res.status(403).json({ message: "Admin access required" });
-    }
-
+  app.get("/api/admin/documents", requireAdmin, async (req, res) => {
     try {
       const documents = await storage.getAllDocumentsForAdmin();
       const analytics = {
@@ -706,16 +653,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin: Get analytics data
-  app.get("/api/admin/analytics", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
-
-    const user = req.user as any;
-    if (!user.isAdmin) {
-      return res.status(403).json({ message: "Admin access required" });
-    }
-
+  app.get("/api/admin/analytics", requireAdmin, async (req, res) => {
     try {
       const stats = await storage.getAdminStats();
       const analytics = {
