@@ -58,6 +58,7 @@ export interface IStorage {
   canUserUseVoice(userId: string): Promise<boolean>;
   getAvailableMinutes(userId: string): Promise<{ total: number; used: number; remaining: number; bonusMinutes: number }>;
   addBonusMinutes(userId: string, minutes: number): Promise<User>;
+  updateUserMarketingPreferences(userId: string, optIn: boolean): Promise<User>;
   createUsageLog(userId: string, minutesUsed: number, sessionType: 'voice' | 'text', sessionId?: string): Promise<void>;
 
   // Dashboard operations
@@ -356,6 +357,29 @@ export class DatabaseStorage implements IStorage {
       .returning();
     
     return updatedUser;
+  }
+
+  async updateUserMarketingPreferences(userId: string, optIn: boolean): Promise<User> {
+    const updateData: any = {
+      marketingOptIn: optIn,
+      updatedAt: new Date(),
+    };
+
+    // Set opt-out date if unsubscribing
+    if (!optIn) {
+      updateData.marketingOptOutDate = new Date();
+    } else {
+      // Set opt-in date if subscribing
+      updateData.marketingOptInDate = new Date();
+      updateData.marketingOptOutDate = null;
+    }
+
+    const [user] = await db
+      .update(users)
+      .set(updateData)
+      .where(eq(users.id, userId))
+      .returning();
+    return user;
   }
 
   async createUsageLog(userId: string, minutesUsed: number, sessionType: 'voice' | 'text', sessionId?: string): Promise<void> {

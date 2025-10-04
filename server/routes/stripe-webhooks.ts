@@ -1,6 +1,7 @@
 import { Router, raw } from 'express';
 import Stripe from 'stripe';
 import { storage } from '../storage';
+import { emailService } from '../services/email-service';
 
 const router = Router();
 
@@ -67,6 +68,16 @@ router.post(
             if (minutesToAdd > 0) {
               await storage.addBonusMinutes(userId, minutesToAdd);
               console.log(`[Stripe Webhook] Added ${minutesToAdd} bonus minutes to user ${userId}`);
+              
+              // Send top-up confirmation email (non-blocking)
+              const user = await storage.getUser(userId);
+              if (user && user.parentName) {
+                emailService.sendTopUpConfirmation({
+                  email: user.email,
+                  parentName: user.parentName,
+                  minutesPurchased: minutesToAdd,
+                }).catch(error => console.error('[Stripe Webhook] Top-up email failed:', error));
+              }
             }
             break;
           }
@@ -108,6 +119,31 @@ router.post(
           await storage.resetUserVoiceUsage(userId);
           
           console.log(`[Stripe Webhook] Subscription activated for user ${userId}`);
+          
+          // Send subscription confirmation email (non-blocking)
+          const user = await storage.getUser(userId);
+          if (user && user.parentName && user.studentName) {
+            const planNames: Record<string, string> = {
+              'starter': 'Starter',
+              'standard': 'Standard',
+              'pro': 'Pro',
+            };
+            
+            emailService.sendSubscriptionConfirmation({
+              email: user.email,
+              parentName: user.parentName,
+              studentName: user.studentName,
+              plan: planNames[plan] || plan,
+              minutes: monthlyMinutes,
+            }).catch(error => console.error('[Stripe Webhook] Subscription email failed:', error));
+            
+            // Send admin notification
+            emailService.sendAdminNotification('New Subscription', {
+              email: user.email,
+              plan: planNames[plan] || plan,
+              amount: session.amount_total ? session.amount_total / 100 : 0,
+            }).catch(error => console.error('[Stripe Webhook] Admin notification failed:', error));
+          }
           break;
         }
 

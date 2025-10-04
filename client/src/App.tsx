@@ -17,6 +17,7 @@ import PricingPage from "@/pages/pricing-page";
 import SubscribePage from "@/pages/subscribe-page";
 import TutorPage from "@/pages/tutor-page";
 import BenefitsPage from "@/pages/benefits-page";
+import UnsubscribePage from "@/pages/unsubscribe-page";
 
 function Router() {
   return (
@@ -34,6 +35,7 @@ function Router() {
       <Route path="/login" component={AuthPage} />
       <Route path="/pricing" component={PricingPage} />
       <Route path="/benefits" component={BenefitsPage} />
+      <Route path="/unsubscribe" component={UnsubscribePage} />
       <Route component={NotFound} />
     </Switch>
   );

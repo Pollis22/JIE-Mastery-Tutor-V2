@@ -60,6 +60,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Setup authentication
   setupAuth(app);
 
+  // Unsubscribe endpoint (public - no authentication required)
+  app.post("/api/unsubscribe", async (req, res) => {
+    try {
+      const { email } = req.body;
+      
+      if (!email) {
+        return res.status(400).json({ error: "Email is required" });
+      }
+
+      const user = await storage.getUserByEmail(email);
+      
+      if (!user) {
+        // Return success even if user not found (don't reveal account existence)
+        return res.json({ success: true });
+      }
+
+      await storage.updateUserMarketingPreferences(user.id, false);
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('[Unsubscribe] Error:', error);
+      res.status(500).json({ error: "Failed to unsubscribe" });
+    }
+  });
+
   // Enhanced voice API routes (use existing voiceRoutes but add enhancedVoiceRoutes functionality if needed)
   app.use("/api/voice", voiceRoutes);
   
