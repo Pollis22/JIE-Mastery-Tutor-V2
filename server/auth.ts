@@ -6,6 +6,7 @@ import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import { storage } from "./storage";
 import { User as SelectUser } from "@shared/schema";
+import { emailService } from "./services/email-service";
 
 declare global {
   namespace Express {
@@ -154,8 +155,26 @@ export function setupAuth(app: Express) {
       marketingOptInDate: req.body.marketingOptIn ? new Date() : null,
     });
 
-    req.login(user, (err) => {
+    req.login(user, async (err) => {
       if (err) return next(err);
+      
+      // Send welcome email (non-blocking)
+      if (user.parentName && user.studentName) {
+        emailService.sendWelcomeEmail({
+          email: user.email,
+          parentName: user.parentName,
+          studentName: user.studentName,
+        }).catch(error => console.error('[Auth] Welcome email failed:', error));
+      }
+
+      // Send admin notification (non-blocking)
+      emailService.sendAdminNotification('Account Created', {
+        email: user.email,
+        studentName: user.studentName,
+        gradeLevel: user.gradeLevel,
+        marketingOptIn: user.marketingOptIn,
+      }).catch(error => console.error('[Auth] Admin notification failed:', error));
+
       res.status(201).json(user);
     });
   });
