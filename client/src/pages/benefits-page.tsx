@@ -337,7 +337,7 @@ export default function BenefitsPage() {
             <p className="text-xl text-primary-foreground/90">
               Join thousands of students already mastering their subjects with JIE Mastery AI Tutors.
             </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <div className="flex justify-center">
               <Button 
                 size="lg" 
                 variant="secondary"
@@ -346,15 +346,6 @@ export default function BenefitsPage() {
                 data-testid="button-signup-cta"
               >
                 Get Started
-              </Button>
-              <Button 
-                size="lg" 
-                variant="outline"
-                onClick={() => setLocation("/pricing")}
-                className="text-lg px-8 py-6 border-white text-white hover:bg-white/10"
-                data-testid="button-view-pricing-cta"
-              >
-                View Pricing Plans
               </Button>
             </div>
           </div>
