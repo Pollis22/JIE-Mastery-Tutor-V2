@@ -67,6 +67,36 @@ Core entities include Users, Subjects, Lessons, User Progress, Learning Sessions
 -   **Unsubscribe Flow**: Public endpoint for one-click email preference management
 -   **CSV Export**: Admin endpoint to export contact list with student profiles and marketing preferences
 
+### Admin Dashboard System
+A comprehensive administrative interface for platform management with complete audit logging:
+
+**Dashboard Features**:
+-   **Overview Panel**: Real-time metrics (total users, active subscriptions, documents, sessions)
+-   **User Management**: Search, view details, add/remove bonus minutes for users
+-   **Subscription Tracking**: Monitor active subscriptions, MRR, and renewal status
+-   **Document Management**: View all uploaded documents across users with storage analytics
+-   **Platform Analytics**: User distribution, usage statistics, and revenue breakdown
+-   **Audit Logs**: Complete activity tracking of all admin actions with timestamps
+
+**Security & Access Control**:
+-   Admin-only routes protected by `requireAdmin` middleware
+-   Automatic authentication and role verification for all admin endpoints
+-   Secure admin audit logging that records only successful actions (2xx responses)
+
+**Audit System**:
+-   Tracks actions: user management, data exports, subscription views, document access, analytics views
+-   Records admin ID, action type, target, and details for full accountability
+-   Query filtering by admin, action type, with pagination support
+-   Self-logging: viewing audit logs is itself logged for complete audit trail
+
+**Admin Routes**:
+-   `/admin` - Dashboard overview with key metrics
+-   `/admin/users` - User management and minute allocation
+-   `/admin/subscriptions` - Subscription analytics and monitoring
+-   `/admin/documents` - Document storage and management
+-   `/admin/analytics` - Platform performance metrics
+-   `/admin/logs` - Complete audit trail of admin actions
+
 ### State Management & Caching
 -   TanStack Query for API state management, caching, and background updates.
 -   PostgreSQL-based session storage for authentication.
