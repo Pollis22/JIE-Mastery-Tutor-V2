@@ -41,10 +41,31 @@ The system integrates a **Multi-Agent ElevenLabs ConvAI System** with five pre-c
 ### Database Schema & Data Management
 Core entities include Users, Subjects, Lessons, User Progress, Learning Sessions, and Quiz Attempts. The RAG system incorporates User Documents, Document Chunks, and Document Embeddings.
 
+**Student Profile Fields**: Users table includes comprehensive student profile data:
+-   `parentName`: Parent/guardian name for account management
+-   `studentName`: Student's full name
+-   `studentAge`: Student's age for age-appropriate content
+-   `gradeLevel`: Academic level (K-2, 3-5, 6-8, 9-12, College/Adult)
+-   `primarySubject`: Main subject of interest (Math, English, Science, Spanish, General)
+
+**Marketing Preferences**: User consent tracking for email communications:
+-   `marketingOptIn`: Boolean flag for marketing consent
+-   `marketingOptInDate`: Timestamp when user opted in
+-   `marketingOptOutDate`: Timestamp when user opted out
+
 ### Payment & Subscription System
 -   Stripe Integration handles subscriptions and payments.
 -   Offers single and all-subjects pricing tiers.
 -   Manages weekly voice minute caps with fallback to text mode.
+
+### Email & Marketing Automation
+-   **Resend Integration**: Transactional email service for automated communications
+-   **Welcome Emails**: Sent immediately after successful registration
+-   **Subscription Confirmations**: Sent after successful subscription purchase or minute top-up
+-   **Admin Notifications**: Real-time alerts for new registrations and purchases
+-   **Marketing Preferences**: User-controlled opt-in/opt-out system with date tracking
+-   **Unsubscribe Flow**: Public endpoint for one-click email preference management
+-   **CSV Export**: Admin endpoint to export contact list with student profiles and marketing preferences
 
 ### State Management & Caching
 -   TanStack Query for API state management, caching, and background updates.
@@ -59,6 +80,9 @@ Core entities include Users, Subjects, Lessons, User Progress, Learning Sessions
 
 ### Payment Processing
 -   **Stripe**: Used for subscription management, payments, and customer portal.
+
+### Email Services
+-   **Resend**: Transactional email delivery for automated communications and marketing.
 
 ### Database & Infrastructure
 -   **PostgreSQL**: Primary database.
