@@ -18,6 +18,11 @@ import SubscribePage from "@/pages/subscribe-page";
 import TutorPage from "@/pages/tutor-page";
 import BenefitsPage from "@/pages/benefits-page";
 import UnsubscribePage from "@/pages/unsubscribe-page";
+import AdminOverview from "@/pages/admin-overview";
+import AdminUsers from "@/pages/admin-users";
+import AdminSubscriptions from "@/pages/admin-subscriptions";
+import AdminDocuments from "@/pages/admin-documents";
+import AdminAnalytics from "@/pages/admin-analytics";
 
 function Router() {
   return (
@@ -29,7 +34,11 @@ function Router() {
       <ProtectedRoute path="/lesson/:lessonId" component={LessonPage} />
       <ProtectedRoute path="/quiz/:lessonId" component={QuizPage} />
       <ProtectedRoute path="/settings" component={SettingsPage} />
-      <ProtectedRoute path="/admin" component={AdminPage} />
+      <ProtectedRoute path="/admin" component={AdminOverview} />
+      <ProtectedRoute path="/admin/users" component={AdminUsers} />
+      <ProtectedRoute path="/admin/subscriptions" component={AdminSubscriptions} />
+      <ProtectedRoute path="/admin/documents" component={AdminDocuments} />
+      <ProtectedRoute path="/admin/analytics" component={AdminAnalytics} />
       <ProtectedRoute path="/subscribe" component={SubscribePage} />
       <Route path="/auth" component={AuthPage} />
       <Route path="/login" component={AuthPage} />

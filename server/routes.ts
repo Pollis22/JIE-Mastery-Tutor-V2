@@ -623,6 +623,130 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Admin: Add/remove bonus minutes
+  app.post("/api/admin/users/:id/minutes", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const user = req.user as any;
+    if (!user.isAdmin) {
+      return res.status(403).json({ message: "Admin access required" });
+    }
+
+    try {
+      const { id } = req.params;
+      const { minutes } = req.body;
+
+      if (typeof minutes !== 'number') {
+        return res.status(400).json({ message: "Minutes must be a number" });
+      }
+
+      await storage.addBonusMinutes(id, minutes);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ message: "Error adding minutes: " + error.message });
+    }
+  });
+
+  // Admin: Get subscriptions data
+  app.get("/api/admin/subscriptions", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const user = req.user as any;
+    if (!user.isAdmin) {
+      return res.status(403).json({ message: "Admin access required" });
+    }
+
+    try {
+      const users = await storage.getAdminUsers({ page: 1, limit: 1000, search: '' });
+      const activeSubscriptions = users.filter((u: any) => u.subscriptionStatus === 'active');
+      
+      const analytics = {
+        mrr: activeSubscriptions.reduce((sum: number, u: any) => {
+          const planRevenue: any = { starter: 19, standard: 59, pro: 99, single: 99, all: 199 };
+          return sum + (planRevenue[u.subscriptionPlan] || 0);
+        }, 0),
+        active: activeSubscriptions.length,
+        growth: 0, // Could calculate from historical data
+        upcomingRenewals: activeSubscriptions.length,
+      };
+
+      res.json({ users, analytics });
+    } catch (error: any) {
+      res.status(500).json({ message: "Error fetching subscriptions: " + error.message });
+    }
+  });
+
+  // Admin: Get documents data
+  app.get("/api/admin/documents", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const user = req.user as any;
+    if (!user.isAdmin) {
+      return res.status(403).json({ message: "Admin access required" });
+    }
+
+    try {
+      const documents = await storage.getAllDocumentsForAdmin();
+      const analytics = {
+        totalDocuments: documents.length,
+        storageUsed: "N/A",
+        avgPerUser: 0,
+      };
+
+      res.json({ documents, analytics });
+    } catch (error: any) {
+      res.status(500).json({ message: "Error fetching documents: " + error.message });
+    }
+  });
+
+  // Admin: Get analytics data
+  app.get("/api/admin/analytics", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const user = req.user as any;
+    if (!user.isAdmin) {
+      return res.status(403).json({ message: "Admin access required" });
+    }
+
+    try {
+      const stats = await storage.getAdminStats();
+      const analytics = {
+        totalUsers: stats.totalUsers || 0,
+        userGrowth: 0,
+        mrr: 0,
+        revenueGrowth: 0,
+        activeSessions: stats.activeSessions || 0,
+        sessionGrowth: 0,
+        retentionRate: 85,
+        retentionChange: 2,
+        totalSessions: stats.totalSessions || 0,
+        avgSessionLength: stats.avgSessionTime || "0 min",
+        totalVoiceMinutes: 0,
+        totalDocuments: stats.totalDocuments || 0,
+        gradeDistribution: {
+          k2: 0,
+          grades35: 0,
+          grades68: 0,
+          grades912: 0,
+          college: 0,
+        },
+        revenueByPlan: {},
+      };
+
+      res.json(analytics);
+    } catch (error: any) {
+      res.status(500).json({ message: "Error fetching analytics: " + error.message });
+    }
+  });
+
   // AI tutor chat endpoint
   app.post("/api/chat", async (req, res) => {
     if (!req.isAuthenticated()) {

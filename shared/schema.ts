@@ -138,6 +138,18 @@ export const usageLogs = pgTable("usage_logs", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Admin audit log table for tracking admin actions
+export const adminLogs = pgTable("admin_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  adminId: varchar("admin_id").notNull().references(() => users.id),
+  action: text("action").notNull(),
+  targetType: text("target_type").$type<'user' | 'subscription' | 'document' | 'agent' | 'system'>().notNull(),
+  targetId: text("target_id"),
+  details: jsonb("details"),
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   progress: many(userProgress),
@@ -503,3 +515,12 @@ export type StudentDocPin = typeof studentDocPins.$inferSelect;
 export type InsertStudentDocPin = z.infer<typeof insertStudentDocPinSchema>;
 export type TutorSession = typeof tutorSessions.$inferSelect;
 export type InsertTutorSession = z.infer<typeof insertTutorSessionSchema>;
+
+// Admin log types
+export const insertAdminLogSchema = createInsertSchema(adminLogs).omit({
+  id: true,
+  createdAt: true,
+  timestamp: true,
+});
+export type AdminLog = typeof adminLogs.$inferSelect;
+export type InsertAdminLog = z.infer<typeof insertAdminLogSchema>;

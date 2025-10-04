@@ -94,6 +94,7 @@ export interface IStorage {
   updateDocument(documentId: string, userId: string, updates: Partial<UserDocument>): Promise<UserDocument>;
   updateDocumentById(documentId: string, updates: Partial<UserDocument>): Promise<UserDocument | null>;
   getAllDocumentsForProcessing(): Promise<UserDocument[]>;
+  getAllDocumentsForAdmin(): Promise<any[]>;
   
   // Document processing operations
   createDocumentChunk(chunk: InsertDocumentChunk): Promise<DocumentChunk>;
@@ -1080,6 +1081,30 @@ export class DatabaseStorage implements IStorage {
 
   async getAllDocumentsForProcessing(): Promise<UserDocument[]> {
     return await db.select().from(userDocuments).orderBy(desc(userDocuments.createdAt));
+  }
+
+  async getAllDocumentsForAdmin(): Promise<any[]> {
+    const docs = await db.select({
+      id: userDocuments.id,
+      filename: userDocuments.filename,
+      mimeType: userDocuments.mimeType,
+      fileSize: userDocuments.fileSize,
+      userId: userDocuments.userId,
+      createdAt: userDocuments.createdAt,
+    }).from(userDocuments).orderBy(desc(userDocuments.createdAt));
+
+    // Get user emails for each document
+    const docsWithEmails = await Promise.all(
+      docs.map(async (doc) => {
+        const user = await this.getUser(doc.userId);
+        return {
+          ...doc,
+          ownerEmail: user?.email || 'Unknown',
+        };
+      })
+    );
+
+    return docsWithEmails;
   }
 
   async getDocument(documentId: string, userId: string): Promise<UserDocument | undefined> {
