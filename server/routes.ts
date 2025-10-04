@@ -11,6 +11,7 @@ import streamingRoutes from "./routes/streamingRoutes";
 import { debugRoutes } from "./routes/debugRoutes";
 import { setupSecurityHeaders, setupCORS } from "./middleware/security";
 import { requireAdmin } from "./middleware/admin-auth";
+import { auditActions } from "./middleware/audit-log";
 import Stripe from "stripe";
 import { z } from "zod";
 
@@ -563,7 +564,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin routes
-  app.get("/api/admin/users", requireAdmin, async (req, res) => {
+  app.get("/api/admin/users", requireAdmin, auditActions.viewUsers, async (req, res) => {
     try {
       const { page = 1, limit = 10, search = '' } = req.query;
       const users = await storage.getAdminUsers({
@@ -586,7 +587,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/admin/export", requireAdmin, async (req, res) => {
+  app.get("/api/admin/export", requireAdmin, auditActions.exportData, async (req, res) => {
     try {
       const csvData = await storage.exportUsersCSV();
       res.setHeader('Content-Type', 'text/csv');
@@ -598,7 +599,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin: Add/remove bonus minutes
-  app.post("/api/admin/users/:id/minutes", requireAdmin, async (req, res) => {
+  app.post("/api/admin/users/:id/minutes", requireAdmin, auditActions.addMinutes, async (req, res) => {
     try {
       const { id } = req.params;
       const { minutes } = req.body;
@@ -615,7 +616,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin: Get subscriptions data
-  app.get("/api/admin/subscriptions", requireAdmin, async (req, res) => {
+  app.get("/api/admin/subscriptions", requireAdmin, auditActions.viewSubscriptions, async (req, res) => {
     try {
       const users = await storage.getAdminUsers({ page: 1, limit: 1000, search: '' });
       const activeSubscriptions = users.filter((u: any) => u.subscriptionStatus === 'active');
@@ -637,7 +638,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin: Get documents data
-  app.get("/api/admin/documents", requireAdmin, async (req, res) => {
+  app.get("/api/admin/documents", requireAdmin, auditActions.viewDocuments, async (req, res) => {
     try {
       const documents = await storage.getAllDocumentsForAdmin();
       const analytics = {
@@ -653,7 +654,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin: Get analytics data
-  app.get("/api/admin/analytics", requireAdmin, async (req, res) => {
+  app.get("/api/admin/analytics", requireAdmin, auditActions.viewAnalytics, async (req, res) => {
     try {
       const stats = await storage.getAdminStats();
       const analytics = {
@@ -682,6 +683,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(analytics);
     } catch (error: any) {
       res.status(500).json({ message: "Error fetching analytics: " + error.message });
+    }
+  });
+
+  // Admin: Get audit logs
+  app.get("/api/admin/logs", requireAdmin, auditActions.viewLogs, async (req, res) => {
+    try {
+      const { page = 1, limit = 50, adminId, action } = req.query;
+      
+      // Validate query parameters
+      const pageNum = Number(page);
+      const limitNum = Number(limit);
+      
+      if (isNaN(pageNum) || pageNum < 1) {
+        return res.status(400).json({ message: "Invalid page parameter" });
+      }
+      
+      if (isNaN(limitNum) || limitNum < 1 || limitNum > 100) {
+        return res.status(400).json({ message: "Invalid limit parameter (must be 1-100)" });
+      }
+      
+      const result = await storage.getAdminLogs({
+        page: pageNum,
+        limit: limitNum,
+        adminId: adminId ? String(adminId) : undefined,
+        action: action ? String(action) : undefined,
+      });
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ message: "Error fetching audit logs: " + error.message });
     }
   });
 

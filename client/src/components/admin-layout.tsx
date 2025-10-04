@@ -7,6 +7,7 @@ import {
   CreditCard,
   FileText,
   BarChart3,
+  ScrollText,
   LogOut,
   Menu,
   X,
@@ -29,6 +30,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     { name: "Subscriptions", href: "/admin/subscriptions", icon: CreditCard },
     { name: "Documents", href: "/admin/documents", icon: FileText },
     { name: "Analytics", href: "/admin/analytics", icon: BarChart3 },
+    { name: "Audit Logs", href: "/admin/logs", icon: ScrollText },
   ];
 
   const handleLogout = () => {

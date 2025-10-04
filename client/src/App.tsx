@@ -23,6 +23,7 @@ import AdminUsers from "@/pages/admin-users";
 import AdminSubscriptions from "@/pages/admin-subscriptions";
 import AdminDocuments from "@/pages/admin-documents";
 import AdminAnalytics from "@/pages/admin-analytics";
+import AdminLogs from "@/pages/admin-logs";
 
 function Router() {
   return (
@@ -39,6 +40,7 @@ function Router() {
       <ProtectedRoute path="/admin/subscriptions" component={AdminSubscriptions} />
       <ProtectedRoute path="/admin/documents" component={AdminDocuments} />
       <ProtectedRoute path="/admin/analytics" component={AdminAnalytics} />
+      <ProtectedRoute path="/admin/logs" component={AdminLogs} />
       <ProtectedRoute path="/subscribe" component={SubscribePage} />
       <Route path="/auth" component={AuthPage} />
       <Route path="/login" component={AuthPage} />

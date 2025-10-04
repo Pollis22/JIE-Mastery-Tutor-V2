@@ -13,6 +13,7 @@ import {
   studentDocPins,
   tutorSessions,
   agentSessions,
+  adminLogs,
   type User,
   type InsertUser,
   type Subject,
@@ -34,6 +35,8 @@ import {
   type InsertStudentDocPin,
   type TutorSession,
   type InsertTutorSession,
+  type AdminLog,
+  type InsertAdminLog,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, asc, count, sum, sql, like, or } from "drizzle-orm";
@@ -85,6 +88,10 @@ export interface IStorage {
   getAdminUsers(options: { page: number; limit: number; search: string }): Promise<any>;
   getAdminStats(): Promise<any>;
   exportUsersCSV(): Promise<string>;
+  
+  // Admin audit log operations
+  createAdminLog(log: InsertAdminLog): Promise<AdminLog>;
+  getAdminLogs(options: { page: number; limit: number; adminId?: string; action?: string }): Promise<{ logs: AdminLog[]; total: number }>;
 
   // Document operations
   uploadDocument(userId: string, document: InsertUserDocument): Promise<UserDocument>;
@@ -1067,6 +1074,45 @@ export class DatabaseStorage implements IStorage {
     ];
 
     return csvRows.join('\n');
+  }
+
+  // Admin audit log operations
+  async createAdminLog(log: InsertAdminLog): Promise<AdminLog> {
+    const [created] = await db.insert(adminLogs).values(log).returning();
+    return created;
+  }
+
+  async getAdminLogs(options: { page: number; limit: number; adminId?: string; action?: string }): Promise<{ logs: AdminLog[]; total: number }> {
+    const { page, limit, adminId, action } = options;
+    const offset = (page - 1) * limit;
+
+    // Build where clauses
+    const whereConditions = [];
+    if (adminId) {
+      whereConditions.push(eq(adminLogs.adminId, adminId));
+    }
+    if (action) {
+      whereConditions.push(eq(adminLogs.action, action));
+    }
+
+    const whereClause = whereConditions.length > 0 ? and(...whereConditions) : undefined;
+
+    // Get logs with pagination
+    const logs = await db
+      .select()
+      .from(adminLogs)
+      .where(whereClause)
+      .orderBy(desc(adminLogs.timestamp))
+      .limit(limit)
+      .offset(offset);
+
+    // Get total count
+    const [{ count: total }] = await db
+      .select({ count: count() })
+      .from(adminLogs)
+      .where(whereClause);
+
+    return { logs, total };
   }
 
   // Document operations implementation
