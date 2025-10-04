@@ -995,37 +995,74 @@ export class DatabaseStorage implements IStorage {
         email: users.email,
         firstName: users.firstName,
         lastName: users.lastName,
+        parentName: users.parentName,
+        studentName: users.studentName,
+        studentAge: users.studentAge,
+        gradeLevel: users.gradeLevel,
+        primarySubject: users.primarySubject,
         subscriptionPlan: users.subscriptionPlan,
         subscriptionStatus: users.subscriptionStatus,
+        marketingOptIn: users.marketingOptIn,
+        marketingOptInDate: users.marketingOptInDate,
+        marketingOptOutDate: users.marketingOptOutDate,
         weeklyVoiceMinutesUsed: users.weeklyVoiceMinutesUsed,
         createdAt: users.createdAt,
       })
       .from(users)
       .orderBy(desc(users.createdAt));
 
+    // Helper function to escape CSV values properly
+    const escapeCSV = (value: any): string => {
+      if (value === null || value === undefined) {
+        return '';
+      }
+      const str = String(value);
+      // If value contains comma, newline, or double quote, wrap in quotes and escape quotes
+      if (str.includes(',') || str.includes('\n') || str.includes('\r') || str.includes('"')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
     const headers = [
       'Username',
       'Email',
       'First Name',
       'Last Name',
+      'Parent Name',
+      'Student Name',
+      'Student Age',
+      'Grade Level',
+      'Primary Subject',
       'Subscription Plan',
       'Subscription Status',
+      'Marketing Opt-In',
+      'Marketing Opt-In Date',
+      'Marketing Opt-Out Date',
       'Weekly Voice Minutes Used',
       'Created At',
     ];
 
     const csvRows = [
-      headers.join(','),
+      headers.map(escapeCSV).join(','),
       ...allUsers.map(user => [
         user.username,
         user.email,
         user.firstName || '',
         user.lastName || '',
+        user.parentName || '',
+        user.studentName || '',
+        user.studentAge || '',
+        user.gradeLevel || '',
+        user.primarySubject || '',
         user.subscriptionPlan || '',
         user.subscriptionStatus || '',
+        user.marketingOptIn ? 'Yes' : 'No',
+        user.marketingOptInDate?.toISOString() || '',
+        user.marketingOptOutDate?.toISOString() || '',
         user.weeklyVoiceMinutesUsed || 0,
         user.createdAt?.toISOString() || '',
-      ].map(field => `"${field}"`).join(','))
+      ].map(escapeCSV).join(','))
     ];
 
     return csvRows.join('\n');
