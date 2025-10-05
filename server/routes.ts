@@ -782,6 +782,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Admin: Get agent statistics
+  app.get("/api/admin/agents/stats", requireAdmin, auditActions.viewAnalytics, async (req, res) => {
+    try {
+      const agents = [
+        { id: 'k2', name: 'K-2', envKey: 'ELEVENLABS_AGENT_K2', gradeLevel: 'kindergarten-2' },
+        { id: 'g3_5', name: 'Grades 3-5', envKey: 'ELEVENLABS_AGENT_35', gradeLevel: 'grades-3-5' },
+        { id: 'g6_8', name: 'Grades 6-8', envKey: 'ELEVENLABS_AGENT_68', gradeLevel: 'grades-6-8' },
+        { id: 'g9_12', name: 'Grades 9-12', envKey: 'ELEVENLABS_AGENT_912', gradeLevel: 'grades-9-12' },
+        { id: 'college', name: 'College/Adult', envKey: 'ELEVENLABS_AGENT_COLLEGE', gradeLevel: 'college-adult' },
+      ];
+
+      const agentStats = await Promise.all(
+        agents.map(async (agent) => {
+          // Get session count for this agent's grade level
+          const sessions = await storage.getAgentSessionsByGrade(agent.gradeLevel as any);
+          const recentSessions = sessions.filter(s => {
+            const created = new Date(s.createdAt);
+            const daysSince = Math.floor((Date.now() - created.getTime()) / (1000 * 60 * 60 * 24));
+            return daysSince <= 7;
+          });
+          
+          return {
+            id: agent.id,
+            name: agent.name,
+            gradeLevel: agent.gradeLevel,
+            agentId: process.env[agent.envKey] || 'Not configured',
+            totalSessions: sessions.length,
+            recentSessions: recentSessions.length,
+            isConfigured: !!process.env[agent.envKey],
+          };
+        })
+      );
+
+      res.json({ agents: agentStats });
+    } catch (error: any) {
+      console.error('[Admin] Agent stats error:', error);
+      res.status(500).json({ message: "Error fetching agent stats: " + error.message });
+    }
+  });
+
   // AI tutor chat endpoint
   app.post("/api/chat", async (req, res) => {
     if (!req.isAuthenticated()) {

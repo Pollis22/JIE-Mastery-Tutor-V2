@@ -9,6 +9,7 @@ import {
   BarChart3,
   ScrollText,
   Mail,
+  Bot,
   LogOut,
   Menu,
   X,
@@ -31,6 +32,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     { name: "Subscriptions", href: "/admin/subscriptions", icon: CreditCard },
     { name: "Documents", href: "/admin/documents", icon: FileText },
     { name: "Analytics", href: "/admin/analytics", icon: BarChart3 },
+    { name: "Agents", href: "/admin/agents", icon: Bot },
     { name: "Contacts", href: "/admin/contacts", icon: Mail },
     { name: "Audit Logs", href: "/admin/logs", icon: ScrollText },
   ];

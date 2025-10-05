@@ -95,6 +95,7 @@ A comprehensive administrative interface for platform management with complete a
 -   `/admin/subscriptions` - Subscription analytics and monitoring
 -   `/admin/documents` - Document storage and management
 -   `/admin/analytics` - Platform performance metrics
+-   `/admin/agents` - ElevenLabs agent monitoring and usage statistics
 -   `/admin/contacts` - Marketing contact management and CSV exports
 -   `/admin/logs` - Complete audit trail of admin actions
 
