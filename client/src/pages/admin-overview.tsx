@@ -1,12 +1,44 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AdminLayout } from "@/components/admin-layout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, CreditCard, FileText, Activity } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Users, CreditCard, FileText, Activity, Download } from "lucide-react";
 
 export default function AdminOverview() {
+  const [exportingSegment, setExportingSegment] = useState<string | null>(null);
+  
   const { data: stats, isLoading } = useQuery({
     queryKey: ["/api/admin/stats"],
   });
+
+  const handleQuickExport = async (segment: string, segmentName: string) => {
+    try {
+      setExportingSegment(segment);
+      const response = await fetch(`/api/admin/contacts/export/${segment}`, {
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        throw new Error("Failed to export contacts");
+      }
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `contacts-${segment}-${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error("Export failed:", error);
+      alert("Failed to export contacts. Please try again.");
+    } finally {
+      setExportingSegment(null);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -136,6 +168,58 @@ export default function AdminOverview() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Quick Export Section */}
+        <Card>
+          <CardHeader>
+            <CardTitle data-testid="heading-quick-export">Quick Contact Export</CardTitle>
+            <CardDescription>
+              Export contact lists for common marketing segments
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <Button
+                variant="outline"
+                onClick={() => handleQuickExport('all', 'All Users')}
+                disabled={exportingSegment === 'all'}
+                data-testid="button-export-all"
+                className="justify-start"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                {exportingSegment === 'all' ? 'Exporting...' : 'All Opted-In Users'}
+              </Button>
+              
+              <Button
+                variant="outline"
+                onClick={() => handleQuickExport('active-premium', 'Active Premium')}
+                disabled={exportingSegment === 'active-premium'}
+                data-testid="button-export-premium"
+                className="justify-start"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                {exportingSegment === 'active-premium' ? 'Exporting...' : 'Active Premium Users'}
+              </Button>
+              
+              <Button
+                variant="outline"
+                onClick={() => handleQuickExport('cancelled', 'Cancelled')}
+                disabled={exportingSegment === 'cancelled'}
+                data-testid="button-export-cancelled"
+                className="justify-start"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                {exportingSegment === 'cancelled' ? 'Exporting...' : 'Cancelled Subscriptions'}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground mt-4">
+              For more export options and campaign tracking, visit the{" "}
+              <a href="/admin/contacts" className="text-primary underline">
+                Contacts page
+              </a>
+            </p>
+          </CardContent>
+        </Card>
       </div>
     </AdminLayout>
   );
