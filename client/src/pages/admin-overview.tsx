@@ -5,10 +5,27 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Users, CreditCard, FileText, Activity, Download } from "lucide-react";
 
+interface AdminStats {
+  totalUsers: number;
+  activeSubscriptions: number;
+  totalDocuments: number;
+  activeSessions: number;
+  monthlyRevenue: number;
+  avgSessionTime: string;
+  totalSessions: number;
+  storageUsed: string;
+  recentUsers?: Array<{
+    id: string;
+    username: string;
+    email: string;
+    createdAt: string;
+  }>;
+}
+
 export default function AdminOverview() {
   const [exportingSegment, setExportingSegment] = useState<string | null>(null);
   
-  const { data: stats, isLoading } = useQuery({
+  const { data: stats, isLoading } = useQuery<AdminStats>({
     queryKey: ["/api/admin/stats"],
   });
 

@@ -4,8 +4,25 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { FileText, HardDrive } from "lucide-react";
 
+interface DocumentAnalytics {
+  totalDocuments?: number;
+  storageUsed?: string;
+  avgPerUser?: string;
+}
+
+interface DocumentData {
+  analytics: DocumentAnalytics;
+  documents?: Array<{
+    id: string;
+    fileName: string;
+    fileSize: number;
+    username: string;
+    createdAt: string;
+  }>;
+}
+
 export default function AdminDocuments() {
-  const { data: documents, isLoading } = useQuery({
+  const { data: documents, isLoading } = useQuery<DocumentData>({
     queryKey: ["/api/admin/documents"],
   });
 

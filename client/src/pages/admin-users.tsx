@@ -18,14 +18,30 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 
+interface AdminUser {
+  id: string;
+  username: string;
+  email: string;
+  createdAt: string;
+  isAdmin: boolean;
+  subscriptionStatus?: string;
+  subscriptionPlan?: string;
+  subscriptionEndDate?: string;
+  voiceMinutesRemaining?: number;
+  bonusMinutes?: number;
+  gradeLevel?: string;
+  monthlyVoiceMinutes?: number;
+  monthlyVoiceMinutesUsed?: number;
+}
+
 export default function AdminUsers() {
   const [search, setSearch] = useState("");
-  const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
   const [showAddMinutes, setShowAddMinutes] = useState(false);
   const [minutesToAdd, setMinutesToAdd] = useState("");
   const { toast } = useToast();
 
-  const { data: users, isLoading } = useQuery({
+  const { data: users, isLoading } = useQuery<{ users: AdminUser[]; total: number }>({
     queryKey: ["/api/admin/users", { search }],
   });
 
@@ -96,7 +112,7 @@ export default function AdminUsers() {
         {/* Users Table */}
         <Card>
           <CardHeader>
-            <CardTitle>All Users ({users?.length || 0})</CardTitle>
+            <CardTitle>All Users ({users?.users?.length || users?.total || 0})</CardTitle>
           </CardHeader>
           <CardContent>
             {isLoading ? (
@@ -119,7 +135,7 @@ export default function AdminUsers() {
                     </tr>
                   </thead>
                   <tbody>
-                    {users?.map((user: any) => (
+                    {users?.users?.map((user) => (
                       <tr key={user.id} className="border-b hover:bg-muted/50">
                         <td className="p-3">
                           <div>

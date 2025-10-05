@@ -3,8 +3,27 @@ import { AdminLayout } from "@/components/admin-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users, DollarSign, Activity, TrendingUp } from "lucide-react";
 
+interface AnalyticsData {
+  totalUsers: number;
+  userGrowth: number;
+  mrr: number;
+  revenueGrowth: number;
+  activeSessions: number;
+  sessionGrowth: number;
+  retentionRate: number;
+  retentionChange: number;
+  totalSessions?: number;
+  avgSessionLength?: string;
+  totalVoiceMinutes?: number;
+  totalDocuments?: number;
+  gradeDistribution?: { [key: string]: number };
+  userDistribution?: Array<{ gradeLevel: string; count: number }>;
+  usageBySubject?: Array<{ subject: string; sessions: number }>;
+  revenueByPlan?: { [plan: string]: number };
+}
+
 export default function AdminAnalytics() {
-  const { data: analytics, isLoading } = useQuery({
+  const { data: analytics, isLoading } = useQuery<AnalyticsData>({
     queryKey: ["/api/admin/analytics"],
   });
 

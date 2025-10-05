@@ -23,7 +23,7 @@ interface AdminLayoutProps {
 
 export function AdminLayout({ children }: AdminLayoutProps) {
   const [location, setLocation] = useLocation();
-  const { user, logout } = useAuth();
+  const { user, logoutMutation } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const navigation = [
@@ -38,8 +38,11 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   ];
 
   const handleLogout = () => {
-    logout();
-    setLocation("/auth");
+    logoutMutation.mutate(undefined, {
+      onSuccess: () => {
+        setLocation("/auth");
+      }
+    });
   };
 
   return (

@@ -4,8 +4,36 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { DollarSign, TrendingUp, Users as UsersIcon, Calendar } from "lucide-react";
 
+interface SubscriptionAnalytics {
+  mrr?: number;
+  active?: number;
+  growth?: number;
+  upcomingRenewals?: number;
+}
+
+interface SubscriptionData {
+  analytics: SubscriptionAnalytics;
+  subscriptions?: Array<{
+    id: string;
+    userId: string;
+    plan: string;
+    status: string;
+    currentPeriodEnd: string;
+    username?: string;
+    email?: string;
+  }>;
+  users?: Array<{
+    id: string;
+    username: string;
+    email: string;
+    plan: string;
+    status: string;
+    currentPeriodEnd: string;
+  }>;
+}
+
 export default function AdminSubscriptions() {
-  const { data: subscriptions, isLoading } = useQuery({
+  const { data: subscriptions, isLoading } = useQuery<SubscriptionData>({
     queryKey: ["/api/admin/subscriptions"],
   });
 
