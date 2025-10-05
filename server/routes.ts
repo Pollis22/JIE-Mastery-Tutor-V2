@@ -12,6 +12,7 @@ import { debugRoutes } from "./routes/debugRoutes";
 import { setupSecurityHeaders, setupCORS } from "./middleware/security";
 import { requireAdmin } from "./middleware/admin-auth";
 import { auditActions } from "./middleware/audit-log";
+import { convertUsersToCSV, generateFilename } from "./utils/csv-export";
 import Stripe from "stripe";
 import { z } from "zod";
 
@@ -712,6 +713,72 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(result);
     } catch (error: any) {
       res.status(500).json({ message: "Error fetching audit logs: " + error.message });
+    }
+  });
+
+  // Admin: Get marketing campaigns
+  app.get("/api/admin/campaigns", requireAdmin, auditActions.viewCampaigns, async (req, res) => {
+    try {
+      const { page = 1, limit = 20 } = req.query;
+      const pageNum = Number(page);
+      const limitNum = Number(limit);
+      
+      if (isNaN(pageNum) || pageNum < 1) {
+        return res.status(400).json({ message: "Invalid page parameter" });
+      }
+      
+      if (isNaN(limitNum) || limitNum < 1 || limitNum > 100) {
+        return res.status(400).json({ message: "Invalid limit parameter (must be 1-100)" });
+      }
+      
+      const result = await storage.getCampaigns({ page: pageNum, limit: limitNum });
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ message: "Error fetching campaigns: " + error.message });
+    }
+  });
+
+  // Admin: Export contacts for a segment
+  app.get("/api/admin/contacts/export/:segment", requireAdmin, auditActions.exportContacts, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { segment } = req.params;
+      
+      // Get contacts for segment
+      const contacts = await storage.getContactsForSegment(segment);
+      
+      // Convert to CSV
+      const csv = convertUsersToCSV(contacts);
+      
+      // Log campaign export
+      await storage.createCampaign({
+        adminId: user.id,
+        campaignName: `Export: ${segment}`,
+        segment,
+        contactCount: contacts.length,
+      });
+      
+      // Send CSV file
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="${generateFilename(segment)}"`);
+      res.send(csv);
+    } catch (error: any) {
+      console.error('[Admin] Contact export error:', error);
+      res.status(500).json({ message: "Error exporting contacts: " + error.message });
+    }
+  });
+
+  // Admin: Get segment preview (first 10 contacts)
+  app.get("/api/admin/contacts/preview/:segment", requireAdmin, async (req, res) => {
+    try {
+      const { segment } = req.params;
+      const contacts = await storage.getContactsForSegment(segment);
+      res.json({
+        count: contacts.length,
+        preview: contacts.slice(0, 10),
+      });
+    } catch (error: any) {
+      res.status(500).json({ message: "Error fetching contacts: " + error.message });
     }
   });
 

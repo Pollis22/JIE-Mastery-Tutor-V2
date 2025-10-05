@@ -83,4 +83,17 @@ export const auditActions = {
     action: 'view_logs',
     targetType: 'system',
   }),
+  
+  exportContacts: createAuditLogger({
+    action: 'export_contacts',
+    targetType: 'system',
+    getDetails: (req) => ({
+      segment: req.params.segment || req.query.segment,
+    }),
+  }),
+  
+  viewCampaigns: createAuditLogger({
+    action: 'view_campaigns',
+    targetType: 'system',
+  }),
 };

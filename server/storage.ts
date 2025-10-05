@@ -14,6 +14,7 @@ import {
   tutorSessions,
   agentSessions,
   adminLogs,
+  marketingCampaigns,
   type User,
   type InsertUser,
   type Subject,
@@ -37,6 +38,8 @@ import {
   type InsertTutorSession,
   type AdminLog,
   type InsertAdminLog,
+  type MarketingCampaign,
+  type InsertMarketingCampaign,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, asc, count, sum, sql, like, or } from "drizzle-orm";
@@ -140,6 +143,11 @@ export interface IStorage {
   getExpiredAgentSessions(hoursOld: number): Promise<any[]>;
   getOrphanedAgentSessions(cutoffDate: Date): Promise<any[]>;
   getDocumentContent(documentId: string): Promise<Buffer | undefined>;
+  
+  // Marketing campaign operations
+  createCampaign(campaign: InsertMarketingCampaign): Promise<MarketingCampaign>;
+  getCampaigns(options: { page: number; limit: number }): Promise<{ campaigns: MarketingCampaign[]; total: number }>;
+  getContactsForSegment(segment: string): Promise<User[]>;
 
   // Session store
   sessionStore: session.Store;
@@ -1418,6 +1426,70 @@ export class DatabaseStorage implements IStorage {
       return undefined;
     }
   }
+  
+  // Marketing campaign operations
+  async createCampaign(campaign: InsertMarketingCampaign): Promise<MarketingCampaign> {
+    const [result] = await db.insert(marketingCampaigns).values(campaign).returning();
+    return result;
+  }
+  
+  async getCampaigns(options: { page: number; limit: number }): Promise<{ campaigns: MarketingCampaign[]; total: number }> {
+    const offset = (options.page - 1) * options.limit;
+    
+    const campaigns = await db.query.marketingCampaigns.findMany({
+      orderBy: [desc(marketingCampaigns.exportedAt)],
+      limit: options.limit,
+      offset,
+    });
+    
+    const [{ value: total }] = await db
+      .select({ value: count() })
+      .from(marketingCampaigns);
+    
+    return { campaigns, total };
+  }
+  
+  async getContactsForSegment(segment: string): Promise<User[]> {
+    let conditions: any[] = [eq(users.marketingOptIn, true)];
+    
+    switch (segment) {
+      case 'all':
+        // All users with marketing consent
+        break;
+        
+      case 'free-users':
+        // Users who never subscribed
+        conditions.push(sql`${users.subscriptionStatus} IS NULL OR ${users.subscriptionStatus} = ''`);
+        break;
+        
+      case 'cancelled':
+        // Users with cancelled subscriptions
+        conditions.push(eq(users.subscriptionStatus, 'canceled'));
+        break;
+        
+      case 'inactive-30':
+        // Users who haven't logged in for 30+ days
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        conditions.push(sql`${users.updatedAt} < ${thirtyDaysAgo.toISOString()}`);
+        break;
+        
+      case 'active-premium':
+        // Active Premium/Pro subscribers
+        conditions.push(
+          eq(users.subscriptionStatus, 'active'),
+          or(eq(users.subscriptionPlan, 'pro'), eq(users.subscriptionPlan, 'standard'))!
+        );
+        break;
+        
+      default:
+        break;
+    }
+    
+    return await db.select().from(users).where(and(...conditions));
+  }
 }
+
+
 
 export const storage = new DatabaseStorage();
