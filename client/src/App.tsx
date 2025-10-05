@@ -24,6 +24,7 @@ import AdminSubscriptions from "@/pages/admin-subscriptions";
 import AdminDocuments from "@/pages/admin-documents";
 import AdminAnalytics from "@/pages/admin-analytics";
 import AdminLogs from "@/pages/admin-logs";
+import TermsPage from "@/pages/terms-page";
 
 function Router() {
   return (
@@ -46,6 +47,7 @@ function Router() {
       <Route path="/login" component={AuthPage} />
       <Route path="/pricing" component={PricingPage} />
       <Route path="/benefits" component={BenefitsPage} />
+      <Route path="/terms" component={TermsPage} />
       <Route path="/unsubscribe" component={UnsubscribePage} />
       <Route component={NotFound} />
     </Switch>
