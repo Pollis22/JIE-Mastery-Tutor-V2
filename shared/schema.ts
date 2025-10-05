@@ -150,6 +150,21 @@ export const adminLogs = pgTable("admin_logs", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Marketing campaign tracking table
+export const marketingCampaigns = pgTable("marketing_campaigns", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  adminId: varchar("admin_id").notNull().references(() => users.id),
+  campaignName: text("campaign_name").notNull(),
+  segment: text("segment").notNull(), // 'all', 'free-users', 'cancelled', etc.
+  contactCount: integer("contact_count").notNull(),
+  filters: jsonb("filters"), // Store custom filter criteria
+  exportedAt: timestamp("exported_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_campaigns_admin").on(table.adminId),
+  index("idx_campaigns_exported").on(table.exportedAt),
+]);
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   progress: many(userProgress),
@@ -524,3 +539,12 @@ export const insertAdminLogSchema = createInsertSchema(adminLogs).omit({
 });
 export type AdminLog = typeof adminLogs.$inferSelect;
 export type InsertAdminLog = z.infer<typeof insertAdminLogSchema>;
+
+// Marketing campaign types
+export const insertMarketingCampaignSchema = createInsertSchema(marketingCampaigns).omit({
+  id: true,
+  createdAt: true,
+  exportedAt: true,
+});
+export type MarketingCampaign = typeof marketingCampaigns.$inferSelect;
+export type InsertMarketingCampaign = z.infer<typeof insertMarketingCampaignSchema>;
