@@ -195,7 +195,7 @@ export default function PricingPage() {
                     </p>
                   </div>
 
-                  <div className="space-y-4 mb-8">
+                  <div className="space-y-4 mb-6">
                     {plan.features.map((feature, idx) => (
                       <div key={idx} className="flex items-center space-x-3" data-testid={`feature-${plan.id}-${idx}`}>
                         <svg className="w-5 h-5 text-secondary flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -204,6 +204,13 @@ export default function PricingPage() {
                         <span className="text-foreground">{feature}</span>
                       </div>
                     ))}
+                  </div>
+
+                  {/* Minute Top-Up Notice */}
+                  <div className="bg-muted/50 rounded-lg p-3 mb-6 border border-border">
+                    <p className="text-xs text-muted-foreground text-center">
+                      <span className="font-semibold text-foreground">Need more minutes?</span> Purchase additional 60-minute blocks for $19.99 anytime
+                    </p>
                   </div>
 
                   <Button 
@@ -249,8 +256,8 @@ export default function PricingPage() {
                 <div>
                   <h4 className="font-semibold text-foreground mb-2">What if I run out of minutes?</h4>
                   <p className="text-muted-foreground text-sm">
-                    If you use all your monthly minutes, you can upgrade to a higher plan. 
-                    We'll notify you when you're close to your limit.
+                    You can instantly purchase additional minutes in 60-minute increments for $19.99 each. 
+                    Alternatively, upgrade to a higher plan for better value. We'll notify you when you're running low.
                   </p>
                 </div>
                 <div>
