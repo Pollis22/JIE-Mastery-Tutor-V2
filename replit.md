@@ -95,7 +95,15 @@ A comprehensive administrative interface for platform management with complete a
 -   `/admin/subscriptions` - Subscription analytics and monitoring
 -   `/admin/documents` - Document storage and management
 -   `/admin/analytics` - Platform performance metrics
+-   `/admin/contacts` - Marketing contact management and CSV exports
 -   `/admin/logs` - Complete audit trail of admin actions
+
+**Contact Management & Marketing Tools**:
+-   **Segment-Based Exports**: Export contact lists for targeted campaigns (All Users, Free Users, Cancelled, Inactive 30+, Active Premium)
+-   **Campaign Tracking**: Database records of all exports with admin, segment, contact count, and timestamp
+-   **CSV Format**: RFC 4180 compliant CSV with comprehensive user data including student profiles, subscription status, and usage metrics
+-   **Preview Feature**: View first 10 contacts from any segment before exporting
+-   **Export History**: Complete audit trail of all contact exports with campaign names and metrics
 
 ### State Management & Caching
 -   TanStack Query for API state management, caching, and background updates.
