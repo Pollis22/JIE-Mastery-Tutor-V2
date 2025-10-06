@@ -1,4 +1,5 @@
 // Test setup for Jest acceptance tests
+import { beforeAll } from '@jest/globals';
 import axios from 'axios';
 
 // Set default timeout for all axios requests in tests

@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeAll } from '@jest/globals';
-import axios from 'axios';
+import axios, { type AxiosResponse } from 'axios';
 
 const API_URL = process.env.API_URL || 'http://localhost:5000';
 const DEBUG_KEY = process.env.DEBUG_API_KEY || 'debug-key-2024';
@@ -90,7 +90,7 @@ describe('AI Tutor Voice Acceptance Tests', () => {
     }
     
     const responses = await Promise.all(promises);
-    const successfulResponses = responses.filter(r => !r.error && r.data);
+    const successfulResponses = responses.filter((r): r is AxiosResponse => 'data' in r && !('error' in r));
     
     // At least some should succeed
     expect(successfulResponses.length).toBeGreaterThan(0);
@@ -209,7 +209,7 @@ describe('Performance Benchmarks', () => {
     const results = await Promise.all(promises);
     const duration = Date.now() - start;
     
-    const successful = results.filter(r => !r.error && r.data);
+    const successful = results.filter((r): r is AxiosResponse => 'data' in r && !('error' in r));
     
     expect(successful.length).toBeGreaterThan(2); // At least 60% success
     expect(duration).toBeLessThan(10000); // All complete within 10s
@@ -235,7 +235,7 @@ describe('Performance Benchmarks', () => {
     }
     
     const results = await Promise.all(promises);
-    const successful = results.filter(r => !r.error);
+    const successful = results.filter((r): r is AxiosResponse => !('error' in r));
     
     // Should handle all requests without major issues
     expect(successful.length).toBeGreaterThan(7);
@@ -247,7 +247,7 @@ describe('Debug API Tests', () => {
   test('Debug endpoint requires authentication', async () => {
     try {
       await axios.get(`${API_URL}/api/debug/last-turns`);
-      fail('Should have required authentication');
+      throw new Error('Should have required authentication');
     } catch (error: any) {
       expect(error.response?.status).toBe(401);
     }
