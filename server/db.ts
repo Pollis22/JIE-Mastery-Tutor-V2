@@ -1,17 +1,8 @@
-import { Pool, neonConfig } from '@neondatabase/serverless';
-import { drizzle } from 'drizzle-orm/neon-serverless';
-import ws from "ws";
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { Pool } from 'pg';
 import * as schema from "@shared/schema";
 
-// Configure Neon serverless
-neonConfig.webSocketConstructor = ws;
-
-// Disable fetching connection parameters from the database
-// This prevents the driver from trying to use Railway's internal postgres proxy
-neonConfig.fetchConnectionCache = false;
-neonConfig.fetchEndpoint = undefined;
-
-// Database configuration with proper SSL handling
+// Database configuration
 const dbUrl = process.env.DATABASE_URL;
 
 if (!dbUrl) {
@@ -30,24 +21,32 @@ if (dbUrl) {
   console.log(`[DB] Database URL configured: ${safeUrl}`);
 }
 
-// Configure pool with secure SSL handling
+// Configure standard PostgreSQL pool with SSL for production
 const connectionConfig: any = {
   connectionString: dbUrl || "postgresql://fallback:fallback@localhost:5432/fallback",
 };
 
-// Only configure SSL if explicitly enabled
-if (process.env.DATABASE_SSL === 'true') {
-  connectionConfig.ssl = {
-    rejectUnauthorized: process.env.DATABASE_SSL_REJECT_UNAUTHORIZED !== 'false'
+// Enable SSL in production for remote databases
+if (process.env.NODE_ENV === 'production' && dbUrl && !dbUrl.includes('localhost')) {
+  connectionConfig.ssl = { 
+    rejectUnauthorized: false // Required for Railway and most cloud providers
   };
-} else if (process.env.NODE_ENV === 'production' && dbUrl && !dbUrl.includes('localhost')) {
-  // Default to SSL in production for remote databases
-  connectionConfig.ssl = { rejectUnauthorized: true };
+  console.log('[DB] SSL enabled for production');
 }
 
-console.log('[DB] Creating connection pool...');
+console.log('[DB] Creating connection pool with standard pg driver...');
 export const pool = new Pool(connectionConfig);
-console.log('[DB] ✓ Pool created (will connect on first query)');
 
-export const db = drizzle({ client: pool, schema });
-console.log('[DB] ✓ Drizzle ORM initialized');
+// Test the connection on startup
+pool.connect((err, client, release) => {
+  if (err) {
+    console.error('[DB] ❌ Initial connection test failed:', err.message);
+    console.error('[DB] The server will continue but database operations may fail');
+  } else {
+    console.log('[DB] ✓ Connection test successful');
+    release();
+  }
+});
+
+export const db = drizzle(pool, { schema });
+console.log('[DB] ✓ Drizzle ORM initialized with standard pg driver');
