@@ -41,6 +41,8 @@ The system integrates a **Multi-Agent ElevenLabs ConvAI System** with five pre-c
 ### Database Schema & Data Management
 Core entities include Users, Subjects, Lessons, User Progress, Learning Sessions, and Quiz Attempts. The RAG system incorporates User Documents, Document Chunks, and Document Embeddings.
 
+**Connection Strategy**: Lazy database initialization - the database connection pool is only created when first accessed, allowing the server to start successfully even if the database is temporarily unavailable. This ensures Railway healthchecks pass before database connectivity is required.
+
 **Student Profile Fields**: Users table includes comprehensive student profile data:
 -   `parentName`: Parent/guardian name for account management
 -   `studentName`: Student's full name
