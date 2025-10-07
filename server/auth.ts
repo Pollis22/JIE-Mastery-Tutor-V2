@@ -93,7 +93,7 @@ export function setupAuth(app: Express) {
         
         // Normal authentication flow
         try {
-          const user = await storage.getUserByUsername(email);
+          const user = await storage.getUserByEmail(email);
           if (!user || !(await comparePasswords(password, user.password))) {
             return done(null, false);
           }
