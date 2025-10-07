@@ -3,7 +3,13 @@ import { drizzle } from 'drizzle-orm/neon-serverless';
 import ws from "ws";
 import * as schema from "@shared/schema";
 
+// Configure Neon serverless
 neonConfig.webSocketConstructor = ws;
+
+// Disable fetching connection parameters from the database
+// This prevents the driver from trying to use Railway's internal postgres proxy
+neonConfig.fetchConnectionCache = false;
+neonConfig.fetchEndpoint = undefined;
 
 // Database configuration with proper SSL handling
 const dbUrl = process.env.DATABASE_URL;
