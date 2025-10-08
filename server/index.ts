@@ -61,6 +61,17 @@ app.use((req, res, next) => {
     console.log(`PORT: ${process.env.PORT || '5000'}`);
     console.log(`DATABASE_URL: ${process.env.DATABASE_URL ? 'Set ✓' : 'Missing ✗'}`);
     
+    // Initialize database schema before anything else
+    if (process.env.DATABASE_URL) {
+      console.log('Initializing database...');
+      const { initializeDatabase } = await import('./db-init');
+      const dbInitSuccess = await initializeDatabase();
+      if (!dbInitSuccess && process.env.NODE_ENV === 'production') {
+        console.error('❌ Failed to initialize database in production!');
+        process.exit(1);
+      }
+    }
+    
     console.log('Registering routes...');
     const server = await registerRoutes(app);
     console.log('Routes registered successfully ✓');
