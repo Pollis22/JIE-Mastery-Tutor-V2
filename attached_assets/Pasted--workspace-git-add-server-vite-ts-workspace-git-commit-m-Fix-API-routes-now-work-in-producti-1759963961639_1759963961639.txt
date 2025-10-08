@@ -1,0 +1,91 @@
+/workspace$ git add server/vite.ts
+~/workspace$ git commit -m "Fix: API routes now work in production - skip catch-all for /api/*"
+On branch main
+Your branch is ahead of 'origin/main' by 1 commit.
+  (use "git push" to publish your local commits)
+
+nothing to commit, working tree clean
+~/workspace$ git push origin main
+Enumerating objects: 8, done.
+Counting objects: 100% (8/8), done.
+Delta compression using up to 8 threads
+Compressing objects: 100% (6/6), done.
+Writing objects: 100% (6/6), 457.91 KiB | 20.81 MiB/s, done.
+Total 6 (delta 2), reused 0 (delta 0), pack-reused 0 (from 0)
+remote: Resolving deltas: 100% (2/2), completed with 2 local objects.
+remote: This repository moved. Please use the new location:
+remote:   https://github.com/Pollis22/JIE-Mastery-Tutor-V2.git
+To https://github.com/Pollis22/jie-mastery-tutor-v2.git
+   4a85cb0..04b1ee7  main -> main
+~/workspace$ git add -A
+~/workspace$ git commit -m "Fix production API routes - skip catch-all for /api endpoints"
+On branch main
+Your branch is ahead of 'origin/main' by 1 commit.
+  (use "git push" to publish your local commits)
+
+nothing to commit, working tree clean
+~/workspace$ git push origin main
+Enumerating objects: 8, done.
+Counting objects: 100% (8/8), done.
+Delta compression using up to 8 threads
+Compressing objects: 100% (6/6), done.
+Writing objects: 100% (6/6), 424.54 KiB | 30.32 MiB/s, done.
+Total 6 (delta 2), reused 0 (delta 0), pack-reused 0 (from 0)
+remote: Resolving deltas: 100% (2/2), completed with 2 local objects.
+remote: This repository moved. Please use the new location:
+remote:   https://github.com/Pollis22/JIE-Mastery-Tutor-V2.git
+To https://github.com/Pollis22/jie-mastery-tutor-v2.git
+   04b1ee7..12f96d1  main -> main
+~/workspace$ git add -A && git commit -m "Fix: API routes work in production + better error messages" && git push origin main
+On branch main
+Your branch is ahead of 'origin/main' by 2 commits.
+  (use "git push" to publish your local commits)
+
+nothing to commit, working tree clean
+~/workspace$ git add -A
+~/workspace$ git commit -m "Fix: API routes work in production + better error messages"
+On branch main
+Your branch is ahead of 'origin/main' by 2 commits.
+  (use "git push" to publish your local commits)
+
+nothing to commit, working tree clean
+~/workspace$ git push origin main
+Enumerating objects: 16, done.
+Counting objects: 100% (16/16), done.
+Delta compression using up to 8 threads
+Compressing objects: 100% (10/10), done.
+Writing objects: 100% (10/10), 424.72 KiB | 24.98 MiB/s, done.
+Total 10 (delta 5), reused 0 (delta 0), pack-reused 0 (from 0)
+remote: Resolving deltas: 100% (5/5), completed with 4 local objects.
+remote: This repository moved. Please use the new location:
+remote:   https://github.com/Pollis22/JIE-Mastery-Tutor-V2.git
+To https://github.com/Pollis22/jie-mastery-tutor-v2.git
+   12f96d1..3fee994  main -> main
+~/workspace$ git add -A
+~/workspace$ git commit -m "Add password visibility toggles to auth forms"
+On branch main
+Your branch is ahead of 'origin/main' by 2 commits.
+  (use "git push" to publish your local commits)
+
+nothing to commit, working tree clean
+~/workspace$ git push origin main
+Enumerating objects: 16, done.
+Counting objects: 100% (16/16), done.
+Delta compression using up to 8 threads
+Compressing objects: 100% (10/10), done.
+Writing objects: 100% (10/10), 268.19 KiB | 29.80 MiB/s, done.
+Total 10 (delta 6), reused 0 (delta 0), pack-reused 0 (from 0)
+remote: Resolving deltas: 100% (6/6), completed with 5 local objects.
+remote: This repository moved. Please use the new location:
+remote:   https://github.com/Pollis22/JIE-Mastery-Tutor-V2.git
+To https://github.com/Pollis22/jie-mastery-tutor-v2.git
+   bab4082..c636c9e  main -> main
+~/workspace$ git add -A
+~/workspace$ git commit -m "Fix API routes, error toasts, and add password toggles"
+On branch main
+Your branch is up to date with 'origin/main'.
+
+nothing to commit, working tree clean
+~/workspace$ git push origin main
+Everything up-to-date
+~/workspace$ 
