@@ -67,9 +67,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       queryClient.setQueryData(["/api/user"], user);
     },
     onError: (error: Error) => {
+      console.error('Register error:', error);
+      const errorMessage = error.message || "Unable to create account. Please try again.";
       toast({
-        title: "Registration failed",
-        description: error.message,
+        title: "Registration failed", 
+        description: errorMessage,
         variant: "destructive",
       });
     },
