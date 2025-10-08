@@ -18,6 +18,16 @@ async function throwIfResNotOk(res: Response) {
     } catch (e) {
       console.error('Error reading response text:', e);
     }
+    
+    // Provide user-friendly error messages for specific status codes
+    if (res.status === 502) {
+      errorMessage = "Server is temporarily unavailable. Please try again in a moment.";
+    } else if (res.status === 500) {
+      errorMessage = errorMessage || "Internal server error. Please try again.";
+    } else if (!errorMessage || errorMessage === "Bad Gateway") {
+      errorMessage = `Request failed with status ${res.status}`;
+    }
+    
     console.error(`API Error ${res.status}:`, errorMessage);
     throw new Error(errorMessage);
   }
