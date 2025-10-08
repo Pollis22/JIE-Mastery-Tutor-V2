@@ -11,7 +11,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import jieLogo from "@/assets/jie-mastery-logo.png";
 import authHeroImage from "@assets/Create_an_image_of_an_AI_robot_tutoring_a_real_tee-1759437278109_1759521800759.png";
 
@@ -44,6 +45,8 @@ type RegisterForm = z.infer<typeof registerSchema>;
 export default function AuthPage() {
   const { user, loginMutation, registerMutation } = useAuth();
   const [, setLocation] = useLocation();
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showRegisterPassword, setShowRegisterPassword] = useState(false);
 
   const loginForm = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
@@ -176,7 +179,27 @@ export default function AuthPage() {
                             <FormItem>
                               <FormLabel>Password</FormLabel>
                               <FormControl>
-                                <Input type="password" {...field} data-testid="input-password" />
+                                <div className="relative">
+                                  <Input 
+                                    type={showLoginPassword ? "text" : "password"} 
+                                    {...field} 
+                                    className="pr-10"
+                                    data-testid="input-password" 
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowLoginPassword(!showLoginPassword)}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                                    aria-label={showLoginPassword ? "Hide password" : "Show password"}
+                                    data-testid="button-toggle-login-password"
+                                  >
+                                    {showLoginPassword ? (
+                                      <EyeOff className="h-4 w-4" />
+                                    ) : (
+                                      <Eye className="h-4 w-4" />
+                                    )}
+                                  </button>
+                                </div>
                               </FormControl>
                               <FormMessage />
                             </FormItem>
@@ -327,7 +350,27 @@ export default function AuthPage() {
                             <FormItem>
                               <FormLabel>Password</FormLabel>
                               <FormControl>
-                                <Input type="password" {...field} data-testid="input-register-password" />
+                                <div className="relative">
+                                  <Input 
+                                    type={showRegisterPassword ? "text" : "password"} 
+                                    {...field} 
+                                    className="pr-10"
+                                    data-testid="input-register-password" 
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowRegisterPassword(!showRegisterPassword)}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                                    aria-label={showRegisterPassword ? "Hide password" : "Show password"}
+                                    data-testid="button-toggle-register-password"
+                                  >
+                                    {showRegisterPassword ? (
+                                      <EyeOff className="h-4 w-4" />
+                                    ) : (
+                                      <Eye className="h-4 w-4" />
+                                    )}
+                                  </button>
+                                </div>
                               </FormControl>
                               <FormDescription>Must be at least 8 characters</FormDescription>
                               <FormMessage />
