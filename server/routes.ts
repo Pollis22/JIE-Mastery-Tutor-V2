@@ -793,27 +793,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         { id: 'college', name: 'College/Adult', envKey: 'ELEVENLABS_AGENT_COLLEGE', gradeLevel: 'college-adult' },
       ];
 
-      const agentStats = await Promise.all(
-        agents.map(async (agent) => {
-          // Get session count for this agent's grade level
-          const sessions = await storage.getAgentSessionsByGrade(agent.gradeLevel as any);
-          const recentSessions = sessions.filter(s => {
-            const created = new Date(s.createdAt);
-            const daysSince = Math.floor((Date.now() - created.getTime()) / (1000 * 60 * 60 * 24));
-            return daysSince <= 7;
-          });
-          
-          return {
-            id: agent.id,
-            name: agent.name,
-            gradeLevel: agent.gradeLevel,
-            agentId: process.env[agent.envKey] || 'Not configured',
-            totalSessions: sessions.length,
-            recentSessions: recentSessions.length,
-            isConfigured: !!process.env[agent.envKey],
-          };
-        })
-      );
+      const agentStats = agents.map((agent) => {
+        return {
+          id: agent.id,
+          name: agent.name,
+          gradeLevel: agent.gradeLevel,
+          agentId: process.env[agent.envKey] || 'Not configured',
+          totalSessions: 0, // TODO: Implement session tracking per agent
+          recentSessions: 0,
+          isConfigured: !!process.env[agent.envKey],
+        };
+      });
 
       res.json({ agents: agentStats });
     } catch (error: any) {
