@@ -9,6 +9,9 @@ export async function initializeDatabase() {
   }
 
   try {
+    // First, ensure session table exists (critical for auth)
+    await ensureSessionTable();
+    
     // Check if tables exist by trying a simple query
     console.log('[DB-Init] Checking database schema...');
     
@@ -72,5 +75,47 @@ export async function initializeDatabase() {
     }
     
     return false;
+  }
+}
+
+async function ensureSessionTable() {
+  try {
+    console.log('[DB-Init] Checking for session table...');
+    
+    // Check if session table exists
+    const result = await pool.query(`
+      SELECT COUNT(*) FROM information_schema.tables 
+      WHERE table_schema = 'public' 
+      AND table_name = 'session'
+    `);
+    
+    const tableCount = parseInt(result.rows[0]?.count || '0', 10);
+    const tableExists = tableCount > 0;
+    
+    if (!tableExists) {
+      console.log('[DB-Init] Creating session table...');
+      
+      // Create session table using raw SQL that matches connect-pg-simple expectations
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS "session" (
+          "sid" VARCHAR(255) NOT NULL COLLATE "default",
+          "sess" JSON NOT NULL,
+          "expire" TIMESTAMP(6) NOT NULL,
+          CONSTRAINT "session_pkey" PRIMARY KEY ("sid")
+        ) WITH (OIDS=FALSE)
+      `);
+      
+      // Create index on expire column for performance
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON "session" ("expire")
+      `);
+      
+      console.log('[DB-Init] ✅ Session table created successfully');
+    } else {
+      console.log('[DB-Init] ✅ Session table already exists');
+    }
+  } catch (error) {
+    console.error('[DB-Init] ❌ Failed to ensure session table:', error);
+    // Don't throw - let connect-pg-simple try to create it
   }
 }
