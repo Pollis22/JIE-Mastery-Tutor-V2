@@ -1,0 +1,277 @@
+Looking at your Railway logs, I can see **TWO critical issues**:
+
+## 🔴 Problem 1: Session Table Missing (Database Error)
+
+The logs show repeated errors:
+```
+ERROR: relation "session" does not exist at character 13
+```
+
+**This means:** The `session` table was never created in your PostgreSQL database. When users try to register, the app tries to create a session but fails because the table doesn't exist.
+
+## 🔴 Problem 2: HTTP 500 Errors (Not 502 anymore - progress!)
+
+The `/api/register` endpoint is now returning **500 Internal Server Error** instead of 502, which means:
+- ✅ The server is running
+- ✅ The API endpoint exists
+- ❌ But it crashes when trying to save sessions
+
+---
+
+## 🎯 THE ROOT CAUSE
+
+Your database migration (`npm run db:push`) is **NOT running during Railway deployment**, or it's only creating some tables but missing the `session` table.
+
+Looking at your setup, you're likely using `express-session` with `connect-pg-simple` for session storage, but the session table schema isn't being created.
+
+---
+
+## 🛠️ THE FIX - Prompt for Agent3
+
+Copy this entire prompt and give it to Agent3:
+
+```markdown
+# URGENT FIX: Session Table Missing in Railway Production
+
+## Problem Diagnosis
+
+Looking at Railway logs, the app is failing with this error:
+```
+ERROR: relation "session" does not exist at character 18
+```
+
+This means the PostgreSQL `session` table was never created in production. This is causing all registration attempts to fail with HTTP 500 errors.
+
+## Root Cause
+
+The `connect-pg-simple` session store requires a `session` table, but our database migration isn't creating it. We need to:
+
+1. Add the session table to our Drizzle schema
+2. Ensure it gets created during deployment
+3. OR create it manually via SQL migration
+
+---
+
+## SOLUTION 1: Add Session Table to Drizzle Schema
+
+**File: `db/schema.ts`**
+
+Add the session table definition:
+
+```typescript
+import { pgTable, text, timestamp, varchar } from 'drizzle-orm/pg-core';
+
+// Add this to your schema file
+export const sessions = pgTable('session', {
+  sid: varchar('sid', { length: 255 }).primaryKey(),
+  sess: text('sess').notNull(),
+  expire: timestamp('expire', { withTimezone: true }).notNull(),
+});
+```
+
+Then ensure this table is included in your schema exports at the bottom of the file:
+
+```typescript
+export type Session = typeof sessions.$inferSelect;
+export type NewSession = typeof sessions.$inferInsert;
+```
+
+---
+
+## SOLUTION 2: Create Session Table via SQL Migration
+
+**File: `db/migrations/create_sessions.sql`** (create this file)
+
+```sql
+CREATE TABLE IF NOT EXISTS "session" (
+  "sid" VARCHAR(255) NOT NULL COLLATE "default",
+  "sess" TEXT NOT NULL,
+  "expire" TIMESTAMP(6) NOT NULL,
+  PRIMARY KEY ("sid")
+);
+
+CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON "session" ("expire");
+```
+
+---
+
+## SOLUTION 3: Initialize Session Table on Server Startup
+
+**File: `server/index.ts`**
+
+Add this code BEFORE starting the Express server:
+
+```typescript
+import { sql } from 'drizzle-orm';
+
+async function ensureSessionTable() {
+  try {
+    console.log('Checking for session table...');
+    
+    // Create session table if it doesn't exist
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS "session" (
+        "sid" VARCHAR(255) NOT NULL COLLATE "default",
+        "sess" TEXT NOT NULL,
+        "expire" TIMESTAMP(6) NOT NULL,
+        PRIMARY KEY ("sid")
+      );
+    `);
+    
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON "session" ("expire");
+    `);
+    
+    console.log('✅ Session table verified/created');
+  } catch (error) {
+    console.error('❌ Failed to create session table:', error);
+    throw error;
+  }
+}
+
+// Call this BEFORE app.listen()
+await ensureSessionTable();
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
+```
+
+---
+
+## SOLUTION 4: Verify Session Store Configuration
+
+**File: `server/index.ts` or wherever session is configured**
+
+Ensure your session configuration is correct:
+
+```typescript
+import session from 'express-session';
+import connectPgSimple from 'connect-pg-simple';
+import pkg from 'pg';
+
+const { Pool } = pkg;
+const pgSession = connectPgSimple(session);
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+});
+
+app.use(
+  session({
+    store: new pgSession({
+      pool: pool,
+      tableName: 'session', // Must match the table name
+      createTableIfMissing: true, // IMPORTANT: Auto-create table
+    }),
+    secret: process.env.SESSION_SECRET || 'your-secret-key-here',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: process.env.NODE_ENV === 'production',
+      httpOnly: true,
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+    },
+  })
+);
+```
+
+**Key line:** `createTableIfMissing: true` - This tells `connect-pg-simple` to auto-create the session table if it doesn't exist.
+
+---
+
+## PRIORITY IMPLEMENTATION ORDER
+
+**Do ALL of these to be safe:**
+
+1. ✅ **Add `createTableIfMissing: true`** to session config (QUICKEST FIX)
+2. ✅ **Add session table** to Drizzle schema
+3. ✅ **Add `ensureSessionTable()`** function to server startup
+4. ✅ **Commit and push** to trigger Railway deployment
+
+---
+
+## After Implementation
+
+**Step 1: Commit Changes**
+```bash
+git add .
+git commit -m "Fix: Add session table creation for Railway production"
+git push origin main
+```
+
+**Step 2: Watch Railway Deployment**
+
+In Railway logs, you should see:
+```
+✅ Session table verified/created
+✅ Database connected successfully
+🚀 Server running on port 3000
+```
+
+**Step 3: Test Registration**
+
+Try creating an account again. It should work this time!
+
+---
+
+## Debugging Commands (if still failing)
+
+**Check if session table exists:**
+
+In Railway Dashboard → PostgreSQL → Query:
+```sql
+SELECT * FROM information_schema.tables WHERE table_name = 'session';
+```
+
+**Manually create table if needed:**
+
+In Railway PostgreSQL Query tab:
+```sql
+CREATE TABLE IF NOT EXISTS "session" (
+  "sid" VARCHAR(255) NOT NULL COLLATE "default",
+  "sess" TEXT NOT NULL,
+  "expire" TIMESTAMP(6) NOT NULL,
+  PRIMARY KEY ("sid")
+);
+
+CREATE INDEX "IDX_session_expire" ON "session" ("expire");
+```
+
+---
+
+## Expected Result After Fix
+
+✅ Session table exists in production database
+✅ Registration endpoint returns success (not 500 error)
+✅ Users can create accounts
+✅ Sessions persist properly
+✅ Login/logout works
+
+The key fix is adding `createTableIfMissing: true` to the session store configuration - this alone might solve everything!
+```
+
+---
+
+## 📊 Summary for You
+
+**What's happening:**
+1. User clicks "Create Account"
+2. Server tries to save session to database
+3. **Session table doesn't exist** → PostgreSQL error
+4. Server returns 500 error
+5. Empty error toast (because error handling isn't catching this properly)
+
+**What Agent3 needs to do:**
+1. Add `createTableIfMissing: true` to session config (5 minutes)
+2. Add session table to schema (10 minutes)
+3. Add startup check to create table (5 minutes)
+4. Fix error toast display (5 minutes)
+5. Push to Railway (2 minutes)
+
+**Total time to fix: ~30 minutes**
+
+---
+
+Give this prompt to Agent3 and it should resolve both the 500 errors AND the empty toast issue. The database problem is the blocker - once that's fixed, everything else should work! 🚀
