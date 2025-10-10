@@ -25,7 +25,7 @@ const plans = [
   {
     id: 'standard',
     name: 'Standard',
-    price: 59,
+    price: 59.99,
     minutes: 240,
     features: [
       '240 voice minutes per month',
