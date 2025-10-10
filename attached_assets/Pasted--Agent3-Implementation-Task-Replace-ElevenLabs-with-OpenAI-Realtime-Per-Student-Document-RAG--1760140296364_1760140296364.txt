@@ -1,0 +1,456 @@
+# Agent3 Implementation Task: Replace ElevenLabs with OpenAI Realtime + Per-Student Document RAG
+
+## Goal
+Replace the current ElevenLabs ConvAI system with **OpenAI Realtime API + Azure TTS/STT** to enable real-time voice tutoring that can intelligently retrieve and cite from each student's uploaded documents during live sessions. Maintain ElevenLabs-quality voice while adding per-student document awareness.
+
+## Requirements
+
+### 1. Voice Stack Migration
+- **Remove dependency on:** ElevenLabs ConvAI agents
+- **Implement:** OpenAI Realtime API for conversational AI
+- **Add:** Azure Speech Services for TTS/STT (higher quality, lower cost than OpenAI's default)
+- **Maintain:** Same voice quality and conversational flow as current ElevenLabs setup
+- **Keep:** Grade-level appropriate teaching (K-2, 3-5, 6-8, 9-12, College) through system prompts
+
+### 2. Document RAG Pipeline
+Build a complete Retrieval-Augmented Generation system that:
+
+#### A. Document Processing (`/api/upload` enhancement)
+When a student uploads a document:
+1. **Parse** the file into text:
+   - PDFs: Use `pdf-parse` or `pdfjs-dist`
+   - DOCX: Use `mammoth` or `docx-parser`
+   - Images: Use OCR (Tesseract.js or Azure Computer Vision API)
+2. **Chunk** the text into 400-800 token segments with 100-token overlap
+3. **Generate embeddings** using OpenAI `text-embedding-3-small` (cheap, excellent quality)
+4. **Store** in vector database with metadata:
+   ```json
+   {
+     "userId": "user_123",
+     "studentId": "student_456",
+     "documentId": "doc_789",
+     "chunkId": "chunk_001",
+     "content": "text chunk here...",
+     "embedding": [0.123, -0.456, ...],
+     "metadata": {
+       "filename": "algebra_homework.pdf",
+       "subject": "Math",
+       "gradeLevel": "9-12",
+       "pageNumber": 3,
+       "uploadedAt": "2025-10-10T12:00:00Z"
+     }
+   }
+   ```
+
+#### B. Vector Database Setup
+- **Use:** PostgreSQL with `pgvector` extension (already available on Railway)
+- **Create table:** `document_embeddings` with vector similarity search
+- **Index:** Use HNSW or IVFFlat index for fast similarity search
+- **Isolation:** CRITICAL - ensure each student can ONLY search their own documents
+
+#### C. Retrieval Controller
+During voice sessions:
+1. **On each user utterance** from STT, run vector search:
+   ```typescript
+   const relevantChunks = await vectorSearch({
+     userId: session.userId,
+     studentId: session.studentId,
+     query: userText,
+     topK: 6,
+     similarityThreshold: 0.7
+   });
+   ```
+2. **Format context** with citations:
+   ```
+   RETRIEVED CONTEXT:
+   [Source: algebra_homework.pdf, Page 3]
+   "The quadratic formula is x = (-b ± √(b²-4ac)) / 2a..."
+   
+   [Source: study_guide.docx, Section 2]
+   "Remember to always check your work by substituting back..."
+   ```
+3. **Inject into LLM** via function/tool calling or system message
+4. **Enforce citation requirement** in system prompt
+
+### 3. OpenAI Realtime Integration
+
+#### A. Backend WebSocket Server
+Create `/api/session/realtime` endpoint that:
+- Establishes WebSocket connection to OpenAI Realtime API
+- Manages audio streaming (receives browser audio, sends AI audio)
+- Handles conversation state and turn-taking
+- Implements RAG injection on each user turn
+
+#### B. System Prompt (Grade-Adaptive)
+```typescript
+const getSystemPrompt = (gradeLevel: string, studentContext: any) => `
+You are an expert ${gradeLevel} tutor having a voice conversation with a student.
+
+PERSONALITY:
+- Warm, encouraging, and patient
+- Age-appropriate language and examples
+- Socratic method - guide students to discover answers
+- Celebrate progress and effort
+
+TEACHING RULES:
+1. When the student asks about their uploaded materials, ALWAYS cite the source document and page
+2. Break complex topics into smaller steps appropriate for ${gradeLevel}
+3. Use real-world examples and analogies
+4. Check understanding frequently with simple questions
+5. If the student seems stuck, offer hints before giving answers
+6. Keep responses concise in voice (30-60 seconds max per turn)
+
+CITATION FORMAT (when using retrieved documents):
+"According to your study guide on page 3..."
+"Looking at your homework assignment..."
+"In the document you uploaded..."
+
+Student Context: ${JSON.stringify(studentContext)}
+`;
+```
+
+#### C. RAG Function/Tool Definition
+Define OpenAI function for document retrieval:
+```typescript
+{
+  name: "search_student_documents",
+  description: "Search the student's uploaded documents for relevant information about their question",
+  parameters: {
+    type: "object",
+    properties: {
+      query: {
+        type: "string",
+        description: "The student's question or topic to search for"
+      }
+    },
+    required: ["query"]
+  }
+}
+```
+
+Auto-call this function on EVERY user turn, inject results into context.
+
+### 4. Frontend Voice Interface
+
+#### A. Replace Current Tutor Component
+Update `/client/src/pages/Tutor.tsx`:
+- Remove ElevenLabs ConvAI widget
+- Add WebRTC audio capture (use `MediaRecorder` API)
+- Create WebSocket connection to `/api/session/realtime`
+- Stream microphone audio to backend
+- Receive and play AI audio responses
+- **CRITICAL: Show real-time live transcript** with auto-scroll as conversation progresses
+
+#### B. UI Elements
+```typescript
+interface VoiceSessionUI {
+  // Audio visualizer (waveform or level meter)
+  AudioVisualizer: React.FC;
+  
+  // LIVE TRANSCRIPT - MUST HAVE FEATURE
+  // Updates in real-time as student speaks and AI responds
+  // Shows both audio and text simultaneously
+  LiveTranscript: React.FC<{
+    messages: Message[];
+    isStreaming: boolean;
+    currentStreamingText: string;
+    onCitationClick: (docId: string, page: number) => void;
+    autoScroll: boolean;
+  }>;
+  
+  // Document context panel
+  ActiveDocuments: React.FC<{
+    documents: Document[];
+    highlightedChunks: string[];
+  }>;
+  
+  // Controls
+  Controls: {
+    muteButton: JSX.Element;
+    endSessionButton: JSX.Element;
+    interruptionIndicator: JSX.Element;
+    transcriptToggle: JSX.Element; // Show/hide transcript
+  };
+}
+```
+
+#### C. Live Transcript Requirements (CRITICAL)
+The live transcript component MUST:
+
+1. **Display in real-time** - Text appears as it's being spoken (word-by-word streaming)
+2. **Show both sides** - Student messages AND AI tutor responses
+3. **Auto-scroll** - Always scroll to bottom as new text appears
+4. **Highlight citations** - When AI cites a document, make it clickable/highlighted
+5. **Differentiate speakers** - Clear visual distinction between student and tutor
+6. **Persist during session** - Full conversation history visible at all times
+7. **Copy/export option** - Button to copy transcript or download as text file
+8. **Accessibility** - Large, readable font; high contrast for readability
+
+**Example Layout:**
+```
+┌─────────────────────────────────────┐
+│  Live Transcript                 📋 │ ← Header with copy button
+├─────────────────────────────────────┤
+│                                     │
+│ 👤 Student (12:34 PM):              │
+│ "Can you help me with question 3    │
+│  on my algebra homework?"           │
+│                                     │
+│ 🤖 Tutor (12:34 PM):                │
+│ "Of course! Looking at your         │
+│  homework assignment, question 3... │ ← Streaming text appears here
+│  [Source: algebra_hw.pdf, p.2] ←───────┐
+│  asks you to solve for x..."        │  │ Clickable citation
+│                                     │  │
+│ 👤 Student (12:35 PM):              │  │
+│ "I don't understand the first step" │  │
+│                                     │  │
+│ 🤖 Tutor (12:35 PM):               │  │
+│ "Great question! Let's break it..." │◄─┘ Auto-scrolls to bottom
+│                                     │
+└─────────────────────────────────────┘
+```
+
+**Technical Implementation:**
+```typescript
+interface TranscriptMessage {
+  id: string;
+  speaker: 'student' | 'tutor';
+  text: string;
+  timestamp: Date;
+  isComplete: boolean; // false while streaming
+  citations?: Array<{
+    documentId: string;
+    documentName: string;
+    pageNumber: number;
+    startIndex: number; // where citation appears in text
+    endIndex: number;
+  }>;
+}
+
+const LiveTranscriptComponent = () => {
+  const [messages, setMessages] = useState<TranscriptMessage[]>([]);
+  const [currentStreaming, setCurrentStreaming] = useState<string>('');
+  const transcriptRef = useRef<HTMLDivElement>(null);
+  
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    if (transcriptRef.current) {
+      transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight;
+    }
+  }, [messages, currentStreaming]);
+  
+  return (
+    <div className="live-transcript" ref={transcriptRef}>
+      {messages.map((msg) => (
+        <TranscriptMessage key={msg.id} message={msg} />
+      ))}
+      {currentStreaming && (
+        <StreamingMessage text={currentStreaming} speaker="tutor" />
+      )}
+    </div>
+  );
+};
+```
+
+### 5. Database Schema Additions
+
+Create new tables/columns:
+
+```sql
+-- Vector embeddings table
+CREATE TABLE document_embeddings (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  student_id INTEGER REFERENCES students(id) ON DELETE CASCADE,
+  document_id INTEGER REFERENCES documents(id) ON DELETE CASCADE,
+  chunk_index INTEGER NOT NULL,
+  content TEXT NOT NULL,
+  embedding vector(1536), -- OpenAI embedding size
+  metadata JSONB,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Add pgvector index for fast similarity search
+CREATE INDEX ON document_embeddings 
+USING ivfflat (embedding vector_cosine_ops)
+WITH (lists = 100);
+
+-- Update sessions table to track RAG usage
+ALTER TABLE sessions ADD COLUMN chunks_retrieved INTEGER DEFAULT 0;
+ALTER TABLE sessions ADD COLUMN citations JSONB;
+ALTER TABLE sessions ADD COLUMN transcript JSONB;
+
+-- Add voice_stack column to track which system was used
+ALTER TABLE sessions ADD COLUMN voice_stack VARCHAR(50) DEFAULT 'realtime';
+```
+
+### 6. New API Endpoints
+
+#### Required Routes:
+```typescript
+// Enhanced document upload with embedding generation
+POST /api/documents/upload
+- Parse file → chunk → embed → store
+- Return: { documentId, chunksCreated, success }
+
+// Start realtime voice session
+POST /api/session/realtime/start
+- Create session record
+- Return: { sessionId, websocketUrl, iceServers }
+
+// WebSocket endpoint for audio streaming
+WS /api/session/realtime/:sessionId
+- Handle audio input/output
+- Manage RAG retrieval loop
+- Track transcript and citations
+
+// Get session transcript with citations
+GET /api/session/:sessionId/transcript
+- Return: { messages, citations, duration, creditsUsed }
+
+// Vector search endpoint (internal use)
+POST /api/rag/search
+- Input: { userId, studentId, query, topK }
+- Output: { chunks, sources }
+```
+
+### 7. Environment Variables to Add
+
+```bash
+# OpenAI Realtime
+OPENAI_REALTIME_MODEL=gpt-4o-realtime-preview-2024-10-01
+OPENAI_API_KEY=sk-proj-*** (already exists)
+
+# Azure Speech (for better TTS/STT than OpenAI default)
+AZURE_SPEECH_KEY=*** (already exists)
+AZURE_SPEECH_REGION=eastus (already exists)
+AZURE_TTS_VOICE_K2=en-US-AriaNeural
+AZURE_TTS_VOICE_35=en-US-JennyNeural
+AZURE_TTS_VOICE_68=en-US-GuyNeural
+AZURE_TTS_VOICE_912=en-US-SaraNeural
+AZURE_TTS_VOICE_COLLEGE=en-US-AndrewNeural
+
+# Vector DB (pgvector already in Railway Postgres)
+# No new vars needed - use existing DATABASE_URL
+
+# Feature Flags
+USE_REALTIME_VOICE=true
+USE_ELEVENLABS_FALLBACK=false
+```
+
+### 8. Package Dependencies to Install
+
+```json
+{
+  "dependencies": {
+    "openai": "^4.20.0",
+    "pgvector": "^0.1.8",
+    "pdf-parse": "^1.1.1",
+    "mammoth": "^1.6.0",
+    "tesseract.js": "^5.0.0",
+    "microsoft-cognitiveservices-speech-sdk": "^1.34.0"
+  }
+}
+```
+
+### 9. Implementation Priority Order
+
+**Phase 1: RAG Pipeline (Do First)**
+1. Install pgvector extension in Railway Postgres
+2. Create `document_embeddings` table with vector index
+3. Update `/api/documents/upload` to chunk → embed → store
+4. Create `/api/rag/search` vector search endpoint
+5. Test: Upload a PDF, verify chunks are stored, test retrieval
+
+**Phase 2: Realtime Voice (Do Second)**
+6. Create `/api/session/realtime/start` endpoint
+7. Implement WebSocket handler at `/api/session/realtime/:sessionId`
+8. Connect to OpenAI Realtime API (audio streaming)
+9. Integrate Azure TTS/STT for better voice quality
+10. Test: Basic voice conversation without RAG
+
+**Phase 3: Connect RAG to Voice (Do Third)**
+11. In WebSocket handler, auto-trigger vector search on each user utterance
+12. Inject retrieved chunks into OpenAI context
+13. Update system prompt to enforce citations
+14. Track citations in session transcript
+15. Test: Upload document, ask question about it, verify AI cites correctly
+
+**Phase 4: Frontend Updates (Do Fourth)**
+16. Replace ElevenLabs widget in `Tutor.tsx`
+17. Add WebSocket audio streaming components
+18. **BUILD LIVE TRANSCRIPT UI (CRITICAL):**
+    - Real-time text display with word-by-word streaming
+    - Auto-scroll to bottom as conversation progresses
+    - Clear visual separation between student and tutor messages
+    - Clickable citations that link to source documents
+    - Copy/export transcript button
+    - Large, readable fonts for accessibility
+    - Must work simultaneously with audio (students SEE and HEAR)
+19. Add document context sidebar showing active documents
+20. Test: Full end-to-end voice session with live transcript updating in real-time
+
+### 10. Critical Success Criteria
+
+✅ **Voice Quality:** Must sound as natural as ElevenLabs (use Azure Neural voices)  
+✅ **Latency:** < 800ms from user stops speaking to AI starts speaking  
+✅ **Accuracy:** RAG retrieves correct document chunks with >80% relevance  
+✅ **Security:** Students can NEVER access other students' documents  
+✅ **Citations:** AI must cite source document + page for every document-based answer  
+✅ **Cost:** Total voice cost < $0.50 per minute (cheaper than ElevenLabs)  
+✅ **Scalability:** System handles 100+ concurrent voice sessions  
+✅ **LIVE TRANSCRIPT (MUST HAVE):** Real-time text display of entire conversation with auto-scroll, clear speaker distinction, clickable citations, and word-by-word streaming as AI speaks  
+✅ **Accessibility:** Transcript must be readable, copyable, and allow students to SEE and HEAR instructions simultaneously  
+
+### 11. Testing Checklist
+
+Before considering this complete:
+- [ ] Upload 3 different file types (PDF, DOCX, image) and verify all are chunked
+- [ ] Ask voice AI a question answered in uploaded doc → verify correct citation
+- [ ] Ask voice AI a general question NOT in docs → verify it answers without false citation
+- [ ] Test with multiple students → verify document isolation (no cross-contamination)
+- [ ] Test interruption: speak while AI is talking → verify graceful handling
+- [ ] Check session transcript includes all citations with correct page numbers
+- [ ] Verify credits are deducted correctly (by minute of audio)
+- [ ] Load test: simulate 10 concurrent sessions → check for memory leaks or crashes
+- [ ] **LIVE TRANSCRIPT TESTS (CRITICAL):**
+  - [ ] Verify transcript updates in real-time as student speaks
+  - [ ] Verify transcript shows AI responses word-by-word as they stream
+  - [ ] Verify auto-scroll keeps latest message visible
+  - [ ] Verify citations are clickable and highlighted
+  - [ ] Test copy/export transcript feature
+  - [ ] Verify transcript is readable on mobile devices
+  - [ ] Confirm students can follow along by reading while listening
+  - [ ] Test that transcript persists full conversation history during session
+
+### 12. Code Quality Requirements
+
+- **TypeScript:** Strict mode, no `any` types except where absolutely necessary
+- **Error Handling:** All async operations must have try/catch with proper logging
+- **Logging:** Use structured logging for all RAG operations, voice events, errors
+- **Security:** Validate all user inputs, sanitize file uploads, rate limit API calls
+- **Documentation:** Add JSDoc comments to all major functions
+- **Testing:** Write unit tests for chunking, embedding, and vector search functions
+
+---
+
+## Expected Outcome
+
+After completion, the JIE Mastery Tutor will:
+1. Support real-time voice conversations with OpenAI Realtime quality
+2. Automatically retrieve relevant content from each student's uploaded documents
+3. Cite sources naturally during voice conversations
+4. Cost 30-50% less than ElevenLabs while maintaining voice quality
+5. Scale to thousands of students without per-student agent configuration
+6. Track all citations and document usage in session transcripts
+
+## Questions to Clarify (Agent3 should ask if needed)
+- Should we keep ElevenLabs as a fallback option or completely remove it?
+- What's the maximum file size for uploads? (suggest 10MB limit)
+- Do we need multi-language support for voice? (Spanish, etc.)
+- Should parents be able to review session transcripts with citations?
+
+---
+
+**Begin implementation now. Start with Phase 1 (RAG Pipeline), then proceed in order. Ask clarifying questions only if critical path blockers arise.**
