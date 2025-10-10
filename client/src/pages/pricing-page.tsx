@@ -11,7 +11,7 @@ const plans = [
   {
     id: 'starter',
     name: 'Starter',
-    price: 19,
+    price: 19.99,
     minutes: 60,
     features: [
       '60 voice minutes per month',
@@ -40,7 +40,7 @@ const plans = [
   {
     id: 'pro',
     name: 'Pro',
-    price: 99,
+    price: 99.99,
     minutes: 600,
     features: [
       '600 voice minutes per month',
