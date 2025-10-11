@@ -22,13 +22,16 @@ The application uses a modern full-stack architecture:
 -   Password hashing using Node.js scrypt.
 
 ### Voice Technology Integration
-**OpenAI Realtime API (Primary - Phase 2 Complete)**:
-- Multi-language voice support: English, Spanish, Hindi, Chinese
-- Age-specific voice selection: 4 languages × 5 age groups = 20 voice configurations
-- OpenAI voice mapping: nova (K-2), fable (3-5), alloy (6-8), echo (9-12/College)
-- WebSocket-based real-time bidirectional audio streaming
-- Automatic session persistence and minute tracking
-- Comprehensive test suite validates all voice mappings and connections
+**OpenAI Realtime API (Primary - Phase 3 Complete)**:
+- **Multi-language voice support**: English, Spanish, Hindi, Chinese
+- **Age-specific voice selection**: 4 languages × 5 age groups = 20 voice configurations  
+- **OpenAI voice mapping**: nova (K-2), fable (3-5), alloy (6-8), echo (9-12/College)
+- **WebSocket-based bidirectional audio**: PCM16 encoding for input, proper signed decoding for playback
+- **RAG Integration**: Student's pinned documents automatically injected as context (up to 10 chunks with source attribution)
+- **Live Transcript UI**: Real-time message display with connection status badges, language/voice indicators
+- **Session Management**: Automatic persistence, minute tracking, mic controls, mute functionality
+- **Comprehensive test suite**: Validates voice mappings, WebSocket connections, session persistence
+- **Toggle Support**: USE_CONVAI=false activates OpenAI Realtime; USE_CONVAI=true uses ElevenLabs
 
 **ElevenLabs ConvAI (Legacy/Backup)**:
 - Pre-configured, age-specific AI tutors (K-2, Grades 3-5, 6-8, 9-12, College/Adult)
