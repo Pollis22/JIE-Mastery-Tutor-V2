@@ -57,7 +57,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       debugMode: process.env.DEBUG_TUTOR === '1',
       // ElevenLabs ConvAI status
       convai: true, // Multi-agent system - agents are hardcoded in frontend
-      useConvai: process.env.USE_CONVAI !== 'false'
+      useConvai: process.env.USE_CONVAI?.toLowerCase() !== 'false'
     });
   });
 

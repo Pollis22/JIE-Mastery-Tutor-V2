@@ -7,8 +7,8 @@ class VoiceService {
   private openai: OpenAI | null = null;
 
   constructor() {
-    // Check if ElevenLabs ConvAI should be used instead
-    const useConvAI = process.env.USE_CONVAI !== 'false';
+    // Check if ElevenLabs ConvAI should be used instead (case-insensitive check)
+    const useConvAI = process.env.USE_CONVAI?.toLowerCase() !== 'false';
     
     if (useConvAI) {
       this.testMode = true;
