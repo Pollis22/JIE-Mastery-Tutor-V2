@@ -15,7 +15,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
-import { Clock, AlertCircle } from "lucide-react";
+import { Clock, AlertCircle, Upload, File, X, Paperclip } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import jieLogo from "@/assets/jie-mastery-logo.png";
@@ -532,10 +532,106 @@ export default function TutorPage() {
               <li><strong>Select your grade level and subject</strong> you want help with</li>
               <li><strong>Click "Start Tutoring Session"</strong> to connect with your AI tutor</li>
               <li><strong>Start speaking</strong> - the tutor will help you learn and answer your questions!</li>
-              <li><strong>You may copy and paste your homework into the message box</strong> if there is something specific you want to cover</li>
+              <li><strong>Upload study materials</strong> - Click the upload button below to share homework, notes, or study guides for personalized help</li>
               <li><strong>View the transcript</strong> below to see your conversation in real-time</li>
             </ol>
           </div>
+
+          {/* Document Upload Section */}
+          {mounted && (
+            <Card className="mt-4" data-testid="card-document-upload">
+              <CardContent className="pt-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-semibold flex items-center gap-2">
+                    <Paperclip className="w-4 h-4" />
+                    Study Materials
+                  </h3>
+                  <label className="cursor-pointer">
+                    <div className="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 flex items-center gap-2">
+                      <Upload className="w-4 h-4" />
+                      Upload Document
+                    </div>
+                    <input
+                      type="file"
+                      className="hidden"
+                      accept=".pdf,.docx,.doc,.txt,.png,.jpg,.jpeg"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        
+                        try {
+                          const formData = new FormData();
+                          formData.append('file', file);
+                          if (selectedStudentId) formData.append('studentId', selectedStudentId);
+                          formData.append('subject', subject);
+                          formData.append('gradeLevel', level);
+                          
+                          const response = await fetch('/api/documents/upload', {
+                            method: 'POST',
+                            body: formData,
+                            credentials: 'include'
+                          });
+                          
+                          if (!response.ok) throw new Error('Upload failed');
+                          
+                          queryClient.invalidateQueries({ queryKey: ['/api/documents'] });
+                          toast({
+                            title: "Document Uploaded",
+                            description: `${file.name} is now available to your tutor`,
+                          });
+                          
+                          e.target.value = '';
+                        } catch (error) {
+                          console.error('Upload error:', error);
+                          toast({
+                            title: "Upload Failed",
+                            description: "Could not upload document. Please try again.",
+                            variant: "destructive",
+                          });
+                        }
+                      }}
+                      data-testid="input-file-upload"
+                    />
+                  </label>
+                </div>
+                
+                {pinnedDocs && pinnedDocs.length > 0 ? (
+                  <div className="space-y-2">
+                    {pinnedDocs.map((pd) => (
+                      <div key={pd.document.id} className="flex items-center justify-between bg-muted p-2 rounded text-sm">
+                        <div className="flex items-center gap-2">
+                          <File className="w-4 h-4" />
+                          <span className="truncate max-w-[300px]">{pd.document.title}</span>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            try {
+                              await apiRequest('DELETE', `/api/documents/${pd.document.id}`, {});
+                              queryClient.invalidateQueries({ queryKey: ['/api/documents'] });
+                              toast({
+                                title: "Document Removed",
+                                description: "Document has been deleted",
+                              });
+                            } catch (error) {
+                              console.error('Delete error:', error);
+                            }
+                          }}
+                          className="text-destructive hover:opacity-70"
+                          data-testid={`button-remove-doc-${pd.document.id}`}
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground text-center py-3">
+                    Upload homework or study materials to get personalized help from your tutor
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Voice System Widget */}
           {mounted && (
