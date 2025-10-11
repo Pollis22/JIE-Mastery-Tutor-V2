@@ -44,6 +44,24 @@ const saveProgress = (data: ProgressData) => {
   }
 };
 
+// Map full language names to ISO codes for OpenAI Realtime API
+const mapLanguageToISO = (language?: string | null): 'en' | 'es' | 'hi' | 'zh' => {
+  if (!language) return 'en';
+  
+  const lang = language.toLowerCase();
+  switch (lang) {
+    case 'spanish':
+      return 'es';
+    case 'hindi':
+      return 'hi';
+    case 'chinese':
+      return 'zh';
+    case 'english':
+    default:
+      return 'en';
+  }
+};
+
 export default function TutorPage() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -546,7 +564,7 @@ export default function TutorPage() {
                   <RealtimeVoiceHost
                     studentId={selectedStudentId || undefined}
                     subject={subject}
-                    language={user?.preferredLanguage as 'en' | 'es' | 'hi' | 'zh' || 'en'}
+                    language={mapLanguageToISO(user?.preferredLanguage)}
                     ageGroup={level === 'k2' ? 'K-2' : level === 'g3_5' ? '3-5' : level === 'g6_8' ? '6-8' : level === 'g9_12' ? '9-12' : 'College/Adult'}
                     contextDocumentIds={contextDocumentIds}
                     onSessionStart={() => setSessionStartTime(new Date())}
