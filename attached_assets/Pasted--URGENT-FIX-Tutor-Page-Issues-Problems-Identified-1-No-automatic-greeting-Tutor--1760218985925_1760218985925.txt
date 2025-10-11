@@ -1,0 +1,369 @@
+# URGENT FIX: Tutor Page Issues
+
+## Problems Identified
+
+1. ❌ **No automatic greeting** - Tutor should greet student when session starts
+2. ❌ **Microphone not responding** - Audio input not being captured
+3. ❌ **No document upload UI** - Students can't upload homework/study materials during session
+
+## Location
+`client/src/pages/Tutor.tsx`
+
+---
+
+## Fix #1: Add Automatic Greeting on Session Start
+
+### Requirements
+When a student clicks "Start Tutoring Session":
+1. Tutor should immediately greet the student by name
+2. Welcome message should be personalized (first-time vs returning student)
+3. Greeting should appear in the transcript
+4. Tutor should give brief instructions on how to use the session
+
+### Implementation
+
+Add a greeting function that triggers when session starts:
+
+```typescript
+const startGreeting = async (studentName: string, isReturning: boolean) => {
+  const greeting = isReturning 
+    ? `Welcome back, ${studentName}! I'm excited to continue our learning journey together. What would you like to work on today? You can ask me questions, share your homework, or practice any subject. Just start speaking when you're ready!`
+    : `Hello ${studentName}! I'm your personal AI tutor, and I'm here to help you master any subject. You can ask me questions, get help with homework, or practice concepts. Feel free to upload any study materials or homework by clicking the upload button. When you're ready, just start speaking and I'll respond!`;
+  
+  // Add greeting to transcript
+  addToTranscript({
+    speaker: 'tutor',
+    text: greeting,
+    timestamp: new Date()
+  });
+  
+  // Send greeting to ElevenLabs agent or trigger TTS
+  await speakGreeting(greeting);
+};
+```
+
+### Trigger greeting when:
+- User clicks "Start Tutoring Session" button
+- After ElevenLabs session is initialized
+- Before user starts speaking
+
+---
+
+## Fix #2: Fix Microphone/Audio Issues
+
+### Debug Steps
+
+1. **Check browser permissions:**
+```typescript
+const requestMicrophonePermission = async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    console.log('✅ Microphone access granted');
+    return stream;
+  } catch (error) {
+    console.error('❌ Microphone access denied:', error);
+    alert('Please allow microphone access to use the voice tutor');
+    return null;
+  }
+};
+```
+
+2. **Verify ElevenLabs initialization:**
+```typescript
+const initializeVoiceSession = async () => {
+  try {
+    // Request microphone first
+    const stream = await requestMicrophonePermission();
+    if (!stream) return;
+    
+    // Initialize ElevenLabs ConvAI widget
+    const conversation = await window.ElevenLabs?.Conversation?.startSession({
+      agentId: selectedAgentId,
+      onMessage: (message) => {
+        console.log('Received message:', message);
+        addToTranscript({
+          speaker: message.source,
+          text: message.text,
+          timestamp: new Date()
+        });
+      },
+      onError: (error) => {
+        console.error('ElevenLabs error:', error);
+        alert(`Voice session error: ${error.message}`);
+      },
+      onStatusChange: (status) => {
+        console.log('Session status:', status);
+        setSessionStatus(status);
+      }
+    });
+    
+    // Send greeting after initialization
+    await startGreeting(studentName, isReturning);
+    
+  } catch (error) {
+    console.error('Failed to initialize voice session:', error);
+    alert('Failed to start voice session. Please refresh and try again.');
+  }
+};
+```
+
+3. **Add visual feedback:**
+```typescript
+// Show microphone status indicator
+<div className="microphone-status">
+  {isMicActive && (
+    <div className="flex items-center gap-2">
+      <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse" />
+      <span className="text-sm text-green-600">Microphone Active</span>
+    </div>
+  )}
+  {!isMicActive && sessionStarted && (
+    <div className="flex items-center gap-2">
+      <div className="w-3 h-3 bg-red-500 rounded-full" />
+      <span className="text-sm text-red-600">Microphone Inactive - Check Permissions</span>
+    </div>
+  )}
+</div>
+```
+
+### Troubleshooting checks:
+- [ ] Verify browser has microphone permission (check browser address bar for mic icon)
+- [ ] Check if ElevenLabs API key is valid in environment variables
+- [ ] Ensure HTTPS is enabled (microphone requires secure context)
+- [ ] Check browser console for errors when clicking "Start Mic"
+- [ ] Test in different browsers (Chrome, Firefox, Edge)
+
+---
+
+## Fix #3: Add Document Upload UI to Tutor Page
+
+### Requirements
+Students need to be able to:
+1. Upload documents during an active tutoring session
+2. See list of uploaded documents
+3. Tell the tutor about specific documents to reference
+4. Remove documents if needed
+
+### Implementation
+
+#### A. Add Upload Section to Tutor Page
+
+Insert this section ABOVE the transcript area:
+
+```tsx
+import { Upload, File, X } from 'lucide-react';
+
+const DocumentUploadSection = () => {
+  const [uploadedDocs, setUploadedDocs] = useState<Document[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    
+    setIsUploading(true);
+    
+    try {
+      const formData = new FormData();
+      formData.append('file', files[0]);
+      formData.append('studentId', selectedStudent.id);
+      formData.append('subject', selectedSubject);
+      formData.append('gradeLevel', selectedGrade);
+      
+      const response = await fetch('/api/documents/upload', {
+        method: 'POST',
+        body: formData,
+        credentials: 'include'
+      });
+      
+      if (!response.ok) throw new Error('Upload failed');
+      
+      const result = await response.json();
+      setUploadedDocs([...uploadedDocs, result.document]);
+      
+      // Show success message
+      alert(`✅ ${files[0].name} uploaded successfully!`);
+      
+      // Optionally notify the tutor
+      addToTranscript({
+        speaker: 'system',
+        text: `📄 Document uploaded: ${files[0].name}`,
+        timestamp: new Date()
+      });
+      
+    } catch (error) {
+      console.error('Upload error:', error);
+      alert('❌ Failed to upload document. Please try again.');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+  
+  const removeDocument = async (docId: string) => {
+    try {
+      await fetch(`/api/documents/${docId}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      });
+      setUploadedDocs(uploadedDocs.filter(doc => doc.id !== docId));
+    } catch (error) {
+      console.error('Delete error:', error);
+      alert('Failed to remove document');
+    }
+  };
+  
+  return (
+    <div className="bg-white rounded-lg shadow-md p-4 mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-lg font-semibold flex items-center gap-2">
+          <File className="w-5 h-5" />
+          Study Materials
+        </h3>
+        <label className="btn btn-sm bg-blue-600 text-white cursor-pointer flex items-center gap-2">
+          <Upload className="w-4 h-4" />
+          Upload Document
+          <input
+            type="file"
+            className="hidden"
+            accept=".pdf,.docx,.doc,.txt,.png,.jpg,.jpeg"
+            onChange={handleFileUpload}
+            disabled={isUploading}
+          />
+        </label>
+      </div>
+      
+      {uploadedDocs.length === 0 ? (
+        <p className="text-sm text-gray-500 text-center py-4">
+          No documents uploaded yet. Upload homework, notes, or study guides to get personalized help!
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {uploadedDocs.map((doc) => (
+            <div key={doc.id} className="flex items-center justify-between bg-gray-50 p-3 rounded">
+              <div className="flex items-center gap-2">
+                <File className="w-4 h-4 text-blue-600" />
+                <span className="text-sm font-medium">{doc.filename}</span>
+                <span className="text-xs text-gray-500">
+                  {(doc.fileSize / 1024).toFixed(1)} KB
+                </span>
+              </div>
+              <button
+                onClick={() => removeDocument(doc.id)}
+                className="text-red-500 hover:text-red-700"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      
+      {isUploading && (
+        <div className="text-center py-2">
+          <span className="text-sm text-blue-600">Uploading...</span>
+        </div>
+      )}
+    </div>
+  );
+};
+```
+
+#### B. Update Tutor Page Layout
+
+Modify the Tutor.tsx structure to include the upload section:
+
+```tsx
+return (
+  <div className="tutor-page">
+    {/* Header with controls */}
+    <div className="controls-section">
+      {/* Existing controls: grade, subject, start/stop buttons */}
+    </div>
+    
+    {/* NEW: Document Upload Section */}
+    {sessionStarted && <DocumentUploadSection />}
+    
+    {/* Instructions */}
+    <div className="instructions-section">
+      {/* Existing "How to Use" instructions */}
+    </div>
+    
+    {/* Voice controls */}
+    <div className="voice-controls">
+      {/* Existing mic/mute/end session buttons */}
+    </div>
+    
+    {/* Transcript */}
+    <div className="transcript-section">
+      {/* Existing transcript display */}
+    </div>
+  </div>
+);
+```
+
+#### C. Add Document Context to Instructions
+
+Update the "How to Use" section to mention document uploads:
+
+```tsx
+<li>
+  <strong>Upload study materials</strong> - Click the "Upload Document" button to 
+  share homework, notes, or study guides. The tutor can reference your materials 
+  to provide personalized help.
+</li>
+```
+
+---
+
+## Testing Checklist
+
+### Greeting Tests:
+- [ ] Click "Start Tutoring Session" → Tutor greets student by name
+- [ ] Greeting appears in transcript immediately
+- [ ] Greeting audio plays through speakers
+- [ ] First-time students get welcome message with instructions
+- [ ] Returning students get "welcome back" message
+
+### Microphone Tests:
+- [ ] Browser prompts for microphone permission
+- [ ] Microphone status indicator shows "Active" when granted
+- [ ] Speaking into mic → transcript shows student text in real-time
+- [ ] Tutor responds to student's voice input
+- [ ] Mute button works (stops mic input)
+- [ ] Error message shows if permission denied
+
+### Document Upload Tests:
+- [ ] Upload button visible on tutor page
+- [ ] Can upload PDF → shows in document list
+- [ ] Can upload DOCX → shows in document list
+- [ ] Can upload image → shows in document list
+- [ ] File size displayed correctly
+- [ ] Can remove uploaded document
+- [ ] Upload notification appears in transcript
+- [ ] Upload works during active session
+
+---
+
+## Priority Order
+
+1. **Fix microphone issues FIRST** (blocking users from using the tutor)
+2. **Add automatic greeting** (improves user experience)
+3. **Add document upload UI** (required feature for homework help)
+
+---
+
+## Expected Result After Fix
+
+✅ Student clicks "Start Tutoring Session"  
+✅ Browser asks for microphone permission  
+✅ Tutor immediately greets student: "Hello [Name]! I'm your personal AI tutor..."  
+✅ Greeting appears in transcript  
+✅ Microphone indicator shows "Active"  
+✅ Student sees "Upload Document" button above transcript  
+✅ Student can upload homework/study materials  
+✅ Student speaks → transcript shows text in real-time  
+✅ Tutor responds with helpful answers  
+
+---
+
+**IMPLEMENT THESE FIXES IMMEDIATELY - These are blocking core functionality of the tutoring app.**

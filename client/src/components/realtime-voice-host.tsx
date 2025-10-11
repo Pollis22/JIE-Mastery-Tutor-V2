@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRealtimeVoice } from '@/hooks/use-realtime-voice';
 import { RealtimeVoiceTranscript } from './realtime-voice-transcript';
 import { Button } from '@/components/ui/button';
 import { Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
+import { useAuth } from '@/hooks/use-auth';
 
 interface RealtimeVoiceHostProps {
   studentId?: string;
@@ -25,6 +26,7 @@ export function RealtimeVoiceHost({
   onSessionStart,
   onSessionEnd,
 }: RealtimeVoiceHostProps) {
+  const { user } = useAuth();
   const { toast } = useToast();
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [wsUrl, setWsUrl] = useState<string | null>(null);
@@ -34,6 +36,7 @@ export function RealtimeVoiceHost({
   const [isMuted, setIsMuted] = useState(false);
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
+  const hasGreetedRef = useRef(false);
 
   const {
     isConnected,
@@ -97,6 +100,7 @@ export function RealtimeVoiceHost({
       setSessionId(null);
       setWsUrl(null);
       setToken(null);
+      hasGreetedRef.current = false; // Reset for next session
       onSessionEnd?.();
       
       toast({
@@ -158,12 +162,37 @@ export function RealtimeVoiceHost({
     setIsMuted(!isMuted);
   };
 
+  // Auto-connect when we have wsUrl and token
   useEffect(() => {
     if (wsUrl && token && !isConnected) {
       connect();
     }
   }, [wsUrl, token, isConnected, connect]);
 
+  // Auto-start microphone and send greeting when connected
+  useEffect(() => {
+    const initializeSession = async () => {
+      if (isConnected && sessionId && !hasGreetedRef.current && !isRecording) {
+        hasGreetedRef.current = true;
+        
+        // Auto-start microphone
+        try {
+          await startRecording();
+          console.log('[RealtimeVoiceHost] Microphone auto-started');
+        } catch (error) {
+          console.error('[RealtimeVoiceHost] Failed to auto-start mic:', error);
+        }
+        
+        // Send greeting - the greeting will come from server-side system prompt
+        // No need to send explicit greeting message
+        console.log('[RealtimeVoiceHost] Session initialized with auto-mic');
+      }
+    };
+    
+    initializeSession();
+  }, [isConnected, sessionId, isRecording]);
+
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
       stopRecording();

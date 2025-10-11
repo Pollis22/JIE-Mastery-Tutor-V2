@@ -193,6 +193,18 @@ export class RealtimeServer {
           type: 'session.ready',
           sessionId: session.sessionId,
         });
+
+        // Trigger initial greeting from AI tutor
+        // Send a response.create to make the AI start speaking the greeting
+        setTimeout(() => {
+          this.sendToOpenAI(session, {
+            type: 'response.create',
+            response: {
+              modalities: ['audio', 'text'],
+            }
+          });
+          console.log(`[RealtimeWS] Triggered initial greeting for session ${session.sessionId}`);
+        }, 500); // Small delay to ensure session is fully ready
       });
 
       openaiWs.on('message', (data: Buffer) => {
@@ -290,8 +302,13 @@ export class RealtimeServer {
 
   private async buildInstructionsWithContext(session: ActiveSession): Promise<string> {
     try {
-      // Base instructions for AI tutor
-      let instructions = `You are a friendly, patient AI tutor. Use the Socratic teaching method - guide students to discover answers rather than giving direct answers immediately. Be encouraging and adapt your teaching style to the student's pace. Keep responses conversational and age-appropriate.`;
+      // Base instructions for AI tutor with auto-greeting
+      let instructions = `You are a friendly, patient AI tutor. 
+
+IMPORTANT: When the session first starts, you should IMMEDIATELY greet the student warmly and ask what they would like to learn about today. Use a welcoming tone like:
+"Hello! I'm your personal AI tutor, and I'm excited to help you learn today! What subject or topic would you like to work on? Feel free to ask me any questions or share homework you need help with."
+
+After greeting, use the Socratic teaching method - guide students to discover answers rather than giving direct answers immediately. Be encouraging and adapt your teaching style to the student's pace. Keep responses conversational and age-appropriate.`;
 
       // Retrieve session from database to get context documents
       const { storage } = await import('./storage');
