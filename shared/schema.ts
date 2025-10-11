@@ -9,11 +9,25 @@ import {
   boolean, 
   jsonb,
   index,
-  uniqueIndex 
+  uniqueIndex,
+  customType
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+
+// Define vector type for pgvector
+const vector = customType<{ data: number[]; driverData: string }>({
+  dataType() {
+    return 'vector(1536)'; // OpenAI text-embedding-3-small dimensions
+  },
+  toDriver(value: number[]): string {
+    return JSON.stringify(value);
+  },
+  fromDriver(value: string): number[] {
+    return JSON.parse(value);
+  },
+});
 
 // Session storage table
 export const sessions = pgTable(
@@ -317,11 +331,13 @@ export const documentChunks = pgTable("document_chunks", {
 export const documentEmbeddings = pgTable("document_embeddings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   chunkId: varchar("chunk_id").notNull().references(() => documentChunks.id, { onDelete: 'cascade' }),
-  embedding: text("embedding").notNull(), // JSON array of floats
+  embedding: vector("embedding").notNull(), // pgvector embedding (1536 dimensions)
   embeddingModel: text("embedding_model").default('text-embedding-3-small'),
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => [
   uniqueIndex("idx_embeddings_chunk_unique").on(table.chunkId),
+  // HNSW index for fast cosine similarity search
+  index("idx_embeddings_hnsw").using("hnsw", table.embedding.asc().op("vector_cosine_ops")),
 ]);
 
 // Update learning sessions to include document context
@@ -366,6 +382,7 @@ export const documentEmbeddingsRelations = relations(documentEmbeddings, ({ one 
 // Insert schemas for new tables
 export const insertUserDocumentSchema = createInsertSchema(userDocuments).omit({
   id: true,
+  userId: true, // userId passed separately to uploadDocument()
   createdAt: true,
   updatedAt: true,
 });

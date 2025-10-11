@@ -22,16 +22,23 @@ const upload = multer({
   fileFilter: (req, file, cb) => {
     const allowedTypes = [
       'application/pdf',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'text/plain',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
+      'application/msword', // .doc
+      'text/plain', // .txt
+      'text/csv', // .csv
+      'application/vnd.ms-excel', // .xls
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
       'image/png',
-      'image/jpeg'
+      'image/jpeg',
+      'image/jpg',
+      'image/gif',
+      'image/bmp'
     ];
     
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid file type'));
+      cb(new Error('Invalid file type. Supported: PDF, DOCX, TXT, CSV, Excel, Images'));
     }
   }
 });
@@ -82,11 +89,11 @@ router.post('/upload', upload.single('file'), async (req, res) => {
 
     // Determine file type
     const fileExtension = path.extname(req.file.originalname).toLowerCase().slice(1);
-    const supportedTypes = ['pdf', 'docx', 'txt'];
+    const supportedTypes = ['pdf', 'docx', 'doc', 'txt', 'csv', 'xlsx', 'xls', 'png', 'jpg', 'jpeg', 'gif', 'bmp'];
     
     if (!supportedTypes.includes(fileExtension)) {
       fs.unlinkSync(req.file.path); // Clean up uploaded file
-      return res.status(400).json({ error: 'Unsupported file type' });
+      return res.status(400).json({ error: 'Unsupported file type. Supported: PDF, DOCX, TXT, CSV, Excel, Images' });
     }
 
     // Save document record - queued for background processing by the embedding worker
@@ -339,13 +346,13 @@ async function processDocumentAsync(documentId: string, filePath: string, fileTy
       const embedding = await processor.generateEmbedding(chunkData.content);
       await storage.createDocumentEmbedding({
         chunkId: chunk.id,
-        embedding: JSON.stringify(embedding)
+        embedding: embedding // Use vector array directly (pgvector type)
       });
     }
     
     // Update document status
     await storage.updateDocument(documentId, '', {
-      processingStatus: 'completed'
+      processingStatus: 'ready'
     });
     
     console.log(`Document ${documentId} processed successfully: ${processed.chunks.length} chunks, ${processed.totalTokens} tokens`);
@@ -354,9 +361,10 @@ async function processDocumentAsync(documentId: string, filePath: string, fileTy
     console.error(`Document processing failed for ${documentId}:`, error);
     
     // Update document with error
+    const errorMessage = error instanceof Error ? error.message : 'Unknown processing error';
     await storage.updateDocument(documentId, '', {
       processingStatus: 'failed',
-      processingError: error.message
+      processingError: errorMessage
     });
   }
 }
