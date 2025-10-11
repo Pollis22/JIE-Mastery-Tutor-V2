@@ -30,8 +30,9 @@ The application uses a modern full-stack architecture:
 - **RAG Integration**: Student's pinned documents automatically injected as context (up to 10 chunks with source attribution)
 - **Live Transcript UI**: Real-time message display with connection status badges, language/voice indicators
 - **Session Management**: Automatic persistence, minute tracking, mic controls, mute functionality
+- **Language Mapping**: `mapLanguageToISO()` function converts database language names ("english", "spanish", etc.) to ISO codes ("en", "es", etc.) for API validation
 - **Comprehensive test suite**: Validates voice mappings, WebSocket connections, session persistence
-- **Toggle Support**: USE_CONVAI=false activates OpenAI Realtime; USE_CONVAI=true uses ElevenLabs
+- **Toggle Support**: USE_CONVAI=false activates OpenAI Realtime; USE_CONVAI=true uses ElevenLabs (case-insensitive)
 
 **ElevenLabs ConvAI (Legacy/Backup)**:
 - Pre-configured, age-specific AI tutors (K-2, Grades 3-5, 6-8, 9-12, College/Adult)
