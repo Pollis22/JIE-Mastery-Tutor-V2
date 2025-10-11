@@ -3,6 +3,9 @@ import * as path from 'path';
 import mammoth from 'mammoth';
 import OpenAI from 'openai';
 import { PdfJsTextExtractor } from './pdf-extractor';
+import xlsx from 'xlsx';
+import { parse } from 'csv-parse/sync';
+import { createWorker } from 'tesseract.js';
 
 export interface ProcessedDocument {
   chunks: Array<{
@@ -18,8 +21,8 @@ export interface ProcessedDocument {
 export class DocumentProcessor {
   private openai: OpenAI;
   private pdfExtractor: PdfJsTextExtractor;
-  private readonly maxChunkSize = 1000; // tokens per chunk
-  private readonly chunkOverlap = 200; // token overlap between chunks
+  private readonly maxChunkSize = 800; // tokens per chunk (400-800 range)
+  private readonly chunkOverlap = 100; // token overlap between chunks
 
   constructor() {
     this.openai = new OpenAI({
@@ -41,10 +44,25 @@ export class DocumentProcessor {
           text = await this.extractPdfText(filePath);
           break;
         case 'docx':
+        case 'doc':
           text = await this.extractDocxText(filePath);
           break;
         case 'txt':
           text = await this.extractTxtText(filePath);
+          break;
+        case 'csv':
+          text = await this.extractCsvText(filePath);
+          break;
+        case 'xlsx':
+        case 'xls':
+          text = await this.extractExcelText(filePath);
+          break;
+        case 'png':
+        case 'jpg':
+        case 'jpeg':
+        case 'gif':
+        case 'bmp':
+          text = await this.extractImageText(filePath);
           break;
         default:
           throw new Error(`Unsupported file type: ${fileType}`);
@@ -95,6 +113,76 @@ export class DocumentProcessor {
    */
   private async extractTxtText(filePath: string): Promise<string> {
     return fs.readFileSync(filePath, 'utf-8');
+  }
+
+  /**
+   * Extract text from CSV
+   */
+  private async extractCsvText(filePath: string): Promise<string> {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const records = parse(content, {
+      skip_empty_lines: true,
+      trim: true,
+    });
+    
+    // Convert CSV to readable text format with headers
+    if (records.length === 0) return '';
+    
+    const headers = records[0];
+    const rows = records.slice(1);
+    
+    let text = `CSV Data:\n\n`;
+    text += `Headers: ${headers.join(' | ')}\n\n`;
+    
+    rows.forEach((row: any[], idx: number) => {
+      text += `Row ${idx + 1}: ${row.join(' | ')}\n`;
+    });
+    
+    return text;
+  }
+
+  /**
+   * Extract text from Excel files
+   */
+  private async extractExcelText(filePath: string): Promise<string> {
+    const workbook = xlsx.readFile(filePath);
+    let text = '';
+
+    workbook.SheetNames.forEach(sheetName => {
+      const sheet = workbook.Sheets[sheetName];
+      text += `\n=== Sheet: ${sheetName} ===\n`;
+      text += xlsx.utils.sheet_to_txt(sheet) + '\n';
+    });
+
+    return text.trim();
+  }
+
+  /**
+   * Extract text from images using OCR (Tesseract.js)
+   * Supports: png, jpg, jpeg, gif, bmp
+   */
+  private async extractImageText(filePath: string): Promise<string> {
+    let worker;
+    try {
+      // Create OCR worker with English language support
+      worker = await createWorker('eng');
+      
+      // Perform OCR on the image
+      const { data: { text } } = await worker.recognize(filePath);
+      
+      if (!text || text.trim().length === 0) {
+        throw new Error('No readable text found in image');
+      }
+      
+      return text;
+    } catch (error) {
+      console.error('OCR extraction failed:', error);
+      throw new Error(`Failed to extract text from image: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      if (worker) {
+        await worker.terminate();
+      }
+    }
   }
 
   /**

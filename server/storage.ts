@@ -1196,9 +1196,85 @@ export class DatabaseStorage implements IStorage {
   }
 
   async searchSimilarContent(userId: string, queryEmbedding: number[], topK: number, threshold: number): Promise<Array<{chunk: DocumentChunk, document: UserDocument, similarity: number}>> {
-    // In a real implementation, this would use vector similarity search
-    // For now, return empty array
-    return [];
+    try {
+      // Use pgvector cosine similarity search with user isolation
+      // <=> operator computes cosine distance (1 - similarity)
+      const vectorLiteral = `'[${queryEmbedding.join(',')}]'::vector`;
+      const results = await db.execute(sql`
+        SELECT 
+          c.id as chunk_id,
+          c.document_id,
+          c.chunk_index,
+          c.content,
+          c.token_count,
+          c.metadata as chunk_metadata,
+          c.created_at as chunk_created_at,
+          d.id as doc_id,
+          d.user_id,
+          d.original_name,
+          d.file_name,
+          d.file_path,
+          d.file_type,
+          d.file_size,
+          d.subject,
+          d.grade,
+          d.title,
+          d.description,
+          d.keep_for_future_sessions,
+          d.processing_status,
+          d.processing_error,
+          d.retry_count,
+          d.next_retry_at,
+          d.parsed_text_path,
+          d.created_at as doc_created_at,
+          d.updated_at as doc_updated_at,
+          1 - (e.embedding <=> ${sql.raw(vectorLiteral)}) as similarity
+        FROM document_chunks c
+        INNER JOIN document_embeddings e ON c.id = e.chunk_id
+        INNER JOIN user_documents d ON c.document_id = d.id
+        WHERE d.user_id = ${userId}
+          AND 1 - (e.embedding <=> ${sql.raw(vectorLiteral)}) >= ${threshold}
+        ORDER BY e.embedding <=> ${sql.raw(vectorLiteral)}
+        LIMIT ${topK}
+      `);
+
+      return results.rows.map((row: any) => ({
+        chunk: {
+          id: row.chunk_id,
+          documentId: row.document_id,
+          chunkIndex: row.chunk_index,
+          content: row.content,
+          tokenCount: row.token_count,
+          metadata: row.chunk_metadata,
+          createdAt: row.chunk_created_at,
+        } as DocumentChunk,
+        document: {
+          id: row.doc_id,
+          userId: row.user_id,
+          originalName: row.original_name,
+          fileName: row.file_name,
+          filePath: row.file_path,
+          fileType: row.file_type,
+          fileSize: row.file_size,
+          subject: row.subject,
+          grade: row.grade,
+          title: row.title,
+          description: row.description,
+          keepForFutureSessions: row.keep_for_future_sessions,
+          processingStatus: row.processing_status,
+          processingError: row.processing_error,
+          retryCount: row.retry_count,
+          nextRetryAt: row.next_retry_at,
+          parsedTextPath: row.parsed_text_path,
+          createdAt: row.doc_created_at,
+          updatedAt: row.doc_updated_at,
+        } as UserDocument,
+        similarity: parseFloat(row.similarity),
+      }));
+    } catch (error) {
+      console.error('[RAG Search] Vector search error:', error);
+      throw new Error('Vector similarity search failed');
+    }
   }
 
   async getDocumentContext(userId: string, documentIds: string[]): Promise<{chunks: DocumentChunk[], documents: UserDocument[]}> {
