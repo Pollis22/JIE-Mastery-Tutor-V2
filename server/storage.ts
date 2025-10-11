@@ -202,6 +202,10 @@ export class DatabaseStorage implements IStorage {
         subscriptionStatus: 'active',
         stripeCustomerId: null,
         stripeSubscriptionId: null,
+        monthlyVoiceMinutes: 600, // Add voice minutes for testing
+        monthlyVoiceMinutesUsed: 0,
+        bonusMinutes: 0,
+        monthlyResetDate: new Date(),
         weeklyVoiceMinutesUsed: 0,
         weeklyResetDate: new Date(),
         preferredLanguage: 'english',

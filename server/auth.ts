@@ -78,6 +78,10 @@ export function setupAuth(app: Express) {
             subscriptionStatus: 'active' as const,
             stripeCustomerId: null,
             stripeSubscriptionId: null,
+            monthlyVoiceMinutes: 600, // Test user gets 600 minutes
+            monthlyVoiceMinutesUsed: 0,
+            bonusMinutes: 0,
+            monthlyResetDate: new Date(),
             weeklyVoiceMinutesUsed: 0,
             weeklyResetDate: new Date(),
             preferredLanguage: 'english',
@@ -122,6 +126,10 @@ export function setupAuth(app: Express) {
         subscriptionStatus: 'active' as const,
         stripeCustomerId: null,
         stripeSubscriptionId: null,
+        monthlyVoiceMinutes: 600, // Test user gets 600 minutes
+        monthlyVoiceMinutesUsed: 0,
+        bonusMinutes: 0,
+        monthlyResetDate: new Date(),
         weeklyVoiceMinutesUsed: 0,
         weeklyResetDate: new Date(),
         preferredLanguage: 'english',
