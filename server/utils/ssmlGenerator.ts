@@ -10,13 +10,18 @@ interface SSMLConfig {
   prosodyVolume?: string;
 }
 
-export function generateSSML(text: string, energyLevel: EnergyStyle = 'neutral'): string {
-  const voice = process.env.AZURE_VOICE_NAME || 'en-US-EmmaMultilingualNeural';
+export function generateSSML(
+  text: string, 
+  energyLevel: EnergyStyle = 'neutral',
+  voiceName?: string,
+  locale?: string
+): string {
+  const voice = voiceName || process.env.AZURE_VOICE_NAME || 'en-US-EmmaMultilingualNeural';
+  const xmlLang = locale || 'en-US';
   
   // Energy level configurations
-  const energyConfigs: Record<EnergyStyle, SSMLConfig> = {
+  const energyConfigs: Record<EnergyStyle, Omit<SSMLConfig, 'voice'>> = {
     calm: {
-      voice,
       style: 'gentle',
       styleDegree: 1.5,
       prosodyRate: '-6%',
@@ -24,7 +29,6 @@ export function generateSSML(text: string, energyLevel: EnergyStyle = 'neutral')
       prosodyVolume: 'soft'
     },
     neutral: {
-      voice,
       style: 'friendly',
       styleDegree: 1.0,
       prosodyRate: '0%',
@@ -32,7 +36,6 @@ export function generateSSML(text: string, energyLevel: EnergyStyle = 'neutral')
       prosodyVolume: 'medium'
     },
     upbeat: {
-      voice,
       style: 'cheerful',
       styleDegree: 1.2,
       prosodyRate: '+6%',
@@ -46,8 +49,8 @@ export function generateSSML(text: string, energyLevel: EnergyStyle = 'neutral')
   // Build SSML with express-as and prosody
   return `
     <speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" 
-           xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="en-US">
-      <voice name="${config.voice}">
+           xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="${xmlLang}">
+      <voice name="${voice}">
         <mstts:express-as style="${config.style}" styledegree="${config.styleDegree}">
           <prosody rate="${config.prosodyRate}" pitch="${config.prosodyPitch}" volume="${config.prosodyVolume}">
             ${escapeSSML(text)}

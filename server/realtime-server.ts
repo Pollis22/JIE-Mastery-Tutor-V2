@@ -15,6 +15,7 @@ interface ActiveSession {
     timestamp: Date;
   }>;
   startTime: Date;
+  voiceName?: string; // OpenAI Realtime voice (alloy, echo, fable, nova, shimmer, onyx)
 }
 
 export class RealtimeServer {
@@ -80,8 +81,25 @@ export class RealtimeServer {
       }
 
       console.log(`[RealtimeWS] Client authenticated for session ${sessionId}`);
+      console.log(`[RealtimeWS] Session config: language=${dbSession.language}, ageGroup=${dbSession.ageGroup}`);
 
-      // Initialize session
+      // Determine voice configuration based on language and age group
+      let voiceName = 'alloy'; // default
+      try {
+        const { getRealtimeVoice } = await import('./config/realtimeVoiceMapping');
+        const { isValidLanguage, isValidAgeGroup } = await import('./config/multiLanguageVoices');
+        
+        if (dbSession.language && isValidLanguage(dbSession.language) && 
+            dbSession.ageGroup && isValidAgeGroup(dbSession.ageGroup)) {
+          const voiceConfig = getRealtimeVoice(dbSession.language, dbSession.ageGroup);
+          voiceName = voiceConfig.openaiVoice;
+          console.log(`[RealtimeWS] Voice selected: ${voiceName} - ${voiceConfig.description}`);
+        }
+      } catch (error) {
+        console.error(`[RealtimeWS] Voice config error, using default:`, error);
+      }
+
+      // Initialize session with voice configuration
       const session: ActiveSession = {
         sessionId,
         userId: dbSession.userId,
@@ -90,6 +108,7 @@ export class RealtimeServer {
         openaiWs: null,
         transcript: [],
         startTime: new Date(),
+        voiceName, // Store voice for OpenAI configuration
       };
 
       this.activeSessions.set(sessionId, session);
@@ -141,13 +160,17 @@ export class RealtimeServer {
       openaiWs.on('open', () => {
         console.log(`[RealtimeWS] Connected to OpenAI for session ${session.sessionId}`);
         
+        // Configure voice based on language/age group selection
+        const selectedVoice = session.voiceName || 'alloy';
+        console.log(`[RealtimeWS] Configuring OpenAI with voice: ${selectedVoice}`);
+        
         // Send initial session configuration
         this.sendToOpenAI(session, {
           type: 'session.update',
           session: {
             modalities: ['text', 'audio'],
             instructions: 'You are a helpful AI tutor. Respond in a friendly, encouraging manner.',
-            voice: 'alloy',
+            voice: selectedVoice,
             input_audio_format: 'pcm16',
             output_audio_format: 'pcm16',
             input_audio_transcription: {

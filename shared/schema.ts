@@ -539,6 +539,7 @@ export const realtimeSessions = pgTable("realtime_sessions", {
   studentId: varchar("student_id").references(() => students.id, { onDelete: 'set null' }),
   subject: text("subject"),
   language: text("language").default('en').$type<'en' | 'es' | 'hi' | 'zh'>(),
+  ageGroup: text("age_group").default('3-5').$type<'K-2' | '3-5' | '6-8' | '9-12' | 'College/Adult'>(),
   voice: text("voice"),
   model: text("model").default('gpt-4o-realtime-preview-2024-10-01'),
   status: text("status").default('connecting').$type<'connecting' | 'active' | 'ended' | 'error'>(),
