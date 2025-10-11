@@ -9,6 +9,7 @@ const startSessionSchema = z.object({
   studentId: z.string().optional(),
   subject: z.string().optional(),
   language: z.enum(['en', 'es', 'hi', 'zh']).default('en'),
+  ageGroup: z.enum(['K-2', '3-5', '6-8', '9-12', 'College/Adult']).default('3-5'),
   voice: z.string().optional(),
   contextDocumentIds: z.array(z.string()).optional(),
 });
@@ -25,6 +26,17 @@ router.post('/start', async (req, res) => {
     }
 
     const data = startSessionSchema.parse(req.body);
+
+    // Determine voice based on language and age group
+    let selectedVoice = 'alloy'; // default
+    try {
+      const { getRealtimeVoice } = await import('../config/realtimeVoiceMapping');
+      const voiceConfig = getRealtimeVoice(data.language, data.ageGroup);
+      selectedVoice = voiceConfig.openaiVoice;
+      console.log(`[RealtimeAPI] Voice mapped: ${data.language}/${data.ageGroup} → ${selectedVoice}`);
+    } catch (error) {
+      console.error('[RealtimeAPI] Voice mapping error, using default:', error);
+    }
 
     // Check user has available voice minutes
     const user = await storage.getUserById(userId);
@@ -45,13 +57,14 @@ router.post('/start', async (req, res) => {
       });
     }
 
-    // Create session record
+    // Create session record with language, age group, and mapped voice
     const session = await storage.createRealtimeSession({
       userId,
       studentId: data.studentId,
       subject: data.subject,
       language: data.language,
-      voice: data.voice,
+      ageGroup: data.ageGroup,
+      voice: selectedVoice, // Use mapped voice instead of client-provided
       model: 'gpt-4o-realtime-preview-2024-10-01',
       status: 'connecting',
       transcript: [],
@@ -79,6 +92,7 @@ router.post('/start', async (req, res) => {
       wsUrl,
       token: sessionToken,
       language: session.language,
+      ageGroup: session.ageGroup,
       voice: session.voice,
       availableMinutes,
       status: session.status,

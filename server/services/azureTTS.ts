@@ -1,11 +1,19 @@
 import * as sdk from 'microsoft-cognitiveservices-speech-sdk';
 import { generateSSML, splitForStreaming, type EnergyStyle } from '../utils/ssmlGenerator';
+import { 
+  getVoiceConfig, 
+  getLocaleFromLanguage,
+  type SupportedLanguage, 
+  type AgeGroup 
+} from '../config/multiLanguageVoices';
 
 export class AzureTTSService {
   private speechConfig: sdk.SpeechConfig;
   private audioConfig: sdk.AudioConfig;
   private synthesizer: sdk.SpeechSynthesizer | null = null;
   private currentEnergyLevel: EnergyStyle = 'neutral';
+  private currentLanguage: SupportedLanguage = 'en';
+  private currentAgeGroup: AgeGroup = '3-5';
 
   constructor() {
     // Initialize Azure Speech SDK
@@ -19,12 +27,29 @@ export class AzureTTSService {
     this.speechConfig = sdk.SpeechConfig.fromSubscription(speechKey, speechRegion);
     this.speechConfig.speechSynthesisOutputFormat = sdk.SpeechSynthesisOutputFormat.Audio16Khz32KBitRateMonoMp3;
     
-    // Set default voice to younger, friendlier American accent
-    this.speechConfig.speechSynthesisVoiceName = process.env.AZURE_VOICE_NAME || 'en-US-AriaNeural';
+    // Set default voice using multi-language config
+    const defaultVoice = getVoiceConfig('en', '3-5');
+    this.speechConfig.speechSynthesisVoiceName = defaultVoice.voiceName;
     
     // Configure audio output for server environment (buffer mode for headless servers)
     this.audioConfig = sdk.AudioConfig.fromDefaultSpeakerOutput(); // Will be overridden in synthesis for buffer mode
     this.currentEnergyLevel = (process.env.ENERGY_LEVEL as EnergyStyle) || 'upbeat';
+  }
+
+  // Set language and age group for voice selection
+  setVoice(language: SupportedLanguage, ageGroup: AgeGroup): void {
+    this.currentLanguage = language;
+    this.currentAgeGroup = ageGroup;
+    
+    const voiceConfig = getVoiceConfig(language, ageGroup);
+    this.speechConfig.speechSynthesisVoiceName = voiceConfig.voiceName;
+    
+    console.log(`[Azure TTS] Voice set to: ${voiceConfig.displayName} (${voiceConfig.voiceName})`);
+  }
+
+  // Get current voice configuration
+  getCurrentVoice() {
+    return getVoiceConfig(this.currentLanguage, this.currentAgeGroup);
   }
 
   // Set energy level for current session
@@ -34,12 +59,16 @@ export class AzureTTSService {
   }
 
   // Synthesize speech with SSML styling
-  async synthesizeSpeech(text: string, energyLevel?: EnergyStyle): Promise<ArrayBuffer> {
+  async synthesizeSpeech(text: string, energyLevel?: EnergyStyle, language?: SupportedLanguage): Promise<ArrayBuffer> {
     const level = energyLevel || this.currentEnergyLevel;
-    const ssml = generateSSML(text, level);
+    const lang = language || this.currentLanguage;
+    const locale = getLocaleFromLanguage(lang);
+    const voiceConfig = getVoiceConfig(lang, this.currentAgeGroup);
     
-    console.log(`[Azure TTS] Synthesizing with energy: ${level}`);
-    console.log(`[Azure TTS] SSML:`, ssml);
+    const ssml = generateSSML(text, level, voiceConfig.voiceName, locale);
+    
+    console.log(`[Azure TTS] Synthesizing: ${voiceConfig.displayName} (${level})`);
+    console.log(`[Azure TTS] Language: ${lang}, Locale: ${locale}`);
 
     return new Promise((resolve, reject) => {
       // Use no audio config for buffer-based synthesis on server
