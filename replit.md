@@ -22,7 +22,18 @@ The application uses a modern full-stack architecture:
 -   Password hashing using Node.js scrypt.
 
 ### Voice Technology Integration
-The system integrates a **Multi-Agent ElevenLabs ConvAI System** with five pre-configured, age-specific AI tutors (K-2, Grades 3-5, 6-8, 9-12, College/Adult). These agents provide progressive complexity and age-appropriate greetings. The system focuses on static agents for reliable production deployment, directly connecting to these agents without dynamic, per-session agent creation. Real-time conversation transcripts are displayed, showing connection status, user messages, and agent responses.
+**OpenAI Realtime API (Primary - Phase 2 Complete)**:
+- Multi-language voice support: English, Spanish, Hindi, Chinese
+- Age-specific voice selection: 4 languages × 5 age groups = 20 voice configurations
+- OpenAI voice mapping: nova (K-2), fable (3-5), alloy (6-8), echo (9-12/College)
+- WebSocket-based real-time bidirectional audio streaming
+- Automatic session persistence and minute tracking
+- Comprehensive test suite validates all voice mappings and connections
+
+**ElevenLabs ConvAI (Legacy/Backup)**:
+- Pre-configured, age-specific AI tutors (K-2, Grades 3-5, 6-8, 9-12, College/Adult)
+- Static agents for reliable production deployment
+- Real-time conversation transcripts with connection status monitoring
 
 ### AI & Learning Engine
 -   **Primary AI Model**: OpenAI GPT-4o with fallback to GPT-4o-mini, utilizing an enhanced TutorMind system prompt for Socratic teaching.
