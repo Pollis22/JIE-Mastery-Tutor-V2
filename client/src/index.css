@@ -221,3 +221,59 @@
   border-left: 4px solid var(--status-color);
   background: var(--status-bg);
 }
+
+/* ============================================= */
+/* CRITICAL: TOAST/ALERT VISIBILITY FIX         */
+/* Force all toast notifications to be visible  */
+/* ============================================= */
+
+/* Force all toasts and alerts to have visible text */
+[data-sonner-toast],
+[data-sonner-toaster],
+[role="alert"]:not(.sr-only),
+[role="status"]:not(.sr-only),
+li[data-sonner-toast] {
+  background-color: #1E293B !important;
+  color: #FFFFFF !important;
+  font-weight: 600 !important;
+  border: 2px solid #0F172A !important;
+}
+
+/* Destructive/Error toasts - RED with WHITE text */
+[data-sonner-toast][data-type="error"],
+[data-type="error"],
+.destructive,
+li[data-sonner-toast].destructive,
+[role="alert"].destructive {
+  background-color: #DC2626 !important;
+  color: #FFFFFF !important;
+  border-color: #991B1B !important;
+  font-weight: 700 !important;
+}
+
+/* Success toasts - GREEN with WHITE text */
+[data-sonner-toast][data-type="success"],
+[data-type="success"],
+li[data-sonner-toast].success {
+  background-color: #16A34A !important;
+  color: #FFFFFF !important;
+  border-color: #166534 !important;
+  font-weight: 700 !important;
+}
+
+/* Ensure ALL child elements inside toasts are visible */
+[data-sonner-toast] *,
+[role="alert"]:not(.sr-only) *,
+[role="status"]:not(.sr-only) *,
+li[data-sonner-toast] * {
+  color: #FFFFFF !important;
+}
+
+/* Toast title and description */
+[data-title],
+[data-description],
+.toast-title,
+.toast-description {
+  color: #FFFFFF !important;
+  font-weight: 600 !important;
+}
