@@ -157,19 +157,22 @@ export class RealtimeServer {
 
       session.openaiWs = openaiWs;
 
-      openaiWs.on('open', () => {
+      openaiWs.on('open', async () => {
         console.log(`[RealtimeWS] Connected to OpenAI for session ${session.sessionId}`);
         
         // Configure voice based on language/age group selection
         const selectedVoice = session.voiceName || 'alloy';
         console.log(`[RealtimeWS] Configuring OpenAI with voice: ${selectedVoice}`);
         
+        // Build system instructions with document context
+        const instructions = await this.buildInstructionsWithContext(session);
+        
         // Send initial session configuration
         this.sendToOpenAI(session, {
           type: 'session.update',
           session: {
             modalities: ['text', 'audio'],
-            instructions: 'You are a helpful AI tutor. Respond in a friendly, encouraging manner.',
+            instructions,
             voice: selectedVoice,
             input_audio_format: 'pcm16',
             output_audio_format: 'pcm16',
@@ -282,6 +285,52 @@ export class RealtimeServer {
   private sendToOpenAI(session: ActiveSession, message: any) {
     if (session.openaiWs && session.openaiWs.readyState === WebSocket.OPEN) {
       session.openaiWs.send(JSON.stringify(message));
+    }
+  }
+
+  private async buildInstructionsWithContext(session: ActiveSession): Promise<string> {
+    try {
+      // Base instructions for AI tutor
+      let instructions = `You are a friendly, patient AI tutor. Use the Socratic teaching method - guide students to discover answers rather than giving direct answers immediately. Be encouraging and adapt your teaching style to the student's pace. Keep responses conversational and age-appropriate.`;
+
+      // Retrieve session from database to get context documents
+      const { storage } = await import('./storage');
+      const { db } = await import('./db');
+      const { realtimeSessions } = await import('@shared/schema');
+      const { eq } = await import('drizzle-orm');
+
+      const [dbSession] = await db.select().from(realtimeSessions)
+        .where(eq(realtimeSessions.id, session.sessionId));
+
+      const contextDocIds = (dbSession?.contextDocuments as string[]) || [];
+      if (contextDocIds.length === 0) {
+        console.log(`[RealtimeWS] No context documents for session ${session.sessionId}`);
+        return instructions;
+      }
+
+      // Retrieve document context
+      const documentContext = await storage.getDocumentContext(session.userId, contextDocIds);
+      
+      if (documentContext.chunks.length === 0) {
+        console.log(`[RealtimeWS] No document chunks found for session ${session.sessionId}`);
+        return instructions;
+      }
+
+      // Build context section from chunks
+      const contextTexts = documentContext.chunks.slice(0, 10).map((chunk, idx) => {
+        const doc = documentContext.documents.find(d => d.id === chunk.documentId);
+        return `[Source ${idx + 1}: ${doc?.title || 'Unknown'}]\n${chunk.content}`;
+      }).join('\n\n');
+
+      // Enhance instructions with document context
+      instructions += `\n\n## Student's Study Materials\n\nThe student has uploaded the following study materials. Reference this content when helping them learn, but use the Socratic method - ask questions to guide them rather than just reading from the materials:\n\n${contextTexts}`;
+
+      console.log(`[RealtimeWS] Added ${documentContext.chunks.length} document chunks to session ${session.sessionId}`);
+      return instructions;
+
+    } catch (error) {
+      console.error(`[RealtimeWS] Error building context:`, error);
+      return 'You are a friendly, patient AI tutor. Use the Socratic teaching method to guide students. Be encouraging and age-appropriate.';
     }
   }
 
