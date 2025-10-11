@@ -1,0 +1,183 @@
+# URGENT FIX: White Popup Box with Invisible Text
+
+## Problem
+There is a white popup/toast notification appearing in the bottom right corner of the screen with **white text on white background**, making it completely unreadable.
+
+## Location
+Bottom right corner of the screen (see screenshot - appears on auth page and likely throughout the app)
+
+## Root Cause
+A toast notification or alert component has:
+- White or very light background
+- White or very light text color
+- No proper contrast
+
+## Required Fix
+
+### Step 1: Find the Toast/Notification Component
+Search the codebase for:
+- `toast` components (likely using shadcn/ui Toast or a custom notification system)
+- `alert` components
+- `notification` components
+- Check `client/src/components/ui/` folder for toast.tsx or similar
+- Check for any global notification/alert wrappers in the root layout
+
+### Step 2: Apply High-Contrast Styling
+
+**For Error/Warning Toasts:**
+```css
+.toast-error,
+.alert-error,
+[data-type="error"] {
+  background-color: #DC2626 !important; /* Red-600 */
+  color: #FFFFFF !important; /* White text */
+  font-weight: 600 !important;
+  border: 2px solid #991B1B !important; /* Red-800 border */
+}
+```
+
+**For Success Toasts:**
+```css
+.toast-success,
+.alert-success,
+[data-type="success"] {
+  background-color: #16A34A !important; /* Green-600 */
+  color: #FFFFFF !important; /* White text */
+  font-weight: 600 !important;
+  border: 2px solid #166534 !important; /* Green-800 border */
+}
+```
+
+**For Info/Default Toasts:**
+```css
+.toast-info,
+.alert-info,
+[data-type="info"],
+.toast-default {
+  background-color: #1E293B !important; /* Slate-800 */
+  color: #FFFFFF !important; /* White text */
+  font-weight: 600 !important;
+  border: 2px solid #0F172A !important; /* Slate-900 border */
+}
+```
+
+### Step 3: Update Toast Component
+
+If using shadcn/ui Toast, update `client/src/components/ui/toast.tsx`:
+
+```typescript
+const toastVariants = cva(
+  "group pointer-events-auto relative flex w-full items-center justify-between space-x-4 overflow-hidden rounded-md border p-6 pr-8 shadow-lg transition-all",
+  {
+    variants: {
+      variant: {
+        default: "bg-slate-800 text-white border-slate-900 font-semibold",
+        destructive: "bg-red-600 text-white border-red-800 font-semibold",
+        success: "bg-green-600 text-white border-green-800 font-semibold",
+      },
+    },
+    defaultVariants: {
+      variant: "default",
+    },
+  }
+)
+```
+
+### Step 4: Check Global Toast Provider
+
+Find where toasts are initialized (usually in `App.tsx` or root layout):
+
+```typescript
+import { Toaster } from "@/components/ui/toaster"
+
+// Make sure Toaster has proper styling
+<Toaster 
+  toastOptions={{
+    style: {
+      background: '#1E293B',
+      color: '#FFFFFF',
+      fontWeight: '600',
+      border: '2px solid #0F172A'
+    }
+  }}
+/>
+```
+
+### Step 5: Add Important Override CSS
+
+Add this to `client/src/index.css` or global stylesheet as a catch-all:
+
+```css
+/* CRITICAL: Fix all white-on-white toast/alert issues */
+[role="alert"],
+[role="status"],
+.toast,
+.alert,
+[data-sonner-toast],
+[data-radix-toast-viewport] > * {
+  background-color: #1E293B !important;
+  color: #FFFFFF !important;
+  font-weight: 600 !important;
+  border: 2px solid #0F172A !important;
+}
+
+[role="alert"][data-type="error"],
+[role="alert"].destructive,
+.toast-error,
+[data-sonner-toast][data-type="error"] {
+  background-color: #DC2626 !important;
+  color: #FFFFFF !important;
+  border-color: #991B1B !important;
+}
+
+[role="alert"][data-type="success"],
+.toast-success,
+[data-sonner-toast][data-type="success"] {
+  background-color: #16A34A !important;
+  color: #FFFFFF !important;
+  border-color: #166534 !important;
+}
+
+/* Ensure all text inside toasts/alerts is visible */
+[role="alert"] *,
+.toast *,
+[data-sonner-toast] * {
+  color: #FFFFFF !important;
+}
+```
+
+## Testing Steps
+
+After applying the fix:
+
+1. **Trigger an error** on the auth page (wrong password)
+   - ✅ Should see red box with white bold text
+   
+2. **Trigger a success message** (successful login)
+   - ✅ Should see green box with white bold text
+   
+3. **Check all pages** where notifications appear:
+   - Auth page
+   - Dashboard
+   - Pricing/checkout
+   - Tutor page
+   - Admin panel
+   
+4. **Verify readability**:
+   - ✅ Text must be clearly visible
+   - ✅ Font must be bold/semibold
+   - ✅ High contrast (white text on dark or colored background)
+
+## Priority
+🔴 **CRITICAL** - This makes error messages completely unreadable, blocking users from understanding what went wrong.
+
+## Expected Result
+All toast notifications and alert popups should have:
+- Dark or colored backgrounds (red for errors, green for success, dark gray for info)
+- White, bold text that's clearly readable
+- Proper contrast ratio (minimum 7:1 for accessibility)
+- Never white-on-white or light-on-light
+
+---
+
+**Implement this fix immediately before the RAG voice migration work. Test thoroughly on the auth page first since that's where the issue is most visible.**
