@@ -14,7 +14,7 @@
   --secondary: hsl(0 5% 96%);
   --secondary-foreground: hsl(0 0% 12%);
   --muted: hsl(0 5% 96%);
-  --muted-foreground: hsl(0 5% 45%);
+  --muted-foreground: hsl(0 0% 20%);
   --accent: hsl(0 75% 45%);
   --accent-foreground: hsl(0 0% 98%);
   --destructive: hsl(0 84.2% 60.2%);
@@ -25,7 +25,7 @@
   --chart-1: hsl(0 75% 45%);
   --chart-2: hsl(0 84.2% 60.2%);
   --chart-3: hsl(0 0% 12%);
-  --chart-4: hsl(0 5% 45%);
+  --chart-4: hsl(0 0% 25%);
   --chart-5: hsl(0 20% 89%);
   --sidebar: hsl(0 0% 100%);
   --sidebar-foreground: hsl(0 0% 12%);
@@ -63,7 +63,7 @@
   --secondary: hsl(0 0% 12%);
   --secondary-foreground: hsl(0 0% 95%);
   --muted: hsl(0 0% 12%);
-  --muted-foreground: hsl(0 0% 65%);
+  --muted-foreground: hsl(0 0% 75%);
   --accent: hsl(0 75% 55%);
   --accent-foreground: hsl(0 0% 98%);
   --destructive: hsl(0 84.2% 60.2%);
@@ -74,7 +74,7 @@
   --chart-1: hsl(0 75% 55%);
   --chart-2: hsl(0 84.2% 60.2%);
   --chart-3: hsl(0 0% 95%);
-  --chart-4: hsl(0 0% 65%);
+  --chart-4: hsl(0 0% 75%);
   --chart-5: hsl(0 0% 18%);
   --sidebar: hsl(0 0% 8%);
   --sidebar-foreground: hsl(0 0% 95%);
