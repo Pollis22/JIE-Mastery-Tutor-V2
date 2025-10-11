@@ -13,6 +13,7 @@ import { setupSecurityHeaders, setupCORS } from "./middleware/security";
 import { requireAdmin } from "./middleware/admin-auth";
 import { auditActions } from "./middleware/audit-log";
 import { convertUsersToCSV, generateFilename } from "./utils/csv-export";
+import { RealtimeServer } from "./realtime-server";
 import Stripe from "stripe";
 import { z } from "zod";
 
@@ -107,8 +108,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Document and context routes for RAG system
   const { default: documentRoutes } = await import('./routes/documents');
   const { default: contextRoutes } = await import('./routes/context');
+  const { default: realtimeRoutes } = await import('./routes/realtime');
   app.use("/api/documents", documentRoutes);
   app.use("/api/context", contextRoutes);
+  app.use("/api/session/realtime", realtimeRoutes);
   
   // Student memory routes
   const { default: studentRoutes } = await import('./routes/students');
@@ -867,5 +870,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   const httpServer = createServer(app);
+  
+  // Initialize WebSocket server for OpenAI Realtime API
+  const realtimeServer = new RealtimeServer(httpServer);
+  console.log('[RealtimeServer] WebSocket server initialized on /ws/realtime');
+  
   return httpServer;
 }

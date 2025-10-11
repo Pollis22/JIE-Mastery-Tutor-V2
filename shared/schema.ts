@@ -532,6 +532,34 @@ export type InsertLearningSession = z.infer<typeof insertLearningSessionSchema>;
 export type QuizAttempt = typeof quizAttempts.$inferSelect;
 export type InsertQuizAttempt = z.infer<typeof insertQuizAttemptSchema>;
 
+// Realtime sessions table (for OpenAI Realtime API WebSocket sessions)
+export const realtimeSessions = pgTable("realtime_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  studentId: varchar("student_id").references(() => students.id, { onDelete: 'set null' }),
+  subject: text("subject"),
+  language: text("language").default('en').$type<'en' | 'es' | 'hi' | 'zh'>(),
+  voice: text("voice"),
+  model: text("model").default('gpt-4o-realtime-preview-2024-10-01'),
+  status: text("status").default('connecting').$type<'connecting' | 'active' | 'ended' | 'error'>(),
+  transcript: jsonb("transcript"),
+  contextDocuments: jsonb("context_documents"),
+  startedAt: timestamp("started_at").defaultNow(),
+  endedAt: timestamp("ended_at"),
+  minutesUsed: integer("minutes_used").default(0),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_realtime_sessions_user").on(table.userId),
+  index("idx_realtime_sessions_student").on(table.studentId),
+  index("idx_realtime_sessions_status").on(table.status),
+]);
+
+export const insertRealtimeSessionSchema = createInsertSchema(realtimeSessions).omit({
+  id: true,
+  createdAt: true,
+});
+
 // New document types
 export type UserDocument = typeof userDocuments.$inferSelect;
 export type InsertUserDocument = z.infer<typeof insertUserDocumentSchema>;
@@ -565,3 +593,7 @@ export const insertMarketingCampaignSchema = createInsertSchema(marketingCampaig
 });
 export type MarketingCampaign = typeof marketingCampaigns.$inferSelect;
 export type InsertMarketingCampaign = z.infer<typeof insertMarketingCampaignSchema>;
+
+// Realtime session types
+export type RealtimeSession = typeof realtimeSessions.$inferSelect;
+export type InsertRealtimeSession = z.infer<typeof insertRealtimeSessionSchema>;
