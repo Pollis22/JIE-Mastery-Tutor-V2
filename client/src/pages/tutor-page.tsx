@@ -4,6 +4,7 @@ import { TutorErrorBoundary } from "@/components/tutor-error-boundary";
 import { NetworkAwareWrapper } from "@/components/network-aware-wrapper";
 import ConvaiHost, { type ConvaiMessage } from "@/components/convai-host";
 import { ConvaiTranscript } from "@/components/convai-transcript";
+import { RealtimeVoiceHost } from "@/components/realtime-voice-host";
 import { AssignmentsPanel } from "@/components/AssignmentsPanel";
 import { StudentSwitcher } from "@/components/StudentSwitcher";
 import { StudentProfilePanel } from "@/components/StudentProfilePanel";
@@ -83,11 +84,30 @@ export default function TutorPage() {
     refetchInterval: 30000, // Refresh every 30 seconds
   });
 
+  // Fetch voice system configuration
+  const { data: systemConfig } = useQuery<{ useConvai: boolean }>({
+    queryKey: ['/api/health'],
+    queryFn: async () => {
+      const response = await fetch('/api/health');
+      return response.json();
+    },
+  });
+
+  const useConvai = systemConfig?.useConvai ?? true; // Default to ConvAI for backward compatibility
+
   // Fetch selected student data
   const { data: selectedStudent } = useQuery<{ id: string; name: string }>({
     queryKey: ['/api/students', selectedStudentId],
     enabled: !!selectedStudentId,
   });
+
+  // Fetch student's pinned documents for RAG context
+  const { data: pinnedDocs } = useQuery<Array<{ pin: any; document: { id: string; title: string } }>>({
+    queryKey: ['/api/students', selectedStudentId, 'pinned-docs'],
+    enabled: !!selectedStudentId,
+  });
+
+  const contextDocumentIds = pinnedDocs?.map(pd => pd.document.id) || [];
 
   // Load ConvAI script
   useEffect(() => {
@@ -499,24 +519,41 @@ export default function TutorPage() {
             </ol>
           </div>
 
-          {/* ConvAI Widget */}
+          {/* Voice System Widget */}
           {mounted && (
             <div className="mt-6 space-y-4">
-              <ConvaiHost
-                agentId={agentId}
-                onMessage={(message) => {
-                  setTranscriptMessages(prev => [...prev, message]);
-                }}
-                onConnectionStatus={(connected) => {
-                  setIsTranscriptConnected(connected);
-                }}
-              />
-              
-              {/* Real-time Transcript */}
-              <ConvaiTranscript 
-                messages={transcriptMessages}
-                isConnected={isTranscriptConnected}
-              />
+              {useConvai ? (
+                <>
+                  {/* ElevenLabs ConvAI System */}
+                  <ConvaiHost
+                    agentId={agentId}
+                    onMessage={(message) => {
+                      setTranscriptMessages(prev => [...prev, message]);
+                    }}
+                    onConnectionStatus={(connected) => {
+                      setIsTranscriptConnected(connected);
+                    }}
+                  />
+                  
+                  <ConvaiTranscript 
+                    messages={transcriptMessages}
+                    isConnected={isTranscriptConnected}
+                  />
+                </>
+              ) : (
+                <>
+                  {/* OpenAI Realtime Voice System */}
+                  <RealtimeVoiceHost
+                    studentId={selectedStudentId || undefined}
+                    subject={subject}
+                    language={user?.preferredLanguage as 'en' | 'es' | 'hi' | 'zh' || 'en'}
+                    ageGroup={level === 'k2' ? 'K-2' : level === 'g3_5' ? '3-5' : level === 'g6_8' ? '6-8' : level === 'g9_12' ? '9-12' : 'College/Adult'}
+                    contextDocumentIds={contextDocumentIds}
+                    onSessionStart={() => setSessionStartTime(new Date())}
+                    onSessionEnd={() => setSessionStartTime(null)}
+                  />
+                </>
+              )}
             </div>
           )}
         </div>
