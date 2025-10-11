@@ -40,6 +40,9 @@ import {
   type InsertAdminLog,
   type MarketingCampaign,
   type InsertMarketingCampaign,
+  realtimeSessions,
+  type RealtimeSession,
+  type InsertRealtimeSession,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, asc, count, sum, sql, like, or } from "drizzle-orm";
@@ -148,6 +151,13 @@ export interface IStorage {
   createCampaign(campaign: InsertMarketingCampaign): Promise<MarketingCampaign>;
   getCampaigns(options: { page: number; limit: number }): Promise<{ campaigns: MarketingCampaign[]; total: number }>;
   getContactsForSegment(segment: string): Promise<User[]>;
+
+  // Realtime session operations
+  getUserById(id: string): Promise<User | undefined>;
+  createRealtimeSession(session: InsertRealtimeSession): Promise<RealtimeSession>;
+  getRealtimeSession(sessionId: string, userId: string): Promise<RealtimeSession | undefined>;
+  updateRealtimeSession(sessionId: string, userId: string, updates: Partial<RealtimeSession>): Promise<RealtimeSession>;
+  endRealtimeSession(sessionId: string, userId: string, transcript: any[], minutesUsed: number): Promise<void>;
 
   // Session store
   sessionStore: session.Store;
@@ -1564,6 +1574,44 @@ export class DatabaseStorage implements IStorage {
     }
     
     return await db.select().from(users).where(and(...conditions));
+  }
+
+  // Realtime session operations
+  async getUserById(id: string): Promise<User | undefined> {
+    return this.getUser(id);
+  }
+
+  async createRealtimeSession(session: InsertRealtimeSession): Promise<RealtimeSession> {
+    const [created] = await db.insert(realtimeSessions).values(session).returning();
+    return created;
+  }
+
+  async getRealtimeSession(sessionId: string, userId: string): Promise<RealtimeSession | undefined> {
+    const [session] = await db.select().from(realtimeSessions)
+      .where(and(eq(realtimeSessions.id, sessionId), eq(realtimeSessions.userId, userId)));
+    return session;
+  }
+
+  async updateRealtimeSession(sessionId: string, userId: string, updates: Partial<RealtimeSession>): Promise<RealtimeSession> {
+    const [updated] = await db.update(realtimeSessions)
+      .set(updates)
+      .where(and(eq(realtimeSessions.id, sessionId), eq(realtimeSessions.userId, userId)))
+      .returning();
+    return updated;
+  }
+
+  async endRealtimeSession(sessionId: string, userId: string, transcript: any[], minutesUsed: number): Promise<void> {
+    await db.update(realtimeSessions)
+      .set({
+        status: 'ended',
+        endedAt: new Date(),
+        transcript,
+        minutesUsed,
+      })
+      .where(and(eq(realtimeSessions.id, sessionId), eq(realtimeSessions.userId, userId)));
+
+    // Update user's voice usage
+    await this.updateUserVoiceUsage(userId, minutesUsed);
   }
 }
 
