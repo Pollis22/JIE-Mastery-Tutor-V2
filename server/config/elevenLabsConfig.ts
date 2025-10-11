@@ -15,7 +15,7 @@ export function getElevenLabsConfig(): ElevenLabsConfig {
     agentId: process.env.ELEVENLABS_AGENT_ID,
     apiKey: process.env.ELEVENLABS_API_KEY,
     openaiApiKey: process.env.OPENAI_API_KEY,
-    useConvAI: process.env.USE_CONVAI !== 'false', // Default to true
+    useConvAI: process.env.USE_CONVAI?.toLowerCase() !== 'false', // Default to true
   };
 }
 
