@@ -134,7 +134,7 @@ export class EmbeddingWorker {
         embeddings.map(emb => 
           storage.createDocumentEmbedding({
             chunkId: emb.chunkId,
-            embedding: JSON.stringify(emb.embedding),
+            embedding: emb.embedding, // Pass array directly for pgvector
             embeddingModel: this.embeddingModel,
           })
         )
