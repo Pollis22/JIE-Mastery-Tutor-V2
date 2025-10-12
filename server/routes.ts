@@ -409,9 +409,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
 
     try {
-      // Create or retrieve Stripe customer
+      // Create or retrieve Stripe customer with validation
       let customerId = user.stripeCustomerId;
       
+      // CRITICAL FIX: Verify customer exists in Stripe, create new one if invalid
+      if (customerId) {
+        try {
+          await stripe.customers.retrieve(customerId);
+          console.log(`✅ Using existing Stripe customer: ${customerId}`);
+        } catch (error) {
+          console.warn(`⚠️ Invalid Stripe customer ID: ${customerId}. Creating new customer.`);
+          customerId = null; // Reset to create new customer
+        }
+      }
+      
+      // Create new Stripe customer if needed
       if (!customerId) {
         const customer = await stripe.customers.create({
           email: user.email,
@@ -422,6 +434,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
         customerId = customer.id;
         await storage.updateUserStripeInfo(user.id, customerId, null);
+        console.log(`✅ Created new Stripe customer: ${customerId}`);
       }
 
       // Create checkout session
@@ -444,7 +457,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ url: session.url });
     } catch (error: any) {
       console.error('[Stripe Checkout] Error:', error);
-      res.status(500).json({ message: "Error creating checkout session: " + error.message });
+      res.status(500).json({ 
+        message: "Error creating checkout session: " + error.message,
+        details: error.message 
+      });
     }
   });
 
@@ -476,8 +492,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Invalid minute package" });
       }
 
-      // Create or retrieve Stripe customer
+      // Create or retrieve Stripe customer with validation
       let customerId = user.stripeCustomerId;
+      
+      // CRITICAL FIX: Verify customer exists in Stripe, create new one if invalid
+      if (customerId) {
+        try {
+          await stripe!.customers.retrieve(customerId);
+          console.log(`✅ Using existing Stripe customer: ${customerId}`);
+        } catch (error) {
+          console.warn(`⚠️ Invalid Stripe customer ID: ${customerId}. Creating new customer.`);
+          customerId = null; // Reset to create new customer
+        }
+      }
+      
+      // Create new Stripe customer if needed
       if (!customerId) {
         const customer = await stripe!.customers.create({
           email: user.email,
@@ -488,6 +517,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
         customerId = customer.id;
         await storage.updateUserStripeInfo(user.id, customerId, null);
+        console.log(`✅ Created new Stripe customer: ${customerId}`);
       }
 
       // Create one-time payment checkout session

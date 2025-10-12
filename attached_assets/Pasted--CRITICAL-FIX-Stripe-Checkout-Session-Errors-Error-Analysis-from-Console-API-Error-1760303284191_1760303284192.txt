@@ -1,0 +1,401 @@
+# CRITICAL FIX: Stripe Checkout Session Errors
+
+## Error Analysis from Console
+
+```
+❌ API Error 500: Error creating checkout session: No such customer: 'cus_TCmwfgUDqBIBM3'
+❌ Failed to load resource: status 404 (API endpoint not found)
+❌ Failed to load resource: status 401 (Unauthorized)
+```
+
+## Root Causes
+
+1. **Invalid Stripe Customer ID**: User has a `stripeCustomerId` in the database that doesn't exist in the current Stripe account
+2. **Stripe Account Mismatch**: Database references customers from an old/different Stripe account
+3. **Missing API Endpoints**: Some checkout-related API routes may be missing or misconfigured
+
+---
+
+## Fix #1: Handle Invalid Stripe Customer IDs
+
+### Location
+`server/routes.ts` - Stripe checkout session creation endpoint
+
+### Problem
+The code tries to use an existing `stripeCustomerId` from the database, but that customer doesn't exist in Stripe anymore (likely from account migration).
+
+### Solution
+
+Update the checkout session creation logic to handle invalid customers:
+
+```typescript
+// POST /api/create-checkout-session
+app.post("/api/create-checkout-session", requireAuth, async (req, res) => {
+  try {
+    const { priceId, planType } = req.body;
+    const userId = req.session.userId;
+    
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    
+    // Get user from database
+    const user = await db.query.users.findFirst({
+      where: eq(users.id, userId)
+    });
+    
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    
+    let customerId = user.stripeCustomerId;
+    
+    // CRITICAL FIX: Verify customer exists in Stripe, create new one if invalid
+    if (customerId) {
+      try {
+        await stripe.customers.retrieve(customerId);
+        console.log(`✅ Using existing Stripe customer: ${customerId}`);
+      } catch (error) {
+        console.warn(`⚠️ Invalid Stripe customer ID: ${customerId}. Creating new customer.`);
+        customerId = null; // Reset to create new customer
+      }
+    }
+    
+    // Create new Stripe customer if needed
+    if (!customerId) {
+      const customer = await stripe.customers.create({
+        email: user.email,
+        name: user.name,
+        metadata: {
+          userId: userId.toString()
+        }
+      });
+      
+      customerId = customer.id;
+      
+      // Update database with new customer ID
+      await db.update(users)
+        .set({ stripeCustomerId: customerId })
+        .where(eq(users.id, userId));
+      
+      console.log(`✅ Created new Stripe customer: ${customerId}`);
+    }
+    
+    // Create checkout session
+    const session = await stripe.checkout.sessions.create({
+      customer: customerId,
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price: priceId,
+          quantity: 1,
+        },
+      ],
+      mode: planType === 'topup' ? 'payment' : 'subscription',
+      success_url: `${process.env.BASE_URL || 'https://jie-mastery-tutor-v2-production.up.railway.app'}/dashboard?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.BASE_URL || 'https://jie-mastery-tutor-v2-production.up.railway.app'}/pricing`,
+      metadata: {
+        userId: userId.toString(),
+        planType: planType
+      }
+    });
+    
+    res.json({ url: session.url });
+    
+  } catch (error) {
+    console.error('Checkout session creation error:', error);
+    res.status(500).json({ 
+      error: 'Failed to create checkout session',
+      details: error.message 
+    });
+  }
+});
+```
+
+---
+
+## Fix #2: Clean Up Invalid Customer IDs in Database
+
+### Create Database Cleanup Script
+
+Add a one-time migration to fix existing users with invalid Stripe customer IDs:
+
+```typescript
+// server/db/cleanup-stripe-customers.ts
+import { db } from './index';
+import { users } from './schema';
+import { isNotNull } from 'drizzle-orm';
+import Stripe from 'stripe';
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  apiVersion: '2023-10-16'
+});
+
+export async function cleanupInvalidStripeCustomers() {
+  console.log('🔍 Checking for invalid Stripe customer IDs...');
+  
+  // Get all users with a stripeCustomerId
+  const usersWithStripeId = await db.query.users.findMany({
+    where: isNotNull(users.stripeCustomerId)
+  });
+  
+  let fixedCount = 0;
+  
+  for (const user of usersWithStripeId) {
+    try {
+      // Try to retrieve customer from Stripe
+      await stripe.customers.retrieve(user.stripeCustomerId!);
+      console.log(`✅ Valid customer: ${user.email}`);
+    } catch (error) {
+      // Customer doesn't exist, clear it from database
+      console.log(`❌ Invalid customer for ${user.email}, clearing...`);
+      
+      await db.update(users)
+        .set({ stripeCustomerId: null })
+        .where(eq(users.id, user.id));
+      
+      fixedCount++;
+    }
+  }
+  
+  console.log(`✅ Cleanup complete. Fixed ${fixedCount} users.`);
+}
+```
+
+### Run the cleanup (add to server startup or run manually):
+
+```typescript
+// In server/index.ts, add this after database connection:
+if (process.env.RUN_STRIPE_CLEANUP === 'true') {
+  import('./db/cleanup-stripe-customers').then(module => {
+    module.cleanupInvalidStripeCustomers();
+  });
+}
+```
+
+---
+
+## Fix #3: Verify API Endpoints Exist
+
+### Check these endpoints are properly defined:
+
+```typescript
+// Required endpoints for pricing/checkout flow:
+
+// 1. Create checkout session
+POST /api/create-checkout-session
+// Body: { priceId: string, planType: 'starter' | 'standard' | 'pro' | 'topup' }
+
+// 2. Stripe webhook (handle successful payments)
+POST /api/webhook/stripe
+// Must have raw body for signature verification
+
+// 3. Get user subscription status
+GET /api/subscription/status
+
+// 4. Cancel subscription
+POST /api/subscription/cancel
+```
+
+### Verify webhook is configured correctly:
+
+```typescript
+// server/routes.ts
+app.post('/api/webhook/stripe', 
+  express.raw({ type: 'application/json' }), 
+  async (req, res) => {
+    const sig = req.headers['stripe-signature'];
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    
+    if (!sig || !webhookSecret) {
+      return res.status(400).send('Webhook signature missing');
+    }
+    
+    try {
+      const event = stripe.webhooks.constructEvent(
+        req.body,
+        sig,
+        webhookSecret
+      );
+      
+      // Handle different event types
+      switch (event.type) {
+        case 'checkout.session.completed':
+          // Handle successful checkout
+          await handleCheckoutSuccess(event.data.object);
+          break;
+        case 'customer.subscription.updated':
+          // Handle subscription updates
+          break;
+        case 'customer.subscription.deleted':
+          // Handle cancellations
+          break;
+      }
+      
+      res.json({ received: true });
+    } catch (error) {
+      console.error('Webhook error:', error);
+      res.status(400).send(`Webhook Error: ${error.message}`);
+    }
+});
+```
+
+---
+
+## Fix #4: Add Better Error Handling on Frontend
+
+### Update Pricing Page (`client/src/pages/Pricing.tsx`):
+
+```typescript
+const handleSubscribe = async (priceId: string, planType: string) => {
+  try {
+    setIsLoading(true);
+    
+    const response = await fetch('/api/create-checkout-session', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify({ priceId, planType })
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || error.details || 'Failed to create checkout session');
+    }
+    
+    const { url } = await response.json();
+    
+    if (!url) {
+      throw new Error('No checkout URL received');
+    }
+    
+    // Redirect to Stripe Checkout
+    window.location.href = url;
+    
+  } catch (error) {
+    console.error('Checkout error:', error);
+    
+    // Show user-friendly error message
+    alert(`❌ Unable to start checkout: ${error.message}\n\nPlease try again or contact support if the issue persists.`);
+    
+    setIsLoading(false);
+  }
+};
+```
+
+---
+
+## Fix #5: Environment Variable Check
+
+### Verify these environment variables are set in Railway:
+
+```bash
+# Stripe Configuration
+STRIPE_SECRET_KEY=sk_live_... or sk_test_...
+STRIPE_PUBLISHABLE_KEY=pk_live_... or pk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+
+# Stripe Price IDs (must match your Stripe dashboard)
+STRIPE_PRICE_STARTER=price_...
+STRIPE_PRICE_STANDARD=price_...
+STRIPE_PRICE_PRO=price_...
+STRIPE_PRICE_TOPUP_60=price_...
+
+# Base URL for redirects
+BASE_URL=https://jie-mastery-tutor-v2-production.up.railway.app
+```
+
+### Add validation on server startup:
+
+```typescript
+// server/index.ts
+const requiredStripeVars = [
+  'STRIPE_SECRET_KEY',
+  'STRIPE_WEBHOOK_SECRET',
+  'STRIPE_PRICE_STARTER',
+  'STRIPE_PRICE_STANDARD',
+  'STRIPE_PRICE_PRO'
+];
+
+const missingVars = requiredStripeVars.filter(v => !process.env[v]);
+
+if (missingVars.length > 0) {
+  console.error('❌ Missing required Stripe environment variables:', missingVars);
+  process.exit(1);
+}
+```
+
+---
+
+## Testing Steps
+
+### 1. Clean up invalid customers:
+```bash
+# In Railway, set environment variable:
+RUN_STRIPE_CLEANUP=true
+
+# Restart the app to run cleanup
+# Then remove the variable and restart again
+```
+
+### 2. Test checkout flow:
+- [ ] Go to /pricing
+- [ ] Click "Subscribe Now" on any plan
+- [ ] Should redirect to Stripe Checkout (not show error)
+- [ ] Complete test payment in Stripe
+- [ ] Should redirect back to /dashboard
+- [ ] Check credits were added to user account
+
+### 3. Check logs:
+- [ ] Railway logs should show: "✅ Created new Stripe customer: cus_..."
+- [ ] No more "No such customer" errors
+- [ ] Webhook events being received
+
+---
+
+## Emergency Quick Fix (if needed immediately)
+
+If Agent3 needs more time, apply this temporary band-aid:
+
+```typescript
+// Quick fix: Always create new customers (remove in production)
+app.post("/api/create-checkout-session", requireAuth, async (req, res) => {
+  try {
+    // ... existing code ...
+    
+    // TEMPORARY: Always create new customer
+    const customer = await stripe.customers.create({
+      email: user.email,
+      name: user.name,
+      metadata: { userId: userId.toString() }
+    });
+    
+    const session = await stripe.checkout.sessions.create({
+      customer: customer.id, // Use fresh customer
+      // ... rest of checkout config
+    });
+    
+    res.json({ url: session.url });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+```
+
+---
+
+## Expected Result After Fix
+
+✅ User clicks "Subscribe Now"  
+✅ System checks if Stripe customer exists  
+✅ If invalid, creates new customer automatically  
+✅ Updates database with new customer ID  
+✅ Redirects to Stripe Checkout successfully  
+✅ Payment completes and credits are added  
+✅ No more 500 errors or "No such customer" messages
+
+---
+
+**PRIORITY: CRITICAL - This is blocking all payments and subscriptions. Implement Fix #1 immediately, then proceed with the rest.**
