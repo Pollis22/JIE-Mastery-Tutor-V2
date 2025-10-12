@@ -598,6 +598,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin routes
+  // Stripe customer cleanup endpoint (admin only)
+  app.post("/api/admin/cleanup-stripe", requireAdmin, async (req, res) => {
+    try {
+      const { manualCleanupEndpoint } = await import('./utils/stripe-cleanup');
+      await manualCleanupEndpoint(req, res);
+    } catch (error: any) {
+      console.error('[Admin] Stripe cleanup error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.get("/api/admin/users", requireAdmin, auditActions.viewUsers, async (req, res) => {
     try {
       const { page = 1, limit = 10, search = '' } = req.query;
