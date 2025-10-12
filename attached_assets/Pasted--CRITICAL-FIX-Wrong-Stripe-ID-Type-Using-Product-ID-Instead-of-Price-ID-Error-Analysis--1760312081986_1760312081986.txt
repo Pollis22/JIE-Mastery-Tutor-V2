@@ -1,0 +1,352 @@
+# CRITICAL FIX: Wrong Stripe ID Type - Using Product ID Instead of Price ID
+
+## Error Analysis
+
+```
+❌ Error creating checkout session: No such price: 'prod_TDF20nQ6n4TUeu'
+```
+
+## Root Cause
+
+The code is sending **Product IDs** (starting with `prod_`) instead of **Price IDs** (starting with `price_`).
+
+**Stripe requires:**
+- ✅ Price IDs: `price_1234567890abcdef`
+- ❌ Product IDs: `prod_1234567890abcdef` (WRONG)
+
+## The Problem
+
+Your environment variables OR frontend code is using Product IDs when it should use Price IDs.
+
+---
+
+## Fix #1: Get Correct Price IDs from Stripe Dashboard
+
+### Step 1: Go to Stripe Dashboard
+1. Log into https://dashboard.stripe.com
+2. Navigate to **Products** in the left sidebar
+3. Click on each of your products (Starter, Standard, Pro, Top-Up)
+
+### Step 2: Copy the PRICE ID (not Product ID)
+For each product, you'll see:
+```
+Product ID: prod_ABC123xyz (DON'T USE THIS)
+Price ID: price_1PQ2R3xyz (USE THIS ONE ✅)
+```
+
+### Step 3: Update Railway Environment Variables
+
+Go to Railway → Your Project → Variables and update these:
+
+```bash
+STRIPE_PRICE_STARTER=price_... (copy from Stripe dashboard)
+STRIPE_PRICE_STANDARD=price_... (copy from Stripe dashboard)
+STRIPE_PRICE_PRO=price_... (copy from Stripe dashboard)
+STRIPE_PRICE_TOPUP_60=price_... (copy from Stripe dashboard)
+```
+
+**CRITICAL:** Make sure they start with `price_` NOT `prod_`
+
+---
+
+## Fix #2: Update Frontend Pricing Page
+
+### Location: `client/src/pages/Pricing.tsx`
+
+Make sure the buttons send the correct Price IDs:
+
+```typescript
+// Pricing page - Subscribe buttons
+const pricingPlans = [
+  {
+    name: 'Starter',
+    price: '$19.99',
+    priceId: import.meta.env.VITE_STRIPE_PRICE_STARTER || 'price_starter', // Must start with price_
+    planType: 'starter',
+    minutes: 60,
+    features: [
+      '60 voice minutes per month',
+      'Math, English, Science, Spanish & More tutoring',
+      'AI-powered learning',
+      'Real-time transcripts',
+      'Progress tracking'
+    ]
+  },
+  {
+    name: 'Standard',
+    price: '$59.99',
+    priceId: import.meta.env.VITE_STRIPE_PRICE_STANDARD || 'price_standard',
+    planType: 'standard',
+    minutes: 240,
+    features: [
+      '240 voice minutes per month',
+      'Math, English, Science, Spanish & More tutoring',
+      'AI-powered learning',
+      'Real-time transcripts',
+      'Progress tracking',
+      'Priority support'
+    ]
+  },
+  {
+    name: 'Pro',
+    price: '$99.99',
+    priceId: import.meta.env.VITE_STRIPE_PRICE_PRO || 'price_pro',
+    planType: 'pro',
+    minutes: 600,
+    features: [
+      '600 voice minutes per month',
+      'Math, English, Science, Spanish & More tutoring',
+      'AI-powered learning',
+      'Real-time transcripts',
+      'Progress tracking',
+      'Priority support',
+      'Custom learning paths'
+    ]
+  }
+];
+
+// Subscribe button handler
+const handleSubscribe = async (priceId: string, planType: string) => {
+  try {
+    console.log('🔍 Subscribing with Price ID:', priceId); // Debug log
+    
+    // CRITICAL: Validate priceId format
+    if (!priceId || !priceId.startsWith('price_')) {
+      throw new Error(`Invalid Price ID format: ${priceId}. Must start with 'price_'`);
+    }
+    
+    const response = await fetch('/api/create-checkout-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ priceId, planType })
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to create checkout');
+    }
+    
+    const { url } = await response.json();
+    window.location.href = url;
+    
+  } catch (error) {
+    console.error('❌ Checkout error:', error);
+    alert(`Unable to start checkout: ${error.message}`);
+  }
+};
+```
+
+---
+
+## Fix #3: Validate Price IDs on Backend
+
+### Location: `server/routes.ts`
+
+Add validation before creating checkout session:
+
+```typescript
+app.post("/api/create-checkout-session", requireAuth, async (req, res) => {
+  try {
+    const { priceId, planType } = req.body;
+    const userId = req.session.userId;
+    
+    // CRITICAL: Validate priceId format
+    if (!priceId) {
+      return res.status(400).json({ error: 'Price ID is required' });
+    }
+    
+    if (!priceId.startsWith('price_')) {
+      console.error(`❌ Invalid Price ID format: ${priceId}`);
+      return res.status(400).json({ 
+        error: `Invalid Price ID format. Received: ${priceId}. Must start with 'price_'` 
+      });
+    }
+    
+    console.log('✅ Creating checkout with valid Price ID:', priceId);
+    
+    // ... rest of checkout logic
+    
+    // Verify price exists in Stripe before creating session
+    try {
+      await stripe.prices.retrieve(priceId);
+      console.log('✅ Price verified in Stripe');
+    } catch (error) {
+      console.error('❌ Price not found in Stripe:', priceId);
+      return res.status(400).json({ 
+        error: `Price ${priceId} not found in Stripe. Please check environment variables.` 
+      });
+    }
+    
+    // Create checkout session
+    const session = await stripe.checkout.sessions.create({
+      // ... checkout config with priceId
+    });
+    
+    res.json({ url: session.url });
+    
+  } catch (error) {
+    console.error('❌ Checkout error:', error);
+    res.status(500).json({ 
+      error: 'Failed to create checkout session',
+      details: error.message 
+    });
+  }
+});
+```
+
+---
+
+## Fix #4: Add Frontend Environment Variables
+
+### Create/Update: `client/.env` or `.env`
+
+```bash
+# Stripe Price IDs (must start with price_)
+VITE_STRIPE_PRICE_STARTER=price_1234567890abcdef
+VITE_STRIPE_PRICE_STANDARD=price_2345678901bcdefg
+VITE_STRIPE_PRICE_PRO=price_3456789012cdefgh
+VITE_STRIPE_PRICE_TOPUP_60=price_4567890123defghi
+```
+
+### Also add to Railway environment variables:
+Same variables but without `VITE_` prefix for backend use.
+
+---
+
+## Fix #5: Debug Helper - Log All Environment Variables
+
+Add this to server startup to verify configuration:
+
+```typescript
+// server/index.ts
+console.log('🔍 Stripe Configuration Check:');
+console.log('STRIPE_PRICE_STARTER:', process.env.STRIPE_PRICE_STARTER);
+console.log('STRIPE_PRICE_STANDARD:', process.env.STRIPE_PRICE_STANDARD);
+console.log('STRIPE_PRICE_PRO:', process.env.STRIPE_PRICE_PRO);
+console.log('STRIPE_PRICE_TOPUP_60:', process.env.STRIPE_PRICE_TOPUP_60);
+
+// Validate all start with 'price_'
+const priceIds = [
+  process.env.STRIPE_PRICE_STARTER,
+  process.env.STRIPE_PRICE_STANDARD,
+  process.env.STRIPE_PRICE_PRO,
+  process.env.STRIPE_PRICE_TOPUP_60
+];
+
+const invalidPriceIds = priceIds.filter(id => id && !id.startsWith('price_'));
+
+if (invalidPriceIds.length > 0) {
+  console.error('❌ CRITICAL: Invalid Price IDs detected (must start with "price_"):', invalidPriceIds);
+  console.error('Please update environment variables with correct Price IDs from Stripe dashboard');
+}
+```
+
+---
+
+## How to Get Correct Price IDs (Step-by-Step)
+
+### Option A: From Stripe Dashboard (Recommended)
+
+1. Go to https://dashboard.stripe.com/test/products (or /live/products for production)
+2. Click on "Starter Plan" product
+3. Look for **"Pricing"** section
+4. Copy the ID that starts with `price_` (NOT the Product ID)
+5. Repeat for Standard, Pro, and Top-Up plans
+
+### Option B: Create New Prices (If Missing)
+
+If you don't see prices, create them:
+
+1. In Stripe Dashboard → Products → Click your product
+2. Click "Add another price"
+3. Set:
+   - **Price:** $19.99 (or whatever amount)
+   - **Billing period:** Monthly (or One-time for top-up)
+   - **Currency:** USD
+4. Click "Add price"
+5. Copy the new `price_` ID
+
+---
+
+## Testing Checklist
+
+After fixing:
+
+- [ ] Check Railway logs for: "✅ Stripe Configuration Check" with all price IDs
+- [ ] All price IDs start with `price_` (not `prod_`)
+- [ ] Click "Subscribe Now" on Starter plan
+- [ ] Should redirect to Stripe Checkout (no error)
+- [ ] Browser console shows: "🔍 Subscribing with Price ID: price_..."
+- [ ] Railway logs show: "✅ Creating checkout with valid Price ID"
+- [ ] No more "No such price" errors
+
+---
+
+## Quick Manual Fix (While Agent3 Works)
+
+**Immediate temporary workaround:**
+
+1. Go to Railway → Variables
+2. Find any variable with value starting with `prod_`
+3. Change it to the corresponding `price_` value from Stripe dashboard
+4. Restart Railway deployment
+5. Test checkout again
+
+---
+
+## Common Mistakes to Avoid
+
+❌ **WRONG:** `STRIPE_PRICE_STARTER=prod_TDF20nQ6n4TUeu`  
+✅ **CORRECT:** `STRIPE_PRICE_STARTER=price_1PQRabcxyz123`
+
+❌ **WRONG:** Using Product ID in checkout session  
+✅ **CORRECT:** Using Price ID in checkout session
+
+❌ **WRONG:** Hardcoding price amounts ($19.99)  
+✅ **CORRECT:** Using Stripe Price IDs
+
+---
+
+## Expected Result After Fix
+
+✅ Environment variables contain valid Price IDs (starting with `price_`)  
+✅ Backend validates Price ID format before checkout  
+✅ Stripe recognizes the Price ID  
+✅ Checkout session creates successfully  
+✅ User redirects to Stripe payment page  
+✅ Payment completes and subscription activates  
+
+---
+
+**URGENT ACTION REQUIRED:**
+
+1. **Get correct Price IDs from Stripe Dashboard NOW**
+2. **Update Railway environment variables immediately**
+3. **Restart deployment**
+4. **Test checkout flow**
+
+The fix will take **5-10 minutes** once you have the correct Price IDs from Stripe.
+
+---
+
+## Still Getting Errors?
+
+If you're still seeing errors after updating Price IDs:
+
+### Check:
+1. Are you in TEST mode or LIVE mode in Stripe?
+2. Do your API keys match the mode? (test keys with test prices, live keys with live prices)
+3. Did you restart Railway after updating variables?
+4. Are the prices in the correct currency (USD)?
+
+### Environment Variable Mismatch:
+```bash
+# WRONG - mixing test and live
+STRIPE_SECRET_KEY=sk_live_...
+STRIPE_PRICE_STARTER=price_test_... # ❌ Test price with live key
+
+# CORRECT - both test
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_PRICE_STARTER=price_test_... # ✅ Matching environment
+```
