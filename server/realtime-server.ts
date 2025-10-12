@@ -320,47 +320,75 @@ export class RealtimeServer {
 
   private async buildInstructionsWithContext(session: ActiveSession): Promise<string> {
     try {
-      // Base instructions for AI tutor with auto-greeting
-      let instructions = `You are a friendly, patient AI tutor. 
-
-IMPORTANT: When the session first starts, you should IMMEDIATELY greet the student warmly and ask what they would like to learn about today. Use a welcoming tone like:
-"Hello! I'm your personal AI tutor, and I'm excited to help you learn today! What subject or topic would you like to work on? Feel free to ask me any questions or share homework you need help with."
-
-After greeting, use the Socratic teaching method - guide students to discover answers rather than giving direct answers immediately. Be encouraging and adapt your teaching style to the student's pace. Keep responses conversational and age-appropriate.`;
-
-      // Retrieve session from database to get context documents
+      // Retrieve session and user data from database
       const { storage } = await import('./storage');
       const { db } = await import('./db');
       const { realtimeSessions } = await import('@shared/schema');
-      const { eq } = await import('drizzle-orm');
+      const { eq, desc } = await import('drizzle-orm');
 
       const [dbSession] = await db.select().from(realtimeSessions)
         .where(eq(realtimeSessions.id, session.sessionId));
 
-      const contextDocIds = (dbSession?.contextDocuments as string[]) || [];
-      if (contextDocIds.length === 0) {
-        console.log(`[RealtimeWS] No context documents for session ${session.sessionId}`);
-        return instructions;
+      // Fetch user profile for personalization
+      const user = await storage.getUser(session.userId);
+      if (!user) {
+        console.error(`[RealtimeWS] User not found for session ${session.sessionId}`);
+        return 'You are a friendly, patient AI tutor. Use the Socratic teaching method to guide students.';
       }
 
-      // Retrieve document context
-      const documentContext = await storage.getDocumentContext(session.userId, contextDocIds);
+      const studentName = user.studentName || user.firstName || 'there';
+      const gradeLevel = user.gradeLevel || 'general';
+      const primarySubject = user.primarySubject || 'learning';
       
-      if (documentContext.chunks.length === 0) {
-        console.log(`[RealtimeWS] No document chunks found for session ${session.sessionId}`);
-        return instructions;
+      // Map grade levels to friendly names
+      const gradeLevelMap: Record<string, string> = {
+        'kindergarten-2': 'K-2',
+        'grades-3-5': 'Grades 3-5',
+        'grades-6-8': 'Grades 6-8',
+        'grades-9-12': 'Grades 9-12',
+        'college-adult': 'College/Adult'
+      };
+      const gradeName = gradeLevelMap[gradeLevel] || gradeLevel;
+
+      // Base instructions with personalized greeting
+      let instructions = `You are a friendly, patient AI tutor for ${studentName}, a ${gradeName} student with primary interest in ${primarySubject}. 
+
+## Student Profile
+- Student Name: ${studentName}
+- Grade Level: ${gradeName}
+- Primary Subject: ${primarySubject}
+
+IMPORTANT FIRST GREETING: When the session first starts, you should IMMEDIATELY greet ${studentName} by name warmly and ask what they would like to learn about today. Use a welcoming tone like:
+"Hello ${studentName}! I'm your personal AI tutor, and I'm excited to help you learn today! What would you like to work on? Feel free to ask me any questions or share homework you need help with."
+
+## Teaching Approach
+- Use the Socratic teaching method - guide ${studentName} to discover answers rather than giving direct answers immediately
+- Be encouraging and adapt your teaching style to ${studentName}'s pace
+- Keep responses conversational and age-appropriate for ${gradeName}
+- Track ${studentName}'s progress across sessions and build on previous topics discussed
+- Reference ${studentName}'s uploaded study materials when relevant
+- Remember key concepts ${studentName} has mastered and areas where they need more practice`;
+
+      const contextDocIds = (dbSession?.contextDocuments as string[]) || [];
+      if (contextDocIds.length > 0) {
+        // Retrieve document context
+        const documentContext = await storage.getDocumentContext(session.userId, contextDocIds);
+        
+        if (documentContext.chunks.length > 0) {
+          // Build context section from chunks
+          const contextTexts = documentContext.chunks.slice(0, 10).map((chunk, idx) => {
+            const doc = documentContext.documents.find(d => d.id === chunk.documentId);
+            return `[Source ${idx + 1}: ${doc?.title || 'Unknown'}]\n${chunk.content}`;
+          }).join('\n\n');
+
+          // Enhance instructions with document context
+          instructions += `\n\n## ${studentName}'s Study Materials\n\n${studentName} has uploaded the following study materials. Reference this content when helping them learn, but use the Socratic method - ask questions to guide them rather than just reading from the materials:\n\n${contextTexts}`;
+
+          console.log(`[RealtimeWS] Added ${documentContext.chunks.length} document chunks to session ${session.sessionId}`);
+        }
       }
 
-      // Build context section from chunks
-      const contextTexts = documentContext.chunks.slice(0, 10).map((chunk, idx) => {
-        const doc = documentContext.documents.find(d => d.id === chunk.documentId);
-        return `[Source ${idx + 1}: ${doc?.title || 'Unknown'}]\n${chunk.content}`;
-      }).join('\n\n');
-
-      // Enhance instructions with document context
-      instructions += `\n\n## Student's Study Materials\n\nThe student has uploaded the following study materials. Reference this content when helping them learn, but use the Socratic method - ask questions to guide them rather than just reading from the materials:\n\n${contextTexts}`;
-
-      console.log(`[RealtimeWS] Added ${documentContext.chunks.length} document chunks to session ${session.sessionId}`);
+      console.log(`[RealtimeWS] Built personalized instructions for ${studentName} (${gradeName}, ${primarySubject})`);
       return instructions;
 
     } catch (error) {
