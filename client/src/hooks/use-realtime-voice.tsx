@@ -99,8 +99,19 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions): UseRealtimeV
         setStatus('active');
       };
 
-      ws.onmessage = (event) => {
+      ws.onmessage = async (event) => {
         try {
+          // Check if the message is binary audio data or JSON
+          if (event.data instanceof Blob) {
+            // Binary audio data from OpenAI
+            const arrayBuffer = await event.data.arrayBuffer();
+            const pcm16 = new Int16Array(arrayBuffer);
+            audioQueueRef.current.push(pcm16);
+            playAudioQueue();
+            return;
+          }
+
+          // JSON message
           const message = JSON.parse(event.data);
           console.log('[RealtimeVoice] Received message:', message.type);
 

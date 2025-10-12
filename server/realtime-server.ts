@@ -208,6 +208,22 @@ export class RealtimeServer {
       });
 
       openaiWs.on('message', (data: Buffer) => {
+        // Log first message from OpenAI for debugging
+        if (Buffer.isBuffer(data)) {
+          const dataStr = data.toString();
+          if (dataStr.startsWith('{')) {
+            try {
+              const msg = JSON.parse(dataStr);
+              if (msg.type === 'session.updated') {
+                console.log(`[RealtimeWS] Session configured successfully for ${session.sessionId}`);
+              } else if (msg.type === 'error') {
+                console.error(`[RealtimeWS] OpenAI error response:`, msg.error);
+              }
+            } catch (e) {
+              // Not JSON, likely audio data
+            }
+          }
+        }
         this.handleOpenAIMessage(session, data);
       });
 
@@ -216,11 +232,13 @@ export class RealtimeServer {
         session.openaiWs = null;
       });
 
-      openaiWs.on('error', (error) => {
+      openaiWs.on('error', (error: any) => {
         console.error(`[RealtimeWS] OpenAI error for session ${session.sessionId}:`, error);
+        console.error(`[RealtimeWS] Error details:`, error.message || 'No message');
+        console.error(`[RealtimeWS] Error code:`, error.code || 'No code');
         this.sendToClient(session, {
           type: 'error',
-          error: 'OpenAI connection error',
+          error: `OpenAI connection error: ${error.message || 'Unknown error'}`,
         });
       });
 
