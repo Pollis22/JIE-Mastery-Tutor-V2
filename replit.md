@@ -25,12 +25,15 @@ The application uses a modern full-stack architecture:
 **OpenAI Realtime API (Primary - Phase 3 Complete)**:
 - **Multi-language voice support**: English, Spanish, Hindi, Chinese
 - **Age-specific voice selection**: 4 languages × 5 age groups = 20 voice configurations  
-- **OpenAI voice mapping**: nova (K-2), fable (3-5), alloy (6-8), echo (9-12/College)
+- **OpenAI voice mapping**: shimmer (K-2), ballad (3-5), alloy (6-8), echo (9-12/College) - using only supported voices
 - **WebSocket-based bidirectional audio**: PCM16 encoding for input, proper signed decoding for playback
 - **RAG Integration**: Student's pinned documents automatically injected as context (up to 10 chunks with source attribution)
 - **Live Transcript UI**: Real-time message display with connection status badges, language/voice indicators
 - **Session Management**: Automatic persistence, minute tracking, mic controls, mute functionality
 - **Language Mapping**: `mapLanguageToISO()` function converts database language names ("english", "spanish", etc.) to ISO codes ("en", "es", etc.) for API validation
+- **Personalized Learning**: Each session includes student profile context (name, grade level, primary subject) for personalized greetings and adaptive teaching
+- **Session Tracking**: All conversations stored per user with transcript tracking for ongoing learning continuity
+- **Auto-greeting**: Tutor greets student by name from profile on session start ("Hello [StudentName]!")
 - **Comprehensive test suite**: Validates voice mappings, WebSocket connections, session persistence
 - **Toggle Support**: USE_CONVAI=false activates OpenAI Realtime; USE_CONVAI=true uses ElevenLabs (case-insensitive)
 
