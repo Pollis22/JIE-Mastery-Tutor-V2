@@ -1,10 +1,10 @@
 // Voice mapping for OpenAI Realtime API based on language and age group
-// OpenAI Realtime supports these voices: alloy, echo, fable, onyx, nova, shimmer
+// OpenAI Realtime supports these voices: alloy, ash, ballad, coral, echo, sage, shimmer, verse, marin, cedar
 
 import type { SupportedLanguage, AgeGroup } from './multiLanguageVoices';
 
 export interface RealtimeVoiceConfig {
-  openaiVoice: 'alloy' | 'echo' | 'fable' | 'onyx' | 'nova' | 'shimmer';
+  openaiVoice: 'alloy' | 'ash' | 'ballad' | 'coral' | 'echo' | 'sage' | 'shimmer' | 'verse' | 'marin' | 'cedar';
   description: string;
 }
 
@@ -14,19 +14,23 @@ export interface RealtimeVoiceConfig {
  * Voice characteristics:
  * - alloy: Neutral, balanced (good for general use)
  * - echo: Clear, professional (good for older students)
- * - fable: Warm, friendly (good for younger students)  
- * - nova: Energetic, upbeat (good for engagement)
- * - shimmer: Soft, gentle (good for calm learning)
- * - onyx: Deep, authoritative (good for advanced topics)
+ * - shimmer: Soft, gentle (good for younger students and calm learning)
+ * - ballad: Warm, friendly (good for elementary students)
+ * - coral: Bright, engaging (good for interactive learning)
+ * - sage: Wise, thoughtful (good for complex topics)
+ * - ash: Smooth, conversational
+ * - verse: Expressive, dynamic
+ * - marin: Calm, steady
+ * - cedar: Deep, authoritative
  */
 export const realtimeVoiceMapping: Record<SupportedLanguage, Record<AgeGroup, RealtimeVoiceConfig>> = {
   en: {
     'K-2': {
-      openaiVoice: 'nova',
-      description: 'Energetic, friendly voice for early learners'
+      openaiVoice: 'shimmer',
+      description: 'Soft, gentle voice for early learners'
     },
     '3-5': {
-      openaiVoice: 'fable',
+      openaiVoice: 'ballad',
       description: 'Warm, engaging voice for elementary students'
     },
     '6-8': {
@@ -44,11 +48,11 @@ export const realtimeVoiceMapping: Record<SupportedLanguage, Record<AgeGroup, Re
   },
   es: {
     'K-2': {
-      openaiVoice: 'nova',
-      description: 'Voz enérgica para niños pequeños'
+      openaiVoice: 'shimmer',
+      description: 'Voz suave para niños pequeños'
     },
     '3-5': {
-      openaiVoice: 'fable',
+      openaiVoice: 'ballad',
       description: 'Voz cálida para primaria'
     },
     '6-8': {
@@ -66,11 +70,11 @@ export const realtimeVoiceMapping: Record<SupportedLanguage, Record<AgeGroup, Re
   },
   hi: {
     'K-2': {
-      openaiVoice: 'nova',
-      description: 'छोटे बच्चों के लिए ऊर्जावान आवाज़'
+      openaiVoice: 'shimmer',
+      description: 'छोटे बच्चों के लिए कोमल आवाज़'
     },
     '3-5': {
-      openaiVoice: 'fable',
+      openaiVoice: 'ballad',
       description: 'प्राथमिक छात्रों के लिए गर्म आवाज़'
     },
     '6-8': {
@@ -88,11 +92,11 @@ export const realtimeVoiceMapping: Record<SupportedLanguage, Record<AgeGroup, Re
   },
   zh: {
     'K-2': {
-      openaiVoice: 'nova',
-      description: '适合幼儿的活力声音'
+      openaiVoice: 'shimmer',
+      description: '适合幼儿的柔和声音'
     },
     '3-5': {
-      openaiVoice: 'fable',
+      openaiVoice: 'ballad',
       description: '适合小学生的温暖声音'
     },
     '6-8': {
