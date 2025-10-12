@@ -72,6 +72,42 @@ app.use((req, res, next) => {
       }
     }
     
+    // Validate Stripe Price IDs at startup
+    console.log('\n🔍 Validating Stripe Configuration...');
+    const stripeVars = {
+      'STRIPE_PRICE_STARTER': process.env.STRIPE_PRICE_STARTER,
+      'STRIPE_PRICE_STANDARD': process.env.STRIPE_PRICE_STANDARD,
+      'STRIPE_PRICE_PRO': process.env.STRIPE_PRICE_PRO,
+      'STRIPE_PRICE_TOPUP_60': process.env.STRIPE_PRICE_TOPUP_60,
+    };
+
+    let hasStripeErrors = false;
+    Object.entries(stripeVars).forEach(([key, value]) => {
+      if (!value) {
+        console.log(`⚠️  ${key}: Not set`);
+      } else if (value.startsWith('prod_')) {
+        console.error(`❌ CRITICAL ERROR: ${key} is using a Product ID (${value}) instead of a Price ID!`);
+        console.error(`   Fix: Go to Stripe Dashboard → Products → Copy the PRICE ID (starts with "price_")`);
+        hasStripeErrors = true;
+      } else if (value.startsWith('price_')) {
+        console.log(`✅ ${key}: ${value}`);
+      } else {
+        console.warn(`⚠️  ${key}: Invalid format (${value}) - should start with "price_"`);
+        hasStripeErrors = true;
+      }
+    });
+
+    if (hasStripeErrors) {
+      console.error('\n❌ STRIPE CONFIGURATION ERROR DETECTED!');
+      console.error('Please update your environment variables with correct Price IDs from Stripe Dashboard.');
+      console.error('Price IDs start with "price_" NOT "prod_"\n');
+      if (process.env.NODE_ENV === 'production') {
+        console.error('Server will continue but checkout will fail until fixed.\n');
+      }
+    } else {
+      console.log('✅ All Stripe Price IDs validated\n');
+    }
+    
     console.log('Registering routes...');
     const server = await registerRoutes(app);
     console.log('Routes registered successfully ✓');

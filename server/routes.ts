@@ -408,6 +408,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(400).json({ message: `Invalid plan: ${plan}` });
     }
 
+    // CRITICAL VALIDATION: Ensure we have a Price ID, not a Product ID
+    if (priceId.startsWith('prod_')) {
+      console.error(`❌ CRITICAL ERROR: Product ID detected instead of Price ID: ${priceId}`);
+      return res.status(500).json({ 
+        error: `Configuration error: ${plan} is using a Product ID (${priceId}) instead of a Price ID. Please update environment variable STRIPE_PRICE_${plan.toUpperCase()} with the correct Price ID from Stripe Dashboard.` 
+      });
+    }
+
+    if (!priceId.startsWith('price_')) {
+      console.error(`❌ Invalid Price ID format: ${priceId}`);
+      return res.status(500).json({ 
+        error: `Invalid Price ID format for ${plan}: ${priceId}. Price IDs must start with "price_"` 
+      });
+    }
+
+    console.log(`✅ Using valid Price ID for ${plan}: ${priceId}`);
+
     try {
       // Create or retrieve Stripe customer with validation
       let customerId = user.stripeCustomerId;
@@ -491,6 +508,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!pkg) {
         return res.status(400).json({ message: "Invalid minute package" });
       }
+
+      // CRITICAL VALIDATION: Ensure we have a Price ID, not a Product ID
+      if (pkg.priceId.startsWith('prod_')) {
+        console.error(`❌ CRITICAL ERROR: Product ID detected instead of Price ID for top-up: ${pkg.priceId}`);
+        return res.status(500).json({ 
+          error: `Configuration error: Top-up is using a Product ID (${pkg.priceId}) instead of a Price ID. Please update environment variable STRIPE_PRICE_TOPUP_60 with the correct Price ID from Stripe Dashboard.` 
+        });
+      }
+
+      if (!pkg.priceId.startsWith('price_')) {
+        console.error(`❌ Invalid Price ID format for top-up: ${pkg.priceId}`);
+        return res.status(500).json({ 
+          error: `Invalid Price ID format for top-up: ${pkg.priceId}. Price IDs must start with "price_"` 
+        });
+      }
+
+      console.log(`✅ Using valid Price ID for ${minutePackage}-minute top-up: ${pkg.priceId}`);
 
       // Create or retrieve Stripe customer with validation
       let customerId = user.stripeCustomerId;
