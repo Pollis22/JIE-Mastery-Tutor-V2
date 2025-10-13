@@ -524,10 +524,9 @@ export default function TutorPage() {
 
             <input 
               id="student-name" 
-              placeholder="Student name (required)" 
+              placeholder="Student name" 
               value={studentName} 
               onChange={e => setStudentName(e.target.value)}
-              required
               className="px-3 py-2 border border-input bg-background text-foreground rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
               data-testid="input-student-name"
             />
