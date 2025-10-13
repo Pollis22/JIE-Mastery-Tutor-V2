@@ -79,8 +79,8 @@ export default function TutorPage() {
   const memo = loadProgress();
   const [level, setLevel] = useState<AgentLevel>((memo.lastLevel as AgentLevel) || "k2");
   const [subject, setSubject] = useState(memo.lastSubject || "general");
-  const [studentName, setStudentName] = useState("");
-  const [gradeText, setGradeText] = useState("");
+  const [studentName, setStudentName] = useState(user?.studentName || "");
+  const [gradeText, setGradeText] = useState(user?.gradeLevel || "");
   const [mounted, setMounted] = useState(false);
   const [lastSummary, setLastSummary] = useState(memo.lastSummary || "");
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
