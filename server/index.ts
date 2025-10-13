@@ -13,7 +13,17 @@ if (process.env.NODE_ENV === 'development' && !process.env.AUTH_TEST_MODE) {
 
 const app = express();
 
-app.use(express.json());
+// CRITICAL: Stripe webhook needs raw body for signature verification
+// Must register webhook route BEFORE JSON parser, so we conditionally parse
+app.use((req, res, next) => {
+  if (req.path === '/api/stripe/webhook') {
+    // Skip JSON parsing for webhook - it uses raw() middleware
+    next();
+  } else {
+    express.json()(req, res, next);
+  }
+});
+
 app.use(express.urlencoded({ extended: false }));
 
 // Explicitly set headers to indicate this is a web application for deployment

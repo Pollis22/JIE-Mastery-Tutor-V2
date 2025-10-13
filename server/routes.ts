@@ -172,6 +172,117 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // User sessions endpoints
+  app.get("/api/user/sessions", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const user = req.user as any;
+      const sessions = await storage.getUserSessions(user.id);
+      res.json({ sessions });
+    } catch (error: any) {
+      console.error('[Sessions] Error fetching sessions:', error);
+      res.status(500).json({ message: "Error fetching sessions: " + error.message });
+    }
+  });
+
+  app.get("/api/user/sessions/:studentId", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const user = req.user as any;
+      const { studentId } = req.params;
+      const sessions = await storage.getStudentSessions(studentId, user.id);
+      res.json({ sessions });
+    } catch (error: any) {
+      console.error('[Sessions] Error fetching student sessions:', error);
+      res.status(500).json({ message: "Error fetching student sessions: " + error.message });
+    }
+  });
+
+  // Billing history endpoint
+  app.get("/api/billing/history", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    if (!stripe) {
+      return res.json({ history: [] });
+    }
+
+    try {
+      const user = req.user as any;
+      
+      if (!user.stripeCustomerId) {
+        return res.json({ history: [] });
+      }
+
+      const invoices = await stripe.invoices.list({
+        customer: user.stripeCustomerId,
+        limit: 50
+      });
+
+      const history = invoices.data.map(invoice => ({
+        id: invoice.id,
+        date: new Date(invoice.created * 1000),
+        amount: invoice.amount_paid / 100,
+        status: invoice.status,
+        description: invoice.description || 'Subscription payment',
+        invoiceUrl: invoice.hosted_invoice_url
+      }));
+
+      res.json({ history });
+    } catch (error: any) {
+      console.error('[Billing] Error fetching history:', error);
+      res.status(500).json({ message: "Error fetching billing history: " + error.message });
+    }
+  });
+
+  // Email preferences endpoints
+  app.get("/api/user/email-preferences", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const user = req.user as any;
+      const preferences = {
+        weeklyNewsletter: user.marketingOptIn || false,
+        productUpdates: true,
+        promotionalOffers: user.marketingOptIn || false,
+        learningTips: true
+      };
+      res.json({ preferences });
+    } catch (error: any) {
+      console.error('[Preferences] Error fetching preferences:', error);
+      res.status(500).json({ message: "Error fetching preferences: " + error.message });
+    }
+  });
+
+  app.patch("/api/user/email-preferences", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const user = req.user as any;
+      const { weeklyNewsletter, productUpdates, promotionalOffers, learningTips } = req.body;
+      
+      // For now, we only track marketing opt-in/opt-out
+      const marketingOptIn = weeklyNewsletter || promotionalOffers;
+      await storage.updateUserMarketingPreferences(user.id, marketingOptIn);
+      
+      res.json({ success: true, message: "Email preferences updated" });
+    } catch (error: any) {
+      console.error('[Preferences] Error updating preferences:', error);
+      res.status(500).json({ message: "Error updating preferences: " + error.message });
+    }
+  });
+
   app.post("/api/lessons/:lessonId/progress", async (req, res) => {
     if (!req.isAuthenticated()) {
       return res.status(401).json({ message: "Unauthorized" });
