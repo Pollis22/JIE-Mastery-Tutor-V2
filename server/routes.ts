@@ -60,6 +60,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       useConvai: process.env.USE_CONVAI?.toLowerCase() === 'true' // Use ConvAI when explicitly true
     });
   });
+  
+  // Realtime health check endpoint
+  app.get("/api/health/realtime", (req, res) => {
+    if (!realtimeServer) {
+      return res.status(503).json({ 
+        error: 'Realtime server not initialized'
+      });
+    }
+    
+    const status = realtimeServer.getHealthStatus();
+    res.status(200).json(status);
+  });
 
   // Setup authentication
   setupAuth(app);
