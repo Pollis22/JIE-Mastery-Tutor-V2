@@ -1,0 +1,120 @@
+Here you go—paste this straight into Agent 3.
+
+---
+
+**Title:** Fix Realtime “thud then silence” — correct audio pipeline, logs, and hello probe
+
+**Goal:** Remove `server_error` + silence by fixing WebRTC/WS audio config, event order, and probes. Prove audio out with a forced hello, then enable normal turn-taking.
+
+**Do exactly this:**
+
+1. **Feature flags**
+
+* Add env flags: `REALTIME_ENABLED`, `REALTIME_TRANSPORT` = `webrtc` | `websocket`.
+* Default to `webrtc`.
+
+2. **Session connect flow**
+
+* On connect: immediately send
+
+```json
+{ "type":"session.update",
+  "session": {
+    "modalities":["text","audio"],
+    "voice":"alloy",
+    "instructions":"You are a concise, upbeat tutor. Speak short sentences. Wait for the user to finish before replying. If the user is silent, say: 'I'm here when you're ready.'",
+    "input_audio_transcription": { "model":"whisper-1" }
+  }
+}
+```
+
+* **If REALTIME_TRANSPORT=webrtc:** do *not* set `output_audio_format`. Let Opus flow over the media track.
+* **If REALTIME_TRANSPORT=websocket:** set
+
+```json
+"input_audio_format":{"type":"pcm16","sample_rate_hz":16000},
+"output_audio_format":{"type":"pcm16","sample_rate_hz":16000}
+```
+
+3. **Hello probe (force audio out)**
+
+* After `session.update`, send:
+
+```json
+{
+  "type":"response.create",
+  "response": {
+    "modalities":["audio"],
+    "instructions":"Say 'hello' clearly once.",
+    "voice":"alloy"
+  }
+}
+```
+
+* Log: “HELLO_PROBE_SENT”.
+
+4. **WebSocket-only mic path**
+
+* When mic audio is streamed via WS, use `input_audio_buffer.append` with **16kHz 16-bit PCM LE** chunks, then **commit**:
+
+```json
+{ "type":"input_audio_buffer.commit" }
+```
+
+* Don’t send any audio until after `session.updated` ack.
+* If commit is missing, add it. Without commit, no response.
+
+5. **Event logging (must-have)**
+
+* Log all incoming frames of type: `error`, `response.error`, `session.updated`, `response.completed`.
+* On `error`, log full payload and last 10 outbound events (in-memory ring buffer).
+
+6. **VAD + turn-taking (add after hello passes)**
+
+* Start with **no** `turn_detection`. After hello works, add:
+
+```json
+"turn_detection": { "type":"server_vad", "threshold":0.5 }
+```
+
+* Confirm you still receive audio after first user speech.
+
+7. **Autoplay guard (WebRTC)**
+
+* Require a user gesture (`Start Voice` button) before attaching the remote audio element. If blocked, show a toast with fix instructions.
+
+8. **Minimal UI debug panel**
+
+* Add a collapsible `<DebugPanel>` showing:
+
+  * transport (webrtc/websocket)
+  * last `session.updated`
+  * last error JSON
+  * hello-probe status
+  * VAD state (on/off)
+  * current model name
+
+9. **Acceptance tests**
+
+* **Test A (WebRTC):** connect → session.update → hello probe → hear audio within 3s.
+* **Test B (WS):** append 1s PCM noise → commit → response.create(text-only) → get text; then response.create(audio) → play PCM (convert to WAV in browser for playback).
+* **Test C:** enable VAD → speak → model replies once within 3s.
+
+10. **Model & endpoints**
+
+* Default model: `gpt-4o-realtime-preview`.
+* Ephemeral session mint stays server-side; return token to client per docs.
+
+**Out-of-bounds to remove now:**
+
+* Any “instructions must be 500+ chars” validations. Not needed.
+* `output_audio_format` when using WebRTC. That’s what caused silence.
+
+**Done =**
+
+* Hello probe audible on both transports.
+* No `server_error` after session.update.
+* Logs show `session.updated` → `response.created` → `response.completed`.
+* VAD on produces replies; VAD off + manual `response.create` also works.
+
+Ship it.
