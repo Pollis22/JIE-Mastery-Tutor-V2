@@ -143,6 +143,16 @@ export class RealtimeServer {
 
   private async connectToOpenAI(session: ActiveSession) {
     try {
+      // BUILD INSTRUCTIONS FIRST, BEFORE OPENING WEBSOCKET (critical for timing!)
+      console.log(`[RealtimeWS] Pre-building instructions before WebSocket connection...`);
+      const { instructions, documentContext } = await this.buildInstructionsWithContext(session);
+      const selectedVoice = session.voiceName || 'alloy';
+      
+      console.log(`[RealtimeWS] Instructions ready: ${instructions.length} chars for ${session.studentName}`);
+      
+      // Store document context in session for later injection
+      (session as any).documentContext = documentContext;
+      
       // Use the latest model version
       const model = 'gpt-4o-realtime-preview-2024-12-17';
       const wsUrl = `wss://api.openai.com/v1/realtime?model=${model}`;
@@ -158,17 +168,10 @@ export class RealtimeServer {
 
       session.openaiWs = openaiWs;
 
-      openaiWs.on('open', async () => {
-        console.log(`[RealtimeWS] Connected to OpenAI for session ${session.sessionId}`);
+      openaiWs.on('open', () => {
+        console.log(`[RealtimeWS] WebSocket OPEN - sending config IMMEDIATELY`);
         
-        // BUILD AND SEND COMPLETE CONFIG AS FIRST MESSAGE (don't wait for session.created!)
-        const { instructions, documentContext } = await this.buildInstructionsWithContext(session);
-        const selectedVoice = session.voiceName || 'alloy';
-        
-        console.log(`[RealtimeWS] Built instructions for ${session.studentName} (${instructions.length} chars)`);
-        console.log(`[RealtimeWS] Sending COMPLETE session config as FIRST message`);
-        
-        // Send COMPLETE configuration as FIRST message (critical!)
+        // Send COMPLETE configuration as FIRST message (synchronous, no await!)
         const sessionConfig = {
           type: 'session.update',
           session: {
@@ -202,8 +205,9 @@ export class RealtimeServer {
           },
         };
         
-        console.log(`[RealtimeWS] Complete session configuration sent`);
+        console.log(`[RealtimeWS] FIRST MESSAGE: Complete session config with instructions (${instructions.length} chars)`);
         this.sendToOpenAI(session, sessionConfig);
+        console.log(`[RealtimeWS] Config sent - waiting for OpenAI confirmation`);
       });
 
       openaiWs.on('message', async (data: Buffer) => {
@@ -216,7 +220,7 @@ export class RealtimeServer {
               
               // Handle session.created confirmation (config already sent on connection)
               if (msg.type === 'session.created') {
-                console.log(`[RealtimeWS] Session created confirmation: ${msg.session?.id}`);
+                console.log(`[RealtimeWS] ✅ Session created by OpenAI: ${msg.session?.id}`);
                 
                 // Notify client that connection is ready
                 this.sendToClient(session, {
@@ -224,8 +228,8 @@ export class RealtimeServer {
                   sessionId: session.sessionId,
                 });
                 
-                // Get document context for injection
-                const { documentContext } = await this.buildInstructionsWithContext(session);
+                // Get pre-built document context from session
+                const documentContext = (session as any).documentContext;
                 
                 // If there's document context, inject it as a conversation item
                 if (documentContext) {
