@@ -164,15 +164,15 @@ export class RealtimeServer {
         const selectedVoice = session.voiceName || 'alloy';
         console.log(`[RealtimeWS] Configuring OpenAI with voice: ${selectedVoice}`);
         
-        // Build system instructions with document context
-        const instructions = await this.buildInstructionsWithContext(session);
+        // Build compact system instructions (without document context to stay under token limit)
+        const { instructions, documentContext } = await this.buildInstructionsWithContext(session);
         
-        // Send initial session configuration
+        // Send initial session configuration with SHORT instructions
         this.sendToOpenAI(session, {
           type: 'session.update',
           session: {
             modalities: ['text', 'audio'],
-            instructions,
+            instructions: instructions,
             voice: selectedVoice,
             input_audio_format: 'pcm16',
             output_audio_format: 'pcm16',
@@ -194,8 +194,27 @@ export class RealtimeServer {
           sessionId: session.sessionId,
         });
 
+        // If there's document context, inject it as a conversation item (not in instructions)
+        if (documentContext) {
+          setTimeout(() => {
+            this.sendToOpenAI(session, {
+              type: 'conversation.item.create',
+              item: {
+                type: 'message',
+                role: 'system',
+                content: [
+                  {
+                    type: 'input_text',
+                    text: documentContext
+                  }
+                ]
+              }
+            });
+            console.log(`[RealtimeWS] Injected document context for session ${session.sessionId}`);
+          }, 100);
+        }
+
         // Trigger initial greeting from AI tutor
-        // Send a response.create to make the AI start speaking the greeting
         setTimeout(() => {
           this.sendToOpenAI(session, {
             type: 'response.create',
@@ -204,7 +223,7 @@ export class RealtimeServer {
             }
           });
           console.log(`[RealtimeWS] Triggered initial greeting for session ${session.sessionId}`);
-        }, 500); // Small delay to ensure session is fully ready
+        }, documentContext ? 600 : 500); // Extra delay if context was injected
       });
 
       openaiWs.on('message', (data: Buffer) => {
@@ -318,7 +337,7 @@ export class RealtimeServer {
     }
   }
 
-  private async buildInstructionsWithContext(session: ActiveSession): Promise<string> {
+  private async buildInstructionsWithContext(session: ActiveSession): Promise<{instructions: string, documentContext?: string}> {
     try {
       // Retrieve session and user data from database
       const { storage } = await import('./storage');
@@ -333,7 +352,7 @@ export class RealtimeServer {
       const user = await storage.getUser(session.userId);
       if (!user) {
         console.error(`[RealtimeWS] User not found for session ${session.sessionId}`);
-        return 'You are a friendly, patient AI tutor. Use the Socratic teaching method to guide students.';
+        return {instructions: 'You are a friendly, patient AI tutor. Use the Socratic teaching method to guide students.'};
       }
 
       const studentName = user.studentName || user.firstName || 'there';
@@ -350,50 +369,38 @@ export class RealtimeServer {
       };
       const gradeName = gradeLevelMap[gradeLevel] || gradeLevel;
 
-      // Base instructions with personalized greeting
-      let instructions = `You are a friendly, patient AI tutor for ${studentName}, a ${gradeName} student with primary interest in ${primarySubject}. 
+      // Base instructions - KEEP SHORT to stay under 16k token limit
+      const instructions = `You are a friendly, patient AI tutor for ${studentName}, a ${gradeName} student interested in ${primarySubject}.
 
-## Student Profile
-- Student Name: ${studentName}
-- Grade Level: ${gradeName}
-- Primary Subject: ${primarySubject}
+IMPORTANT: Greet ${studentName} by name and ask what they'd like to learn. Use Socratic teaching - guide with questions rather than direct answers. Keep responses age-appropriate for ${gradeName} level.`;
 
-IMPORTANT FIRST GREETING: When the session first starts, you should IMMEDIATELY greet ${studentName} by name warmly and ask what they would like to learn about today. Use a welcoming tone like:
-"Hello ${studentName}! I'm your personal AI tutor, and I'm excited to help you learn today! What would you like to work on? Feel free to ask me any questions or share homework you need help with."
-
-## Teaching Approach
-- Use the Socratic teaching method - guide ${studentName} to discover answers rather than giving direct answers immediately
-- Be encouraging and adapt your teaching style to ${studentName}'s pace
-- Keep responses conversational and age-appropriate for ${gradeName}
-- Track ${studentName}'s progress across sessions and build on previous topics discussed
-- Reference ${studentName}'s uploaded study materials when relevant
-- Remember key concepts ${studentName} has mastered and areas where they need more practice`;
-
+      // Handle document context separately
+      let documentContext: string | undefined;
       const contextDocIds = (dbSession?.contextDocuments as string[]) || [];
       if (contextDocIds.length > 0) {
         // Retrieve document context
-        const documentContext = await storage.getDocumentContext(session.userId, contextDocIds);
+        const docData = await storage.getDocumentContext(session.userId, contextDocIds);
         
-        if (documentContext.chunks.length > 0) {
-          // Build context section from chunks
-          const contextTexts = documentContext.chunks.slice(0, 10).map((chunk, idx) => {
-            const doc = documentContext.documents.find(d => d.id === chunk.documentId);
-            return `[Source ${idx + 1}: ${doc?.title || 'Unknown'}]\n${chunk.content}`;
+        if (docData.chunks.length > 0) {
+          // Build context section from chunks - will be sent via conversation.item.create
+          const contextTexts = docData.chunks.slice(0, 5).map((chunk, idx) => {
+            const doc = docData.documents.find(d => d.id === chunk.documentId);
+            return `[Source: ${doc?.title || 'Unknown'}]\n${chunk.content.substring(0, 800)}`;
           }).join('\n\n');
 
-          // Enhance instructions with document context
-          instructions += `\n\n## ${studentName}'s Study Materials\n\n${studentName} has uploaded the following study materials. Reference this content when helping them learn, but use the Socratic method - ask questions to guide them rather than just reading from the materials:\n\n${contextTexts}`;
-
-          console.log(`[RealtimeWS] Added ${documentContext.chunks.length} document chunks to session ${session.sessionId}`);
+          documentContext = `${studentName}'s Study Materials:\n\n${contextTexts}`;
+          console.log(`[RealtimeWS] Prepared ${docData.chunks.length} document chunks for context injection`);
         }
       }
 
-      console.log(`[RealtimeWS] Built personalized instructions for ${studentName} (${gradeName}, ${primarySubject})`);
-      return instructions;
+      console.log(`[RealtimeWS] Built compact instructions for ${studentName} (${gradeName}, ${primarySubject})`);
+      return {instructions, documentContext};
 
     } catch (error) {
       console.error(`[RealtimeWS] Error building context:`, error);
-      return 'You are a friendly, patient AI tutor. Use the Socratic teaching method to guide students. Be encouraging and age-appropriate.';
+      return {
+        instructions: 'You are a friendly, patient AI tutor. Use the Socratic teaching method to guide students. Be encouraging and age-appropriate.'
+      };
     }
   }
 
