@@ -1,0 +1,136 @@
+# Task: Connect client to OpenAI Realtime via WebRTC
+
+## Problem
+The server sends `webrtc.credentials` but the client never completes the WebRTC handshake, causing audio to fail.
+
+## Files to modify
+- `client/src/hooks/use-realtime-voice.tsx`
+
+## Implementation
+
+### 1. Add these helper functions to the hook:
+
+```typescript
+function ensureRemoteAudioElement(): HTMLAudioElement {
+  let el = document.getElementById("realtime-audio") as HTMLAudioElement | null;
+  if (!el) {
+    el = document.createElement("audio");
+    el.id = "realtime-audio";
+    el.autoplay = true;
+    el.playsInline = true;
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+async function connectToOpenAIWebRTC({
+  clientSecret,
+  model = "gpt-4o-realtime-preview",
+}: { clientSecret: string; model?: string }) {
+  if (!clientSecret) throw new Error("Missing clientSecret for WebRTC");
+
+  console.log("🔵 Starting WebRTC connection...");
+
+  // 1) Create peer connection
+  const pc = new RTCPeerConnection();
+
+  // Log connection states
+  pc.onconnectionstatechange = () => console.log("pc.state", pc.connectionState);
+  pc.oniceconnectionstatechange = () => console.log("pc.ice", pc.iceConnectionState);
+
+  // 2) Remote audio sink (must be created after user gesture)
+  const audioEl = ensureRemoteAudioElement();
+  pc.ontrack = (e) => {
+    console.log("🎵 Received audio track");
+    if (audioEl.srcObject !== e.streams[0]) {
+      audioEl.srcObject = e.streams[0];
+    }
+  };
+
+  // 3) Data channel for events/logs (optional but useful)
+  const dc = pc.createDataChannel("oai-events");
+  dc.onopen = () => console.log("✅ DataChannel open");
+  dc.onmessage = (ev) => console.log("DC message:", ev.data);
+
+  // 4) Add local mic track (Opus over WebRTC)
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  stream.getAudioTracks().forEach((t) => pc.addTrack(t, stream));
+
+  // 5) Create and set local offer
+  const offer = await pc.createOffer({
+    offerToReceiveAudio: true,
+    offerToReceiveVideo: false,
+  });
+  await pc.setLocalDescription(offer);
+
+  // 6) Send SDP offer to OpenAI
+  const base = "https://api.openai.com/v1/realtime";
+  const sdpResp = await fetch(`${base}?model=${encodeURIComponent(model)}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${clientSecret}`,
+      "Content-Type": "application/sdp",
+    },
+    body: offer.sdp,
+  });
+
+  if (!sdpResp.ok) {
+    const text = await sdpResp.text().catch(() => "");
+    console.error(`❌ SDP exchange failed: ${sdpResp.status}`, text);
+    throw new Error(`Realtime SDP exchange failed: ${sdpResp.status} ${text}`);
+  }
+
+  // 7) Apply remote answer
+  const answerSdp = await sdpResp.text();
+  await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
+
+  console.log("✅ WebRTC connected; remote description set");
+  return pc;
+}
+```
+
+### 2. In the WebSocket message switch statement, add this case:
+
+```typescript
+case "webrtc.credentials": {
+  console.log("🔑 Received webrtc.credentials");
+  const { client_secret, model } = message;
+  
+  try {
+    await connectToOpenAIWebRTC({ 
+      clientSecret: client_secret?.value, 
+      model: model || "gpt-4o-realtime-preview" 
+    });
+    
+    // After connection, send hello probe via existing socket
+    ws?.send(JSON.stringify({
+      type: "response.create",
+      response: { 
+        modalities: ["audio"], 
+        instructions: "Say 'hello' clearly once.", 
+        voice: "alloy" 
+      }
+    }));
+  } catch (error) {
+    console.error("❌ WebRTC connection failed:", error);
+  }
+  break;
+}
+```
+
+## Critical notes
+- **DO NOT** include `output_audio_format` for WebRTC — audio is Opus, not PCM16
+- The `<audio>` element is created after user gesture (the "Start Voice" button)
+- Keep existing server socket for sending commands like `response.create`
+- WebRTC handles audio streaming natively; no manual AudioContext needed
+
+## Acceptance criteria
+✅ Click "Start Voice" → credentials arrive → WebRTC connects → hear "hello" within ~3s  
+✅ Console shows: `🔑 Received webrtc.credentials` → `SDP 200` → `pc.connectionState: connected`  
+✅ No `server_error` after session.update  
+✅ Audio plays through the `<audio>` element automatically
+
+## What to verify
+- Check console for the blue/green checkmarks in the logs
+- Confirm SDP POST returns 200
+- Check browser's WebRTC internals (chrome://webrtc-internals) if needed

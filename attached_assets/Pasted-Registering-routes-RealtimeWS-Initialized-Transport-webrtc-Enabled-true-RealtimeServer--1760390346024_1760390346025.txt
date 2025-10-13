@@ -1,0 +1,48 @@
+Registering routes...
+[RealtimeWS] Initialized - Transport: webrtc, Enabled: true
+[RealtimeServer] WebSocket server initialized on /ws/realtime
+Routes registered successfully ✓
+Starting embedding worker...
+[EmbeddingWorker] Starting background embedding processor
+9:15:57 PM [express] Embedding worker started for background document processing
+Setting up Vite dev server...
+Attempting to listen on 0.0.0.0:5000...
+=== SERVER STARTED SUCCESSFULLY ===
+✓ Listening on 0.0.0.0:5000
+✓ Environment: development
+✓ Health check: http://0.0.0.0:5000/api/health
+===================================
+9:15:57 PM [express] serving on port 5000
+Browserslist: browsers data (caniuse-lite) is 12 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+9:16:10 PM [express] GET /api/user 401 in 2ms
+9:16:23 PM [express] GET /api/health/realtime 200 in 1ms :: {"transport":"webrtc","model":"gpt-4o-re…
+9:16:31 PM [express] GET /api/user 401 in 1ms
+9:17:20 PM [express] GET /api/user 401 in 1ms
+9:17:41 PM [express] POST /api/login 200 in 116ms :: {"id":"9f0f901d-d3c1-42c0-8c7b-0407d231fd55","u…
+9:17:41 PM [express] GET /api/health 200 in 1ms :: {"status":"ok","timestamp":"2025-10-13T21:17:41.3…
+9:17:41 PM [express] GET /api/students 304 in 134ms :: []
+[DB] ✓ Database connection established
+[DB] ✓ Database connection established
+9:17:41 PM [express] GET /api/documents 404 in 480ms
+9:17:41 PM [express] POST /api/session/check-availability 200 in 603ms :: {"allowed":true,"remaining…
+9:17:50 PM [express] POST /api/session/check-availability 200 in 208ms :: {"allowed":true,"remaining…
+[RealtimeAPI] Voice mapped: en/6-8 → alloy
+[RealtimeAPI] Created session e8fba16e-0e42-442e-8c26-95095fdb9df7 for user 9f0f901d-d3c1-42c0-8c7b-0407d231fd55
+9:17:52 PM [express] POST /api/session/realtime/start 200 in 275ms :: {"sessionId":"e8fba16e-0e42-44…
+[RealtimeWS] Client attempting connection for session e8fba16e-0e42-442e-8c26-95095fdb9df7
+[RealtimeWS] Client authenticated for session e8fba16e-0e42-442e-8c26-95095fdb9df7
+[RealtimeWS] Session config: language=en, ageGroup=6-8
+[RealtimeWS] Voice selected: alloy - Clear, balanced voice for middle school
+[RealtimeWS] [conn-e8fba16e-1760390272970] Starting connection for session e8fba16e-0e42-442e-8c26-95095fdb9df7
+[RealtimeWS] [conn-e8fba16e-1760390272970] Transport mode: webrtc
+[RealtimeWS] Minting session with model: gpt-4o-realtime-preview, voice: alloy
+[RealtimeWS] Session minted successfully: {
+  id: 'sess_CQKDRH7h07g9HbNzMaiCO',
+  model: 'gpt-4o-realtime-preview',
+  transport: 'webrtc'
+}
+[RealtimeWS] [conn-e8fba16e-1760390272970] Sent WebRTC credentials to client
+9:18:12 PM [express] POST /api/session/check-availability 200 in 203ms :: {"allowed":true,"remaining…
+9:18:42 PM [express] POST /api/session/check-availability 200 in 198ms :: {"allowed":true,"remaining…
