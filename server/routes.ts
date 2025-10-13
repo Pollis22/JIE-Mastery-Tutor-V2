@@ -57,7 +57,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       debugMode: process.env.DEBUG_TUTOR === '1',
       // Voice system selection
       convai: true, // Multi-agent system - agents are hardcoded in frontend
-      useConvai: process.env.USE_CONVAI?.toLowerCase() !== 'false' // Use OpenAI Realtime when false
+      useConvai: process.env.USE_CONVAI?.toLowerCase() === 'true' // Use ConvAI when explicitly true
     });
   });
 

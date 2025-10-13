@@ -52,6 +52,13 @@ export class RealtimeServer {
 
       console.log(`[RealtimeWS] Client attempting connection for session ${sessionId}`);
 
+      // Check if Realtime is enabled
+      if (!this.REALTIME_ENABLED) {
+        console.log(`[RealtimeWS] Realtime disabled - rejecting connection`);
+        clientWs.close(1013, 'Realtime service is disabled');
+        return;
+      }
+
       // Validate session token to prevent hijacking
       const token = url.searchParams.get('token');
       if (!token) {
