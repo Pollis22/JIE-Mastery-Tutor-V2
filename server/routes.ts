@@ -14,6 +14,7 @@ import { requireAdmin } from "./middleware/admin-auth";
 import { auditActions } from "./middleware/audit-log";
 import { convertUsersToCSV, generateFilename } from "./utils/csv-export";
 import { RealtimeServer } from "./realtime-server";
+import { sql } from "drizzle-orm";
 import Stripe from "stripe";
 import { z } from "zod";
 
