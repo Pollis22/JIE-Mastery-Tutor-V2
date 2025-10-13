@@ -204,7 +204,13 @@ export default function SettingsPage() {
                   <div className="flex items-center justify-between">
                     <CardTitle>Subscription</CardTitle>
                     <span className="bg-secondary/10 text-secondary px-3 py-1 rounded-full text-sm font-medium">
-                      {user?.subscriptionPlan === 'all' ? 'All Subjects Plan' : 'Single Subject Plan'}
+                      {(() => {
+                        const plan = user?.subscriptionPlan;
+                        if (plan === 'starter' || plan === 'single') return 'Starter Plan';
+                        if (plan === 'standard') return 'Standard Plan';
+                        if (plan === 'pro' || plan === 'all') return 'Pro Plan';
+                        return 'Starter Plan';
+                      })()}
                     </span>
                   </div>
                 </CardHeader>
@@ -213,15 +219,24 @@ export default function SettingsPage() {
                     <div>
                       <p className="font-medium text-foreground">Current Plan</p>
                       <p className="text-sm text-muted-foreground">
-                        {user?.subscriptionPlan === 'all' 
-                          ? 'Access to Math, English, Science, Spanish & More' 
-                          : 'Access to one subject'
-                        }
+                        {(() => {
+                          const plan = user?.subscriptionPlan;
+                          if (plan === 'starter' || plan === 'single') return '60 minutes per month';
+                          if (plan === 'standard') return '240 minutes per month';
+                          if (plan === 'pro' || plan === 'all') return '600 minutes per month';
+                          return '60 minutes per month';
+                        })()}
                       </p>
                     </div>
                     <div className="text-right">
                       <p className="font-semibold text-foreground">
-                        ${user?.subscriptionPlan === 'all' ? '199.00' : '99.99'}/month
+                        ${(() => {
+                          const plan = user?.subscriptionPlan;
+                          if (plan === 'starter' || plan === 'single') return '19.99';
+                          if (plan === 'standard') return '59.99';
+                          if (plan === 'pro' || plan === 'all') return '99.99';
+                          return '19.99';
+                        })()}/month
                       </p>
                       <p className="text-sm text-muted-foreground">Active</p>
                     </div>

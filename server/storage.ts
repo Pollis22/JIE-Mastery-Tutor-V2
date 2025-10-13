@@ -511,20 +511,48 @@ export class DatabaseStorage implements IStorage {
       })
     );
 
-    // Get usage info
-    const weeklyLimit = user.subscriptionPlan === 'all' ? 90 : 60;
-    const usagePercentage = Math.round(((user.weeklyVoiceMinutesUsed || 0) / weeklyLimit) * 100);
+    // Get usage info based on plan tier
+    let monthlyLimit = 60; // Default to Starter
+    let planName = 'Starter Plan';
+    
+    switch(user.subscriptionPlan) {
+      case 'starter':
+        monthlyLimit = 60;
+        planName = 'Starter Plan';
+        break;
+      case 'standard':
+        monthlyLimit = 240;
+        planName = 'Standard Plan';
+        break;
+      case 'pro':
+        monthlyLimit = 600;
+        planName = 'Pro Plan';
+        break;
+      case 'single': // Legacy - map to Starter
+        monthlyLimit = 60;
+        planName = 'Starter Plan';
+        break;
+      case 'all': // Legacy - map to Pro
+        monthlyLimit = 600;
+        planName = 'Pro Plan';
+        break;
+      default:
+        monthlyLimit = 60;
+        planName = 'Starter Plan';
+    }
+    
+    const usagePercentage = Math.round(((user.weeklyVoiceMinutesUsed || 0) / monthlyLimit) * 100);
 
     return {
       user: {
         name: `${user.firstName} ${user.lastName}`.trim() || user.username,
         firstName: user.firstName,
         initials: `${user.firstName?.[0] || ''}${user.lastName?.[0] || ''}`.toUpperCase() || user.username[0].toUpperCase(),
-        plan: user.subscriptionPlan === 'all' ? 'All Subjects Plan' : 'Single Subject Plan',
+        plan: planName,
       },
       subjectProgress,
       usage: {
-        voiceMinutes: `${user.weeklyVoiceMinutesUsed || 0} / ${weeklyLimit} min`,
+        voiceMinutes: `${user.weeklyVoiceMinutesUsed || 0} / ${monthlyLimit} min`,
         percentage: usagePercentage,
       },
     };
