@@ -1,0 +1,406 @@
+# FIX: Undefined Student Data in Instructions
+
+## Problem Identified from Logs
+
+```
+[RealtimeWS] Session config: language=en, ageGroup=College/Adult ← Correct
+[RealtimeWS] Built compact instructions for Robbie (6-8, General) ← Wrong grade!
+[RealtimeWS] Instructions ready: 272 chars for undefined ← Name is undefined!
+[RealtimeWS] OpenAI error: server_error ← Rejects invalid instructions
+```
+
+**Root Cause:** Student name and grade level are not being passed correctly to the instruction builder, resulting in undefined/incorrect values in the instructions template.
+
+---
+
+## Fix #1: Pass Correct Data to Instruction Builder
+
+### Location: Where `buildSystemInstructions()` is called
+
+**Current (Wrong):**
+```typescript
+// Wrong data being passed
+const instructions = buildSystemInstructions(
+  studentName,  // undefined
+  gradeLevel,   // wrong value (6-8 instead of College/Adult)
+  subject       // 'General'
+);
+```
+
+**Fixed (Correct):**
+```typescript
+// Get data from session configuration
+const { studentName, ageGroup, subject, language } = sessionConfig;
+
+// Use correct values with fallbacks
+const instructions = buildSystemInstructions(
+  studentName || 'Student',           // Default if undefined
+  ageGroup || 'General',              // Use ageGroup, not gradeLevel
+  subject || 'General',               // Subject
+  language || 'en'                    // Language
+);
+
+console.log(`✅ Building instructions with: name=${studentName}, age=${ageGroup}, subject=${subject}`);
+```
+
+---
+
+## Fix #2: Validate Data Before Building Instructions
+
+Add validation to catch undefined values:
+
+```typescript
+// Before building instructions
+function validateSessionData(sessionConfig) {
+  const { studentName, ageGroup, subject } = sessionConfig;
+  
+  // Log what we received
+  console.log('Session data received:', {
+    studentName,
+    ageGroup,
+    subject
+  });
+  
+  // Check for undefined values
+  if (!studentName || studentName === 'undefined') {
+    console.warn('⚠️ Student name is undefined, using default');
+  }
+  
+  if (!ageGroup || ageGroup === 'undefined') {
+    console.warn('⚠️ Age group is undefined, using default');
+  }
+  
+  return {
+    name: studentName || 'Student',
+    age: ageGroup || 'General',
+    subject: subject || 'General'
+  };
+}
+
+// Use validated data
+const validatedData = validateSessionData(sessionConfig);
+const instructions = buildSystemInstructions(
+  validatedData.name,
+  validatedData.age,
+  validatedData.subject
+);
+```
+
+---
+
+## Fix #3: Update Instruction Template to Handle Undefined
+
+Make the template more robust:
+
+```typescript
+function buildSystemInstructions(studentName, ageGroup, subject, language = 'en') {
+  // Ensure no undefined values
+  const name = studentName || 'Student';
+  const age = ageGroup || 'General';
+  const subj = subject || 'General';
+  
+  console.log(`Building instructions for: ${name} (${age}, ${subj})`);
+  
+  const instructions = `You are an expert tutor for ${age} level students, speaking with ${name} about ${subj}.
+
+PERSONALITY:
+- Warm, encouraging, and patient
+- Use age-appropriate language for ${age} students
+- Apply the Socratic method - guide students to discover answers
+- Celebrate effort and progress enthusiastically
+
+TEACHING APPROACH:
+1. Break complex topics into smaller steps appropriate for ${age} level
+2. Use real-world examples and analogies relevant to ${age} students
+3. Check understanding frequently with simple questions
+4. If ${name} seems stuck, offer hints before giving direct answers
+5. Keep responses concise for voice conversation (30-60 seconds per turn)
+
+CONVERSATION STYLE:
+- Natural and conversational, not robotic or formal
+- Enthusiastic and supportive tone
+- Adapt difficulty based on ${name}'s responses
+- Ask follow-up questions to ensure comprehension
+- Use encouragement: "Great thinking!", "You're on the right track!"
+
+IMPORTANT: You are in a real-time voice conversation with ${name}. Speak naturally as if you're sitting together in person.
+
+Your goal: Help ${name} understand concepts deeply, not just get the right answer.`;
+
+  // Validate before returning
+  if (instructions.includes('undefined')) {
+    console.error('❌ Instructions contain "undefined"!');
+    throw new Error('Instructions have undefined values');
+  }
+  
+  if (instructions.length < 200) {
+    console.error('❌ Instructions too short');
+    throw new Error('Instructions not built correctly');
+  }
+  
+  console.log(`✅ Instructions validated: ${instructions.length} chars, no undefined values`);
+  
+  return instructions;
+}
+```
+
+---
+
+## Fix #4: Check WebSocket Handler Data Flow
+
+Verify data is being passed from client correctly:
+
+### Backend WebSocket Handler:
+
+```typescript
+// When client connects
+wss.on('connection', (ws, req) => {
+  const url = new URL(req.url, 'ws://localhost');
+  const sessionId = url.searchParams.get('sessionId');
+  
+  console.log(`[RealtimeWS] Client connecting for session ${sessionId}`);
+  
+  // Get session data from database
+  const session = await db.query.realtimeSessions.findFirst({
+    where: eq(realtimeSessions.id, sessionId)
+  });
+  
+  if (!session) {
+    console.error('❌ Session not found');
+    ws.close(1008, 'Session not found');
+    return;
+  }
+  
+  // Get user data
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, session.userId)
+  });
+  
+  // Get student data if available
+  let studentName = user?.name || 'Student';
+  if (session.studentId) {
+    const student = await db.query.students.findFirst({
+      where: eq(students.id, session.studentId)
+    });
+    if (student) {
+      studentName = student.name;
+    }
+  }
+  
+  // Log what we got from database
+  console.log(`[RealtimeWS] Session data from DB:`, {
+    studentName,
+    gradeLevel: session.gradeLevel,
+    subject: session.subject,
+    language: session.language
+  });
+  
+  // Build instructions with correct data
+  const instructions = buildSystemInstructions(
+    studentName,
+    session.gradeLevel,
+    session.subject,
+    session.language || 'en'
+  );
+  
+  // Continue with WebSocket setup...
+});
+```
+
+---
+
+## Fix #5: Check Session Creation Endpoint
+
+Make sure correct data is saved to database:
+
+```typescript
+app.post("/api/session/realtime/start", requireAuth, async (req, res) => {
+  try {
+    const { studentId, subject, gradeLevel, language } = req.body;
+    const userId = req.session.userId;
+    
+    // Log what we received from client
+    console.log('[RealtimeAPI] Session request:', {
+      studentId,
+      subject,
+      gradeLevel,
+      language
+    });
+    
+    // Get user info
+    const user = await db.query.users.findFirst({
+      where: eq(users.id, userId!)
+    });
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // Get student info
+    let studentName = user.name;
+    if (studentId) {
+      const student = await db.query.students.findFirst({
+        where: eq(students.id, studentId)
+      });
+      if (student) {
+        studentName = student.name;
+      }
+    }
+    
+    console.log('[RealtimeAPI] Resolved student name:', studentName);
+    
+    // Select voice
+    const voice = getVoiceForGrade(gradeLevel);
+    
+    // Save session to database with ALL data
+    const dbSession = await db.insert(realtimeSessions).values({
+      userId: userId!,
+      studentId: studentId || null,
+      subject: subject || 'General',
+      gradeLevel: gradeLevel || 'General',  // Make sure this is saved!
+      language: language || 'en',
+      voice: voice,
+      model: 'gpt-4o-realtime-preview',
+      status: 'active',
+      startedAt: new Date()
+    }).returning();
+    
+    console.log('[RealtimeAPI] Session saved to DB:', {
+      id: dbSession[0].id,
+      gradeLevel: dbSession[0].gradeLevel,
+      subject: dbSession[0].subject
+    });
+    
+    // Return to client
+    res.json({
+      sessionId: dbSession[0].id,
+      voice: voice,
+      gradeLevel: gradeLevel  // Return so client knows what was set
+    });
+    
+  } catch (error) {
+    console.error('[RealtimeAPI] Error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+```
+
+---
+
+## Fix #6: Check Frontend Data Submission
+
+Make sure client sends correct data:
+
+```typescript
+// Frontend - Tutor page
+const startSession = async () => {
+  try {
+    const response = await fetch('/api/session/realtime/start', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        studentId: selectedStudent?.id,
+        subject: selectedSubject || 'General',
+        gradeLevel: selectedGrade || 'General',  // Make sure this is set!
+        language: 'en'
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to start session');
+    }
+    
+    const { sessionId, voice, gradeLevel } = await response.json();
+    
+    console.log('Session created:', {
+      sessionId,
+      voice,
+      gradeLevel  // Verify this matches what was sent
+    });
+    
+    // Connect to WebSocket
+    await connectWebSocket(sessionId);
+    
+  } catch (error) {
+    console.error('Session start failed:', error);
+  }
+};
+```
+
+---
+
+## Expected Log Output After Fix
+
+**Should see:**
+```
+✅ Session request: { studentId: 123, gradeLevel: 'College', subject: 'General' }
+✅ Resolved student name: Robbie Robertson
+✅ Session saved to DB: { gradeLevel: 'College', subject: 'General' }
+✅ Client connecting for session abc123
+✅ Session data from DB: { studentName: 'Robbie Robertson', gradeLevel: 'College' }
+✅ Building instructions for: Robbie Robertson (College, General)
+✅ Instructions validated: 487 chars, no undefined values
+✅ WebSocket OPEN - sending config
+✅ Session created by OpenAI
+✅ Session configured successfully
+[No server_error!]
+```
+
+**Should NOT see:**
+```
+❌ Instructions for undefined
+❌ Built instructions for (6-8, General) when age is College
+❌ Instructions contain "undefined"
+```
+
+---
+
+## Debug Checklist
+
+1. **Check what's sent from frontend:**
+   - Browser console → Network tab → `/api/session/realtime/start`
+   - Check request payload has `gradeLevel` and `studentId`
+
+2. **Check what's saved to database:**
+   - Railway PostgreSQL → Query: `SELECT * FROM realtime_sessions ORDER BY created_at DESC LIMIT 1;`
+   - Verify `grade_level`, `subject`, `language` columns have correct values
+
+3. **Check what's retrieved from database:**
+   - Check WebSocket handler logs
+   - Should show correct data from session query
+
+4. **Check instruction building:**
+   - Should log: "Building instructions for: NAME (GRADE, SUBJECT)"
+   - Should NOT have undefined values
+
+---
+
+## Testing Steps
+
+1. **Start fresh session**
+2. **Check Railway logs for data flow:**
+   - Session request data
+   - Resolved student name
+   - Saved to DB data
+   - Retrieved from DB data
+   - Built instructions data
+3. **Verify no "undefined" in logs**
+4. **Verify no server_error from OpenAI**
+5. **Test voice conversation works**
+
+---
+
+## Expected Results
+
+✅ Student name resolves correctly (not undefined)  
+✅ Grade level matches user selection (College, not 6-8)  
+✅ Instructions built with correct data  
+✅ No "undefined" in instruction text  
+✅ OpenAI accepts config without server_error  
+✅ Voice session starts and works  
+✅ Transcript shows conversation  
+
+---
+
+**The timing issue is FIXED. Now we need to fix the data flow to ensure student name and grade level are passed correctly to the instruction builder.

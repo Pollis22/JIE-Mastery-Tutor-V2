@@ -1,0 +1,47 @@
+7:48:42 PM [express] serving on port 5000
+Browserslist: browsers data (caniuse-lite) is 12 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+7:48:49 PM [express] GET /api/user 401 in 3ms
+7:51:57 PM [express] POST /api/login 200 in 115ms :: {"id":"9f0f901d-d3c1-42c0-8c7b-0407d231fd55","u…
+[RealtimeAPI] Voice mapped: en/3-5 → ballad
+[RealtimeAPI] Created session 6afeca39-4535-4292-adef-70662737ad48 for user 9f0f901d-d3c1-42c0-8c7b-0407d231fd55
+7:52:27 PM [express] POST /api/session/realtime/start 200 in 274ms :: {"sessionId":"6afeca39-4535-42…
+7:54:38 PM [express] GET /api/user 401 in 1ms
+7:54:53 PM [express] POST /api/login 200 in 112ms :: {"id":"9f0f901d-d3c1-42c0-8c7b-0407d231fd55","u…
+7:54:53 PM [express] GET /api/health 200 in 2ms :: {"status":"ok","timestamp":"2025-10-13T19:54:53.7…
+7:54:53 PM [express] POST /api/session/check-availability 200 in 198ms :: {"allowed":true,"remaining…
+[DB] ✓ Database connection established
+[DB] ✓ Database connection established
+7:54:54 PM [express] GET /api/documents 404 in 473ms
+7:54:54 PM [express] GET /api/students 304 in 543ms :: []
+7:55:02 PM [express] POST /api/session/check-availability 200 in 194ms :: {"allowed":true,"remaining…
+[RealtimeAPI] Voice mapped: en/College/Adult → echo
+[RealtimeAPI] Created session 6bd3c019-3724-4697-b0c4-c7941d0ba73e for user 9f0f901d-d3c1-42c0-8c7b-0407d231fd55
+7:55:06 PM [express] POST /api/session/realtime/start 200 in 266ms :: {"sessionId":"6bd3c019-3724-46…
+[RealtimeWS] Client attempting connection for session 6bd3c019-3724-4697-b0c4-c7941d0ba73e
+[RealtimeWS] Client authenticated for session 6bd3c019-3724-4697-b0c4-c7941d0ba73e
+[RealtimeWS] Session config: language=en, ageGroup=College/Adult
+[RealtimeWS] Voice selected: echo - Professional voice for advanced learners
+[RealtimeWS] Pre-building instructions before WebSocket connection...
+[RealtimeWS] Built compact instructions for Robbie (6-8, General)
+[RealtimeWS] Instructions ready: 272 chars for undefined
+[RealtimeWS] Connecting to OpenAI Realtime API for session 6bd3c019-3724-4697-b0c4-c7941d0ba73e
+[RealtimeWS] WebSocket OPEN - sending config IMMEDIATELY
+[RealtimeWS] FIRST MESSAGE: Complete session config with instructions (272 chars)
+[RealtimeWS] Config sent - waiting for OpenAI confirmation
+[RealtimeWS] ✅ Session created by OpenAI: sess_CQIvLIZLvauhmeHD9neax
+[RealtimeWS] Session configured successfully for 6bd3c019-3724-4697-b0c4-c7941d0ba73e
+[RealtimeWS] OpenAI error response: {
+  type: 'error',
+  event_id: 'event_CQIvLVdEITgO38Ypmwaux',
+  error: {
+    type: 'server_error',
+    code: null,
+    message: 'The server had an error while processing your request. Sorry about that! Please contact us through our help center at help.openai.com if the error persists. (include session ID in your message: sess_CQIvLIZLvauhmeHD9neax). We recommend you retry your request.',
+    param: null,
+    event_id: null
+  }
+}
+[RealtimeWS] OpenAI disconnected for session 6bd3c019-3724-4697-b0c4-c7941d0ba73e
+[RealtimeWS] Triggered initial greeting for session 6bd3c019-3724-4697-b0c4-c7941d0ba73e
