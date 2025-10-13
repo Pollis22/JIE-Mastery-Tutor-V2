@@ -183,28 +183,17 @@ export class RealtimeServer {
                 const { instructions, documentContext } = await this.buildInstructionsWithContext(session);
                 console.log(`[RealtimeWS] Instructions prepared (${instructions.length} chars)`);
                 
-                // Send session configuration
+                // Send session configuration - START WITH MINIMAL CONFIG
                 const sessionConfig = {
                   type: 'session.update',
                   session: {
-                    modalities: ['text', 'audio'],
                     instructions: instructions,
                     voice: selectedVoice,
-                    input_audio_format: 'pcm16',
-                    output_audio_format: 'pcm16',
-                    input_audio_transcription: {
-                      model: 'whisper-1',
-                    },
-                    turn_detection: {
-                      type: 'server_vad',
-                      threshold: 0.5,
-                      prefix_padding_ms: 300,
-                      silence_duration_ms: 500,
-                    },
                   },
                 };
                 
-                console.log(`[RealtimeWS] Sending session config with voice: ${selectedVoice}, instructions length: ${instructions.length}`);
+                console.log(`[RealtimeWS] Sending MINIMAL session config with voice: ${selectedVoice}, instructions length: ${instructions.length}`);
+                console.log(`[RealtimeWS] Exact payload:`, JSON.stringify(sessionConfig, null, 2));
                 this.sendToOpenAI(session, sessionConfig);
                 
                 // Notify client that connection is ready
