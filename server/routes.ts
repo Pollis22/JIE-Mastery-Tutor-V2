@@ -55,9 +55,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       hasAzureTTS: hasAzureTTS,
       useRealtime: process.env.USE_REALTIME === 'true' || process.env.USE_REALTIME === '1',
       debugMode: process.env.DEBUG_TUTOR === '1',
-      // ElevenLabs ConvAI status - default to true since OpenAI Realtime requires special API access
+      // Voice system selection
       convai: true, // Multi-agent system - agents are hardcoded in frontend
-      useConvai: process.env.USE_CONVAI?.toLowerCase() === 'true' || !process.env.USE_CONVAI // Default to ElevenLabs if not set or if set to false
+      useConvai: process.env.USE_CONVAI?.toLowerCase() !== 'false' // Use OpenAI Realtime when false
     });
   });
 
