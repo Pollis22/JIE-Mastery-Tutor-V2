@@ -3,6 +3,8 @@
 ## Overview
 This project is a production-ready conversational AI tutoring web platform designed to help students learn Math, English, and Spanish. It features interactive voice conversations, personalized quizzes, and adaptive learning paths. The platform includes a fully functional multi-agent ElevenLabs ConvAI system with five age-specific AI tutors (K-2, Grades 3-5, 6-8, 9-12, College/Adult), each optimized for their target age group's complexity, vocabulary, and teaching approaches. The system is designed for high reliability and a streamlined user experience, focusing on immediate voice tutoring without dynamic agent creation for each session.
 
+**Sibling-Friendly Design:** The platform prioritizes per-session configuration over user profile defaults, allowing parents to share one account across multiple children. Each tutoring session can specify different grade levels and subjects, while all sessions share the same minute pool. This flexibility is a key selling point - families only need one subscription regardless of how many children use the service.
+
 ## User Preferences
 Preferred communication style: Simple, everyday language.
 
@@ -20,6 +22,12 @@ The application uses a modern full-stack architecture:
 -   Session-based authentication with PostgreSQL session storage.
 -   Role-based access control with admin privileges.
 -   Password hashing using Node.js scrypt.
+
+### Session Priority System
+The platform uses a **session-first** data priority model:
+-   **Session Configuration** (what's selected when starting a session): Primary source for grade level, subject, language
+-   **User Profile** (set during account creation): Used as defaults and fallbacks
+-   **Benefits**: Enables sibling sharing - parents can use one account for multiple children at different grade levels by creating sessions with different configurations. Only voice minutes are tracked across all sessions.
 
 ### Voice Technology Integration
 **OpenAI Realtime API (Primary - Phase 3 Complete)**:
