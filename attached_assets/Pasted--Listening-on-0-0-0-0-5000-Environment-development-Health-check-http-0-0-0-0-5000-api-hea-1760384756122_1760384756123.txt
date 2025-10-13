@@ -1,0 +1,48 @@
+✓ Listening on 0.0.0.0:5000
+✓ Environment: development
+✓ Health check: http://0.0.0.0:5000/api/health
+===================================
+7:43:14 PM [express] serving on port 5000
+Browserslist: browsers data (caniuse-lite) is 12 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+7:43:21 PM [express] GET /api/user 401 in 2ms
+7:43:24 PM [express] GET /api/user 401 in 4ms
+7:43:59 PM [express] GET /api/user 401 in 2ms
+7:45:19 PM [express] POST /api/login 200 in 127ms :: {"id":"9f0f901d-d3c1-42c0-8c7b-0407d231fd55","u…
+7:45:19 PM [express] GET /api/health 200 in 1ms :: {"status":"ok","timestamp":"2025-10-13T19:45:19.7…
+7:45:19 PM [express] GET /api/students 200 in 137ms :: []
+[DB] ✓ Database connection established
+[DB] ✓ Database connection established
+7:45:20 PM [express] GET /api/documents 404 in 476ms
+7:45:20 PM [express] POST /api/session/check-availability 200 in 625ms :: {"allowed":true,"remaining…
+7:45:21 PM [express] POST /api/session/check-availability 200 in 201ms :: {"allowed":true,"remaining…
+[RealtimeAPI] Voice mapped: en/College/Adult → echo
+[RealtimeAPI] Created session fd96e47f-8024-463b-b53f-6cbfbc612eac for user 9f0f901d-d3c1-42c0-8c7b-0407d231fd55
+7:45:26 PM [express] POST /api/session/realtime/start 200 in 346ms :: {"sessionId":"fd96e47f-8024-46…
+[RealtimeWS] Client attempting connection for session fd96e47f-8024-463b-b53f-6cbfbc612eac
+[RealtimeWS] Client authenticated for session fd96e47f-8024-463b-b53f-6cbfbc612eac
+[RealtimeWS] Session config: language=en, ageGroup=College/Adult
+[RealtimeWS] Voice selected: echo - Professional voice for advanced learners
+[RealtimeWS] Connecting to OpenAI Realtime API for session fd96e47f-8024-463b-b53f-6cbfbc612eac
+[RealtimeWS] Connected to OpenAI for session fd96e47f-8024-463b-b53f-6cbfbc612eac
+[RealtimeWS] Session created confirmation: sess_CQIlzBzEZJG83JDqeTA3j
+[RealtimeWS] Built compact instructions for Robbie (6-8, General)
+[RealtimeWS] Built instructions for undefined (272 chars)
+[RealtimeWS] Sending COMPLETE session config as FIRST message
+[RealtimeWS] Complete session configuration sent
+[RealtimeWS] Built compact instructions for Robbie (6-8, General)
+[RealtimeWS] Session configured successfully for fd96e47f-8024-463b-b53f-6cbfbc612eac
+[RealtimeWS] OpenAI error response: {
+  type: 'error',
+  event_id: 'event_CQIlzEQ2VVkDMsLuRiwzZ',
+  error: {
+    type: 'server_error',
+    code: null,
+    message: 'The server had an error while processing your request. Sorry about that! Please contact us through our help center at help.openai.com if the error persists. (include session ID in your message: sess_CQIlzBzEZJG83JDqeTA3j). We recommend you retry your request.',
+    param: null,
+    event_id: null
+  }
+}
+[RealtimeWS] OpenAI disconnected for session fd96e47f-8024-463b-b53f-6cbfbc612eac
+[RealtimeWS] Triggered initial greeting for session fd96e47f-8024-463b-b53f-6cbfbc612eac
