@@ -1,0 +1,368 @@
+# URGENT: Create Missing Database Table - realtime_sessions
+
+## Error Analysis
+
+**Railway Error:**
+```
+relation "realtime_sessions" does not exist at character 13
+POST /api/session/realtime/start 500
+```
+
+**Root Cause:** The `realtime_sessions` table was never created in the PostgreSQL database. Code is trying to insert session data into a non-existent table.
+
+---
+
+## Fix #1: Add Table Definition to Schema
+
+### Location: `server/db/schema.ts`
+
+Add this table definition:
+
+```typescript
+import { pgTable, serial, integer, text, timestamp, jsonb, boolean } from "drizzle-orm/pg-core";
+
+// Existing tables (users, students, subscriptions, documents, sessions)...
+
+// ADD THIS: Realtime voice sessions table
+export const realtimeSessions = pgTable("realtime_sessions", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id")
+    .references(() => users.id, { onDelete: 'cascade' })
+    .notNull(),
+  studentId: integer("student_id")
+    .references(() => students.id, { onDelete: 'cascade' }),
+  subject: text("subject"),
+  gradeLevel: text("grade_level"),
+  language: text("language").default("en"),
+  voice: text("voice"), // OpenAI voice name (alloy, echo, fable, onyx, nova)
+  model: text("model").default("gpt-4o-realtime-preview"),
+  status: text("status").default("active"), // active, ended, error
+  transcript: jsonb("transcript").default([]),
+  contentDocuments: jsonb("content_documents").default([]), // Document IDs referenced
+  startedAt: timestamp("started_at").defaultNow(),
+  endedAt: timestamp("ended_at"),
+  minutesUsed: integer("minutes_used").default(0),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow()
+});
+```
+
+---
+
+## Fix #2: Run Database Migration
+
+### Option A: Using Drizzle Kit (Recommended)
+
+```bash
+# In your project directory (Replit or local)
+
+# 1. Generate migration
+npx drizzle-kit generate:pg
+
+# 2. Push schema to database
+npx drizzle-kit push:pg
+
+# OR single command:
+npm run db:push
+```
+
+### Option B: Direct SQL (If Drizzle doesn't work)
+
+Connect to Railway PostgreSQL and run:
+
+```sql
+CREATE TABLE IF NOT EXISTS realtime_sessions (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  student_id INTEGER REFERENCES students(id) ON DELETE CASCADE,
+  subject TEXT,
+  grade_level TEXT,
+  language TEXT DEFAULT 'en',
+  voice TEXT,
+  model TEXT DEFAULT 'gpt-4o-realtime-preview',
+  status TEXT DEFAULT 'active',
+  transcript JSONB DEFAULT '[]'::jsonb,
+  content_documents JSONB DEFAULT '[]'::jsonb,
+  started_at TIMESTAMP DEFAULT NOW(),
+  ended_at TIMESTAMP,
+  minutes_used INTEGER DEFAULT 0,
+  error_message TEXT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Create index for faster queries
+CREATE INDEX idx_realtime_sessions_user_id ON realtime_sessions(user_id);
+CREATE INDEX idx_realtime_sessions_student_id ON realtime_sessions(student_id);
+CREATE INDEX idx_realtime_sessions_status ON realtime_sessions(status);
+```
+
+### Option C: Railway Dashboard
+
+1. Go to Railway Dashboard
+2. Select your project
+3. Click on PostgreSQL database
+4. Click "Data" tab
+5. Click "Query" button
+6. Paste the SQL from Option B
+7. Click "Run"
+
+---
+
+## Fix #3: Verify Table Was Created
+
+### Check in Railway PostgreSQL:
+
+```sql
+-- List all tables
+SELECT table_name 
+FROM information_schema.tables 
+WHERE table_schema = 'public';
+
+-- Should include: realtime_sessions
+
+-- Check table structure
+\d realtime_sessions
+
+-- Or:
+SELECT column_name, data_type 
+FROM information_schema.columns 
+WHERE table_name = 'realtime_sessions';
+```
+
+---
+
+## Fix #4: Update Import Statements
+
+### Location: `server/routes/realtime.ts` (or wherever session creation happens)
+
+Make sure to import the table:
+
+```typescript
+import { realtimeSessions } from '../db/schema';
+import { db } from '../db';
+import { eq } from 'drizzle-orm';
+```
+
+---
+
+## Fix #5: Use the Table in Code
+
+### Verify session creation code uses correct table:
+
+```typescript
+// Create session record in database
+const dbSession = await db.insert(realtimeSessions).values({
+  userId: userId,
+  studentId: studentId || null,
+  subject: subject || 'General',
+  gradeLevel: gradeLevel || 'General',
+  language: language || 'en',
+  voice: voice,
+  model: 'gpt-4o-realtime-preview',
+  status: 'active',
+  transcript: [],
+  startedAt: new Date()
+}).returning();
+
+console.log('✅ Session saved to database:', dbSession[0].id);
+```
+
+---
+
+## Testing After Fix
+
+### Step 1: Verify Table Exists
+
+**In Railway Dashboard → PostgreSQL → Query:**
+
+```sql
+SELECT COUNT(*) FROM realtime_sessions;
+```
+
+**Expected:** Should return 0 (table exists but empty), not an error
+
+### Step 2: Test Session Creation
+
+1. Go to your app
+2. Click "Start Tutoring Session"
+3. Check Railway logs
+
+**Expected logs:**
+```
+✅ Session saved to database: 123
+✅ OpenAI session created
+✅ WebSocket connected
+```
+
+**NOT:**
+```
+❌ relation "realtime_sessions" does not exist
+❌ 500 Internal Server Error
+```
+
+### Step 3: Verify Data Is Saved
+
+**In Railway PostgreSQL → Query:**
+
+```sql
+SELECT * FROM realtime_sessions ORDER BY created_at DESC LIMIT 5;
+```
+
+**Should show:** Recent session records with your data
+
+---
+
+## Troubleshooting
+
+### Issue: Migration Fails
+
+**Check:**
+1. Are you connected to the correct database?
+2. Do you have write permissions?
+3. Is the database URL correct in .env?
+
+**Solution:**
+```bash
+# Verify database connection
+echo $DATABASE_URL
+
+# Test connection
+psql $DATABASE_URL -c "SELECT version();"
+```
+
+### Issue: Table Already Exists Error
+
+**If you see:** `table "realtime_sessions" already exists`
+
+**Solution:** Table is already there, just update the schema file and restart server.
+
+### Issue: Foreign Key Constraint Fails
+
+**Check:** Do `users` and `students` tables exist?
+
+**Solution:**
+```sql
+-- Verify parent tables exist
+SELECT table_name FROM information_schema.tables 
+WHERE table_name IN ('users', 'students');
+```
+
+If missing, run full migration to create all tables.
+
+---
+
+## Additional Missing Tables (Create These Too)
+
+While you're at it, add these if they don't exist:
+
+### Email Logs Table:
+
+```typescript
+export const emailLogs = pgTable("email_logs", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id, { onDelete: 'cascade' }),
+  type: text("type").notNull(), // 'welcome', 'receipt', 'password_reset'
+  to: text("to").notNull(),
+  subject: text("subject").notNull(),
+  sentAt: timestamp("sent_at").defaultNow(),
+  metadata: jsonb("metadata").default({})
+});
+```
+
+### Run migration again after adding:
+
+```bash
+npx drizzle-kit push:pg
+```
+
+---
+
+## Quick Fix Script (Copy-Paste)
+
+**Run this in Railway PostgreSQL Query tab:**
+
+```sql
+-- Create realtime_sessions table
+CREATE TABLE IF NOT EXISTS realtime_sessions (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  student_id INTEGER REFERENCES students(id) ON DELETE CASCADE,
+  subject TEXT,
+  grade_level TEXT,
+  language TEXT DEFAULT 'en',
+  voice TEXT,
+  model TEXT DEFAULT 'gpt-4o-realtime-preview',
+  status TEXT DEFAULT 'active',
+  transcript JSONB DEFAULT '[]'::jsonb,
+  content_documents JSONB DEFAULT '[]'::jsonb,
+  started_at TIMESTAMP DEFAULT NOW(),
+  ended_at TIMESTAMP,
+  minutes_used INTEGER DEFAULT 0,
+  error_message TEXT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Create indexes
+CREATE INDEX IF NOT EXISTS idx_realtime_sessions_user_id ON realtime_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_realtime_sessions_student_id ON realtime_sessions(student_id);
+CREATE INDEX IF NOT EXISTS idx_realtime_sessions_status ON realtime_sessions(status);
+
+-- Create email_logs table
+CREATE TABLE IF NOT EXISTS email_logs (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  type TEXT NOT NULL,
+  to TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  sent_at TIMESTAMP DEFAULT NOW(),
+  metadata JSONB DEFAULT '{}'::jsonb
+);
+
+-- Verify tables were created
+SELECT table_name FROM information_schema.tables 
+WHERE table_name IN ('realtime_sessions', 'email_logs');
+```
+
+**Expected output:** Should show both table names
+
+---
+
+## After Creating Tables
+
+### Restart Railway Deployment:
+
+1. Go to Railway Dashboard
+2. Click your project
+3. Click "Deployments" tab
+4. Click "Redeploy" (or push new commit)
+5. Wait for deployment to finish
+6. Test again
+
+---
+
+## Expected Results After Fix
+
+✅ Table `realtime_sessions` exists in database  
+✅ No more "relation does not exist" errors  
+✅ Session creation returns 200 OK  
+✅ Session data is saved to database  
+✅ Voice session starts successfully  
+✅ Railway logs show: "✅ Session saved to database"  
+
+---
+
+## Priority Actions (Do Now - 10 minutes)
+
+1. **Add `realtimeSessions` table to `server/db/schema.ts`** (2 min)
+2. **Run `npx drizzle-kit push:pg`** to create table (2 min)
+3. **OR run SQL directly in Railway PostgreSQL** (2 min)
+4. **Verify table exists** with SELECT query (1 min)
+5. **Restart Railway deployment** (2 min)
+6. **Test session creation** (1 min)
+
+---
+
+**THIS IS THE BLOCKING ISSUE. Once the table is created, voice sessions will work!**
