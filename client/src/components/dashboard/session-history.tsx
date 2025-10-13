@@ -27,10 +27,12 @@ export default function SessionHistory({ limit }: SessionHistoryProps) {
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
 
   // Fetch session history
-  const { data: sessions = [], isLoading } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ['/api/user/sessions', limit],
     enabled: !!user
   });
+
+  const sessions = data?.sessions || [];
 
   const filteredSessions = sessions.filter((session: any) => {
     if (!searchTerm) return true;

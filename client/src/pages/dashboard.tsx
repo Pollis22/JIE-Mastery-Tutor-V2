@@ -50,11 +50,8 @@ export default function DashboardPage() {
   const [, setLocation] = useLocation();
   const [activeTab, setActiveTab] = useState("overview");
 
-  // Fetch user statistics
-  const { data: stats } = useQuery({
-    queryKey: ['/api/user/stats'],
-    enabled: !!user
-  });
+  // Fetch user statistics (disabled until endpoint is implemented)
+  const stats = null;
 
   const handleLogout = async () => {
     await logout();
