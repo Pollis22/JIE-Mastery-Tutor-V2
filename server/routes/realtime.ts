@@ -20,6 +20,18 @@ const startSessionSchema = z.object({
  */
 router.post('/start', async (req, res) => {
   try {
+    // Check if Realtime is enabled
+    const realtimeEnabled = process.env.REALTIME_ENABLED !== 'false';
+    const useConvai = process.env.USE_CONVAI?.toLowerCase() === 'true';
+    
+    if (!realtimeEnabled || useConvai) {
+      return res.status(503).json({ 
+        error: 'OpenAI Realtime is currently disabled',
+        realtimeEnabled,
+        useConvai
+      });
+    }
+
     const userId = req.user?.id;
     if (!userId) {
       return res.status(401).json({ error: 'User not authenticated' });

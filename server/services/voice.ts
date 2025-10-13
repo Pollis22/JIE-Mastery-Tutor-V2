@@ -8,7 +8,7 @@ class VoiceService {
 
   constructor() {
     // Check if ElevenLabs ConvAI should be used instead (case-insensitive check)
-    const useConvAI = process.env.USE_CONVAI?.toLowerCase() !== 'false';
+    const useConvAI = process.env.USE_CONVAI?.toLowerCase() === 'true';
     
     if (useConvAI) {
       this.testMode = true;
