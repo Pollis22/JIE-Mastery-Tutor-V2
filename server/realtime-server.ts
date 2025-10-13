@@ -158,9 +158,52 @@ export class RealtimeServer {
 
       session.openaiWs = openaiWs;
 
-      openaiWs.on('open', () => {
+      openaiWs.on('open', async () => {
         console.log(`[RealtimeWS] Connected to OpenAI for session ${session.sessionId}`);
-        // OpenAI will send session.created event next
+        
+        // BUILD AND SEND COMPLETE CONFIG AS FIRST MESSAGE (don't wait for session.created!)
+        const { instructions, documentContext } = await this.buildInstructionsWithContext(session);
+        const selectedVoice = session.voiceName || 'alloy';
+        
+        console.log(`[RealtimeWS] Built instructions for ${session.studentName} (${instructions.length} chars)`);
+        console.log(`[RealtimeWS] Sending COMPLETE session config as FIRST message`);
+        
+        // Send COMPLETE configuration as FIRST message (critical!)
+        const sessionConfig = {
+          type: 'session.update',
+          session: {
+            // Voice configuration
+            voice: selectedVoice,
+            
+            // System instructions (CRITICAL - must be here!)
+            instructions: instructions,
+            
+            // Audio configuration
+            modalities: ['text', 'audio'],
+            
+            // Response behavior
+            temperature: 0.8,
+            max_response_output_tokens: 4096,
+            
+            // Turn detection
+            turn_detection: {
+              type: 'server_vad',
+              threshold: 0.5,
+              prefix_padding_ms: 300,
+              silence_duration_ms: 500,
+            },
+            
+            // Input/output audio format
+            input_audio_format: 'pcm16',
+            output_audio_format: 'pcm16',
+            input_audio_transcription: {
+              model: 'whisper-1',
+            },
+          },
+        };
+        
+        console.log(`[RealtimeWS] Complete session configuration sent`);
+        this.sendToOpenAI(session, sessionConfig);
       });
 
       openaiWs.on('message', async (data: Buffer) => {
@@ -171,47 +214,18 @@ export class RealtimeServer {
             try {
               const msg = JSON.parse(dataStr);
               
-              // Wait for session.created before configuring
+              // Handle session.created confirmation (config already sent on connection)
               if (msg.type === 'session.created') {
-                console.log(`[RealtimeWS] Session created by OpenAI for ${session.sessionId}`);
-                
-                // Build instructions IMMEDIATELY
-                const { instructions, documentContext } = await this.buildInstructionsWithContext(session);
-                const selectedVoice = session.voiceName || 'alloy';
-                
-                console.log(`[RealtimeWS] Configuring session with instructions (${instructions.length} chars) and voice: ${selectedVoice}`);
-                
-                // Send COMPLETE configuration with instructions AND voice
-                const sessionConfig = {
-                  type: 'session.update',
-                  session: {
-                    modalities: ['text', 'audio'],
-                    instructions: instructions,
-                    voice: selectedVoice,
-                    input_audio_format: 'pcm16',
-                    output_audio_format: 'pcm16',
-                    input_audio_transcription: {
-                      model: 'whisper-1',
-                    },
-                    turn_detection: {
-                      type: 'server_vad',
-                      threshold: 0.5,
-                      prefix_padding_ms: 300,
-                      silence_duration_ms: 500,
-                    },
-                    temperature: 0.8,
-                    max_response_output_tokens: 4096,
-                  },
-                };
-                
-                console.log(`[RealtimeWS] Sending COMPLETE session config`);
-                this.sendToOpenAI(session, sessionConfig);
+                console.log(`[RealtimeWS] Session created confirmation: ${msg.session?.id}`);
                 
                 // Notify client that connection is ready
                 this.sendToClient(session, {
                   type: 'session.ready',
                   sessionId: session.sessionId,
                 });
+                
+                // Get document context for injection
+                const { documentContext } = await this.buildInstructionsWithContext(session);
                 
                 // If there's document context, inject it as a conversation item
                 if (documentContext) {
