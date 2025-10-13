@@ -179,22 +179,30 @@ export class RealtimeServer {
                 const selectedVoice = session.voiceName || 'alloy';
                 console.log(`[RealtimeWS] Configuring OpenAI with voice: ${selectedVoice}`);
                 
-                // Build compact system instructions
-                const { instructions, documentContext } = await this.buildInstructionsWithContext(session);
-                console.log(`[RealtimeWS] Instructions prepared (${instructions.length} chars)`);
-                
-                // Send session configuration - START WITH MINIMAL CONFIG
+                // Try ULTRA MINIMAL - just voice, no instructions
                 const sessionConfig = {
                   type: 'session.update',
                   session: {
-                    instructions: instructions,
                     voice: selectedVoice,
                   },
                 };
                 
-                console.log(`[RealtimeWS] Sending MINIMAL session config with voice: ${selectedVoice}, instructions length: ${instructions.length}`);
+                console.log(`[RealtimeWS] Sending ULTRA MINIMAL session config with ONLY voice: ${selectedVoice}`);
                 console.log(`[RealtimeWS] Exact payload:`, JSON.stringify(sessionConfig, null, 2));
                 this.sendToOpenAI(session, sessionConfig);
+                
+                // If voice update works, then send instructions separately
+                setTimeout(async () => {
+                  const { instructions, documentContext } = await this.buildInstructionsWithContext(session);
+                  console.log(`[RealtimeWS] Now sending instructions (${instructions.length} chars)`);
+                  
+                  this.sendToOpenAI(session, {
+                    type: 'session.update',
+                    session: {
+                      instructions: instructions,
+                    },
+                  });
+                }, 200);
                 
                 // Notify client that connection is ready
                 this.sendToClient(session, {
