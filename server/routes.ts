@@ -754,6 +754,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Bootstrap: Make user admin (TEMPORARY - remove after first admin is created)
+  app.post("/api/bootstrap/make-admin", async (req, res) => {
+    try {
+      const { email } = req.body;
+      
+      if (!email) {
+        return res.status(400).json({ error: "Email required" });
+      }
+
+      const user = await storage.getUserByEmail(email);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      // Update user to admin
+      await storage.updateUser(user.id, { isAdmin: true });
+      
+      console.log(`✅ User ${email} is now an admin`);
+      res.json({ success: true, message: `${email} is now an admin` });
+    } catch (error: any) {
+      console.error('[Bootstrap] Make admin error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.get("/api/admin/users", requireAdmin, auditActions.viewUsers, async (req, res) => {
     try {
       const { page = 1, limit = 10, search = '' } = req.query;

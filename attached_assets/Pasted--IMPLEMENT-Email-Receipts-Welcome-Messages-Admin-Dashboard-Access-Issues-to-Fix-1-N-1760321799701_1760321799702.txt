@@ -1,0 +1,845 @@
+# IMPLEMENT: Email Receipts, Welcome Messages & Admin Dashboard Access
+
+## Issues to Fix
+
+1. ❌ No receipt sent to customer after payment (pollis@mfhfoods.com should have received receipt)
+2. ❌ No welcome email sent to new users
+3. ❌ Admin dashboard has no visible link/access point in the app
+4. ❌ Admin cannot see email history or receipts sent
+
+---
+
+## Fix #1: Implement Payment Receipt Email
+
+### A. Create Receipt Email Template
+
+```typescript
+// server/emails/receipt.ts
+
+export interface ReceiptEmailData {
+  customerName: string;
+  customerEmail: string;
+  date: string;
+  planName: string;
+  amount: string;
+  credits: number;
+  nextBillingDate?: string;
+  invoiceUrl?: string;
+  subscriptionId: string;
+}
+
+export const receiptEmailTemplate = (data: ReceiptEmailData) => {
+  const isSubscription = !!data.nextBillingDate;
+  
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Payment Receipt - JIE Mastery Tutor</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f4f4f4; }
+    .container { max-width: 600px; margin: 40px auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    .header { background: linear-gradient(135deg, #DC2626 0%, #991B1B 100%); color: white; padding: 30px 40px; text-align: center; }
+    .header h1 { margin: 0; font-size: 28px; font-weight: 700; }
+    .header p { margin: 10px 0 0; font-size: 16px; opacity: 0.9; }
+    .content { padding: 40px; }
+    .receipt-box { background: #F9FAFB; border: 2px solid #E5E7EB; border-radius: 8px; padding: 24px; margin: 24px 0; }
+    .receipt-row { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid #E5E7EB; }
+    .receipt-row:last-child { border-bottom: none; font-weight: 700; font-size: 18px; color: #DC2626; }
+    .receipt-label { color: #6B7280; font-weight: 500; }
+    .receipt-value { color: #111827; font-weight: 600; text-align: right; }
+    .features { margin: 30px 0; }
+    .feature-item { display: flex; align-items: center; margin: 12px 0; }
+    .feature-icon { color: #10B981; margin-right: 12px; font-size: 20px; }
+    .cta-button { display: inline-block; background: #DC2626; color: white; padding: 14px 32px; border-radius: 6px; text-decoration: none; font-weight: 600; margin: 20px 0; }
+    .cta-button:hover { background: #B91C1C; }
+    .footer { background: #F9FAFB; padding: 30px 40px; text-align: center; color: #6B7280; font-size: 14px; border-top: 1px solid #E5E7EB; }
+    .footer a { color: #DC2626; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🎓 Payment Received!</h1>
+      <p>Thank you for choosing JIE Mastery Tutor</p>
+    </div>
+    
+    <div class="content">
+      <p style="font-size: 18px; margin-bottom: 10px;">Hi <strong>${data.customerName}</strong>,</p>
+      
+      <p>Thank you for your payment! Your ${isSubscription ? 'subscription is now active' : 'purchase is complete'} and you're ready to start learning with your personal AI tutor.</p>
+      
+      <div class="receipt-box">
+        <h2 style="margin-top: 0; color: #111827; font-size: 20px;">Receipt Details</h2>
+        
+        <div class="receipt-row">
+          <span class="receipt-label">Date</span>
+          <span class="receipt-value">${data.date}</span>
+        </div>
+        
+        <div class="receipt-row">
+          <span class="receipt-label">Plan</span>
+          <span class="receipt-value">${data.planName}</span>
+        </div>
+        
+        <div class="receipt-row">
+          <span class="receipt-label">Voice Minutes</span>
+          <span class="receipt-value">${data.credits} minutes</span>
+        </div>
+        
+        ${data.nextBillingDate ? `
+        <div class="receipt-row">
+          <span class="receipt-label">Next Billing Date</span>
+          <span class="receipt-value">${data.nextBillingDate}</span>
+        </div>
+        ` : ''}
+        
+        <div class="receipt-row">
+          <span class="receipt-label">Amount Paid</span>
+          <span class="receipt-value">$${data.amount}</span>
+        </div>
+      </div>
+      
+      ${data.invoiceUrl ? `
+      <p style="text-align: center;">
+        <a href="${data.invoiceUrl}" class="cta-button">Download Invoice</a>
+      </p>
+      ` : ''}
+      
+      <div class="features">
+        <h3 style="color: #111827; font-size: 18px;">What's included in your plan:</h3>
+        <div class="feature-item">
+          <span class="feature-icon">✓</span>
+          <span>${data.credits} minutes of voice tutoring per month</span>
+        </div>
+        <div class="feature-item">
+          <span class="feature-icon">✓</span>
+          <span>Math, English, Science, Spanish & More subjects</span>
+        </div>
+        <div class="feature-item">
+          <span class="feature-icon">✓</span>
+          <span>AI-powered personalized learning</span>
+        </div>
+        <div class="feature-item">
+          <span class="feature-icon">✓</span>
+          <span>Real-time transcripts and progress tracking</span>
+        </div>
+        <div class="feature-item">
+          <span class="feature-icon">✓</span>
+          <span>Document upload support (coming soon!)</span>
+        </div>
+      </div>
+      
+      <p style="text-align: center; margin-top: 30px;">
+        <a href="https://jie-mastery-tutor-v2-production.up.railway.app/tutor" class="cta-button">Start Learning Now →</a>
+      </p>
+      
+      <p style="color: #6B7280; font-size: 14px; margin-top: 30px;">
+        <strong>Order ID:</strong> ${data.subscriptionId}<br>
+        <strong>Email:</strong> ${data.customerEmail}
+      </p>
+    </div>
+    
+    <div class="footer">
+      <p><strong>JIE Mastery Tutor</strong></p>
+      <p>Need help? Contact us at <a href="mailto:hello@jiemastery.ai">hello@jiemastery.ai</a></p>
+      <p style="margin-top: 20px;">
+        <a href="https://jie-mastery-tutor-v2-production.up.railway.app/dashboard">Manage Subscription</a> • 
+        <a href="https://jie-mastery-tutor-v2-production.up.railway.app/pricing">View Plans</a>
+      </p>
+    </div>
+  </div>
+</body>
+</html>
+  `;
+};
+```
+
+### B. Send Receipt After Payment
+
+```typescript
+// server/routes.ts - Add to webhook handler
+
+import { Resend } from 'resend';
+import { receiptEmailTemplate } from './emails/receipt';
+
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+async function handleCheckoutComplete(session: Stripe.Checkout.Session) {
+  console.log('💳 Processing checkout completion:', session.id);
+  
+  const userId = parseInt(session.metadata?.userId || '0');
+  const planType = session.metadata?.planType;
+  
+  // ... existing subscription activation code ...
+  
+  // Get user details
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, userId)
+  });
+  
+  if (!user) return;
+  
+  // Determine plan details
+  let credits = 0;
+  let planName = '';
+  
+  switch (planType) {
+    case 'starter':
+      credits = 60;
+      planName = 'Starter Plan';
+      break;
+    case 'standard':
+      credits = 240;
+      planName = 'Standard Plan';
+      break;
+    case 'pro':
+      credits = 600;
+      planName = 'Pro Plan';
+      break;
+    case 'topup':
+      credits = 60;
+      planName = 'Top-Up (60 minutes)';
+      break;
+  }
+  
+  // Get subscription details
+  const subscription = await stripe.subscriptions.retrieve(session.subscription as string);
+  
+  // Send receipt email
+  try {
+    await resend.emails.send({
+      from: 'JIE Mastery Tutor <hello@jiemastery.ai>',
+      to: user.email,
+      subject: `Payment Receipt - ${planName} - $${(session.amount_total! / 100).toFixed(2)}`,
+      html: receiptEmailTemplate({
+        customerName: user.name,
+        customerEmail: user.email,
+        date: new Date().toLocaleDateString('en-US', { 
+          year: 'numeric', 
+          month: 'long', 
+          day: 'numeric' 
+        }),
+        planName: planName,
+        amount: (session.amount_total! / 100).toFixed(2),
+        credits: credits,
+        nextBillingDate: subscription ? new Date(subscription.current_period_end * 1000).toLocaleDateString('en-US', { 
+          year: 'numeric', 
+          month: 'long', 
+          day: 'numeric' 
+        }) : undefined,
+        invoiceUrl: session.invoice ? `https://dashboard.stripe.com/invoices/${session.invoice}` : undefined,
+        subscriptionId: session.id
+      })
+    });
+    
+    console.log(`✅ Receipt email sent to ${user.email}`);
+    
+    // Log email in database
+    await db.insert(emailLogs).values({
+      userId: userId,
+      type: 'receipt',
+      to: user.email,
+      subject: `Payment Receipt - ${planName}`,
+      sentAt: new Date(),
+      metadata: {
+        orderId: session.id,
+        amount: (session.amount_total! / 100).toFixed(2),
+        plan: planName
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Failed to send receipt email:', error);
+  }
+}
+```
+
+---
+
+## Fix #2: Welcome Email for New Users
+
+### A. Create Welcome Email Template
+
+```typescript
+// server/emails/welcome.ts
+
+export interface WelcomeEmailData {
+  customerName: string;
+  customerEmail: string;
+  loginUrl: string;
+}
+
+export const welcomeEmailTemplate = (data: WelcomeEmailData) => `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Welcome to JIE Mastery Tutor</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f4f4f4; }
+    .container { max-width: 600px; margin: 40px auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    .header { background: linear-gradient(135deg, #DC2626 0%, #991B1B 100%); color: white; padding: 40px; text-align: center; }
+    .header h1 { margin: 0; font-size: 32px; font-weight: 700; }
+    .header p { margin: 15px 0 0; font-size: 18px; opacity: 0.9; }
+    .content { padding: 40px; }
+    .welcome-message { font-size: 18px; color: #111827; line-height: 1.8; }
+    .steps { margin: 30px 0; }
+    .step { display: flex; align-items: start; margin: 20px 0; padding: 20px; background: #F9FAFB; border-radius: 8px; }
+    .step-number { background: #DC2626; color: white; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 18px; flex-shrink: 0; margin-right: 16px; }
+    .step-content h3 { margin: 0 0 8px; color: #111827; font-size: 16px; }
+    .step-content p { margin: 0; color: #6B7280; font-size: 14px; }
+    .cta-button { display: inline-block; background: #DC2626; color: white; padding: 16px 40px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 16px; margin: 20px 0; }
+    .cta-button:hover { background: #B91C1C; }
+    .features { background: #FEF2F2; border-left: 4px solid #DC2626; padding: 20px 24px; margin: 30px 0; border-radius: 4px; }
+    .footer { background: #F9FAFB; padding: 30px 40px; text-align: center; color: #6B7280; font-size: 14px; border-top: 1px solid #E5E7EB; }
+    .footer a { color: #DC2626; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🎓 Welcome to JIE Mastery!</h1>
+      <p>Your personal AI tutor is ready</p>
+    </div>
+    
+    <div class="content">
+      <div class="welcome-message">
+        <p>Hi <strong>${data.customerName}</strong>,</p>
+        
+        <p>Welcome to JIE Mastery Tutor! We're thrilled to have you join our learning community. Your account is now active and ready to help you master any subject.</p>
+        
+        <p>Whether you're tackling homework, preparing for exams, or exploring new topics, your AI tutor is here to guide you every step of the way.</p>
+      </div>
+      
+      <div class="steps">
+        <h2 style="color: #111827; font-size: 24px; margin-bottom: 20px;">Get Started in 3 Easy Steps:</h2>
+        
+        <div class="step">
+          <div class="step-number">1</div>
+          <div class="step-content">
+            <h3>Add Your Students</h3>
+            <p>Create profiles for each student including their grade level and subjects they need help with.</p>
+          </div>
+        </div>
+        
+        <div class="step">
+          <div class="step-number">2</div>
+          <div class="step-content">
+            <h3>Start a Tutoring Session</h3>
+            <p>Click "Start Tutoring Session" and begin talking with your AI tutor. It's like having a personal teacher available 24/7!</p>
+          </div>
+        </div>
+        
+        <div class="step">
+          <div class="step-number">3</div>
+          <div class="step-content">
+            <h3>Track Progress</h3>
+            <p>View session history, transcripts, and learning progress in your dashboard.</p>
+          </div>
+        </div>
+      </div>
+      
+      <p style="text-align: center; margin: 40px 0;">
+        <a href="${data.loginUrl}" class="cta-button">Access Your Dashboard →</a>
+      </p>
+      
+      <div class="features">
+        <h3 style="color: #DC2626; margin-top: 0;">💡 Pro Tips for Success:</h3>
+        <ul style="margin: 10px 0; padding-left: 20px; color: #374151;">
+          <li>Be specific with your questions - the more details you provide, the better the tutoring!</li>
+          <li>Use the transcript feature to review conversations later</li>
+          <li>Practice regularly - consistency is key to mastery</li>
+          <li>Don't hesitate to ask for different explanations if something isn't clear</li>
+        </ul>
+      </div>
+      
+      <p style="color: #6B7280; font-size: 14px; margin-top: 30px;">
+        Need help getting started? Reply to this email or contact us at <a href="mailto:hello@jiemastery.ai" style="color: #DC2626;">hello@jiemastery.ai</a>
+      </p>
+    </div>
+    
+    <div class="footer">
+      <p><strong>JIE Mastery Tutor</strong></p>
+      <p>Your personal AI tutor for Math, English, Science, Spanish & More</p>
+      <p style="margin-top: 20px;">
+        <a href="https://jie-mastery-tutor-v2-production.up.railway.app/tutor">Start Learning</a> • 
+        <a href="https://jie-mastery-tutor-v2-production.up.railway.app/pricing">View Plans</a> • 
+        <a href="mailto:hello@jiemastery.ai">Contact Support</a>
+      </p>
+    </div>
+  </div>
+</body>
+</html>
+`;
+```
+
+### B. Send Welcome Email on Registration
+
+```typescript
+// server/routes.ts - In registration endpoint
+
+import { welcomeEmailTemplate } from './emails/welcome';
+
+app.post("/api/auth/register", async (req, res) => {
+  try {
+    const { email, password, name } = req.body;
+    
+    // ... existing registration code ...
+    
+    // After user is created
+    const newUser = await db.insert(users).values({
+      email: email.toLowerCase(),
+      password: hashedPassword,
+      name: name,
+      credits: 0, // New users start with 0 credits
+      role: 'user'
+    }).returning();
+    
+    // Send welcome email
+    try {
+      await resend.emails.send({
+        from: 'JIE Mastery Tutor <hello@jiemastery.ai>',
+        to: email,
+        subject: 'Welcome to JIE Mastery Tutor - Your AI Learning Journey Begins! 🎓',
+        html: welcomeEmailTemplate({
+          customerName: name,
+          customerEmail: email,
+          loginUrl: 'https://jie-mastery-tutor-v2-production.up.railway.app/dashboard'
+        })
+      });
+      
+      console.log(`✅ Welcome email sent to ${email}`);
+      
+      // Log email
+      await db.insert(emailLogs).values({
+        userId: newUser[0].id,
+        type: 'welcome',
+        to: email,
+        subject: 'Welcome to JIE Mastery Tutor',
+        sentAt: new Date()
+      });
+      
+    } catch (error) {
+      console.error('❌ Failed to send welcome email:', error);
+      // Don't fail registration if email fails
+    }
+    
+    res.json({ message: "Registration successful", userId: newUser[0].id });
+    
+  } catch (error) {
+    console.error('Registration error:', error);
+    res.status(500).json({ error: "Registration failed" });
+  }
+});
+```
+
+---
+
+## Fix #3: Email Logs Database Table
+
+### Create Email Logs Table
+
+```typescript
+// server/db/schema.ts
+
+export const emailLogs = pgTable("email_logs", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id, { onDelete: 'cascade' }),
+  type: text("type").notNull(), // 'welcome', 'receipt', 'password_reset', etc.
+  to: text("to").notNull(),
+  subject: text("subject").notNull(),
+  sentAt: timestamp("sent_at").defaultNow(),
+  metadata: jsonb("metadata") // Store additional data like order IDs, amounts, etc.
+});
+```
+
+### Run migration:
+```bash
+npm run db:push
+```
+
+---
+
+## Fix #4: Admin Dashboard Access & Visibility
+
+### A. Add Admin Link to Navigation
+
+Update navigation to show Admin link for admin users:
+
+```typescript
+// client/src/components/Navigation.tsx or similar
+
+const Navigation = () => {
+  const { user } = useAuth(); // Get current user
+  
+  return (
+    <nav className="navigation">
+      <div className="nav-links">
+        <a href="/dashboard">Dashboard</a>
+        <a href="/tutor">Tutor</a>
+        <a href="/pricing">Pricing</a>
+        
+        {/* Show Admin link only for admin users */}
+        {user?.role === 'admin' && (
+          <a href="/admin" className="admin-link">
+            🔧 Admin
+          </a>
+        )}
+        
+        <a href="/api/auth/logout">Logout</a>
+      </div>
+    </nav>
+  );
+};
+```
+
+### B. Add Admin Button to Dashboard
+
+```typescript
+// client/src/pages/Dashboard.tsx
+
+{user?.role === 'admin' && (
+  <div className="admin-access-banner" style={{
+    background: 'linear-gradient(135deg, #DC2626 0%, #991B1B 100%)',
+    color: 'white',
+    padding: '16px 24px',
+    borderRadius: '8px',
+    marginBottom: '24px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between'
+  }}>
+    <div>
+      <h3 style={{ margin: 0, fontSize: '18px' }}>🔧 Admin Access</h3>
+      <p style={{ margin: '4px 0 0', fontSize: '14px', opacity: 0.9 }}>
+        Manage users, subscriptions, and view system analytics
+      </p>
+    </div>
+    <a 
+      href="/admin" 
+      style={{
+        background: 'white',
+        color: '#DC2626',
+        padding: '10px 24px',
+        borderRadius: '6px',
+        textDecoration: 'none',
+        fontWeight: 600
+      }}
+    >
+      Open Admin Panel →
+    </a>
+  </div>
+)}
+```
+
+---
+
+## Fix #5: Add Email History to Admin Dashboard
+
+### A. Create Email Logs Endpoint
+
+```typescript
+// server/routes.ts
+
+// GET /api/admin/emails - Get all email logs
+app.get("/api/admin/emails", requireAdmin, async (req, res) => {
+  try {
+    const { limit = 100, type, userId } = req.query;
+    
+    let query = db.select({
+      id: emailLogs.id,
+      userId: emailLogs.userId,
+      userName: users.name,
+      userEmail: users.email,
+      type: emailLogs.type,
+      to: emailLogs.to,
+      subject: emailLogs.subject,
+      sentAt: emailLogs.sentAt,
+      metadata: emailLogs.metadata
+    })
+    .from(emailLogs)
+    .leftJoin(users, eq(emailLogs.userId, users.id))
+    .orderBy(desc(emailLogs.sentAt))
+    .limit(parseInt(limit as string));
+    
+    if (type) {
+      query = query.where(eq(emailLogs.type, type as string));
+    }
+    
+    if (userId) {
+      query = query.where(eq(emailLogs.userId, parseInt(userId as string)));
+    }
+    
+    const emails = await query;
+    
+    res.json({ emails });
+    
+  } catch (error) {
+    console.error('Error fetching email logs:', error);
+    res.status(500).json({ error: "Failed to fetch email logs" });
+  }
+});
+
+// GET /api/admin/emails/stats - Email statistics
+app.get("/api/admin/emails/stats", requireAdmin, async (req, res) => {
+  try {
+    const totalEmails = await db.select({ count: sql`count(*)` })
+      .from(emailLogs);
+    
+    const emailsByType = await db.select({
+      type: emailLogs.type,
+      count: sql`count(*)`
+    })
+    .from(emailLogs)
+    .groupBy(emailLogs.type);
+    
+    const recentEmails = await db.select()
+      .from(emailLogs)
+      .orderBy(desc(emailLogs.sentAt))
+      .limit(5);
+    
+    res.json({
+      total: totalEmails[0].count,
+      byType: emailsByType,
+      recent: recentEmails
+    });
+    
+  } catch (error) {
+    console.error('Error fetching email stats:', error);
+    res.status(500).json({ error: "Failed to fetch email stats" });
+  }
+});
+```
+
+### B. Add Email History Section to Admin Panel
+
+```typescript
+// client/src/pages/Admin.tsx - Add new section
+
+const EmailLogsSection = () => {
+  const [emails, setEmails] = useState([]);
+  const [filter, setFilter] = useState('all');
+  
+  useEffect(() => {
+    fetchEmails();
+  }, [filter]);
+  
+  const fetchEmails = async () => {
+    const response = await fetch(
+      `/api/admin/emails${filter !== 'all' ? `?type=${filter}` : ''}`,
+      { credentials: 'include' }
+    );
+    const data = await response.json();
+    setEmails(data.emails);
+  };
+  
+  return (
+    <div className="admin-section">
+      <h2>📧 Email History</h2>
+      
+      <div className="filter-buttons">
+        <button onClick={() => setFilter('all')} className={filter === 'all' ? 'active' : ''}>
+          All
+        </button>
+        <button onClick={() => setFilter('welcome')} className={filter === 'welcome' ? 'active' : ''}>
+          Welcome
+        </button>
+        <button onClick={() => setFilter('receipt')} className={filter === 'receipt' ? 'active' : ''}>
+          Receipts
+        </button>
+      </div>
+      
+      <table className="admin-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Type</th>
+            <th>To</th>
+            <th>Subject</th>
+            <th>User</th>
+            <th>Details</th>
+          </tr>
+        </thead>
+        <tbody>
+          {emails.map((email) => (
+            <tr key={email.id}>
+              <td>{new Date(email.sentAt).toLocaleString()}</td>
+              <td>
+                <span className={`badge badge-${email.type}`}>
+                  {email.type}
+                </span>
+              </td>
+              <td>{email.to}</td>
+              <td>{email.subject}</td>
+              <td>{email.userName || 'N/A'}</td>
+              <td>
+                {email.metadata && (
+                  <button onClick={() => alert(JSON.stringify(email.metadata, null, 2))}>
+                    View Details
+                  </button>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+```
+
+---
+
+## Fix #6: Resend Manually Missed Receipt
+
+Create an endpoint to manually resend receipt to pollis@mfhfoods.com:
+
+```typescript
+// server/routes.ts
+
+// POST /api/admin/resend-receipt - Manually resend receipt
+app.post("/api/admin/resend-receipt", requireAdmin, async (req, res) => {
+  try {
+    const { userId, subscriptionId } = req.body;
+    
+    // Get user and subscription details
+    const user = await db.query.users.findFirst({
+      where: eq(users.id, userId)
+    });
+    
+    const subscription = await db.query.subscriptions.findFirst({
+      where: eq(subscriptions.userId, userId)
+    });
+    
+    if (!user || !subscription) {
+      return res.status(404).json({ error: "User or subscription not found" });
+    }
+    
+    // Determine plan name
+    let planName = '';
+    let credits = 0;
+    
+    switch (subscription.plan) {
+      case 'starter':
+        planName = 'Starter Plan';
+        credits = 60;
+        break;
+      case 'standard':
+        planName = 'Standard Plan';
+        credits = 240;
+        break;
+      case 'pro':
+        planName = 'Pro Plan';
+        credits = 600;
+        break;
+    }
+    
+    // Send receipt
+    await resend.emails.send({
+      from: 'JIE Mastery Tutor <hello@jiemastery.ai>',
+      to: user.email,
+      subject: `Payment Receipt - ${planName} - $${subscription.price.toFixed(2)}`,
+      html: receiptEmailTemplate({
+        customerName: user.name,
+        customerEmail: user.email,
+        date: new Date(subscription.startDate).toLocaleDateString('en-US', { 
+          year: 'numeric', 
+          month: 'long', 
+          day: 'numeric' 
+        }),
+        planName: planName,
+        amount: subscription.price.toFixed(2),
+        credits: credits,
+        nextBillingDate: subscription.nextBillingDate ? new Date(subscription.nextBillingDate).toLocaleDateString('en-US', { 
+          year: 'numeric', 
+          month: 'long', 
+          day: 'numeric' 
+        }) : undefined,
+        subscriptionId: subscription.stripeSubscriptionId || subscriptionId
+      })
+    });
+    
+    // Log email
+    await db.insert(emailLogs).values({
+      userId: userId,
+      type: 'receipt',
+      to: user.email,
+      subject: `Payment Receipt - ${planName}`,
+      sentAt: new Date(),
+      metadata: {
+        resent: true,
+        resentBy: req.session.userId,
+        originalSubscriptionId: subscriptionId
+      }
+    });
+    
+    res.json({ success: true, message: `Receipt sent to ${user.email}` });
+    
+  } catch (error) {
+    console.error('Error resending receipt:', error);
+    res.status(500).json({ error: "Failed to resend receipt" });
+  }
+});
+```
+
+---
+
+## Testing Checklist
+
+### Email Receipts:
+- [ ] Make test payment → Receipt email arrives within 1 minute
+- [ ] Receipt includes correct plan, amount, credits
+- [ ] Receipt shows next billing date for subscriptions
+- [ ] Receipt email is logged in database
+
+### Welcome Emails:
+- [ ] Register new user → Welcome email arrives
+- [ ] Welcome email includes getting started steps
+- [ ] Welcome email has working dashboard link
+- [ ] Welcome email is logged in database
+
+### Admin Dashboard Access:
+- [ ] Admin users see "Admin" link in navigation
+- [ ] Admin users see admin access banner on dashboard
+- [ ] Clicking admin link goes to /admin
+- [ ] Regular users do NOT see admin links
+
+### Email History in Admin:
+- [ ] Admin can view all sent emails
+- [ ] Filter by email type works (welcome, receipt)
+- [ ] Email details show metadata
+- [ ] Can resend receipt manually
+
+### Manual Receipt for pollis@mfhfoods.com:
+- [ ] Use admin panel to resend receipt
+- [ ] Receipt arrives at pollis@mfhfoods.com
+- [ ] Receipt shows STARTER plan, 60 minutes, $19.99
+
+---
+
+## Priority Order
+
+1. **🔴 IMMEDIATE:** Send manual receipt to pollis@mfhfoods.com (create resend endpoint)
+2. **🔴 CRITICAL:** Add receipt email to webhook (Fix #1B)
+3. **🟡 HIGH:** Add welcome email to registration (Fix #2B)
+4. **🟡 HIGH:** Add email logs table and tracking (Fix #3)
+5. **🟡 HIGH:** Add admin dashboard links (Fix #4)
+6. **🟢 MEDIUM:** Add email history to admin panel (Fix #5)
+
+---
+
+## Expected Results After Implementation
+
+✅ All new payments trigger automatic receipt emails  
+✅ All new registrations trigger welcome emails  
+✅ pollis@mfhfoods.com receives missed receipt  
+✅ Admin can access admin panel from navigation  
+✅ Admin can view all sent emails  
+✅ Admin can manually resend receipts if needed  
+✅ All emails are logged and trackable  
+
+**FIRST ACTION: Send receipt manually to pollis@mfhfoods.com for the STARTER plan purchase ($19.99, 60 minutes).**
