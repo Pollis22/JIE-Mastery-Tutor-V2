@@ -1622,35 +1622,89 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createRealtimeSession(session: InsertRealtimeSession): Promise<RealtimeSession> {
-    const [created] = await db.insert(realtimeSessions).values(session).returning();
-    return created;
+    try {
+      const [created] = await db.insert(realtimeSessions).values(session).returning();
+      return created;
+    } catch (error: any) {
+      // PostgreSQL error code 42P01 = "undefined_table"
+      if (error.code === '42P01') {
+        console.warn('⚠️ realtime_sessions table missing; creating stub session. Voice will still work.');
+        // Return a stub session so WebRTC can continue
+        return {
+          ...session,
+          id: `stub-${Date.now()}`,
+          createdAt: new Date(),
+          startedAt: new Date(),
+        } as RealtimeSession;
+      }
+      // For other errors, log but still return stub
+      console.error('❌ Failed to save realtime session to database:', error);
+      return {
+        ...session,
+        id: `stub-${Date.now()}`,
+        createdAt: new Date(),
+        startedAt: new Date(),
+      } as RealtimeSession;
+    }
   }
 
   async getRealtimeSession(sessionId: string, userId: string): Promise<RealtimeSession | undefined> {
-    const [session] = await db.select().from(realtimeSessions)
-      .where(and(eq(realtimeSessions.id, sessionId), eq(realtimeSessions.userId, userId)));
-    return session;
+    try {
+      const [session] = await db.select().from(realtimeSessions)
+        .where(and(eq(realtimeSessions.id, sessionId), eq(realtimeSessions.userId, userId)));
+      return session;
+    } catch (error: any) {
+      if (error.code === '42P01') {
+        console.warn('⚠️ realtime_sessions table missing; cannot retrieve session.');
+      } else {
+        console.error('❌ Failed to get realtime session:', error);
+      }
+      return undefined;
+    }
   }
 
   async updateRealtimeSession(sessionId: string, userId: string, updates: Partial<RealtimeSession>): Promise<RealtimeSession> {
-    const [updated] = await db.update(realtimeSessions)
-      .set(updates)
-      .where(and(eq(realtimeSessions.id, sessionId), eq(realtimeSessions.userId, userId)))
-      .returning();
-    return updated;
+    try {
+      const [updated] = await db.update(realtimeSessions)
+        .set(updates)
+        .where(and(eq(realtimeSessions.id, sessionId), eq(realtimeSessions.userId, userId)))
+        .returning();
+      return updated;
+    } catch (error: any) {
+      if (error.code === '42P01') {
+        console.warn('⚠️ realtime_sessions table missing; cannot update session.');
+      } else {
+        console.error('❌ Failed to update realtime session:', error);
+      }
+      // Return a stub with updates applied
+      return {
+        id: sessionId,
+        userId,
+        ...updates,
+      } as RealtimeSession;
+    }
   }
 
   async endRealtimeSession(sessionId: string, userId: string, transcript: any[], minutesUsed: number): Promise<void> {
-    await db.update(realtimeSessions)
-      .set({
-        status: 'ended',
-        endedAt: new Date(),
-        transcript,
-        minutesUsed,
-      })
-      .where(and(eq(realtimeSessions.id, sessionId), eq(realtimeSessions.userId, userId)));
+    try {
+      await db.update(realtimeSessions)
+        .set({
+          status: 'ended',
+          endedAt: new Date(),
+          transcript,
+          minutesUsed,
+        })
+        .where(and(eq(realtimeSessions.id, sessionId), eq(realtimeSessions.userId, userId)));
+    } catch (error: any) {
+      if (error.code === '42P01') {
+        console.warn('⚠️ realtime_sessions table missing; skipping session end update.');
+      } else {
+        console.error('❌ Failed to end realtime session:', error);
+      }
+      // Don't throw - let voice minute update continue
+    }
 
-    // Update user's voice usage
+    // Update user's voice usage regardless of session table status
     await this.updateUserVoiceUsage(userId, minutesUsed);
   }
 }

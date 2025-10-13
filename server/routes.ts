@@ -73,6 +73,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.status(200).json(status);
   });
 
+  // Database health check endpoint - verify realtime_sessions table exists
+  app.get("/api/health/db", async (req, res) => {
+    const checks = {
+      database: false,
+      realtimeSessions: false,
+      timestamp: new Date().toISOString()
+    };
+
+    try {
+      // Check basic DB connection
+      const { db } = await import('./db');
+      await db.execute(sql`SELECT 1`);
+      checks.database = true;
+
+      // Check if realtime_sessions table exists
+      const result = await db.execute(sql`
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'realtime_sessions'
+        );
+      `);
+      checks.realtimeSessions = result.rows[0]?.exists === true;
+
+      const allHealthy = checks.database && checks.realtimeSessions;
+      res.status(allHealthy ? 200 : 503).json({
+        status: allHealthy ? 'healthy' : 'degraded',
+        checks
+      });
+    } catch (error: any) {
+      res.status(503).json({
+        status: 'unhealthy',
+        checks,
+        error: error.message
+      });
+    }
+  });
+
   // Setup authentication
   setupAuth(app);
 
