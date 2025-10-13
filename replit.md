@@ -30,11 +30,14 @@ The platform uses a **session-first** data priority model:
 -   **Benefits**: Enables sibling sharing - parents can use one account for multiple children at different grade levels by creating sessions with different configurations. Only voice minutes are tracked across all sessions.
 
 ### Voice Technology Integration
-**OpenAI Realtime API (Primary - Phase 3 Complete)**:
+**OpenAI Realtime API (Primary - WebRTC Production-Ready)**:
+- **WebRTC Transport**: Native browser-to-OpenAI audio streaming using RTCPeerConnection with Opus codec
+- **Client-Secret Flow**: Secure ephemeral token minting via backend, tokens used for WebRTC SDP exchange
+- **Critical Headers**: SDP exchange requires `Authorization: Bearer ${client_secret}` and `OpenAI-Beta: realtime=v1`
+- **Audio Flow**: Microphone → RTC media track → OpenAI → Remote audio track → HTML5 audio element (no manual PCM processing)
 - **Multi-language voice support**: English, Spanish, Hindi, Chinese
 - **Age-specific voice selection**: 4 languages × 5 age groups = 20 voice configurations  
 - **OpenAI voice mapping**: shimmer (K-2), ballad (3-5), alloy (6-8), echo (9-12/College) - using only supported voices
-- **WebSocket-based bidirectional audio**: PCM16 encoding for input, proper signed decoding for playback
 - **RAG Integration**: Student's pinned documents automatically injected as context (up to 10 chunks with source attribution)
 - **Live Transcript UI**: Real-time message display with connection status badges, language/voice indicators
 - **Session Management**: Automatic persistence, minute tracking, mic controls, mute functionality
@@ -42,7 +45,8 @@ The platform uses a **session-first** data priority model:
 - **Personalized Learning**: Each session includes student profile context (name, grade level, primary subject) for personalized greetings and adaptive teaching
 - **Session Tracking**: All conversations stored per user with transcript tracking for ongoing learning continuity
 - **Auto-greeting**: Tutor greets student by name from profile on session start ("Hello [StudentName]!")
-- **Comprehensive test suite**: Validates voice mappings, WebSocket connections, session persistence
+- **Fail-Soft Database**: All realtime session methods gracefully handle missing table (code 42P01), voice continues even if DB writes fail
+- **Health Monitoring**: `/api/health/db` endpoint verifies realtime_sessions table exists
 - **Toggle Support**: USE_CONVAI=false activates OpenAI Realtime; USE_CONVAI=true uses ElevenLabs (case-insensitive)
 
 **ElevenLabs ConvAI (Legacy/Backup)**:
