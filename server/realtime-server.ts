@@ -132,6 +132,36 @@ export class RealtimeServer {
         errorMessage: null,
       });
 
+      // Add heartbeat to keep connection alive (prevent Railway disconnects)
+      const HEARTBEAT_INTERVAL = 15000; // 15 seconds
+      let isAlive = true;
+
+      // Setup ping-pong heartbeat
+      const heartbeatInterval = setInterval(() => {
+        if (clientWs.readyState !== WebSocket.OPEN) {
+          clearInterval(heartbeatInterval);
+          return;
+        }
+
+        if (!isAlive) {
+          console.warn(`⚠️ [RealtimeWS] No pong received, terminating session ${sessionId}`);
+          clientWs.terminate();
+          clearInterval(heartbeatInterval);
+          this.cleanupSession(sessionId);
+          return;
+        }
+
+        isAlive = false;
+        clientWs.ping();
+        console.log(`🏓 [RealtimeWS] Ping sent for session ${sessionId}`);
+      }, HEARTBEAT_INTERVAL);
+
+      // Handle pong response
+      clientWs.on('pong', () => {
+        isAlive = true;
+        console.log(`🏓 [RealtimeWS] Pong received for session ${sessionId}`);
+      });
+
       // Connect to OpenAI Realtime API
       this.connectToOpenAI(session);
 
@@ -141,14 +171,19 @@ export class RealtimeServer {
       });
 
       // Handle client disconnect
-      clientWs.on('close', () => {
-        console.log(`[RealtimeWS] Client disconnected for session ${sessionId}`);
+      clientWs.on('close', (code, reason) => {
+        console.log(`[RealtimeWS] Client disconnected for session ${sessionId}`, {
+          code,
+          reason: reason?.toString() || 'no reason provided'
+        });
+        clearInterval(heartbeatInterval);
         this.cleanupSession(sessionId);
       });
 
       // Handle client errors
       clientWs.on('error', (error) => {
         console.error(`[RealtimeWS] Client error for session ${sessionId}:`, error);
+        clearInterval(heartbeatInterval);
         this.cleanupSession(sessionId);
       });
     });
@@ -264,8 +299,8 @@ export class RealtimeServer {
                 (session as any).waitingForSessionUpdate = false;
                 
                 // Send hello probe after session.updated ack
-                setTimeout(() => {
-                  this.sendHelloProbe(session);
+                setTimeout(async () => {
+                  await this.sendHelloProbe(session);
                 }, 100);
               } else if (msg.type === 'response.created') {
                 const correlationId = (session as any).correlationId;
@@ -701,17 +736,32 @@ Remember: Your goal is to build understanding and confidence in learning.`
   /**
    * Send hello probe with retry logic
    */
-  private sendHelloProbe(session: ActiveSession) {
+  private async sendHelloProbe(session: ActiveSession) {
     const correlationId = (session as any).correlationId;
     const selectedVoice = session.voiceName || 'alloy';
     
     console.log(`[RealtimeWS] [${correlationId}] HELLO_PROBE_SENT (attempt ${(session as any).helloProbeRetries + 1})`);
     
+    // Get user info for personalized greeting
+    let greetingMessage = "Say 'Hi! I'm your tutor. What would you like to learn today?' clearly once.";
+    
+    try {
+      const { storage } = await import('./storage');
+      const user = await storage.getUser(session.userId);
+      if (user && user.studentName) {
+        const studentName = user.studentName;
+        const subject = (session as any).subject || user.primarySubject || 'learning';
+        greetingMessage = `Say warmly and enthusiastically: "Hi ${studentName}! I'm your tutor and I'm excited to help you with ${subject} today. What would you like to work on?"`;
+      }
+    } catch (error) {
+      console.error(`[RealtimeWS] Error fetching user for greeting:`, error);
+    }
+    
     const helloProbe = {
       type: 'response.create',
       response: {
         modalities: ['audio'],
-        instructions: "Say 'hello' clearly once.",
+        instructions: greetingMessage,
         voice: selectedVoice
       }
     };
@@ -742,8 +792,8 @@ Remember: Your goal is to build understanding and confidence in learning.`
     
     console.log(`[RealtimeWS] [${correlationId}] Retrying hello probe in ${delay + jitter}ms (attempt ${retries + 1}/3)`);
     
-    setTimeout(() => {
-      this.sendHelloProbe(session);
+    setTimeout(async () => {
+      await this.sendHelloProbe(session);
     }, delay + jitter);
   }
 
