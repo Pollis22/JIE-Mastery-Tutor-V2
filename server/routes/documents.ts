@@ -138,7 +138,44 @@ router.post('/upload', upload.single('file'), async (req, res) => {
 });
 
 /**
- * Get user's documents
+ * Get user's documents (root route)
+ */
+router.get('/', async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    const documents = await storage.getUserDocuments(userId);
+    
+    res.json({
+      documents: documents.map(doc => ({
+        id: doc.id,
+        title: doc.title,
+        originalName: doc.originalName,
+        fileType: doc.fileType,
+        fileSize: doc.fileSize,
+        subject: doc.subject,
+        grade: doc.grade,
+        description: doc.description,
+        keepForFutureSessions: doc.keepForFutureSessions,
+        processingStatus: doc.processingStatus,
+        processingError: doc.processingError,
+        retryCount: doc.retryCount,
+        nextRetryAt: doc.nextRetryAt,
+        createdAt: doc.createdAt
+      }))
+    });
+
+  } catch (error) {
+    console.error('List documents error:', error);
+    res.status(500).json({ error: 'Failed to fetch documents' });
+  }
+});
+
+/**
+ * Get user's documents (alias for compatibility)
  */
 router.get('/list', async (req, res) => {
   try {
