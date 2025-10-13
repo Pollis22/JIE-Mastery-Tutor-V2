@@ -19,6 +19,7 @@ import { Clock, AlertCircle, Upload, File, X, Paperclip, LogOut, Settings, Layou
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
+import { DebugPanel } from "@/components/realtime/DebugPanel";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -89,6 +90,18 @@ export default function TutorPage() {
   const [summaryModalOpen, setSummaryModalOpen] = useState(false);
   const [transcriptMessages, setTranscriptMessages] = useState<ConvaiMessage[]>([]);
   const [isTranscriptConnected, setIsTranscriptConnected] = useState(false);
+
+  // Debug state for Realtime debugging
+  const [debugInfo, setDebugInfo] = useState<{
+    transport?: string;
+    sessionStatus?: string;
+    lastError?: any;
+    helloProbeStatus?: string;
+    vadEnabled?: boolean;
+    modelName?: string;
+    connectionStatus?: 'connecting' | 'connected' | 'disconnected' | 'error';
+    lastEvent?: string;
+  }>({});
 
   // Sync student name and grade when user loads
   useEffect(() => {
@@ -746,6 +759,20 @@ export default function TutorPage() {
           onClose={() => setShowTopUpModal(false)}
           remainingMinutes={minutesData?.remaining}
         />
+
+        {/* Debug Panel - only show for OpenAI Realtime */}
+        {!useConvai && process.env.NODE_ENV === 'development' && (
+          <DebugPanel
+            transport={debugInfo.transport || 'websocket'}
+            sessionStatus={debugInfo.sessionStatus}
+            lastError={debugInfo.lastError}
+            helloProbeStatus={debugInfo.helloProbeStatus}
+            vadEnabled={debugInfo.vadEnabled}
+            modelName={debugInfo.modelName}
+            connectionStatus={debugInfo.connectionStatus}
+            lastEvent={debugInfo.lastEvent}
+          />
+        )}
       </TutorErrorBoundary>
     </NetworkAwareWrapper>
   );

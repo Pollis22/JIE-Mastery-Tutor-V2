@@ -22,6 +22,9 @@ export class RealtimeServer {
   private wss: WebSocketServer;
   private activeSessions = new Map<string, ActiveSession>();
   private openai: OpenAI;
+  private eventBuffer = new Map<string, any[]>(); // Ring buffer for debugging
+  private readonly REALTIME_TRANSPORT = process.env.REALTIME_TRANSPORT || 'websocket'; // 'webrtc' | 'websocket'
+  private readonly REALTIME_ENABLED = process.env.REALTIME_ENABLED !== 'false';
 
   constructor(server: HTTPServer) {
     // Create WebSocket server - no path restriction to allow /ws/realtime/:sessionId
@@ -38,6 +41,7 @@ export class RealtimeServer {
       apiKey: process.env.OPENAI_API_KEY,
     });
 
+    console.log(`[RealtimeWS] Initialized - Transport: ${this.REALTIME_TRANSPORT}, Enabled: ${this.REALTIME_ENABLED}`);
     this.setupWebSocketServer();
   }
 
@@ -143,21 +147,15 @@ export class RealtimeServer {
 
   private async connectToOpenAI(session: ActiveSession) {
     try {
-      // BUILD INSTRUCTIONS FIRST, BEFORE OPENING WEBSOCKET (critical for timing!)
-      console.log(`[RealtimeWS] Pre-building instructions before WebSocket connection...`);
-      const { instructions, documentContext } = await this.buildInstructionsWithContext(session);
-      const selectedVoice = session.voiceName || 'alloy';
+      // Initialize event buffer for this session
+      this.eventBuffer.set(session.sessionId, []);
       
-      console.log(`[RealtimeWS] Instructions ready: ${instructions.length} chars`);
-      
-      // Store document context in session for later injection
-      (session as any).documentContext = documentContext;
-      
-      // Use the latest model version
-      const model = 'gpt-4o-realtime-preview-2024-12-17';
+      // Use correct model version
+      const model = 'gpt-4o-realtime-preview';
       const wsUrl = `wss://api.openai.com/v1/realtime?model=${model}`;
 
       console.log(`[RealtimeWS] Connecting to OpenAI Realtime API for session ${session.sessionId}`);
+      console.log(`[RealtimeWS] Transport mode: ${this.REALTIME_TRANSPORT}`);
 
       const openaiWs = new WebSocket(wsUrl, {
         headers: {
@@ -171,54 +169,69 @@ export class RealtimeServer {
       openaiWs.on('open', () => {
         console.log(`[RealtimeWS] WebSocket OPEN - sending config IMMEDIATELY`);
         
-        // Send COMPLETE configuration as FIRST message (synchronous, no await!)
-        const sessionConfig = {
+        // Use concise instructions that work
+        const instructions = `You are a concise, upbeat tutor. Speak short sentences. Wait for the user to finish before replying. If the user is silent, say: 'I'm here when you're ready.'`;
+        const selectedVoice = session.voiceName || 'alloy';
+        
+        // Build session configuration
+        const sessionConfig: any = {
           type: 'session.update',
           session: {
-            // Voice configuration
-            voice: selectedVoice,
-            
-            // System instructions (CRITICAL - must be here!)
-            instructions: instructions,
-            
-            // Audio configuration
             modalities: ['text', 'audio'],
-            
-            // Response behavior
-            temperature: 0.8,
-            max_response_output_tokens: 4096,
-            
-            // Turn detection
-            turn_detection: {
-              type: 'server_vad',
-              threshold: 0.5,
-              prefix_padding_ms: 300,
-              silence_duration_ms: 500,
-            },
-            
-            // Input/output audio format
-            input_audio_format: 'pcm16',
-            output_audio_format: 'pcm16',
+            voice: selectedVoice,
+            instructions: instructions,
             input_audio_transcription: {
-              model: 'whisper-1',
+              model: 'whisper-1'
             },
-          },
+            temperature: 0.8
+          }
         };
         
-        console.log(`[RealtimeWS] FIRST MESSAGE: Complete session config with instructions (${instructions.length} chars)`);
+        // CRITICAL: Only add audio format for WebSocket, NOT for WebRTC
+        if (this.REALTIME_TRANSPORT === 'websocket') {
+          sessionConfig.session.input_audio_format = 'pcm16';
+          sessionConfig.session.output_audio_format = 'pcm16';
+          console.log(`[RealtimeWS] WebSocket transport - using PCM16 audio format`);
+        } else {
+          console.log(`[RealtimeWS] WebRTC transport - Opus flows over media track (no output_audio_format)`);
+        }
+        
+        // Start without VAD for initial testing
+        // Will add after hello probe works
+        
+        console.log(`[RealtimeWS] Sending session.update`);
+        this.logOutboundEvent(session.sessionId, sessionConfig);
         this.sendToOpenAI(session, sessionConfig);
-        console.log(`[RealtimeWS] Config sent - waiting for OpenAI confirmation`);
+        
+        // Send hello probe after a short delay
+        setTimeout(() => {
+          console.log(`[RealtimeWS] HELLO_PROBE_SENT`);
+          const helloProbe = {
+            type: 'response.create',
+            response: {
+              modalities: ['audio'],
+              instructions: `Say 'hello' clearly once.`,
+              voice: selectedVoice
+            }
+          };
+          this.logOutboundEvent(session.sessionId, helloProbe);
+          this.sendToOpenAI(session, helloProbe);
+        }, 500);
       });
 
       openaiWs.on('message', async (data: Buffer) => {
-        // Log first message from OpenAI for debugging
         if (Buffer.isBuffer(data)) {
           const dataStr = data.toString();
           if (dataStr.startsWith('{')) {
             try {
               const msg = JSON.parse(dataStr);
               
-              // Handle session.created confirmation (config already sent on connection)
+              // Log important events
+              if (['error', 'response.error', 'session.created', 'session.updated', 'response.completed'].includes(msg.type)) {
+                console.log(`[RealtimeWS] Event: ${msg.type}`, msg.type === 'error' ? msg : '');
+              }
+              
+              // Handle session.created
               if (msg.type === 'session.created') {
                 console.log(`[RealtimeWS] ✅ Session created by OpenAI: ${msg.session?.id}`);
                 
@@ -227,45 +240,41 @@ export class RealtimeServer {
                   type: 'session.ready',
                   sessionId: session.sessionId,
                 });
-                
-                // Get pre-built document context from session
-                const documentContext = (session as any).documentContext;
-                
-                // If there's document context, inject it as a conversation item
-                if (documentContext) {
-                  setTimeout(() => {
-                    this.sendToOpenAI(session, {
-                      type: 'conversation.item.create',
-                      item: {
-                        type: 'message',
-                        role: 'system',
-                        content: [
-                          {
-                            type: 'input_text',
-                            text: documentContext
-                          }
-                        ]
-                      }
-                    });
-                    console.log(`[RealtimeWS] Injected document context for session ${session.sessionId}`);
-                  }, 100);
-                }
-                
-                // Trigger initial greeting from AI tutor
-                setTimeout(() => {
-                  this.sendToOpenAI(session, {
-                    type: 'response.create',
-                    response: {
-                      modalities: ['audio', 'text'],
-                    }
-                  });
-                  console.log(`[RealtimeWS] Triggered initial greeting for session ${session.sessionId}`);
-                }, documentContext ? 600 : 500);
-                
               } else if (msg.type === 'session.updated') {
-                console.log(`[RealtimeWS] Session configured successfully for ${session.sessionId}`);
-              } else if (msg.type === 'error' || msg.type === 'server_error') {
-                console.error(`[RealtimeWS] OpenAI error response:`, msg);
+                console.log(`[RealtimeWS] ✅ Session updated successfully`);
+                
+                // After successful update, enable VAD if not already enabled
+                if (!msg.session?.turn_detection) {
+                  setTimeout(() => {
+                    console.log(`[RealtimeWS] Enabling VAD for turn detection`);
+                    const vadConfig = {
+                      type: 'session.update',
+                      session: {
+                        turn_detection: {
+                          type: 'server_vad',
+                          threshold: 0.5
+                        }
+                      }
+                    };
+                    this.logOutboundEvent(session.sessionId, vadConfig);
+                    this.sendToOpenAI(session, vadConfig);
+                  }, 1000); // Enable VAD after hello probe has a chance to play
+                }
+              } else if (msg.type === 'response.created') {
+                console.log(`[RealtimeWS] Response created`);
+              } else if (msg.type === 'response.completed') {
+                console.log(`[RealtimeWS] ✅ Response completed - hello probe success!`);
+              } else if (msg.type === 'error') {
+                console.error(`[RealtimeWS] ❌ ERROR:`, msg);
+                
+                // Log last 10 outbound events for debugging
+                const events = this.eventBuffer.get(session.sessionId) || [];
+                console.error(`[RealtimeWS] Last ${Math.min(10, events.length)} outbound events:`, 
+                  events.slice(-10).map(e => e.type).join(', '));
+                  
+                if (msg.error?.type === 'server_error') {
+                  console.error(`[RealtimeWS] Server error - Session ID for support: ${msg.error?.message?.match(/sess_[a-zA-Z0-9]+/)?.[0]}`);
+                }
               }
             } catch (e) {
               // Not JSON, likely audio data
@@ -305,11 +314,27 @@ export class RealtimeServer {
       if (session.openaiWs && session.openaiWs.readyState === WebSocket.OPEN) {
         // Check if it's binary audio data or text JSON
         if (Buffer.isBuffer(data)) {
-          // Binary audio frame - forward as-is
-          session.openaiWs.send(data);
+          // Binary audio frame - append to buffer then commit
+          const audioChunk = {
+            type: 'input_audio_buffer.append',
+            audio: data.toString('base64')
+          };
+          this.sendToOpenAI(session, audioChunk);
+          
+          // CRITICAL: Must commit the buffer for audio to be processed
+          const commitMsg = { type: 'input_audio_buffer.commit' };
+          this.sendToOpenAI(session, commitMsg);
+          this.logOutboundEvent(session.sessionId, commitMsg);
         } else if (typeof data === 'string') {
-          // Text message - forward as-is
-          session.openaiWs.send(data);
+          // Text message - parse and handle
+          try {
+            const msg = JSON.parse(data);
+            this.logOutboundEvent(session.sessionId, msg);
+            session.openaiWs.send(data);
+          } catch (e) {
+            // Not JSON, forward as-is
+            session.openaiWs.send(data);
+          }
         } else {
           // ArrayBuffer or other format - convert to Buffer
           session.openaiWs.send(Buffer.from(data));
@@ -366,6 +391,16 @@ export class RealtimeServer {
     }
   }
 
+  private logOutboundEvent(sessionId: string, event: any) {
+    const buffer = this.eventBuffer.get(sessionId) || [];
+    buffer.push({ type: event.type, timestamp: new Date().toISOString() });
+    // Keep only last 20 events
+    if (buffer.length > 20) {
+      buffer.shift();
+    }
+    this.eventBuffer.set(sessionId, buffer);
+  }
+
   private async buildInstructionsWithContext(session: ActiveSession): Promise<{instructions: string, documentContext?: string}> {
     try {
       // Retrieve session and user data from database
@@ -379,7 +414,7 @@ export class RealtimeServer {
       
       if (!dbSession) {
         console.error(`[RealtimeWS] Session not found in database: ${session.sessionId}`);
-        // Return comprehensive fallback instructions (500+ chars required)
+        // Return fallback instructions
         return {
           instructions: `You are an expert AI tutor having a real-time voice conversation with a student.
 
@@ -397,7 +432,7 @@ Remember: Build understanding and confidence in learning.`
       const user = await storage.getUser(session.userId);
       if (!user) {
         console.error(`[RealtimeWS] User not found for session ${session.sessionId}`);
-        // Return comprehensive fallback instructions (500+ chars required)
+        // Return fallback instructions
         return {
           instructions: `You are an expert AI tutor having a real-time voice conversation with a student.
 
@@ -461,13 +496,8 @@ IMPORTANT REMINDERS:
 
 Remember: You're not just teaching ${subject}, you're building ${studentName}'s confidence and love of learning.`;
 
-      // Validate instructions length (OpenAI requires 400+ chars)
-      if (instructions.length < 400) {
-        console.error(`[RealtimeWS] ❌ Instructions too short: ${instructions.length} chars (minimum 400 required)`);
-        throw new Error(`Instructions must be at least 400 characters, got ${instructions.length}`);
-      }
-      
-      console.log(`[RealtimeWS] ✅ Instructions validated: ${instructions.length} chars`);
+      // Instructions are ready to use - no minimum length required
+      console.log(`[RealtimeWS] Instructions prepared: ${instructions.length} chars`);
 
       // Handle document context separately
       let documentContext: string | undefined;
@@ -493,7 +523,7 @@ Remember: You're not just teaching ${subject}, you're building ${studentName}'s 
 
     } catch (error) {
       console.error(`[RealtimeWS] Error building context:`, error);
-      // Return comprehensive fallback instructions (500+ chars required)
+      // Return fallback instructions
       return {
         instructions: `You are an expert AI tutor having a real-time voice conversation with a student.
 
