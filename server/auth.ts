@@ -60,13 +60,13 @@ export function setupAuth(app: Express) {
   passport.use(
     new LocalStrategy(
       { usernameField: 'email', passwordField: 'password' },
-      async (email, password, done) => {
+      async (emailOrUsername, password, done) => {
         // Test mode authentication
         const isTestMode = process.env.AUTH_TEST_MODE === 'true' || process.env.NODE_ENV === 'development';
         const testEmail = process.env.TEST_USER_EMAIL || 'test@example.com';
         const testPassword = process.env.TEST_USER_PASSWORD || 'TestPass123!';
         
-        if (isTestMode && (email ?? '').toLowerCase() === testEmail.toLowerCase() && password === testPassword) {
+        if (isTestMode && (emailOrUsername ?? '').toLowerCase() === testEmail.toLowerCase() && password === testPassword) {
           const testUser = {
             id: 'test-user-id',
             username: testEmail,
@@ -74,6 +74,11 @@ export function setupAuth(app: Express) {
             password: await hashPassword(testPassword),
             firstName: 'Test',
             lastName: 'User',
+            parentName: 'Test Parent',
+            studentName: 'Test Student',
+            studentAge: 10,
+            gradeLevel: '3-5',
+            primarySubject: 'Math',
             subscriptionPlan: 'all' as const,
             subscriptionStatus: 'active' as const,
             stripeCustomerId: null,
@@ -89,15 +94,28 @@ export function setupAuth(app: Express) {
             speechSpeed: '1.0',
             volumeLevel: 75,
             isAdmin: false,
+            marketingOptIn: false,
+            marketingOptInDate: null,
+            marketingOptOutDate: null,
             createdAt: new Date(),
             updatedAt: new Date(),
           };
           return done(null, testUser);
         }
         
-        // Normal authentication flow
+        // Normal authentication flow - support both email and username
         try {
-          const user = await storage.getUserByEmail(email);
+          let user = null;
+          
+          // Try email first
+          user = await storage.getUserByEmail(emailOrUsername);
+          
+          // If not found by email, try username
+          if (!user) {
+            user = await storage.getUserByUsername(emailOrUsername);
+          }
+          
+          // Validate password
           if (!user || !(await comparePasswords(password, user.password))) {
             return done(null, false);
           }
@@ -122,6 +140,11 @@ export function setupAuth(app: Express) {
         password: await hashPassword(process.env.TEST_USER_PASSWORD || 'TestPass123!'),
         firstName: 'Test',
         lastName: 'User',
+        parentName: 'Test Parent',
+        studentName: 'Test Student',
+        studentAge: 10,
+        gradeLevel: '3-5',
+        primarySubject: 'Math',
         subscriptionPlan: 'all' as const,
         subscriptionStatus: 'active' as const,
         stripeCustomerId: null,
@@ -137,6 +160,9 @@ export function setupAuth(app: Express) {
         speechSpeed: '1.0',
         volumeLevel: 75,
         isAdmin: false,
+        marketingOptIn: false,
+        marketingOptInDate: null,
+        marketingOptOutDate: null,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
