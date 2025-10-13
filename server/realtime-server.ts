@@ -175,34 +175,37 @@ export class RealtimeServer {
               if (msg.type === 'session.created') {
                 console.log(`[RealtimeWS] Session created by OpenAI for ${session.sessionId}`);
                 
-                // Now configure the session
+                // Build instructions IMMEDIATELY
+                const { instructions, documentContext } = await this.buildInstructionsWithContext(session);
                 const selectedVoice = session.voiceName || 'alloy';
-                console.log(`[RealtimeWS] Configuring OpenAI with voice: ${selectedVoice}`);
                 
-                // Try ULTRA MINIMAL - just voice, no instructions
+                console.log(`[RealtimeWS] Configuring session with instructions (${instructions.length} chars) and voice: ${selectedVoice}`);
+                
+                // Send COMPLETE configuration with instructions AND voice
                 const sessionConfig = {
                   type: 'session.update',
                   session: {
+                    modalities: ['text', 'audio'],
+                    instructions: instructions,
                     voice: selectedVoice,
+                    input_audio_format: 'pcm16',
+                    output_audio_format: 'pcm16',
+                    input_audio_transcription: {
+                      model: 'whisper-1',
+                    },
+                    turn_detection: {
+                      type: 'server_vad',
+                      threshold: 0.5,
+                      prefix_padding_ms: 300,
+                      silence_duration_ms: 500,
+                    },
+                    temperature: 0.8,
+                    max_response_output_tokens: 4096,
                   },
                 };
                 
-                console.log(`[RealtimeWS] Sending ULTRA MINIMAL session config with ONLY voice: ${selectedVoice}`);
-                console.log(`[RealtimeWS] Exact payload:`, JSON.stringify(sessionConfig, null, 2));
+                console.log(`[RealtimeWS] Sending COMPLETE session config`);
                 this.sendToOpenAI(session, sessionConfig);
-                
-                // If voice update works, then send instructions separately
-                setTimeout(async () => {
-                  const { instructions, documentContext } = await this.buildInstructionsWithContext(session);
-                  console.log(`[RealtimeWS] Now sending instructions (${instructions.length} chars)`);
-                  
-                  this.sendToOpenAI(session, {
-                    type: 'session.update',
-                    session: {
-                      instructions: instructions,
-                    },
-                  });
-                }, 200);
                 
                 // Notify client that connection is ready
                 this.sendToClient(session, {
