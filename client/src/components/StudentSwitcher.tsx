@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -28,23 +29,27 @@ export function StudentSwitcher({
   onSelectStudent, 
   onOpenProfile 
 }: StudentSwitcherProps) {
+  const { user } = useAuth();
   const { data: students = [], isLoading } = useQuery<Student[]>({
     queryKey: ['/api/students'],
   });
 
   const currentStudent = students.find(s => s.id === selectedStudentId);
+  
+  // Use current student name, or fall back to user's default student name from profile
+  const displayName = currentStudent?.name || user?.studentName || user?.firstName || "Student";
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
           variant="outline"
-          className="gap-2"
+          className="gap-2 ml-6"
           data-testid="button-student-switcher"
         >
           <User className="h-4 w-4" />
           <span className="max-w-[150px] truncate">
-            {currentStudent?.name || "No Student"}
+            {displayName}
           </span>
           <ChevronDown className="h-4 w-4 opacity-50" />
         </Button>
@@ -98,19 +103,6 @@ export function StudentSwitcher({
             <Settings className="h-4 w-4" />
             <span>Edit Profile</span>
           </DropdownMenuItem>
-        )}
-        
-        {currentStudent && (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={() => onSelectStudent(null)}
-              className="gap-2 text-muted-foreground"
-              data-testid="button-clear-student"
-            >
-              <span>Clear Selection</span>
-            </DropdownMenuItem>
-          </>
         )}
       </DropdownMenuContent>
     </DropdownMenu>
