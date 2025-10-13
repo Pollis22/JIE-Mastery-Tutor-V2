@@ -1,0 +1,556 @@
+# Agent3 Task: Fix Railway Production Issues
+
+## Problems Identified
+
+🔴 **Issue 1:** WebSocket connect → close → connect loop (no greeting spoken)  
+🔴 **Issue 2:** `POST /api/documents` returns 404 (file uploads broken in prod)  
+✅ **Working:** Dev environment works perfectly
+
+---
+
+## Fix #1: Stop WebSocket Loop & Enable Greeting
+
+### Problem
+Railway logs show continuous WebSocket connect/close cycles. The greeting never plays because:
+- Connection drops before session establishes
+- Path mismatch between client and server
+- No heartbeat keeping connection alive
+- Missing OpenAI Beta header
+
+### Solution Steps
+
+#### Step 1: Add WebSocket Logging
+
+**File: `server/src/routes/realtime.ts` (or wherever WS handler lives)**
+
+```typescript
+// Add detailed logging to diagnose connection issues
+app.ws('/ws/realtime/:sessionId', (ws, req) => {
+  const sessionId = req.params.sessionId;
+  const token = req.query.token;
+  
+  console.log('🔵 [WS] New connection attempt', { sessionId, hasToken: !!token });
+
+  // Log closure with reason
+  ws.on('close', (code, reason) => {
+    console.warn('⚠️ [WS] Connection closed', { 
+      sessionId, 
+      code, 
+      reason: reason?.toString() || 'no reason provided'
+    });
+  });
+
+  ws.on('error', (err) => {
+    console.error('❌ [WS] Error', { sessionId, error: err.message });
+  });
+
+  // Validate before proceeding
+  if (!process.env.REALTIME_ENABLED || process.env.REALTIME_ENABLED !== 'true') {
+    console.warn('⚠️ [WS] Rejected: REALTIME_DISABLED');
+    ws.close(1008, 'Feature disabled');
+    return;
+  }
+
+  if (!token || !isValidToken(token)) {
+    console.warn('⚠️ [WS] Rejected: Invalid token');
+    ws.close(1008, 'Invalid authentication');
+    return;
+  }
+
+  console.log('✅ [WS] Connection accepted', { sessionId });
+  
+  // ... rest of your handler
+});
+```
+
+#### Step 2: Add WebSocket Heartbeat (Prevent Idle Disconnects)
+
+**In the same WebSocket handler:**
+
+```typescript
+// Add heartbeat to keep connection alive
+const HEARTBEAT_INTERVAL = 15000; // 15 seconds
+
+ws.isAlive = true;
+
+ws.on('pong', () => {
+  ws.isAlive = true;
+});
+
+const heartbeatInterval = setInterval(() => {
+  if (ws.readyState !== ws.OPEN) {
+    clearInterval(heartbeatInterval);
+    return;
+  }
+
+  if (!ws.isAlive) {
+    console.warn('⚠️ [WS] No pong received, terminating', { sessionId });
+    ws.terminate();
+    clearInterval(heartbeatInterval);
+    return;
+  }
+
+  ws.isAlive = false;
+  ws.ping();
+}, HEARTBEAT_INTERVAL);
+
+ws.on('close', () => {
+  clearInterval(heartbeatInterval);
+});
+```
+
+#### Step 3: Verify WebSocket Path Match
+
+**Ensure client and server use the exact same path.**
+
+Client should connect to:
+```typescript
+// client/src/hooks/use-realtime-voice.tsx
+const wsUrl = `wss://${window.location.host}/ws/realtime/${sessionId}?token=${authToken}`;
+```
+
+Server must mount at:
+```typescript
+// server/src/app.ts or server/src/routes/realtime.ts
+app.ws('/ws/realtime/:sessionId', wsHandler);
+```
+
+#### Step 4: Send Greeting After Session Established
+
+**Add greeting trigger on server side:**
+
+```typescript
+// After you receive session.updated from OpenAI, trigger greeting once
+let greetingSent = false;
+
+function handleOpenAIMessage(message: any, ws: WebSocket) {
+  console.log('📨 OpenAI message:', message.type);
+  
+  if (message.type === 'session.updated' && !greetingSent) {
+    greetingSent = true;
+    console.log('👋 Sending greeting...');
+    
+    // Send greeting request
+    ws.send(JSON.stringify({
+      type: 'response.create',
+      response: {
+        modalities: ['audio'],
+        instructions: "Say 'Hi! I'm your tutor. What would you like to learn today?' clearly once.",
+        voice: 'alloy'
+      }
+    }));
+  }
+  
+  // Forward message to client
+  // ... your existing code
+}
+```
+
+#### Step 5: Add OpenAI-Beta Header to WebRTC SDP Request
+
+**File: `client/src/hooks/use-realtime-voice.tsx`**
+
+```typescript
+// In the connectToOpenAIWebRTC function
+const sdpResp = await fetch(`${base}?model=${encodeURIComponent(model)}`, {
+  method: "POST",
+  headers: {
+    Authorization: `Bearer ${clientSecret}`,
+    "Content-Type": "application/sdp",
+    "OpenAI-Beta": "realtime=v1"  // ← ADD THIS HEADER
+  },
+  body: offer.sdp,
+});
+```
+
+#### Step 6: Prevent Transport Mixing
+
+**Make sure WebRTC mode doesn't open PCM16 WebSocket:**
+
+```typescript
+// client/src/hooks/use-realtime-voice.tsx
+const connect = async () => {
+  const transport = process.env.REALTIME_TRANSPORT || 'webrtc';
+  
+  if (transport === 'webrtc') {
+    // Only establish WebRTC connection
+    // Do NOT open WebSocket for audio streaming
+    console.log('🔵 Using WebRTC transport - no WS audio stream needed');
+    return;
+  }
+  
+  // WebSocket PCM16 fallback
+  // ... existing websocket code
+};
+```
+
+---
+
+## Fix #2: Add Document Upload API
+
+### Problem
+`POST /api/documents` returns 404 because the route doesn't exist in production build.
+
+### Solution Steps
+
+#### Step 1: Install Multer (if not already installed)
+
+```bash
+npm install multer
+npm install --save-dev @types/multer
+```
+
+#### Step 2: Create Documents Upload Route
+
+**Create file: `server/src/routes/documents.ts`**
+
+```typescript
+import { Router } from 'express';
+import multer from 'multer';
+import { v4 as uuidv4 } from 'uuid';
+
+const router = Router();
+
+// Configure multer for memory storage
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 20 * 1024 * 1024, // 20MB max
+  },
+  fileFilter: (req, file, cb) => {
+    // Accept common document types
+    const allowedMimes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain',
+      'text/csv',
+      'image/jpeg',
+      'image/png',
+    ];
+    
+    if (allowedMimes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type'));
+    }
+  }
+});
+
+// POST /api/documents - Upload a document
+router.post('/documents', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file provided' });
+    }
+
+    console.log('📄 File upload received:', {
+      name: req.file.originalname,
+      size: req.file.size,
+      mime: req.file.mimetype
+    });
+
+    // TODO: Save to database and/or S3
+    // For now, we'll save metadata to DB
+    const doc = {
+      id: uuidv4(),
+      userId: req.user?.id, // if you have auth middleware
+      name: req.file.originalname,
+      mimeType: req.file.mimetype,
+      size: req.file.size,
+      uploadedAt: new Date(),
+      // buffer: req.file.buffer // Store in S3 or disk instead
+    };
+
+    // If you have a documents table:
+    // await db.documents.create({ data: doc });
+
+    console.log('✅ Document saved:', doc.id);
+
+    res.json({
+      id: doc.id,
+      name: doc.name,
+      size: doc.size,
+      uploadedAt: doc.uploadedAt
+    });
+
+  } catch (error) {
+    console.error('❌ Document upload failed:', error);
+    res.status(500).json({ 
+      error: 'Upload failed',
+      message: error.message 
+    });
+  }
+});
+
+// GET /api/documents - List user's documents
+router.get('/documents', async (req, res) => {
+  try {
+    // TODO: Fetch from database
+    // const docs = await db.documents.findMany({ 
+    //   where: { userId: req.user?.id } 
+    // });
+    
+    res.json({ documents: [] }); // Return empty array for now
+  } catch (error) {
+    console.error('❌ Failed to fetch documents:', error);
+    res.status(500).json({ error: 'Failed to fetch documents' });
+  }
+});
+
+// DELETE /api/documents/:id - Delete a document
+router.delete('/documents/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // TODO: Delete from database and S3
+    // await db.documents.delete({ where: { id } });
+    
+    console.log('🗑️ Document deleted:', id);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('❌ Failed to delete document:', error);
+    res.status(500).json({ error: 'Failed to delete document' });
+  }
+});
+
+export default router;
+```
+
+#### Step 3: Mount the Documents Router
+
+**File: `server/src/app.ts` or `server/src/index.ts`**
+
+```typescript
+import express from 'express';
+import documentsRouter from './routes/documents';
+
+const app = express();
+
+// IMPORTANT: Set body size limits before routes
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ extended: true, limit: '25mb' }));
+
+// Mount the documents router
+app.use('/api', documentsRouter);
+
+// ... other routes and middleware
+```
+
+#### Step 4: Verify Client Upload Code
+
+**File: `client/src/components/document-upload.tsx` (or similar)**
+
+```typescript
+const handleFileUpload = async (file: File) => {
+  try {
+    console.log('📤 Uploading file:', file.name);
+    
+    const formData = new FormData();
+    formData.append('file', file); // Must match multer.single('file')
+    
+    const response = await fetch('/api/documents', {
+      method: 'POST',
+      body: formData,
+      // Don't set Content-Type - browser sets it with boundary
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Upload failed: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    console.log('✅ Upload successful:', result);
+    
+    // Add to UI
+    setDocuments(prev => [...prev, result]);
+    
+  } catch (error) {
+    console.error('❌ Upload failed:', error);
+    alert('Failed to upload document');
+  }
+};
+```
+
+#### Step 5: Add Health Check for Documents
+
+**Add to `server/src/routes/health.ts`:**
+
+```typescript
+router.get('/health/docs', async (req, res) => {
+  const checks = {
+    uploadRoute: true,
+    documentsTable: false,
+    timestamp: new Date().toISOString()
+  };
+  
+  try {
+    // Check if documents table exists
+    const result = await db.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_name = 'documents'
+      );
+    `);
+    checks.documentsTable = result.rows[0].exists;
+  } catch (error) {
+    console.error('Health check failed:', error);
+  }
+  
+  res.json(checks);
+});
+```
+
+---
+
+## Fix #3: Database Fail-Safe
+
+### Prevent 500 Errors from Missing Tables
+
+**File: `server/src/routes/realtime.ts`**
+
+```typescript
+async function saveRealtimeSession(sessionData: any) {
+  try {
+    await db.query(`
+      INSERT INTO realtime_sessions (
+        user_id, student_id, subject, language, 
+        age_group, voice, model, status
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `, [
+      sessionData.userId,
+      sessionData.studentId,
+      sessionData.subject,
+      sessionData.language,
+      sessionData.ageGroup,
+      sessionData.voice,
+      sessionData.model,
+      'active'
+    ]);
+  } catch (error: any) {
+    // PostgreSQL error code 42P01 = "undefined_table"
+    if (error.code === '42P01') {
+      console.warn('⚠️ realtime_sessions table missing; skipping DB save. Session continues normally.');
+      return; // Don't throw - let voice session work
+    }
+    
+    // Log but don't crash for other DB errors
+    console.error('❌ Failed to save session to DB:', error.message);
+    // Still don't throw - voice functionality is more important
+  }
+}
+```
+
+---
+
+## Deployment Checklist
+
+### 1. Environment Variables (Railway Dashboard)
+
+Verify these are set in Railway:
+```bash
+REALTIME_ENABLED=true
+REALTIME_TRANSPORT=webrtc
+OPENAI_API_KEY=sk-proj-...
+DATABASE_URL=postgresql://...
+```
+
+### 2. Build Command
+
+Ensure TypeScript compiles the documents route:
+```json
+{
+  "scripts": {
+    "build": "tsc && cp -r server/src/routes dist/server/src/"
+  }
+}
+```
+
+### 3. Start Command
+
+If using migrations:
+```bash
+npm run migrate && npm run start
+```
+
+Or just:
+```bash
+npm run start
+```
+
+---
+
+## Testing & Acceptance Criteria
+
+### Test WebSocket Connection
+
+1. Open production app
+2. Click "Start Tutoring"
+3. **Expected:**
+   - Console shows: `🔵 [WS] New connection attempt`
+   - Then: `✅ [WS] Connection accepted`
+   - Then: `👋 Sending greeting...`
+   - Hear greeting within 3 seconds
+   - No `⚠️ [WS] Connection closed` messages
+
+### Test Document Upload
+
+1. Click "Add Study Materials"
+2. Select a PDF file
+3. Click Upload
+4. **Expected:**
+   - Console shows: `📤 Uploading file: test.pdf`
+   - Network tab shows: `POST /api/documents → 200 OK`
+   - Console shows: `✅ Upload successful`
+   - File appears in UI list
+
+### Railway Logs Should Show
+
+✅ `🔵 [WS] New connection attempt`  
+✅ `✅ [WS] Connection accepted`  
+✅ `👋 Sending greeting...`  
+✅ `📄 File upload received`  
+✅ `✅ Document saved`  
+
+❌ No `⚠️ [WS] Connection closed` spam  
+❌ No `404` for `/api/documents`  
+❌ No `relation "realtime_sessions" does not exist` crashes  
+
+---
+
+## Debug Commands
+
+### Check if routes are mounted:
+```bash
+railway run node -e "require('./dist/app').listRoutes?.()" 
+```
+
+### Test WebSocket from CLI:
+```bash
+wscat -c "wss://your-app.railway.app/ws/realtime/test-123?token=test"
+```
+
+### Test upload endpoint:
+```bash
+curl -X POST https://your-app.railway.app/api/documents \
+  -F "file=@test.pdf" \
+  -v
+```
+
+### Check health:
+```bash
+curl https://your-app.railway.app/health/docs
+```
+
+---
+
+## Summary
+
+| Issue | Fix | Files Changed |
+|-------|-----|---------------|
+| WS Loop | Add heartbeat + logging + path verification | `server/src/routes/realtime.ts` |
+| No Greeting | Trigger after session.updated | `server/src/routes/realtime.ts` |
+| Upload 404 | Create documents route + mount it | `server/src/routes/documents.ts`, `server/src/app.ts` |
+| DB Crashes | Add fail-safe error handling | `server/src/routes/realtime.ts` |
+
+Apply these fixes, deploy, and you should have stable voice + working uploads in production! 🚀
