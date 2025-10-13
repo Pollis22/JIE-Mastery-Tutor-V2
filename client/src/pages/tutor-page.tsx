@@ -79,8 +79,8 @@ export default function TutorPage() {
   const memo = loadProgress();
   const [level, setLevel] = useState<AgentLevel>((memo.lastLevel as AgentLevel) || "k2");
   const [subject, setSubject] = useState(memo.lastSubject || "general");
-  const [studentName, setStudentName] = useState(user?.studentName || "");
-  const [gradeText, setGradeText] = useState(user?.gradeLevel || "");
+  const [studentName, setStudentName] = useState("");
+  const [gradeText, setGradeText] = useState("");
   const [mounted, setMounted] = useState(false);
   const [lastSummary, setLastSummary] = useState(memo.lastSummary || "");
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
@@ -89,6 +89,16 @@ export default function TutorPage() {
   const [summaryModalOpen, setSummaryModalOpen] = useState(false);
   const [transcriptMessages, setTranscriptMessages] = useState<ConvaiMessage[]>([]);
   const [isTranscriptConnected, setIsTranscriptConnected] = useState(false);
+
+  // Sync student name and grade when user loads
+  useEffect(() => {
+    if (user?.studentName) {
+      setStudentName(user.studentName);
+    }
+    if (user?.gradeLevel) {
+      setGradeText(user.gradeLevel);
+    }
+  }, [user]);
   
   // Session tracking state
   const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
