@@ -143,7 +143,8 @@ export class RealtimeServer {
 
   private async connectToOpenAI(session: ActiveSession) {
     try {
-      const model = 'gpt-4o-realtime-preview-2024-10-01';
+      // Use the latest model version
+      const model = 'gpt-4o-realtime-preview-2024-12-17';
       const wsUrl = `wss://api.openai.com/v1/realtime?model=${model}`;
 
       console.log(`[RealtimeWS] Connecting to OpenAI Realtime API for session ${session.sessionId}`);
@@ -157,86 +158,96 @@ export class RealtimeServer {
 
       session.openaiWs = openaiWs;
 
-      openaiWs.on('open', async () => {
+      openaiWs.on('open', () => {
         console.log(`[RealtimeWS] Connected to OpenAI for session ${session.sessionId}`);
-        
-        // Configure voice based on language/age group selection
-        const selectedVoice = session.voiceName || 'alloy';
-        console.log(`[RealtimeWS] Configuring OpenAI with voice: ${selectedVoice}`);
-        
-        // Build compact system instructions (without document context to stay under token limit)
-        const { instructions, documentContext } = await this.buildInstructionsWithContext(session);
-        
-        // Send initial session configuration with SHORT instructions
-        this.sendToOpenAI(session, {
-          type: 'session.update',
-          session: {
-            modalities: ['text', 'audio'],
-            instructions: instructions,
-            voice: selectedVoice,
-            input_audio_format: 'pcm16',
-            output_audio_format: 'pcm16',
-            input_audio_transcription: {
-              model: 'whisper-1',
-            },
-            turn_detection: {
-              type: 'server_vad',
-              threshold: 0.5,
-              prefix_padding_ms: 300,
-              silence_duration_ms: 200,
-            },
-          },
-        });
-
-        // Notify client that connection is ready
-        this.sendToClient(session, {
-          type: 'session.ready',
-          sessionId: session.sessionId,
-        });
-
-        // If there's document context, inject it as a conversation item (not in instructions)
-        if (documentContext) {
-          setTimeout(() => {
-            this.sendToOpenAI(session, {
-              type: 'conversation.item.create',
-              item: {
-                type: 'message',
-                role: 'system',
-                content: [
-                  {
-                    type: 'input_text',
-                    text: documentContext
-                  }
-                ]
-              }
-            });
-            console.log(`[RealtimeWS] Injected document context for session ${session.sessionId}`);
-          }, 100);
-        }
-
-        // Trigger initial greeting from AI tutor
-        setTimeout(() => {
-          this.sendToOpenAI(session, {
-            type: 'response.create',
-            response: {
-              modalities: ['audio', 'text'],
-            }
-          });
-          console.log(`[RealtimeWS] Triggered initial greeting for session ${session.sessionId}`);
-        }, documentContext ? 600 : 500); // Extra delay if context was injected
+        // OpenAI will send session.created event next
       });
 
-      openaiWs.on('message', (data: Buffer) => {
+      openaiWs.on('message', async (data: Buffer) => {
         // Log first message from OpenAI for debugging
         if (Buffer.isBuffer(data)) {
           const dataStr = data.toString();
           if (dataStr.startsWith('{')) {
             try {
               const msg = JSON.parse(dataStr);
-              if (msg.type === 'session.updated') {
+              
+              // Wait for session.created before configuring
+              if (msg.type === 'session.created') {
+                console.log(`[RealtimeWS] Session created by OpenAI for ${session.sessionId}`);
+                
+                // Now configure the session
+                const selectedVoice = session.voiceName || 'alloy';
+                console.log(`[RealtimeWS] Configuring OpenAI with voice: ${selectedVoice}`);
+                
+                // Build compact system instructions
+                const { instructions, documentContext } = await this.buildInstructionsWithContext(session);
+                console.log(`[RealtimeWS] Instructions prepared (${instructions.length} chars)`);
+                
+                // Send session configuration
+                const sessionConfig = {
+                  type: 'session.update',
+                  session: {
+                    modalities: ['text', 'audio'],
+                    instructions: instructions,
+                    voice: selectedVoice,
+                    input_audio_format: 'pcm16',
+                    output_audio_format: 'pcm16',
+                    input_audio_transcription: {
+                      model: 'whisper-1',
+                    },
+                    turn_detection: {
+                      type: 'server_vad',
+                      threshold: 0.5,
+                      prefix_padding_ms: 300,
+                      silence_duration_ms: 500,
+                    },
+                  },
+                };
+                
+                console.log(`[RealtimeWS] Sending session config with voice: ${selectedVoice}, instructions length: ${instructions.length}`);
+                this.sendToOpenAI(session, sessionConfig);
+                
+                // Notify client that connection is ready
+                this.sendToClient(session, {
+                  type: 'session.ready',
+                  sessionId: session.sessionId,
+                });
+                
+                // If there's document context, inject it as a conversation item
+                if (documentContext) {
+                  setTimeout(() => {
+                    this.sendToOpenAI(session, {
+                      type: 'conversation.item.create',
+                      item: {
+                        type: 'message',
+                        role: 'system',
+                        content: [
+                          {
+                            type: 'input_text',
+                            text: documentContext
+                          }
+                        ]
+                      }
+                    });
+                    console.log(`[RealtimeWS] Injected document context for session ${session.sessionId}`);
+                  }, 100);
+                }
+                
+                // Trigger initial greeting from AI tutor
+                setTimeout(() => {
+                  this.sendToOpenAI(session, {
+                    type: 'response.create',
+                    response: {
+                      modalities: ['audio', 'text'],
+                    }
+                  });
+                  console.log(`[RealtimeWS] Triggered initial greeting for session ${session.sessionId}`);
+                }, documentContext ? 600 : 500);
+                
+              } else if (msg.type === 'session.updated') {
                 console.log(`[RealtimeWS] Session configured successfully for ${session.sessionId}`);
-              } else if (msg.type === 'error') {
-                console.error(`[RealtimeWS] OpenAI error response:`, msg.error);
+              } else if (msg.type === 'error' || msg.type === 'server_error') {
+                console.error(`[RealtimeWS] OpenAI error response:`, msg);
               }
             } catch (e) {
               // Not JSON, likely audio data
