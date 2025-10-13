@@ -1,0 +1,243 @@
+# Task: Fix Production Database - Add realtime_sessions Table
+
+## Problem
+✅ WebRTC connection works  
+✅ OpenAI API key is correct  
+❌ Railway crashes with: `ERROR: relation "realtime_sessions" does not exist`
+
+The dev database has the table, but Railway's production Postgres doesn't.
+
+## Solution: 3-Part Fix
+
+### Part 1: Create the Database Table
+
+**Option A - Quick Fix (Railway Dashboard):**
+1. Go to Railway → Your Postgres Service → Data → Query
+2. Run this SQL:
+
+```sql
+-- Enable UUID extension if needed
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- Create the table
+CREATE TABLE IF NOT EXISTS realtime_sessions (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id          TEXT,
+  student_id       TEXT,
+  subject          TEXT,
+  language         TEXT,
+  age_group        TEXT,
+  voice            TEXT,
+  model            TEXT,
+  status           TEXT,
+  transcript       JSONB DEFAULT '[]'::jsonb,
+  context_documents JSONB DEFAULT '[]'::jsonb,
+  started_at       TIMESTAMPTZ DEFAULT now(),
+  ended_at         TIMESTAMPTZ,
+  minutes_used     NUMERIC(10,2) DEFAULT 0,
+  error_message    TEXT,
+  created_at       TIMESTAMPTZ DEFAULT now()
+);
+
+-- Add indexes for performance
+CREATE INDEX IF NOT EXISTS idx_rt_sessions_user ON realtime_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_rt_sessions_time ON realtime_sessions(started_at);
+CREATE INDEX IF NOT EXISTS idx_rt_sessions_status ON realtime_sessions(status);
+```
+
+**Option B - Proper Migration (recommended):**
+
+Create file: `server/src/db/migrations/003_create_realtime_sessions.sql`
+
+```sql
+-- Migration: Add realtime_sessions table
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+CREATE TABLE IF NOT EXISTS realtime_sessions (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id          TEXT,
+  student_id       TEXT,
+  subject          TEXT,
+  language         TEXT,
+  age_group        TEXT,
+  voice            TEXT,
+  model            TEXT,
+  status           TEXT,
+  transcript       JSONB DEFAULT '[]'::jsonb,
+  context_documents JSONB DEFAULT '[]'::jsonb,
+  started_at       TIMESTAMPTZ DEFAULT now(),
+  ended_at         TIMESTAMPTZ,
+  minutes_used     NUMERIC(10,2) DEFAULT 0,
+  error_message    TEXT,
+  created_at       TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_rt_sessions_user ON realtime_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_rt_sessions_time ON realtime_sessions(started_at);
+CREATE INDEX IF NOT EXISTS idx_rt_sessions_status ON realtime_sessions(status);
+```
+
+### Part 2: Make Database Insert Fail-Soft
+
+In `server/src/routes/realtime.ts` (or wherever you're inserting sessions), wrap the database insert to prevent crashes:
+
+```typescript
+// When saving a realtime session
+async function saveRealtimeSession(sessionData: any) {
+  try {
+    await db.query(`
+      INSERT INTO realtime_sessions (
+        user_id, student_id, subject, language, age_group, 
+        voice, model, status, transcript, context_documents
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    `, [
+      sessionData.userId,
+      sessionData.studentId,
+      sessionData.subject,
+      sessionData.language,
+      sessionData.ageGroup,
+      sessionData.voice,
+      sessionData.model,
+      'active',
+      JSON.stringify([]),
+      JSON.stringify([])
+    ]);
+  } catch (error: any) {
+    // Postgres error code 42P01 = "undefined_table"
+    if (error.code === '42P01') {
+      console.warn('⚠️ realtime_sessions table missing; skipping persistence. Session will still work.');
+      // Don't throw - let the voice session continue
+      return;
+    }
+    // For other errors, log but don't crash the session
+    console.error('❌ Failed to save realtime session:', error);
+    // Still don't throw - voice should work even if DB fails
+  }
+}
+```
+
+**Key point:** Voice sessions should work even if the database insert fails. Don't let DB errors break the core functionality.
+
+### Part 3: Add Database Health Check
+
+Create a new endpoint to verify the database setup:
+
+```typescript
+// In server/src/routes/health.ts or similar
+router.get('/health/db', async (req, res) => {
+  const checks = {
+    database: false,
+    realtimeSessions: false,
+    timestamp: new Date().toISOString()
+  };
+
+  try {
+    // Check basic DB connection
+    await db.query('SELECT 1');
+    checks.database = true;
+
+    // Check if realtime_sessions table exists
+    const result = await db.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'realtime_sessions'
+      );
+    `);
+    checks.realtimeSessions = result.rows[0].exists;
+
+    const allHealthy = checks.database && checks.realtimeSessions;
+    res.status(allHealthy ? 200 : 503).json({
+      status: allHealthy ? 'healthy' : 'degraded',
+      checks
+    });
+  } catch (error) {
+    res.status(503).json({
+      status: 'unhealthy',
+      checks,
+      error: error.message
+    });
+  }
+});
+```
+
+### Part 4: Auto-Run Migrations on Deploy (Optional but Recommended)
+
+Update `package.json`:
+
+```json
+{
+  "scripts": {
+    "start": "node dist/server.js",
+    "migrate": "psql $DATABASE_URL -f server/src/db/migrations/*.sql",
+    "start:prod": "npm run migrate && npm run start"
+  }
+}
+```
+
+In Railway, set the **Start Command** to:
+```bash
+npm run start:prod
+```
+
+Or if you prefer to keep migrations separate, run once manually:
+```bash
+railway run npm run migrate
+```
+
+## Testing Checklist
+
+After applying the fixes:
+
+✅ **Quick test (5 seconds):**
+```bash
+railway run psql $DATABASE_URL -c "SELECT count(*) FROM realtime_sessions;"
+```
+Should return a count (even if 0), not an error.
+
+✅ **Health check:**
+```bash
+curl https://your-app.railway.app/health/db
+```
+Should return: `{"status":"healthy","checks":{"database":true,"realtimeSessions":true}}`
+
+✅ **End-to-end test:**
+1. Open your production app
+2. Click "Start Voice"
+3. WebRTC connects ✅
+4. Audio works ✅
+5. No 500 errors in Railway logs ✅
+6. Session data saves to database ✅
+
+## What Changed vs Dev
+
+| Environment | Status |
+|-------------|--------|
+| **Dev (Replit)** | ✅ Table exists in local/dev DB |
+| **Prod (Railway)** | ❌ Table missing in prod Postgres |
+
+Same code, same API key - just missing table in prod database.
+
+## Rollback Plan
+
+If something goes wrong:
+1. The fail-soft wrapper ensures voice still works even if DB fails
+2. You can drop the table: `DROP TABLE IF EXISTS realtime_sessions CASCADE;`
+3. Re-run the CREATE TABLE statement
+
+## Success Indicators
+
+🟢 Railway logs show: `INSERT INTO realtime_sessions` succeeds  
+🟢 No more `ERROR: relation "realtime_sessions" does not exist`  
+🟢 Voice sessions work end-to-end  
+🟢 `/health/db` returns healthy status  
+🟢 Database persists session data for analytics
+
+## Priority Order
+
+1. **Now (30 seconds):** Run the CREATE TABLE SQL in Railway dashboard to unblock
+2. **Soon (5 minutes):** Add fail-soft wrapper to prevent future DB errors from breaking voice
+3. **Later (10 minutes):** Add health check endpoint for monitoring
+4. **Eventually:** Set up auto-migrations on deploy
+
+The fastest path: Copy the SQL from Part 1 → paste in Railway Postgres Query tab → Execute → Done! 🚀
