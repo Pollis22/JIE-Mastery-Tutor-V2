@@ -148,7 +148,7 @@ export class RealtimeServer {
       const { instructions, documentContext } = await this.buildInstructionsWithContext(session);
       const selectedVoice = session.voiceName || 'alloy';
       
-      console.log(`[RealtimeWS] Instructions ready: ${instructions.length} chars for ${session.studentName}`);
+      console.log(`[RealtimeWS] Instructions ready: ${instructions.length} chars`);
       
       // Store document context in session for later injection
       (session as any).documentContext = documentContext;
@@ -376,6 +376,11 @@ export class RealtimeServer {
 
       const [dbSession] = await db.select().from(realtimeSessions)
         .where(eq(realtimeSessions.id, session.sessionId));
+      
+      if (!dbSession) {
+        console.error(`[RealtimeWS] Session not found in database: ${session.sessionId}`);
+        return {instructions: 'You are a friendly, patient AI tutor. Use the Socratic teaching method to guide students.'};
+      }
 
       // Fetch user profile for personalization
       const user = await storage.getUser(session.userId);
@@ -384,24 +389,22 @@ export class RealtimeServer {
         return {instructions: 'You are a friendly, patient AI tutor. Use the Socratic teaching method to guide students.'};
       }
 
+      // Use session's ageGroup (not user's gradeLevel) and subject
       const studentName = user.studentName || user.firstName || 'there';
-      const gradeLevel = user.gradeLevel || 'general';
-      const primarySubject = user.primarySubject || 'learning';
+      const ageGroup = dbSession.ageGroup || 'General';
+      const subject = dbSession.subject || user.primarySubject || 'learning';
       
-      // Map grade levels to friendly names
-      const gradeLevelMap: Record<string, string> = {
-        'kindergarten-2': 'K-2',
-        'grades-3-5': 'Grades 3-5',
-        'grades-6-8': 'Grades 6-8',
-        'grades-9-12': 'Grades 9-12',
-        'college-adult': 'College/Adult'
-      };
-      const gradeName = gradeLevelMap[gradeLevel] || gradeLevel;
+      console.log(`[RealtimeWS] Building instructions with session data:`, {
+        studentName,
+        ageGroup,
+        subject,
+        sessionId: session.sessionId
+      });
 
       // Base instructions - KEEP SHORT to stay under 16k token limit
-      const instructions = `You are a friendly, patient AI tutor for ${studentName}, a ${gradeName} student interested in ${primarySubject}.
+      const instructions = `You are a friendly, patient AI tutor for ${studentName}, a ${ageGroup} level student interested in ${subject}.
 
-IMPORTANT: Greet ${studentName} by name and ask what they'd like to learn. Use Socratic teaching - guide with questions rather than direct answers. Keep responses age-appropriate for ${gradeName} level.`;
+IMPORTANT: Greet ${studentName} by name and ask what they'd like to learn. Use Socratic teaching - guide with questions rather than direct answers. Keep responses age-appropriate for ${ageGroup} level.`;
 
       // Handle document context separately
       let documentContext: string | undefined;
@@ -422,7 +425,7 @@ IMPORTANT: Greet ${studentName} by name and ask what they'd like to learn. Use S
         }
       }
 
-      console.log(`[RealtimeWS] Built compact instructions for ${studentName} (${gradeName}, ${primarySubject})`);
+      console.log(`[RealtimeWS] ✅ Instructions built successfully with correct session data`);
       return {instructions, documentContext};
 
     } catch (error) {
