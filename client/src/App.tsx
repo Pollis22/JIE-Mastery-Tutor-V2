@@ -28,6 +28,7 @@ import AdminLogs from "@/pages/admin-logs";
 import AdminContacts from "@/pages/admin/admin-contacts-page";
 import AdminAgents from "@/pages/admin/admin-agents-page";
 import TermsPage from "@/pages/terms-page";
+import AdminSetupPage from "@/pages/admin-setup-page";
 
 function Router() {
   return (
@@ -51,6 +52,7 @@ function Router() {
       <ProtectedRoute path="/subscribe" component={SubscribePage} />
       <Route path="/auth" component={AuthPage} />
       <Route path="/login" component={AuthPage} />
+      <Route path="/admin-setup" component={AdminSetupPage} />
       <Route path="/pricing" component={PricingPage} />
       <Route path="/benefits" component={BenefitsPage} />
       <Route path="/terms" component={TermsPage} />
