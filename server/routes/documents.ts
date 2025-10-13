@@ -139,6 +139,7 @@ router.post('/upload', upload.single('file'), async (req, res) => {
 
 /**
  * Get user's documents (root route)
+ * Returns array directly for compatibility with StudentProfilePanel
  */
 router.get('/', async (req, res) => {
   try {
@@ -149,24 +150,23 @@ router.get('/', async (req, res) => {
 
     const documents = await storage.getUserDocuments(userId);
     
-    res.json({
-      documents: documents.map(doc => ({
-        id: doc.id,
-        title: doc.title,
-        originalName: doc.originalName,
-        fileType: doc.fileType,
-        fileSize: doc.fileSize,
-        subject: doc.subject,
-        grade: doc.grade,
-        description: doc.description,
-        keepForFutureSessions: doc.keepForFutureSessions,
-        processingStatus: doc.processingStatus,
-        processingError: doc.processingError,
-        retryCount: doc.retryCount,
-        nextRetryAt: doc.nextRetryAt,
-        createdAt: doc.createdAt
-      }))
-    });
+    // Return array directly (not wrapped in object)
+    res.json(documents.map(doc => ({
+      id: doc.id,
+      title: doc.title,
+      originalName: doc.originalName,
+      fileType: doc.fileType,
+      fileSize: doc.fileSize,
+      subject: doc.subject,
+      grade: doc.grade,
+      description: doc.description,
+      keepForFutureSessions: doc.keepForFutureSessions,
+      processingStatus: doc.processingStatus,
+      processingError: doc.processingError,
+      retryCount: doc.retryCount,
+      nextRetryAt: doc.nextRetryAt,
+      createdAt: doc.createdAt
+    })));
 
   } catch (error) {
     console.error('List documents error:', error);
