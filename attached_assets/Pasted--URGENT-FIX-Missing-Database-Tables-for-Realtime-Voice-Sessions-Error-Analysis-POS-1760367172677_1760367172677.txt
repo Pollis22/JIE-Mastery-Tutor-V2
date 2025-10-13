@@ -1,0 +1,319 @@
+# URGENT FIX: Missing Database Tables for Realtime Voice Sessions
+
+## Error Analysis
+
+```
+❌ POST /api/session/realtime/start - 500 Internal Server Error
+❌ Database Error: relation "realtime_sessions" does not exist at character 13
+❌ Failed to start realtime session
+```
+
+## Root Cause
+
+The code is trying to insert into a `realtime_sessions` table that **doesn't exist** in the PostgreSQL database.
+
+---
+
+## Fix #1: Add Missing Database Tables to Schema
+
+### Location: `server/db/schema.ts`
+
+Add these table definitions:
+
+```typescript
+import { pgTable, serial, integer, text, timestamp, jsonb, boolean, vector } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+
+// Existing tables (users, students, subscriptions, documents, sessions)...
+
+// ADD THIS: Realtime voice sessions table
+export const realtimeSessions = pgTable("realtime_sessions", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  studentId: integer("student_id").references(() => students.id, { onDelete: 'cascade' }),
+  subject: text("subject"),
+  gradeLevel: text("grade_level"),
+  language: text("language").default("en"),
+  voice: text("voice"), // Azure voice name
+  model: text("model").default("gpt-4o-realtime-preview"),
+  status: text("status").default("active"), // active, ended, error
+  transcript: jsonb("transcript").default([]),
+  contentDocuments: jsonb("content_documents").default([]), // Referenced document IDs
+  startedAt: timestamp("started_at").defaultNow(),
+  endedAt: timestamp("ended_at"),
+  minutesUsed: integer("minutes_used").default(0),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").defaultNow()
+});
+
+// ADD THIS: Document embeddings for RAG (if implementing document-aware voice tutoring)
+export const documentEmbeddings = pgTable("document_embeddings", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  studentId: integer("student_id").references(() => students.id, { onDelete: 'cascade' }),
+  documentId: integer("document_id").references(() => documents.id, { onDelete: 'cascade' }).notNull(),
+  chunkIndex: integer("chunk_index").notNull(),
+  content: text("content").notNull(),
+  embedding: vector("embedding", { dimensions: 1536 }), // OpenAI embedding size
+  metadata: jsonb("metadata").default({}), // page number, section, etc.
+  createdAt: timestamp("created_at").defaultNow()
+});
+
+// ADD THIS: Email logs table (for tracking sent emails)
+export const emailLogs = pgTable("email_logs", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id, { onDelete: 'cascade' }),
+  type: text("type").notNull(), // 'welcome', 'receipt', 'password_reset'
+  to: text("to").notNull(),
+  subject: text("subject").notNull(),
+  sentAt: timestamp("sent_at").defaultNow(),
+  metadata: jsonb("metadata").default({})
+});
+```
+
+---
+
+## Fix #2: Install pgvector Extension (Required for RAG)
+
+### Option A: If using Railway PostgreSQL
+
+1. Connect to Railway PostgreSQL
+2. Run this SQL command:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+```
+
+### Option B: If using Neon or other provider
+
+Most PostgreSQL providers have pgvector available. Enable it in your database settings or run the SQL command above.
+
+### Option C: Skip vector embeddings for now
+
+If you want to defer the RAG document feature, you can:
+1. Remove the `embedding: vector(...)` line from `documentEmbeddings`
+2. Change it to: `embedding: text("embedding")` (store as text temporarily)
+3. Come back to implement proper vector search later
+
+---
+
+## Fix #3: Run Database Migration
+
+After updating the schema, run the migration to create the tables:
+
+```bash
+# In your project directory (Replit or local)
+npm run db:push
+
+# OR if that doesn't work:
+npx drizzle-kit push:pg
+```
+
+This will:
+- ✅ Create `realtime_sessions` table
+- ✅ Create `document_embeddings` table
+- ✅ Create `email_logs` table
+- ✅ Apply all schema changes to Railway PostgreSQL
+
+---
+
+## Fix #4: Verify API Endpoint Exists
+
+### Check: `server/routes.ts`
+
+Make sure this endpoint is defined:
+
+```typescript
+// POST /api/session/realtime/start - Start realtime voice session
+app.post("/api/session/realtime/start", requireAuth, async (req, res) => {
+  try {
+    const { studentId, subject, gradeLevel, language } = req.body;
+    const userId = req.session.userId;
+    
+    if (!userId) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+    
+    // Validate user has credits
+    const user = await db.query.users.findFirst({
+      where: eq(users.id, userId)
+    });
+    
+    if (!user || user.credits <= 0) {
+      return res.status(403).json({ 
+        error: "No voice minutes remaining. Please purchase more minutes to continue." 
+      });
+    }
+    
+    // Create session record
+    const session = await db.insert(realtimeSessions).values({
+      userId: userId,
+      studentId: studentId || null,
+      subject: subject || 'General',
+      gradeLevel: gradeLevel || 'General',
+      language: language || 'en',
+      status: 'active',
+      transcript: [],
+      contentDocuments: [],
+      startedAt: new Date()
+    }).returning();
+    
+    // Return session details for frontend
+    res.json({
+      sessionId: session[0].id,
+      message: "Session created successfully",
+      creditsRemaining: user.credits
+    });
+    
+  } catch (error) {
+    console.error('Error starting realtime session:', error);
+    res.status(500).json({ 
+      error: "Failed to start realtime session",
+      details: error.message 
+    });
+  }
+});
+```
+
+---
+
+## Fix #5: Add Missing /api/documents Endpoint
+
+The browser console shows 404 errors for `/api/documents`. Add this endpoint:
+
+```typescript
+// GET /api/documents - Get user's uploaded documents
+app.get("/api/documents", requireAuth, async (req, res) => {
+  try {
+    const userId = req.session.userId;
+    
+    const userDocuments = await db.query.documents.findMany({
+      where: eq(documents.userId, userId!),
+      orderBy: desc(documents.uploadedAt)
+    });
+    
+    res.json({ documents: userDocuments });
+    
+  } catch (error) {
+    console.error('Error fetching documents:', error);
+    res.status(500).json({ error: "Failed to fetch documents" });
+  }
+});
+
+// POST /api/documents/upload - Upload document
+app.post("/api/documents/upload", requireAuth, async (req, res) => {
+  try {
+    // Document upload logic here
+    // (This can be implemented later for RAG features)
+    
+    res.json({ 
+      message: "Document upload endpoint - Coming soon!",
+      note: "This feature will be enabled when RAG voice tutoring is fully implemented"
+    });
+    
+  } catch (error) {
+    console.error('Error uploading document:', error);
+    res.status(500).json({ error: "Failed to upload document" });
+  }
+});
+```
+
+---
+
+## Fix #6: Temporary Fallback - Disable Realtime for Now
+
+If you want to get the voice session working immediately without full RAG implementation:
+
+### Option: Keep ElevenLabs ConvAI as Primary
+
+In `client/src/pages/TutorPage.tsx`, ensure the ElevenLabs integration is still working:
+
+```typescript
+// Check if realtime is enabled, otherwise fall back to ElevenLabs
+const USE_REALTIME = process.env.VITE_USE_REALTIME === 'true';
+
+const startSession = async () => {
+  if (USE_REALTIME) {
+    // Try new realtime API
+    await startRealtimeSession();
+  } else {
+    // Fall back to ElevenLabs ConvAI
+    await startElevenLabsSession();
+  }
+};
+```
+
+Set in `.env`:
+```bash
+VITE_USE_REALTIME=false
+```
+
+This lets voice tutoring work with ElevenLabs while you implement the new realtime system.
+
+---
+
+## Priority Order
+
+### **IMMEDIATE (Do First - 15 minutes):**
+
+1. ✅ Add `realtimeSessions` table to `server/db/schema.ts`
+2. ✅ Add `emailLogs` table to `server/db/schema.ts`
+3. ✅ Run `npm run db:push` to create tables
+4. ✅ Verify tables exist in Railway PostgreSQL
+5. ✅ Test `/api/session/realtime/start` endpoint
+
+### **HIGH PRIORITY (1 hour):**
+
+6. ✅ Add `/api/documents` GET endpoint
+7. ✅ Fix any remaining API errors in console
+8. ✅ Test voice session starts successfully
+
+### **MEDIUM PRIORITY (Defer if needed):**
+
+9. Add `documentEmbeddings` table (only needed for RAG features)
+10. Install pgvector extension
+11. Implement full document upload and embedding pipeline
+
+---
+
+## Testing Steps
+
+After running migration:
+
+1. **Verify tables exist:**
+   - Check Railway PostgreSQL database
+   - Should see `realtime_sessions` table
+   - Should see `email_logs` table
+
+2. **Test session start:**
+   - Go to Tutor page
+   - Click "Start Tutoring Session"
+   - Should NOT see "Failed to start realtime session" error
+   - Check Railway logs - should see: "Session created successfully"
+
+3. **Check browser console:**
+   - Should NOT see 500 errors
+   - May still see 404 for documents (that's OK for now)
+
+---
+
+## Expected Results After Fix
+
+✅ Database tables created successfully  
+✅ `/api/session/realtime/start` returns 200 OK  
+✅ Voice tutoring session starts without errors  
+✅ Session is recorded in `realtime_sessions` table  
+✅ No more "relation does not exist" errors  
+
+---
+
+## Critical Notes
+
+- **DON'T delete existing tables** - just ADD the new ones
+- **RUN migration** - code changes alone won't create tables
+- **Check Railway logs** after deployment to verify tables were created
+- If pgvector fails, use text field temporarily for embeddings
+
+---
+
+**START WITH FIX #1 and #3 - Add tables to schema and run migration. This is the blocker preventing voice sessions from starting.**

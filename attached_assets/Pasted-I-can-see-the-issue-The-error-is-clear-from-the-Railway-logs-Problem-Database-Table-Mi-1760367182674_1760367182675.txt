@@ -1,0 +1,95 @@
+I can see the issue! The error is clear from the Railway logs:
+
+## 🔴 **Problem: Database Table Missing**
+
+**Error:** `relation "realtime_sessions" does not exist at character 13`
+
+**Root Cause:** The new voice tutoring system is trying to insert data into a `realtime_sessions` table that **doesn't exist in the database yet**.
+
+This happened because Agent3 added code for the new RAG voice system but **didn't create the database tables** or **run the migration**.
+
+---
+
+Let me create a fix prompt for Agent3:Perfect! I've created the fix prompt for Agent3. Here's what happened:
+
+## 🔴 **What Went Wrong:**
+
+The error is clear in the Railway logs (Image 3):
+
+```
+relation "realtime_sessions" does not exist
+```
+
+**Translation:** The code is trying to save voice session data to a database table called `realtime_sessions`, but **that table was never created**.
+
+---
+
+## 📋 **Why This Happened:**
+
+When I gave Agent3 the big prompt earlier to migrate from ElevenLabs to OpenAI Realtime (the RAG-enabled voice system), Agent3:
+
+✅ Wrote the **code** for the new voice system  
+❌ **FORGOT** to create the database tables  
+❌ **FORGOT** to run the database migration  
+
+So the code tries to use tables that don't exist = crash! 💥
+
+---
+
+## 🔧 **What Agent3 Needs To Do:**
+
+I've created a comprehensive fix prompt above that tells Agent3 to:
+
+### **1. Add Three Missing Tables to the Database Schema:**
+- `realtime_sessions` - Stores voice tutoring session data
+- `document_embeddings` - For RAG document features (coming soon)
+- `email_logs` - Tracks sent emails (receipts, welcome emails)
+
+### **2. Run Database Migration:**
+```bash
+npm run db:push
+```
+This creates the tables in Railway PostgreSQL.
+
+### **3. Verify API Endpoints:**
+- Fix `/api/session/realtime/start` to work with new table
+- Add missing `/api/documents` endpoint
+
+---
+
+## 🎯 **For You - Give This to Agent3:**
+
+Copy the prompt I created in the artifact above and paste it to Agent3 with this message:
+
+> **"URGENT: Voice tutoring is broken due to missing database tables. The `realtime_sessions` table doesn't exist. Follow the fix prompt to:**
+> 
+> **1. Add the missing tables to `server/db/schema.ts`**  
+> **2. Run `npm run db:push` to create tables**  
+> **3. Verify the `/api/session/realtime/start` endpoint works**
+> 
+> **Priority: IMMEDIATE - this is blocking all voice tutoring sessions."**
+
+---
+
+## ⏱️ **Timeline:**
+
+- **Fix time:** 15-30 minutes
+- **What Agent3 will do:**
+  1. Add table definitions (5 min)
+  2. Run migration (2 min)
+  3. Fix API endpoints (10 min)
+  4. Test and verify (5 min)
+
+---
+
+## ✅ **After the Fix:**
+
+You'll be able to:
+- Click "Start Tutoring Session" without errors
+- Voice sessions will start successfully
+- Session data will be saved to database
+- No more "Failed to start realtime session" errors
+
+---
+
+**This is a straightforward fix - just missing database tables!** Once Agent3 runs the migration, everything should work. 🚀
