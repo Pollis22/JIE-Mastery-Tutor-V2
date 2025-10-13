@@ -38,6 +38,8 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions): UseRealtimeV
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioQueueRef = useRef<Int16Array[]>([]);
   const isPlayingRef = useRef(false);
+  const pcRef = useRef<RTCPeerConnection | null>(null);
+  const dataChannelRef = useRef<RTCDataChannel | null>(null);
 
   const addMessage = useCallback((message: RealtimeMessage) => {
     setMessages(prev => [...prev, message]);
@@ -73,6 +75,119 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions): UseRealtimeV
 
     isPlayingRef.current = false;
   }, []);
+
+  // Helper to ensure remote audio element exists
+  const ensureRemoteAudioElement = useCallback((): HTMLAudioElement => {
+    let el = document.getElementById("realtime-audio") as HTMLAudioElement | null;
+    if (!el) {
+      el = document.createElement("audio");
+      el.id = "realtime-audio";
+      el.autoplay = true;
+      el.setAttribute('playsinline', 'true');
+      document.body.appendChild(el);
+    }
+    return el;
+  }, []);
+
+  // Connect to OpenAI Realtime via WebRTC
+  const connectToOpenAIWebRTC = useCallback(async ({
+    clientSecret,
+    model = "gpt-4o-realtime-preview",
+  }: { clientSecret: string; model?: string }) => {
+    if (!clientSecret) throw new Error("Missing clientSecret for WebRTC");
+
+    console.log("🔵 Starting WebRTC connection...");
+
+    // 1) Create peer connection
+    const pc = new RTCPeerConnection();
+    pcRef.current = pc;
+
+    // Log connection states
+    pc.onconnectionstatechange = () => {
+      console.log("pc.state", pc.connectionState);
+      if (pc.connectionState === 'connected') {
+        setIsConnected(true);
+        setStatus('active');
+      } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+        setIsConnected(false);
+        setStatus('error');
+      }
+    };
+    pc.oniceconnectionstatechange = () => console.log("pc.ice", pc.iceConnectionState);
+
+    // 2) Remote audio sink (must be created after user gesture)
+    const audioEl = ensureRemoteAudioElement();
+    pc.ontrack = (e) => {
+      console.log("🎵 Received audio track");
+      if (audioEl.srcObject !== e.streams[0]) {
+        audioEl.srcObject = e.streams[0];
+      }
+    };
+
+    // 3) Data channel for events/logs (optional but useful)
+    const dc = pc.createDataChannel("oai-events");
+    dataChannelRef.current = dc;
+    dc.onopen = () => console.log("✅ DataChannel open");
+    dc.onmessage = (ev) => {
+      try {
+        const message = JSON.parse(ev.data);
+        console.log("DC message:", message.type);
+        
+        // Handle transcript messages from data channel
+        if (message.type === 'response.audio_transcript.done' && message.transcript) {
+          addMessage({
+            role: 'assistant',
+            content: message.transcript,
+            timestamp: new Date(),
+          });
+        } else if (message.type === 'conversation.item.input_audio_transcription.completed' && message.transcript) {
+          addMessage({
+            role: 'user',
+            content: message.transcript,
+            timestamp: new Date(),
+          });
+        }
+      } catch (error) {
+        console.log("DC message (non-JSON):", ev.data);
+      }
+    };
+
+    // 4) Add local mic track (Opus over WebRTC)
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream.getAudioTracks().forEach((t) => pc.addTrack(t, stream));
+
+    // 5) Create and set local offer
+    const offer = await pc.createOffer({
+      offerToReceiveAudio: true,
+      offerToReceiveVideo: false,
+    });
+    await pc.setLocalDescription(offer);
+
+    // 6) Send SDP offer to OpenAI
+    const base = "https://api.openai.com/v1/realtime";
+    const sdpResp = await fetch(`${base}?model=${encodeURIComponent(model)}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${clientSecret}`,
+        "Content-Type": "application/sdp",
+        "OpenAI-Beta": "realtime=v1",
+      },
+      body: offer.sdp,
+    });
+
+    if (!sdpResp.ok) {
+      const text = await sdpResp.text().catch(() => "");
+      console.error(`❌ SDP exchange failed: ${sdpResp.status}`, text);
+      throw new Error(`Realtime SDP exchange failed: ${sdpResp.status} ${text}`);
+    }
+
+    // 7) Apply remote answer
+    const answerSdp = await sdpResp.text();
+    await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
+
+    console.log("✅ WebRTC connected; remote description set");
+    return pc;
+  }, [ensureRemoteAudioElement, addMessage]);
 
   const connect = useCallback(() => {
     if (!wsUrl || !token) {
@@ -117,6 +232,35 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions): UseRealtimeV
 
           // Handle different message types
           switch (message.type) {
+            case 'webrtc.credentials': {
+              console.log('🔑 Received webrtc.credentials');
+              const { client_secret, model } = message;
+              
+              try {
+                await connectToOpenAIWebRTC({ 
+                  clientSecret: client_secret?.value, 
+                  model: model || "gpt-4o-realtime-preview" 
+                });
+                
+                // After WebRTC connection, send hello probe via existing socket
+                if (ws) {
+                  ws.send(JSON.stringify({
+                    type: "response.create",
+                    response: { 
+                      modalities: ["audio"], 
+                      instructions: "Say 'hello' clearly once.", 
+                      voice: voice || "alloy" 
+                    }
+                  }));
+                }
+              } catch (error) {
+                console.error("❌ WebRTC connection failed:", error);
+                setStatus('error');
+                onError?.('Failed to setup WebRTC connection');
+              }
+              break;
+            }
+
             case 'session.ready':
               console.log('[RealtimeVoice] Session ready');
               break;
@@ -226,18 +370,32 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions): UseRealtimeV
       setStatus('error');
       onError?.('Failed to initialize connection');
     }
-  }, [wsUrl, token, addMessage, onError, toast]);
+  }, [wsUrl, token, addMessage, onError, toast, connectToOpenAIWebRTC, voice]);
 
   const disconnect = useCallback(() => {
+    // Close WebSocket
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
     }
+    
+    // Close WebRTC connection
+    if (dataChannelRef.current) {
+      dataChannelRef.current.close();
+      dataChannelRef.current = null;
+    }
+    if (pcRef.current) {
+      pcRef.current.close();
+      pcRef.current = null;
+    }
+    
     setIsConnected(false);
     setStatus('ended');
   }, []);
 
   const sendAudio = useCallback((audioData: ArrayBuffer) => {
+    // For WebRTC, audio is sent automatically via the media track
+    // Only send via WebSocket if that's the active connection
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(audioData);
     }
