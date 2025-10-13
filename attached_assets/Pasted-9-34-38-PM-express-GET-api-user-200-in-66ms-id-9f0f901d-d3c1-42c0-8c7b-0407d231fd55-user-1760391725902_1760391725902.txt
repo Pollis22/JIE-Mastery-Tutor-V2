@@ -1,0 +1,49 @@
+9:34:38 PM [express] GET /api/user 200 in 66ms :: {"id":"9f0f901d-d3c1-42c0-8c7b-0407d231fd55","user…
+9:34:38 PM [express] GET /api/health 200 in 0ms :: {"status":"ok","timestamp":"2025-10-13T21:34:38.2…
+9:34:38 PM [express] GET /api/documents 404 in 69ms
+9:34:38 PM [express] GET /api/students 304 in 132ms :: []
+9:34:38 PM [express] POST /api/session/check-availability 200 in 193ms :: {"allowed":true,"remaining…
+9:34:41 PM [express] POST /api/session/check-availability 200 in 197ms :: {"allowed":true,"remaining…
+[RealtimeAPI] Voice mapped: en/6-8 → alloy
+[RealtimeAPI] Created session 72ee40e5-dbca-43bf-89b5-33dac0ad634e for user 9f0f901d-d3c1-42c0-8c7b-0407d231fd55
+9:34:43 PM [express] POST /api/session/realtime/start 200 in 265ms :: {"sessionId":"72ee40e5-dbca-43…
+[RealtimeWS] Client attempting connection for session 72ee40e5-dbca-43bf-89b5-33dac0ad634e
+[RealtimeWS] Client authenticated for session 72ee40e5-dbca-43bf-89b5-33dac0ad634e
+[RealtimeWS] Session config: language=en, ageGroup=6-8
+[RealtimeWS] Voice selected: alloy - Clear, balanced voice for middle school
+[RealtimeWS] [conn-72ee40e5-1760391284004] Starting connection for session 72ee40e5-dbca-43bf-89b5-33dac0ad634e
+[RealtimeWS] [conn-72ee40e5-1760391284004] Transport mode: webrtc
+[RealtimeWS] Minting session with model: gpt-4o-realtime-preview, voice: alloy
+[RealtimeWS] Session minted successfully: {
+  id: 'sess_CQKTkJqePEsXRQ36uixdy',
+  model: 'gpt-4o-realtime-preview',
+  transport: 'webrtc'
+}
+[RealtimeWS] [conn-72ee40e5-1760391284004] Sent WebRTC credentials to client
+9:35:08 PM [express] POST /api/session/check-availability 200 in 200ms :: {"allowed":true,"remaining…
+9:35:39 PM [express] POST /api/session/check-availability 200 in 258ms :: {"allowed":true,"remaining…
+Document 4872677a-4761-43fa-850b-4995eec238f6 queued for processing
+9:35:56 PM [express] POST /api/documents/upload 200 in 284ms :: {"id":"4872677a-4761-43fa-850b-4995e…
+9:35:56 PM [express] GET /api/documents 404 in 66ms
+[EmbeddingWorker] Processing 1 documents
+[EmbeddingWorker] Processing document 4872677a-4761-43fa-850b-4995eec238f6
+[DB] ✓ Database connection established
+[DB] ✓ Database connection established
+[DB] ✓ Database connection established
+[DB] ✓ Database connection established
+[DB] ✓ Database connection established
+Document aa1983d4-1f2b-4982-9e1c-503921fa0fd0 queued for processing
+9:36:08 PM [express] POST /api/documents/upload 200 in 140ms :: {"id":"aa1983d4-1f2b-4982-9e1c-50392…
+[EmbeddingWorker] Successfully processed document 4872677a-4761-43fa-850b-4995eec238f6
+[DB] ✓ Database connection established
+9:36:08 PM [express] GET /api/documents 404 in 464ms
+9:36:09 PM [express] POST /api/session/check-availability 200 in 198ms :: {"allowed":true,"remaining…
+[EmbeddingWorker] Processing 1 documents
+[EmbeddingWorker] Processing document aa1983d4-1f2b-4982-9e1c-503921fa0fd0
+[EmbeddingWorker] Successfully processed document aa1983d4-1f2b-4982-9e1c-503921fa0fd0
+9:36:34 PM [express] POST /api/session/realtime/72ee40e5-dbca-43bf-89b5-33dac0ad634e/end 200 in 200m…
+[RealtimeWS] Client disconnected for session 72ee40e5-dbca-43bf-89b5-33dac0ad634e
+[RealtimeWS] Session 72ee40e5-dbca-43bf-89b5-33dac0ad634e ended. Duration: 2 minutes
+[RealtimeWS] Session 72ee40e5-dbca-43bf-89b5-33dac0ad634e saved to database
+9:36:39 PM [express] POST /api/session/check-availability 200 in 200ms :: {"allowed":true,"remaining…
+9:37:09 PM [express] POST /api/session/check-availability 200 in 197ms :: {"allowed":true,"remaining…
