@@ -71,7 +71,7 @@ const mapLanguageToISO = (language?: string | null): 'en' | 'es' | 'hi' | 'zh' =
 };
 
 export default function TutorPage() {
-  const { user } = useAuth();
+  const { user, logoutMutation } = useAuth();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const [scriptReady, setScriptReady] = useState(false);
@@ -429,13 +429,12 @@ export default function TutorPage() {
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem 
-                      onClick={async () => {
-                        try {
-                          await apiRequest('POST', '/api/logout', {});
-                          setLocation('/auth');
-                        } catch (error) {
-                          console.error('Logout error:', error);
-                        }
+                      onClick={() => {
+                        logoutMutation.mutate(undefined, {
+                          onSuccess: () => {
+                            setLocation('/auth');
+                          }
+                        });
                       }}
                       data-testid="menu-item-signout"
                     >
