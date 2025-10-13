@@ -7,6 +7,7 @@ import { promisify } from "util";
 import { storage } from "./storage";
 import { User as SelectUser } from "@shared/schema";
 import { emailService } from "./services/email-service";
+import { z } from "zod";
 
 declare global {
   namespace Express {
@@ -178,15 +179,38 @@ export function setupAuth(app: Express) {
   });
 
   app.post("/api/register", async (req, res, next) => {
-    const existingUser = await storage.getUserByUsername(req.body.username);
+    // Validate registration payload
+    const registerSchema = z.object({
+      email: z.string().email(),
+      username: z.string().min(1),
+      password: z.string().min(8),
+      firstName: z.string().min(1, "First name is required"),
+      lastName: z.string().min(1, "Last name is required"),
+      parentName: z.string().optional(),
+      studentName: z.string().min(1, "Student name is required"),
+      studentAge: z.number().optional(),
+      gradeLevel: z.string().min(1, "Grade level is required"),
+      primarySubject: z.string().optional(),
+      marketingOptIn: z.boolean().optional(),
+    });
+
+    const validation = registerSchema.safeParse(req.body);
+    if (!validation.success) {
+      return res.status(400).json({ 
+        error: "Validation failed", 
+        details: validation.error.errors 
+      });
+    }
+
+    const existingUser = await storage.getUserByUsername(validation.data.username);
     if (existingUser) {
       return res.status(400).send("Username already exists");
     }
 
     const user = await storage.createUser({
-      ...req.body,
-      password: await hashPassword(req.body.password),
-      marketingOptInDate: req.body.marketingOptIn ? new Date() : null,
+      ...validation.data,
+      password: await hashPassword(validation.data.password),
+      marketingOptInDate: validation.data.marketingOptIn ? new Date() : null,
     });
 
     req.login(user, async (err) => {
