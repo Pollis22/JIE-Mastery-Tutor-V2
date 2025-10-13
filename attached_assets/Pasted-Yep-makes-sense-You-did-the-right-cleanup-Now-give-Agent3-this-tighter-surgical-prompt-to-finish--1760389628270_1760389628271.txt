@@ -1,0 +1,151 @@
+Yep—makes sense. You did the right cleanup. Now give Agent3 this tighter, surgical prompt to finish it off and kill the lingering `server_error`.
+
+---
+
+# Agent3 Task: Realtime “server_error” — harden connect flow, validate frames, and prove audio
+
+## Objective
+
+Eliminate intermittent `server_error` after `session.update`. Make audio reliably play (“thud → hello”) and keep robust logs for any future regressions.
+
+## Context (do not re-argue)
+
+* We use OpenAI Realtime with **WebRTC** as default, **WebSocket** optional.
+* We’ve removed the bogus “500+ chars” validation and added a hello probe + DebugPanel.
+* We still see occasional `server_error` after a valid `session.update`.
+
+## Root-cause hypotheses to guard against
+
+1. **Illegal/unknown fields in `session.update`** (e.g., `output_audio_format` on WebRTC).
+2. **Event ordering** (sending audio/config before server acks).
+3. **Transport confusion** (client thinks WS PCM, server negotiated WebRTC Opus).
+4. **Model/endpoint mismatch** (bad model id or wrong base URL).
+5. **Auth header/org header variance** (org header set when not needed, or missing).
+
+## Implement exactly this
+
+### 1) Sanity constants
+
+* `REALTIME_MODEL="gpt-4o-realtime-preview"` (env-override allowed)
+* `OPENAI_BASE="https://api.openai.com"`
+* For **WebRTC**: never send `output_audio_format`.
+* For **WebSocket**: `input_audio_format:{type:"pcm16",sample_rate_hz:16000}`, `output_audio_format:{type:"pcm16",sample_rate_hz:16000}`.
+
+### 2) Session mint (server → OpenAI, REST)
+
+Create a dedicated function `mintRealtimeSession()`:
+
+* POST `${OPENAI_BASE}/v1/realtime/sessions`
+* Headers:
+  `Authorization: Bearer ${OPENAI_API_KEY}`
+  `Content-Type: application/json`
+  *(No organization header unless explicitly set in env)*
+* Body:
+
+```json
+{
+  "model": "gpt-4o-realtime-preview",
+  "voice": "alloy",
+  "modalities": ["text","audio"],
+  "instructions": "You are a concise, upbeat tutor. Speak short sentences. Wait for the user to finish before replying. If the user is silent for 5s, say 'I'm here when you're ready.'"
+}
+```
+
+* Validate 200; on non-200, log full JSON, return structured error.
+
+### 3) WebRTC connect flow (client ⇄ server ⇄ OpenAI)
+
+* After client’s **Start Voice** button:
+
+  1. Server calls `mintRealtimeSession()`; return the **client_secret** to the browser.
+  2. Browser starts WebRTC to OpenAI using the client_secret per docs.
+  3. On **socket open** (or `session.created/updated` event), send **exactly one** `session.update` (minimal):
+
+     ```json
+     { "type":"session.update",
+       "session":{
+         "modalities":["text","audio"],
+         "voice":"alloy",
+         "input_audio_transcription":{"model":"whisper-1"}
+       }
+     }
+     ```
+  4. Wait for `session.updated` ack before any further frames.
+  5. Send **hello probe**:
+
+     ```json
+     {"type":"response.create",
+      "response":{"modalities":["audio"],"instructions":"Say 'hello' clearly once.","voice":"alloy"}}
+     ```
+* Do **not** include `output_audio_format` for WebRTC—ever.
+
+### 4) WebSocket connect flow (optional transport)
+
+* Only if `REALTIME_TRANSPORT=websocket`.
+* After `session.update` ack, stream mic as PCM16 via `input_audio_buffer.append` then `input_audio_buffer.commit`.
+* Verify you send at least one `response.create` (text first, then audio) during debug.
+
+### 5) Strict schema guard
+
+* Add a **validator** before sending any `session.update` or `response.create`:
+
+  * Drop unknown keys.
+  * Enforce correct enums for `modalities`, `turn_detection.type`, etc.
+  * Log the **exact** JSON sent (redact secrets).
+
+### 6) Error/event logging (observable and actionable)
+
+* Capture and pretty-print **all** inbound events of types:
+
+  * `error`, `response.error`, `session.updated`, `session.created`, `response.completed`
+* Include a 10-event **outbound ring buffer** per connection. On any error, dump the last 10 outbound events + timestamps.
+* Add a `X-Debug-Conn` id to correlate server/client logs.
+
+### 7) Backoff/retry policy (only for transient server_error)
+
+* If we receive `type:"error"` with `code` in `["server_error","internal_error","upstream_error"]`:
+
+  * Wait `250ms, 500ms, 1s` (jitter) and retry **hello probe** up to 3 times.
+  * Do **not** re-mint the session on first two retries; mint a fresh session on the 3rd.
+
+### 8) Guard rails & flags
+
+* Enforce `REALTIME_ENABLED` server-side: all realtime routes 403 when false.
+* Default `USE_CONVAI=false` unless explicitly `"true"`.
+* Add `/health/realtime` endpoint returning:
+
+  * model, transport, last error summary, last `session.updated` timestamp.
+
+### 9) DebugPanel additions
+
+* Show: transport, model, session id (redacted), last 3 inbound events, last error payload, hello-probe status.
+* Button: “Force Hello Probe” → sends `response.create` audio with a known phrase.
+
+### 10) Acceptance tests
+
+**Test A — WebRTC Hello**
+
+* Click **Start Voice** → hear “hello” within 3s.
+* Logs show: connect → `session.updated` → `response.created` → `response.completed`.
+
+**Test B — Text Roundtrip**
+
+* Send `response.create` with `modalities:["text"]` → receive text within 2s.
+
+**Test C — Transient error**
+
+* Simulate network hiccup (disconnect/reconnect). On `server_error`, see up to 3 probe retries; recover without manual refresh.
+
+**Test D — Transport switch**
+
+* Set `REALTIME_TRANSPORT=websocket`, verify PCM16 path: append→commit→text reply, then audio reply.
+
+**Done when**
+
+* No `server_error` during normal connect.
+* Hello probe audible on first try (≥ 95%).
+* Logs contain complete, minimal JSON frames; no `output_audio_format` on WebRTC.
+
+---
+
+If anything fails, dump the last inbound `error` frame and the outbound ring buffer so we can pinpoint the exact illegal field or sequence.

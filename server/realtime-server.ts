@@ -23,8 +23,10 @@ export class RealtimeServer {
   private activeSessions = new Map<string, ActiveSession>();
   private openai: OpenAI;
   private eventBuffer = new Map<string, any[]>(); // Ring buffer for debugging
-  private readonly REALTIME_TRANSPORT = process.env.REALTIME_TRANSPORT || 'websocket'; // 'webrtc' | 'websocket'
+  private readonly REALTIME_TRANSPORT = process.env.REALTIME_TRANSPORT || 'webrtc'; // Default to WebRTC
   private readonly REALTIME_ENABLED = process.env.REALTIME_ENABLED !== 'false';
+  private readonly REALTIME_MODEL = process.env.REALTIME_MODEL || 'gpt-4o-realtime-preview';
+  private readonly OPENAI_BASE = 'https://api.openai.com';
 
   constructor(server: HTTPServer) {
     // Create WebSocket server - no path restriction to allow /ws/realtime/:sessionId
@@ -154,76 +156,85 @@ export class RealtimeServer {
 
   private async connectToOpenAI(session: ActiveSession) {
     try {
-      // Initialize event buffer for this session
+      // Initialize event buffer and add correlation ID
       this.eventBuffer.set(session.sessionId, []);
+      const correlationId = `conn-${session.sessionId.substring(0, 8)}-${Date.now()}`;
+      (session as any).correlationId = correlationId;
       
-      // Use correct model version
-      const model = 'gpt-4o-realtime-preview';
-      const wsUrl = `wss://api.openai.com/v1/realtime?model=${model}`;
-
-      console.log(`[RealtimeWS] Connecting to OpenAI Realtime API for session ${session.sessionId}`);
-      console.log(`[RealtimeWS] Transport mode: ${this.REALTIME_TRANSPORT}`);
-
+      console.log(`[RealtimeWS] [${correlationId}] Starting connection for session ${session.sessionId}`);
+      console.log(`[RealtimeWS] [${correlationId}] Transport mode: ${this.REALTIME_TRANSPORT}`);
+      
+      // For WebRTC, mint session via REST API and return client_secret
+      if (this.REALTIME_TRANSPORT === 'webrtc') {
+        const mintResult = await this.mintRealtimeSession(session.voiceName || 'alloy');
+        
+        if (mintResult.error) {
+          throw new Error(mintResult.error);
+        }
+        
+        // Send client_secret to browser for WebRTC connection
+        this.sendToClient(session, {
+          type: 'webrtc.credentials',
+          client_secret: mintResult.client_secret,
+          session_id: mintResult.session_id,
+          correlation_id: correlationId
+        });
+        
+        console.log(`[RealtimeWS] [${correlationId}] Sent WebRTC credentials to client`);
+        return; // Client will establish WebRTC connection directly
+      }
+      
+      // For WebSocket, connect directly
+      const wsUrl = `wss://api.openai.com/v1/realtime?model=${this.REALTIME_MODEL}`;
+      
       const openaiWs = new WebSocket(wsUrl, {
         headers: {
           'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
           'OpenAI-Beta': 'realtime=v1',
+          'X-Debug-Conn': correlationId
         },
       });
 
       session.openaiWs = openaiWs;
 
       openaiWs.on('open', () => {
-        console.log(`[RealtimeWS] WebSocket OPEN - sending config IMMEDIATELY`);
+        const correlationId = (session as any).correlationId;
+        console.log(`[RealtimeWS] [${correlationId}] WebSocket OPEN - sending minimal config`);
         
-        // Use concise instructions that work
-        const instructions = `You are a concise, upbeat tutor. Speak short sentences. Wait for the user to finish before replying. If the user is silent, say: 'I'm here when you're ready.'`;
         const selectedVoice = session.voiceName || 'alloy';
         
-        // Build session configuration
+        // Send minimal session.update (exactly one)
         const sessionConfig: any = {
           type: 'session.update',
           session: {
             modalities: ['text', 'audio'],
             voice: selectedVoice,
-            instructions: instructions,
             input_audio_transcription: {
               model: 'whisper-1'
-            },
-            temperature: 0.8
+            }
           }
         };
         
-        // CRITICAL: Only add audio format for WebSocket, NOT for WebRTC
+        // Add audio format ONLY for WebSocket transport
         if (this.REALTIME_TRANSPORT === 'websocket') {
-          sessionConfig.session.input_audio_format = 'pcm16';
-          sessionConfig.session.output_audio_format = 'pcm16';
-          console.log(`[RealtimeWS] WebSocket transport - using PCM16 audio format`);
-        } else {
-          console.log(`[RealtimeWS] WebRTC transport - Opus flows over media track (no output_audio_format)`);
+          sessionConfig.session.input_audio_format = {
+            type: 'pcm16',
+            sample_rate_hz: 16000
+          };
+          sessionConfig.session.output_audio_format = {
+            type: 'pcm16',
+            sample_rate_hz: 16000
+          };
+          console.log(`[RealtimeWS] [${correlationId}] WebSocket transport - added PCM16 audio format`);
         }
         
-        // Start without VAD for initial testing
-        // Will add after hello probe works
-        
-        console.log(`[RealtimeWS] Sending session.update`);
+        console.log(`[RealtimeWS] [${correlationId}] Sending session.update`);
         this.logOutboundEvent(session.sessionId, sessionConfig);
         this.sendToOpenAI(session, sessionConfig);
         
-        // Send hello probe after a short delay
-        setTimeout(() => {
-          console.log(`[RealtimeWS] HELLO_PROBE_SENT`);
-          const helloProbe = {
-            type: 'response.create',
-            response: {
-              modalities: ['audio'],
-              instructions: `Say 'hello' clearly once.`,
-              voice: selectedVoice
-            }
-          };
-          this.logOutboundEvent(session.sessionId, helloProbe);
-          this.sendToOpenAI(session, helloProbe);
-        }, 500);
+        // Mark that we're waiting for session.updated ack
+        (session as any).waitingForSessionUpdate = true;
+        (session as any).helloProbeRetries = 0;
       });
 
       openaiWs.on('message', async (data: Buffer) => {
@@ -248,39 +259,34 @@ export class RealtimeServer {
                   sessionId: session.sessionId,
                 });
               } else if (msg.type === 'session.updated') {
-                console.log(`[RealtimeWS] ✅ Session updated successfully`);
+                const correlationId = (session as any).correlationId;
+                console.log(`[RealtimeWS] [${correlationId}] ✅ Session updated successfully`);
+                (session as any).waitingForSessionUpdate = false;
                 
-                // After successful update, enable VAD if not already enabled
-                if (!msg.session?.turn_detection) {
-                  setTimeout(() => {
-                    console.log(`[RealtimeWS] Enabling VAD for turn detection`);
-                    const vadConfig = {
-                      type: 'session.update',
-                      session: {
-                        turn_detection: {
-                          type: 'server_vad',
-                          threshold: 0.5
-                        }
-                      }
-                    };
-                    this.logOutboundEvent(session.sessionId, vadConfig);
-                    this.sendToOpenAI(session, vadConfig);
-                  }, 1000); // Enable VAD after hello probe has a chance to play
-                }
+                // Send hello probe after session.updated ack
+                setTimeout(() => {
+                  this.sendHelloProbe(session);
+                }, 100);
               } else if (msg.type === 'response.created') {
-                console.log(`[RealtimeWS] Response created`);
+                const correlationId = (session as any).correlationId;
+                console.log(`[RealtimeWS] [${correlationId}] Response created`);
               } else if (msg.type === 'response.completed') {
-                console.log(`[RealtimeWS] ✅ Response completed - hello probe success!`);
+                const correlationId = (session as any).correlationId;
+                console.log(`[RealtimeWS] [${correlationId}] ✅ Response completed - hello probe success!`);
+                (session as any).helloProbeSuccess = true;
               } else if (msg.type === 'error') {
-                console.error(`[RealtimeWS] ❌ ERROR:`, msg);
+                const correlationId = (session as any).correlationId;
+                console.error(`[RealtimeWS] [${correlationId}] ❌ ERROR:`, msg);
                 
                 // Log last 10 outbound events for debugging
                 const events = this.eventBuffer.get(session.sessionId) || [];
-                console.error(`[RealtimeWS] Last ${Math.min(10, events.length)} outbound events:`, 
-                  events.slice(-10).map(e => e.type).join(', '));
+                console.error(`[RealtimeWS] [${correlationId}] Last ${Math.min(10, events.length)} outbound events:`, 
+                  events.slice(-10));
                   
-                if (msg.error?.type === 'server_error') {
-                  console.error(`[RealtimeWS] Server error - Session ID for support: ${msg.error?.message?.match(/sess_[a-zA-Z0-9]+/)?.[0]}`);
+                // Handle transient server errors with retry
+                if (msg.error?.code && ['server_error', 'internal_error', 'upstream_error'].includes(msg.error.code)) {
+                  console.log(`[RealtimeWS] [${correlationId}] Transient error detected, attempting retry...`);
+                  this.handleTransientError(session);
                 }
               }
             } catch (e) {
@@ -394,7 +400,14 @@ export class RealtimeServer {
 
   private sendToOpenAI(session: ActiveSession, message: any) {
     if (session.openaiWs && session.openaiWs.readyState === WebSocket.OPEN) {
-      session.openaiWs.send(JSON.stringify(message));
+      const validated = this.validateEventPayload(message);
+      const jsonStr = JSON.stringify(validated);
+      
+      // Log exact JSON being sent (redact API keys)
+      const logSafe = jsonStr.replace(/(Bearer\s+)[^"]+/g, '$1[REDACTED]');
+      console.log(`[RealtimeWS] Sending to OpenAI: ${logSafe.substring(0, 500)}`);
+      
+      session.openaiWs.send(jsonStr);
     }
   }
 
@@ -582,6 +595,180 @@ Remember: Your goal is to build understanding and confidence in learning.`
     }
 
     this.activeSessions.delete(sessionId);
+    this.eventBuffer.delete(sessionId);
+  }
+
+  /**
+   * Mint a new Realtime session via REST API
+   * Returns client_secret for WebRTC or session details for WebSocket
+   */
+  async mintRealtimeSession(voice: string = 'alloy'): Promise<{
+    client_secret?: string;
+    session_id?: string;
+    error?: string;
+  }> {
+    try {
+      const url = `${this.OPENAI_BASE}/v1/realtime/sessions`;
+      
+      // Build headers - no org header unless explicitly set
+      const headers: any = {
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Content-Type': 'application/json'
+      };
+      
+      if (process.env.OPENAI_ORG_ID) {
+        headers['OpenAI-Organization'] = process.env.OPENAI_ORG_ID;
+      }
+      
+      const body = {
+        model: this.REALTIME_MODEL,
+        voice: voice,
+        modalities: ['text', 'audio'],
+        instructions: "You are a concise, upbeat tutor. Speak short sentences. Wait for the user to finish before replying. If the user is silent for 5s, say 'I'm here when you're ready.'"
+      };
+      
+      console.log(`[RealtimeWS] Minting session with model: ${this.REALTIME_MODEL}, voice: ${voice}`);
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body)
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        console.error(`[RealtimeWS] Session mint failed:`, data);
+        return { 
+          error: data.error?.message || `HTTP ${response.status}: Failed to mint session` 
+        };
+      }
+      
+      console.log(`[RealtimeWS] Session minted successfully:`, {
+        id: data.id,
+        model: data.model,
+        transport: this.REALTIME_TRANSPORT
+      });
+      
+      return {
+        client_secret: data.client_secret,
+        session_id: data.id
+      };
+    } catch (error) {
+      console.error(`[RealtimeWS] Session mint error:`, error);
+      return { 
+        error: error instanceof Error ? error.message : 'Failed to mint session' 
+      };
+    }
+  }
+
+  /**
+   * Validate and sanitize event payload before sending
+   */
+  private validateEventPayload(event: any): any {
+    // Remove any unknown/illegal fields based on event type
+    const sanitized = { ...event };
+    
+    // Never include output_audio_format for WebRTC
+    if (this.REALTIME_TRANSPORT === 'webrtc') {
+      if (sanitized.session?.output_audio_format) {
+        delete sanitized.session.output_audio_format;
+        console.log(`[RealtimeWS] Removed output_audio_format for WebRTC`);
+      }
+      if (sanitized.session?.input_audio_format) {
+        delete sanitized.session.input_audio_format;
+        console.log(`[RealtimeWS] Removed input_audio_format for WebRTC`);
+      }
+    }
+    
+    // Validate modalities enum
+    if (sanitized.session?.modalities) {
+      sanitized.session.modalities = sanitized.session.modalities.filter(
+        (m: string) => ['text', 'audio'].includes(m)
+      );
+    }
+    
+    // Validate turn_detection type
+    if (sanitized.session?.turn_detection?.type) {
+      if (!['server_vad', 'none'].includes(sanitized.session.turn_detection.type)) {
+        sanitized.session.turn_detection.type = 'server_vad';
+      }
+    }
+    
+    return sanitized;
+  }
+
+  /**
+   * Send hello probe with retry logic
+   */
+  private sendHelloProbe(session: ActiveSession) {
+    const correlationId = (session as any).correlationId;
+    const selectedVoice = session.voiceName || 'alloy';
+    
+    console.log(`[RealtimeWS] [${correlationId}] HELLO_PROBE_SENT (attempt ${(session as any).helloProbeRetries + 1})`);
+    
+    const helloProbe = {
+      type: 'response.create',
+      response: {
+        modalities: ['audio'],
+        instructions: "Say 'hello' clearly once.",
+        voice: selectedVoice
+      }
+    };
+    
+    this.logOutboundEvent(session.sessionId, helloProbe);
+    this.sendToOpenAI(session, helloProbe);
+    (session as any).helloProbeRetries = ((session as any).helloProbeRetries || 0) + 1;
+  }
+
+  /**
+   * Handle transient errors with backoff/retry
+   */
+  private handleTransientError(session: ActiveSession) {
+    const correlationId = (session as any).correlationId;
+    const retries = (session as any).helloProbeRetries || 0;
+    
+    if (retries >= 3) {
+      console.error(`[RealtimeWS] [${correlationId}] Max retries reached, minting new session`);
+      // On 3rd retry, mint a fresh session
+      this.connectToOpenAI(session);
+      return;
+    }
+    
+    // Exponential backoff: 250ms, 500ms, 1000ms
+    const delays = [250, 500, 1000];
+    const delay = delays[Math.min(retries, delays.length - 1)];
+    const jitter = Math.random() * 100;
+    
+    console.log(`[RealtimeWS] [${correlationId}] Retrying hello probe in ${delay + jitter}ms (attempt ${retries + 1}/3)`);
+    
+    setTimeout(() => {
+      this.sendHelloProbe(session);
+    }, delay + jitter);
+  }
+
+  /**
+   * Get realtime health status
+   */
+  public getHealthStatus(): any {
+    const sessions = Array.from(this.activeSessions.values());
+    const lastSession = sessions[sessions.length - 1];
+    const lastErrors = Array.from(this.eventBuffer.values())
+      .flat()
+      .filter(e => e.type === 'error')
+      .slice(-3);
+    
+    return {
+      transport: this.REALTIME_TRANSPORT,
+      model: this.REALTIME_MODEL,
+      enabled: this.REALTIME_ENABLED,
+      activeSessions: this.activeSessions.size,
+      lastSessionUpdate: lastSession?.startTime,
+      lastErrors: lastErrors.map(e => ({
+        time: e.timestamp,
+        message: e.error?.message || 'Unknown error'
+      }))
+    };
   }
 
   public getActiveSessionCount(): number {
