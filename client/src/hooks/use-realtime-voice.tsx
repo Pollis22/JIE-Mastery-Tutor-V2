@@ -10,6 +10,7 @@ export interface RealtimeMessage {
 export function useRealtimeVoice() {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [isProcessingDocuments, setIsProcessingDocuments] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [messages, setMessages] = useState<RealtimeMessage[]>([]);
   
@@ -18,6 +19,7 @@ export function useRealtimeVoice() {
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
   const sessionIdRef = useRef<string | null>(null);
+  const currentAssistantMessage = useRef<RealtimeMessage | null>(null);
 
   const connect = useCallback(async (config: {
     model?: string;
@@ -33,6 +35,12 @@ export function useRealtimeVoice() {
       setIsConnecting(true);
       setError(null);
       console.log('🔵 [RealtimeVoice] Starting connection...');
+
+      // If documents provided, show processing state
+      if (config.contextDocumentIds && config.contextDocumentIds.length > 0) {
+        setIsProcessingDocuments(true);
+        console.log('📚 Processing', config.contextDocumentIds.length, 'documents...');
+      }
 
       // Step 1: Get credentials via HTTP (working!)
       console.log('🔑 [RealtimeVoice] Requesting credentials...');
@@ -62,6 +70,13 @@ export function useRealtimeVoice() {
         hasSecret: !!data.client_secret?.value
       });
 
+      // Documents processed!
+      setIsProcessingDocuments(false);
+      
+      if (config.contextDocumentIds && config.contextDocumentIds.length > 0) {
+        console.log('✅ Documents ready for AI context');
+      }
+
       if (!data.client_secret?.value) {
         throw new Error('No client_secret in response');
       }
@@ -79,6 +94,7 @@ export function useRealtimeVoice() {
       console.error('❌ [RealtimeVoice] Connection failed:', err);
       setError(err.message);
       setIsConnected(false);
+      setIsProcessingDocuments(false);
     } finally {
       setIsConnecting(false);
     }
@@ -257,6 +273,44 @@ export function useRealtimeVoice() {
           }
         }
         
+        // Capture streaming AI response transcript
+        if (message.type === 'response.audio_transcript.delta') {
+          // This fires for each chunk of AI speech - accumulate
+          if (!currentAssistantMessage.current) {
+            currentAssistantMessage.current = {
+              id: message.response_id || `assistant-${Date.now()}`,
+              role: 'assistant',
+              content: '',
+              timestamp: new Date(),
+            };
+          }
+
+          currentAssistantMessage.current.content += message.delta || '';
+          console.log('🔊 [Transcript] AI speaking:', message.delta);
+        }
+
+        // AI finished speaking - save complete message
+        if (message.type === 'response.done') {
+          if (currentAssistantMessage.current && currentAssistantMessage.current.content) {
+            console.log('🤖 [Transcript] AI complete:', currentAssistantMessage.current.content);
+            
+            const finalMessage = { ...currentAssistantMessage.current };
+            setMessages((prev) => {
+              // Check if message already exists
+              const exists = prev.some(m => m.id === finalMessage.id);
+              if (exists) return prev;
+              return [...prev, finalMessage];
+            });
+
+            // Save to server
+            if (sessionIdRef.current) {
+              saveTranscriptMessage(sessionIdRef.current, finalMessage);
+            }
+
+            currentAssistantMessage.current = null;
+          }
+        }
+
         // Also capture response text for assistant messages
         if (message.type === 'response.output_item.added' || message.type === 'response.text.delta') {
           const item = message.item || message;
@@ -266,27 +320,19 @@ export function useRealtimeVoice() {
               .map((c: any) => c.text || '')
               .join(' ');
               
-            if (textContent) {
-              // Check if we need to create or update the last assistant message
+            if (textContent && !currentAssistantMessage.current) {
+              // Only use this as fallback if we're not already capturing via audio_transcript.delta
+              const newMessage: RealtimeMessage = {
+                id: `msg-${Date.now()}`,
+                role: 'assistant',
+                content: textContent,
+                timestamp: new Date(),
+              };
+              
               setMessages((prev) => {
-                const lastMessage = prev[prev.length - 1];
-                if (lastMessage && lastMessage.role === 'assistant' && 
-                    (Date.now() - lastMessage.timestamp.getTime()) < 5000) {
-                  // Update the last assistant message if it's recent
-                  return [
-                    ...prev.slice(0, -1),
-                    { ...lastMessage, content: lastMessage.content + ' ' + textContent }
-                  ];
-                } else {
-                  // Create a new assistant message
-                  const newMessage: RealtimeMessage = {
-                    id: `msg-${Date.now()}`,
-                    role: 'assistant',
-                    content: textContent,
-                    timestamp: new Date(),
-                  };
-                  return [...prev, newMessage];
-                }
+                const exists = prev.some(m => m.content === textContent);
+                if (exists) return prev;
+                return [...prev, newMessage];
               });
             }
           }
@@ -464,6 +510,7 @@ export function useRealtimeVoice() {
     disconnect,
     isConnected,
     isConnecting,
+    isProcessingDocuments,
     error,
     sendAudio,
     status: isConnecting ? 'connecting' as const : 
