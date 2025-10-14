@@ -1685,6 +1685,32 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  async saveRealtimeTranscript(sessionId: string, message: any): Promise<void> {
+    try {
+      // Get the current session to append to existing transcript
+      const session = await db.query.realtimeSessions.findFirst({
+        where: eq(realtimeSessions.id, sessionId),
+      });
+      
+      if (session) {
+        const currentTranscript = Array.isArray(session.transcript) ? session.transcript : [];
+        const updatedTranscript = [...currentTranscript, message];
+        
+        await db.update(realtimeSessions)
+          .set({ transcript: updatedTranscript })
+          .where(eq(realtimeSessions.id, sessionId));
+      }
+    } catch (error: any) {
+      if (error.code === '42P01') {
+        // Table doesn't exist - fail silently to not break voice sessions
+        console.log('⚠️ realtime_sessions table missing; skipping transcript save.');
+      } else {
+        console.error('Failed to save transcript:', error);
+      }
+      // Don't throw - voice session should continue even if transcript fails
+    }
+  }
+
   async endRealtimeSession(sessionId: string, userId: string, transcript: any[], minutesUsed: number): Promise<void> {
     try {
       await db.update(realtimeSessions)
