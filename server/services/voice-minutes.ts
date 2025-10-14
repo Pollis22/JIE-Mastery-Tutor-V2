@@ -80,9 +80,20 @@ export async function deductMinutes(userId: string, minutesUsed: number): Promis
   }
 
   const userData = userResult.rows[0] as any;
-  const subscriptionRemaining = (userData.subscription_minutes_limit || 60) - (userData.subscription_minutes_used || 0);
+  const subscriptionRemaining = Math.max(0, (userData.subscription_minutes_limit || 60) - (userData.subscription_minutes_used || 0));
+  const purchasedBalance = userData.purchased_minutes_balance || 0;
+  const totalAvailable = subscriptionRemaining + purchasedBalance;
 
+  // Validate sufficient minutes before deducting
+  if (totalAvailable < minutesUsed) {
+    const shortfall = minutesUsed - totalAvailable;
+    console.error(`❌ [VoiceMinutes] Insufficient minutes. User ${userId} needs ${minutesUsed} but only has ${totalAvailable}. Shortfall: ${shortfall}`);
+    throw new Error(`Insufficient voice minutes. You need ${minutesUsed} minutes but only have ${totalAvailable} available.`);
+  }
+
+  // Deduct from subscription first, then purchased
   if (subscriptionRemaining >= minutesUsed) {
+    // All from subscription
     await db.execute(sql`
       UPDATE users 
       SET subscription_minutes_used = subscription_minutes_used + ${minutesUsed}
@@ -91,6 +102,7 @@ export async function deductMinutes(userId: string, minutesUsed: number): Promis
     
     console.log('✅ [VoiceMinutes] Deducted from subscription minutes');
   } else if (subscriptionRemaining > 0) {
+    // Partial subscription, rest from purchased
     const fromSubscription = subscriptionRemaining;
     const fromPurchased = minutesUsed - fromSubscription;
     
@@ -104,6 +116,7 @@ export async function deductMinutes(userId: string, minutesUsed: number): Promis
     
     console.log('✅ [VoiceMinutes] Deducted from both pools', { fromSubscription, fromPurchased });
   } else {
+    // All from purchased
     await db.execute(sql`
       UPDATE users 
       SET purchased_minutes_balance = purchased_minutes_balance - ${minutesUsed}

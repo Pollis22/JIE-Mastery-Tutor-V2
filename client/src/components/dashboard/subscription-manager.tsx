@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { format } from "date-fns";
 import { 
@@ -22,6 +22,14 @@ import {
   ArrowDownCircle,
   RefreshCw
 } from "lucide-react";
+
+interface VoiceBalance {
+  subscriptionMinutes: number;
+  subscriptionLimit: number;
+  purchasedMinutes: number;
+  totalAvailable: number;
+  resetDate: string;
+}
 
 const plans = [
   {
@@ -67,12 +75,24 @@ const plans = [
 ];
 
 export default function SubscriptionManager() {
-  const { user, refetch } = useAuth();
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
   const { toast } = useToast();
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
 
+  const refetch = () => {
+    queryClient.invalidateQueries({ queryKey: ['/api/user'] });
+    queryClient.invalidateQueries({ queryKey: ['/api/user/voice-balance'] });
+  };
+
+  // Fetch hybrid minute balance
+  const { data: voiceBalance } = useQuery<VoiceBalance>({
+    queryKey: ['/api/user/voice-balance'],
+    enabled: !!user
+  });
+
   // Fetch billing history
-  const { data: billingHistory } = useQuery({
+  const { data: billingHistory } = useQuery<any[]>({
     queryKey: ['/api/billing/history'],
     enabled: !!user
   });
@@ -186,30 +206,64 @@ export default function SubscriptionManager() {
               </div>
             </div>
 
-            {/* Usage Stats */}
-            <div className="space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-sm font-medium">Voice Minutes Used</span>
-                <span className="text-sm">
-                  {user?.monthlyVoiceMinutesUsed || 0} / {user?.monthlyVoiceMinutes || 0} minutes
-                </span>
+            {/* Hybrid Minute Breakdown */}
+            <div className="space-y-4">
+              {/* Total Available */}
+              <div className="bg-gradient-to-r from-primary/10 to-primary/5 p-4 rounded-lg border border-primary/20">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Total Available</p>
+                    <p className="text-3xl font-bold text-primary">
+                      {voiceBalance?.totalAvailable || 0} <span className="text-lg">minutes</span>
+                    </p>
+                  </div>
+                  <Clock className="h-8 w-8 text-primary/50" />
+                </div>
               </div>
-              <Progress value={usagePercentage} className="h-3" />
-              
-              {user?.bonusMinutes && user.bonusMinutes > 0 && (
-                <Alert>
-                  <Zap className="h-4 w-4" />
-                  <AlertDescription>
-                    You have {user.bonusMinutes} bonus minutes available!
-                  </AlertDescription>
-                </Alert>
+
+              {/* Subscription Minutes */}
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm font-medium flex items-center gap-2">
+                    <Calendar className="h-4 w-4" />
+                    This Month's Allocation
+                  </span>
+                  <span className="text-sm font-semibold">
+                    {voiceBalance?.subscriptionMinutes || 0} / {voiceBalance?.subscriptionLimit || 0} minutes
+                  </span>
+                </div>
+                <Progress 
+                  value={((voiceBalance?.subscriptionLimit || 1) - (voiceBalance?.subscriptionMinutes || 0)) / (voiceBalance?.subscriptionLimit || 1) * 100} 
+                  className="h-2" 
+                />
+                {voiceBalance?.resetDate && (
+                  <p className="text-xs text-muted-foreground">
+                    Resets {format(new Date(voiceBalance.resetDate), 'MMM dd, yyyy')}
+                  </p>
+                )}
+              </div>
+
+              {/* Purchased Minutes (Rollover) */}
+              {(voiceBalance?.purchasedMinutes ?? 0) > 0 && (
+                <div className="bg-amber-500/10 p-3 rounded-lg border border-amber-500/20">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Zap className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                      <span className="text-sm font-medium">Rollover Balance</span>
+                    </div>
+                    <span className="text-sm font-bold text-amber-700 dark:text-amber-300">
+                      {voiceBalance?.purchasedMinutes} minutes
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">From purchased top-ups • Never expires</p>
+                </div>
               )}
 
-              {usagePercentage > 80 && (
+              {/* Low Minutes Warning */}
+              {(voiceBalance?.totalAvailable ?? 0) < 10 && voiceBalance && (
                 <Alert variant="destructive">
                   <AlertDescription>
-                    You've used {Math.round(usagePercentage)}% of your monthly minutes. 
-                    Consider upgrading or purchasing additional minutes.
+                    You're running low on voice minutes! Consider upgrading your plan or purchasing additional minutes.
                   </AlertDescription>
                 </Alert>
               )}

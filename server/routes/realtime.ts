@@ -486,10 +486,23 @@ router.post('/:sessionId/end', async (req, res) => {
     });
 
     // Deduct minutes using hybrid rollover policy (subscription first, then purchased)
+    let minutesDeducted = false;
+    let insufficientMinutes = false;
+    
     if (minutesUsed > 0) {
-      const { deductMinutes } = await import('../services/voice-minutes');
-      await deductMinutes(userId, minutesUsed);
-      console.log(`✅ [RealtimeAPI] Deducted ${minutesUsed} minutes from user ${userId}`);
+      try {
+        const { deductMinutes } = await import('../services/voice-minutes');
+        await deductMinutes(userId, minutesUsed);
+        minutesDeducted = true;
+        console.log(`✅ [RealtimeAPI] Deducted ${minutesUsed} minutes from user ${userId}`);
+      } catch (error: any) {
+        if (error.message?.includes('Insufficient voice minutes')) {
+          insufficientMinutes = true;
+          console.warn(`⚠️ [RealtimeAPI] User ${userId} has insufficient minutes for ${minutesUsed} minute session`);
+        } else {
+          throw error; // Re-throw other errors
+        }
+      }
     }
 
     res.json({ 
@@ -497,6 +510,8 @@ router.post('/:sessionId/end', async (req, res) => {
       sessionId: session.id,
       minutesUsed: minutesUsed,
       duration: durationMs,
+      minutesDeducted: minutesDeducted,
+      insufficientMinutes: insufficientMinutes
     });
 
   } catch (error) {

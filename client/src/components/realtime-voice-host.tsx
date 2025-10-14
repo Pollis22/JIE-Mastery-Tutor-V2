@@ -109,11 +109,19 @@ export function RealtimeVoiceHost({
         if (data.success) {
           console.log(`✅ [RealtimeVoiceHost] Session saved. Minutes used: ${data.minutesUsed}`);
           
-          // Show minutes used in toast
-          toast({
-            title: "Session Ended",
-            description: `Voice session completed. ${data.minutesUsed} minute${data.minutesUsed !== 1 ? 's' : ''} used.`,
-          });
+          // Show appropriate message based on minute deduction status
+          if (data.insufficientMinutes) {
+            toast({
+              title: "Session Ended - Out of Minutes",
+              description: `Voice session completed (${data.minutesUsed} minutes). You've run out of voice minutes. Please upgrade your plan or purchase additional minutes to continue.`,
+              variant: "destructive",
+            });
+          } else {
+            toast({
+              title: "Session Ended",
+              description: `Voice session completed. ${data.minutesUsed} minute${data.minutesUsed !== 1 ? 's' : ''} used.`,
+            });
+          }
         }
       } catch (error: any) {
         console.error('[RealtimeVoiceHost] Failed to save session:', error);

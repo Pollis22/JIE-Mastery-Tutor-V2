@@ -5,15 +5,38 @@ This project is a production-ready conversational AI tutoring web platform desig
 
 ## Recent Changes (January 14, 2025)
 
-### Payment & Minutes Tracking Fixes
-- **Created `/api/user/analytics` endpoint**: Provides comprehensive usage analytics including total sessions, minutes used, active days, and usage by subject
-- **Created `/api/subscription/change` endpoint**: Enables plan upgrades/downgrades with automatic Stripe subscription updates and checkout fallback
-- **Fixed voice minutes tracking**: 
-  - Sessions now properly calculate duration and deduct minutes when ended
-  - Added API call to `/api/session/realtime/:sessionId/end` on session cleanup
-  - Minutes are tracked and deducted using `storage.updateUserVoiceUsage()`
-  - Toast notifications show exact minutes used after each session
-- **Session status alignment**: Updated analytics queries to filter for `status = 'ended'` to match actual session lifecycle
+### Hybrid Minute Rollover System Implementation
+- **Implemented hybrid minute tracking policy**:
+  - **Subscription Minutes**: Reset monthly (30 days from billing cycle start) - "use it or lose it"
+  - **Purchased Minutes**: Carry over indefinitely - rollover balance that never expires
+  - **Usage Priority**: Subscription minutes used first, then purchased minutes
+  
+- **Database Schema Updates**:
+  - Added `subscription_minutes_used`, `subscription_minutes_limit`, `purchased_minutes_balance` columns to users table
+  - Added `billing_cycle_start` and `last_reset_at` for automatic monthly reset tracking
+  - Created `minute_purchases` table to track individual top-up purchases with expiration support
+  
+- **New Voice Minutes Service** (`server/services/voice-minutes.ts`):
+  - `getUserMinuteBalance()`: Gets balance with automatic 30-day reset check
+  - `deductMinutes()`: Deducts subscription first, then purchased with validation to prevent negative balances
+  - `addPurchasedMinutes()`: Adds rollover minutes and tracks purchase history
+  
+- **Integration Updates**:
+  - Realtime session end uses new hybrid deduction logic with insufficient minutes handling
+  - Stripe webhook adds purchased minutes to rollover balance (never expires)
+  - New `/api/user/voice-balance` endpoint for dashboard balance display
+  - Graceful error handling when users run out of minutes (session saves, user notified)
+  
+- **Dashboard Enhancements**:
+  - Clear visual breakdown: Total Available, Monthly Allocation, Rollover Balance
+  - Shows reset date for subscription minutes
+  - Highlights rollover balance with amber styling to indicate purchased top-ups
+  - Low minutes warning when total available < 10 minutes
+
+### Previous Payment & Minutes Tracking Fixes
+- Created `/api/user/analytics` endpoint for usage statistics
+- Created `/api/subscription/change` endpoint for plan upgrades/downgrades
+- Fixed session status alignment (changed from "completed" to "ended")
 
 **Sibling-Friendly Design:** The platform prioritizes per-session configuration over user profile defaults, allowing parents to share one account across multiple children. Each tutoring session can specify different grade levels and subjects, while all sessions share the same minute pool. This flexibility is a key selling point - families only need one subscription regardless of how many children use the service.
 
