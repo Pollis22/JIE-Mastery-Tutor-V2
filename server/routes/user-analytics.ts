@@ -132,4 +132,28 @@ router.get('/analytics', async (req, res) => {
   }
 });
 
+// GET /api/user/voice-balance - Get hybrid minute balance for dashboard
+router.get('/voice-balance', async (req, res) => {
+  try {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const userId = req.user!.id;
+    
+    const { getUserMinuteBalance } = await import('../services/voice-minutes');
+    const balance = await getUserMinuteBalance(userId);
+    
+    console.log('💰 [VoiceBalance] Fetched balance for user:', userId);
+    res.json(balance);
+
+  } catch (error: any) {
+    console.error('❌ [VoiceBalance] Failed to fetch balance:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch voice balance',
+      message: error.message 
+    });
+  }
+});
+
 export default router;
