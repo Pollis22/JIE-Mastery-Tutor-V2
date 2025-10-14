@@ -1,0 +1,644 @@
+# Agent3: Fix Document Retrieval - AI Can't See Uploaded Docs
+
+## Problem Identified
+
+Railway logs show:
+```
+✅ Document uploaded successfully
+🔍 Checking for documents with IDs: ['73106d69-...']
+❌ Found 0 documents with 0 total chunks
+```
+
+**Root cause:** Documents are being saved but not retrieved when AI needs them.
+
+---
+
+## Fix #1: Verify Document Storage
+
+**File: `server/src/routes/documents.ts`**
+
+First, let's ensure documents are being saved correctly with all needed fields:
+
+```typescript
+router.post('/documents/upload', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file provided' });
+    }
+
+    console.log('📄 [Upload] Processing:', req.file.originalname);
+
+    const docId = `doc-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const userId = req.user?.id || req.body.userId || 'anonymous';
+
+    // Extract text FIRST before saving
+    console.log('📝 [Upload] Extracting text...');
+    const extractedText = await extractTextFromFile(req.file);
+    console.log('✅ [Upload] Extracted', extractedText.length, 'characters');
+
+    // Create chunks (split into manageable pieces)
+    const chunks = createChunks(extractedText, 2000);
+    console.log('📦 [Upload] Created', chunks.length, 'chunks');
+
+    const doc = {
+      id: docId,
+      userId: userId,
+      name: req.file.originalname,
+      size: req.file.size,
+      mimeType: req.file.mimetype,
+      extractedText: extractedText,
+      chunks: chunks,
+      chunkCount: chunks.length,
+      uploadedAt: new Date().toISOString(),
+      status: 'ready'
+    };
+
+    // Save to database
+    await saveDocumentWithChunks(doc);
+    
+    console.log('✅ [Upload] Document saved:', {
+      id: docId,
+      userId: userId,
+      name: req.file.originalname,
+      chunks: chunks.length
+    });
+
+    // Return document info
+    res.json({
+      id: doc.id,
+      name: doc.name,
+      size: doc.size,
+      uploadedAt: doc.uploadedAt,
+      chunkCount: doc.chunkCount,
+      status: doc.status
+    });
+
+  } catch (error: any) {
+    console.error('❌ [Upload] Error:', error);
+    res.status(500).json({ 
+      error: 'Upload failed',
+      message: error.message 
+    });
+  }
+});
+
+// Helper: Create chunks from text
+function createChunks(text: string, chunkSize: number = 2000): string[] {
+  if (!text) return [];
+  
+  const chunks: string[] = [];
+  const words = text.split(/\s+/);
+  let currentChunk = '';
+
+  for (const word of words) {
+    if ((currentChunk + ' ' + word).length > chunkSize && currentChunk) {
+      chunks.push(currentChunk.trim());
+      currentChunk = word;
+    } else {
+      currentChunk += (currentChunk ? ' ' : '') + word;
+    }
+  }
+
+  if (currentChunk) {
+    chunks.push(currentChunk.trim());
+  }
+
+  return chunks;
+}
+
+// Helper: Extract text from file
+async function extractTextFromFile(file: Express.Multer.File): Promise<string> {
+  try {
+    console.log('🔍 [Extract] File type:', file.mimetype);
+
+    // Text files
+    if (file.mimetype === 'text/plain') {
+      const text = file.buffer.toString('utf-8');
+      console.log('✅ [Extract] Text file:', text.length, 'chars');
+      return text;
+    }
+
+    // PDFs
+    if (file.mimetype === 'application/pdf') {
+      const pdfParse = require('pdf-parse');
+      const data = await pdfParse(file.buffer);
+      console.log('✅ [Extract] PDF:', data.text.length, 'chars');
+      return data.text;
+    }
+
+    // Word documents
+    if (file.mimetype.includes('word') || file.mimetype.includes('document')) {
+      const mammoth = require('mammoth');
+      const result = await mammoth.extractRawText({ buffer: file.buffer });
+      console.log('✅ [Extract] Word doc:', result.value.length, 'chars');
+      return result.value;
+    }
+
+    // Images (basic placeholder - add OCR later)
+    if (file.mimetype.startsWith('image/')) {
+      console.log('⚠️ [Extract] Image - OCR not implemented');
+      return `[Image uploaded: ${file.originalname}. Please describe what help you need with this image.]`;
+    }
+
+    console.warn('⚠️ [Extract] Unsupported file type:', file.mimetype);
+    return `[Document: ${file.originalname}]`;
+
+  } catch (error) {
+    console.error('❌ [Extract] Error:', error);
+    return `[Document: ${file.originalname} - text extraction failed]`;
+  }
+}
+
+// Helper: Save document with chunks
+async function saveDocumentWithChunks(doc: any) {
+  try {
+    console.log('💾 [Save] Saving document:', doc.id);
+
+    // Save main document record
+    await db.query(`
+      INSERT INTO documents (
+        id, user_id, name, size, mime_type, 
+        extracted_text, chunk_count, uploaded_at, status
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `, [
+      doc.id,
+      doc.userId,
+      doc.name,
+      doc.size,
+      doc.mimeType,
+      doc.extractedText,
+      doc.chunkCount,
+      doc.uploadedAt,
+      doc.status
+    ]);
+
+    // Save chunks
+    for (let i = 0; i < doc.chunks.length; i++) {
+      await db.query(`
+        INSERT INTO document_chunks (
+          id, document_id, chunk_index, content
+        ) VALUES ($1, $2, $3, $4)
+      `, [
+        `${doc.id}-chunk-${i}`,
+        doc.id,
+        i,
+        doc.chunks[i]
+      ]);
+    }
+
+    console.log('✅ [Save] Saved document with', doc.chunks.length, 'chunks');
+
+  } catch (error: any) {
+    if (error.code === '42P01') {
+      console.warn('⚠️ [Save] Table missing, using in-memory storage');
+      // Store in memory as fallback
+      inMemoryDocs.set(doc.id, doc);
+    } else {
+      console.error('❌ [Save] Error:', error);
+      throw error;
+    }
+  }
+}
+
+// In-memory fallback storage
+const inMemoryDocs = new Map<string, any>();
+```
+
+---
+
+## Fix #2: Create Database Tables
+
+**Run this SQL in Railway Postgres:**
+
+```sql
+-- Documents table
+CREATE TABLE IF NOT EXISTS documents (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  size INTEGER,
+  mime_type TEXT,
+  extracted_text TEXT,
+  chunk_count INTEGER DEFAULT 0,
+  uploaded_at TIMESTAMPTZ DEFAULT NOW(),
+  status TEXT DEFAULT 'ready'
+);
+
+CREATE INDEX IF NOT EXISTS idx_documents_user ON documents(user_id);
+CREATE INDEX IF NOT EXISTS idx_documents_uploaded ON documents(uploaded_at);
+
+-- Document chunks table (for large documents)
+CREATE TABLE IF NOT EXISTS document_chunks (
+  id TEXT PRIMARY KEY,
+  document_id TEXT NOT NULL,
+  chunk_index INTEGER NOT NULL,
+  content TEXT NOT NULL,
+  FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_chunks_document ON document_chunks(document_id);
+CREATE INDEX IF NOT EXISTS idx_chunks_index ON document_chunks(document_id, chunk_index);
+
+-- Verify
+SELECT COUNT(*) FROM documents;
+SELECT COUNT(*) FROM document_chunks;
+```
+
+---
+
+## Fix #3: Fix Document Retrieval
+
+**File: `server/src/routes/realtime.ts`**
+
+Fix the function that retrieves documents for the AI:
+
+```typescript
+async function getDocumentsForAI(userId: string, documentIds: string[]) {
+  console.log('🔍 [GetDocs] Fetching documents:', {
+    userId,
+    documentIds,
+    count: documentIds.length
+  });
+
+  if (!documentIds || documentIds.length === 0) {
+    console.log('⚠️ [GetDocs] No document IDs provided');
+    return [];
+  }
+
+  try {
+    // Try database first
+    const placeholders = documentIds.map((_, i) => `$${i + 2}`).join(',');
+    const query = `
+      SELECT 
+        d.id,
+        d.name,
+        d.extracted_text,
+        d.chunk_count,
+        array_agg(dc.content ORDER BY dc.chunk_index) as chunks
+      FROM documents d
+      LEFT JOIN document_chunks dc ON d.id = dc.document_id
+      WHERE d.user_id = $1
+      AND d.id IN (${placeholders})
+      GROUP BY d.id, d.name, d.extracted_text, d.chunk_count
+    `;
+
+    console.log('📊 [GetDocs] Running query:', query);
+    console.log('📊 [GetDocs] Parameters:', [userId, ...documentIds]);
+
+    const result = await db.query(query, [userId, ...documentIds]);
+
+    console.log('✅ [GetDocs] Found', result.rows.length, 'documents from DB');
+
+    if (result.rows.length > 0) {
+      return result.rows.map(row => ({
+        id: row.id,
+        name: row.name,
+        content: row.extracted_text,
+        chunks: row.chunks.filter(c => c !== null)
+      }));
+    }
+
+    // Fallback to in-memory storage
+    console.log('🔄 [GetDocs] Trying in-memory storage...');
+    const docs = [];
+    for (const docId of documentIds) {
+      const doc = inMemoryDocs.get(docId);
+      if (doc) {
+        console.log('✅ [GetDocs] Found in memory:', docId);
+        docs.push({
+          id: doc.id,
+          name: doc.name,
+          content: doc.extractedText,
+          chunks: doc.chunks
+        });
+      }
+    }
+
+    if (docs.length > 0) {
+      console.log('✅ [GetDocs] Returning', docs.length, 'docs from memory');
+      return docs;
+    }
+
+    console.warn('⚠️ [GetDocs] No documents found anywhere');
+    return [];
+
+  } catch (error: any) {
+    console.error('❌ [GetDocs] Error:', error);
+    
+    if (error.code === '42P01') {
+      console.warn('⚠️ [GetDocs] Tables missing, trying in-memory...');
+      // Try in-memory as fallback
+      const docs = [];
+      for (const docId of documentIds) {
+        const doc = inMemoryDocs.get(docId);
+        if (doc) {
+          docs.push({
+            id: doc.id,
+            name: doc.name,
+            content: doc.extractedText,
+            chunks: doc.chunks
+          });
+        }
+      }
+      return docs;
+    }
+
+    return [];
+  }
+}
+```
+
+---
+
+## Fix #4: Include Documents in AI Instructions
+
+**File: `server/src/routes/realtime.ts`**
+
+When creating the OpenAI session, include document context:
+
+```typescript
+router.post('/session/realtime', async (req, res) => {
+  try {
+    console.log('🎬 [RealtimeAPI] Creating session');
+
+    const {
+      model = 'gpt-4o-realtime-preview',
+      voice = 'alloy',
+      userId,
+      studentId,
+      subject,
+      language,
+      ageGroup,
+      contextDocumentIds = [] // Document IDs to include
+    } = req.body;
+
+    // Get documents if provided
+    let documentContext = '';
+    if (contextDocumentIds && contextDocumentIds.length > 0) {
+      console.log('📚 [RealtimeAPI] Fetching documents:', contextDocumentIds);
+      
+      const documents = await getDocumentsForAI(userId, contextDocumentIds);
+      
+      console.log('📚 [RealtimeAPI] Retrieved', documents.length, 'documents');
+
+      if (documents.length > 0) {
+        documentContext = '\n\nSTUDENT UPLOADED DOCUMENTS:\n\n';
+        
+        for (const doc of documents) {
+          documentContext += `=== ${doc.name} ===\n`;
+          
+          // Use chunks if available, otherwise use full content
+          const chunks = doc.chunks && doc.chunks.length > 0 
+            ? doc.chunks.slice(0, 3) // First 3 chunks
+            : [doc.content?.substring(0, 6000) || '']; // Or first 6000 chars
+
+          for (let i = 0; i < chunks.length; i++) {
+            if (chunks[i]) {
+              documentContext += `\n[Part ${i + 1}]\n${chunks[i]}\n`;
+            }
+          }
+          
+          documentContext += '\n---\n\n';
+        }
+
+        console.log('✅ [RealtimeAPI] Document context prepared:', documentContext.length, 'chars');
+      } else {
+        console.warn('⚠️ [RealtimeAPI] No documents found for IDs:', contextDocumentIds);
+      }
+    }
+
+    // Create session with OpenAI
+    const openaiResponse = await fetch('https://api.openai.com/v1/realtime/sessions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        voice,
+        // Include document context in instructions
+        instructions: `You are a helpful AI tutor for ${ageGroup} students learning ${subject}.
+${documentContext}
+
+IMPORTANT: The student has uploaded the documents shown above. Reference them when helping!
+If the student asks about homework or uploaded materials, refer to the specific content.
+Be encouraging and explain concepts clearly at an appropriate level.`
+      }),
+    });
+
+    if (!openaiResponse.ok) {
+      const errorText = await openaiResponse.text();
+      console.error('❌ [RealtimeAPI] OpenAI error:', errorText);
+      return res.status(openaiResponse.status).json({ 
+        error: 'OpenAI API error',
+        details: errorText 
+      });
+    }
+
+    const sessionData = await openaiResponse.json();
+
+    console.log('✅ [RealtimeAPI] Session created:', {
+      sessionId: sessionData.id,
+      hasDocuments: documents.length > 0
+    });
+
+    // Save session to DB (fail-safe)
+    try {
+      await saveSession({
+        id: sessionData.id,
+        userId,
+        studentId,
+        subject,
+        language,
+        ageGroup,
+        voice,
+        model,
+        documentIds: contextDocumentIds,
+        documentCount: documents.length
+      });
+    } catch (dbError) {
+      console.warn('⚠️ [RealtimeAPI] DB save failed:', dbError.message);
+    }
+
+    res.json({
+      success: true,
+      sessionId: sessionData.id,
+      client_secret: sessionData.client_secret,
+      model: sessionData.model,
+      documentCount: documents.length
+    });
+
+  } catch (error: any) {
+    console.error('❌ [RealtimeAPI] Error:', error);
+    res.status(500).json({ 
+      error: 'Session creation failed',
+      message: error.message 
+    });
+  }
+});
+```
+
+---
+
+## Fix #5: Update Client to Pass Document IDs
+
+**File: `client/src/hooks/use-realtime-voice.tsx`**
+
+Make sure document IDs are passed when connecting:
+
+```typescript
+const connect = useCallback(async (config: {
+  model?: string;
+  voice?: string;
+  userId?: string;
+  studentId?: string;
+  subject?: string;
+  language?: string;
+  ageGroup?: string;
+  documentIds?: string[]; // ADD THIS
+}) => {
+  try {
+    console.log('🔵 [RealtimeVoice] Connecting with config:', {
+      ...config,
+      documentCount: config.documentIds?.length || 0
+    });
+
+    // Get credentials
+    const response = await fetch('/api/session/realtime', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: config.model || 'gpt-4o-realtime-preview',
+        voice: config.voice || 'alloy',
+        userId: config.userId,
+        studentId: config.studentId,
+        subject: config.subject,
+        language: config.language,
+        ageGroup: config.ageGroup,
+        contextDocumentIds: config.documentIds || [] // PASS DOCUMENT IDS
+      }),
+    });
+
+    const data = await response.json();
+    
+    console.log('✅ [RealtimeVoice] Session created with', data.documentCount, 'documents');
+
+    // Continue with WebRTC setup...
+    await connectWebRTC(data.client_secret.value, data.model);
+
+  } catch (error) {
+    console.error('❌ [RealtimeVoice] Connection failed:', error);
+    throw error;
+  }
+}, []);
+```
+
+---
+
+## Testing Steps
+
+### 1. Verify Upload & Storage
+
+```bash
+# After uploading a document, check Railway logs:
+```
+**Should see:**
+```
+📄 [Upload] Processing: homework.pdf
+📝 [Upload] Extracting text...
+✅ [Upload] Extracted 1234 characters
+📦 [Upload] Created 1 chunks
+💾 [Save] Saving document: doc-...
+✅ [Save] Saved document with 1 chunks
+✅ [Upload] Document saved: { id: 'doc-...', userId: '...', chunks: 1 }
+```
+
+### 2. Verify Retrieval
+
+```bash
+# When starting a session, check Railway logs:
+```
+**Should see:**
+```
+🔍 [GetDocs] Fetching documents: { userId: '...', documentIds: ['doc-...'] }
+📊 [GetDocs] Running query: SELECT...
+✅ [GetDocs] Found 1 documents from DB
+📚 [RealtimeAPI] Retrieved 1 documents
+✅ [RealtimeAPI] Document context prepared: 1234 chars
+✅ [RealtimeAPI] Session created: { sessionId: '...', hasDocuments: true }
+```
+
+### 3. Test AI Recognition
+
+1. Upload a document with specific content (e.g., math problems)
+2. Start a session
+3. Say: "Can you help me with problem 3 from my homework?"
+4. **AI should respond with reference to the actual content**
+
+---
+
+## Debug Commands
+
+```bash
+# Check if documents table exists
+railway run psql $DATABASE_URL -c "SELECT COUNT(*) FROM documents;"
+
+# List all uploaded documents
+railway run psql $DATABASE_URL -c "SELECT id, name, chunk_count FROM documents;"
+
+# Check document chunks
+railway run psql $DATABASE_URL -c "SELECT document_id, chunk_index, LENGTH(content) FROM document_chunks;"
+
+# Verify document content
+railway run psql $DATABASE_URL -c "SELECT id, name, LEFT(extracted_text, 100) FROM documents;"
+```
+
+---
+
+## Success Criteria
+
+✅ Upload shows: `✅ [Upload] Extracted X characters`  
+✅ Upload shows: `✅ [Save] Saved document with X chunks`  
+✅ Session shows: `✅ [GetDocs] Found X documents from DB`  
+✅ Session shows: `✅ [RealtimeAPI] Document context prepared`  
+✅ AI responds: "Looking at your homework..."  
+✅ AI references specific content from uploaded file  
+
+---
+
+## If Still Not Working
+
+Add this debug endpoint to manually check documents:
+
+```typescript
+router.get('/debug/documents/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    const docs = await db.query(`
+      SELECT d.*, 
+        array_agg(dc.chunk_index) as chunk_indexes
+      FROM documents d
+      LEFT JOIN document_chunks dc ON d.id = dc.document_id
+      WHERE d.user_id = $1
+      GROUP BY d.id
+    `, [userId]);
+
+    res.json({
+      count: docs.rows.length,
+      documents: docs.rows,
+      inMemory: Array.from(inMemoryDocs.keys())
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+```
+
+Test with:
+```bash
+curl https://your-app.railway.app/api/debug/documents/YOUR_USER_ID
+```
+
+This will show exactly what documents exist and where they are! 🔍
