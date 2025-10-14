@@ -189,7 +189,65 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions): UseRealtimeV
     return pc;
   }, [ensureRemoteAudioElement, addMessage]);
 
-  const connect = useCallback(() => {
+  const connect = useCallback(async () => {
+    if (!sessionId || !token) {
+      console.error('[RealtimeVoice] Missing sessionId or token');
+      onError?.('Missing connection parameters');
+      return;
+    }
+
+    try {
+      console.log('🔵 [RealtimeVoice] Starting connection for session:', sessionId);
+      setStatus('connecting');
+      
+      // Initialize audio context for playback
+      if (!audioContextRef.current) {
+        audioContextRef.current = new AudioContext({ sampleRate: 24000 });
+      }
+      
+      // Get WebRTC credentials via HTTP (no WebSocket needed - fixes Railway issues)
+      console.log('🎫 [RealtimeVoice] Fetching WebRTC credentials via HTTP...');
+      const credResponse = await fetch(`/api/session/realtime/${sessionId}/credentials`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!credResponse.ok) {
+        const error = await credResponse.text();
+        throw new Error(`Failed to get credentials: ${credResponse.status} ${error}`);
+      }
+
+      const credentials = await credResponse.json();
+      console.log('✅ [RealtimeVoice] Got WebRTC credentials');
+
+      // Now establish WebRTC connection directly
+      await connectToOpenAIWebRTC({ 
+        clientSecret: credentials.client_secret?.value || credentials.client_secret, 
+        model: credentials.model || "gpt-4o-realtime-preview" 
+      });
+
+      console.log('✅ [RealtimeVoice] WebRTC connected successfully');
+      setIsConnected(true);
+      setStatus('active');
+
+    } catch (error: any) {
+      console.error('❌ [RealtimeVoice] Connection failed:', error);
+      setStatus('error');
+      setIsConnected(false);
+      onError?.(error.message || 'Connection failed');
+      
+      toast({
+        title: 'Connection Error',
+        description: error.message || 'Failed to connect to voice service',
+        variant: 'destructive',
+      });
+    }
+  }, [sessionId, token, voice, connectToOpenAIWebRTC, addMessage, onError, toast]);
+
+  // Legacy WebSocket code (keeping for reference but unused now)
+  const connectViaWebSocket = useCallback(() => {
     if (!wsUrl || !token) {
       console.error('[RealtimeVoice] Missing wsUrl or token');
       onError?.('Missing connection parameters');
@@ -197,7 +255,7 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions): UseRealtimeV
     }
 
     try {
-      console.log('[RealtimeVoice] Connecting to:', wsUrl);
+      console.log('[RealtimeVoice] Connecting via WebSocket:', wsUrl);
       setStatus('connecting');
       
       // Initialize audio context for playback

@@ -155,6 +155,68 @@ router.get('/:sessionId', async (req, res) => {
 });
 
 /**
+ * POST /api/session/realtime/:sessionId/credentials
+ * Get WebRTC credentials for a session (HTTP alternative to WebSocket)
+ * This bypasses WebSocket which doesn't work well in Railway
+ */
+router.post('/:sessionId/credentials', async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    const sessionId = req.params.sessionId;
+    const session = await storage.getRealtimeSession(sessionId, userId);
+    
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    // Mint ephemeral token from OpenAI
+    console.log(`🎫 [Realtime] Minting WebRTC credentials for session ${sessionId}`);
+    
+    const mintResponse = await fetch('https://api.openai.com/v1/realtime/sessions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: session.model || 'gpt-4o-realtime-preview-2024-10-01',
+        voice: session.voice || 'alloy',
+        modalities: ['text', 'audio'],
+        instructions: '', // Will be set separately
+      }),
+    });
+
+    if (!mintResponse.ok) {
+      const errorText = await mintResponse.text();
+      console.error(`❌ [Realtime] OpenAI mint failed: ${mintResponse.status}`, errorText);
+      return res.status(500).json({ 
+        error: 'Failed to mint session credentials',
+        details: errorText 
+      });
+    }
+
+    const mintData = await mintResponse.json();
+    console.log(`✅ [Realtime] Minted session: ${mintData.id}`);
+
+    res.json({
+      client_secret: mintData.client_secret,
+      session_id: mintData.id,
+      model: mintData.model,
+      voice: session.voice,
+      expires_at: mintData.expires_at,
+    });
+
+  } catch (error: any) {
+    console.error('[Realtime] Error minting credentials:', error);
+    res.status(500).json({ error: 'Failed to mint credentials', details: error.message });
+  }
+});
+
+/**
  * POST /api/session/realtime/:sessionId/end
  * End an active session
  */
