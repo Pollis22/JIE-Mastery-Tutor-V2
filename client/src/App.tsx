@@ -29,12 +29,14 @@ import AdminContacts from "@/pages/admin/admin-contacts-page";
 import AdminAgents from "@/pages/admin/admin-agents-page";
 import TermsPage from "@/pages/terms-page";
 import AdminSetupPage from "@/pages/admin-setup-page";
+import SessionDetailsPage from "@/pages/session-details";
 
 function Router() {
   return (
     <Switch>
       <ProtectedRoute path="/" component={TutorPage} />
       <ProtectedRoute path="/dashboard" component={DashboardPage} />
+      <ProtectedRoute path="/sessions/:id" component={SessionDetailsPage} />
       <ProtectedRoute path="/tutor" component={TutorPage} />
       <ProtectedRoute path="/old-lessons" component={HomePage} />
       <ProtectedRoute path="/lessons" component={LessonsPage} />
