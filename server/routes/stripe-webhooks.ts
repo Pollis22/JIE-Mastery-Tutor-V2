@@ -61,13 +61,17 @@ router.post(
             break;
           }
 
-          // Handle minute top-up purchases
+          // Handle minute top-up purchases (hybrid rollover policy)
           if (type === 'minute_topup') {
             const minutesToAdd = parseInt(session.metadata?.minutesToAdd || '0');
             
             if (minutesToAdd > 0) {
-              await storage.addBonusMinutes(userId, minutesToAdd);
-              console.log(`[Stripe Webhook] Added ${minutesToAdd} bonus minutes to user ${userId}`);
+              const pricePaid = session.amount_total ? session.amount_total / 100 : 0; // Convert cents to dollars
+              
+              // Use new hybrid rollover system
+              const { addPurchasedMinutes } = await import('../services/voice-minutes');
+              await addPurchasedMinutes(userId, minutesToAdd, pricePaid);
+              console.log(`[Stripe Webhook] Added ${minutesToAdd} purchased minutes (rollover) to user ${userId}`);
               
               // Send top-up confirmation email (non-blocking)
               const user = await storage.getUser(userId);
