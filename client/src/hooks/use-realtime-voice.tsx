@@ -156,33 +156,26 @@ export function useRealtimeVoice() {
     dc.onopen = () => {
       console.log('✅ [DataChannel] Opened');
       
-      // Send initial greeting immediately upon connection
-      console.log('👋 [DataChannel] Sending greeting...');
+      // Configure session for transcript capture
+      console.log('🎙️ [DataChannel] Configuring audio input...');
       
-      // First, add a system message to set the context
+      // Enable input audio transcription
       dc.send(JSON.stringify({
-        type: 'conversation.item.create',
-        item: {
-          type: 'message',
-          role: 'system',
-          content: [{
-            type: 'text',
-            text: 'You are a friendly AI tutor. Start with a warm greeting that mentions you speak multiple languages and encourages the student to ask questions.'
-          }]
+        type: 'session.update',
+        session: {
+          input_audio_transcription: {
+            model: 'whisper-1'
+          }
         }
       }));
       
-      // Then request the greeting response
+      // Request initial greeting (without overriding server instructions)
       setTimeout(() => {
         dc.send(JSON.stringify({
-          type: 'response.create',
-          response: {
-            modalities: ['audio', 'text'],
-            instructions: 'Greet the student warmly. Say: "Hello and welcome! I\'m your AI tutor, ready to make learning fun and effective. I speak many languages fluently - English, Spanish, French, Mandarin, Arabic, German, and more - so feel free to use whichever you\'re most comfortable with. Don\'t worry about making mistakes; that\'s how we learn! Now, what would you like to explore today?"'
-          }
+          type: 'response.create'
         }));
-        console.log('✅ [DataChannel] Greeting request sent');
-      }, 100); // Small delay to ensure system message is processed first
+        console.log('✅ [DataChannel] Initial response requested');
+      }, 100);
     };
 
     dc.onmessage = (event) => {
