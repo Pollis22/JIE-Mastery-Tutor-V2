@@ -204,6 +204,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Session agent routes (dynamic agent creation)
   const { sessionRouter } = await import('./routes/session');
   app.use("/api/session", sessionRouter);
+  
+  // Support, payment, and billing routes
+  const { default: supportRoutes } = await import('./routes/support');
+  const { default: paymentMethodRoutes } = await import('./routes/payment-methods');
+  const { default: billingRoutes } = await import('./routes/billing');
+  app.use("/api/support", supportRoutes);
+  app.use("/api/payment-methods", paymentMethodRoutes);
+  app.use("/api/billing", billingRoutes);
 
   // Legacy voice API routes (for compatibility)
   // Note: live-token endpoint is now handled in voiceRoutes
@@ -600,7 +608,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const priceId = priceMap[plan];
 
     if (!priceId) {
-      return res.status(400).json({ message: `Invalid plan: ${plan}` });
+      console.error(`❌ Price ID not configured for plan: ${plan}`);
+      return res.status(503).json({ 
+        message: `Subscription service temporarily unavailable - Stripe pricing not configured for ${plan} plan. Please set STRIPE_PRICE_${plan.toUpperCase()} environment variable.` 
+      });
     }
 
     // CRITICAL VALIDATION: Ensure we have a Price ID, not a Product ID
@@ -695,13 +706,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
         '60': { 
           price: 1999, // $19.99 in cents
           minutes: 60, 
-          priceId: process.env.STRIPE_PRICE_TOPUP_60 || 'price_topup_60_placeholder'
+          priceId: process.env.STRIPE_PRICE_TOPUP_60 || ''
         }
       };
 
       const pkg = packages[minutePackage];
       if (!pkg) {
         return res.status(400).json({ message: "Invalid minute package" });
+      }
+
+      // Check if Price ID is configured
+      if (!pkg.priceId) {
+        console.error('❌ STRIPE_PRICE_TOPUP_60 environment variable not configured');
+        return res.status(503).json({ 
+          message: "Top-up service temporarily unavailable - Stripe pricing not configured. Please set STRIPE_PRICE_TOPUP_60 environment variable." 
+        });
       }
 
       // CRITICAL VALIDATION: Ensure we have a Price ID, not a Product ID
@@ -771,8 +790,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Stripe customer portal
-  app.post('/api/customer-portal', async (req, res) => {
+  // Stripe customer portal (accessible via GET for direct link or POST for API)
+  const handleStripePortal = async (req: any, res: any) => {
     if (!req.isAuthenticated()) {
       return res.sendStatus(401);
     }
@@ -790,14 +809,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const session = await stripe!.billingPortal.sessions.create({
         customer: user.stripeCustomerId,
-        return_url: `${req.protocol}://${req.get('host')}/settings`,
+        return_url: `${req.protocol}://${req.get('host')}/dashboard?tab=subscription`,
       });
 
-      res.json({ url: session.url });
+      // For GET requests, redirect directly. For POST, return the URL
+      if (req.method === 'GET') {
+        res.redirect(session.url);
+      } else {
+        res.json({ url: session.url });
+      }
     } catch (error: any) {
       res.status(500).json({ message: "Error creating portal session: " + error.message });
     }
-  });
+  };
+
+  app.get('/api/stripe/portal', handleStripePortal);
+  app.post('/api/stripe/portal', handleStripePortal);
+  
+  // Legacy endpoint for backward compatibility
+  app.post('/api/customer-portal', handleStripePortal);
 
   // Usage tracking endpoint
   app.post('/api/usage/log', async (req, res) => {
