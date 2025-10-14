@@ -96,27 +96,29 @@ export function RealtimeVoiceHost({
     }
   };
 
-  const endSession = async () => {
-    try {
-      if (sessionId) {
-        await apiRequest('POST', `/api/session/realtime/${sessionId}/end`, {});
-      }
-      
-      disconnect();
-      stopRecording();
-      setSessionId(null);
-      setWsUrl(null);
-      setToken(null);
-      hasGreetedRef.current = false; // Reset for next session
-      onSessionEnd?.();
-      
-      toast({
-        title: "Session Ended",
-        description: "Voice session has been closed",
-      });
-    } catch (error: any) {
-      console.error('[RealtimeVoiceHost] Failed to end session:', error);
-    }
+  const endSession = () => {
+    console.log('🔴 [RealtimeVoiceHost] Ending session...');
+    
+    // Just disconnect - no API call needed for WebRTC cleanup
+    disconnect();
+    stopRecording();
+    
+    // Clear local state
+    setSessionId(null);
+    setWsUrl(null);
+    setToken(null);
+    setClientSecret(null);
+    hasGreetedRef.current = false; // Reset for next session
+    
+    // Notify parent component
+    onSessionEnd?.();
+    
+    toast({
+      title: "Session Ended",
+      description: "Voice session has been closed",
+    });
+    
+    console.log('✅ [RealtimeVoiceHost] Session ended successfully');
   };
 
   const startRecording = async () => {

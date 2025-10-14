@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 
 export function useRealtimeVoice() {
   const [isConnected, setIsConnected] = useState(false);
@@ -206,39 +206,87 @@ export function useRealtimeVoice() {
   const disconnect = useCallback(() => {
     console.log('🔴 [RealtimeVoice] Disconnecting...');
 
-    // Close data channel
-    if (dataChannelRef.current) {
-      dataChannelRef.current.close();
-      dataChannelRef.current = null;
-    }
+    try {
+      // 1. Close data channel first
+      if (dataChannelRef.current) {
+        console.log('🔴 [DataChannel] Closing...');
+        try {
+          dataChannelRef.current.close();
+        } catch (e) {
+          console.warn('⚠️ [DataChannel] Error closing:', e);
+        }
+        dataChannelRef.current = null;
+      }
 
-    // Close peer connection
-    if (peerConnectionRef.current) {
-      peerConnectionRef.current.close();
-      peerConnectionRef.current = null;
-    }
+      // 2. Close peer connection
+      if (peerConnectionRef.current) {
+        console.log('🔴 [WebRTC] Closing peer connection...');
+        try {
+          peerConnectionRef.current.close();
+        } catch (e) {
+          console.warn('⚠️ [WebRTC] Error closing:', e);
+        }
+        peerConnectionRef.current = null;
+      }
 
-    // Stop microphone
-    if (micStreamRef.current) {
-      micStreamRef.current.getTracks().forEach(track => track.stop());
-      micStreamRef.current = null;
-    }
+      // 3. Stop microphone tracks
+      if (micStreamRef.current) {
+        console.log('🔴 [Microphone] Stopping tracks...');
+        micStreamRef.current.getTracks().forEach(track => {
+          try {
+            track.stop();
+            console.log('✅ [Microphone] Track stopped');
+          } catch (e) {
+            console.warn('⚠️ [Microphone] Error stopping track:', e);
+          }
+        });
+        micStreamRef.current = null;
+      }
 
-    // Remove audio element
-    if (audioElementRef.current) {
-      audioElementRef.current.srcObject = null;
-      audioElementRef.current.remove();
-      audioElementRef.current = null;
-    }
+      // 4. Remove and cleanup audio element
+      if (audioElementRef.current) {
+        console.log('🔴 [Audio] Removing element...');
+        try {
+          audioElementRef.current.pause();
+          audioElementRef.current.srcObject = null;
+          audioElementRef.current.remove();
+        } catch (e) {
+          console.warn('⚠️ [Audio] Error removing:', e);
+        }
+        audioElementRef.current = null;
+      }
 
-    setIsConnected(false);
-    setError(null);
+      console.log('✅ [RealtimeVoice] Disconnected successfully');
+      
+      // Update state
+      setIsConnected(false);
+      setError(null);
+
+    } catch (error) {
+      console.error('❌ [RealtimeVoice] Error during disconnect:', error);
+      // Force state update even if cleanup failed
+      setIsConnected(false);
+    }
   }, []);
 
   const sendAudio = useCallback((audioData: ArrayBuffer) => {
     // This can be implemented later for sending audio chunks
     console.log('[RealtimeVoice] sendAudio not yet implemented');
   }, []);
+
+  // Cleanup on unmount or page unload
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      disconnect();
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      disconnect(); // Cleanup on component unmount
+    };
+  }, [disconnect]);
 
   // Return compatible interface with existing components
   return {
