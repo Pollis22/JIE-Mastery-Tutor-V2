@@ -224,6 +224,39 @@ export function useRealtimeVoice() {
           }
         }
         
+        // Capture audio transcript completion
+        if (message.type === 'response.audio.done' && message.item) {
+          const item = message.item;
+          if (item.content && Array.isArray(item.content)) {
+            const textContent = item.content
+              .filter((c: any) => c.type === 'text')
+              .map((c: any) => c.text || '')
+              .join(' ');
+              
+            if (textContent) {
+              const newMessage: RealtimeMessage = {
+                id: item.id || `msg-${Date.now()}`,
+                role: 'assistant',
+                content: textContent,
+                timestamp: new Date(),
+              };
+              
+              setMessages((prev) => {
+                // Check if message already exists
+                const exists = prev.some(m => m.id === newMessage.id);
+                if (exists) return prev;
+                return [...prev, newMessage];
+              });
+              console.log('🎵 [Transcript] Audio transcript:', textContent.substring(0, 50));
+              
+              // Persist to database
+              if (sessionIdRef.current) {
+                saveTranscriptMessage(sessionIdRef.current, newMessage);
+              }
+            }
+          }
+        }
+        
         // Also capture response text for assistant messages
         if (message.type === 'response.output_item.added' || message.type === 'response.text.delta') {
           const item = message.item || message;

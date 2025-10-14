@@ -82,16 +82,20 @@ router.post('/', async (req, res) => {
     // Fetch document context if documents are selected
     let documentContext = '';
     const sessionUserId = req.user?.id || data.userId;
+    console.log(`🔍 [Realtime] Checking for documents. User: ${sessionUserId}, Document IDs:`, data.contextDocumentIds);
+    
     if (sessionUserId && data.contextDocumentIds && data.contextDocumentIds.length > 0) {
       try {
         const { chunks, documents } = await storage.getDocumentContext(sessionUserId, data.contextDocumentIds);
+        console.log(`📄 [Realtime] Found ${documents.length} documents with ${chunks.length} total chunks`);
         
         if (documents.length > 0) {
           documentContext = '\n\n# Student Documents for Reference:\n';
+          documentContext += 'The student has uploaded the following documents. Please reference these when helping them:\n';
           
           // Add document summaries
           for (const doc of documents) {
-            documentContext += `\n## Document: ${doc.title || doc.originalName}\n`;
+            documentContext += `\n## Document: "${doc.title || doc.originalName}"\n`;
             if (doc.subject) documentContext += `Subject: ${doc.subject}\n`;
             if (doc.grade) documentContext += `Grade Level: ${doc.grade}\n`;
             if (doc.description) documentContext += `Description: ${doc.description}\n`;
@@ -102,16 +106,18 @@ router.post('/', async (req, res) => {
               .slice(0, 3); // Take first 3 chunks
             
             if (docChunks.length > 0) {
-              documentContext += '\n### Content Preview:\n';
-              docChunks.forEach(chunk => {
+              documentContext += '\n### Content from this document:\n';
+              docChunks.forEach((chunk, idx) => {
                 // Limit each chunk to 500 characters for context
                 const content = chunk.content.slice(0, 500);
-                documentContext += `${content}${chunk.content.length > 500 ? '...' : ''}\n\n`;
+                documentContext += `Part ${idx + 1}:\n${content}${chunk.content.length > 500 ? '...' : ''}\n\n`;
               });
             }
           }
           
-          console.log(`📚 Added context from ${documents.length} documents`);
+          console.log(`📚 Added context from ${documents.length} documents. Total context length: ${documentContext.length} chars`);
+        } else {
+          console.log('⚠️ [Realtime] No documents found for provided IDs');
         }
       } catch (error) {
         console.error('⚠️ Failed to fetch document context:', error);
