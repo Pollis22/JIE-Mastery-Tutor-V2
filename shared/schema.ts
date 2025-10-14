@@ -560,13 +560,23 @@ export const realtimeSessions = pgTable("realtime_sessions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id),
   studentId: varchar("student_id").references(() => students.id, { onDelete: 'set null' }),
+  studentName: text("student_name"),
   subject: text("subject"),
   language: text("language").default('en').$type<'en' | 'es' | 'hi' | 'zh'>(),
   ageGroup: text("age_group").default('3-5').$type<'K-2' | '3-5' | '6-8' | '9-12' | 'College/Adult'>(),
   voice: text("voice"),
   model: text("model").default('gpt-4o-realtime-preview-2024-10-01'),
   status: text("status").default('connecting').$type<'connecting' | 'active' | 'ended' | 'error'>(),
-  transcript: jsonb("transcript"),
+  transcript: jsonb("transcript").$type<Array<{
+    speaker: 'tutor' | 'student';
+    text: string;
+    timestamp: string;
+    messageId: string;
+  }>>().default(sql`'[]'::jsonb`),
+  summary: text("summary"),
+  totalMessages: integer("total_messages").default(0),
+  aiCost: decimal("ai_cost", { precision: 10, scale: 4 }).default("0"),
+  audioUrl: text("audio_url"),
   contextDocuments: jsonb("context_documents"),
   startedAt: timestamp("started_at").defaultNow(),
   endedAt: timestamp("ended_at"),
@@ -577,6 +587,7 @@ export const realtimeSessions = pgTable("realtime_sessions", {
   index("idx_realtime_sessions_user").on(table.userId),
   index("idx_realtime_sessions_student").on(table.studentId),
   index("idx_realtime_sessions_status").on(table.status),
+  index("idx_sessions_user_started").on(table.userId, table.startedAt),
 ]);
 
 export const insertRealtimeSessionSchema = createInsertSchema(realtimeSessions).omit({
