@@ -97,10 +97,35 @@ export function RealtimeVoiceHost({
     }
   };
 
-  const endSession = () => {
+  const endSession = async () => {
     console.log('🔴 [RealtimeVoiceHost] Ending session...');
     
-    // Just disconnect - no API call needed for WebRTC cleanup
+    // Save session and track minutes used
+    if (sessionId) {
+      try {
+        const response = await apiRequest('POST', `/api/session/realtime/${sessionId}/end`, {});
+        const data = await response.json();
+        
+        if (data.success) {
+          console.log(`✅ [RealtimeVoiceHost] Session saved. Minutes used: ${data.minutesUsed}`);
+          
+          // Show minutes used in toast
+          toast({
+            title: "Session Ended",
+            description: `Voice session completed. ${data.minutesUsed} minute${data.minutesUsed !== 1 ? 's' : ''} used.`,
+          });
+        }
+      } catch (error: any) {
+        console.error('[RealtimeVoiceHost] Failed to save session:', error);
+        // Continue with cleanup even if API call fails
+        toast({
+          title: "Session Ended",
+          description: "Voice session has been closed",
+        });
+      }
+    }
+    
+    // Clean up WebRTC connection
     disconnect();
     stopRecording();
     
@@ -113,11 +138,6 @@ export function RealtimeVoiceHost({
     
     // Notify parent component
     onSessionEnd?.();
-    
-    toast({
-      title: "Session Ended",
-      description: "Voice session has been closed",
-    });
     
     console.log('✅ [RealtimeVoiceHost] Session ended successfully');
   };

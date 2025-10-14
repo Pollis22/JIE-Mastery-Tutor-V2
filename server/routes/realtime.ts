@@ -456,7 +456,7 @@ router.post('/transcript', async (req, res) => {
 
 /**
  * POST /api/session/realtime/:sessionId/end
- * End an active session
+ * End an active session and track voice minutes used
  */
 router.post('/:sessionId/end', async (req, res) => {
   try {
@@ -470,16 +470,32 @@ router.post('/:sessionId/end', async (req, res) => {
       return res.status(404).json({ error: 'Session not found' });
     }
 
-    // Update session status
+    // Calculate duration and minutes used
+    const endTime = new Date();
+    const startTime = session.startedAt ? new Date(session.startedAt) : endTime;
+    const durationMs = endTime.getTime() - startTime.getTime();
+    const minutesUsed = Math.ceil(durationMs / 60000); // Round up to nearest minute
+
+    console.log(`⏱️ [RealtimeAPI] Session ${session.id} ended. Duration: ${minutesUsed} minutes (${durationMs}ms)`);
+
+    // Update session with minutes used and end time
     await storage.updateRealtimeSession(session.id, userId, {
       status: 'ended',
-      endedAt: new Date(),
+      endedAt: endTime,
+      minutesUsed: minutesUsed,
     });
+
+    // Deduct minutes from user's account (prioritize bonus minutes first)
+    if (minutesUsed > 0) {
+      await storage.updateUserVoiceUsage(userId, minutesUsed);
+      console.log(`✅ [RealtimeAPI] Deducted ${minutesUsed} minutes from user ${userId}`);
+    }
 
     res.json({ 
       success: true,
       sessionId: session.id,
-      minutesUsed: session.minutesUsed,
+      minutesUsed: minutesUsed,
+      duration: durationMs,
     });
 
   } catch (error) {
