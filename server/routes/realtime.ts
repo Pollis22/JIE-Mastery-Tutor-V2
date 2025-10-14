@@ -416,6 +416,39 @@ router.post('/:sessionId/credentials', async (req, res) => {
 });
 
 /**
+ * POST /api/session/realtime/transcript
+ * Save transcript message to database
+ */
+router.post('/transcript', async (req, res) => {
+  try {
+    const { sessionId, message } = req.body;
+    
+    if (!sessionId || !message) {
+      return res.status(400).json({ error: 'Missing sessionId or message' });
+    }
+
+    // Save transcript to database (if table exists)
+    try {
+      await storage.saveRealtimeTranscript(sessionId, message);
+      console.log(`💬 [Transcript] Saved message for session ${sessionId}`);
+    } catch (error: any) {
+      // Fail silently if table doesn't exist to avoid breaking voice sessions
+      if (error.code === '42P01') {
+        console.log(`⚠️ [Transcript] Table not found, skipping save`);
+      } else {
+        console.error(`⚠️ [Transcript] Save failed:`, error.message);
+      }
+    }
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('[Transcript] Error:', error);
+    // Return success even on error to avoid breaking client
+    res.json({ success: true });
+  }
+});
+
+/**
  * POST /api/session/realtime/:sessionId/end
  * End an active session
  */

@@ -1,14 +1,23 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 
+export interface RealtimeMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp: Date;
+}
+
 export function useRealtimeVoice() {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [messages, setMessages] = useState<RealtimeMessage[]>([]);
   
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const dataChannelRef = useRef<RTCDataChannel | null>(null);
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
 
   const connect = useCallback(async (config: {
     model?: string;
@@ -18,6 +27,7 @@ export function useRealtimeVoice() {
     subject?: string;
     language?: string;
     ageGroup?: string;
+    contextDocumentIds?: string[];
   }) => {
     try {
       setIsConnecting(true);
@@ -37,6 +47,7 @@ export function useRealtimeVoice() {
           subject: config.subject,
           language: config.language || 'en',
           ageGroup: config.ageGroup,
+          contextDocumentIds: config.contextDocumentIds || [],
         }),
       });
 
@@ -55,6 +66,9 @@ export function useRealtimeVoice() {
         throw new Error('No client_secret in response');
       }
 
+      // Store sessionId for transcript persistence
+      sessionIdRef.current = data.sessionId;
+
       // Step 2: Establish WebRTC to OpenAI
       await connectWebRTC(data.client_secret.value, data.model);
 
@@ -69,6 +83,26 @@ export function useRealtimeVoice() {
       setIsConnecting(false);
     }
   }, []);
+
+  // Helper function to save transcript messages
+  const saveTranscriptMessage = async (sessionId: string, message: RealtimeMessage) => {
+    try {
+      await fetch('/api/session/realtime/transcript', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId,
+          message: {
+            role: message.role,
+            content: message.content,
+            timestamp: message.timestamp.toISOString(),
+          }
+        }),
+      });
+    } catch (error) {
+      console.error('Failed to save transcript:', error);
+    }
+  };
 
   const connectWebRTC = async (clientSecret: string, model: string) => {
     console.log('🔵 [WebRTC] Creating peer connection...');
@@ -159,6 +193,98 @@ export function useRealtimeVoice() {
         if (message.type === 'error') {
           console.error('❌ [OpenAI] Error:', message.error);
           setError(message.error.message);
+        }
+        
+        // Capture transcript messages
+        if (message.type === 'conversation.item.created') {
+          const item = message.item;
+          if (item && (item.type === 'message' || item.type === 'function_call_output')) {
+            const role = item.role === 'user' ? 'user' : item.role === 'assistant' ? 'assistant' : 'system';
+            let content = '';
+            
+            // Extract text content from the item
+            if (item.content && Array.isArray(item.content)) {
+              content = item.content
+                .filter((c: any) => c.type === 'text' || c.type === 'input_text')
+                .map((c: any) => c.text || c.transcript || '')
+                .join(' ');
+            } else if (typeof item.content === 'string') {
+              content = item.content;
+            }
+            
+            if (content) {
+              const newMessage: RealtimeMessage = {
+                id: item.id || `msg-${Date.now()}`,
+                role,
+                content,
+                timestamp: new Date(),
+              };
+              
+              setMessages((prev) => [...prev, newMessage]);
+              console.log('💬 [Transcript] Added message:', { role, content: content.substring(0, 50) });
+              
+              // Persist to database if we have a sessionId
+              if (sessionIdRef.current) {
+                saveTranscriptMessage(sessionIdRef.current, newMessage);
+              }
+            }
+          }
+        }
+        
+        // Also capture response text for assistant messages
+        if (message.type === 'response.output_item.added' || message.type === 'response.text.delta') {
+          const item = message.item || message;
+          if (item && item.content && Array.isArray(item.content)) {
+            const textContent = item.content
+              .filter((c: any) => c.type === 'text')
+              .map((c: any) => c.text || '')
+              .join(' ');
+              
+            if (textContent) {
+              // Check if we need to create or update the last assistant message
+              setMessages((prev) => {
+                const lastMessage = prev[prev.length - 1];
+                if (lastMessage && lastMessage.role === 'assistant' && 
+                    (Date.now() - lastMessage.timestamp.getTime()) < 5000) {
+                  // Update the last assistant message if it's recent
+                  return [
+                    ...prev.slice(0, -1),
+                    { ...lastMessage, content: lastMessage.content + ' ' + textContent }
+                  ];
+                } else {
+                  // Create a new assistant message
+                  const newMessage: RealtimeMessage = {
+                    id: `msg-${Date.now()}`,
+                    role: 'assistant',
+                    content: textContent,
+                    timestamp: new Date(),
+                  };
+                  return [...prev, newMessage];
+                }
+              });
+            }
+          }
+        }
+        
+        // Capture user speech transcription
+        if (message.type === 'conversation.item.input_audio_transcription.completed') {
+          const transcript = message.transcript;
+          if (transcript) {
+            const newMessage: RealtimeMessage = {
+              id: `msg-${Date.now()}`,
+              role: 'user',
+              content: transcript,
+              timestamp: new Date(),
+            };
+            
+            setMessages((prev) => [...prev, newMessage]);
+            console.log('🎤 [Transcript] User said:', transcript);
+            
+            // Persist to database
+            if (sessionIdRef.current) {
+              saveTranscriptMessage(sessionIdRef.current, newMessage);
+            }
+          }
         }
       } catch (err) {
         console.error('❌ [DataChannel] Parse error:', err);
@@ -278,6 +404,7 @@ export function useRealtimeVoice() {
       // Update state
       setIsConnected(false);
       setError(null);
+      setMessages([]);
 
     } catch (error) {
       console.error('❌ [RealtimeVoice] Error during disconnect:', error);
@@ -317,6 +444,6 @@ export function useRealtimeVoice() {
            isConnected ? 'active' as const : 
            error ? 'error' as const : 
            'idle' as const,
-    messages: [],
+    messages,
   };
 }

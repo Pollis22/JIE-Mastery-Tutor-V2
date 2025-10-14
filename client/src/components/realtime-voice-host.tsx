@@ -180,9 +180,12 @@ export function RealtimeVoiceHost({
         language: language || 'en',
         ageGroup: ageGroup || '3-5',
         subject: selectedSubject || 'Math',
+        contextDocumentIds: contextDocumentIds || [],
+        userId: user?.id,
+        studentId: studentId,
       });
     }
-  }, [clientSecret, sessionId, isConnected, connect, model, voice, language, ageGroup, selectedSubject]);
+  }, [clientSecret, sessionId, isConnected, connect, model, voice, language, ageGroup, selectedSubject, contextDocumentIds, user?.id, studentId]);
 
   // Auto-start microphone and send greeting when connected
   useEffect(() => {
