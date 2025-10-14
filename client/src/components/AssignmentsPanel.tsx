@@ -147,11 +147,24 @@ export function AssignmentsPanel({ userId, onSelectionChange }: AssignmentsPanel
       return;
     }
 
-    const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'];
+    const allowedTypes = [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
+      'application/msword', // .doc
+      'text/plain', // .txt
+      'text/csv', // .csv
+      'application/vnd.ms-excel', // .xls
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+      'image/png',
+      'image/jpeg',
+      'image/jpg',
+      'image/gif',
+      'image/bmp'
+    ];
     if (!allowedTypes.includes(file.type)) {
       toast({
         title: 'Invalid file type',
-        description: 'Please choose a PDF, Word document, or text file.',
+        description: 'Please choose a PDF, Word document, Excel spreadsheet, text file, or image (PNG, JPG, GIF).',
         variant: 'destructive',
       });
       return;
