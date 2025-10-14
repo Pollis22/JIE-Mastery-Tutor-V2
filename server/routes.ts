@@ -213,6 +213,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/api/payment-methods", paymentMethodRoutes);
   app.use("/api/billing", billingRoutes);
 
+  // Learning sessions routes
+  const { default: sessionsRoutes } = await import('./routes/sessions');
+  app.use("/api/sessions", sessionsRoutes);
+
   // Legacy voice API routes (for compatibility)
   // Note: live-token endpoint is now handled in voiceRoutes
 
