@@ -1,0 +1,1103 @@
+# Agent3 Task: Implement Learning Sessions Storage & Transcript Access
+
+## Goal
+Store all voice tutoring sessions with full transcripts and make them accessible to users for review and studying.
+
+## User Requirements
+- Dashboard shows **last 10 sessions** (quick overview)
+- Dedicated **"Learning Sessions" page** shows all sessions from last 30 days
+- Full transcripts available for each session
+- Searchable by student, subject, date
+- Auto-delete sessions older than 30 days
+
+---
+
+## Part 1: Database Schema Updates
+
+### Enhance `realtime_sessions` Table
+
+```sql
+-- Add transcript and metadata columns
+ALTER TABLE realtime_sessions
+  ADD COLUMN IF NOT EXISTS transcript JSONB DEFAULT '[]'::jsonb,
+  ADD COLUMN IF NOT EXISTS summary TEXT,
+  ADD COLUMN IF NOT EXISTS student_name TEXT,
+  ADD COLUMN IF NOT EXISTS total_messages INTEGER DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS ai_cost DECIMAL(10,4) DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS audio_url TEXT;
+
+-- Add indexes for efficient querying
+CREATE INDEX IF NOT EXISTS idx_sessions_user_started 
+  ON realtime_sessions(user_id, started_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_student 
+  ON realtime_sessions(student_id, started_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_status_started 
+  ON realtime_sessions(status, started_at DESC);
+
+-- Add full-text search on transcripts (PostgreSQL)
+CREATE INDEX IF NOT EXISTS idx_sessions_transcript_search 
+  ON realtime_sessions USING gin(to_tsvector('english', transcript::text));
+
+-- Comment on columns
+COMMENT ON COLUMN realtime_sessions.transcript IS 'Full conversation transcript as JSON array';
+COMMENT ON COLUMN realtime_sessions.summary IS 'AI-generated summary of the session';
+COMMENT ON COLUMN realtime_sessions.audio_url IS 'URL to recorded audio file (if enabled)';
+```
+
+### Transcript JSON Structure
+
+```typescript
+// Each transcript entry:
+{
+  speaker: 'tutor' | 'student',
+  text: string,
+  timestamp: string, // ISO format
+  messageId: string
+}
+
+// Example:
+[
+  {
+    speaker: 'tutor',
+    text: "Hi! I'm your math tutor. What would you like to work on today?",
+    timestamp: '2025-10-14T13:45:12.000Z',
+    messageId: 'msg_001'
+  },
+  {
+    speaker: 'student',
+    text: "Can you help me with fractions?",
+    timestamp: '2025-10-14T13:45:18.000Z',
+    messageId: 'msg_002'
+  }
+]
+```
+
+---
+
+## Part 2: Real-Time Transcript Storage
+
+### Update WebSocket Handler to Capture Transcripts
+
+**File: `server/src/routes/realtime.ts`**
+
+```typescript
+// Track transcripts in memory during session
+const sessionTranscripts = new Map<string, Array<{
+  speaker: 'tutor' | 'student';
+  text: string;
+  timestamp: string;
+  messageId: string;
+}>>();
+
+app.ws('/ws/realtime/:sessionId', (ws, req) => {
+  const sessionId = req.params.sessionId;
+  const userId = req.user?.id;
+  
+  // Initialize transcript array
+  sessionTranscripts.set(sessionId, []);
+  
+  // Listen for OpenAI messages (from data channel or websocket)
+  ws.on('message', (data) => {
+    try {
+      const message = JSON.parse(data.toString());
+      const transcript = sessionTranscripts.get(sessionId) || [];
+      
+      // Capture tutor responses
+      if (message.type === 'response.audio_transcript.done' || 
+          message.type === 'conversation.item.created') {
+        
+        const tutorText = message.item?.content?.find(c => c.type === 'text')?.text ||
+                         message.transcript;
+        
+        if (tutorText) {
+          transcript.push({
+            speaker: 'tutor',
+            text: tutorText,
+            timestamp: new Date().toISOString(),
+            messageId: message.item?.id || message.id
+          });
+          
+          console.log('💬 Tutor:', tutorText.substring(0, 50) + '...');
+        }
+      }
+      
+      // Capture student input (from speech-to-text)
+      if (message.type === 'conversation.item.input_audio_transcription.completed' ||
+          message.type === 'input_audio_buffer.speech_stopped') {
+        
+        const studentText = message.transcript;
+        
+        if (studentText) {
+          transcript.push({
+            speaker: 'student',
+            text: studentText,
+            timestamp: new Date().toISOString(),
+            messageId: message.item_id || message.id
+          });
+          
+          console.log('🎤 Student:', studentText.substring(0, 50) + '...');
+        }
+      }
+      
+      sessionTranscripts.set(sessionId, transcript);
+      
+    } catch (error) {
+      console.error('Error processing transcript:', error);
+    }
+  });
+  
+  // Save transcript when session ends
+  ws.on('close', async () => {
+    const transcript = sessionTranscripts.get(sessionId) || [];
+    const session = activeSessions.get(sessionId);
+    
+    if (!session) return;
+    
+    try {
+      console.log('💾 Saving transcript with', transcript.length, 'messages');
+      
+      // Generate AI summary (optional but recommended)
+      const summary = await generateSessionSummary(transcript);
+      
+      // Save to database
+      await db.query(`
+        UPDATE realtime_sessions 
+        SET 
+          transcript = $1,
+          summary = $2,
+          total_messages = $3,
+          status = 'completed'
+        WHERE id = $4
+      `, [
+        JSON.stringify(transcript),
+        summary,
+        transcript.length,
+        sessionId
+      ]);
+      
+      console.log('✅ Transcript saved successfully');
+      
+    } catch (error) {
+      console.error('❌ Failed to save transcript:', error);
+    } finally {
+      // Cleanup memory
+      sessionTranscripts.delete(sessionId);
+      activeSessions.delete(sessionId);
+    }
+  });
+});
+
+// Helper: Generate AI summary of the session
+async function generateSessionSummary(
+  transcript: Array<{ speaker: string; text: string }>
+): Promise<string> {
+  if (transcript.length === 0) return 'No conversation recorded';
+  
+  // Combine all messages
+  const fullConversation = transcript
+    .map(t => `${t.speaker}: ${t.text}`)
+    .join('\n');
+  
+  // Call OpenAI to generate summary (optional)
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [{
+          role: 'system',
+          content: 'Summarize this tutoring session in 2-3 sentences. Focus on topics covered and student progress.'
+        }, {
+          role: 'user',
+          content: fullConversation.substring(0, 3000) // Limit tokens
+        }],
+        max_tokens: 150
+      })
+    });
+    
+    const data = await response.json();
+    return data.choices[0].message.content;
+    
+  } catch (error) {
+    console.error('Failed to generate summary:', error);
+    
+    // Fallback: Extract topics mentioned
+    const topics = new Set<string>();
+    transcript.forEach(t => {
+      if (t.text.toLowerCase().includes('math')) topics.add('Math');
+      if (t.text.toLowerCase().includes('science')) topics.add('Science');
+      if (t.text.toLowerCase().includes('reading')) topics.add('Reading');
+      // Add more topic detection as needed
+    });
+    
+    return topics.size > 0 
+      ? `Discussed: ${Array.from(topics).join(', ')}`
+      : `${transcript.length} messages exchanged`;
+  }
+}
+```
+
+---
+
+## Part 3: API Endpoints for Sessions
+
+**Create file: `server/src/routes/sessions.ts`**
+
+```typescript
+import { Router } from 'express';
+import { authenticateUser } from '../middleware/auth';
+
+const router = Router();
+
+// GET /api/sessions/recent - Last 10 sessions for dashboard
+router.get('/recent', authenticateUser, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    const result = await db.query(`
+      SELECT 
+        id,
+        student_id,
+        student_name,
+        subject,
+        language,
+        age_group,
+        started_at,
+        ended_at,
+        minutes_used,
+        summary,
+        total_messages,
+        status
+      FROM realtime_sessions
+      WHERE user_id = $1
+        AND status = 'completed'
+        AND started_at > NOW() - INTERVAL '30 days'
+      ORDER BY started_at DESC
+      LIMIT 10
+    `, [userId]);
+    
+    res.json({ sessions: result.rows });
+    
+  } catch (error) {
+    console.error('Failed to fetch recent sessions:', error);
+    res.status(500).json({ error: 'Failed to fetch sessions' });
+  }
+});
+
+// GET /api/sessions - All sessions (last 30 days) with filters
+router.get('/', authenticateUser, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { 
+      page = 1, 
+      limit = 20,
+      studentId,
+      subject,
+      search,
+      startDate,
+      endDate
+    } = req.query;
+    
+    const offset = (Number(page) - 1) * Number(limit);
+    
+    // Build dynamic query
+    let query = `
+      SELECT 
+        id,
+        student_id,
+        student_name,
+        subject,
+        language,
+        age_group,
+        started_at,
+        ended_at,
+        minutes_used,
+        summary,
+        total_messages,
+        status
+      FROM realtime_sessions
+      WHERE user_id = $1
+        AND status = 'completed'
+        AND started_at > NOW() - INTERVAL '30 days'
+    `;
+    
+    const params: any[] = [userId];
+    let paramCount = 1;
+    
+    if (studentId) {
+      paramCount++;
+      query += ` AND student_id = $${paramCount}`;
+      params.push(studentId);
+    }
+    
+    if (subject) {
+      paramCount++;
+      query += ` AND subject = $${paramCount}`;
+      params.push(subject);
+    }
+    
+    if (search) {
+      paramCount++;
+      query += ` AND (
+        summary ILIKE $${paramCount} OR 
+        to_tsvector('english', transcript::text) @@ plainto_tsquery('english', $${paramCount})
+      )`;
+      params.push(`%${search}%`);
+    }
+    
+    if (startDate) {
+      paramCount++;
+      query += ` AND started_at >= $${paramCount}`;
+      params.push(startDate);
+    }
+    
+    if (endDate) {
+      paramCount++;
+      query += ` AND started_at <= $${paramCount}`;
+      params.push(endDate);
+    }
+    
+    // Get total count
+    const countResult = await db.query(
+      query.replace('SELECT id,', 'SELECT COUNT(*) as total FROM (SELECT id,') + `) as count_query`,
+      params
+    );
+    const totalCount = parseInt(countResult.rows[0]?.total || '0');
+    
+    // Get paginated results
+    query += ` ORDER BY started_at DESC LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
+    params.push(Number(limit), offset);
+    
+    const result = await db.query(query, params);
+    
+    res.json({
+      sessions: result.rows,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        total: totalCount,
+        totalPages: Math.ceil(totalCount / Number(limit))
+      }
+    });
+    
+  } catch (error) {
+    console.error('Failed to fetch sessions:', error);
+    res.status(500).json({ error: 'Failed to fetch sessions' });
+  }
+});
+
+// GET /api/sessions/:id - Get full session with transcript
+router.get('/:id', authenticateUser, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+    
+    const result = await db.query(`
+      SELECT 
+        id,
+        user_id,
+        student_id,
+        student_name,
+        subject,
+        language,
+        age_group,
+        voice,
+        model,
+        started_at,
+        ended_at,
+        minutes_used,
+        transcript,
+        summary,
+        total_messages,
+        audio_url,
+        status,
+        created_at
+      FROM realtime_sessions
+      WHERE id = $1 AND user_id = $2
+    `, [id, userId]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    
+    res.json({ session: result.rows[0] });
+    
+  } catch (error) {
+    console.error('Failed to fetch session:', error);
+    res.status(500).json({ error: 'Failed to fetch session' });
+  }
+});
+
+// DELETE /api/sessions/:id - Delete a session
+router.delete('/:id', authenticateUser, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+    
+    const result = await db.query(`
+      DELETE FROM realtime_sessions
+      WHERE id = $1 AND user_id = $2
+      RETURNING id
+    `, [id, userId]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    
+    res.json({ success: true, deletedId: id });
+    
+  } catch (error) {
+    console.error('Failed to delete session:', error);
+    res.status(500).json({ error: 'Failed to delete session' });
+  }
+});
+
+export default router;
+```
+
+**Mount in `server/src/app.ts`:**
+
+```typescript
+import sessionsRouter from './routes/sessions';
+
+app.use('/api/sessions', sessionsRouter);
+```
+
+---
+
+## Part 4: Frontend Components
+
+### Update Dashboard - Show Last 10 Sessions
+
+**File: `client/src/pages/dashboard.tsx`**
+
+```typescript
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+
+interface RecentSession {
+  id: string;
+  student_name: string;
+  subject: string;
+  started_at: string;
+  minutes_used: number;
+  summary: string;
+}
+
+export default function Dashboard() {
+  const [recentSessions, setRecentSessions] = useState<RecentSession[]>([]);
+  const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
+  
+  useEffect(() => {
+    fetchRecentSessions();
+  }, []);
+  
+  const fetchRecentSessions = async () => {
+    try {
+      const response = await fetch('/api/sessions/recent');
+      const data = await response.json();
+      setRecentSessions(data.sessions || []);
+    } catch (error) {
+      console.error('Failed to fetch sessions:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+  
+  return (
+    <div className="dashboard">
+      {/* ... other dashboard content ... */}
+      
+      <div className="recent-sessions-section">
+        <div className="section-header">
+          <h2>Recent Learning Sessions</h2>
+          <p className="subtitle">Your last 10 tutoring sessions</p>
+        </div>
+        
+        {loading ? (
+          <div className="loading">Loading sessions...</div>
+        ) : recentSessions.length === 0 ? (
+          <div className="empty-state">
+            <div className="icon">🎙️</div>
+            <p>No learning sessions yet</p>
+            <p className="hint">Start a tutoring session to see your history here</p>
+          </div>
+        ) : (
+          <div className="sessions-list">
+            {recentSessions.map((session) => (
+              <div 
+                key={session.id} 
+                className="session-card"
+                onClick={() => navigate(`/sessions/${session.id}`)}
+                style={{ cursor: 'pointer' }}
+              >
+                <div className="session-header">
+                  <span className="subject-badge">{session.subject}</span>
+                  <span className="duration">{session.minutes_used} min</span>
+                </div>
+                <div className="session-info">
+                  <p className="student-name">{session.student_name || 'Student'}</p>
+                  <p className="date">{formatDate(session.started_at)}</p>
+                </div>
+                {session.summary && (
+                  <p className="summary">{session.summary}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        
+        <button 
+          className="view-all-btn"
+          onClick={() => navigate('/sessions')}
+        >
+          View all sessions →
+        </button>
+      </div>
+    </div>
+  );
+}
+```
+
+### Create Full Sessions Page
+
+**Create file: `client/src/pages/sessions-page.tsx`**
+
+```typescript
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+
+interface Session {
+  id: string;
+  student_id: string;
+  student_name: string;
+  subject: string;
+  language: string;
+  started_at: string;
+  ended_at: string;
+  minutes_used: number;
+  summary: string;
+  total_messages: number;
+}
+
+export default function SessionsPage() {
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filters, setFilters] = useState({
+    search: '',
+    subject: '',
+    studentId: ''
+  });
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 20,
+    total: 0,
+    totalPages: 0
+  });
+  
+  const navigate = useNavigate();
+  
+  useEffect(() => {
+    fetchSessions();
+  }, [filters, pagination.page]);
+  
+  const fetchSessions = async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({
+        page: pagination.page.toString(),
+        limit: pagination.limit.toString(),
+        ...filters
+      });
+      
+      const response = await fetch(`/api/sessions?${params}`);
+      const data = await response.json();
+      
+      setSessions(data.sessions || []);
+      setPagination(prev => ({ ...prev, ...data.pagination }));
+    } catch (error) {
+      console.error('Failed to fetch sessions:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+  
+  return (
+    <div className="sessions-page">
+      <div className="page-header">
+        <h1>Learning Sessions</h1>
+        <p>All sessions from the last 30 days</p>
+      </div>
+      
+      {/* Filters */}
+      <div className="filters">
+        <input
+          type="text"
+          placeholder="Search transcripts..."
+          value={filters.search}
+          onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+          className="search-input"
+        />
+        
+        <select
+          value={filters.subject}
+          onChange={(e) => setFilters({ ...filters, subject: e.target.value })}
+          className="subject-filter"
+        >
+          <option value="">All Subjects</option>
+          <option value="Math">Math</option>
+          <option value="Science">Science</option>
+          <option value="Reading">Reading</option>
+          <option value="Writing">Writing</option>
+          <option value="History">History</option>
+          <option value="Language Arts">Language Arts</option>
+        </select>
+      </div>
+      
+      {/* Sessions Table */}
+      {loading ? (
+        <div className="loading">Loading sessions...</div>
+      ) : sessions.length === 0 ? (
+        <div className="empty-state">
+          <p>No sessions found</p>
+        </div>
+      ) : (
+        <>
+          <div className="sessions-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date & Time</th>
+                  <th>Student</th>
+                  <th>Subject</th>
+                  <th>Duration</th>
+                  <th>Messages</th>
+                  <th>Summary</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sessions.map((session) => (
+                  <tr key={session.id}>
+                    <td>{formatDate(session.started_at)}</td>
+                    <td>{session.student_name || 'Student'}</td>
+                    <td><span className="subject-badge">{session.subject}</span></td>
+                    <td>{session.minutes_used} min</td>
+                    <td>{session.total_messages}</td>
+                    <td className="summary-cell">{session.summary}</td>
+                    <td>
+                      <button 
+                        onClick={() => navigate(`/sessions/${session.id}`)}
+                        className="view-btn"
+                      >
+                        View Transcript
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          
+          {/* Pagination */}
+          <div className="pagination">
+            <button
+              disabled={pagination.page === 1}
+              onClick={() => setPagination({ ...pagination, page: pagination.page - 1 })}
+            >
+              Previous
+            </button>
+            <span>
+              Page {pagination.page} of {pagination.totalPages}
+            </span>
+            <button
+              disabled={pagination.page === pagination.totalPages}
+              onClick={() => setPagination({ ...pagination, page: pagination.page + 1 })}
+            >
+              Next
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+```
+
+### Create Transcript Viewer
+
+**Create file: `client/src/pages/session-detail.tsx`**
+
+```typescript
+import { useEffect, useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+
+interface TranscriptMessage {
+  speaker: 'tutor' | 'student';
+  text: string;
+  timestamp: string;
+  messageId: string;
+}
+
+interface SessionDetail {
+  id: string;
+  student_name: string;
+  subject: string;
+  language: string;
+  started_at: string;
+  ended_at: string;
+  minutes_used: number;
+  transcript: TranscriptMessage[];
+  summary: string;
+  total_messages: number;
+}
+
+export default function SessionDetail() {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const [session, setSession] = useState<SessionDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  
+  useEffect(() => {
+    fetchSession();
+  }, [id]);
+  
+  const fetchSession = async () => {
+    try {
+      const response = await fetch(`/api/sessions/${id}`);
+      const data = await response.json();
+      setSession(data.session);
+    } catch (error) {
+      console.error('Failed to fetch session:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const formatTime = (timestamp: string) => {
+    const date = new Date(timestamp);
+    return date.toLocaleTimeString('en-US', { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      second: '2-digit'
+    });
+  };
+  
+  const exportTranscript = () => {
+    if (!session) return;
+    
+    const text = session.transcript
+      .map(m => `[${formatTime(m.timestamp)}] ${m.speaker === 'tutor' ? 'Tutor' : 'Student'}: ${m.text}`)
+      .join('\n');
+    
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `session-${session.id}-transcript.txt`;
+    a.click();
+  };
+  
+  if (loading) return <div className="loading">Loading session...</div>;
+  if (!session) return <div className="error">Session not found</div>;
+  
+  return (
+    <div className="session-detail">
+      {/* Header */}
+      <div className="detail-header">
+        <button onClick={() => navigate('/sessions')} className="back-btn">
+          ← Back to Sessions
+        </button>
+        
+        <div className="session-meta">
+          <h1>{session.subject} Session</h1>
+          <p>
+            {session.student_name || 'Student'} • 
+            {new Date(session.started_at).toLocaleDateString()} • 
+            {session.minutes_used} minutes • 
+            {session.total_messages} messages
+          </p>
+        </div>
+        
+        <button onClick={exportTranscript} className="export-btn">
+          Export Transcript
+        </button>
+      </div>
+      
+      {/* Summary */}
+      {session.summary && (
+        <div className="summary-box">
+          <h3>Session Summary</h3>
+          <p>{session.summary}</p>
+        </div>
+      )}
+      
+      {/* Transcript */}
+      <div className="transcript-container">
+        <h3>Full Transcript</h3>
+        <div className="transcript">
+          {session.transcript.map((message, index) => (
+            <div 
+              key={message.messageId || index} 
+              className={`message ${message.speaker}`}
+            >
+              <div className="message-header">
+                <span className="speaker">
+                  {message.speaker === 'tutor' ? '🤖 Tutor' : '👤 Student'}
+                </span>
+                <span className="time">{formatTime(message.timestamp)}</span>
+              </div>
+              <div className="message-text">{message.text}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+### Add Route to Navigation
+
+**Update `client/src/app.tsx` or router:**
+
+```typescript
+import SessionsPage from './pages/sessions-page';
+import SessionDetail from './pages/session-detail';
+
+// Add routes:
+<Route path="/sessions" element={<SessionsPage />} />
+<Route path="/sessions/:id" element={<SessionDetail />} />
+```
+
+---
+
+## Part 5: Auto-Cleanup (Delete sessions > 30 days)
+
+**Create file: `server/src/jobs/cleanup-old-sessions.ts`**
+
+```typescript
+import { db } from '../db';
+
+export async function cleanupOldSessions() {
+  try {
+    console.log('🗑️ Running session cleanup job...');
+    
+    const result = await db.query(`
+      DELETE FROM realtime_sessions
+      WHERE started_at < NOW() - INTERVAL '30 days'
+        AND status = 'completed'
+      RETURNING id
+    `);
+    
+    const deletedCount = result.rows.length;
+    
+    if (deletedCount > 0) {
+      console.log(`✅ Deleted ${deletedCount} sessions older than 30 days`);
+    } else {
+      console.log('✅ No old sessions to delete');
+    }
+    
+    return deletedCount;
+    
+  } catch (error) {
+    console.error('❌ Failed to cleanup old sessions:', error);
+    throw error;
+  }
+}
+
+// Run cleanup daily
+if (process.env.NODE_ENV === 'production') {
+  setInterval(
+    cleanupOldSessions,
+    24 * 60 * 60 * 1000 // 24 hours
+  );
+  
+  // Run on startup
+  cleanupOldSessions();
+}
+```
+
+**Import in `server/src/index.ts`:**
+
+```typescript
+import './jobs/cleanup-old-sessions';
+```
+
+**Or use a cron job (Railway):**
+
+Add a Railway cron service that runs:
+```bash
+curl -X POST https://your-app.railway.app/api/admin/cleanup-sessions
+```
+
+---
+
+## Part 6: CSS Styling (Optional)
+
+**Add to `client/src/styles/sessions.css`:**
+
+```css
+/* Session Cards */
+.session-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+  transition: all 0.2s;
+}
+
+.session-card:hover {
+  border-color: #3b82f6;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
+  transform: translateY(-2px);
+}
+
+.subject-badge {
+  background: #3b82f6;
+  color: white;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* Transcript Messages */
+.transcript {
+  max-height: 600px;
+  overflow-y: auto;
+  padding: 16px;
+  background: #f9fafb;
+  border-radius: 8px;
+}
+
+.message {
+  margin-bottom: 16px;
+  padding: 12px;
+  border-radius: 8px;
+}
+
+.message.tutor {
+  background: #eff6ff;
+  border-left: 3px solid #3b82f6;
+}
+
+.message.student {
+  background: #f0fdf4;
+  border-left: 3px solid #10b981;
+}
+
+.message-text {
+  margin-top: 8px;
+  line-height: 1.6;
+}
+```
+
+---
+
+## Testing Checklist
+
+### 1. Test Transcript Capture
+1. Start a voice session
+2. Have a conversation (at least 5-10 exchanges)
+3. End the session
+4. Check database:
+```sql
+SELECT transcript, summary, total_messages 
+FROM realtime_sessions 
+ORDER BY started_at DESC LIMIT 1;
+```
+**Expected:** transcript JSON with all messages, summary generated, total_messages > 0
+
+### 2. Test Dashboard Display
+1. Go to `/dashboard`
+2. Look for "Recent Learning Sessions"
+**Expected:** Shows last 10 sessions, summary visible, click opens detail page
+
+### 3. Test Sessions Page
+1. Go to `/sessions`
+2. Try search filter
+3. Try subject filter
+4. Click pagination
+**Expected:** All sessions from last 30 days, filters work, pagination works
+
+### 4. Test Transcript Viewer
+1. Click "View Transcript" on any session
+2. Review full conversation
+3. Click "Export Transcript"
+**Expected:** Full transcript displayed, export downloads .txt file
+
+### 5. Test Auto-Cleanup
+```sql
+-- Manually test cleanup
+DELETE FROM realtime_sessions 
+WHERE started_at < NOW() - INTERVAL '30 days'
+RETURNING id;
+```
+**Expected:** Old sessions deleted
+
+---
+
+## Success Criteria
+
+✅ All voice sessions save full transcripts to database  
+✅ Dashboard shows last 10 sessions with summaries  
+✅ Dedicated Sessions page shows all sessions (30 days)  
+✅ Search and filter work correctly  
+✅ Transcript viewer displays full conversation  
+✅ Export function downloads transcript  
+✅ Auto-cleanup deletes sessions > 30 days  
+✅ Performance: Page loads in < 2 seconds with 100+ sessions  
+
+---
+
+## Environment Variables
+
+No new env vars needed, but verify:
+```bash
+OPENAI_API_KEY=sk-proj-...  # For AI summaries
+DATABASE_URL=postgresql://...
+```
+
+---
+
+## Deploy
+
+```bash
+git add .
+git commit -m "Add session storage and transcript viewing"
+git push
+```
+
+Check Railway logs for:
+- ✅ `💬 Tutor: ...` and `🎤 Student: ...` during sessions
+- ✅ `💾 Saving transcript with X messages`
+- ✅ `✅ Transcript saved successfully`
