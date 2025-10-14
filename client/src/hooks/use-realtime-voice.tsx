@@ -122,13 +122,13 @@ export function useRealtimeVoice() {
     dc.onopen = () => {
       console.log('✅ [DataChannel] Opened');
       
-      // Send greeting request
+      // Send engaging greeting request with language support mention
       console.log('👋 [DataChannel] Requesting greeting...');
       dc.send(JSON.stringify({
         type: 'response.create',
         response: {
           modalities: ['audio'],
-          instructions: "Say 'Hi! I'm your tutor. What would you like to learn today?' clearly once.",
+          instructions: `Say the following with genuine enthusiasm: "Hello and welcome! I'm your AI tutor, ready to make learning fun and effective. I speak many languages fluently - English, Spanish, French, Mandarin, Arabic, German, and more - so feel free to use whichever you're most comfortable with. Don't worry about making mistakes; that's how we learn! Now, what would you like to explore today?"`,
           voice: 'alloy'
         }
       }));
