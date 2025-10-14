@@ -164,6 +164,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/api/context", contextRoutes);
   app.use("/api/session/realtime", realtimeRoutes);
   
+  // Debug endpoint to verify route mounting
+  app.get("/api/routes", (req, res) => {
+    const routes: any[] = [];
+    app._router.stack.forEach((middleware: any) => {
+      if (middleware.route) {
+        routes.push({
+          path: middleware.route.path,
+          methods: Object.keys(middleware.route.methods)
+        });
+      } else if (middleware.name === 'router') {
+        middleware.handle.stack.forEach((handler: any) => {
+          if (handler.route) {
+            const path = middleware.regexp.source
+              .replace('\\/', '')
+              .replace('(?:\\/(?=$))?', '')
+              .replace(/\\/g, '');
+            routes.push({
+              path: path + handler.route.path,
+              methods: Object.keys(handler.route.methods)
+            });
+          }
+        });
+      }
+    });
+    res.json({ routes, total: routes.length });
+  });
+  
   // Student memory routes
   const { default: studentRoutes } = await import('./routes/students');
   app.use("/api/students", studentRoutes);
