@@ -26,9 +26,9 @@ export default function SessionHistory({ limit }: SessionHistoryProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
 
-  // Fetch session history
+  // Fetch session history using correct endpoint
   const { data, isLoading } = useQuery({
-    queryKey: ['/api/user/sessions', limit],
+    queryKey: limit ? ['/api/sessions/recent'] : ['/api/sessions'],
     enabled: !!user
   });
 
@@ -38,9 +38,10 @@ export default function SessionHistory({ limit }: SessionHistoryProps) {
     if (!searchTerm) return true;
     const searchLower = searchTerm.toLowerCase();
     return (
-      session.transcript?.toLowerCase().includes(searchLower) ||
+      session.summary?.toLowerCase().includes(searchLower) ||
       session.subject?.toLowerCase().includes(searchLower) ||
-      session.topic?.toLowerCase().includes(searchLower)
+      session.studentName?.toLowerCase().includes(searchLower) ||
+      session.ageGroup?.toLowerCase().includes(searchLower)
     );
   });
 
@@ -111,53 +112,68 @@ export default function SessionHistory({ limit }: SessionHistoryProps) {
                 <div className="flex items-start justify-between">
                   <div className="space-y-2 flex-1">
                     <div className="flex items-center gap-2">
-                      <Badge variant="outline">
-                        {session.sessionType === 'voice' ? (
-                          <><Mic className="mr-1 h-3 w-3" /> Voice</>
-                        ) : (
-                          <><FileText className="mr-1 h-3 w-3" /> Text</>
-                        )}
-                      </Badge>
+                      {session.language && (
+                        <Badge variant="outline">
+                          {session.language === 'en' ? '🇺🇸' : 
+                           session.language === 'es' ? '🇪🇸' : 
+                           session.language === 'hi' ? '🇮🇳' : 
+                           session.language === 'zh' ? '🇨🇳' : ''} {session.language.toUpperCase()}
+                        </Badge>
+                      )}
                       {session.subject && (
                         <Badge variant="secondary">{session.subject}</Badge>
                       )}
-                      {session.isCompleted && (
-                        <Badge variant="default">Completed</Badge>
+                      {session.ageGroup && (
+                        <Badge variant="outline">{session.ageGroup}</Badge>
+                      )}
+                      {session.totalMessages > 0 && (
+                        <Badge variant="default">
+                          <FileText className="mr-1 h-3 w-3" />
+                          {session.totalMessages} messages
+                        </Badge>
                       )}
                     </div>
                     
                     <div className="text-sm text-muted-foreground space-y-1">
+                      {session.studentName && (
+                        <div className="font-medium text-foreground">
+                          Student: {session.studentName}
+                        </div>
+                      )}
                       <div className="flex items-center gap-2">
                         <Calendar className="h-3 w-3" />
-                        {format(new Date(session.startedAt), 'MMM dd, yyyy')}
+                        {format(new Date(session.startedAt), 'MMM dd, yyyy h:mm a')}
                       </div>
                       <div className="flex items-center gap-2">
                         <Clock className="h-3 w-3" />
-                        {session.voiceMinutesUsed || 0} minutes • 
+                        {session.minutesUsed || 0} minutes • 
                         {formatDistanceToNow(new Date(session.startedAt), { addSuffix: true })}
                       </div>
                     </div>
 
-                    {selectedSession === session.id && session.transcript && (
+                    {session.summary && (
+                      <div className="mt-2 p-2 bg-muted/30 rounded">
+                        <p className="text-sm">{session.summary}</p>
+                      </div>
+                    )}
+
+                    {selectedSession === session.id && (
                       <div className="mt-4 p-3 bg-muted/50 rounded-lg">
-                        <h4 className="font-medium text-sm mb-2">Session Transcript Preview</h4>
-                        <p className="text-sm text-muted-foreground line-clamp-3">
-                          {typeof session.transcript === 'string' 
-                            ? session.transcript 
-                            : JSON.stringify(session.transcript).slice(0, 200)
-                          }...
+                        <h4 className="font-medium text-sm mb-2">Session Details</h4>
+                        <p className="text-sm text-muted-foreground mb-2">
+                          This session contained {session.totalMessages || 0} messages between the student and tutor.
                         </p>
                         <Button
                           variant="link"
                           size="sm"
-                          className="mt-2 p-0"
+                          className="p-0"
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleExportSession(session.id);
+                            window.open(`/sessions/${session.id}`, '_blank');
                           }}
                         >
-                          <Download className="mr-2 h-3 w-3" />
-                          Export Full Transcript
+                          <FileText className="mr-2 h-3 w-3" />
+                          View Full Transcript
                         </Button>
                       </div>
                     )}
