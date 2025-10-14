@@ -39,6 +39,10 @@ export function RealtimeVoiceHost({
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
   const hasGreetedRef = useRef(false);
+  
+  // Use props for these
+  const selectedSubject = subject;
+  const student = { id: studentId };
 
   const {
     isConnected,
@@ -47,15 +51,8 @@ export function RealtimeVoiceHost({
     connect,
     disconnect,
     sendAudio,
-  } = useRealtimeVoice({
-    sessionId: sessionId || undefined,
-    wsUrl: wsUrl || undefined,
-    token: token || undefined,
-    language,
-    voice,
-    clientSecret: clientSecret || undefined,
-    model: model || undefined,
-  });
+    isConnecting,
+  } = useRealtimeVoice();
 
   const startSession = async () => {
     try {
@@ -172,12 +169,18 @@ export function RealtimeVoiceHost({
     setIsMuted(!isMuted);
   };
 
-  // Auto-connect when we have wsUrl and token
+  // Auto-connect when we have clientSecret and sessionId
   useEffect(() => {
-    if (wsUrl && token && !isConnected) {
-      connect();
+    if (clientSecret && sessionId && !isConnected) {
+      connect({
+        model: model || 'gpt-4o-realtime-preview-2024-10-01',
+        voice: voice || 'alloy',
+        language: language || 'en',
+        ageGroup: ageGroup || '3-5',
+        subject: selectedSubject || 'Math',
+      });
     }
-  }, [wsUrl, token, isConnected, connect]);
+  }, [clientSecret, sessionId, isConnected, connect, model, voice, language, ageGroup, selectedSubject]);
 
   // Auto-start microphone and send greeting when connected
   useEffect(() => {
