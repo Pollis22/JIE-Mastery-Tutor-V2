@@ -52,13 +52,7 @@ function StatusPill({ status, error, retryCount }: { status: Document['processin
 export function AssignmentsPanel({ userId, onSelectionChange }: AssignmentsPanelProps) {
   const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
   const [isUploading, setIsUploading] = useState(false);
-  const [uploadMetadata, setUploadMetadata] = useState({
-    subject: '',
-    grade: '',
-    title: '',
-    description: '',
-    keepForFutureSessions: false
-  });
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -84,26 +78,31 @@ export function AssignmentsPanel({ userId, onSelectionChange }: AssignmentsPanel
       const response = await fetch('/api/documents/upload', {
         method: 'POST',
         body: formData,
+        credentials: 'include',
       });
       
       if (!response.ok) {
-        throw new Error('Upload failed');
+        const errorData = await response.json().catch(() => ({ error: 'Upload failed' }));
+        throw new Error(errorData.error || 'Upload failed');
       }
       
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['documents', userId] });
-      setUploadMetadata({ subject: '', grade: '', title: '', description: '', keepForFutureSessions: false });
+      setSelectedFile(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
       toast({
-        title: 'Document uploaded',
-        description: 'Your document is being processed...',
+        title: 'Document uploaded successfully',
+        description: 'Your document is being processed and will be available shortly.',
       });
     },
-    onError: () => {
+    onError: (error: Error) => {
       toast({
         title: 'Upload failed',
-        description: 'Please try again with a smaller file or different format.',
+        description: error.message || 'Please try again with a smaller file or different format.',
         variant: 'destructive',
       });
     },
@@ -135,18 +134,26 @@ export function AssignmentsPanel({ userId, onSelectionChange }: AssignmentsPanel
 
   const handleFileSelect = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (!file) return;
+    if (!file) {
+      setSelectedFile(null);
+      return;
+    }
 
-    // Validate file
+    // Validate file size
     if (file.size > 10 * 1024 * 1024) {
       toast({
         title: 'File too large',
         description: 'Please choose a file smaller than 10MB.',
         variant: 'destructive',
       });
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      setSelectedFile(null);
       return;
     }
 
+    // Validate file type
     const allowedTypes = [
       'application/pdf',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
@@ -161,40 +168,48 @@ export function AssignmentsPanel({ userId, onSelectionChange }: AssignmentsPanel
       'image/gif',
       'image/bmp'
     ];
-    if (!allowedTypes.includes(file.type)) {
+    
+    if (!allowedTypes.includes(file.type) && !file.name.match(/\.(pdf|docx?|txt|csv|xlsx?|png|jpe?g|gif|bmp)$/i)) {
       toast({
         title: 'Invalid file type',
         description: 'Please choose a PDF, Word document, Excel spreadsheet, text file, or image (PNG, JPG, GIF).',
         variant: 'destructive',
       });
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+      setSelectedFile(null);
       return;
     }
 
-    // Auto-fill title if empty
-    if (!uploadMetadata.title) {
-      setUploadMetadata(prev => ({ ...prev, title: file.name.replace(/\.[^/.]+$/, '') }));
-    }
+    // File is valid, store it
+    setSelectedFile(file);
+    console.log('📄 File selected:', file.name);
   };
 
   const handleUpload = async () => {
-    const file = fileInputRef.current?.files?.[0];
-    if (!file) return;
+    if (!selectedFile) {
+      toast({
+        title: 'No file selected',
+        description: 'Please select a file to upload.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     setIsUploading(true);
     
     const formData = new FormData();
-    formData.append('file', file);
-    formData.append('subject', uploadMetadata.subject);
-    formData.append('grade', uploadMetadata.grade);
-    formData.append('title', uploadMetadata.title || file.name);
-    formData.append('description', uploadMetadata.description);
-    formData.append('keepForFutureSessions', uploadMetadata.keepForFutureSessions.toString());
+    formData.append('file', selectedFile);
+    // Use filename without extension as default title
+    const defaultTitle = selectedFile.name.replace(/\.[^/.]+$/, '');
+    formData.append('title', defaultTitle);
+    formData.append('keepForFutureSessions', 'false');
+    
+    console.log('📤 Uploading file:', selectedFile.name);
 
     try {
       await uploadMutation.mutateAsync(formData);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
     } finally {
       setIsUploading(false);
     }
@@ -234,74 +249,67 @@ export function AssignmentsPanel({ userId, onSelectionChange }: AssignmentsPanel
       {/* Upload Section */}
       <div className="upload-section mb-6" data-testid="upload-section">
         <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
-          <h4 className="font-medium text-gray-900 dark:text-white mb-3">Upload New Document</h4>
+          <h4 className="font-medium text-gray-900 dark:text-white mb-3">Upload Assignments or Documents</h4>
           
-          <div className="file-input-group mb-3">
+          {/* File Selection and Preview */}
+          <div className="space-y-3">
             <input
               ref={fileInputRef}
               type="file"
               accept=".pdf,.doc,.docx,.txt,.csv,.xls,.xlsx,.png,.jpg,.jpeg,.gif,.bmp"
               onChange={handleFileSelect}
-              className="block w-full text-sm text-gray-500 dark:text-gray-400
-                file:mr-4 file:py-2 file:px-4
-                file:rounded-lg file:border-0
-                file:text-sm file:font-medium
-                file:bg-blue-50 file:text-blue-700
-                dark:file:bg-blue-900 dark:file:text-blue-300
-                hover:file:bg-blue-100 dark:hover:file:bg-blue-800"
+              className="hidden"
               data-testid="file-input"
             />
+            
+            {!selectedFile ? (
+              <div 
+                onClick={() => fileInputRef.current?.click()}
+                className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-8 text-center cursor-pointer hover:border-red-400 dark:hover:border-red-500 transition-colors"
+              >
+                <FileText className="w-12 h-12 mx-auto mb-3 text-gray-400" />
+                <p className="text-gray-600 dark:text-gray-300 font-medium">
+                  Click to select a file
+                </p>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  PDF, Word, Excel, Text, or Image files (max 10MB)
+                </p>
+              </div>
+            ) : (
+              <div className="border border-gray-300 dark:border-gray-600 rounded-lg p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <FileText className="w-8 h-8 text-gray-500" />
+                  <div>
+                    <p className="font-medium text-gray-900 dark:text-white">
+                      {selectedFile.name}
+                    </p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      {formatFileSize(selectedFile.size)}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setSelectedFile(null);
+                    if (fileInputRef.current) fileInputRef.current.value = '';
+                  }}
+                  className="text-gray-500 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            )}
+            
+            <button
+              onClick={handleUpload}
+              disabled={!selectedFile || isUploading}
+              className="upload-btn w-full bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white px-4 py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+              data-testid="button-upload"
+            >
+              <Upload className="w-4 h-4" />
+              {isUploading ? 'Uploading...' : 'Upload Document'}
+            </button>
           </div>
-
-          <div className="upload-metadata grid grid-cols-2 gap-3 mb-3">
-            <input
-              type="text"
-              placeholder="Title (optional)"
-              value={uploadMetadata.title}
-              onChange={(e) => setUploadMetadata(prev => ({ ...prev, title: e.target.value }))}
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
-              data-testid="input-title"
-            />
-            <input
-              type="text"
-              placeholder="Subject (optional)"
-              value={uploadMetadata.subject}
-              onChange={(e) => setUploadMetadata(prev => ({ ...prev, subject: e.target.value }))}
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
-              data-testid="input-subject"
-            />
-            <input
-              type="text"
-              placeholder="Grade level (optional)"
-              value={uploadMetadata.grade}
-              onChange={(e) => setUploadMetadata(prev => ({ ...prev, grade: e.target.value }))}
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
-              data-testid="input-grade"
-            />
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="keepForFutureSessions"
-                checked={uploadMetadata.keepForFutureSessions}
-                onChange={(e) => setUploadMetadata(prev => ({ ...prev, keepForFutureSessions: e.target.checked }))}
-                className="rounded border-gray-300 dark:border-gray-600"
-                data-testid="checkbox-keep-sessions"
-              />
-              <label htmlFor="keepForFutureSessions" className="text-sm text-gray-700 dark:text-gray-300">
-                Keep for future sessions
-              </label>
-            </div>
-          </div>
-
-          <button
-            onClick={handleUpload}
-            disabled={!fileInputRef.current?.files?.[0] || isUploading}
-            className="upload-btn w-full bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
-            data-testid="button-upload"
-          >
-            <Upload className="w-4 h-4" />
-            {isUploading ? 'Uploading...' : 'Upload Document'}
-          </button>
         </div>
       </div>
 
