@@ -41,9 +41,10 @@ router.post('/change', async (req, res) => {
 
     const priceId = priceIds[plan.toLowerCase()];
     if (!priceId) {
-      return res.status(400).json({ 
-        error: 'Invalid plan',
-        validPlans: ['starter', 'standard', 'pro']
+      console.error(`❌ [Subscription] Price ID not configured for plan: ${plan}`);
+      return res.status(503).json({ 
+        error: 'Subscription service temporarily unavailable',
+        message: `Stripe pricing not configured for ${plan} plan. Please set STRIPE_PRICE_${plan.toUpperCase()} environment variable.`
       });
     }
 
