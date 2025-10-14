@@ -227,7 +227,7 @@ export function AssignmentsPanel({ userId, onSelectionChange }: AssignmentsPanel
             <input
               ref={fileInputRef}
               type="file"
-              accept=".pdf,.docx,.txt"
+              accept=".pdf,.doc,.docx,.txt,.csv,.xls,.xlsx,.png,.jpg,.jpeg,.gif,.bmp"
               onChange={handleFileSelect}
               className="block w-full text-sm text-gray-500 dark:text-gray-400
                 file:mr-4 file:py-2 file:px-4
