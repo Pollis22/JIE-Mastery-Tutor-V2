@@ -39,7 +39,7 @@ router.get('/analytics', async (req, res) => {
           COUNT(DISTINCT student_id) as unique_students
         FROM realtime_sessions
         WHERE user_id = ${userId}
-          AND status = 'completed'
+          AND status = 'ended'
       `);
 
       if (statsResult.rows && statsResult.rows[0]) {
@@ -89,7 +89,7 @@ router.get('/analytics', async (req, res) => {
           SUM(COALESCE(minutes_used, 0)) as total_minutes
         FROM realtime_sessions
         WHERE user_id = ${userId}
-          AND status = 'completed'
+          AND status = 'ended'
         GROUP BY subject
         ORDER BY total_minutes DESC
       `);
