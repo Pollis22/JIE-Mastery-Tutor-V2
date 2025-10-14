@@ -13,6 +13,8 @@ interface UseRealtimeVoiceOptions {
   token?: string;
   language?: string;
   voice?: string;
+  clientSecret?: string; // Pass the client_secret directly
+  model?: string;
   onTranscript?: (message: RealtimeMessage) => void;
   onError?: (error: string) => void;
 }
@@ -27,7 +29,7 @@ interface UseRealtimeVoiceReturn {
 }
 
 export function useRealtimeVoice(options: UseRealtimeVoiceOptions): UseRealtimeVoiceReturn {
-  const { sessionId, wsUrl, token, language, voice, onTranscript, onError } = options;
+  const { sessionId, wsUrl, token, language, voice, clientSecret, model, onTranscript, onError } = options;
   const { toast } = useToast();
   
   const [isConnected, setIsConnected] = useState(false);
@@ -190,6 +192,43 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions): UseRealtimeV
   }, [ensureRemoteAudioElement, addMessage]);
 
   const connect = useCallback(async () => {
+    // If clientSecret is provided directly, use it. Otherwise fetch it.
+    if (clientSecret) {
+      // Direct WebRTC connection with provided credentials
+      try {
+        console.log('🔵 [RealtimeVoice] Starting direct WebRTC connection');
+        setStatus('connecting');
+        
+        // Initialize audio context for playback
+        if (!audioContextRef.current) {
+          audioContextRef.current = new AudioContext({ sampleRate: 24000 });
+        }
+
+        // Connect directly with provided credentials
+        await connectToOpenAIWebRTC({ 
+          clientSecret: typeof clientSecret === 'object' ? clientSecret.value : clientSecret, 
+          model: model || "gpt-4o-realtime-preview-2024-10-01" 
+        });
+
+        console.log('✅ [RealtimeVoice] WebRTC connected successfully');
+        setIsConnected(true);
+        setStatus('active');
+      } catch (error: any) {
+        console.error('❌ [RealtimeVoice] Connection failed:', error);
+        setStatus('error');
+        setIsConnected(false);
+        onError?.(error.message || 'Connection failed');
+        
+        toast({
+          title: 'Connection Error',
+          description: error.message || 'Failed to connect to voice service',
+          variant: 'destructive',
+        });
+      }
+      return;
+    }
+
+    // Legacy path - fetch credentials (kept for backward compatibility)
     if (!sessionId || !token) {
       console.error('[RealtimeVoice] Missing sessionId or token');
       onError?.('Missing connection parameters');
@@ -244,7 +283,7 @@ export function useRealtimeVoice(options: UseRealtimeVoiceOptions): UseRealtimeV
         variant: 'destructive',
       });
     }
-  }, [sessionId, token, voice, connectToOpenAIWebRTC, addMessage, onError, toast]);
+  }, [sessionId, token, voice, clientSecret, model, connectToOpenAIWebRTC, addMessage, onError, toast]);
 
   // Legacy WebSocket code (keeping for reference but unused now)
   const connectViaWebSocket = useCallback(() => {

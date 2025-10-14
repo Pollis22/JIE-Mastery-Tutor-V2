@@ -12,11 +12,148 @@ const startSessionSchema = z.object({
   ageGroup: z.enum(['K-2', '3-5', '6-8', '9-12', 'College/Adult']).default('3-5'),
   voice: z.string().optional(),
   contextDocumentIds: z.array(z.string()).optional(),
+  model: z.string().optional(),
+  userId: z.string().optional(),
+});
+
+/**
+ * POST /api/session/realtime - Single unified endpoint
+ * Creates OpenAI session and returns credentials immediately
+ * This matches what the client is actually calling
+ */
+router.post('/', async (req, res) => {
+  const startTime = Date.now();
+  
+  try {
+    console.log('🎬 [RealtimeAPI] Creating session via HTTP');
+    
+    // Check if Realtime is enabled
+    const realtimeEnabled = process.env.REALTIME_ENABLED !== 'false';
+    const useConvai = process.env.USE_CONVAI?.toLowerCase() === 'true';
+    
+    if (!realtimeEnabled || useConvai) {
+      return res.status(503).json({ 
+        error: 'OpenAI Realtime is currently disabled',
+        realtimeEnabled,
+        useConvai
+      });
+    }
+
+    // Parse request body with defaults
+    const data = startSessionSchema.parse(req.body);
+    const model = data.model || 'gpt-4o-realtime-preview-2024-10-01';
+    
+    // Determine voice based on language and age group
+    let selectedVoice = data.voice || 'alloy'; // default
+    try {
+      const { getRealtimeVoice } = await import('../config/realtimeVoiceMapping');
+      const voiceConfig = getRealtimeVoice(data.language, data.ageGroup);
+      selectedVoice = voiceConfig.openaiVoice;
+      console.log(`[RealtimeAPI] Voice mapped: ${data.language}/${data.ageGroup} → ${selectedVoice}`);
+    } catch (error) {
+      console.error('[RealtimeAPI] Voice mapping error, using default:', error);
+    }
+
+    // Validate API key
+    if (!process.env.OPENAI_API_KEY) {
+      console.error('❌ Missing OPENAI_API_KEY');
+      return res.status(500).json({ 
+        error: 'Server configuration error' 
+      });
+    }
+
+    // Request ephemeral session from OpenAI
+    console.log('🔑 Requesting ephemeral session from OpenAI...');
+    const openaiResponse = await fetch('https://api.openai.com/v1/realtime/sessions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ 
+        model,
+        voice: selectedVoice,
+        modalities: ['text', 'audio'],
+        instructions: ''
+      }),
+    });
+
+    if (!openaiResponse.ok) {
+      const errorText = await openaiResponse.text();
+      console.error('❌ OpenAI API error:', {
+        status: openaiResponse.status,
+        error: errorText
+      });
+      return res.status(openaiResponse.status).json({ 
+        error: 'Failed to create OpenAI session',
+        details: errorText 
+      });
+    }
+
+    const sessionData = await openaiResponse.json();
+    const sessionId = sessionData.id || `stub-${Date.now()}`;
+
+    console.log('✅ OpenAI session created', { 
+      sessionId,
+      hasClientSecret: !!sessionData.client_secret?.value 
+    });
+
+    // Save to database asynchronously (fail-safe, don't block on error)
+    const userId = req.user?.id || data.userId;
+    if (userId && storage.createRealtimeSession) {
+      storage.createRealtimeSession({
+        userId,
+        studentId: data.studentId,
+        subject: data.subject,
+        language: data.language,
+        ageGroup: data.ageGroup,
+        voice: selectedVoice,
+        model,
+        status: 'active',
+        transcript: [],
+        contextDocuments: data.contextDocumentIds || [],
+      }).then(session => {
+        console.log('✅ Session saved to DB:', session.id);
+      }).catch((err: any) => {
+        // PostgreSQL error code 42P01 = "undefined_table"
+        if (err.code === '42P01') {
+          console.warn('⚠️ realtime_sessions table missing; skipping DB save');
+        } else {
+          console.warn('⚠️ DB save failed (non-blocking):', err.message);
+        }
+      });
+    }
+
+    // Return credentials immediately
+    const duration = Date.now() - startTime;
+    console.log(`✅ [RealtimeAPI] Session ready in ${duration}ms`);
+
+    res.json({
+      success: true,
+      sessionId,
+      client_secret: sessionData.client_secret,
+      model: sessionData.model,
+      voice: selectedVoice,
+      expires_at: sessionData.expires_at,
+    });
+
+  } catch (error: any) {
+    console.error('❌ [RealtimeAPI] Error:', error);
+    
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Invalid request data', details: error.errors });
+    }
+    
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
+  }
 });
 
 /**
  * POST /api/session/realtime/start
- * Start a new realtime voice session
+ * Legacy endpoint - kept for backward compatibility
  */
 router.post('/start', async (req, res) => {
   try {
