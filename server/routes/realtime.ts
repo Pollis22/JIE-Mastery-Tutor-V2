@@ -17,6 +17,23 @@ const startSessionSchema = z.object({
 });
 
 /**
+ * GET /api/session/realtime/test - Test endpoint
+ * Verifies the route is working and has necessary configuration
+ */
+router.get('/test', (req, res) => {
+  res.json({ 
+    message: 'Session endpoint is working!',
+    timestamp: new Date().toISOString(),
+    env: {
+      hasOpenAIKey: !!process.env.OPENAI_API_KEY,
+      nodeEnv: process.env.NODE_ENV,
+      realtimeEnabled: process.env.REALTIME_ENABLED !== 'false',
+      useConvai: process.env.USE_CONVAI?.toLowerCase() === 'true'
+    }
+  });
+});
+
+/**
  * POST /api/session/realtime - Single unified endpoint
  * Creates OpenAI session and returns credentials immediately
  * This matches what the client is actually calling
