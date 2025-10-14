@@ -1,0 +1,941 @@
+# Agent3: Critical UX Improvements
+
+## Issues to Fix
+
+1. ❌ **Silent processing** - Several seconds of quiet while documents load (looks broken)
+2. ❌ **Incomplete transcript** - Only shows student's words, missing AI responses
+
+Both are critical for learning experience!
+
+---
+
+## Fix #1: Add Document Processing Status
+
+### Update: Show Processing State
+
+**File: `client/src/components/document-status.tsx`**
+
+Create a new component for document processing feedback:
+
+```typescript
+import { useState, useEffect } from 'react';
+
+interface DocumentStatusProps {
+  documents: { id: string; name: string; status?: string }[];
+  isProcessing: boolean;
+}
+
+export function DocumentStatus({ documents, isProcessing }: DocumentStatusProps) {
+  const [processingMessage, setProcessingMessage] = useState('');
+  const [dots, setDots] = useState('');
+
+  // Animate dots while processing
+  useEffect(() => {
+    if (!isProcessing) return;
+
+    const messages = [
+      'Reading your documents',
+      'Understanding the content',
+      'Preparing to help',
+    ];
+
+    let messageIndex = 0;
+    let dotCount = 0;
+
+    const messageInterval = setInterval(() => {
+      setProcessingMessage(messages[messageIndex]);
+      messageIndex = (messageIndex + 1) % messages.length;
+    }, 2000);
+
+    const dotInterval = setInterval(() => {
+      dotCount = (dotCount + 1) % 4;
+      setDots('.'.repeat(dotCount));
+    }, 500);
+
+    return () => {
+      clearInterval(messageInterval);
+      clearInterval(dotInterval);
+    };
+  }, [isProcessing]);
+
+  if (!documents || documents.length === 0) return null;
+
+  return (
+    <div className="document-status">
+      {isProcessing ? (
+        <div className="processing-state">
+          <div className="spinner">⏳</div>
+          <div className="processing-text">
+            <strong>{processingMessage}{dots}</strong>
+            <p className="hint">This may take a few seconds...</p>
+          </div>
+        </div>
+      ) : (
+        <div className="ready-state">
+          <span className="checkmark">✅</span>
+          <span className="ready-text">
+            {documents.length} document{documents.length > 1 ? 's' : ''} ready
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+**File: `client/src/hooks/use-realtime-voice.tsx`**
+
+Add processing state tracking:
+
+```typescript
+export function useRealtimeVoice() {
+  const [isConnected, setIsConnected] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [isProcessingDocuments, setIsProcessingDocuments] = useState(false); // NEW
+  const [error, setError] = useState<string | null>(null);
+
+  const connect = useCallback(async (config) => {
+    try {
+      setIsConnecting(true);
+      setError(null);
+
+      // If documents provided, show processing state
+      if (config.documentIds && config.documentIds.length > 0) {
+        setIsProcessingDocuments(true);
+        console.log('📚 Processing', config.documentIds.length, 'documents...');
+      }
+
+      // Get credentials
+      const response = await fetch('/api/session/realtime', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          // ... config
+          contextDocumentIds: config.documentIds || []
+        }),
+      });
+
+      const data = await response.json();
+
+      // Documents processed!
+      setIsProcessingDocuments(false);
+      
+      if (data.documentCount > 0) {
+        console.log('✅ Documents ready:', data.documentCount);
+      }
+
+      // Establish WebRTC
+      await connectWebRTC(data.client_secret.value, data.model);
+
+      setIsConnected(true);
+
+    } catch (err) {
+      setError(err.message);
+      setIsProcessingDocuments(false);
+    } finally {
+      setIsConnecting(false);
+    }
+  }, []);
+
+  return {
+    connect,
+    disconnect,
+    isConnected,
+    isConnecting,
+    isProcessingDocuments, // NEW
+    error,
+  };
+}
+```
+
+**File: `client/src/pages/tutor-page.tsx`**
+
+Show the status:
+
+```typescript
+export function TutorPage() {
+  const { 
+    connect, 
+    isConnected, 
+    isConnecting, 
+    isProcessingDocuments // NEW
+  } = useRealtimeVoice();
+  
+  const [documents, setDocuments] = useState([]);
+
+  return (
+    <div className="tutor-page">
+      {/* Document upload section */}
+      <DocumentList 
+        documents={documents}
+        onDocumentsChange={setDocuments}
+      />
+
+      {/* Show processing status */}
+      {(isConnecting || isProcessingDocuments) && (
+        <DocumentStatus 
+          documents={documents}
+          isProcessing={isProcessingDocuments}
+        />
+      )}
+
+      {/* Connection button */}
+      {!isConnected ? (
+        <button 
+          onClick={handleStart}
+          disabled={isConnecting || isProcessingDocuments}
+        >
+          {isConnecting && 'Connecting...'}
+          {isProcessingDocuments && 'Processing documents...'}
+          {!isConnecting && !isProcessingDocuments && 'Start Tutoring Session'}
+        </button>
+      ) : (
+        <button onClick={disconnect}>End Session</button>
+      )}
+    </div>
+  );
+}
+```
+
+---
+
+## Fix #2: Capture AI Tutor Responses in Transcript
+
+### Critical Issue
+The transcript is only showing user messages because we're not capturing AI responses from the data channel.
+
+**File: `client/src/hooks/use-realtime-voice.tsx`**
+
+Update the data channel handler to capture ALL messages:
+
+```typescript
+const connectWebRTC = async (clientSecret: string, model: string) => {
+  // ... peer connection setup
+
+  // Create data channel
+  const dc = pc.createDataChannel('oai-events');
+  dataChannelRef.current = dc;
+
+  // Store transcript messages
+  const transcriptMessages: TranscriptMessage[] = [];
+
+  dc.onopen = () => {
+    console.log('✅ [DataChannel] Opened');
+    
+    // Send initial greeting request
+    dc.send(JSON.stringify({
+      type: 'response.create',
+      response: {
+        modalities: ['audio'],
+        instructions: "Say 'Hi! I'm your tutor. What would you like to learn today?' clearly once.",
+        voice: 'alloy'
+      }
+    }));
+  };
+
+  dc.onmessage = (event) => {
+    try {
+      const message = JSON.parse(event.data);
+      console.log('📨 [DataChannel] Message:', message.type);
+
+      // Handle different message types
+      switch (message.type) {
+        // ========================================
+        // CRITICAL: Capture user's speech
+        // ========================================
+        case 'conversation.item.input_audio_transcription.completed': {
+          const userMessage = {
+            id: message.item_id || `user-${Date.now()}`,
+            role: 'user' as const,
+            content: message.transcript,
+            timestamp: new Date().toISOString()
+          };
+
+          console.log('👤 [Transcript] User said:', message.transcript);
+          transcriptMessages.push(userMessage);
+
+          // Update UI
+          if (onTranscriptUpdate) {
+            onTranscriptUpdate(userMessage);
+          }
+
+          // Save to server
+          saveTranscriptMessage(sessionIdRef.current, userMessage);
+          break;
+        }
+
+        // ========================================
+        // CRITICAL: Capture AI tutor's responses
+        // ========================================
+        case 'response.audio_transcript.done':
+        case 'conversation.item.created': {
+          // Check if this is an assistant message
+          if (message.item?.role === 'assistant' || message.type === 'response.audio_transcript.done') {
+            const content = message.transcript || message.item?.content?.[0]?.transcript || '';
+            
+            if (content) {
+              const assistantMessage = {
+                id: message.item_id || message.response_id || `assistant-${Date.now()}`,
+                role: 'assistant' as const,
+                content: content,
+                timestamp: new Date().toISOString()
+              };
+
+              console.log('🤖 [Transcript] AI said:', content);
+              transcriptMessages.push(assistantMessage);
+
+              // Update UI
+              if (onTranscriptUpdate) {
+                onTranscriptUpdate(assistantMessage);
+              }
+
+              // Save to server
+              saveTranscriptMessage(sessionIdRef.current, assistantMessage);
+            }
+          }
+          break;
+        }
+
+        // ========================================
+        // ALTERNATIVE: Capture from audio deltas
+        // ========================================
+        case 'response.audio_transcript.delta': {
+          // This fires for each chunk of AI speech
+          // We'll accumulate and save when done
+          if (!currentAssistantMessage.current) {
+            currentAssistantMessage.current = {
+              id: message.response_id || `assistant-${Date.now()}`,
+              role: 'assistant',
+              content: '',
+              timestamp: new Date().toISOString()
+            };
+          }
+
+          currentAssistantMessage.current.content += message.delta || '';
+          
+          // Update UI with partial message
+          if (onTranscriptPartial) {
+            onTranscriptPartial(currentAssistantMessage.current);
+          }
+          break;
+        }
+
+        case 'response.done': {
+          // AI finished speaking - save complete message
+          if (currentAssistantMessage.current) {
+            console.log('🤖 [Transcript] AI complete:', currentAssistantMessage.current.content);
+            
+            transcriptMessages.push(currentAssistantMessage.current);
+
+            // Update UI with final message
+            if (onTranscriptUpdate) {
+              onTranscriptUpdate(currentAssistantMessage.current);
+            }
+
+            // Save to server
+            saveTranscriptMessage(sessionIdRef.current, currentAssistantMessage.current);
+
+            currentAssistantMessage.current = null;
+          }
+          break;
+        }
+
+        case 'error': {
+          console.error('❌ [OpenAI] Error:', message.error);
+          break;
+        }
+      }
+    } catch (err) {
+      console.error('❌ [DataChannel] Parse error:', err);
+    }
+  };
+
+  // ... rest of WebRTC setup
+};
+
+// Helper: Save transcript message to server
+async function saveTranscriptMessage(sessionId: string, message: TranscriptMessage) {
+  try {
+    await fetch(`/api/transcripts/${sessionId}/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(message)
+    });
+    console.log('✅ [Transcript] Saved:', message.role, message.content.substring(0, 50));
+  } catch (error) {
+    console.warn('⚠️ [Transcript] Save failed:', error);
+    // Don't throw - transcript saving shouldn't break the session
+  }
+}
+
+// Add refs at top of hook
+const currentAssistantMessage = useRef<TranscriptMessage | null>(null);
+const sessionIdRef = useRef<string>('');
+```
+
+**Add callback props:**
+
+```typescript
+export function useRealtimeVoice({
+  onTranscriptUpdate,
+  onTranscriptPartial
+}: {
+  onTranscriptUpdate?: (message: TranscriptMessage) => void;
+  onTranscriptPartial?: (message: TranscriptMessage) => void;
+}) {
+  // ... hook implementation
+}
+
+interface TranscriptMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp: string;
+}
+```
+
+---
+
+## Fix #3: Update Transcript UI Component
+
+**File: `client/src/components/live-transcript.tsx`**
+
+```typescript
+import { useState, useEffect, useRef } from 'react';
+
+interface TranscriptMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp: string;
+}
+
+export function LiveTranscript({ sessionId }: { sessionId: string }) {
+  const [messages, setMessages] = useState<TranscriptMessage[]>([]);
+  const [partialMessage, setPartialMessage] = useState<TranscriptMessage | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, partialMessage]);
+
+  // Add message to transcript
+  const addMessage = (message: TranscriptMessage) => {
+    setMessages(prev => {
+      // Avoid duplicates
+      if (prev.some(m => m.id === message.id)) {
+        return prev;
+      }
+      return [...prev, message];
+    });
+    setPartialMessage(null);
+  };
+
+  // Update partial message (streaming)
+  const updatePartial = (message: TranscriptMessage) => {
+    setPartialMessage(message);
+  };
+
+  return (
+    <div className="live-transcript">
+      <div className="transcript-header">
+        <h3>💬 Conversation</h3>
+        <div className="live-badge">
+          <span className="pulse-dot"></span>
+          Live
+        </div>
+      </div>
+
+      <div className="transcript-messages">
+        {messages.length === 0 && !partialMessage && (
+          <div className="empty-state">
+            <p>Start speaking to begin the conversation...</p>
+          </div>
+        )}
+
+        {messages.map((msg) => (
+          <TranscriptMessage key={msg.id} message={msg} />
+        ))}
+
+        {/* Show partial/streaming message */}
+        {partialMessage && (
+          <TranscriptMessage 
+            message={partialMessage} 
+            isStreaming={true}
+          />
+        )}
+
+        <div ref={scrollRef} />
+      </div>
+    </div>
+  );
+}
+
+function TranscriptMessage({ 
+  message, 
+  isStreaming = false 
+}: { 
+  message: TranscriptMessage;
+  isStreaming?: boolean;
+}) {
+  const isUser = message.role === 'user';
+
+  return (
+    <div className={`message ${message.role} ${isStreaming ? 'streaming' : ''}`}>
+      <div className="message-avatar">
+        {isUser ? '👤' : '🎓'}
+      </div>
+      <div className="message-content">
+        <div className="message-header">
+          <span className="message-role">
+            {isUser ? 'You' : 'AI Tutor'}
+          </span>
+          <span className="message-time">
+            {new Date(message.timestamp).toLocaleTimeString()}
+          </span>
+        </div>
+        <div className="message-text">
+          {message.content}
+          {isStreaming && <span className="cursor">|</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+---
+
+## Fix #4: Wire Everything Together
+
+**File: `client/src/pages/tutor-page.tsx`**
+
+```typescript
+import { useState, useCallback } from 'react';
+import { useRealtimeVoice } from '../hooks/use-realtime-voice';
+import { LiveTranscript } from '../components/live-transcript';
+import { DocumentStatus } from '../components/document-status';
+
+export function TutorPage() {
+  const [messages, setMessages] = useState<TranscriptMessage[]>([]);
+  const [sessionId, setSessionId] = useState<string>('');
+  const [documents, setDocuments] = useState([]);
+
+  // Handle transcript updates
+  const handleTranscriptUpdate = useCallback((message: TranscriptMessage) => {
+    setMessages(prev => [...prev, message]);
+  }, []);
+
+  const handleTranscriptPartial = useCallback((message: TranscriptMessage) => {
+    // Update UI with streaming message
+    // This will be handled by LiveTranscript component
+  }, []);
+
+  const { 
+    connect, 
+    disconnect, 
+    isConnected, 
+    isConnecting,
+    isProcessingDocuments,
+    error 
+  } = useRealtimeVoice({
+    onTranscriptUpdate: handleTranscriptUpdate,
+    onTranscriptPartial: handleTranscriptPartial
+  });
+
+  const handleStart = async () => {
+    const newSessionId = `session-${Date.now()}`;
+    setSessionId(newSessionId);
+
+    await connect({
+      voice: 'alloy',
+      model: 'gpt-4o-realtime-preview',
+      documentIds: documents.map(d => d.id),
+      sessionId: newSessionId,
+      // ... other config
+    });
+  };
+
+  return (
+    <div className="tutor-page">
+      <div className="main-content">
+        {/* Left side - controls */}
+        <div className="controls-panel">
+          {/* Student info, document upload, etc. */}
+          
+          {/* Document processing status */}
+          {documents.length > 0 && (
+            <DocumentStatus 
+              documents={documents}
+              isProcessing={isProcessingDocuments}
+            />
+          )}
+
+          {/* Start/Stop button */}
+          {!isConnected ? (
+            <button 
+              onClick={handleStart}
+              disabled={isConnecting || isProcessingDocuments}
+              className="start-button"
+            >
+              {isProcessingDocuments && '⏳ Processing documents...'}
+              {isConnecting && !isProcessingDocuments && '🔗 Connecting...'}
+              {!isConnecting && !isProcessingDocuments && '🎙️ Start Tutoring Session'}
+            </button>
+          ) : (
+            <button onClick={disconnect} className="stop-button">
+              🛑 End Session
+            </button>
+          )}
+        </div>
+
+        {/* Right side - transcript */}
+        <div className="transcript-panel">
+          {isConnected && (
+            <LiveTranscript 
+              sessionId={sessionId}
+              messages={messages}
+            />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+---
+
+## CSS Styling
+
+**File: `client/src/styles/ux-improvements.css`**
+
+```css
+/* Document Processing Status */
+.document-status {
+  margin: 16px 0;
+  padding: 16px;
+  border-radius: 8px;
+  background: #fff;
+  border: 2px solid #e0e0e0;
+}
+
+.processing-state {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.spinner {
+  font-size: 24px;
+  animation: spin 2s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.processing-text {
+  flex: 1;
+}
+
+.processing-text strong {
+  font-size: 14px;
+  color: #1976d2;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.processing-text .hint {
+  font-size: 12px;
+  color: #666;
+  margin: 0;
+}
+
+.ready-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #2e7d32;
+  font-weight: 500;
+}
+
+.checkmark {
+  font-size: 18px;
+}
+
+/* Live Transcript */
+.live-transcript {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+}
+
+.transcript-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.live-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #dc3545;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.pulse-dot {
+  width: 8px;
+  height: 8px;
+  background: #dc3545;
+  border-radius: 50%;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.3; transform: scale(0.8); }
+}
+
+.transcript-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  min-height: 400px;
+}
+
+.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #999;
+  text-align: center;
+}
+
+.message {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.message-avatar {
+  font-size: 32px;
+  flex-shrink: 0;
+}
+
+.message-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.message-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.message-role {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.message-time {
+  font-size: 12px;
+  color: #999;
+}
+
+.message-text {
+  padding: 12px;
+  border-radius: 12px;
+  line-height: 1.5;
+  background: #f5f5f5;
+}
+
+.message.user .message-text {
+  background: #e3f2fd;
+}
+
+.message.assistant .message-text {
+  background: #f1f8e9;
+}
+
+.message.streaming .cursor {
+  display: inline-block;
+  animation: blink 1s step-end infinite;
+  margin-left: 2px;
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+/* Layout */
+.tutor-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.main-content {
+  display: grid;
+  grid-template-columns: 400px 1fr;
+  gap: 20px;
+  padding: 20px;
+  flex: 1;
+  overflow: hidden;
+}
+
+.controls-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.transcript-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Buttons */
+.start-button,
+.stop-button {
+  padding: 16px 24px;
+  font-size: 16px;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.start-button {
+  background: #1976d2;
+  color: white;
+}
+
+.start-button:hover:not(:disabled) {
+  background: #1565c0;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(25, 118, 210, 0.3);
+}
+
+.start-button:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.stop-button {
+  background: #dc3545;
+  color: white;
+}
+
+.stop-button:hover {
+  background: #c82333;
+}
+```
+
+---
+
+## Testing Checklist
+
+### Test #1: Document Processing Feedback
+1. Upload a document
+2. Click "Start Tutoring"
+3. **Should see:**
+   - ⏳ "Reading your documents..."
+   - Changes to "Understanding the content..."
+   - Changes to "Preparing to help..."
+   - Then ✅ "2 documents ready"
+4. **Should NOT see:** Silent gap with no feedback
+
+### Test #2: Complete Transcript
+1. Start session (with or without documents)
+2. Say: "Hi, can you help me?"
+3. AI responds: "Of course! What would you like to learn?"
+4. **Should see in transcript:**
+   ```
+   👤 You: Hi, can you help me?
+   🎓 AI Tutor: Of course! What would you like to learn?
+   ```
+5. **Should NOT see:** Only user messages
+
+### Test #3: Streaming Transcript
+1. Ask AI a question
+2. While AI is speaking, watch transcript
+3. **Should see:** Words appearing with blinking cursor |
+4. When AI finishes, cursor disappears
+
+### Test #4: Transcript Persistence
+1. Have a conversation (5+ exchanges)
+2. End session
+3. Reload page / start new session
+4. **Should see:** Previous transcript still available
+
+---
+
+## Server Endpoint for Transcript Saving
+
+**File: `server/src/routes/transcripts.ts`**
+
+```typescript
+router.post('/transcripts/:sessionId/messages', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { id, role, content, timestamp } = req.body;
+
+    console.log('💾 [Transcript] Saving:', role, content.substring(0, 50));
+
+    await db.query(`
+      INSERT INTO transcripts (id, session_id, role, content, timestamp)
+      VALUES ($1, $2, $3, $4, $5)
+      ON CONFLICT (id) DO NOTHING
+    `, [id, sessionId, role, content, timestamp]);
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.warn('⚠️ [Transcript] Save failed:', error.message);
+    // Don't fail the request - transcript is nice-to-have
+    res.json({ success: false, error: error.message });
+  }
+});
+```
+
+---
+
+## Success Criteria
+
+✅ Document processing shows animated status  
+✅ "Processing documents..." visible for 2-5 seconds  
+✅ No silent gaps during connection  
+✅ Transcript shows BOTH user and AI messages  
+✅ User messages have 👤 icon  
+✅ AI messages have 🎓 icon  
+✅ Streaming text appears with blinking cursor  
+✅ Timestamps shown for each message  
+✅ Messages saved to database  
+✅ Students can review what AI said  
+
+This fixes both critical UX issues! 🎯

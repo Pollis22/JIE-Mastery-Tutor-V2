@@ -52,6 +52,7 @@ export function RealtimeVoiceHost({
     disconnect,
     sendAudio,
     isConnecting,
+    isProcessingDocuments,
   } = useRealtimeVoice();
 
   const startSession = async () => {
