@@ -3,6 +3,18 @@
 ## Overview
 This project is a production-ready conversational AI tutoring web platform designed to help students learn Math, English, and Spanish. It features interactive voice conversations, personalized quizzes, and adaptive learning paths. The platform includes a fully functional multi-agent ElevenLabs ConvAI system with five age-specific AI tutors (K-2, Grades 3-5, 6-8, 9-12, College/Adult), each optimized for their target age group's complexity, vocabulary, and teaching approaches. The system is designed for high reliability and a streamlined user experience, focusing on immediate voice tutoring without dynamic agent creation for each session.
 
+## Recent Changes (January 14, 2025)
+
+### Payment & Minutes Tracking Fixes
+- **Created `/api/user/analytics` endpoint**: Provides comprehensive usage analytics including total sessions, minutes used, active days, and usage by subject
+- **Created `/api/subscription/change` endpoint**: Enables plan upgrades/downgrades with automatic Stripe subscription updates and checkout fallback
+- **Fixed voice minutes tracking**: 
+  - Sessions now properly calculate duration and deduct minutes when ended
+  - Added API call to `/api/session/realtime/:sessionId/end` on session cleanup
+  - Minutes are tracked and deducted using `storage.updateUserVoiceUsage()`
+  - Toast notifications show exact minutes used after each session
+- **Session status alignment**: Updated analytics queries to filter for `status = 'ended'` to match actual session lifecycle
+
 **Sibling-Friendly Design:** The platform prioritizes per-session configuration over user profile defaults, allowing parents to share one account across multiple children. Each tutoring session can specify different grade levels and subjects, while all sessions share the same minute pool. This flexibility is a key selling point - families only need one subscription regardless of how many children use the service.
 
 ## User Preferences
