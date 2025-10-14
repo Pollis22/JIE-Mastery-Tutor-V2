@@ -1,0 +1,538 @@
+# Agent3: Final Improvements - Robust Disconnect + Engaging Greeting
+
+## Goal
+
+1. Make "End Session" bullet-proof (no race conditions, complete cleanup)
+2. Add engaging greeting that prompts student response and mentions language support
+
+---
+
+## Part 1: Robust Disconnect with Race Protection
+
+### Add New Refs at Top of Hook
+
+**File: `client/src/hooks/use-realtime-voice.tsx`**
+
+```typescript
+export function useRealtimeVoice() {
+  // Existing refs
+  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+  const dataChannelRef = useRef<RTCDataChannel | null>(null);
+  const audioElementRef = useRef<HTMLAudioElement | null>(null);
+  const micStreamRef = useRef<MediaStream | null>(null);
+  
+  // NEW: Add these refs for robust cleanup
+  const connectAbortRef = useRef<AbortController | null>(null);
+  const sessionNonceRef = useRef<number>(0);
+  const sessionIdRef = useRef<string | null>(null);
+  const isClosingRef = useRef<boolean>(false);
+  const heartbeatIdRef = useRef<NodeJS.Timeout | null>(null);
+  const beforeUnloadHandlerRef = useRef<(() => void) | null>(null);
+
+  // ... existing state
+}
+```
+
+### Update Connect Function with Abort Controller
+
+Replace the `connectWebRTC` function:
+
+```typescript
+const connectWebRTC = async (clientSecret: string, model: string, sessionId: string) => {
+  console.log('🔵 [WebRTC] Creating peer connection...');
+
+  // Abort any in-flight connection
+  connectAbortRef.current?.abort();
+  connectAbortRef.current = new AbortController();
+  
+  // Increment session nonce to invalidate stale callbacks
+  sessionNonceRef.current += 1;
+  const myNonce = sessionNonceRef.current;
+  
+  // Store session ID
+  sessionIdRef.current = sessionId;
+
+  // Create peer connection
+  const pc = new RTCPeerConnection();
+  peerConnectionRef.current = pc;
+
+  // Log state changes (with nonce check)
+  pc.onconnectionstatechange = () => {
+    if (sessionNonceRef.current !== myNonce) return; // Ignore stale events
+    
+    console.log('🔗 [WebRTC] Connection state:', pc.connectionState);
+    if (pc.connectionState === 'connected') {
+      console.log('✅ [WebRTC] Connected to OpenAI!');
+    } else if (pc.connectionState === 'failed') {
+      if (!isClosingRef.current) {
+        setError('WebRTC connection failed');
+        setIsConnected(false);
+      }
+    }
+  };
+
+  pc.oniceconnectionstatechange = () => {
+    if (sessionNonceRef.current !== myNonce) return;
+    console.log('🧊 [WebRTC] ICE state:', pc.iceConnectionState);
+  };
+
+  // Handle incoming audio from OpenAI (with nonce check)
+  pc.ontrack = (event) => {
+    if (sessionNonceRef.current !== myNonce) return;
+    
+    console.log('🎵 [WebRTC] Received audio track from OpenAI');
+    
+    let audioEl = audioElementRef.current;
+    if (!audioEl) {
+      audioEl = document.createElement('audio');
+      audioEl.id = 'openai-audio';
+      audioEl.autoplay = true;
+      audioEl.playsInline = true;
+      document.body.appendChild(audioEl);
+      audioElementRef.current = audioEl;
+    }
+
+    if (audioEl.srcObject !== event.streams[0]) {
+      audioEl.srcObject = event.streams[0];
+      console.log('🔊 [WebRTC] Audio stream attached to element');
+    }
+  };
+
+  // Create data channel
+  const dc = pc.createDataChannel('oai-events');
+  dataChannelRef.current = dc;
+
+  dc.onopen = () => {
+    if (sessionNonceRef.current !== myNonce) return;
+    
+    console.log('✅ [DataChannel] Opened');
+    console.log('👋 [DataChannel] Sending greeting request...');
+    
+    // IMPROVED GREETING - mentions language support and prompts response
+    dc.send(JSON.stringify({
+      type: 'response.create',
+      response: {
+        modalities: ['audio'],
+        instructions: `Say the following in a warm, friendly voice: "Hello! I'm your AI tutor, and I'm excited to help you learn today. I can speak with you in English, Spanish, French, Mandarin, and many other languages. What subject would you like to explore together?"`,
+        voice: 'alloy'
+      }
+    }));
+  };
+
+  dc.onmessage = (event) => {
+    if (sessionNonceRef.current !== myNonce) return;
+    
+    try {
+      const message = JSON.parse(event.data);
+      console.log('📨 [DataChannel] Message:', message.type);
+      
+      if (message.type === 'error') {
+        console.error('❌ [OpenAI] Error:', message.error);
+        if (!isClosingRef.current) {
+          setError(message.error.message);
+        }
+      }
+    } catch (err) {
+      console.error('❌ [DataChannel] Parse error:', err);
+    }
+  };
+
+  // Get microphone
+  console.log('🎤 [WebRTC] Requesting microphone...');
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+      sampleRate: 24000,
+    }
+  });
+  micStreamRef.current = stream;
+
+  stream.getTracks().forEach(track => {
+    console.log('🎤 [WebRTC] Adding microphone track');
+    pc.addTrack(track, stream);
+  });
+
+  // Create offer
+  console.log('📤 [WebRTC] Creating SDP offer...');
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+
+  // Send to OpenAI with abort signal
+  console.log('🌐 [WebRTC] Sending SDP to OpenAI...');
+  const sdpResponse = await fetch(
+    `https://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${clientSecret}`,
+        'Content-Type': 'application/sdp',
+      },
+      body: offer.sdp,
+      signal: connectAbortRef.current.signal, // ← Abort signal for cleanup
+    }
+  );
+
+  // Check if aborted
+  if (connectAbortRef.current.signal.aborted) {
+    console.log('⚠️ [WebRTC] Connection aborted');
+    return;
+  }
+
+  if (!sdpResponse.ok) {
+    const errorText = await sdpResponse.text();
+    console.error('❌ [WebRTC] SDP exchange failed:', sdpResponse.status, errorText);
+    throw new Error(`WebRTC SDP failed: ${sdpResponse.status}`);
+  }
+
+  const answerSdp = await sdpResponse.text();
+  console.log('📥 [WebRTC] Applying remote answer...');
+  await pc.setRemoteDescription({
+    type: 'answer',
+    sdp: answerSdp,
+  });
+
+  console.log('✅ [WebRTC] Setup complete, waiting for connection...');
+};
+```
+
+### Update Disconnect Function (Bullet-Proof Version)
+
+Replace the `disconnect` function with this comprehensive version:
+
+```typescript
+const disconnect = useCallback(() => {
+  console.log('🔴 [RealtimeVoice] Disconnecting...');
+
+  // Mark as intentionally closing
+  isClosingRef.current = true;
+
+  try {
+    // 1. Abort any in-flight connection
+    if (connectAbortRef.current) {
+      connectAbortRef.current.abort();
+      connectAbortRef.current = null;
+      console.log('✅ [Abort] Connection aborted');
+    }
+
+    // 2. Clear any timers
+    if (heartbeatIdRef.current) {
+      clearInterval(heartbeatIdRef.current);
+      heartbeatIdRef.current = null;
+    }
+
+    // 3. Remove event listeners
+    if (beforeUnloadHandlerRef.current) {
+      try {
+        window.removeEventListener('beforeunload', beforeUnloadHandlerRef.current as any);
+      } catch (e) {
+        console.warn('⚠️ Could not remove beforeunload listener');
+      }
+    }
+
+    // 4. Close data channel
+    if (dataChannelRef.current) {
+      console.log('🔴 [DataChannel] Closing...');
+      try {
+        if (dataChannelRef.current.readyState === 'open') {
+          dataChannelRef.current.close();
+        }
+      } catch (e) {
+        console.warn('⚠️ [DataChannel] Error closing:', e);
+      }
+      dataChannelRef.current = null;
+    }
+
+    // 5. Close peer connection (Safari-friendly: detach tracks first)
+    if (peerConnectionRef.current) {
+      console.log('🔴 [WebRTC] Closing peer connection...');
+      try {
+        const pc = peerConnectionRef.current;
+        
+        // Detach senders (helps Safari cleanup)
+        pc.getSenders()?.forEach(sender => {
+          try {
+            sender.replaceTrack(null);
+          } catch (e) {
+            console.warn('⚠️ Could not replace track:', e);
+          }
+        });
+
+        // Stop receiver tracks
+        pc.getReceivers()?.forEach(receiver => {
+          try {
+            receiver.track?.stop();
+          } catch (e) {
+            console.warn('⚠️ Could not stop receiver track:', e);
+          }
+        });
+
+        // Close the connection
+        pc.close();
+      } catch (e) {
+        console.warn('⚠️ [WebRTC] Error closing:', e);
+      }
+      peerConnectionRef.current = null;
+    }
+
+    // 6. Stop microphone tracks
+    if (micStreamRef.current) {
+      console.log('🔴 [Microphone] Stopping tracks...');
+      try {
+        micStreamRef.current.getTracks().forEach(track => {
+          try {
+            track.stop();
+            console.log('✅ [Microphone] Track stopped:', track.label);
+          } catch (e) {
+            console.warn('⚠️ [Microphone] Error stopping track:', e);
+          }
+        });
+      } catch (e) {
+        console.warn('⚠️ [Microphone] Error accessing tracks:', e);
+      }
+      micStreamRef.current = null;
+    }
+
+    // 7. Remove and cleanup audio element
+    if (audioElementRef.current) {
+      console.log('🔴 [Audio] Removing element...');
+      try {
+        const audio = audioElementRef.current;
+        audio.pause();
+        audio.srcObject = null;
+        audio.src = '';
+        audio.remove();
+      } catch (e) {
+        console.warn('⚠️ [Audio] Error removing:', e);
+      }
+      audioElementRef.current = null;
+    }
+
+    // 8. Reset session state
+    sessionIdRef.current = null;
+    sessionNonceRef.current += 1; // Invalidate any late events
+    isClosingRef.current = false;
+
+    console.log('✅ [RealtimeVoice] Disconnected cleanly');
+    
+  } catch (error) {
+    console.error('❌ [RealtimeVoice] Error during disconnect:', error);
+  } finally {
+    // Always update state, even if cleanup had errors
+    setIsConnecting(false);
+    setIsConnected(false);
+    setError(null);
+  }
+}, []);
+```
+
+### Add Page Unload Handler
+
+Add this useEffect in the hook:
+
+```typescript
+// Cleanup on page unload or unmount
+useEffect(() => {
+  const handleBeforeUnload = () => {
+    console.log('🔴 [Page] Unloading, cleaning up...');
+    disconnect();
+  };
+  
+  beforeUnloadHandlerRef.current = handleBeforeUnload;
+  window.addEventListener('beforeunload', handleBeforeUnload);
+  
+  return () => {
+    window.removeEventListener('beforeunload', handleBeforeUnload);
+    disconnect(); // Cleanup on component unmount
+  };
+}, [disconnect]);
+```
+
+---
+
+## Part 2: Better Greeting Message
+
+The greeting is already included in the `dc.onopen` handler above. Here are variations you can use:
+
+### Option 1: Current (Simple & Friendly)
+```javascript
+instructions: `Say the following in a warm, friendly voice: "Hello! I'm your AI tutor, and I'm excited to help you learn today. I can speak with you in English, Spanish, French, Mandarin, and many other languages. What subject would you like to explore together?"`
+```
+
+### Option 2: More Personal
+```javascript
+instructions: `Say the following in an enthusiastic, welcoming voice: "Hi there! I'm your personal AI tutor, and I'm so glad you're here to learn with me! I can help you in many languages - English, Spanish, French, German, Mandarin, Japanese, and more. Just speak naturally, and let's discover something amazing together! What would you like to learn about today?"`
+```
+
+### Option 3: Academic but Approachable
+```javascript
+instructions: `Say the following warmly: "Welcome! I'm your AI learning companion. Whether you prefer English, Spanish, French, or one of dozens of other languages, I'm here to make learning engaging and effective. I adapt to your learning style and pace. What subject shall we tackle today?"`
+```
+
+### Option 4: Interactive & Encouraging
+```javascript
+instructions: `Say the following with genuine enthusiasm: "Hello and welcome! I'm your AI tutor, ready to make learning fun and effective. I speak many languages fluently - English, Spanish, French, Mandarin, Arabic, German, and more - so feel free to use whichever you're most comfortable with. Don't worry about making mistakes; that's how we learn! Now, what would you like to explore today?"`
+```
+
+**Recommendation:** Use Option 4 - it's warm, mentions mistakes are okay (reduces student anxiety), and naturally prompts a response.
+
+---
+
+## Part 3: Update Connect Function Call
+
+Make sure you pass the sessionId to connectWebRTC:
+
+```typescript
+const connect = useCallback(async (config: any) => {
+  try {
+    setIsConnecting(true);
+    setError(null);
+    console.log('🔵 [RealtimeVoice] Starting connection...');
+
+    // Get credentials
+    const response = await fetch('/api/session/realtime', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: config.model || 'gpt-4o-realtime-preview',
+        voice: config.voice || 'alloy',
+        userId: config.userId,
+        studentId: config.studentId,
+        subject: config.subject,
+        language: config.language,
+        ageGroup: config.ageGroup,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(`HTTP ${response.status}: ${JSON.stringify(errorData)}`);
+    }
+
+    const data = await response.json();
+    console.log('✅ [RealtimeVoice] Got credentials:', {
+      sessionId: data.sessionId,
+      hasSecret: !!data.client_secret?.value
+    });
+
+    if (!data.client_secret?.value) {
+      throw new Error('No client_secret in response');
+    }
+
+    // Establish WebRTC - pass sessionId
+    await connectWebRTC(
+      data.client_secret.value, 
+      data.model,
+      data.sessionId // ← Pass session ID
+    );
+
+    console.log('✅ [RealtimeVoice] Connected successfully!');
+    setIsConnected(true);
+
+  } catch (err: any) {
+    // Only set error if not intentionally closing
+    if (!isClosingRef.current) {
+      console.error('❌ [RealtimeVoice] Connection failed:', err);
+      setError(err.message);
+      setIsConnected(false);
+    }
+  } finally {
+    setIsConnecting(false);
+  }
+}, []);
+```
+
+---
+
+## Testing Checklist
+
+### Test 1: Normal Connection & Disconnect
+1. Click "Start Session"
+2. Wait for greeting (should mention languages)
+3. Click "End Session"
+4. **Expected:** Clean disconnect, no errors
+
+### Test 2: Disconnect During Connection
+1. Click "Start Session"
+2. **Immediately** click "End Session" (while connecting)
+3. **Expected:** Aborts cleanly, no hanging requests
+
+### Test 3: Multiple Sessions
+1. Start → End → Start → End (repeat 5 times)
+2. **Expected:** Works every time, no memory leaks
+
+### Test 4: Close Tab
+1. Start session
+2. Close browser tab
+3. **Expected:** Microphone stops, resources cleaned up
+
+### Test 5: Network Failure
+1. Start session
+2. Disconnect network
+3. Wait for failure
+4. Click "End Session"
+5. **Expected:** Cleans up despite network error
+
+---
+
+## Expected Console Output
+
+**On Connect:**
+```
+🔵 [RealtimeVoice] Starting connection...
+🔑 [RealtimeVoice] Requesting credentials...
+✅ [RealtimeVoice] Got credentials
+🔵 [WebRTC] Creating peer connection...
+🎤 [WebRTC] Requesting microphone...
+📤 [WebRTC] Creating SDP offer...
+🌐 [WebRTC] Sending SDP to OpenAI...
+📥 [WebRTC] Applying remote answer...
+✅ [WebRTC] Setup complete
+🔗 [WebRTC] Connection state: connected
+✅ [WebRTC] Connected to OpenAI!
+🎵 [WebRTC] Received audio track
+✅ [DataChannel] Opened
+👋 [DataChannel] Sending greeting request...
+```
+
+**On Disconnect:**
+```
+🔴 [RealtimeVoice] Disconnecting...
+✅ [Abort] Connection aborted
+🔴 [DataChannel] Closing...
+🔴 [WebRTC] Closing peer connection...
+🔴 [Microphone] Stopping tracks...
+✅ [Microphone] Track stopped: Default Audio Device
+🔴 [Audio] Removing element...
+✅ [RealtimeVoice] Disconnected cleanly
+```
+
+---
+
+## Success Criteria
+
+✅ Greeting mentions multiple language support  
+✅ Greeting prompts student to respond with subject  
+✅ "End Session" works instantly  
+✅ No errors when disconnecting mid-connection  
+✅ Microphone icon disappears after disconnect  
+✅ Audio element removed from DOM  
+✅ Can start new session immediately after ending  
+✅ No memory leaks after multiple sessions  
+✅ Clean disconnect on page close  
+✅ No "stale event" warnings in console  
+
+---
+
+## Quick Reference
+
+**Key improvements:**
+1. ✅ **AbortController** - cancels in-flight SDP requests
+2. ✅ **Session nonce** - prevents stale callbacks from affecting new sessions
+3. ✅ **isClosing flag** - prevents error states during intentional disconnect
+4. ✅ **Safari-friendly cleanup** - detaches tracks before closing peer connection
+5. ✅ **Comprehensive error handling** - try/catch around each cleanup step
+6. ✅ **Better greeting** - mentions languages and prompts response
+
+Your "End Session" button is now production-ready! 🎯
