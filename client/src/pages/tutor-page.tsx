@@ -90,6 +90,7 @@ export default function TutorPage() {
   const [summaryModalOpen, setSummaryModalOpen] = useState(false);
   const [transcriptMessages, setTranscriptMessages] = useState<ConvaiMessage[]>([]);
   const [isTranscriptConnected, setIsTranscriptConnected] = useState(false);
+  const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
 
   // Debug state for Realtime debugging
   const [debugInfo, setDebugInfo] = useState<{
@@ -589,98 +590,22 @@ export default function TutorPage() {
             </ol>
           </div>
 
-          {/* Document Upload Section */}
-          {mounted && (
+          {/* Document Upload Section - Using AssignmentsPanel */}
+          {mounted && user && (
             <Card className="mt-4" data-testid="card-document-upload">
               <CardContent className="pt-4">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-semibold flex items-center gap-2">
-                    <Paperclip className="w-4 h-4" />
-                    Study Materials
-                  </h3>
-                  <label className="cursor-pointer">
-                    <div className="px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 flex items-center gap-2">
-                      <Upload className="w-4 h-4" />
-                      Upload Document
-                    </div>
-                    <input
-                      type="file"
-                      className="hidden"
-                      accept=".pdf,.docx,.doc,.txt,.png,.jpg,.jpeg"
-                      onChange={async (e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        
-                        try {
-                          const formData = new FormData();
-                          formData.append('file', file);
-                          if (selectedStudentId) formData.append('studentId', selectedStudentId);
-                          formData.append('subject', subject);
-                          formData.append('gradeLevel', level);
-                          
-                          const response = await fetch('/api/documents/upload', {
-                            method: 'POST',
-                            body: formData,
-                            credentials: 'include'
-                          });
-                          
-                          if (!response.ok) throw new Error('Upload failed');
-                          
-                          queryClient.invalidateQueries({ queryKey: ['/api/documents'] });
-                          toast({
-                            title: "Document Uploaded",
-                            description: `${file.name} is now available to your tutor`,
-                          });
-                          
-                          e.target.value = '';
-                        } catch (error) {
-                          console.error('Upload error:', error);
-                          toast({
-                            title: "Upload Failed",
-                            description: "Could not upload document. Please try again.",
-                            variant: "destructive",
-                          });
-                        }
-                      }}
-                      data-testid="input-file-upload"
-                    />
-                  </label>
-                </div>
-                
-                {pinnedDocs && pinnedDocs.length > 0 ? (
-                  <div className="space-y-2">
-                    {pinnedDocs.map((pd) => (
-                      <div key={pd.document.id} className="flex items-center justify-between bg-muted p-2 rounded text-sm">
-                        <div className="flex items-center gap-2">
-                          <File className="w-4 h-4" />
-                          <span className="truncate max-w-[300px]">{pd.document.title}</span>
-                        </div>
-                        <button
-                          onClick={async () => {
-                            try {
-                              await apiRequest('DELETE', `/api/documents/${pd.document.id}`, {});
-                              queryClient.invalidateQueries({ queryKey: ['/api/documents'] });
-                              toast({
-                                title: "Document Removed",
-                                description: "Document has been deleted",
-                              });
-                            } catch (error) {
-                              console.error('Delete error:', error);
-                            }
-                          }}
-                          className="text-destructive hover:opacity-70"
-                          data-testid={`button-remove-doc-${pd.document.id}`}
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground text-center py-3">
-                    Upload homework or study materials to get personalized help from your tutor
-                  </p>
-                )}
+                <h3 className="text-sm font-semibold flex items-center gap-2 mb-3">
+                  <Paperclip className="w-4 h-4" />
+                  Study Materials
+                </h3>
+                <AssignmentsPanel 
+                  userId={user.id}
+                  onSelectionChange={(selectedIds) => {
+                    // Update selected documents for AI context
+                    setSelectedDocumentIds(selectedIds);
+                    console.log('Documents selected for AI context:', selectedIds);
+                  }}
+                />
               </CardContent>
             </Card>
           )}
@@ -714,7 +639,7 @@ export default function TutorPage() {
                     subject={subject}
                     language={mapLanguageToISO(user?.preferredLanguage)}
                     ageGroup={level === 'k2' ? 'K-2' : level === 'g3_5' ? '3-5' : level === 'g6_8' ? '6-8' : level === 'g9_12' ? '9-12' : 'College/Adult'}
-                    contextDocumentIds={contextDocumentIds}
+                    contextDocumentIds={[...contextDocumentIds, ...selectedDocumentIds]}
                     onSessionStart={() => setSessionStartTime(new Date())}
                     onSessionEnd={() => setSessionStartTime(null)}
                   />
