@@ -45,7 +45,7 @@ import {
   type InsertRealtimeSession,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, asc, count, sum, sql, like, or } from "drizzle-orm";
+import { eq, and, desc, asc, count, sum, sql, like, or, inArray } from "drizzle-orm";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
 import MemoryStore from "memorystore";
@@ -1339,7 +1339,7 @@ export class DatabaseStorage implements IStorage {
       const documents = await db.select().from(userDocuments)
         .where(and(
           eq(userDocuments.userId, userId),
-          sql`${userDocuments.id} IN (${documentIds.map(id => sql`${id}`).join(sql`, `)})`
+          inArray(userDocuments.id, documentIds)
         ));
       
       console.log(`✅ [Storage] Found ${documents.length} documents`);
@@ -1355,7 +1355,7 @@ export class DatabaseStorage implements IStorage {
       }
       
       const chunks = await db.select().from(documentChunks)
-        .where(sql`${documentChunks.documentId} IN (${readyDocumentIds.map(id => sql`${id}`).join(sql`, `)})`)
+        .where(inArray(documentChunks.documentId, readyDocumentIds))
         .orderBy(asc(documentChunks.chunkIndex));
       
       console.log(`✅ [Storage] Found ${chunks.length} chunks from ready documents`);
