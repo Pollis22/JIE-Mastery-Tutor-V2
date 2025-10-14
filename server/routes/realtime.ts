@@ -485,9 +485,10 @@ router.post('/:sessionId/end', async (req, res) => {
       minutesUsed: minutesUsed,
     });
 
-    // Deduct minutes from user's account (prioritize bonus minutes first)
+    // Deduct minutes using hybrid rollover policy (subscription first, then purchased)
     if (minutesUsed > 0) {
-      await storage.updateUserVoiceUsage(userId, minutesUsed);
+      const { deductMinutes } = await import('../services/voice-minutes');
+      await deductMinutes(userId, minutesUsed);
       console.log(`✅ [RealtimeAPI] Deducted ${minutesUsed} minutes from user ${userId}`);
     }
 
