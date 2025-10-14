@@ -32,6 +32,8 @@ export function RealtimeVoiceHost({
   const [wsUrl, setWsUrl] = useState<string | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [voice, setVoice] = useState<string>('alloy');
+  const [clientSecret, setClientSecret] = useState<any>(null);
+  const [model, setModel] = useState<string>('gpt-4o-realtime-preview-2024-10-01');
   const [isRecording, setIsRecording] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
@@ -51,26 +53,34 @@ export function RealtimeVoiceHost({
     token: token || undefined,
     language,
     voice,
+    clientSecret: clientSecret || undefined,
+    model: model || undefined,
   });
 
   const startSession = async () => {
     try {
-      const response = await apiRequest('POST', '/api/session/realtime/start', {
+      // Call the unified endpoint (without /start)
+      const response = await apiRequest('POST', '/api/session/realtime', {
         studentId,
         subject,
         language,
         ageGroup,
         contextDocumentIds,
+        model: 'gpt-4o-realtime-preview-2024-10-01'
       });
 
       const data = await response.json();
       
-      if (data.sessionId && data.wsUrl && data.token) {
+      // The new endpoint returns success flag and client_secret directly
+      if (data.success && data.sessionId && data.client_secret) {
         setSessionId(data.sessionId);
-        setWsUrl(data.wsUrl);
-        setToken(data.token);
+        setClientSecret(data.client_secret); // Store the client_secret for WebRTC
+        setModel(data.model || 'gpt-4o-realtime-preview-2024-10-01');
         setVoice(data.voice || 'alloy');
+        setToken(data.sessionId); // Use sessionId as token for backward compatibility
         onSessionStart?.();
+        
+        // The hook will automatically connect when clientSecret is set
         
         toast({
           title: "Voice Session Started",
