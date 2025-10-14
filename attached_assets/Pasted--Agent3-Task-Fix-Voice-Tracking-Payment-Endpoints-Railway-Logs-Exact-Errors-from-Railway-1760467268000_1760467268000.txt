@@ -1,0 +1,691 @@
+# Agent3 Task: Fix Voice Tracking & Payment Endpoints (Railway Logs)
+
+## Exact Errors from Railway Production Logs
+
+```
+❌ GET /api/user/analytics 404 - "API endpoint not found"
+❌ POST /api/subscription/change 404 - "API endpoint not found"
+❌ POST /api/checkout/buy-minutes 500 - "Invalid Price ID format"
+⚠️ Invalid Price ID format for top-up: price_1SGvXShsCXqdQW9z2hIqAPdN
+⚠️ realtime_sessions table missing; creating stub session
+⚠️ realtime_sessions table missing; skipping transcript save
+✅ Session saved to DB: stub-17604668360Z8
+✅ Voice mapped: en/K-2 + Shimmer
+```
+
+---
+
+## Fix #1: Remove Overly Strict Price ID Validation
+
+### Problem
+Stripe Price ID `price_1SGvXShsCXqdQW9z2hIqAPdN` is VALID but your code rejects it with "Invalid Price ID format". The validation logic is wrong.
+
+### Solution
+
+**File: `server/src/routes/checkout.ts` (or wherever price validation happens)**
+
+Find and **DELETE or FIX** this incorrect validation:
+
+```typescript
+// ❌ WRONG - This rejects valid price IDs
+if (!priceId.startsWith('price_')) {
+  throw new Error('Invalid Price ID format');
+}
+
+// ✅ CORRECT - Stripe price IDs are "price_" followed by 24+ chars
+if (!priceId || !priceId.match(/^price_[a-zA-Z0-9]{24,}$/)) {
+  throw new Error('Invalid Price ID format');
+}
+
+// ✅ BETTER - Just validate it's not empty and starts with price_
+if (!priceId || !priceId.startsWith('price_')) {
+  throw new Error('Invalid Price ID');
+}
+
+// ✅ BEST - Let Stripe validate it, just check it exists
+if (!priceId) {
+  throw new Error('Price ID is required');
+}
+```
+
+**Or simply remove the validation entirely** and let Stripe API return an error if the price ID is invalid:
+
+```typescript
+// POST /api/checkout/buy-minutes
+router.post('/buy-minutes', authenticateUser, async (req, res) => {
+  try {
+    const { minutes = 60 } = req.body;
+    const userId = req.user.id;
+
+    console.log('💳 Creating checkout for minutes', { userId, minutes });
+
+    // Map minutes to price IDs from environment
+    const priceMap: Record<number, string> = {
+      60: process.env.STRIPE_PRICE_60_MIN!,
+      120: process.env.STRIPE_PRICE_120_MIN!,
+      300: process.env.STRIPE_PRICE_300_MIN!,
+    };
+
+    const priceId = priceMap[minutes];
+    
+    // Simple validation - just check it exists
+    if (!priceId) {
+      return res.status(400).json({ 
+        error: 'Invalid minutes amount',
+        validOptions: [60, 120, 300]
+      });
+    }
+
+    console.log('💰 Using price ID:', priceId);
+
+    // Let Stripe handle validation - if price ID is invalid, Stripe will error
+    const session = await stripe.checkout.sessions.create({
+      customer_email: req.user.email,
+      mode: 'payment',
+      payment_method_types: ['card'],
+      line_items: [{
+        price: priceId,
+        quantity: 1,
+      }],
+      metadata: {
+        userId,
+        type: 'voice_minutes',
+        minutes: minutes.toString(),
+      },
+      success_url: `${process.env.APP_URL}/dashboard?payment=success`,
+      cancel_url: `${process.env.APP_URL}/dashboard?payment=cancelled`,
+    });
+
+    console.log('✅ Checkout session created', { sessionId: session.id });
+
+    res.json({ 
+      sessionId: session.id,
+      url: session.url 
+    });
+
+  } catch (error: any) {
+    console.error('❌ Checkout creation failed:', error);
+    
+    // Return detailed error for debugging
+    res.status(500).json({ 
+      error: 'Failed to create checkout',
+      message: error.message,
+      type: error.type,
+      code: error.code
+    });
+  }
+});
+
+export default router;
+```
+
+---
+
+## Fix #2: Create Missing Analytics Endpoint
+
+### Problem
+`GET /api/user/analytics` returns 404 - route doesn't exist
+
+### Solution
+
+**Create file: `server/src/routes/user.ts`** (or add to existing user routes)
+
+```typescript
+import { Router } from 'express';
+import { authenticateUser } from '../middleware/auth';
+
+const router = Router();
+
+// GET /api/user/analytics
+router.get('/analytics', authenticateUser, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    console.log('📊 Fetching analytics for user:', userId);
+
+    // Get voice usage statistics
+    const usageStats = await db.query(`
+      SELECT 
+        COUNT(DISTINCT id) as total_sessions,
+        COALESCE(SUM(minutes_used), 0) as total_minutes_used,
+        COUNT(DISTINCT DATE(started_at)) as active_days,
+        COUNT(DISTINCT student_id) as unique_students
+      FROM realtime_sessions
+      WHERE user_id = $1
+        AND status = 'completed'
+    `, [userId]);
+
+    // Get recent sessions
+    const recentSessions = await db.query(`
+      SELECT 
+        id,
+        subject,
+        language,
+        minutes_used,
+        started_at,
+        ended_at,
+        status
+      FROM realtime_sessions
+      WHERE user_id = $1
+      ORDER BY started_at DESC
+      LIMIT 10
+    `, [userId]);
+
+    // Get usage by subject
+    const bySubject = await db.query(`
+      SELECT 
+        subject,
+        COUNT(*) as session_count,
+        SUM(COALESCE(minutes_used, 0)) as total_minutes
+      FROM realtime_sessions
+      WHERE user_id = $1
+        AND status = 'completed'
+      GROUP BY subject
+      ORDER BY total_minutes DESC
+    `, [userId]);
+
+    // Get user's subscription info
+    const userInfo = await db.query(`
+      SELECT 
+        voice_minutes_used,
+        voice_minutes_limit,
+        subscription_plan
+      FROM users
+      WHERE id = $1
+    `, [userId]);
+
+    const user = userInfo.rows[0] || {};
+
+    const response = {
+      summary: usageStats.rows[0] || {
+        total_sessions: 0,
+        total_minutes_used: 0,
+        active_days: 0,
+        unique_students: 0
+      },
+      currentUsage: {
+        minutesUsed: user.voice_minutes_used || 0,
+        minutesLimit: user.voice_minutes_limit || 60,
+        minutesRemaining: (user.voice_minutes_limit || 60) - (user.voice_minutes_used || 0),
+        plan: user.subscription_plan || 'starter'
+      },
+      recentSessions: recentSessions.rows,
+      bySubject: bySubject.rows,
+    };
+
+    console.log('✅ Analytics fetched successfully');
+    res.json(response);
+
+  } catch (error: any) {
+    console.error('❌ Failed to fetch analytics:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch analytics',
+      message: error.message 
+    });
+  }
+});
+
+export default router;
+```
+
+**Mount in `server/src/app.ts`:**
+
+```typescript
+import userRouter from './routes/user';
+
+// Mount user routes
+app.use('/api/user', userRouter);
+```
+
+---
+
+## Fix #3: Create Missing Subscription Change Endpoint
+
+### Problem
+`POST /api/subscription/change` returns 404 - route doesn't exist
+
+### Solution
+
+**Create file: `server/src/routes/subscription.ts`**
+
+```typescript
+import { Router } from 'express';
+import Stripe from 'stripe';
+import { authenticateUser } from '../middleware/auth';
+
+const router = Router();
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  apiVersion: '2024-10-28'
+});
+
+// POST /api/subscription/change
+router.post('/change', authenticateUser, async (req, res) => {
+  try {
+    const { plan } = req.body; // 'starter', 'standard', 'pro'
+    const userId = req.user.id;
+
+    console.log('📝 Subscription change request', { userId, plan });
+
+    if (!plan) {
+      return res.status(400).json({ error: 'Plan is required' });
+    }
+
+    // Price ID mapping - use environment variables
+    const priceIds: Record<string, string> = {
+      starter: process.env.STRIPE_PRICE_STARTER!,
+      standard: process.env.STRIPE_PRICE_STANDARD!,
+      pro: process.env.STRIPE_PRICE_PRO!,
+    };
+
+    const priceId = priceIds[plan.toLowerCase()];
+    if (!priceId) {
+      return res.status(400).json({ 
+        error: 'Invalid plan',
+        validPlans: ['starter', 'standard', 'pro']
+      });
+    }
+
+    console.log('💳 Using price ID:', priceId);
+
+    // Get user's stripe info
+    const userResult = await db.query(`
+      SELECT 
+        stripe_customer_id, 
+        stripe_subscription_id,
+        email
+      FROM users 
+      WHERE id = $1
+    `, [userId]);
+
+    const user = userResult.rows[0];
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const { stripe_customer_id, stripe_subscription_id, email } = user;
+
+    // If user has active subscription, update it
+    if (stripe_subscription_id) {
+      console.log('🔄 Updating existing subscription:', stripe_subscription_id);
+      
+      const subscription = await stripe.subscriptions.retrieve(stripe_subscription_id);
+      
+      const updatedSubscription = await stripe.subscriptions.update(
+        stripe_subscription_id,
+        {
+          items: [{
+            id: subscription.items.data[0].id,
+            price: priceId,
+          }],
+          proration_behavior: 'create_prorations',
+        }
+      );
+
+      // Update database
+      await db.query(`
+        UPDATE users 
+        SET subscription_plan = $1
+        WHERE id = $2
+      `, [plan, userId]);
+
+      console.log('✅ Subscription updated successfully');
+
+      return res.json({ 
+        success: true,
+        subscription: updatedSubscription.id,
+        plan: plan
+      });
+    }
+
+    // Create new subscription checkout
+    console.log('🆕 Creating new subscription checkout');
+    
+    const session = await stripe.checkout.sessions.create({
+      customer: stripe_customer_id || undefined,
+      customer_email: !stripe_customer_id ? email : undefined,
+      mode: 'subscription',
+      payment_method_types: ['card'],
+      line_items: [{ 
+        price: priceId, 
+        quantity: 1 
+      }],
+      metadata: {
+        userId,
+        plan,
+        type: 'subscription_change'
+      },
+      subscription_data: {
+        metadata: {
+          userId,
+          plan
+        }
+      },
+      success_url: `${process.env.APP_URL}/dashboard?subscription=success&plan=${plan}`,
+      cancel_url: `${process.env.APP_URL}/dashboard?subscription=cancelled`,
+    });
+
+    console.log('✅ Checkout session created:', session.id);
+
+    res.json({ 
+      sessionId: session.id,
+      url: session.url 
+    });
+
+  } catch (error: any) {
+    console.error('❌ Subscription change failed:', error);
+    res.status(500).json({ 
+      error: 'Failed to change subscription',
+      message: error.message,
+      type: error.type
+    });
+  }
+});
+
+// GET /api/subscription/status
+router.get('/status', authenticateUser, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    const result = await db.query(`
+      SELECT 
+        subscription_plan,
+        subscription_status,
+        voice_minutes_used,
+        voice_minutes_limit,
+        stripe_subscription_id
+      FROM users 
+      WHERE id = $1
+    `, [userId]);
+
+    const user = result.rows[0];
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({
+      plan: user.subscription_plan || 'starter',
+      status: user.subscription_status || 'active',
+      minutesUsed: user.voice_minutes_used || 0,
+      minutesLimit: user.voice_minutes_limit || 60,
+      minutesRemaining: (user.voice_minutes_limit || 60) - (user.voice_minutes_used || 0),
+      hasActiveSubscription: !!user.stripe_subscription_id
+    });
+
+  } catch (error: any) {
+    console.error('❌ Failed to get subscription status:', error);
+    res.status(500).json({ 
+      error: 'Failed to get subscription status',
+      message: error.message 
+    });
+  }
+});
+
+export default router;
+```
+
+**Mount in `server/src/app.ts`:**
+
+```typescript
+import subscriptionRouter from './routes/subscription';
+
+// Mount subscription routes
+app.use('/api/subscription', subscriptionRouter);
+```
+
+---
+
+## Fix #4: Voice Minutes Tracking (Critical)
+
+### Problem
+Logs show: "realtime_sessions table missing; skipping transcript save" but then "Session saved to DB: stub-17604668360Z8"
+
+This means:
+1. The table exists but there's a fallback creating "stub" sessions
+2. Minutes aren't being tracked during the session
+3. Need to track actual audio duration
+
+### Solution
+
+**File: `server/src/routes/realtime.ts`**
+
+```typescript
+// Track active sessions with timing
+const activeSessions = new Map<string, {
+  userId: string;
+  studentId: string;
+  sessionId: string;
+  startTime: Date;
+  audioStartTime: Date | null;
+  lastActivityTime: Date;
+}>();
+
+app.ws('/ws/realtime/:sessionId', (ws, req) => {
+  const sessionId = req.params.sessionId;
+  const userId = req.user?.id;
+  const studentId = req.query.studentId as string;
+
+  console.log('🎙️ Voice session starting', { sessionId, userId, studentId });
+
+  // Initialize session tracking
+  activeSessions.set(sessionId, {
+    userId,
+    studentId,
+    sessionId,
+    startTime: new Date(),
+    audioStartTime: null,
+    lastActivityTime: new Date()
+  });
+
+  // Track when audio actually starts
+  ws.on('message', (data) => {
+    try {
+      const message = JSON.parse(data.toString());
+      const session = activeSessions.get(sessionId);
+      
+      if (!session) return;
+
+      // Update last activity
+      session.lastActivityTime = new Date();
+
+      // Mark audio start on first audio buffer
+      if ((message.type === 'input_audio_buffer.append' || 
+           message.type === 'conversation.item.create') && 
+          !session.audioStartTime) {
+        session.audioStartTime = new Date();
+        console.log('🎤 Audio started for session:', sessionId);
+      }
+
+      // Handle other messages...
+    } catch (error) {
+      console.error('Error processing message:', error);
+    }
+  });
+
+  // Calculate and save minutes when session ends
+  ws.on('close', async () => {
+    const session = activeSessions.get(sessionId);
+    if (!session) return;
+
+    const endTime = new Date();
+    const startTime = session.audioStartTime || session.startTime;
+    const durationMs = endTime.getTime() - startTime.getTime();
+    const minutesUsed = Math.ceil(durationMs / 60000); // Round up to nearest minute
+
+    console.log('⏱️ Session ended', { 
+      sessionId, 
+      durationMs, 
+      minutesUsed,
+      userId: session.userId
+    });
+
+    try {
+      // Update session in database with actual minutes
+      await db.query(`
+        UPDATE realtime_sessions 
+        SET 
+          minutes_used = $1,
+          ended_at = $2,
+          status = 'completed'
+        WHERE id = $3
+      `, [minutesUsed, endTime, sessionId]);
+
+      // Increment user's total minutes used
+      await db.query(`
+        UPDATE users 
+        SET voice_minutes_used = COALESCE(voice_minutes_used, 0) + $1
+        WHERE id = $2
+      `, [minutesUsed, session.userId]);
+
+      console.log('✅ Minutes tracked', { 
+        userId: session.userId, 
+        minutesUsed,
+        sessionId 
+      });
+
+    } catch (error: any) {
+      console.error('❌ Failed to track minutes:', error);
+      
+      // Log error but don't crash
+      if (error.code === '42P01') {
+        console.warn('⚠️ realtime_sessions table missing');
+      }
+    } finally {
+      activeSessions.delete(sessionId);
+    }
+  });
+
+  // Handle errors
+  ws.on('error', (error) => {
+    console.error('❌ WebSocket error for session:', sessionId, error);
+  });
+});
+```
+
+---
+
+## Environment Variables Required
+
+Add these to Railway (Settings → Variables):
+
+```bash
+# Stripe API Keys
+STRIPE_SECRET_KEY=sk_live_51...
+STRIPE_WEBHOOK_SECRET=whsec_...
+
+# Stripe Price IDs (from your Stripe Dashboard)
+STRIPE_PRICE_60_MIN=price_1SGvXShsCXqdQW9z2hIqAPdN
+STRIPE_PRICE_120_MIN=price_...
+STRIPE_PRICE_300_MIN=price_...
+STRIPE_PRICE_STARTER=price_...
+STRIPE_PRICE_STANDARD=price_...
+STRIPE_PRICE_PRO=price_...
+
+# App Configuration
+APP_URL=https://jie-mastery-tutor-v2-production.up.railway.app
+```
+
+---
+
+## Database Schema Check
+
+Run this to ensure proper structure:
+
+```sql
+-- Verify realtime_sessions table exists
+SELECT table_name FROM information_schema.tables 
+WHERE table_schema = 'public' AND table_name = 'realtime_sessions';
+
+-- Check columns
+SELECT column_name, data_type FROM information_schema.columns
+WHERE table_name = 'realtime_sessions';
+
+-- Add missing columns if needed
+ALTER TABLE realtime_sessions 
+  ADD COLUMN IF NOT EXISTS minutes_used INTEGER DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active',
+  ADD COLUMN IF NOT EXISTS ended_at TIMESTAMPTZ;
+
+-- Verify users table has voice tracking columns
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS voice_minutes_used INTEGER DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS voice_minutes_limit INTEGER DEFAULT 60,
+  ADD COLUMN IF NOT EXISTS subscription_plan TEXT DEFAULT 'starter',
+  ADD COLUMN IF NOT EXISTS subscription_status TEXT DEFAULT 'active',
+  ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT,
+  ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT;
+```
+
+---
+
+## Testing Checklist
+
+### 1. Test Price ID Validation Fix
+```bash
+# Should NOT return "Invalid Price ID format"
+curl -X POST https://your-app.railway.app/api/checkout/buy-minutes \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"minutes": 60}'
+```
+**Expected:** Returns checkout session URL, no validation error
+
+### 2. Test Analytics Endpoint
+```bash
+curl https://your-app.railway.app/api/user/analytics \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+**Expected:** 200 OK with usage statistics
+
+### 3. Test Subscription Change
+```bash
+curl -X POST https://your-app.railway.app/api/subscription/change \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"plan": "standard"}'
+```
+**Expected:** 200 OK with checkout URL
+
+### 4. Test Voice Minute Tracking
+1. Start a voice session
+2. Talk for 2 minutes
+3. End session
+4. Check database:
+```sql
+SELECT minutes_used, status FROM realtime_sessions ORDER BY started_at DESC LIMIT 1;
+SELECT voice_minutes_used FROM users WHERE id = 'YOUR_USER_ID';
+```
+**Expected:** minutes_used = 2, status = 'completed', user's total increased by 2
+
+---
+
+## Success Criteria
+
+✅ No more "Invalid Price ID format" errors  
+✅ `/api/user/analytics` returns 200 with data  
+✅ `/api/subscription/change` returns 200 with checkout URL  
+✅ Voice minutes increment in database after each session  
+✅ Dashboard displays accurate minute usage (e.g., "5 / 60 minutes")  
+✅ Buy Minutes button redirects to Stripe checkout  
+✅ Upgrade buttons redirect to Stripe checkout  
+
+---
+
+## Deploy & Verify
+
+```bash
+# 1. Commit changes
+git add .
+git commit -m "Fix payment endpoints and voice tracking"
+git push
+
+# 2. Wait for Railway deploy
+
+# 3. Check logs
+railway logs --tail
+
+# 4. Test endpoints
+# Should see:
+# ✅ Analytics fetched successfully
+# ✅ Checkout session created
+# ✅ Minutes tracked
+```
