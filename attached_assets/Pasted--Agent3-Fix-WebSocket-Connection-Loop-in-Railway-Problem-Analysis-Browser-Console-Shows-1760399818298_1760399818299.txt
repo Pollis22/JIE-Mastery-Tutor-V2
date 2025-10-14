@@ -1,0 +1,516 @@
+# Agent3: Fix WebSocket Connection Loop in Railway
+
+## Problem Analysis
+
+**Browser Console Shows:**
+- `[RealtimeVoice] WebSocket closed` → `Connecting to:` → `WebSocket connected` → `WebSocket closed` (infinite loop)
+- `WebSocket connection to 'wss://...railway.app/ws/realtime/stub-17...' failed`
+- UI stuck on "Connecting to voice service..."
+
+**Railway Logs Show:**
+- ✅ Document uploads working (200 responses)
+- ✅ Database connections working
+- ✅ Session check-availability calls happening
+- ❌ **NO WebSocket connection logs at all**
+
+**Diagnosis:** The WebSocket route is either not mounted, not handling upgrades, or Railway isn't forwarding WebSocket connections properly.
+
+---
+
+## Fix Strategy
+
+We'll use a **hybrid approach**: Keep WebSocket for initial handshake, but use the WebRTC data channel for actual communication once connected.
+
+---
+
+## Step 1: Verify WebSocket Route is Mounted
+
+**File: `server/src/app.ts` or `server/src/index.ts`**
+
+Make sure you're using `express-ws` properly:
+
+```typescript
+import express from 'express';
+import expressWs from 'express-ws';
+
+const app = express();
+
+// CRITICAL: Initialize express-ws BEFORE defining routes
+const { app: wsApp } = expressWs(app);
+
+// Add this debug route to verify WebSocket support
+app.get('/ws-test', (req, res) => {
+  res.json({ 
+    websocketSupport: true,
+    routes: app._router.stack
+      .filter((r: any) => r.route)
+      .map((r: any) => r.route.path)
+  });
+});
+
+// NOW import and mount WebSocket routes
+import realtimeRouter from './routes/realtime';
+app.use('/ws', realtimeRouter);
+
+// ... rest of your app
+```
+
+**Test this in Railway:**
+```bash
+curl https://your-app.railway.app/ws-test
+```
+Should return `{"websocketSupport": true, "routes": [...]}`
+
+---
+
+## Step 2: Fix WebSocket Route Handler
+
+**File: `server/src/routes/realtime.ts`**
+
+```typescript
+import { Router } from 'express';
+import expressWs from 'express-ws';
+
+const router = Router();
+
+// Apply express-ws to this router
+expressWs(router);
+
+// CRITICAL: Log before the route is even registered
+console.log('🔧 Registering WebSocket route: /realtime/:sessionId');
+
+router.ws('/realtime/:sessionId', (ws, req) => {
+  const sessionId = req.params.sessionId;
+  const token = req.query.token as string;
+  
+  // FIRST LOG - this proves the connection reached the server
+  console.log('🟢 [WS] Connection received!', { 
+    sessionId, 
+    token: token?.substring(0, 10) + '...',
+    ip: req.ip,
+    headers: req.headers
+  });
+
+  // Validate immediately
+  if (!token || token === 'undefined') {
+    console.error('❌ [WS] Rejected: Missing or invalid token');
+    ws.close(1008, 'Missing authentication token');
+    return;
+  }
+
+  // Send immediate acknowledgment
+  ws.send(JSON.stringify({ 
+    type: 'connection.established',
+    sessionId,
+    timestamp: Date.now()
+  }));
+
+  console.log('✅ [WS] Connection accepted', { sessionId });
+
+  // Add heartbeat to keep connection alive
+  let heartbeatInterval: NodeJS.Timeout;
+  ws.isAlive = true;
+
+  ws.on('pong', () => {
+    console.log('💓 [WS] Pong received', { sessionId });
+    ws.isAlive = true;
+  });
+
+  heartbeatInterval = setInterval(() => {
+    if (!ws.isAlive) {
+      console.warn('⚠️ [WS] No pong, terminating', { sessionId });
+      clearInterval(heartbeatInterval);
+      ws.terminate();
+      return;
+    }
+    ws.isAlive = false;
+    ws.ping();
+  }, 15000);
+
+  // Handle incoming messages
+  ws.on('message', (data: string) => {
+    try {
+      const message = JSON.parse(data.toString());
+      console.log('📨 [WS] Message received', { 
+        type: message.type, 
+        sessionId 
+      });
+
+      // Handle different message types
+      switch (message.type) {
+        case 'session.create':
+          // Forward to OpenAI or handle locally
+          handleSessionCreate(ws, message, sessionId);
+          break;
+        
+        case 'ping':
+          ws.send(JSON.stringify({ type: 'pong' }));
+          break;
+
+        default:
+          console.log('📬 [WS] Unhandled message type:', message.type);
+      }
+    } catch (error) {
+      console.error('❌ [WS] Message parse error:', error);
+    }
+  });
+
+  ws.on('close', (code, reason) => {
+    console.warn('⚠️ [WS] Connection closed', { 
+      sessionId, 
+      code, 
+      reason: reason.toString() 
+    });
+    clearInterval(heartbeatInterval);
+  });
+
+  ws.on('error', (error) => {
+    console.error('❌ [WS] Error', { sessionId, error: error.message });
+  });
+});
+
+async function handleSessionCreate(ws: any, message: any, sessionId: string) {
+  console.log('🎬 [WS] Creating session', { sessionId });
+  
+  try {
+    // Your session creation logic here
+    // Mint ephemeral token from OpenAI
+    const response = await fetch('https://api.openai.com/v1/realtime/sessions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: message.model || 'gpt-4o-realtime-preview',
+        voice: message.voice || 'alloy',
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`OpenAI session creation failed: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    console.log('✅ [WS] Session created', { sessionId });
+
+    // Send credentials back to client
+    ws.send(JSON.stringify({
+      type: 'session.created',
+      session: data,
+      client_secret: data.client_secret
+    }));
+
+  } catch (error) {
+    console.error('❌ [WS] Session creation failed', { sessionId, error });
+    ws.send(JSON.stringify({
+      type: 'error',
+      error: {
+        message: 'Failed to create session',
+        details: error.message
+      }
+    }));
+  }
+}
+
+export default router;
+```
+
+---
+
+## Step 3: Update Client to Match Server Path
+
+**File: `client/src/hooks/use-realtime-voice.tsx`**
+
+```typescript
+const connect = async () => {
+  try {
+    console.log('🔵 Starting connection...');
+    
+    // Generate session ID
+    const sessionId = `session-${Date.now()}`;
+    
+    // Build WebSocket URL - match server path exactly
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.host;
+    const wsUrl = `${protocol}//${host}/ws/realtime/${sessionId}?token=${authToken}`;
+    
+    console.log('🔗 Connecting to:', wsUrl);
+    
+    // Create WebSocket connection
+    const socket = new WebSocket(wsUrl);
+    
+    socket.onopen = () => {
+      console.log('✅ WebSocket connected!');
+      setConnectionState('connected');
+      
+      // Send session.create message
+      socket.send(JSON.stringify({
+        type: 'session.create',
+        model: 'gpt-4o-realtime-preview',
+        voice: 'alloy'
+      }));
+    };
+    
+    socket.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        console.log('📨 Received:', message.type);
+        
+        switch (message.type) {
+          case 'connection.established':
+            console.log('🤝 Connection acknowledged by server');
+            break;
+            
+          case 'session.created':
+            console.log('🎬 Session created, starting WebRTC...');
+            // Now establish WebRTC with the ephemeral token
+            connectWebRTC(message.client_secret.value);
+            break;
+            
+          case 'error':
+            console.error('❌ Server error:', message.error);
+            setConnectionState('error');
+            break;
+        }
+      } catch (error) {
+        console.error('❌ Failed to parse message:', error);
+      }
+    };
+    
+    socket.onclose = (event) => {
+      console.warn('⚠️ WebSocket closed', { 
+        code: event.code, 
+        reason: event.reason || 'No reason provided',
+        wasClean: event.wasClean
+      });
+      setConnectionState('disconnected');
+      
+      // Only retry if it wasn't a clean close
+      if (!event.wasClean && retryCount < 3) {
+        console.log('🔄 Retrying connection...');
+        setTimeout(() => {
+          setRetryCount(prev => prev + 1);
+          connect();
+        }, 2000);
+      }
+    };
+    
+    socket.onerror = (error) => {
+      console.error('❌ WebSocket error:', error);
+      setConnectionState('error');
+    };
+    
+    setWsConnection(socket);
+    
+  } catch (error) {
+    console.error('❌ Connection failed:', error);
+    setConnectionState('error');
+  }
+};
+```
+
+---
+
+## Step 4: Railway WebSocket Configuration
+
+**Check Railway Settings:**
+
+1. Go to Railway Dashboard → Your Service → Settings
+2. Verify these are NOT set (Railway handles WebSocket automatically):
+   - No special proxy settings needed
+   - No NGINX config needed
+
+3. **Verify Environment Variables:**
+```bash
+NODE_ENV=production
+PORT=3000
+```
+
+4. **Check Start Command:**
+```bash
+node dist/server/index.js
+```
+
+---
+
+## Step 5: Add WebSocket Debug Endpoint
+
+**File: `server/src/app.ts`**
+
+```typescript
+// Add this test endpoint
+app.get('/api/ws-status', (req, res) => {
+  res.json({
+    websocketEnabled: true,
+    uptime: process.uptime(),
+    activeConnections: wsApp.getWss().clients.size,
+    env: {
+      NODE_ENV: process.env.NODE_ENV,
+      PORT: process.env.PORT
+    }
+  });
+});
+```
+
+Test in Railway:
+```bash
+curl https://your-app.railway.app/api/ws-status
+```
+
+---
+
+## Step 6: Test Connection Flow
+
+**In Browser Console, run:**
+
+```javascript
+// Test WebSocket connection directly
+const ws = new WebSocket('wss://your-app.railway.app/ws/realtime/test-123?token=test-token');
+
+ws.onopen = () => console.log('✅ Connected');
+ws.onmessage = (e) => console.log('📨 Message:', e.data);
+ws.onclose = (e) => console.log('⚠️ Closed:', e.code, e.reason);
+ws.onerror = (e) => console.error('❌ Error:', e);
+```
+
+**Expected in Railway Logs:**
+```
+🟢 [WS] Connection received! { sessionId: 'test-123', ... }
+✅ [WS] Connection accepted { sessionId: 'test-123' }
+```
+
+---
+
+## Step 7: Alternative - Use WebRTC Data Channel Only
+
+If WebSocket continues to fail, use the WebRTC data channel for all communication:
+
+**File: `client/src/hooks/use-realtime-voice.tsx`**
+
+```typescript
+// Instead of WebSocket, use HTTP to get credentials, then WebRTC data channel
+const connect = async () => {
+  console.log('🔵 Requesting session credentials via HTTP...');
+  
+  // Get ephemeral token via HTTP POST (not WebSocket)
+  const response = await fetch('/api/session/create', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${authToken}`
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o-realtime-preview',
+      voice: 'alloy'
+    })
+  });
+  
+  const data = await response.json();
+  
+  console.log('🎫 Got credentials, establishing WebRTC...');
+  
+  // Use WebRTC data channel for all communication
+  await connectWebRTC(data.client_secret.value);
+};
+```
+
+**Add HTTP endpoint: `server/src/routes/session.ts`**
+
+```typescript
+router.post('/session/create', async (req, res) => {
+  try {
+    console.log('🎬 Creating session via HTTP');
+    
+    const response = await fetch('https://api.openai.com/v1/realtime/sessions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: req.body.model || 'gpt-4o-realtime-preview',
+        voice: req.body.voice || 'alloy',
+      }),
+    });
+
+    const data = await response.json();
+    
+    console.log('✅ Session created via HTTP');
+    
+    res.json(data);
+  } catch (error) {
+    console.error('❌ Session creation failed:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+```
+
+---
+
+## Debugging Checklist
+
+Run these commands to diagnose:
+
+```bash
+# 1. Check if WebSocket route is registered
+railway run node -e "console.log(require('./dist/app').default._router.stack.map(r => r.route?.path))"
+
+# 2. Test WebSocket from command line
+wscat -c "wss://your-app.railway.app/ws/realtime/test?token=test"
+
+# 3. Check Railway logs for WebSocket messages
+railway logs --filter "WS"
+
+# 4. Verify server is listening
+railway run curl http://localhost:$PORT/api/ws-status
+
+# 5. Check if express-ws is installed
+railway run npm list express-ws
+```
+
+---
+
+## Expected Outcomes
+
+### ✅ Success Indicators:
+
+**Browser Console:**
+```
+🔵 Starting connection...
+🔗 Connecting to: wss://...
+✅ WebSocket connected!
+🤝 Connection acknowledged by server
+📨 Received: session.created
+🎬 Session created, starting WebRTC...
+```
+
+**Railway Logs:**
+```
+🟢 [WS] Connection received! { sessionId: '...', token: '...' }
+✅ [WS] Connection accepted { sessionId: '...' }
+🎬 [WS] Creating session
+✅ [WS] Session created
+```
+
+### ❌ If Still Failing:
+
+1. **Railway logs show nothing** → WebSocket route not mounted, check Step 1
+2. **Connection closes immediately** → Token validation issue, check Step 2
+3. **"Connection failed"** → Path mismatch, verify paths match exactly
+4. **Works locally, fails on Railway** → Use HTTP + WebRTC approach (Step 7)
+
+---
+
+## TL;DR Quick Fix
+
+**Fastest path to test:**
+
+1. Add massive logging to verify WebSocket route is hit
+2. Check Railway logs after clicking "Start Tutoring"
+3. If no logs appear → route isn't mounted
+4. If logs appear → connection is reaching server, debug from there
+5. If WebSocket keeps failing → switch to HTTP + WebRTC data channel only
+
+Apply these fixes and share the Railway logs - we'll see exactly where it's failing! 🔍
