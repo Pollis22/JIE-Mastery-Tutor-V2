@@ -1,0 +1,386 @@
+# Voice Minute Rollover Implementation
+
+## Option 1: Hybrid (RECOMMENDED) ⭐
+
+**Policy:**
+- Subscription minutes reset on billing cycle
+- Purchased top-up minutes carry over indefinitely
+
+### Database Schema
+
+```sql
+-- Add minute tracking columns to users table
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS subscription_minutes_used INTEGER DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS subscription_minutes_limit INTEGER DEFAULT 60,
+  ADD COLUMN IF NOT EXISTS purchased_minutes_balance INTEGER DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS billing_cycle_start TIMESTAMPTZ DEFAULT NOW(),
+  ADD COLUMN IF NOT EXISTS last_reset_at TIMESTAMPTZ;
+
+-- Track minute purchases separately
+CREATE TABLE IF NOT EXISTS minute_purchases (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id TEXT NOT NULL,
+  minutes_purchased INTEGER NOT NULL,
+  minutes_remaining INTEGER NOT NULL,
+  price_paid DECIMAL(10,2),
+  purchased_at TIMESTAMPTZ DEFAULT NOW(),
+  expires_at TIMESTAMPTZ, -- NULL = never expires, or set to 12 months
+  status TEXT DEFAULT 'active', -- active, used, expired
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_minute_purchases_user ON minute_purchases(user_id, status);
+```
+
+### Minute Usage Logic
+
+```typescript
+// server/src/services/voice-minutes.ts
+
+interface MinuteBalance {
+  subscriptionMinutes: number;
+  subscriptionLimit: number;
+  purchasedMinutes: number;
+  totalAvailable: number;
+  resetDate: Date;
+}
+
+export async function getUserMinuteBalance(userId: string): Promise<MinuteBalance> {
+  // Get user's subscription info
+  const user = await db.query(`
+    SELECT 
+      subscription_minutes_used,
+      subscription_minutes_limit,
+      purchased_minutes_balance,
+      billing_cycle_start,
+      last_reset_at
+    FROM users 
+    WHERE id = $1
+  `, [userId]);
+
+  const userData = user.rows[0];
+  
+  // Check if we need to reset subscription minutes
+  const now = new Date();
+  const lastReset = new Date(userData.last_reset_at || userData.billing_cycle_start);
+  const daysSinceReset = (now.getTime() - lastReset.getTime()) / (1000 * 60 * 60 * 24);
+  
+  if (daysSinceReset >= 30) {
+    // Reset subscription minutes at start of new billing cycle
+    await db.query(`
+      UPDATE users 
+      SET 
+        subscription_minutes_used = 0,
+        last_reset_at = NOW()
+      WHERE id = $1
+    `, [userId]);
+    
+    userData.subscription_minutes_used = 0;
+  }
+
+  const subscriptionRemaining = Math.max(
+    0, 
+    userData.subscription_minutes_limit - userData.subscription_minutes_used
+  );
+
+  // Calculate next reset date
+  const nextReset = new Date(lastReset);
+  nextReset.setDate(nextReset.getDate() + 30);
+
+  return {
+    subscriptionMinutes: subscriptionRemaining,
+    subscriptionLimit: userData.subscription_minutes_limit,
+    purchasedMinutes: userData.purchased_minutes_balance || 0,
+    totalAvailable: subscriptionRemaining + (userData.purchased_minutes_balance || 0),
+    resetDate: nextReset
+  };
+}
+
+export async function deductMinutes(userId: string, minutesUsed: number): Promise<void> {
+  console.log('⏱️ Deducting minutes', { userId, minutesUsed });
+
+  // First, use subscription minutes
+  const user = await db.query(`
+    SELECT 
+      subscription_minutes_used,
+      subscription_minutes_limit,
+      purchased_minutes_balance
+    FROM users 
+    WHERE id = $1
+  `, [userId]);
+
+  const userData = user.rows[0];
+  const subscriptionRemaining = userData.subscription_minutes_limit - userData.subscription_minutes_used;
+
+  if (subscriptionRemaining >= minutesUsed) {
+    // All from subscription
+    await db.query(`
+      UPDATE users 
+      SET subscription_minutes_used = subscription_minutes_used + $1
+      WHERE id = $2
+    `, [minutesUsed, userId]);
+    
+    console.log('✅ Deducted from subscription minutes');
+  } else if (subscriptionRemaining > 0) {
+    // Partial subscription, rest from purchased
+    const fromSubscription = subscriptionRemaining;
+    const fromPurchased = minutesUsed - fromSubscription;
+    
+    await db.query(`
+      UPDATE users 
+      SET 
+        subscription_minutes_used = subscription_minutes_limit,
+        purchased_minutes_balance = purchased_minutes_balance - $1
+      WHERE id = $2
+    `, [fromPurchased, userId]);
+    
+    console.log('✅ Deducted from both pools', { fromSubscription, fromPurchased });
+  } else {
+    // All from purchased
+    await db.query(`
+      UPDATE users 
+      SET purchased_minutes_balance = purchased_minutes_balance - $1
+      WHERE id = $2
+    `, [minutesUsed, userId]);
+    
+    console.log('✅ Deducted from purchased minutes');
+  }
+}
+
+export async function addPurchasedMinutes(
+  userId: string, 
+  minutes: number,
+  pricePaid: number
+): Promise<void> {
+  // Add to user's balance
+  await db.query(`
+    UPDATE users 
+    SET purchased_minutes_balance = purchased_minutes_balance + $1
+    WHERE id = $2
+  `, [minutes, userId]);
+
+  // Track the purchase
+  await db.query(`
+    INSERT INTO minute_purchases (
+      user_id, 
+      minutes_purchased, 
+      minutes_remaining, 
+      price_paid,
+      expires_at
+    ) VALUES ($1, $2, $3, $4, $5)
+  `, [
+    userId, 
+    minutes, 
+    minutes, 
+    pricePaid,
+    null // Never expires (or set to NOW() + interval '12 months' for expiration)
+  ]);
+
+  console.log('✅ Added purchased minutes', { userId, minutes });
+}
+```
+
+### Update WebSocket Handler
+
+```typescript
+// server/src/routes/realtime.ts
+
+import { getUserMinuteBalance, deductMinutes } from '../services/voice-minutes';
+
+ws.on('close', async () => {
+  const session = activeSessions.get(sessionId);
+  if (!session) return;
+
+  const minutesUsed = calculateMinutesUsed(session);
+
+  try {
+    // Check if user has enough minutes
+    const balance = await getUserMinuteBalance(session.userId);
+    
+    if (balance.totalAvailable < minutesUsed) {
+      console.warn('⚠️ User exceeded minute balance', { 
+        userId: session.userId, 
+        needed: minutesUsed, 
+        available: balance.totalAvailable 
+      });
+      // Still allow the session to complete, but flag it
+    }
+
+    // Deduct minutes (subscription first, then purchased)
+    await deductMinutes(session.userId, minutesUsed);
+
+    console.log('✅ Minutes deducted successfully');
+  } catch (error) {
+    console.error('❌ Failed to deduct minutes:', error);
+  }
+});
+```
+
+### Update Stripe Webhook
+
+```typescript
+// server/src/routes/checkout.ts
+
+if (event.type === 'checkout.session.completed') {
+  const session = event.data.object as Stripe.Checkout.Session;
+  const { userId, minutes, type } = session.metadata || {};
+
+  if (type === 'voice_minutes' && userId && minutes) {
+    const minutesNum = parseInt(minutes);
+    const pricePaid = session.amount_total! / 100; // Convert cents to dollars
+
+    await addPurchasedMinutes(userId, minutesNum, pricePaid);
+    
+    console.log('✅ Purchased minutes added', { userId, minutes: minutesNum });
+  }
+}
+```
+
+### Dashboard Display
+
+```typescript
+// client/src/pages/dashboard.tsx
+
+const [balance, setBalance] = useState({
+  subscriptionMinutes: 0,
+  subscriptionLimit: 60,
+  purchasedMinutes: 0,
+  totalAvailable: 0,
+  resetDate: new Date()
+});
+
+useEffect(() => {
+  fetch('/api/user/voice-balance')
+    .then(r => r.json())
+    .then(setBalance);
+}, []);
+
+return (
+  <div className="minute-balance">
+    <h3>Voice Minutes</h3>
+    
+    {/* Subscription Minutes */}
+    <div className="subscription-minutes">
+      <p>This Month</p>
+      <p>{balance.subscriptionMinutes} / {balance.subscriptionLimit} minutes</p>
+      <small>Resets on {balance.resetDate.toLocaleDateString()}</small>
+    </div>
+
+    {/* Purchased Minutes (only show if > 0) */}
+    {balance.purchasedMinutes > 0 && (
+      <div className="purchased-minutes">
+        <p>Rollover Balance</p>
+        <p>{balance.purchasedMinutes} minutes</p>
+        <small>Never expires</small>
+      </div>
+    )}
+
+    {/* Total Available */}
+    <div className="total-available">
+      <p className="text-lg font-bold">
+        {balance.totalAvailable} minutes available
+      </p>
+    </div>
+  </div>
+);
+```
+
+---
+
+## Option 2: Full Rollover (Most User-Friendly)
+
+**Policy:** All unused minutes carry over to next month
+
+### Pros:
+- Extremely user-friendly
+- No "use it or lose it" pressure
+- Great for customer satisfaction
+
+### Cons:
+- Users might never upgrade plans
+- Less predictable revenue
+- Need expiration policy (e.g., expire after 12 months of inactivity)
+
+### Simplified Implementation:
+
+```sql
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS minute_balance INTEGER DEFAULT 60;
+
+-- On subscription renewal, just add more minutes
+UPDATE users 
+SET minute_balance = minute_balance + 60  -- Starter plan
+WHERE subscription_plan = 'starter';
+```
+
+---
+
+## Option 3: Reset Monthly (Simplest)
+
+**Policy:** All minutes reset at end of billing cycle
+
+### Pros:
+- Dead simple to implement
+- Predictable revenue
+- Common pattern (cell phone plans)
+
+### Cons:
+- Users feel they "lose" unused value
+- Higher churn risk
+- Less flexible for students
+
+### Implementation:
+
+```sql
+-- Just track current month usage
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS monthly_minutes_used INTEGER DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS monthly_minutes_limit INTEGER DEFAULT 60,
+  ADD COLUMN IF NOT EXISTS billing_cycle_start TIMESTAMPTZ DEFAULT NOW();
+
+-- Cron job resets every 30 days
+UPDATE users 
+SET 
+  monthly_minutes_used = 0,
+  billing_cycle_start = NOW()
+WHERE billing_cycle_start < NOW() - INTERVAL '30 days';
+```
+
+---
+
+## Recommended Approach: Hybrid
+
+```typescript
+// Add this endpoint for the dashboard
+// GET /api/user/voice-balance
+router.get('/voice-balance', authenticateUser, async (req, res) => {
+  const balance = await getUserMinuteBalance(req.user.id);
+  res.json(balance);
+});
+```
+
+### Benefits:
+✅ Fair to users - keeps purchased minutes  
+✅ Encourages subscriptions - monthly allocation is cheaper  
+✅ Industry standard - familiar pattern  
+✅ Flexible - handles irregular usage  
+✅ Clear value prop - "Get 240 minutes/month vs buying 240 minutes for $76"  
+
+### Dashboard Language:
+```
+Your Voice Minutes
+━━━━━━━━━━━━━━━━━━
+📅 This Month: 45 / 60 minutes
+   Resets Feb 14, 2025
+
+💎 Rollover Balance: 0 minutes
+   From purchased top-ups
+
+━━━━━━━━━━━━━━━━━━
+✨ Total Available: 45 minutes
+
+Need more? Buy 60 minutes for $19.99 →
+```
+
+This makes it crystal clear what resets vs what carries over!
