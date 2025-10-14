@@ -79,6 +79,52 @@ router.post('/', async (req, res) => {
       });
     }
 
+    // Fetch document context if documents are selected
+    let documentContext = '';
+    const sessionUserId = req.user?.id || data.userId;
+    if (sessionUserId && data.contextDocumentIds && data.contextDocumentIds.length > 0) {
+      try {
+        const { chunks, documents } = await storage.getDocumentContext(sessionUserId, data.contextDocumentIds);
+        
+        if (documents.length > 0) {
+          documentContext = '\n\n# Student Documents for Reference:\n';
+          
+          // Add document summaries
+          for (const doc of documents) {
+            documentContext += `\n## Document: ${doc.title || doc.originalName}\n`;
+            if (doc.subject) documentContext += `Subject: ${doc.subject}\n`;
+            if (doc.grade) documentContext += `Grade Level: ${doc.grade}\n`;
+            if (doc.description) documentContext += `Description: ${doc.description}\n`;
+            
+            // Add first few chunks of content (limit to avoid token overflow)
+            const docChunks = chunks
+              .filter(c => c.documentId === doc.id)
+              .slice(0, 3); // Take first 3 chunks
+            
+            if (docChunks.length > 0) {
+              documentContext += '\n### Content Preview:\n';
+              docChunks.forEach(chunk => {
+                // Limit each chunk to 500 characters for context
+                const content = chunk.content.slice(0, 500);
+                documentContext += `${content}${chunk.content.length > 500 ? '...' : ''}\n\n`;
+              });
+            }
+          }
+          
+          console.log(`📚 Added context from ${documents.length} documents`);
+        }
+      } catch (error) {
+        console.error('⚠️ Failed to fetch document context:', error);
+        // Continue without document context
+      }
+    }
+
+    // Build instructions with document context
+    const instructions = `You are a friendly, patient AI tutor helping students learn.
+${documentContext ? documentContext : ''}
+Please reference the student's documents when relevant to provide personalized help.
+Be encouraging and adapt your teaching style to the student's needs.`;
+
     // Request ephemeral session from OpenAI
     console.log('🔑 Requesting ephemeral session from OpenAI...');
     const openaiResponse = await fetch('https://api.openai.com/v1/realtime/sessions', {
@@ -91,7 +137,7 @@ router.post('/', async (req, res) => {
         model,
         voice: selectedVoice,
         modalities: ['text', 'audio'],
-        instructions: ''
+        instructions
       }),
     });
 
@@ -116,10 +162,9 @@ router.post('/', async (req, res) => {
     });
 
     // Save to database asynchronously (fail-safe, don't block on error)
-    const userId = req.user?.id || data.userId;
-    if (userId && storage.createRealtimeSession) {
+    if (sessionUserId && storage.createRealtimeSession) {
       storage.createRealtimeSession({
-        userId,
+        userId: sessionUserId,
         studentId: data.studentId,
         subject: data.subject,
         language: data.language,
