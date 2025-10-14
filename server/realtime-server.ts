@@ -7,12 +7,14 @@ interface ActiveSession {
   sessionId: string;
   userId: string;
   studentId?: string;
+  studentName?: string;
   clientWs: WebSocket;
   openaiWs: WebSocket | null;
   transcript: Array<{
-    role: 'user' | 'assistant';
-    content: string;
-    timestamp: Date;
+    speaker: 'tutor' | 'student';
+    text: string;
+    timestamp: string;
+    messageId: string;
   }>;
   startTime: Date;
   voiceName?: string; // OpenAI Realtime voice (alloy, echo, fable, nova, shimmer, onyx)
@@ -117,6 +119,7 @@ export class RealtimeServer {
         sessionId,
         userId: dbSession.userId,
         studentId: dbSession.studentId || undefined,
+        studentName: dbSession.studentName || undefined,
         clientWs,
         openaiWs: null,
         transcript: [],
@@ -407,15 +410,40 @@ export class RealtimeServer {
       // Text JSON message - parse and handle
       const message = JSON.parse(data.toString());
 
-      // Track transcript
-      if (message.type === 'conversation.item.created') {
-        const item = message.item;
-        if (item.type === 'message') {
+      // Track transcript - Capture assistant messages (tutor)
+      if (message.type === 'response.audio_transcript.done' || 
+          (message.type === 'conversation.item.created' && message.item?.role === 'assistant')) {
+        
+        const tutorText = message.transcript || 
+                         message.item?.content?.find((c: any) => c.type === 'text')?.text;
+        
+        if (tutorText) {
           session.transcript.push({
-            role: item.role,
-            content: item.content?.[0]?.transcript || '',
-            timestamp: new Date(),
+            speaker: 'tutor',
+            text: tutorText,
+            timestamp: new Date().toISOString(),
+            messageId: message.item?.id || message.response_id || `tutor_${Date.now()}`
           });
+          console.log(`💬 [Transcript] Tutor: ${tutorText.substring(0, 50)}...`);
+        }
+      }
+
+      // Capture student messages
+      if (message.type === 'conversation.item.input_audio_transcription.completed' ||
+          message.type === 'input_audio_buffer.speech_stopped' ||
+          (message.type === 'conversation.item.created' && message.item?.role === 'user')) {
+        
+        const studentText = message.transcript || 
+                           message.item?.content?.find((c: any) => c.type === 'input_text')?.text;
+        
+        if (studentText) {
+          session.transcript.push({
+            speaker: 'student',
+            text: studentText,
+            timestamp: new Date().toISOString(),
+            messageId: message.item?.id || message.item_id || `student_${Date.now()}`
+          });
+          console.log(`🎤 [Transcript] Student: ${studentText.substring(0, 50)}...`);
         }
       }
 
@@ -619,18 +647,106 @@ Remember: Your goal is to build understanding and confidence in learning.`
     const minutesUsed = Math.ceil(durationMs / 60000);
 
     console.log(`[RealtimeWS] Session ${sessionId} ended. Duration: ${minutesUsed} minutes`);
+    console.log(`💾 [RealtimeWS] Saving transcript with ${session.transcript.length} messages`);
 
     // Save transcript and update voice usage
     try {
       const { storage } = await import('./storage');
+      const { db } = await import('./db');
+      const { realtimeSessions } = await import('@shared/schema');
+      const { eq } = await import('drizzle-orm');
+
+      // Generate summary if transcript exists
+      let summary: string | null = null;
+      if (session.transcript.length > 0) {
+        summary = await this.generateSessionSummary(session.transcript);
+      }
+
+      // Update session with full transcript and metadata
+      await db.update(realtimeSessions)
+        .set({
+          transcript: session.transcript,
+          summary: summary,
+          totalMessages: session.transcript.length,
+          studentName: session.studentName,
+          status: 'ended',
+          endedAt: new Date(),
+          minutesUsed: minutesUsed,
+        })
+        .where(eq(realtimeSessions.id, sessionId));
+
+      // Also call the original endRealtimeSession to handle voice minutes deduction
       await storage.endRealtimeSession(sessionId, session.userId, session.transcript, minutesUsed);
-      console.log(`[RealtimeWS] Session ${sessionId} saved to database`);
+
+      console.log(`✅ [RealtimeWS] Session ${sessionId} saved to database with transcript`);
     } catch (error) {
       console.error(`[RealtimeWS] Error saving session ${sessionId}:`, error);
     }
 
     this.activeSessions.delete(sessionId);
     this.eventBuffer.delete(sessionId);
+  }
+
+  private async generateSessionSummary(
+    transcript: Array<{ speaker: string; text: string; timestamp: string }>
+  ): Promise<string> {
+    if (transcript.length === 0) return 'No conversation recorded';
+    
+    // Combine all messages
+    const fullConversation = transcript
+      .map(t => `${t.speaker}: ${t.text}`)
+      .slice(0, 20) // Take first 20 messages for summary
+      .join('\n');
+    
+    // Call OpenAI to generate summary
+    try {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [{
+            role: 'system',
+            content: 'Summarize this tutoring session in 2-3 sentences. Focus on topics covered and student progress. Be specific about what was learned.'
+          }, {
+            role: 'user',
+            content: fullConversation.substring(0, 3000) // Limit tokens
+          }],
+          max_tokens: 150,
+          temperature: 0.3
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`OpenAI API error: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      return data.choices[0].message.content;
+      
+    } catch (error) {
+      console.error('[RealtimeWS] Failed to generate summary:', error);
+      
+      // Fallback: Extract topics mentioned
+      const topics = new Set<string>();
+      transcript.forEach(t => {
+        const text = t.text.toLowerCase();
+        if (text.includes('math')) topics.add('Math');
+        if (text.includes('science')) topics.add('Science');
+        if (text.includes('reading') || text.includes('english')) topics.add('English');
+        if (text.includes('spanish')) topics.add('Spanish');
+        if (text.includes('fraction')) topics.add('Fractions');
+        if (text.includes('algebra')) topics.add('Algebra');
+        if (text.includes('geometry')) topics.add('Geometry');
+      });
+      
+      return topics.size > 0 
+        ? `Discussed: ${Array.from(topics).join(', ')}. ${transcript.length} messages exchanged.`
+        : `${transcript.length} messages exchanged during this session.`;
+    }
   }
 
   /**
