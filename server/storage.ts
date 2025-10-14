@@ -1328,17 +1328,43 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getDocumentContext(userId: string, documentIds: string[]): Promise<{chunks: DocumentChunk[], documents: UserDocument[]}> {
-    const documents = await db.select().from(userDocuments)
-      .where(and(
-        eq(userDocuments.userId, userId),
-        sql`${userDocuments.id} IN (${documentIds.map(id => sql`${id}`).join(sql`, `)})`
-      ));
+    console.log(`📚 [Storage] Getting document context for user ${userId}, documentIds:`, documentIds);
     
-    const chunks = await db.select().from(documentChunks)
-      .where(sql`${documentChunks.documentId} IN (${documentIds.map(id => sql`${id}`).join(sql`, `)})`)
-      .orderBy(asc(documentChunks.chunkIndex));
+    if (!documentIds || documentIds.length === 0) {
+      console.log('⚠️ [Storage] No document IDs provided');
+      return { chunks: [], documents: [] };
+    }
     
-    return { chunks, documents };
+    try {
+      const documents = await db.select().from(userDocuments)
+        .where(and(
+          eq(userDocuments.userId, userId),
+          sql`${userDocuments.id} IN (${documentIds.map(id => sql`${id}`).join(sql`, `)})`
+        ));
+      
+      console.log(`✅ [Storage] Found ${documents.length} documents`);
+      
+      // Only get chunks for documents that are ready
+      const readyDocumentIds = documents
+        .filter(doc => doc.processingStatus === 'ready')
+        .map(doc => doc.id);
+      
+      if (readyDocumentIds.length === 0) {
+        console.log('⚠️ [Storage] No documents in ready status');
+        return { chunks: [], documents };
+      }
+      
+      const chunks = await db.select().from(documentChunks)
+        .where(sql`${documentChunks.documentId} IN (${readyDocumentIds.map(id => sql`${id}`).join(sql`, `)})`)
+        .orderBy(asc(documentChunks.chunkIndex));
+      
+      console.log(`✅ [Storage] Found ${chunks.length} chunks from ready documents`);
+      
+      return { chunks, documents };
+    } catch (error) {
+      console.error('❌ [Storage] Error fetching document context:', error);
+      return { chunks: [], documents: [] };
+    }
   }
 
   async createStudent(student: InsertStudent): Promise<Student> {
