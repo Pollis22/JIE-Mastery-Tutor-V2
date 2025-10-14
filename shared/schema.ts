@@ -60,12 +60,20 @@ export const users = pgTable("users", {
   stripeSubscriptionId: text("stripe_subscription_id"),
   subscriptionPlan: text("subscription_plan").$type<'starter' | 'standard' | 'pro' | 'single' | 'all'>(),
   subscriptionStatus: text("subscription_status").$type<'active' | 'canceled' | 'paused'>(),
-  monthlyVoiceMinutes: integer("monthly_voice_minutes").default(60), // Monthly allowance
-  monthlyVoiceMinutesUsed: integer("monthly_voice_minutes_used").default(0), // Usage counter
-  bonusMinutes: integer("bonus_minutes").default(0), // Minutes purchased as top-ups
-  monthlyResetDate: timestamp("monthly_reset_date").defaultNow(), // Next reset date
-  weeklyVoiceMinutesUsed: integer("weekly_voice_minutes_used").default(0), // Keep for backward compatibility
-  weeklyResetDate: timestamp("weekly_reset_date").defaultNow(), // Keep for backward compatibility
+  // Hybrid Minute Tracking System
+  subscriptionMinutesUsed: integer("subscription_minutes_used").default(0), // Monthly usage counter
+  subscriptionMinutesLimit: integer("subscription_minutes_limit").default(60), // Monthly allowance
+  purchasedMinutesBalance: integer("purchased_minutes_balance").default(0), // Rollover balance (never expires)
+  billingCycleStart: timestamp("billing_cycle_start").defaultNow(), // When billing cycle started
+  lastResetAt: timestamp("last_reset_at"), // When last reset occurred
+  
+  // Legacy fields (keep for backward compatibility)
+  monthlyVoiceMinutes: integer("monthly_voice_minutes").default(60),
+  monthlyVoiceMinutesUsed: integer("monthly_voice_minutes_used").default(0),
+  bonusMinutes: integer("bonus_minutes").default(0),
+  monthlyResetDate: timestamp("monthly_reset_date").defaultNow(),
+  weeklyVoiceMinutesUsed: integer("weekly_voice_minutes_used").default(0),
+  weeklyResetDate: timestamp("weekly_reset_date").defaultNow(),
   preferredLanguage: text("preferred_language").default('english'),
   voiceStyle: text("voice_style").default('cheerful'),
   speechSpeed: decimal("speech_speed").default('1.0'),
@@ -177,6 +185,21 @@ export const marketingCampaigns = pgTable("marketing_campaigns", {
 }, (table) => [
   index("idx_campaigns_admin").on(table.adminId),
   index("idx_campaigns_exported").on(table.exportedAt),
+]);
+
+// Minute purchases tracking table for hybrid rollover policy
+export const minutePurchases = pgTable("minute_purchases", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  minutesPurchased: integer("minutes_purchased").notNull(),
+  minutesRemaining: integer("minutes_remaining").notNull(),
+  pricePaid: decimal("price_paid", { precision: 10, scale: 2 }),
+  purchasedAt: timestamp("purchased_at").defaultNow().notNull(),
+  expiresAt: timestamp("expires_at"), // NULL = never expires
+  status: text("status").$type<'active' | 'used' | 'expired'>().default('active'),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_minute_purchases_user").on(table.userId, table.status),
 ]);
 
 // Relations
