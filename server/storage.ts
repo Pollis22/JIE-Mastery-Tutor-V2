@@ -502,7 +502,6 @@ export class DatabaseStorage implements IStorage {
       .update(users)
       .set({
         emailVerified: true,
-        emailVerifiedAt: new Date(),
         emailVerificationToken: null,
         emailVerificationExpiry: null,
         updatedAt: new Date(),
