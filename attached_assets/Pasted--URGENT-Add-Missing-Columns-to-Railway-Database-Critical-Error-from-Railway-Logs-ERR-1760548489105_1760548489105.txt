@@ -1,0 +1,246 @@
+# URGENT: Add Missing Columns to Railway Database
+
+## Critical Error from Railway Logs
+
+```
+ERROR: column "subscription_minutes_used" does not exist at character 317
+```
+
+**This error is blocking ALL logins.** The code expects columns that don't exist in Railway's PostgreSQL database.
+
+---
+
+## One-Command Fix (Run This NOW)
+
+Copy and paste this **entire block** into your Replit Shell:
+
+```bash
+railway run psql $DATABASE_URL << 'EOF'
+-- Add all missing voice tracking columns
+ALTER TABLE users 
+  ADD COLUMN IF NOT EXISTS subscription_minutes_used INTEGER DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS subscription_minutes_limit INTEGER DEFAULT 60,
+  ADD COLUMN IF NOT EXISTS purchased_minutes_balance INTEGER DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS billing_cycle_start TIMESTAMPTZ DEFAULT NOW(),
+  ADD COLUMN IF NOT EXISTS last_reset_at TIMESTAMPTZ DEFAULT NOW();
+
+-- Add email verification columns
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT true,
+  ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ DEFAULT NOW(),
+  ADD COLUMN IF NOT EXISTS email_verification_token TEXT,
+  ADD COLUMN IF NOT EXISTS email_verification_expires TIMESTAMPTZ;
+
+-- Add password reset columns
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS password_reset_token TEXT,
+  ADD COLUMN IF NOT EXISTS password_reset_expires TIMESTAMPTZ;
+
+-- Mark all existing users as verified (they registered before verification was required)
+UPDATE users 
+SET email_verified = true, 
+    email_verified_at = COALESCE(email_verified_at, created_at)
+WHERE email_verified IS NULL OR email_verified = false;
+
+-- Show what we just added
+SELECT 
+  'Added columns successfully!' as status,
+  COUNT(*) as total_users,
+  COUNT(*) FILTER (WHERE email_verified = true) as verified_users
+FROM users;
+EOF
+```
+
+**Expected output:**
+```
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+UPDATE 1
+       status                | total_users | verified_users
+-----------------------------|-------------|---------------
+ Added columns successfully! |     1       |      1
+```
+
+---
+
+## Verify Columns Were Added
+
+```bash
+railway run psql $DATABASE_URL -c "
+SELECT column_name, data_type, column_default 
+FROM information_schema.columns 
+WHERE table_name = 'users' 
+  AND column_name IN (
+    'subscription_minutes_used',
+    'subscription_minutes_limit',
+    'purchased_minutes_balance',
+    'email_verified'
+  )
+ORDER BY column_name;
+"
+```
+
+**Expected output:**
+```
+column_name                 | data_type | column_default
+----------------------------|-----------|---------------
+email_verified             | boolean   | true
+purchased_minutes_balance  | integer   | 0
+subscription_minutes_limit | integer   | 60
+subscription_minutes_used  | integer   | 0
+```
+
+---
+
+## Now Check Your Account Status
+
+```bash
+railway run psql $DATABASE_URL -c "
+SELECT 
+  email,
+  email_verified,
+  subscription_minutes_used,
+  subscription_minutes_limit,
+  purchased_minutes_balance,
+  substring(password, 1, 20) as password_preview
+FROM users 
+WHERE email = 'pollis@mfhfoods.com';
+"
+```
+
+**Expected output:**
+```
+email                | email_verified | used | limit | balance | password_preview
+---------------------|----------------|------|-------|---------|------------------
+pollis@mfhfoods.com | true           | 0    | 60    | 0       | a3f7b2c1d4e5f6...
+```
+
+---
+
+## Check Railway Logs
+
+After running the migration, refresh your Railway logs. You should see:
+
+**Before fix (BAD):**
+```
+❌ ERROR: column "subscription_minutes_used" does not exist
+```
+
+**After fix (GOOD):**
+```
+✅ [DB] ✓ Database connection established
+✅ [Auth] Login attempt for: pollis@mfhfoods.com
+```
+
+---
+
+## Now Try Logging In
+
+1. Go to: https://jie-mastery-tutor-v2-production.up.railway.app/auth
+2. Email: `pollis@mfhfoods.com`
+3. Password: `Crenshaw22$$`
+4. Click "Sign In"
+
+**Should work now!** ✅
+
+---
+
+## Why This Is Critical
+
+The login code queries the `users` table like this:
+
+```sql
+SELECT 
+  id, email, username, password,
+  subscription_minutes_used,    -- ❌ Doesn't exist!
+  subscription_minutes_limit,   -- ❌ Doesn't exist!
+  email_verified               -- ❌ Doesn't exist!
+FROM users 
+WHERE email = $1
+```
+
+Without these columns, **every login attempt fails** with a database error before it even checks the password.
+
+---
+
+## If Migration Command Fails
+
+### Error: "railway: command not found"
+
+Install Railway CLI:
+```bash
+npm i -g @railway/cli
+railway login
+railway link
+```
+
+Then run the migration command again.
+
+### Error: "permission denied"
+
+Make sure you're linked to the correct Railway project:
+```bash
+railway status
+```
+
+Should show your project name. If not:
+```bash
+railway link
+```
+
+### Alternative: Run SQL in Railway Dashboard
+
+1. Go to https://railway.app/dashboard
+2. Open your project
+3. Click on "PostgreSQL" service
+4. Go to "Data" tab
+5. Click "Query"
+6. Paste the SQL from the first command block above
+7. Click "Run"
+
+---
+
+## What Happened
+
+Yesterday when we added voice minute tracking:
+- ✅ **Dev database (Replit):** Columns added automatically
+- ❌ **Production database (Railway):** Never got the migration
+
+Result: Production code expects columns that don't exist.
+
+---
+
+## Priority: CRITICAL 🚨
+
+**This must be done BEFORE login will work.** 
+
+The sequence is:
+1. ✅ Add missing columns (this command)
+2. ✅ Login will work immediately after
+3. ✅ Dashboard will load
+4. ✅ All features will work
+
+---
+
+## After This Works
+
+Once you can log in, we still need to fix:
+- Stripe Price IDs (environment variables)
+- Any other production configuration
+
+But first, let's get the database schema fixed!
+
+---
+
+## Success Indicators
+
+After running the migration:
+
+✅ No more "column does not exist" errors in Railway logs  
+✅ Verification query shows all 4 columns exist  
+✅ Your account shows `email_verified = true`  
+✅ Login works on production site  
+✅ Dashboard loads after login  
+
+Run the command now and report back! 🚀
