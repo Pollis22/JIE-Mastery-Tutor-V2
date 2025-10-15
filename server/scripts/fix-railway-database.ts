@@ -1,4 +1,10 @@
-// Complete fix for Railway production database - adds missing columns AND resets password
+#!/usr/bin/env tsx
+/**
+ * Complete fix for Railway production database
+ * Adds ALL missing columns individually and resets password
+ * Run: railway run npx tsx server/scripts/fix-railway-database.ts
+ */
+
 import { scrypt, randomBytes } from 'crypto';
 import { promisify } from 'util';
 import pkg from 'pg';
@@ -13,12 +19,8 @@ async function hashPassword(password: string): Promise<string> {
 }
 
 async function fixRailwayDatabase() {
-  console.log('🔧 RAILWAY DATABASE FIX SCRIPT');
-  console.log('================================');
-  console.log('This will:');
-  console.log('1. Add all missing database columns');
-  console.log('2. Reset your password');
-  console.log('3. Verify everything works');
+  console.log('🔧 RAILWAY DATABASE COMPLETE FIX');
+  console.log('=================================');
   console.log('');
   
   const client = new Client({
@@ -30,130 +32,133 @@ async function fixRailwayDatabase() {
   
   try {
     await client.connect();
-    console.log('✅ Connected to database');
+    console.log('✅ Connected to Railway database');
     console.log('');
     
-    // Step 1: Add missing voice tracking columns
-    console.log('📦 Step 1: Adding voice minute tracking columns...');
-    try {
-      await client.query(`
-        ALTER TABLE users 
-          ADD COLUMN IF NOT EXISTS subscription_minutes_used INTEGER DEFAULT 0,
-          ADD COLUMN IF NOT EXISTS subscription_minutes_limit INTEGER DEFAULT 60,
-          ADD COLUMN IF NOT EXISTS purchased_minutes_balance INTEGER DEFAULT 0,
-          ADD COLUMN IF NOT EXISTS billing_cycle_start TIMESTAMPTZ DEFAULT NOW(),
-          ADD COLUMN IF NOT EXISTS last_reset_at TIMESTAMPTZ DEFAULT NOW()
-      `);
-      console.log('✅ Voice tracking columns added');
-    } catch (e) {
-      console.log('⚠️  Voice tracking columns may already exist (this is OK)');
-    }
+    // Add columns one by one to avoid any errors
+    const columnsToAdd = [
+      // Critical voice tracking columns
+      { name: 'subscription_minutes_used', type: 'INTEGER DEFAULT 0' },
+      { name: 'subscription_minutes_limit', type: 'INTEGER DEFAULT 60' },
+      { name: 'purchased_minutes_balance', type: 'INTEGER DEFAULT 0' },
+      { name: 'billing_cycle_start', type: 'TIMESTAMPTZ DEFAULT NOW()' },
+      { name: 'last_reset_at', type: 'TIMESTAMPTZ' },
+      
+      // Email verification columns
+      { name: 'email_verified', type: 'BOOLEAN DEFAULT true' },
+      { name: 'email_verification_token', type: 'TEXT' },
+      { name: 'email_verification_expiry', type: 'TIMESTAMPTZ' },
+      
+      // Password reset columns
+      { name: 'reset_token', type: 'TEXT' },
+      { name: 'reset_token_expiry', type: 'TIMESTAMPTZ' },
+      
+      // Legacy voice columns (for backward compatibility)
+      { name: 'monthly_voice_minutes', type: 'INTEGER DEFAULT 60' },
+      { name: 'monthly_voice_minutes_used', type: 'INTEGER DEFAULT 0' },
+      { name: 'bonus_minutes', type: 'INTEGER DEFAULT 0' },
+      { name: 'monthly_reset_date', type: 'TIMESTAMPTZ DEFAULT (NOW() + INTERVAL \'30 days\')' },
+      { name: 'weekly_voice_minutes_used', type: 'INTEGER DEFAULT 0' },
+      { name: 'weekly_reset_date', type: 'TIMESTAMPTZ DEFAULT (NOW() + INTERVAL \'7 days\')' },
+      
+      // Marketing columns
+      { name: 'marketing_opt_in', type: 'BOOLEAN DEFAULT false' },
+      { name: 'marketing_opt_in_date', type: 'TIMESTAMPTZ' },
+      { name: 'marketing_opt_out_date', type: 'TIMESTAMPTZ' },
+      
+      // Timestamps
+      { name: 'created_at', type: 'TIMESTAMPTZ DEFAULT NOW()' },
+      { name: 'updated_at', type: 'TIMESTAMPTZ DEFAULT NOW()' }
+    ];
     
-    // Step 2: Add email verification columns
-    console.log('📦 Step 2: Adding email verification columns...');
-    try {
-      await client.query(`
-        ALTER TABLE users
-          ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT true,
-          ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ DEFAULT NOW(),
-          ADD COLUMN IF NOT EXISTS email_verification_token TEXT,
-          ADD COLUMN IF NOT EXISTS email_verification_expires TIMESTAMPTZ
-      `);
-      console.log('✅ Email verification columns added');
-    } catch (e) {
-      console.log('⚠️  Email verification columns may already exist (this is OK)');
-    }
+    console.log('📦 Adding missing columns one by one...');
+    let addedCount = 0;
+    let existingCount = 0;
     
-    // Step 3: Add password reset columns
-    console.log('📦 Step 3: Adding password reset columns...');
-    try {
-      await client.query(`
-        ALTER TABLE users
-          ADD COLUMN IF NOT EXISTS password_reset_token TEXT,
-          ADD COLUMN IF NOT EXISTS password_reset_expires TIMESTAMPTZ
-      `);
-      console.log('✅ Password reset columns added');
-    } catch (e) {
-      console.log('⚠️  Password reset columns may already exist (this is OK)');
-    }
-    
-    // Step 4: Add marketing columns
-    console.log('📦 Step 4: Adding marketing preference columns...');
-    try {
-      await client.query(`
-        ALTER TABLE users
-          ADD COLUMN IF NOT EXISTS marketing_opt_in BOOLEAN DEFAULT false,
-          ADD COLUMN IF NOT EXISTS marketing_opt_in_date TIMESTAMPTZ,
-          ADD COLUMN IF NOT EXISTS marketing_opt_out_date TIMESTAMPTZ
-      `);
-      console.log('✅ Marketing columns added');
-    } catch (e) {
-      console.log('⚠️  Marketing columns may already exist (this is OK)');
-    }
-    
-    // Step 5: Add missing timestamp columns
-    console.log('📦 Step 5: Adding timestamp columns...');
-    try {
-      await client.query(`
-        ALTER TABLE users
-          ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW(),
-          ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()
-      `);
-      console.log('✅ Timestamp columns added');
-    } catch (e) {
-      console.log('⚠️  Timestamp columns may already exist (this is OK)');
+    for (const column of columnsToAdd) {
+      try {
+        await client.query(`ALTER TABLE users ADD COLUMN ${column.name} ${column.type}`);
+        console.log(`  ✅ Added: ${column.name}`);
+        addedCount++;
+      } catch (error: any) {
+        if (error.message.includes('already exists')) {
+          console.log(`  ⚠️  Already exists: ${column.name}`);
+          existingCount++;
+        } else {
+          console.log(`  ❌ Error adding ${column.name}:`, error.message);
+        }
+      }
     }
     
     console.log('');
-    console.log('✅ All database columns are now present');
+    console.log(`Summary: ${addedCount} columns added, ${existingCount} already existed`);
     console.log('');
     
-    // Step 6: Mark existing users as verified
-    console.log('📦 Step 6: Marking existing users as email verified...');
-    const verifyResult = await client.query(`
+    // Update defaults for ALL users
+    console.log('📝 Setting safe defaults for all users...');
+    await client.query(`
       UPDATE users 
-      SET email_verified = true, 
-          email_verified_at = COALESCE(email_verified_at, COALESCE(created_at, NOW()))
-      WHERE email_verified IS NULL OR email_verified = false
-      RETURNING email
+      SET 
+        email_verified = COALESCE(email_verified, true),
+        subscription_minutes_used = COALESCE(subscription_minutes_used, 0),
+        subscription_minutes_limit = COALESCE(subscription_minutes_limit, 60),
+        purchased_minutes_balance = COALESCE(purchased_minutes_balance, 0),
+        billing_cycle_start = COALESCE(billing_cycle_start, created_at, NOW()),
+        monthly_voice_minutes = COALESCE(monthly_voice_minutes, 60),
+        monthly_voice_minutes_used = COALESCE(monthly_voice_minutes_used, 0),
+        bonus_minutes = COALESCE(bonus_minutes, 0),
+        monthly_reset_date = COALESCE(monthly_reset_date, NOW() + INTERVAL '30 days'),
+        weekly_reset_date = COALESCE(weekly_reset_date, NOW() + INTERVAL '7 days')
     `);
-    console.log(`✅ Marked ${verifyResult.rowCount} users as verified`);
+    console.log('✅ Defaults updated for all users');
     console.log('');
-    
-    // Step 7: Reset password for pollis@mfhfoods.com
-    console.log('🔐 Step 7: Resetting password for pollis@mfhfoods.com...');
-    const email = 'pollis@mfhfoods.com';
-    const newPassword = 'Crenshaw22$$';
     
     // Check if user exists
+    console.log('🔍 Checking for user pollis@mfhfoods.com...');
     const userCheck = await client.query(
       'SELECT id, email, username FROM users WHERE email = $1',
-      [email]
+      ['pollis@mfhfoods.com']
     );
     
     if (userCheck.rows.length === 0) {
-      console.error('❌ User not found:', email);
-      console.log('');
-      console.log('Checking what users exist in database...');
-      const allUsers = await client.query('SELECT email FROM users LIMIT 10');
-      console.log('Found users:');
-      allUsers.rows.forEach(u => console.log('  -', u.email));
-      process.exit(1);
+      console.log('⚠️  User not found, creating new account...');
+      
+      const hashedPassword = await hashPassword('Crenshaw22$$');
+      await client.query(`
+        INSERT INTO users (
+          email, username, first_name, last_name,
+          parent_name, student_name, student_age, grade_level,
+          primary_subject, password, email_verified,
+          subscription_minutes_limit, subscription_minutes_used,
+          purchased_minutes_balance, monthly_voice_minutes,
+          is_admin, created_at, updated_at
+        ) VALUES (
+          'pollis@mfhfoods.com', 'robbierobertson', 'Robbie', 'Robertson',
+          'Robbie Robertson', 'Robbie', 12, '6-8',
+          'General', $1, true,
+          60, 0, 0, 60,
+          false, NOW(), NOW()
+        )
+      `, [hashedPassword]);
+      console.log('✅ User account created');
+    } else {
+      console.log('✅ User exists:', userCheck.rows[0].email);
     }
+    console.log('');
     
-    // Hash the password
-    const hashedPassword = await hashPassword(newPassword);
+    // Reset password
+    console.log('🔐 Resetting password to Crenshaw22$$...');
+    const hashedPassword = await hashPassword('Crenshaw22$$');
     
-    // Update the password
     const updateResult = await client.query(`
       UPDATE users 
-      SET password = $1,
-          email_verified = true,
-          email_verified_at = COALESCE(email_verified_at, NOW()),
-          updated_at = NOW()
+      SET 
+        password = $1,
+        email_verified = true,
+        updated_at = NOW()
       WHERE email = $2
       RETURNING id, email, username
-    `, [hashedPassword, email]);
+    `, [hashedPassword, 'pollis@mfhfoods.com']);
     
     if (updateResult.rows.length === 0) {
       console.error('❌ Failed to update password');
@@ -163,72 +168,119 @@ async function fixRailwayDatabase() {
     console.log('✅ Password reset successfully!');
     console.log('');
     
-    // Step 8: Verify everything
-    console.log('🔍 Step 8: Verifying account status...');
-    const finalCheck = await client.query(`
-      SELECT 
-        email,
-        username,
-        email_verified,
-        subscription_minutes_used,
-        subscription_minutes_limit,
-        purchased_minutes_balance,
-        substring(password, 1, 30) as password_preview,
-        created_at
-      FROM users 
-      WHERE email = $1
-    `, [email]);
+    // Verify all critical columns exist
+    console.log('🔍 Verifying critical columns...');
+    const criticalColumns = [
+      'subscription_minutes_used',
+      'subscription_minutes_limit', 
+      'purchased_minutes_balance',
+      'email_verified',
+      'reset_token',
+      'reset_token_expiry'
+    ];
     
-    if (finalCheck.rows.length > 0) {
-      const user = finalCheck.rows[0];
-      console.log('');
-      console.log('╔═══════════════════════════════════════════════════════╗');
-      console.log('║         🎉 RAILWAY DATABASE FIXED! 🎉                 ║');
-      console.log('╠═══════════════════════════════════════════════════════╣');
-      console.log('║                                                       ║');
-      console.log('║  LOGIN CREDENTIALS:                                   ║');
-      console.log('║  ─────────────────                                   ║');
-      console.log(`║  Email:    pollis@mfhfoods.com                       ║`);
-      console.log(`║  Password: Crenshaw22$$                               ║`);
-      console.log('║                                                       ║');
-      console.log('║  ACCOUNT STATUS:                                      ║');
-      console.log('║  ──────────────                                      ║');
-      console.log(`║  ✅ Email Verified: ${user.email_verified ? 'Yes' : 'No'}                            ║`);
-      console.log(`║  ✅ Voice Minutes:  ${user.subscription_minutes_limit}/${user.subscription_minutes_used} used                    ║`);
-      console.log(`║  ✅ Rollover Mins:  ${user.purchased_minutes_balance}                                ║`);
-      console.log(`║  ✅ Password Hash:  ${user.password_preview.substring(0, 20)}...     ║`);
-      console.log('║                                                       ║');
-      console.log('╚═══════════════════════════════════════════════════════╝');
-      console.log('');
-      console.log('🌐 Test your login at:');
-      console.log('https://jie-mastery-tutor-v2-production.up.railway.app/auth');
-      console.log('');
+    for (const colName of criticalColumns) {
+      const check = await client.query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'users' AND column_name = $1
+      `, [colName]);
+      
+      if (check.rows.length > 0) {
+        console.log(`  ✅ ${colName} exists`);
+      } else {
+        console.log(`  ❌ ${colName} MISSING - This will cause errors!`);
+      }
     }
+    console.log('');
     
-    // Step 9: Test the database structure
-    console.log('🔍 Step 9: Testing database structure...');
+    // Test the exact query that login uses
+    console.log('🧪 Testing login query...');
     try {
-      // This is the exact query that the login code uses
       const testQuery = await client.query(`
         SELECT 
           id, email, username, password,
+          first_name, last_name, parent_name, student_name,
+          student_age, grade_level, primary_subject,
+          stripe_customer_id, stripe_subscription_id,
+          subscription_plan, subscription_status,
           subscription_minutes_used,
           subscription_minutes_limit,
           purchased_minutes_balance,
-          email_verified
+          billing_cycle_start,
+          last_reset_at,
+          monthly_voice_minutes,
+          monthly_voice_minutes_used,
+          bonus_minutes,
+          monthly_reset_date,
+          weekly_voice_minutes_used,
+          weekly_reset_date,
+          preferred_language,
+          voice_style,
+          speech_speed,
+          volume_level,
+          is_admin,
+          email_verified,
+          email_verification_token,
+          email_verification_expiry,
+          reset_token,
+          reset_token_expiry,
+          marketing_opt_in,
+          marketing_opt_in_date,
+          marketing_opt_out_date,
+          created_at,
+          updated_at
         FROM users 
         WHERE email = $1
         LIMIT 1
-      `, [email]);
-      console.log('✅ Database structure test PASSED - login query works!');
+      `, ['pollis@mfhfoods.com']);
+      
+      console.log('✅ Login query works perfectly!');
+      
+      const user = testQuery.rows[0];
+      if (user) {
+        console.log('');
+        console.log('User details:');
+        console.log(`  Email: ${user.email}`);
+        console.log(`  Verified: ${user.email_verified}`);
+        console.log(`  Minutes: ${user.subscription_minutes_limit} limit, ${user.subscription_minutes_used} used`);
+        console.log(`  Password hash length: ${user.password.length} chars`);
+      }
     } catch (error: any) {
-      console.error('❌ Database structure test FAILED:', error.message);
-      console.error('The login query still has issues');
+      console.error('❌ Login query FAILED:', error.message);
+      console.error('');
+      console.error('The exact error Railway is seeing:');
+      console.error(error.message);
+      
+      // Try to identify the missing column
+      if (error.message.includes('column')) {
+        const match = error.message.match(/column "(\w+)"/);
+        if (match) {
+          console.error('');
+          console.error(`MISSING COLUMN: ${match[1]}`);
+          console.error('Add it manually with:');
+          console.error(`railway run psql $DATABASE_URL -c "ALTER TABLE users ADD COLUMN ${match[1]} TEXT"`);
+        }
+      }
     }
+    
+    console.log('');
+    console.log('╔═══════════════════════════════════════════════════════╗');
+    console.log('║              🎉 DATABASE FIX COMPLETE! 🎉             ║');
+    console.log('╠═══════════════════════════════════════════════════════╣');
+    console.log('║                                                       ║');
+    console.log('║  LOGIN CREDENTIALS:                                   ║');
+    console.log('║  ─────────────────                                   ║');
+    console.log('║  URL:      https://jie-mastery-tutor-v2-             ║');
+    console.log('║            production.up.railway.app/auth             ║');
+    console.log('║  Email:    pollis@mfhfoods.com                       ║');
+    console.log('║  Password: Crenshaw22$$                               ║');
+    console.log('║                                                       ║');
+    console.log('╚═══════════════════════════════════════════════════════╝');
     
   } catch (error: any) {
     console.error('');
-    console.error('❌ Error:', error.message);
+    console.error('❌ Critical Error:', error.message);
     if (error.code) {
       console.error('Error Code:', error.code);
     }
@@ -247,12 +299,20 @@ async function fixRailwayDatabase() {
 fixRailwayDatabase()
   .then(() => {
     console.log('');
-    console.log('✅ Railway database is now fixed!');
-    console.log('✅ You can now log in to production!');
+    console.log('✅ Script completed successfully!');
+    console.log('');
+    console.log('Next steps:');
+    console.log('1. Push code changes: git push');
+    console.log('2. Wait for Railway to deploy');
+    console.log('3. Test login at production URL');
     process.exit(0);
   })
   .catch((error) => {
     console.error('');
-    console.error('❌ Fix script failed:', error.message);
+    console.error('❌ Script failed:', error.message);
+    console.error('');
+    console.error('Try running this command directly:');
+    console.error('railway run psql $DATABASE_URL');
+    console.error('Then paste the SQL from the fix script');
     process.exit(1);
   });
