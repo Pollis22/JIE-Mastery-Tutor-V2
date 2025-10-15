@@ -73,6 +73,7 @@ export interface IStorage {
   // Email verification methods
   generateEmailVerificationToken(userId: string): Promise<string>;
   verifyEmailToken(token: string): Promise<User | null>;
+  markUserEmailAsVerified(userId: string): Promise<User | null>;
   // Password reset methods
   generatePasswordResetToken(email: string): Promise<{ user: User; token: string } | null>;
   verifyPasswordResetToken(token: string): Promise<User | null>;
@@ -491,6 +492,22 @@ export class DatabaseStorage implements IStorage {
         updatedAt: new Date(),
       })
       .where(eq(users.id, user.id))
+      .returning();
+    
+    return verifiedUser;
+  }
+
+  async markUserEmailAsVerified(userId: string): Promise<User | null> {
+    const [verifiedUser] = await db
+      .update(users)
+      .set({
+        emailVerified: true,
+        emailVerifiedAt: new Date(),
+        emailVerificationToken: null,
+        emailVerificationExpiry: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId))
       .returning();
     
     return verifiedUser;
