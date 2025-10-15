@@ -1,0 +1,48 @@
+ Validating Stripe Configuration...
+⚠️  STRIPE_PRICE_STARTER: Invalid format (19.99) - should start with "price_"
+⚠️  STRIPE_PRICE_STANDARD: Invalid format (59.99) - should start with "price_"
+⚠️  STRIPE_PRICE_PRO: Invalid format (99.99) - should start with "price_"
+⚠️  STRIPE_PRICE_TOPUP_60: Invalid format (19.99) - should start with "price_"
+
+❌ STRIPE CONFIGURATION ERROR DETECTED!
+Please update your environment variables with correct Price IDs from Stripe Dashboard.
+Price IDs start with "price_" NOT "prod_"
+
+Registering routes...
+[RealtimeWS] Initialized - Transport: webrtc, Enabled: true
+[RealtimeServer] WebSocket server initialized on /ws/realtime
+Routes registered successfully ✓
+Starting embedding worker...
+[EmbeddingWorker] Starting background embedding processor
+4:52:58 PM [express] Embedding worker started for background document processing
+Setting up Vite dev server...
+Attempting to listen on 0.0.0.0:5000...
+=== SERVER STARTED SUCCESSFULLY ===
+✓ Listening on 0.0.0.0:5000
+✓ Environment: development
+✓ Health check: http://0.0.0.0:5000/api/health
+===================================
+4:52:58 PM [express] serving on port 5000
+Browserslist: browsers data (caniuse-lite) is 12 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+4:53:07 PM [express] GET /api/user 401 in 2ms
+4:53:23 PM [express] GET /api/user 401 in 1ms
+[Auth] Login attempt for: pollis@mfhfoods.com
+[Auth] User found by email: YES
+[Auth] Checking password for user: pollis@mfhfoods.com
+[Auth] Password match: false
+[Auth] Password mismatch for: pollis@mfhfoods.com
+4:54:30 PM [express] POST /api/login 401 in 125ms :: {"error":"Invalid credentials"}
+[Auth] Login attempt for: pollis@mfhfoods.com
+[Auth] User found by email: YES
+[Auth] Checking password for user: pollis@mfhfoods.com
+[Auth] Password match: false
+[Auth] Password mismatch for: pollis@mfhfoods.com
+4:54:33 PM [express] POST /api/login 401 in 171ms :: {"error":"Invalid credentials"}
+[Auth] Login attempt for: pollis@mfhfoods.com
+[Auth] User found by email: YES
+[Auth] Checking password for user: pollis@mfhfoods.com
+[Auth] Password match: false
+[Auth] Password mismatch for: pollis@mfhfoods.com
+4:54:35 PM [express] POST /api/login 401 in 110ms :: {"error":"Invalid credentials"}
