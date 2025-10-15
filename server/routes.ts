@@ -951,8 +951,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Admin: Get subscriptions data
   app.get("/api/admin/subscriptions", requireAdmin, auditActions.viewSubscriptions, async (req, res) => {
     try {
-      const users = await storage.getAdminUsers({ page: 1, limit: 1000, search: '' });
-      const activeSubscriptions = users.filter((u: any) => u.subscriptionStatus === 'active');
+      const result = await storage.getAdminUsers({ page: 1, limit: 1000, search: '' });
+      const activeSubscriptions = result.users.filter((u: any) => u.subscriptionStatus === 'active');
       
       const analytics = {
         mrr: activeSubscriptions.reduce((sum: number, u: any) => {
@@ -964,7 +964,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         upcomingRenewals: activeSubscriptions.length,
       };
 
-      res.json({ users, analytics });
+      res.json({ users: result.users, analytics });
     } catch (error: any) {
       res.status(500).json({ message: "Error fetching subscriptions: " + error.message });
     }
