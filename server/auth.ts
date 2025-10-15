@@ -84,6 +84,11 @@ export function setupAuth(app: Express) {
             subscriptionStatus: 'active' as const,
             stripeCustomerId: null,
             stripeSubscriptionId: null,
+            subscriptionMinutesUsed: 0, // New hybrid minute field
+            subscriptionMinutesLimit: 600, // New hybrid minute field
+            purchasedMinutesBalance: 0, // New hybrid minute field
+            billingCycleStart: new Date(), // New hybrid minute field
+            lastResetAt: null, // New hybrid minute field
             monthlyVoiceMinutes: 600, // Test user gets 600 minutes
             monthlyVoiceMinutesUsed: 0,
             bonusMinutes: 0,
@@ -150,6 +155,11 @@ export function setupAuth(app: Express) {
         subscriptionStatus: 'active' as const,
         stripeCustomerId: null,
         stripeSubscriptionId: null,
+        subscriptionMinutesUsed: 0, // New hybrid minute field
+        subscriptionMinutesLimit: 600, // New hybrid minute field
+        purchasedMinutesBalance: 0, // New hybrid minute field
+        billingCycleStart: new Date(), // New hybrid minute field
+        lastResetAt: null, // New hybrid minute field
         monthlyVoiceMinutes: 600, // Test user gets 600 minutes
         monthlyVoiceMinutesUsed: 0,
         bonusMinutes: 0,
@@ -240,7 +250,10 @@ export function setupAuth(app: Express) {
   app.post("/api/login", (req, res, next) => {
     passport.authenticate("local", (err: any, user: any, info: any) => {
       if (err) {
-        return res.status(500).json({ error: 'Authentication error', details: err.message });
+        console.error('[Auth] Login error:', err);
+        // Better error handling - capture the full error
+        const errorMessage = err.message || err.toString() || 'Unknown authentication error';
+        return res.status(500).json({ error: 'Authentication error', details: errorMessage });
       }
       if (!user) {
         return res.status(401).json({ error: 'Invalid credentials' });
@@ -248,7 +261,9 @@ export function setupAuth(app: Express) {
       
       req.login(user, (err) => {
         if (err) {
-          return res.status(500).json({ error: 'Session error', details: err.message });
+          console.error('[Auth] Session error:', err);
+          const errorMessage = err.message || err.toString() || 'Unknown session error';
+          return res.status(500).json({ error: 'Session error', details: errorMessage });
         }
         // Sanitize user response to exclude sensitive fields
         const { password, ...safeUser } = user as any;
