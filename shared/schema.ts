@@ -79,6 +79,13 @@ export const users = pgTable("users", {
   speechSpeed: decimal("speech_speed").default('1.0'),
   volumeLevel: integer("volume_level").default(75),
   isAdmin: boolean("is_admin").default(false),
+  // Email verification fields
+  emailVerified: boolean("email_verified").default(false),
+  emailVerificationToken: text("email_verification_token"),
+  emailVerificationExpiry: timestamp("email_verification_expiry"),
+  // Password reset fields
+  resetToken: text("reset_token"),
+  resetTokenExpiry: timestamp("reset_token_expiry"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
