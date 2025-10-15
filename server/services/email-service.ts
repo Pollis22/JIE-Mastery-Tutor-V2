@@ -151,6 +151,70 @@ export class EmailService {
       console.error('[EmailService] Failed to send admin notification:', error);
     }
   }
+
+  async sendEmailVerification(user: {
+    email: string;
+    name: string;
+    token: string;
+  }) {
+    try {
+      const {client, fromEmail} = await getUncachableResendClient();
+      const baseUrl = process.env.REPLIT_DEV_DOMAIN || 'http://localhost:5000';
+      const verificationLink = `${baseUrl}/verify-email?token=${user.token}`;
+      
+      await client.emails.send({
+        from: fromEmail,
+        to: user.email,
+        subject: 'Verify Your Email - JIE Mastery Tutor',
+        html: `
+          <h1>Verify Your Email Address</h1>
+          <p>Hi ${user.name},</p>
+          <p>Thank you for signing up for JIE Mastery Tutor! Please verify your email address to activate your account.</p>
+          <a href="${verificationLink}" style="display:inline-block;padding:12px 24px;background:#dc2626;color:white;text-decoration:none;border-radius:6px;margin:20px 0;">Verify Email Address</a>
+          <p>Or copy and paste this link into your browser:</p>
+          <p style="color:#666;font-size:14px;">${verificationLink}</p>
+          <p style="margin-top:24px;color:#666;font-size:13px;">
+            This verification link will expire in 24 hours. If you didn't create an account, you can safely ignore this email.
+          </p>
+        `
+      });
+    } catch (error) {
+      console.error('[EmailService] Failed to send email verification:', error);
+      throw error;
+    }
+  }
+
+  async sendPasswordReset(user: {
+    email: string;
+    name: string;
+    token: string;
+  }) {
+    try {
+      const {client, fromEmail} = await getUncachableResendClient();
+      const baseUrl = process.env.REPLIT_DEV_DOMAIN || 'http://localhost:5000';
+      const resetLink = `${baseUrl}/reset-password?token=${user.token}`;
+      
+      await client.emails.send({
+        from: fromEmail,
+        to: user.email,
+        subject: 'Reset Your Password - JIE Mastery Tutor',
+        html: `
+          <h1>Reset Your Password</h1>
+          <p>Hi ${user.name},</p>
+          <p>We received a request to reset your password. Click the button below to create a new password:</p>
+          <a href="${resetLink}" style="display:inline-block;padding:12px 24px;background:#dc2626;color:white;text-decoration:none;border-radius:6px;margin:20px 0;">Reset Password</a>
+          <p>Or copy and paste this link into your browser:</p>
+          <p style="color:#666;font-size:14px;">${resetLink}</p>
+          <p style="margin-top:24px;color:#666;font-size:13px;">
+            This password reset link will expire in 1 hour. If you didn't request a password reset, you can safely ignore this email.
+          </p>
+        `
+      });
+    } catch (error) {
+      console.error('[EmailService] Failed to send password reset:', error);
+      throw error;
+    }
+  }
 }
 
 export const emailService = new EmailService();

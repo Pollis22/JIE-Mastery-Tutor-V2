@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import {
   users,
   subjects,
@@ -69,6 +70,12 @@ export interface IStorage {
   addBonusMinutes(userId: string, minutes: number): Promise<User>;
   updateUserMarketingPreferences(userId: string, optIn: boolean): Promise<User>;
   updateUserPassword(userId: string, hashedPassword: string): Promise<User>;
+  // Email verification methods
+  generateEmailVerificationToken(userId: string): Promise<string>;
+  verifyEmailToken(token: string): Promise<User | null>;
+  // Password reset methods
+  generatePasswordResetToken(email: string): Promise<{ user: User; token: string } | null>;
+  verifyPasswordResetToken(token: string): Promise<User | null>;
   createUsageLog(userId: string, minutesUsed: number, sessionType: 'voice' | 'text', sessionId?: string): Promise<void>;
 
   // Dashboard operations
@@ -442,6 +449,84 @@ export class DatabaseStorage implements IStorage {
       .where(eq(users.id, userId))
       .returning();
     return user;
+  }
+
+  async generateEmailVerificationToken(userId: string): Promise<string> {
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+    
+    await db
+      .update(users)
+      .set({
+        emailVerificationToken: token,
+        emailVerificationExpiry: expiry,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId));
+    
+    return token;
+  }
+
+  async verifyEmailToken(token: string): Promise<User | null> {
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(
+        and(
+          eq(users.emailVerificationToken, token),
+          sql`${users.emailVerificationExpiry} > NOW()`
+        )
+      );
+    
+    if (!user) return null;
+    
+    // Mark email as verified
+    const [verifiedUser] = await db
+      .update(users)
+      .set({
+        emailVerified: true,
+        emailVerificationToken: null,
+        emailVerificationExpiry: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, user.id))
+      .returning();
+    
+    return verifiedUser;
+  }
+
+  async generatePasswordResetToken(email: string): Promise<{ user: User; token: string } | null> {
+    const user = await this.getUserByEmail(email);
+    if (!user) return null;
+    
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+    
+    const [updatedUser] = await db
+      .update(users)
+      .set({
+        resetToken: token,
+        resetTokenExpiry: expiry,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, user.id))
+      .returning();
+    
+    return { user: updatedUser, token };
+  }
+
+  async verifyPasswordResetToken(token: string): Promise<User | null> {
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(
+        and(
+          eq(users.resetToken, token),
+          sql`${users.resetTokenExpiry} > NOW()`
+        )
+      );
+    
+    return user || null;
   }
 
   async createUsageLog(userId: string, minutesUsed: number, sessionType: 'voice' | 'text', sessionId?: string): Promise<void> {
