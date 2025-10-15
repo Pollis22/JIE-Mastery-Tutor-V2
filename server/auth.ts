@@ -343,25 +343,45 @@ export function setupAuth(app: Express) {
       if (!email) {
         return res.status(400).json({ error: 'Email is required' });
       }
+
+      console.log('[Auth] Password reset requested for:', email);
       
-      const result = await storage.generatePasswordResetToken(email);
+      const result = await storage.generatePasswordResetToken(email.toLowerCase());
       
       // Always return success even if user doesn't exist (security best practice)
       if (result) {
-        await emailService.sendPasswordReset({
-          email: result.user.email,
-          name: result.user.parentName || result.user.firstName || 'User',
-          token: result.token,
-        });
+        console.log('[Auth] Reset token generated for:', result.user.email);
+        
+        try {
+          await emailService.sendPasswordReset({
+            email: result.user.email,
+            name: result.user.parentName || result.user.firstName || 'User',
+            token: result.token,
+          });
+          console.log('[Auth] Password reset email sent successfully to:', result.user.email);
+        } catch (emailError) {
+          console.error('[Auth] Failed to send reset email:', emailError);
+          // Don't fail the request if email fails - user might still contact support
+        }
+      } else {
+        console.log('[Auth] No user found for email:', email);
       }
       
+      // Always return success to avoid user enumeration
       res.json({ 
         success: true, 
         message: 'If an account exists with that email, a password reset link has been sent.' 
       });
     } catch (error) {
       console.error('[Auth] Password reset request error:', error);
-      res.status(500).json({ error: 'Failed to process password reset request' });
+      // Return a more detailed error in development
+      const errorMessage = process.env.NODE_ENV === 'development' 
+        ? (error as Error).message 
+        : 'Failed to process password reset request';
+      res.status(500).json({ 
+        error: 'Failed to process password reset request. Please try again.',
+        details: errorMessage 
+      });
     }
   });
 

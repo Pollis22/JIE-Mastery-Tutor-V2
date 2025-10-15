@@ -36,8 +36,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     mutationFn: async (credentials: LoginData) => {
       console.log('[AUTH] Making login request with:', credentials);
       const res = await apiRequest("POST", "/api/login", credentials);
+      
+      // Check if the response has content before parsing
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        throw new Error("Server error. Please try again.");
+      }
+      
       const data = await res.json();
       console.log('[AUTH] Login response:', data);
+      
+      // Handle specific error cases from backend
+      if (!res.ok) {
+        // Check for email verification error
+        if (data.requiresVerification || data.needsVerification) {
+          throw new Error(data.message || "Please verify your email before logging in. Check your inbox for the verification link.");
+        }
+        // Check for invalid credentials
+        if (res.status === 401) {
+          throw new Error("Invalid email or password. Please check your credentials and try again.");
+        }
+        // Server error
+        if (res.status === 500) {
+          throw new Error("Server error. Please try again in a moment or contact support at hello@jiemastery.ai");
+        }
+        // Generic error
+        throw new Error(data.error || data.message || "Login failed. Please try again.");
+      }
+      
       return data;
     },
     onSuccess: (user: SelectUser) => {
