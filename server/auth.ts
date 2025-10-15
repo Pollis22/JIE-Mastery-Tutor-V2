@@ -242,6 +242,14 @@ export function setupAuth(app: Express) {
     req.login(user, async (err) => {
       if (err) return next(err);
       
+      // Generate and send email verification (non-blocking)
+      const verificationToken = await storage.generateEmailVerificationToken(user.id);
+      emailService.sendEmailVerification({
+        email: user.email,
+        name: user.parentName || user.firstName || 'User',
+        token: verificationToken,
+      }).catch(error => console.error('[Auth] Email verification failed:', error));
+
       // Send welcome email (non-blocking)
       if (user.parentName && user.studentName) {
         emailService.sendWelcomeEmail({
@@ -275,6 +283,17 @@ export function setupAuth(app: Express) {
         return res.status(401).json({ error: 'Invalid credentials' });
       }
       
+      // Check if email is verified (allow login but send warning in response)
+      if (!user.emailVerified) {
+        console.log('[Auth] Login with unverified email:', user.email);
+        return res.status(403).json({ 
+          error: 'Email not verified',
+          message: 'Please verify your email address to continue. Check your inbox for the verification link.',
+          email: user.email,
+          requiresVerification: true
+        });
+      }
+      
       req.login(user, (err) => {
         if (err) {
           console.error('[Auth] Session error:', err);
@@ -302,13 +321,73 @@ export function setupAuth(app: Express) {
     res.json(safeUser);
   });
 
-  // Temporary password reset endpoint for debugging
+  // Request password reset
+  app.post("/api/auth/forgot-password", async (req, res) => {
+    try {
+      const { email } = req.body;
+      
+      if (!email) {
+        return res.status(400).json({ error: 'Email is required' });
+      }
+      
+      const result = await storage.generatePasswordResetToken(email);
+      
+      // Always return success even if user doesn't exist (security best practice)
+      if (result) {
+        await emailService.sendPasswordReset({
+          email: result.user.email,
+          name: result.user.parentName || result.user.firstName || 'User',
+          token: result.token,
+        });
+      }
+      
+      res.json({ 
+        success: true, 
+        message: 'If an account exists with that email, a password reset link has been sent.' 
+      });
+    } catch (error) {
+      console.error('[Auth] Password reset request error:', error);
+      res.status(500).json({ error: 'Failed to process password reset request' });
+    }
+  });
+
+  // Verify password reset token and update password
   app.post("/api/auth/reset-password", async (req, res) => {
     try {
-      const { email, newPassword } = req.body;
+      const { token, newPassword } = req.body;
       
-      if (!email || !newPassword) {
-        return res.status(400).json({ error: 'Email and newPassword required' });
+      if (!token || !newPassword) {
+        return res.status(400).json({ error: 'Token and new password are required' });
+      }
+      
+      // Validate password strength
+      if (newPassword.length < 8) {
+        return res.status(400).json({ error: 'Password must be at least 8 characters' });
+      }
+      
+      const user = await storage.verifyPasswordResetToken(token);
+      if (!user) {
+        return res.status(400).json({ error: 'Invalid or expired reset token' });
+      }
+      
+      const hashedPassword = await hashPassword(newPassword);
+      await storage.updateUserPassword(user.id, hashedPassword);
+      await storage.clearPasswordResetToken(user.id);
+      
+      res.json({ success: true, message: 'Password has been reset successfully' });
+    } catch (error) {
+      console.error('[Auth] Password reset error:', error);
+      res.status(500).json({ error: 'Failed to reset password' });
+    }
+  });
+
+  // Resend email verification
+  app.post("/api/auth/resend-verification", async (req, res) => {
+    try {
+      const { email } = req.body;
+      
+      if (!email) {
+        return res.status(400).json({ error: 'Email is required' });
       }
       
       const user = await storage.getUserByEmail(email);
@@ -316,13 +395,42 @@ export function setupAuth(app: Express) {
         return res.status(404).json({ error: 'User not found' });
       }
       
-      const hashedPassword = await hashPassword(newPassword);
-      await storage.updateUserPassword(user.id, hashedPassword);
+      if (user.emailVerified) {
+        return res.status(400).json({ error: 'Email is already verified' });
+      }
       
-      res.json({ success: true, message: 'Password updated successfully' });
+      const token = await storage.generateEmailVerificationToken(user.id);
+      await emailService.sendEmailVerification({
+        email: user.email,
+        name: user.parentName || user.firstName || 'User',
+        token,
+      });
+      
+      res.json({ success: true, message: 'Verification email sent' });
     } catch (error) {
-      console.error('[Auth] Password reset error:', error);
-      res.status(500).json({ error: 'Password reset failed' });
+      console.error('[Auth] Resend verification error:', error);
+      res.status(500).json({ error: 'Failed to send verification email' });
+    }
+  });
+
+  // Verify email token
+  app.get("/api/auth/verify-email", async (req, res) => {
+    try {
+      const { token } = req.query;
+      
+      if (!token || typeof token !== 'string') {
+        return res.status(400).json({ error: 'Invalid verification token' });
+      }
+      
+      const user = await storage.verifyEmailToken(token);
+      if (!user) {
+        return res.status(400).json({ error: 'Invalid or expired verification token' });
+      }
+      
+      res.json({ success: true, message: 'Email verified successfully' });
+    } catch (error) {
+      console.error('[Auth] Email verification error:', error);
+      res.status(500).json({ error: 'Failed to verify email' });
     }
   });
 }
