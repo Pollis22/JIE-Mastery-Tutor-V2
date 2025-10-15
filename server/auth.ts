@@ -283,15 +283,29 @@ export function setupAuth(app: Express) {
         return res.status(401).json({ error: 'Invalid credentials' });
       }
       
-      // Check if email is verified (allow login but send warning in response)
-      if (!user.emailVerified) {
-        console.log('[Auth] Login with unverified email:', user.email);
+      // Check if email is verified - but only for NEW users
+      // Skip check for users created before verification feature (Oct 13, 2025)
+      const verificationCutoffDate = new Date('2025-10-13');
+      const accountCreatedAt = new Date(user.createdAt);
+      
+      // Only require verification for users created after the feature was added
+      if (accountCreatedAt > verificationCutoffDate && !user.emailVerified) {
+        console.log('[Auth] Login with unverified email (new user):', user.email);
         return res.status(403).json({ 
           error: 'Email not verified',
           message: 'Please verify your email address to continue. Check your inbox for the verification link.',
           email: user.email,
           requiresVerification: true
         });
+      }
+      
+      // Auto-verify old users if not already verified
+      if (accountCreatedAt <= verificationCutoffDate && !user.emailVerified) {
+        console.log('[Auth] Auto-verifying existing user:', user.email);
+        // Mark as verified in background (non-blocking)
+        storage.markUserEmailAsVerified(user.id).catch(err => 
+          console.error('[Auth] Failed to auto-verify user:', err)
+        );
       }
       
       req.login(user, (err) => {
