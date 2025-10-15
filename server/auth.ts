@@ -111,22 +111,38 @@ export function setupAuth(app: Express) {
         
         // Normal authentication flow - support both email and username
         try {
+          console.log('[Auth] Login attempt for:', emailOrUsername);
           let user = null;
           
           // Try email first
           user = await storage.getUserByEmail(emailOrUsername);
+          console.log('[Auth] User found by email:', user ? 'YES' : 'NO');
           
           // If not found by email, try username
           if (!user) {
             user = await storage.getUserByUsername(emailOrUsername);
+            console.log('[Auth] User found by username:', user ? 'YES' : 'NO');
+          }
+          
+          if (!user) {
+            console.log('[Auth] User not found:', emailOrUsername);
+            return done(null, false);
           }
           
           // Validate password
-          if (!user || !(await comparePasswords(password, user.password))) {
+          console.log('[Auth] Checking password for user:', user.email);
+          const passwordMatch = await comparePasswords(password, user.password);
+          console.log('[Auth] Password match:', passwordMatch);
+          
+          if (!passwordMatch) {
+            console.log('[Auth] Password mismatch for:', emailOrUsername);
             return done(null, false);
           }
+          
+          console.log('[Auth] Login successful for:', user.email);
           return done(null, user);
         } catch (error) {
+          console.error('[Auth] Login error:', error);
           return done(error);
         }
       }
@@ -284,5 +300,29 @@ export function setupAuth(app: Express) {
     // Sanitize user response to exclude sensitive fields
     const { password, ...safeUser } = req.user as any;
     res.json(safeUser);
+  });
+
+  // Temporary password reset endpoint for debugging
+  app.post("/api/auth/reset-password", async (req, res) => {
+    try {
+      const { email, newPassword } = req.body;
+      
+      if (!email || !newPassword) {
+        return res.status(400).json({ error: 'Email and newPassword required' });
+      }
+      
+      const user = await storage.getUserByEmail(email);
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      
+      const hashedPassword = await hashPassword(newPassword);
+      await storage.updateUserPassword(user.id, hashedPassword);
+      
+      res.json({ success: true, message: 'Password updated successfully' });
+    } catch (error) {
+      console.error('[Auth] Password reset error:', error);
+      res.status(500).json({ error: 'Password reset failed' });
+    }
   });
 }

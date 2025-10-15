@@ -68,6 +68,7 @@ export interface IStorage {
   getAvailableMinutes(userId: string): Promise<{ total: number; used: number; remaining: number; bonusMinutes: number }>;
   addBonusMinutes(userId: string, minutes: number): Promise<User>;
   updateUserMarketingPreferences(userId: string, optIn: boolean): Promise<User>;
+  updateUserPassword(userId: string, hashedPassword: string): Promise<User>;
   createUsageLog(userId: string, minutesUsed: number, sessionType: 'voice' | 'text', sessionId?: string): Promise<void>;
 
   // Dashboard operations
@@ -426,6 +427,18 @@ export class DatabaseStorage implements IStorage {
     const [user] = await db
       .update(users)
       .set(updateData)
+      .where(eq(users.id, userId))
+      .returning();
+    return user;
+  }
+
+  async updateUserPassword(userId: string, hashedPassword: string): Promise<User> {
+    const [user] = await db
+      .update(users)
+      .set({
+        password: hashedPassword,
+        updatedAt: new Date(),
+      })
       .where(eq(users.id, userId))
       .returning();
     return user;
