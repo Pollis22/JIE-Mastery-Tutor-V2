@@ -1,0 +1,89 @@
+#!/bin/bash
+# Complete Railway Database Fix
+# Run this entire script at once
+
+echo "🔧 Starting Railway Database Fix..."
+echo ""
+
+# Step 1: Add all missing columns
+echo "📋 Step 1: Adding missing columns to users table..."
+railway run psql $DATABASE_URL << 'SQL1'
+-- Add voice tracking columns
+ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_minutes_used INTEGER DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_minutes_limit INTEGER DEFAULT 60;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS purchased_minutes_balance INTEGER DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS billing_cycle_start TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_reset_at TIMESTAMPTZ DEFAULT NOW();
+
+-- Add auth columns
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT true;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verification_token TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verification_expires TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_reset_token TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_reset_expires TIMESTAMPTZ;
+
+SELECT '✅ Columns added successfully' as status;
+SQL1
+
+echo ""
+echo "📊 Step 2: Checking if columns were added..."
+railway run psql $DATABASE_URL << 'SQL2'
+SELECT column_name, data_type 
+FROM information_schema.columns 
+WHERE table_name = 'users' 
+  AND column_name IN (
+    'subscription_minutes_used',
+    'email_verified'
+  )
+ORDER BY column_name;
+SQL2
+
+echo ""
+echo "👤 Step 3: Checking if your user exists..."
+railway run psql $DATABASE_URL << 'SQL3'
+SELECT 
+  CASE 
+    WHEN COUNT(*) > 0 THEN '✅ User exists'
+    ELSE '❌ User NOT found'
+  END as status,
+  COUNT(*) as count,
+  MAX(email) as email,
+  MAX(username) as username
+FROM users 
+WHERE email = 'pollis@mfhfoods.com';
+SQL3
+
+echo ""
+echo "🔐 Step 4: Generating new password hash..."
+node -e "
+const crypto = require('crypto');
+const { promisify } = require('util');
+const scrypt = promisify(crypto.scrypt);
+
+(async () => {
+  const password = 'Crenshaw22\$\$';
+  const salt = crypto.randomBytes(16).toString('hex');
+  const buf = await scrypt(password, salt, 64);
+  const hash = buf.toString('hex') + '.' + salt;
+  console.log('');
+  console.log('Generated hash:');
+  console.log(hash);
+  console.log('');
+  console.log('Run this command to update password:');
+  console.log('');
+  console.log(\`railway run psql \\$DATABASE_URL -c \"UPDATE users SET password = '\${hash}' WHERE email = 'pollis@mfhfoods.com';\"\`);
+})();
+" > /tmp/railway_hash.txt
+
+cat /tmp/railway_hash.txt
+echo ""
+echo "⚠️  COPY THE COMMAND ABOVE AND RUN IT MANUALLY"
+echo ""
+
+echo "✅ Script complete!"
+echo ""
+echo "Next steps:"
+echo "1. Copy and run the UPDATE command above"
+echo "2. Try logging in again at:"
+echo "   https://jie-mastery-tutor-v2-production.up.railway.app/auth"

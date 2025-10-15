@@ -1,0 +1,96 @@
+I can see the problem! The Railway logs still show:
+
+```
+ERROR: column "subscription_minutes_used" does not exist
+[Auth] User not found: pollis@mfhfoods.com
+```
+
+**Two issues:**
+1. The migration didn't run or didn't work
+2. Your user might not exist in Railway database
+
+Let me create a complete fix script:Actually, let me give you a **simpler, single command** that will fix everything at once:
+
+## Run This ONE Command (Copy Everything)
+
+```bash
+railway run psql $DATABASE_URL << 'EOF'
+-- Add all missing columns
+ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_minutes_used INTEGER DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_minutes_limit INTEGER DEFAULT 60;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS purchased_minutes_balance INTEGER DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS billing_cycle_start TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_reset_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT true;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verification_token TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verification_expires TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_reset_token TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_reset_expires TIMESTAMPTZ;
+
+-- Mark all users as verified
+UPDATE users SET email_verified = true, email_verified_at = NOW() WHERE email_verified IS NULL OR email_verified = false;
+
+-- Show results
+SELECT 
+  '✅ Migration Complete' as status,
+  COUNT(*) as total_users,
+  STRING_AGG(email, ', ') as emails
+FROM users;
+
+-- Show your account details
+SELECT 
+  email,
+  username,
+  email_verified,
+  subscription_minutes_limit,
+  CASE 
+    WHEN email = 'pollis@mfhfoods.com' THEN '✅ Your account exists'
+    ELSE 'Other user'
+  END as account_status
+FROM users 
+WHERE email = 'pollis@mfhfoods.com';
+EOF
+```
+
+**This will:**
+- ✅ Add all missing columns
+- ✅ Mark your account as verified  
+- ✅ Show if your account exists
+
+---
+
+## After Running, Check the Output
+
+Look for:
+```
+✅ Your account exists
+```
+
+**If you see "Your account exists"** → Good! Now we just need to reset password.
+
+**If you DON'T see your account** → We need to create it.
+
+---
+
+## Then Reset Password
+
+Run this to generate a new hash:
+
+```bash
+node -e "const crypto=require('crypto');const{promisify}=require('util');const scrypt=promisify(crypto.scrypt);(async()=>{const p='Crenshaw22\$\$';const s=crypto.randomBytes(16).toString('hex');const b=await scrypt(p,s,64);const h=b.toString('hex')+'.'+s;console.log('Run this:\n');console.log('railway run psql \$DATABASE_URL -c \"UPDATE users SET password=\\''+h+'\\' WHERE email=\\'pollis@mfhfoods.com\\';\"');})();"
+```
+
+Copy the output command and run it.
+
+---
+
+## Try Again
+
+After both commands complete:
+1. Go to https://jie-mastery-tutor-v2-production.up.railway.app/auth
+2. Email: `pollis@mfhfoods.com`
+3. Password: `Crenshaw22$$`
+4. Should work! ✅
+
+**Run the first command now and paste what you see!**
