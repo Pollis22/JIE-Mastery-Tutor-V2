@@ -76,6 +76,7 @@ export interface IStorage {
   // Password reset methods
   generatePasswordResetToken(email: string): Promise<{ user: User; token: string } | null>;
   verifyPasswordResetToken(token: string): Promise<User | null>;
+  clearPasswordResetToken(userId: string): Promise<void>;
   createUsageLog(userId: string, minutesUsed: number, sessionType: 'voice' | 'text', sessionId?: string): Promise<void>;
 
   // Dashboard operations
@@ -527,6 +528,17 @@ export class DatabaseStorage implements IStorage {
       );
     
     return user || null;
+  }
+
+  async clearPasswordResetToken(userId: string): Promise<void> {
+    await db
+      .update(users)
+      .set({
+        resetToken: null,
+        resetTokenExpiry: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId));
   }
 
   async createUsageLog(userId: string, minutesUsed: number, sessionType: 'voice' | 'text', sessionId?: string): Promise<void> {
