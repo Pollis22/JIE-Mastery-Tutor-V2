@@ -78,7 +78,7 @@ export function setupAuth(app: Express) {
             parentName: 'Test Parent',
             studentName: 'Test Student',
             studentAge: 10,
-            gradeLevel: '3-5',
+            gradeLevel: 'grades-3-5',
             primarySubject: 'Math',
             subscriptionPlan: 'all' as const,
             subscriptionStatus: 'active' as const,
@@ -100,6 +100,11 @@ export function setupAuth(app: Express) {
             speechSpeed: '1.0',
             volumeLevel: 75,
             isAdmin: false,
+            emailVerified: true, // Added missing field
+            emailVerificationToken: null, // Added missing field
+            emailVerificationExpiry: null, // Added missing field
+            resetToken: null, // Added missing field
+            resetTokenExpiry: null, // Added missing field
             marketingOptIn: false,
             marketingOptInDate: null,
             marketingOptOutDate: null,
@@ -193,6 +198,11 @@ export function setupAuth(app: Express) {
         speechSpeed: '1.0',
         volumeLevel: 75,
         isAdmin: false,
+        emailVerified: true, // Added missing field
+        emailVerificationToken: null, // Added missing field
+        emailVerificationExpiry: null, // Added missing field
+        resetToken: null, // Added missing field
+        resetTokenExpiry: null, // Added missing field
         marketingOptIn: false,
         marketingOptInDate: null,
         marketingOptOutDate: null,
