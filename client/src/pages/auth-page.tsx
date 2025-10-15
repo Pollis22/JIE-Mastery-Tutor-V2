@@ -214,6 +214,18 @@ export default function AuthPage() {
                         >
                           {loginMutation.isPending ? "Signing in..." : "Sign In"}
                         </Button>
+                        
+                        <div className="text-center">
+                          <Button 
+                            type="button"
+                            variant="link" 
+                            onClick={() => setLocation("/forgot-password")}
+                            className="text-sm text-muted-foreground hover:text-foreground"
+                            data-testid="link-forgot-password"
+                          >
+                            Forgot your password?
+                          </Button>
+                        </div>
                       </form>
                     </Form>
                   </TabsContent>

@@ -30,6 +30,9 @@ import AdminAgents from "@/pages/admin/admin-agents-page";
 import TermsPage from "@/pages/terms-page";
 import AdminSetupPage from "@/pages/admin-setup-page";
 import SessionDetailsPage from "@/pages/session-details";
+import ForgotPasswordPage from "@/pages/forgot-password";
+import ResetPasswordPage from "@/pages/reset-password";
+import VerifyEmailPage from "@/pages/verify-email";
 
 function Router() {
   return (
@@ -54,6 +57,9 @@ function Router() {
       <ProtectedRoute path="/subscribe" component={SubscribePage} />
       <Route path="/auth" component={AuthPage} />
       <Route path="/login" component={AuthPage} />
+      <Route path="/forgot-password" component={ForgotPasswordPage} />
+      <Route path="/reset-password" component={ResetPasswordPage} />
+      <Route path="/verify-email" component={VerifyEmailPage} />
       <Route path="/admin-setup" component={AdminSetupPage} />
       <Route path="/pricing" component={PricingPage} />
       <Route path="/benefits" component={BenefitsPage} />
