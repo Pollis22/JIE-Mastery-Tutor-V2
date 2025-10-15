@@ -115,12 +115,18 @@ export function setupAuth(app: Express) {
           let user = null;
           
           // Try email first
-          user = await storage.getUserByEmail(emailOrUsername);
+          user = await storage.getUserByEmail(emailOrUsername).catch(err => {
+            console.error('[Auth] Error fetching user by email:', err);
+            return null;
+          });
           console.log('[Auth] User found by email:', user ? 'YES' : 'NO');
           
           // If not found by email, try username
           if (!user) {
-            user = await storage.getUserByUsername(emailOrUsername);
+            user = await storage.getUserByUsername(emailOrUsername).catch(err => {
+              console.error('[Auth] Error fetching user by username:', err);
+              return null;
+            });
             console.log('[Auth] User found by username:', user ? 'YES' : 'NO');
           }
           

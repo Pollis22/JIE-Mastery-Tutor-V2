@@ -1,0 +1,487 @@
+# Agent3 URGENT: Fix Missing Database Columns on Railway Production
+
+## Exact Error from Railway Logs
+
+```
+[Auth] Password reset request error: error: column "subscription_minutes_used" does not exist
+at /app/node_modules/pg-pool/index.js:45:11
+```
+
+**Root Cause:** The production database on Railway is missing the new columns added for voice minute tracking. The application code expects these columns but they don't exist.
+
+---
+
+## Missing Columns
+
+The following columns need to be added to the `users` table in Railway PostgreSQL:
+
+```sql
+subscription_minutes_used
+subscription_minutes_limit  
+purchased_minutes_balance
+billing_cycle_start
+last_reset_at
+```
+
+Plus authentication columns:
+```sql
+email_verified
+email_verified_at
+email_verification_token
+email_verification_expires
+password_reset_token
+password_reset_expires
+```
+
+---
+
+## Solution: Run Database Migration on Railway
+
+### Option 1: Use Drizzle Push (Recommended)
+
+**Step 1: Push schema to Railway database**
+
+```bash
+npm run db:push
+```
+
+This will read your `db/schema.ts` and apply all missing columns to the Railway database.
+
+**Step 2: Verify columns were added**
+
+```bash
+railway run psql $DATABASE_URL -c "\d users"
+```
+
+Should show all new columns.
+
+### Option 2: Manual SQL Migration (If Drizzle fails)
+
+**Create file: `server/migrations/add-missing-columns.sql`**
+
+```sql
+-- Add voice minute tracking columns
+ALTER TABLE users 
+  ADD COLUMN IF NOT EXISTS subscription_minutes_used INTEGER DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS subscription_minutes_limit INTEGER DEFAULT 60,
+  ADD COLUMN IF NOT EXISTS purchased_minutes_balance INTEGER DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS billing_cycle_start TIMESTAMPTZ DEFAULT NOW(),
+  ADD COLUMN IF NOT EXISTS last_reset_at TIMESTAMPTZ DEFAULT NOW();
+
+-- Add email verification columns
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT false,
+  ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS email_verification_token TEXT,
+  ADD COLUMN IF NOT EXISTS email_verification_expires TIMESTAMPTZ;
+
+-- Add password reset columns
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS password_reset_token TEXT,
+  ADD COLUMN IF NOT EXISTS password_reset_expires TIMESTAMPTZ;
+
+-- Create indexes for performance
+CREATE INDEX IF NOT EXISTS idx_users_email_verified ON users(email_verified);
+CREATE INDEX IF NOT EXISTS idx_users_verification_token ON users(email_verification_token);
+CREATE INDEX IF NOT EXISTS idx_users_reset_token ON users(password_reset_token);
+CREATE INDEX IF NOT EXISTS idx_users_voice_usage ON users(subscription_minutes_used, subscription_minutes_limit);
+CREATE INDEX IF NOT EXISTS idx_users_billing_cycle ON users(billing_cycle_start);
+
+-- Set existing users as verified and with starter plan limits
+UPDATE users 
+SET 
+  email_verified = true,
+  email_verified_at = created_at,
+  subscription_minutes_limit = 60,
+  subscription_minutes_used = 0,
+  purchased_minutes_balance = 0,
+  billing_cycle_start = created_at,
+  last_reset_at = created_at
+WHERE email_verified IS NULL;
+
+-- Verify the changes
+SELECT 
+  column_name, 
+  data_type, 
+  column_default
+FROM information_schema.columns
+WHERE table_name = 'users'
+  AND column_name IN (
+    'subscription_minutes_used',
+    'subscription_minutes_limit',
+    'purchased_minutes_balance',
+    'billing_cycle_start',
+    'last_reset_at',
+    'email_verified',
+    'password_reset_token'
+  )
+ORDER BY column_name;
+```
+
+**Step 3: Run the migration on Railway**
+
+```bash
+railway run psql $DATABASE_URL -f server/migrations/add-missing-columns.sql
+```
+
+---
+
+## Fix Authentication Code (Stop Querying Missing Columns)
+
+The password reset endpoint is trying to query `subscription_minutes_used` which doesn't exist yet. We need to make the code resilient.
+
+### Update: `server/auth.ts`
+
+**Find the password reset handler and wrap database queries in try-catch:**
+
+```typescript
+// POST /api/auth/forgot-password
+app.post('/api/auth/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    console.log('[AUTH] Password reset requested for:', email);
+
+    // Query ONLY essential columns to avoid missing column errors
+    const result = await db.query(
+      'SELECT id, email, name FROM users WHERE email = $1',
+      [email.toLowerCase()]
+    );
+
+    const user = result.rows[0];
+
+    if (!user) {
+      // Security: Don't reveal if user exists
+      console.log('[AUTH] Password reset for non-existent user:', email);
+      return res.json({ 
+        message: 'If an account exists with that email, you will receive a password reset link.' 
+      });
+    }
+
+    // Generate secure reset token
+    const crypto = await import('crypto');
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetTokenExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    // Save token - use conditional update in case columns don't exist
+    try {
+      await db.query(`
+        UPDATE users 
+        SET 
+          password_reset_token = $1,
+          password_reset_expires = $2
+        WHERE id = $3
+      `, [resetToken, resetTokenExpiry, user.id]);
+    } catch (dbError: any) {
+      console.error('[AUTH] Database error saving reset token:', dbError.message);
+      
+      // If columns don't exist, tell user to contact support
+      if (dbError.message.includes('column') && dbError.message.includes('does not exist')) {
+        return res.status(503).json({ 
+          error: 'Password reset is temporarily unavailable. Please contact support at hello@jiemastery.ai' 
+        });
+      }
+      throw dbError;
+    }
+
+    // Generate reset URL
+    const resetUrl = `${process.env.APP_URL || 'https://jie-mastery-tutor-v2-production.up.railway.app'}/reset-password?token=${resetToken}`;
+
+    console.log('[AUTH] Reset URL:', resetUrl);
+
+    // Send email
+    try {
+      const { Resend } = await import('resend');
+      const resend = new Resend(process.env.RESEND_API_KEY);
+
+      await resend.emails.send({
+        from: process.env.RESEND_FROM_EMAIL || 'hello@jiemastery.ai',
+        to: user.email,
+        subject: 'Reset Your JIE Mastery Password',
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2>Reset Your Password</h2>
+            <p>Hi ${user.name || 'there'},</p>
+            <p>Click the button below to reset your password:</p>
+            <div style="margin: 30px 0;">
+              <a href="${resetUrl}" 
+                 style="background: #dc2626; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block;">
+                Reset Password
+              </a>
+            </div>
+            <p>Or copy this link: ${resetUrl}</p>
+            <p><strong>Expires in 1 hour.</strong></p>
+          </div>
+        `
+      });
+
+      console.log('✅ [AUTH] Reset email sent to:', user.email);
+    } catch (emailError) {
+      console.error('❌ [AUTH] Email failed:', emailError);
+    }
+
+    res.json({ 
+      message: 'If an account exists with that email, you will receive a password reset link.' 
+    });
+
+  } catch (error: any) {
+    console.error('❌ [AUTH] Forgot password error:', error);
+    res.status(500).json({ 
+      error: 'Failed to process password reset. Please try again or contact support.',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+```
+
+### Update Login Endpoint
+
+**Make login resilient to missing columns:**
+
+```typescript
+// POST /api/login
+app.post('/api/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password required' });
+    }
+
+    console.log('[AUTH] Login attempt:', email);
+
+    // Query ONLY essential columns
+    const result = await db.query(
+      `SELECT 
+        id, email, username, name, password, role, created_at,
+        COALESCE(email_verified, true) as email_verified
+       FROM users 
+       WHERE email = $1 OR username = $1`,
+      [email.toLowerCase()]
+    );
+
+    const user = result.rows[0];
+
+    if (!user) {
+      console.log('[AUTH] User not found:', email);
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+
+    // Verify password
+    const isValid = await scrypt.verify(user.password, password);
+
+    if (!isValid) {
+      console.log('[AUTH] Invalid password for:', email);
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+
+    // Check email verification (skip for old accounts)
+    const accountAge = new Date().getTime() - new Date(user.created_at).getTime();
+    const oneDay = 24 * 60 * 60 * 1000;
+    
+    if (accountAge < oneDay && !user.email_verified) {
+      console.log('[AUTH] New account not verified:', email);
+      return res.status(403).json({ 
+        error: 'Please verify your email. Check your inbox.',
+        needsVerification: true
+      });
+    }
+
+    // Create session
+    req.session.userId = user.id;
+    req.session.email = user.email;
+    req.session.role = user.role;
+
+    await new Promise((resolve, reject) => {
+      req.session.save((err) => err ? reject(err) : resolve(true));
+    });
+
+    console.log('✅ [AUTH] Login successful:', email);
+
+    res.json({
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        name: user.name,
+        role: user.role
+      }
+    });
+
+  } catch (error: any) {
+    console.error('❌ [AUTH] Login error:', error);
+    res.status(500).json({ 
+      error: 'Login failed. Please try again.',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+```
+
+---
+
+## Deployment Steps (IN ORDER)
+
+### Step 1: Run Database Migration (CRITICAL)
+
+**Option A - Drizzle (easiest):**
+```bash
+npm run db:push
+```
+
+**Option B - Manual SQL:**
+```bash
+# Create the migration file first, then:
+railway run psql $DATABASE_URL -f server/migrations/add-missing-columns.sql
+```
+
+### Step 2: Verify Columns Exist
+
+```bash
+railway run psql $DATABASE_URL -c "
+SELECT column_name, data_type 
+FROM information_schema.columns 
+WHERE table_name = 'users' 
+  AND column_name IN (
+    'subscription_minutes_used',
+    'email_verified',
+    'password_reset_token'
+  )
+ORDER BY column_name;
+"
+```
+
+**Expected output:**
+```
+column_name                 | data_type
+----------------------------|----------
+email_verified             | boolean
+password_reset_token       | text
+subscription_minutes_used  | integer
+```
+
+### Step 3: Verify Your Account
+
+```bash
+railway run psql $DATABASE_URL -c "
+SELECT 
+  email, 
+  email_verified, 
+  subscription_minutes_limit,
+  subscription_minutes_used
+FROM users 
+WHERE email = 'pollis@mfhfoods.com';
+"
+```
+
+**Expected output:**
+```
+email                | email_verified | limit | used
+---------------------|----------------|-------|-----
+pollis@mfhfoods.com | true           | 60    | 0
+```
+
+### Step 4: Commit Code Changes
+
+```bash
+git add server/auth.ts
+git commit -m "Fix auth to handle missing DB columns gracefully"
+git push
+```
+
+Railway will auto-deploy.
+
+### Step 5: Test Login
+
+1. Go to https://jie-mastery-tutor-v2-production.up.railway.app/auth
+2. Email: `pollis@mfhfoods.com`
+3. Password: `Crenshaw22$$`
+4. Click "Sign In"
+
+**Should:** ✅ Log in successfully and redirect to dashboard
+
+### Step 6: Test Password Reset
+
+1. Go to /forgot-password
+2. Enter: `pollis@mfhfoods.com`
+3. Click "Send Reset Link"
+
+**Should:** ✅ Show success message (no 500 error)
+
+### Step 7: Check Railway Logs
+
+```bash
+railway logs --tail
+```
+
+**Should see:**
+```
+✅ [AUTH] Login successful: pollis@mfhfoods.com
+✅ [AUTH] Reset email sent to: pollis@mfhfoods.com
+```
+
+**Should NOT see:**
+```
+❌ column "subscription_minutes_used" does not exist
+❌ 500 Internal Server Error
+```
+
+---
+
+## Why This Happened
+
+Yesterday we added the voice minute tracking columns to the schema, but the migration was never run on Railway's production database. The dev database in Replit has the columns, but Railway doesn't.
+
+**The fix:** Run the migration to add the columns, then make the code resilient to handle missing columns gracefully (just in case).
+
+---
+
+## Testing Checklist
+
+- [ ] Migration runs without errors
+- [ ] Verification query shows all new columns exist
+- [ ] User account has `email_verified = true`
+- [ ] Login works with correct password
+- [ ] Forgot password doesn't return 500 error
+- [ ] Railway logs show no database errors
+- [ ] Dashboard loads after login
+
+---
+
+## Success Criteria
+
+✅ **All columns exist** in Railway database  
+✅ **Login works** with `pollis@mfhfoods.com` / `Crenshaw22$$`  
+✅ **Password reset works** without 500 errors  
+✅ **No more "column does not exist" errors** in Railway logs  
+✅ **Dashboard accessible** after login  
+
+---
+
+## Emergency Rollback
+
+If something breaks worse:
+
+```bash
+# Just add the ONE critical column manually
+railway run psql $DATABASE_URL -c "
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT true;
+"
+```
+
+This will at least unblock login.
+
+---
+
+## Priority: CRITICAL 🚨
+
+The production database is out of sync with the code. Run the migration FIRST before any code changes.
+
+Report back with:
+1. Output of the verification query showing columns exist
+2. Screenshot of successful login
+3. Railway logs showing no errors
