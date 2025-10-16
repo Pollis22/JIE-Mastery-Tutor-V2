@@ -43,7 +43,18 @@ The platform uses a **session-first** data priority model where session configur
 Core entities include Users, Subjects, Lessons, User Progress, Learning Sessions, and Quiz Attempts. The RAG system incorporates User Documents, Document Chunks, and Document Embeddings. The Users table includes comprehensive student profile data and marketing preferences. Lazy database initialization is employed.
 
 ### Payment & Subscription System
--   Stripe Integration handles subscriptions and payments, supporting single and all-subjects pricing tiers and managing voice minute caps. A hybrid minute tracking policy is implemented, differentiating between monthly subscription minutes and non-expiring purchased minutes.
+-   Stripe Integration handles subscriptions and payments, supporting single and all-subjects pricing tiers and managing voice minute caps. 
+-   **Hybrid Minute Tracking**: Subscription minutes reset monthly, while purchased minutes rollover indefinitely. The system tracks:
+    -   `subscription_minutes_used`: Minutes used from monthly subscription (resets every 30 days)
+    -   `purchased_minutes_balance`: Remaining purchased minutes (never expires)
+    -   `minute_purchases` table: Individual purchase records with FIFO consumption tracking
+-   **Voice Minutes Service** (`server/services/voice-minutes.ts`): Centralized service handling all minute operations:
+    -   `getUserMinuteBalance()`: Returns detailed balance including subscriptionUsed, purchasedUsed, and totalAvailable
+    -   `deductMinutes()`: Uses subscription first, then purchased (FIFO), updating both users table and minute_purchases table
+    -   `addPurchasedMinutes()`: Creates new purchase records for tracking
+-   **API Endpoints**:
+    -   `/api/voice-balance`: Returns comprehensive minute balance for UI display
+    -   Supports both new hybrid format and legacy format for backward compatibility
 
 ### Email & Marketing Automation
 -   Resend Integration for transactional emails (welcome, subscription confirmations) and admin notifications. Includes user consent tracking for marketing opt-in/opt-out.
