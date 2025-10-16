@@ -46,7 +46,7 @@ import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 
 export default function DashboardPage() {
-  const { user, logout } = useAuth();
+  const { user, logoutMutation } = useAuth();
   const [, setLocation] = useLocation();
   const [activeTab, setActiveTab] = useState("overview");
 
@@ -66,12 +66,21 @@ export default function DashboardPage() {
     enabled: !!user,
   });
 
-  // Fetch user statistics (disabled until endpoint is implemented)
-  const stats = null;
+  // Fetch dashboard statistics
+  const { data: stats } = useQuery<{
+    totalSessions: number;
+    weeklyMinutes: number;
+  }>({
+    queryKey: ['/api/dashboard/stats'],
+    enabled: !!user,
+  });
 
   const handleLogout = async () => {
-    await logout();
-    setLocation("/auth");
+    logoutMutation.mutate(undefined, {
+      onSuccess: () => {
+        setLocation("/auth");
+      }
+    });
   };
 
   const sidebarItems = [
