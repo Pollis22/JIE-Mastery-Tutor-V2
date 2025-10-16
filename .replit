@@ -8,8 +8,8 @@ packages = ["railway"]
 
 [deployment]
 deploymentTarget = "autoscale"
-build = ["npm", "run", "build"]
-run = ["npm", "run", "start"]
+build = ["npm", "install"]
+run = ["npm", "start"]
 
 [env]
 PORT = "5000"
