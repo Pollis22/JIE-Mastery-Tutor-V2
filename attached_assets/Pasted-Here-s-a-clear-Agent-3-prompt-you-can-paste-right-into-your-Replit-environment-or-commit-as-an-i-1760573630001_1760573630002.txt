@@ -1,0 +1,52 @@
+Here’s a clear **Agent 3 prompt** you can paste right into your Replit environment or commit as an instruction file (for `/prompts/system.txt` or similar). It gives the model full context of what’s been fixed and what’s failing now:
+
+---
+
+### 🧠 **Agent 3 Debug Prompt (Replit / JIE-Mastery-Tutor-V2)**
+
+```
+# Context
+The production Postgres database hosted on Railway was successfully patched.
+The following columns were added to the "users" table:
+  - subscription_minutes_used (INTEGER DEFAULT 0)
+  - subscription_minutes_limit (INTEGER DEFAULT 60)
+  - purchased_minutes_balance (INTEGER DEFAULT 0)
+  - email_verified (BOOLEAN DEFAULT true)
+  - reset_token (TEXT)
+  - reset_token_expiry (TIMESTAMPTZ)
+  - billing_cycle_start (TIMESTAMPTZ DEFAULT NOW())
+
+The schema migration completed without errors and is confirmed live on the Railway production instance.
+
+# Current Issue
+Login and password reset endpoints on the deployed Railway app are still failing with:
+```
+
+API Error 401: Invalid credentials
+Server Error 500: Failed to process password reset request
+Auth Error: column "billing_cycle_start" does not exist (now resolved)
+
+```
+
+# Goal
+Agent should:
+1. Verify that the production service (`JIE-Mastery-Tutor-V2`) is pointing to the correct `DATABASE_URL` (the same instance patched via Beekeeper).
+2. Rebuild and redeploy if environment variables or migrations are out of sync.
+3. Run a local test for `/api/login` and `/api/auth/forgot-password` endpoints.
+4. Check the `getUserByUsername` query in `/server/storage/session.ts` and `/server/auth.ts` to confirm it selects valid fields that exist in the current schema.
+5. Log any mismatched field names or missing-column errors.
+6. Confirm bcrypt verification works (passwords stored via `crypt('Crenshaw22$$', gen_salt('bf'))` in pgcrypto).
+7. If database connection and hashing are valid, test that the login flow returns a valid JWT and the password reset flow sends a response without internal server errors.
+
+# Deliverable
+Summarize:
+- Whether the app and DB are using the same connection string.
+- Any missing field or query mismatch still present.
+- The next schema or code change needed to restore normal login/password reset behavior.
+```
+
+---
+
+You can drop that into your Replit “Agent” tab or your `.prompt` file—Agent 3 will use it to sync migrations and debug the backend auth logic automatically.
+
+Would you like me to write the follow-up validation command (the `psql` or curl tests Agent 3 should run after the redeploy) so it can confirm the login endpoint succeeds?
