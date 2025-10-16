@@ -15,6 +15,7 @@ import { auditActions } from "./middleware/audit-log";
 import { convertUsersToCSV, generateFilename } from "./utils/csv-export";
 import { RealtimeServer } from "./realtime-server";
 import { sql } from "drizzle-orm";
+import { db } from "./db";
 import Stripe from "stripe";
 import { z } from "zod";
 
@@ -270,6 +271,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error('[VoiceBalance] Error fetching balance:', error);
       res.status(500).json({ message: "Error fetching voice balance: " + error.message });
+    }
+  });
+
+  // Dashboard statistics endpoint
+  app.get("/api/dashboard/stats", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const user = req.user as any;
+      
+      // Get total sessions count
+      const sessionsResult = await db.execute(sql`
+        SELECT COUNT(*) as count
+        FROM learning_sessions
+        WHERE user_id = ${user.id}
+      `);
+      const totalSessions = Number((sessionsResult.rows[0] as any)?.count || 0);
+      
+      // Get minutes used in the past 7 days
+      const weekAgo = new Date();
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      
+      const weeklyResult = await db.execute(sql`
+        SELECT COALESCE(SUM(duration), 0) as weekly_minutes
+        FROM learning_sessions
+        WHERE user_id = ${user.id}
+          AND created_at >= ${weekAgo.toISOString()}
+      `);
+      const weeklyMinutes = Number((weeklyResult.rows[0] as any)?.weekly_minutes || 0);
+      
+      res.json({
+        totalSessions,
+        weeklyMinutes: Math.round(weeklyMinutes)
+      });
+    } catch (error: any) {
+      console.error('[DashboardStats] Error fetching stats:', error);
+      res.status(500).json({ message: "Error fetching dashboard statistics: " + error.message });
     }
   });
 
