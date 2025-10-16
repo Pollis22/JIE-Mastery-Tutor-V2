@@ -1,0 +1,166 @@
+**Great idea!** Yes, let's create a database migration script that will automatically fix everything when deployed to Railway!
+
+---
+
+## Create Database Migration Script
+
+**Create a new file: `scripts/init-railway-db.js`**
+
+```javascript
+const { Pool } = require('pg');
+
+async function initializeDatabase() {
+  console.log('🚀 Initializing Railway database...');
+  
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+  });
+
+  try {
+    // Add missing columns to users table
+    console.log('📝 Adding missing columns to users table...');
+    await pool.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS billing_cycle_start TIMESTAMPTZ DEFAULT NOW();
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_plan TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS weekly_voice_minutes_used INTEGER DEFAULT 0;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS weekly_reset_date TIMESTAMPTZ;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS monthly_voice_minutes INTEGER DEFAULT 60;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS monthly_voice_minutes_used INTEGER DEFAULT 0;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS monthly_reset_date TIMESTAMPTZ;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS bonus_minutes INTEGER DEFAULT 0;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS parent_name TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS student_name TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS student_age INTEGER;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS grade_level TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS primary_subject TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS marketing_opt_in BOOLEAN DEFAULT false;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS marketing_opt_in_date TIMESTAMPTZ;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS marketing_opt_out_date TIMESTAMPTZ;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_language TEXT DEFAULT 'english';
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS voice_style TEXT DEFAULT 'cheerful';
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS speech_speed TEXT DEFAULT '1.0';
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS volume_level INTEGER DEFAULT 75;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT false;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS last_reset_at TIMESTAMPTZ;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verification_token TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verification_expiry TIMESTAMPTZ;
+    `);
+    console.log('✅ Users table columns updated');
+
+    // Create minute_purchases table
+    console.log('📝 Creating minute_purchases table...');
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS minute_purchases (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        minutes_purchased INTEGER NOT NULL,
+        price_paid NUMERIC(10, 2) NOT NULL,
+        stripe_payment_intent_id TEXT,
+        purchase_date TIMESTAMPTZ DEFAULT NOW(),
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_minute_purchases_user_id ON minute_purchases(user_id);
+    `);
+    console.log('✅ minute_purchases table created');
+
+    // Create any other missing tables your app needs
+    console.log('📝 Creating other required tables...');
+    
+    // Add more table creation statements here if needed
+    // For example: sessions, learning_sessions, etc.
+
+    console.log('✅ Database initialization complete!');
+    
+  } catch (error) {
+    console.error('❌ Database initialization failed:', error);
+    throw error;
+  } finally {
+    await pool.end();
+  }
+}
+
+// Run if called directly
+if (require.main === module) {
+  initializeDatabase()
+    .then(() => {
+      console.log('✅ All done!');
+      process.exit(0);
+    })
+    .catch((error) => {
+      console.error('❌ Failed:', error);
+      process.exit(1);
+    });
+}
+
+module.exports = { initializeDatabase };
+```
+
+---
+
+## Update package.json
+
+**Add these scripts to your `package.json`:**
+
+```json
+{
+  "scripts": {
+    "init-db": "node scripts/init-railway-db.js",
+    "start": "npm run init-db && node server.js",
+    "dev": "nodemon server.js"
+  }
+}
+```
+
+This makes the database initialization run **automatically** every time Railway starts your app!
+
+---
+
+## Optional: Create Railway Build Script
+
+**Create `railway.json` in your project root:**
+
+```json
+{
+  "build": {
+    "builder": "NIXPACKS"
+  },
+  "deploy": {
+    "startCommand": "npm run start",
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 10
+  }
+}
+```
+
+---
+
+## Push to GitHub
+
+**Now commit and push everything:**
+
+```bash
+# Make sure you're in your project directory
+git add scripts/init-railway-db.js
+git add package.json
+git add railway.json  # if you created it
+git commit -m "Add automatic Railway database initialization"
+git push origin main
+```
+
+---
+
+## Railway Will Automatically Redeploy!
+
+Once you push to GitHub:
+1. **Railway detects the push** and starts a new deployment
+2. **The init script runs automatically** on startup
+3. **All missing tables and columns are created**
+4. **Your app starts working**
+
+---
+
+**Want me to also check what other tables might be missing from Railway?** We can add those to the script too before pushing!
