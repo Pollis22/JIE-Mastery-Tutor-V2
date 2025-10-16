@@ -238,6 +238,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Voice balance endpoint - get user's voice minute balance
+  app.get("/api/voice-balance", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const user = req.user as any;
+      const { getUserMinuteBalance } = await import('./services/voice-minutes');
+      const balance = await getUserMinuteBalance(user.id);
+      
+      const totalUsed = balance.subscriptionUsed + balance.purchasedUsed;
+      const totalPurchased = balance.purchasedMinutes + balance.purchasedUsed;
+      
+      res.json({
+        // New hybrid format
+        subscriptionMinutes: balance.subscriptionMinutes,
+        subscriptionLimit: balance.subscriptionLimit,
+        subscriptionUsed: balance.subscriptionUsed,
+        purchasedMinutes: balance.purchasedMinutes,
+        purchasedUsed: balance.purchasedUsed,
+        totalAvailable: balance.totalAvailable,
+        resetDate: balance.resetDate,
+        // Legacy format for backward compatibility
+        total: balance.subscriptionLimit + totalPurchased,
+        used: totalUsed,
+        remaining: balance.totalAvailable,
+        bonusMinutes: balance.purchasedMinutes
+      });
+    } catch (error: any) {
+      console.error('[VoiceBalance] Error fetching balance:', error);
+      res.status(500).json({ message: "Error fetching voice balance: " + error.message });
+    }
+  });
+
   // Lessons API routes
   app.get("/api/lessons", async (req, res) => {
     if (!req.isAuthenticated()) {

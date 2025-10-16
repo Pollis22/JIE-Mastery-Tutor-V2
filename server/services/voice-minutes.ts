@@ -8,6 +8,8 @@ export interface MinuteBalance {
   purchasedMinutes: number;
   totalAvailable: number;
   resetDate: Date;
+  subscriptionUsed: number;
+  purchasedUsed: number;
 }
 
 export async function getUserMinuteBalance(userId: string): Promise<MinuteBalance> {
@@ -46,6 +48,18 @@ export async function getUserMinuteBalance(userId: string): Promise<MinuteBalanc
     userData.subscription_minutes_used = 0;
   }
 
+  // Calculate purchased minutes used by querying minute_purchases table
+  // Include both 'active' and 'used' status to count fully consumed purchases
+  const purchasesResult = await db.execute(sql`
+    SELECT 
+      COALESCE(SUM(minutes_purchased - minutes_remaining), 0) as purchased_used
+    FROM minute_purchases
+    WHERE user_id = ${userId}
+      AND status IN ('active', 'used')
+  `);
+  
+  const purchasedUsed = Number((purchasesResult.rows[0] as any)?.purchased_used || 0);
+
   const subscriptionRemaining = Math.max(
     0, 
     (userData.subscription_minutes_limit || 60) - (userData.subscription_minutes_used || 0)
@@ -59,7 +73,10 @@ export async function getUserMinuteBalance(userId: string): Promise<MinuteBalanc
     subscriptionLimit: userData.subscription_minutes_limit || 60,
     purchasedMinutes: userData.purchased_minutes_balance || 0,
     totalAvailable: subscriptionRemaining + (userData.purchased_minutes_balance || 0),
-    resetDate: nextReset
+    resetDate: nextReset,
+    // Add total used minutes including both subscription and purchased
+    subscriptionUsed: userData.subscription_minutes_used || 0,
+    purchasedUsed: purchasedUsed
   };
 }
 
@@ -114,6 +131,9 @@ export async function deductMinutes(userId: string, minutesUsed: number): Promis
       WHERE id = ${userId}
     `);
     
+    // Deduct from minute_purchases table
+    await deductFromPurchases(userId, fromPurchased);
+    
     console.log('✅ [VoiceMinutes] Deducted from both pools', { fromSubscription, fromPurchased });
   } else {
     // All from purchased
@@ -123,7 +143,56 @@ export async function deductMinutes(userId: string, minutesUsed: number): Promis
       WHERE id = ${userId}
     `);
     
+    // Deduct from minute_purchases table
+    await deductFromPurchases(userId, minutesUsed);
+    
     console.log('✅ [VoiceMinutes] Deducted from purchased minutes');
+  }
+}
+
+// Helper function to deduct minutes from minute_purchases table
+async function deductFromPurchases(userId: string, minutesToDeduct: number): Promise<void> {
+  let remaining = minutesToDeduct;
+  
+  // Get active purchases ordered by oldest first (FIFO)
+  const purchases = await db.execute(sql`
+    SELECT id, minutes_remaining
+    FROM minute_purchases
+    WHERE user_id = ${userId}
+      AND status = 'active'
+      AND minutes_remaining > 0
+    ORDER BY purchased_at ASC
+  `);
+  
+  for (const purchase of purchases.rows) {
+    if (remaining <= 0) break;
+    
+    const purchaseId = (purchase as any).id;
+    const minutesAvailable = Number((purchase as any).minutes_remaining || 0);
+    const toDeduct = Math.min(remaining, minutesAvailable);
+    const newRemaining = minutesAvailable - toDeduct;
+    
+    // Update minutes_remaining and mark as 'used' if fully consumed
+    if (newRemaining <= 0) {
+      await db.execute(sql`
+        UPDATE minute_purchases
+        SET minutes_remaining = 0, status = 'used'
+        WHERE id = ${purchaseId}
+      `);
+    } else {
+      await db.execute(sql`
+        UPDATE minute_purchases
+        SET minutes_remaining = ${newRemaining}
+        WHERE id = ${purchaseId}
+      `);
+    }
+    
+    remaining -= toDeduct;
+    console.log(`💰 [VoiceMinutes] Deducted ${toDeduct} from purchase ${purchaseId}, ${newRemaining} remaining`);
+  }
+  
+  if (remaining > 0) {
+    console.error(`⚠️ [VoiceMinutes] Could not deduct all minutes. ${remaining} minutes unaccounted for.`);
   }
 }
 
