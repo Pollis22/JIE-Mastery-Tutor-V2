@@ -50,6 +50,22 @@ export default function DashboardPage() {
   const [, setLocation] = useLocation();
   const [activeTab, setActiveTab] = useState("overview");
 
+  // Fetch voice balance
+  const { data: voiceBalance } = useQuery<{
+    subscriptionMinutes: number;
+    subscriptionLimit: number;
+    purchasedMinutes: number;
+    totalAvailable: number;
+    resetDate: string;
+    total: number;
+    used: number;
+    remaining: number;
+    bonusMinutes: number;
+  }>({
+    queryKey: ['/api/voice-balance'],
+    enabled: !!user,
+  });
+
   // Fetch user statistics (disabled until endpoint is implemented)
   const stats = null;
 
@@ -156,11 +172,11 @@ export default function DashboardPage() {
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-muted-foreground">Voice Minutes</span>
                   <span className="text-sm font-semibold">
-                    {user?.monthlyVoiceMinutesUsed || 0}/{user?.monthlyVoiceMinutes || 0}
+                    {voiceBalance?.used || 0}/{voiceBalance?.total || 0}
                   </span>
                 </div>
                 <Progress 
-                  value={(user?.monthlyVoiceMinutesUsed || 0) / (user?.monthlyVoiceMinutes || 1) * 100} 
+                  value={(voiceBalance?.used || 0) / (voiceBalance?.total || 1) * 100} 
                   className="h-2"
                 />
                 
@@ -211,7 +227,7 @@ export default function DashboardPage() {
                             <Volume2 className="h-4 w-4 text-muted-foreground" />
                             <span className="text-sm text-muted-foreground">Minutes Used</span>
                           </div>
-                          <p className="text-2xl font-bold mt-2">{stats?.totalMinutes || 0}</p>
+                          <p className="text-2xl font-bold mt-2">{voiceBalance?.used || 0}</p>
                         </CardContent>
                       </Card>
 

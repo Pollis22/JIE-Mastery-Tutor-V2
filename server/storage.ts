@@ -384,20 +384,18 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAvailableMinutes(userId: string): Promise<{ total: number; used: number; remaining: number; bonusMinutes: number }> {
-    const user = await this.getUser(userId);
-    if (!user) throw new Error("User not found");
+    // Use the new hybrid minute tracking system
+    const { getUserMinuteBalance } = await import('./services/voice-minutes');
+    const balance = await getUserMinuteBalance(userId);
 
-    const monthlyMinutes = user.monthlyVoiceMinutes || 60;
-    const bonusMinutes = user.bonusMinutes || 0;
-    const totalMinutes = monthlyMinutes + bonusMinutes;
-    const usedMinutes = user.monthlyVoiceMinutesUsed || 0;
-    const remainingMinutes = Math.max(0, totalMinutes - usedMinutes);
-
+    // Calculate total used minutes (subscription + purchased that have been consumed)
+    const totalUsed = balance.subscriptionUsed + balance.purchasedUsed;
+    
     return {
-      total: totalMinutes,
-      used: usedMinutes,
-      remaining: remainingMinutes,
-      bonusMinutes: bonusMinutes,
+      total: balance.subscriptionLimit + balance.purchasedMinutes + balance.purchasedUsed,
+      used: totalUsed,
+      remaining: balance.totalAvailable,
+      bonusMinutes: balance.purchasedMinutes,
     };
   }
 
