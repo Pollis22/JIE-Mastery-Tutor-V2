@@ -42,10 +42,10 @@ Make sure these are set in Replit Secrets:
 ### Current Configuration: **Autoscale Deployment**
 
 **What it means:**
-- ✅ Automatically scales from 0 to unlimited instances
+- ✅ Automatically scales from 0 to multiple instances based on demand
 - ✅ Supports WebSockets (OpenAI Realtime API works!)
-- ✅ 99.95% uptime SLA
-- ✅ Pay only for active usage
+- ✅ High availability with automatic failover
+- ✅ Pay only for active usage (billed per compute unit + requests)
 
 ### Expected Performance:
 
@@ -66,14 +66,16 @@ Make sure these are set in Replit Secrets:
 
 1. Click the **"Deploy"** button in Replit (top right)
 2. Choose **"Autoscale"** deployment type
-3. Configure:
-   - **Build command:** `npm install` (already set)
-   - **Run command:** `npm start` (already set)
+3. **CRITICAL:** Verify build configuration:
+   - **Build command:** `bash -c "npm install && npm run build"` (compiles Vite frontend)
+   - **Run command:** `npm start` (starts Express + serves built assets)
    - **Port:** `5000` (auto-detected)
-4. Review environment variables
+4. Review environment variables (all secrets must be set)
 5. Click **"Deploy"**
 6. Wait 2-5 minutes for deployment
 7. Test at your deployed URL
+
+**⚠️ Important:** The build step is REQUIRED. Without `npm run build`, your frontend will show 404 errors in production.
 
 ### Method 2: CLI Deploy
 
@@ -136,10 +138,10 @@ TTL: 3600
 ## 🔐 Production Database
 
 Your PostgreSQL database automatically:
-- ✅ Scales with your app
-- ✅ Backs up daily
-- ✅ Provides connection pooling
-- ✅ Supports up to 10,000 concurrent connections
+- ✅ Scales with your app (managed by Neon)
+- ✅ Provides built-in backups
+- ✅ Includes connection pooling
+- ✅ Handles high concurrency (check your plan limits)
 
 **Connection:** Already configured via `DATABASE_URL`
 
