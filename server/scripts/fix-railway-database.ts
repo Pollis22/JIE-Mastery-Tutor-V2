@@ -23,11 +23,9 @@ async function fixRailwayDatabase() {
   console.log('=================================');
   console.log('');
   
+  // Railway internal connections don't use SSL
   const client = new Client({
-    connectionString: process.env.DATABASE_URL,
-    ssl: process.env.NODE_ENV === 'production' ? {
-      rejectUnauthorized: false
-    } : undefined
+    connectionString: process.env.DATABASE_URL
   });
   
   try {

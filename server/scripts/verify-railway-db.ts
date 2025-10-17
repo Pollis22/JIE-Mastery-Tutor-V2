@@ -28,9 +28,9 @@ async function verifyRailwayDatabase() {
   console.log(`  User: ${urlParts.username}`);
   console.log('');
   
+  // Railway internal connections don't use SSL
   const client = new Client({
-    connectionString: databaseUrl,
-    ssl: { rejectUnauthorized: false }
+    connectionString: databaseUrl
   });
   
   try {
