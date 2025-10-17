@@ -351,6 +351,14 @@ export function setupAuth(app: Express) {
     res.json(safeUser);
   });
 
+  // Alias for /api/user for frontend compatibility
+  app.get("/api/auth/me", (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    // Sanitize user response to exclude sensitive fields
+    const { password, ...safeUser } = req.user as any;
+    res.json(safeUser);
+  });
+
   // Request password reset
   app.post("/api/auth/forgot-password", async (req, res) => {
     try {
