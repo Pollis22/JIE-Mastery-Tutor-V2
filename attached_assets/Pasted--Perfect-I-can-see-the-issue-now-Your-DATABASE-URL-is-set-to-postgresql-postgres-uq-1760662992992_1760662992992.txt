@@ -1,0 +1,130 @@
+**Perfect! I can see the issue now.**
+
+Your DATABASE_URL is set to:
+```
+postgresql://postgres:uqs3xfm2tcht6fenks3eh7qhgis34oix@pgvector.railway.internal:5432/railway
+```
+
+This is the **internal Railway network connection** (`.railway.internal`), which **doesn't use SSL**. But the migration script is trying to force SSL, causing the error.
+
+---
+
+## Fix for Agent3
+
+**Give Agent3 this updated prompt:**
+
+```
+Update scripts/init-railway-db.js to fix the SSL connection error. The issue is that Railway's internal network connections don't use SSL.
+
+Replace the entire scripts/init-railway-db.js file with:
+
+```javascript
+const { Pool } = require('pg');
+
+async function initializeDatabase() {
+  console.log('🚀 Initializing Railway database...');
+  
+  // Railway internal connections don't use SSL
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL
+    // No SSL config needed for Railway internal connections
+  });
+
+  try {
+    // Try to enable vector extension
+    console.log('📝 Enabling pgvector extension...');
+    try {
+      await pool.query(`CREATE EXTENSION IF NOT EXISTS vector;`);
+      console.log('✅ Vector extension enabled');
+    } catch (vectorError) {
+      console.log('⚠️  Vector extension error:', vectorError.message);
+      console.log('⚠️  Continuing without vector extension...');
+    }
+
+    // Add missing columns to users table
+    console.log('📝 Adding missing columns to users table...');
+    await pool.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS billing_cycle_start TIMESTAMPTZ DEFAULT NOW();
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_plan TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS weekly_voice_minutes_used INTEGER DEFAULT 0;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS weekly_reset_date TIMESTAMPTZ;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS monthly_voice_minutes INTEGER DEFAULT 60;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS monthly_voice_minutes_used INTEGER DEFAULT 0;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS monthly_reset_date TIMESTAMPTZ;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS bonus_minutes INTEGER DEFAULT 0;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS parent_name TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS student_name TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS student_age INTEGER;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS grade_level TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS primary_subject TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS marketing_opt_in BOOLEAN DEFAULT false;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS marketing_opt_in_date TIMESTAMPTZ;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS marketing_opt_out_date TIMESTAMPTZ;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_language TEXT DEFAULT 'english';
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS voice_style TEXT DEFAULT 'cheerful';
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS speech_speed TEXT DEFAULT '1.0';
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS volume_level INTEGER DEFAULT 75;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT false;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS last_reset_at TIMESTAMPTZ;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verification_token TEXT;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verification_expiry TIMESTAMPTZ;
+    `);
+    console.log('✅ Users table columns updated');
+
+    // Create minute_purchases table
+    console.log('📝 Creating minute_purchases table...');
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS minute_purchases (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        minutes_purchased INTEGER NOT NULL,
+        price_paid NUMERIC(10, 2) NOT NULL,
+        stripe_payment_intent_id TEXT,
+        purchase_date TIMESTAMPTZ DEFAULT NOW(),
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_minute_purchases_user_id ON minute_purchases(user_id);
+    `);
+    console.log('✅ minute_purchases table created');
+
+    console.log('✅ Database initialization complete!');
+    
+  } catch (error) {
+    console.error('❌ Database initialization failed:', error);
+    console.log('⚠️  Continuing despite errors - app will start anyway');
+  } finally {
+    await pool.end();
+  }
+}
+
+// Run if called directly
+if (require.main === module) {
+  initializeDatabase()
+    .then(() => {
+      console.log('✅ All done!');
+      process.exit(0);
+    })
+    .catch((error) => {
+      console.error('❌ Failed:', error);
+      process.exit(1);
+    });
+}
+
+module.exports = { initializeDatabase };
+```
+
+Commit and push:
+
+```bash
+git add scripts/init-railway-db.js
+git commit -m "Fix: Remove SSL config for Railway internal database connections"
+git push origin main
+```
+```
+
+---
+
+**This should fix the SSL error!** Railway will auto-deploy after the push, and the migration should work properly. 🚀

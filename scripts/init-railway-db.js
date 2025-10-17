@@ -3,16 +3,21 @@ const { Pool } = require('pg');
 async function initializeDatabase() {
   console.log('🚀 Initializing Railway database...');
   
+  // Railway internal connections don't use SSL
   const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+    connectionString: process.env.DATABASE_URL
   });
 
   try {
-    // Enable pgvector extension for document embeddings
+    // Try to enable pgvector extension for document embeddings
     console.log('📝 Enabling pgvector extension...');
-    await pool.query(`CREATE EXTENSION IF NOT EXISTS vector;`);
-    console.log('✅ pgvector extension enabled');
+    try {
+      await pool.query(`CREATE EXTENSION IF NOT EXISTS vector;`);
+      console.log('✅ pgvector extension enabled');
+    } catch (vectorError) {
+      console.log('⚠️  Vector extension error:', vectorError.message);
+      console.log('⚠️  Continuing without vector extension (RAG features may be limited)');
+    }
 
     // Add missing columns to users table (hybrid minute tracking)
     console.log('📝 Adding missing columns to users table...');
@@ -196,7 +201,8 @@ async function initializeDatabase() {
     
   } catch (error) {
     console.error('❌ Database initialization failed:', error);
-    throw error;
+    console.log('⚠️  Continuing despite errors - app will start anyway');
+    // Don't throw - allow app to start even if migration has issues
   } finally {
     await pool.end();
   }
