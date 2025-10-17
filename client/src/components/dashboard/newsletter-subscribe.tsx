@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 
 export default function NewsletterSubscribe() {
-  const { user, refetch } = useAuth();
+  const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [preferences, setPreferences] = useState({
@@ -39,7 +39,6 @@ export default function NewsletterSubscribe() {
         title: "Preferences updated",
         description: "Your email preferences have been saved",
       });
-      refetch();
       queryClient.invalidateQueries({ queryKey: ["/api/user"] });
     },
     onError: (error) => {
@@ -53,7 +52,13 @@ export default function NewsletterSubscribe() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    updatePreferencesMutation.mutate(preferences);
+    // Transform preferences to match backend API format
+    updatePreferencesMutation.mutate({
+      weeklyNewsletter: preferences.newsletter,
+      productUpdates: preferences.updates,
+      promotionalOffers: preferences.promotions,
+      learningTips: preferences.tips
+    });
   };
 
   return (
