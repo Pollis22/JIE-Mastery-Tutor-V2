@@ -12,7 +12,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { useEffect, useState } from "react";
-import { Eye, EyeOff, Mail, FileText, Upload, Scan } from "lucide-react";
+import { Eye, EyeOff, Mail, FileText, Upload, Scan, Users } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -494,11 +494,16 @@ export default function AuthPage() {
           <div className="flex justify-center">
             <div className="text-center lg:text-left space-y-6">
               <div className="space-y-4">
+                <div className="inline-block mb-3">
+                  <span className="text-sm font-semibold text-primary uppercase tracking-wide bg-primary/10 px-4 py-2 rounded-full">
+                    The Future of Family Tutoring
+                  </span>
+                </div>
                 <h1 className="text-4xl lg:text-5xl font-bold text-foreground leading-tight">
                   Master Every Subject with <span className="text-primary">JIE Mastery Tutor</span>
                 </h1>
                 <p className="text-xl text-muted-foreground max-w-md">
-                  Experience personalized AI tutoring for Math, English, Science, Spanish and More with interactive voice conversations and adaptive learning paths.
+                  One subscription, whole family learns. Experience personalized AI tutoring for Math, English, Science, Spanish and More with interactive voice conversations and adaptive learning paths.
                 </p>
               </div>
 
@@ -548,12 +553,38 @@ export default function AuthPage() {
                 </div>
                 
                 <div className="flex items-center space-x-3">
+                  <div className="w-8 h-8 bg-green-500/10 rounded-lg flex items-center justify-center">
+                    <Users className="w-4 h-4 text-green-500" />
+                  </div>
+                  <span className="text-foreground font-medium">Family Sharing - Multiple Profiles</span>
+                </div>
+                
+                <div className="flex items-center space-x-3">
                   <div className="w-8 h-8 bg-accent/10 rounded-lg flex items-center justify-center">
                     <svg className="w-4 h-4 text-accent" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd"/>
                     </svg>
                   </div>
                   <span className="text-foreground font-medium">Progress Tracking</span>
+                </div>
+              </div>
+
+              {/* Family Sharing Highlight */}
+              <div className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border-2 border-green-200 dark:border-green-800 rounded-xl p-6 space-y-3">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 bg-green-500 rounded-full flex items-center justify-center">
+                    <Users className="w-5 h-5 text-white" />
+                  </div>
+                  <h3 className="font-bold text-foreground text-lg">Perfect for Families!</h3>
+                </div>
+                <p className="text-sm text-foreground">
+                  <strong>One subscription, whole family benefits!</strong> Since billing is minute-based, siblings can share the account. Simply create different profiles for each family member - everyone gets personalized learning at their grade level.
+                </p>
+                <div className="flex items-center space-x-2 text-xs text-green-700 dark:text-green-300 font-medium">
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/>
+                  </svg>
+                  <span>K-12 to College/Adult supported • Multiple student profiles • Shared minute pool</span>
                 </div>
               </div>
 
@@ -580,12 +611,12 @@ export default function AuthPage() {
                     <span className="text-foreground">Photo-to-text OCR</span>
                   </div>
                   <div className="flex items-center space-x-2">
-                    <span className="text-lg">🏆</span>
-                    <span className="text-foreground">Track progress</span>
+                    <span className="text-lg">👨‍👩‍👧‍👦</span>
+                    <span className="text-foreground">Family sharing</span>
                   </div>
                   <div className="flex items-center space-x-2">
-                    <span className="text-lg">🎙️</span>
-                    <span className="text-foreground">Voice tutoring</span>
+                    <span className="text-lg">🏆</span>
+                    <span className="text-foreground">Track progress</span>
                   </div>
                 </div>
               </div>

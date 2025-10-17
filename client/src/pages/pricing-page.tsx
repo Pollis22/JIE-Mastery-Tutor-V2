@@ -17,6 +17,7 @@ const plans = [
       '60 voice minutes per month',
       'Math, English, Science, Spanish & More tutoring',
       'AI-powered learning',
+      'Multiple family profiles',
       'Real-time transcripts',
       'Progress tracking'
     ],
@@ -31,6 +32,7 @@ const plans = [
       '240 voice minutes per month',
       'Math, English, Science, Spanish & More tutoring',
       'AI-powered learning',
+      'Multiple family profiles',
       'Real-time transcripts',
       'Progress tracking',
       'Priority support'
@@ -46,6 +48,7 @@ const plans = [
       '600 voice minutes per month',
       'Math, English, Science, Spanish & More tutoring',
       'AI-powered learning',
+      'Multiple family profiles',
       'Real-time transcripts',
       'Progress tracking',
       'Priority support',
@@ -122,12 +125,17 @@ export default function PricingPage() {
           
           {/* Hero Section */}
           <div className="text-center mb-16">
+            <div className="inline-block mb-4">
+              <span className="text-sm font-semibold text-primary uppercase tracking-wide bg-primary/10 px-4 py-2 rounded-full">
+                The Future of Family Tutoring
+              </span>
+            </div>
             <h1 className="text-5xl font-bold text-foreground mb-6" data-testid="text-hero-title">
-              Learn with Your Personal AI Tutor
+              One Plan. Entire Family. Unlimited Potential.
             </h1>
             <p className="text-xl text-muted-foreground mb-8 max-w-3xl mx-auto">
-              Master Math, English, Science, Spanish and More with interactive voice lessons, personalized quizzes, and progress tracking. 
-              Your AI tutor adapts to your learning style.
+              Master Math, English, Science, Spanish and More with interactive voice lessons and progress tracking. 
+              Create profiles for each family member and share minutes across all learners—from kindergarten to college.
             </p>
             
             {/* Feature highlights */}
@@ -233,6 +241,58 @@ export default function PricingPage() {
                 </CardContent>
               </Card>
             ))}
+          </div>
+
+          {/* Family Sharing Highlight */}
+          <div className="mb-16">
+            <Card className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border-2 border-green-500 shadow-xl">
+              <CardContent className="p-8">
+                <div className="flex flex-col md:flex-row items-center gap-6">
+                  <div className="flex-shrink-0">
+                    <div className="w-20 h-20 bg-green-500 rounded-full flex items-center justify-center">
+                      <svg className="w-10 h-10 text-white" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/>
+                      </svg>
+                    </div>
+                  </div>
+                  <div className="flex-1 text-center md:text-left">
+                    <h3 className="text-3xl font-bold text-foreground mb-3">Perfect for Families! 👨‍👩‍👧‍👦</h3>
+                    <p className="text-lg text-foreground mb-4">
+                      <strong>One subscription, whole family learns together!</strong> Since billing is minute-based, siblings can share the account seamlessly.
+                    </p>
+                    <div className="grid md:grid-cols-3 gap-4 text-sm">
+                      <div className="bg-white/50 dark:bg-black/20 rounded-lg p-3">
+                        <div className="flex items-center justify-center md:justify-start space-x-2 mb-1">
+                          <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/>
+                          </svg>
+                          <span className="font-semibold text-foreground">Multiple Profiles</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">Create separate profiles for each child</p>
+                      </div>
+                      <div className="bg-white/50 dark:bg-black/20 rounded-lg p-3">
+                        <div className="flex items-center justify-center md:justify-start space-x-2 mb-1">
+                          <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/>
+                          </svg>
+                          <span className="font-semibold text-foreground">Personalized Learning</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">Each gets age-appropriate tutoring</p>
+                      </div>
+                      <div className="bg-white/50 dark:bg-black/20 rounded-lg p-3">
+                        <div className="flex items-center justify-center md:justify-start space-x-2 mb-1">
+                          <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/>
+                          </svg>
+                          <span className="font-semibold text-foreground">Shared Minutes</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">Pool minutes across all siblings</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </div>
 
           {/* FAQ Section */}
