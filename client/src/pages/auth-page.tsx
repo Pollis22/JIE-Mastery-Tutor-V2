@@ -12,7 +12,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { useEffect, useState } from "react";
-import { Eye, EyeOff, Mail } from "lucide-react";
+import { Eye, EyeOff, Mail, FileText, Upload, Scan } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -525,6 +525,20 @@ export default function AuthPage() {
                 </div>
                 
                 <div className="flex items-center space-x-3">
+                  <div className="w-8 h-8 bg-blue-500/10 rounded-lg flex items-center justify-center">
+                    <Upload className="w-4 h-4 text-blue-500" />
+                  </div>
+                  <span className="text-foreground font-medium">Upload Homework & Assignments</span>
+                </div>
+                
+                <div className="flex items-center space-x-3">
+                  <div className="w-8 h-8 bg-purple-500/10 rounded-lg flex items-center justify-center">
+                    <Scan className="w-4 h-4 text-purple-500" />
+                  </div>
+                  <span className="text-foreground font-medium">Smart Document OCR & Analysis</span>
+                </div>
+                
+                <div className="flex items-center space-x-3">
                   <div className="w-8 h-8 bg-secondary/10 rounded-lg flex items-center justify-center">
                     <svg className="w-4 h-4 text-secondary" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
@@ -543,17 +557,36 @@ export default function AuthPage() {
                 </div>
               </div>
 
-              <div className="bg-card border border-border rounded-xl p-6 space-y-4">
-                <h3 className="font-semibold text-foreground">Ready to start learning?</h3>
+              <div className="bg-gradient-to-br from-primary/5 to-secondary/5 border border-primary/20 rounded-xl p-6 space-y-4">
+                <h3 className="font-semibold text-foreground text-lg">Ready to start learning?</h3>
                 <p className="text-sm text-muted-foreground">
                   Join thousands of students who are already improving their skills with AI-powered tutoring.
                 </p>
-                <div className="flex items-center space-x-2 text-sm text-muted-foreground">
-                  <span>🎯 Personalized lessons</span>
-                  <span>•</span>
-                  <span>📊 Real-time feedback</span>
-                  <span>•</span>
-                  <span>🏆 Track progress</span>
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-lg">🎯</span>
+                    <span className="text-foreground">Personalized lessons</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-lg">📄</span>
+                    <span className="text-foreground">Upload documents</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-lg">📊</span>
+                    <span className="text-foreground">Real-time feedback</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-lg">📸</span>
+                    <span className="text-foreground">Photo-to-text OCR</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-lg">🏆</span>
+                    <span className="text-foreground">Track progress</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-lg">🎙️</span>
+                    <span className="text-foreground">Voice tutoring</span>
+                  </div>
                 </div>
               </div>
 
