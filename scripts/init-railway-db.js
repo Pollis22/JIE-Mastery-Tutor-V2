@@ -197,6 +197,18 @@ async function initializeDatabase() {
     `);
     console.log('✅ marketing_campaigns table created');
 
+    // Add trial management columns to users table
+    console.log('📝 Adding trial management columns to users table...');
+    await pool.query(`
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_started_at TIMESTAMPTZ;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMPTZ;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_minutes_limit INTEGER DEFAULT 30;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_minutes_used INTEGER DEFAULT 0;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_reminder_sent BOOLEAN DEFAULT false;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS is_trial_active BOOLEAN DEFAULT false;
+    `);
+    console.log('✅ Trial management columns added');
+
     console.log('✅ Database initialization complete!');
     
   } catch (error) {
