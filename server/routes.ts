@@ -116,7 +116,106 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Setup authentication
   setupAuth(app);
 
-  // Unsubscribe endpoint (public - no authentication required)
+  // Unsubscribe endpoint - GET version for email links (public - no authentication required)
+  app.get("/api/unsubscribe", async (req, res) => {
+    try {
+      const { email, token } = req.query;
+
+      if (!email) {
+        return res.status(400).send(`
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <style>
+                body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f9fafb; }
+                .container { max-width: 500px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+                h1 { color: #ef4444; }
+              </style>
+            </head>
+            <body>
+              <div class="container">
+                <h1>❌ Invalid Request</h1>
+                <p>Email address is required to unsubscribe.</p>
+              </div>
+            </body>
+          </html>
+        `);
+      }
+
+      const emailStr = Array.isArray(email) ? email[0] : email;
+      const user = await storage.getUserByEmail(emailStr);
+      
+      if (!user) {
+        return res.send(`
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <style>
+                body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f9fafb; }
+                .container { max-width: 500px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+                h1 { color: #f59e0b; }
+              </style>
+            </head>
+            <body>
+              <div class="container">
+                <h1>⚠️ Email Not Found</h1>
+                <p>We couldn't find that email address in our system.</p>
+              </div>
+            </body>
+          </html>
+        `);
+      }
+
+      await storage.updateUserMarketingPreferences(user.id, false);
+      
+      res.send(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <style>
+              body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f9fafb; }
+              .container { max-width: 500px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+              h1 { color: #10b981; }
+              p { line-height: 1.6; color: #4b5563; }
+              .footer { margin-top: 30px; color: #6b7280; font-size: 14px; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <h1>✅ Unsubscribed Successfully</h1>
+              <p>You have been unsubscribed from marketing emails.</p>
+              <p>You will still receive important account-related emails such as receipts and password resets.</p>
+              <p class="footer">
+                Changed your mind? You can re-subscribe anytime in your <a href="/settings" style="color: #dc2626;">account settings</a>.
+              </p>
+            </div>
+          </body>
+        </html>
+      `);
+    } catch (error: any) {
+      console.error('[Unsubscribe] GET Error:', error);
+      res.status(500).send(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <style>
+              body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f9fafb; }
+              .container { max-width: 500px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+              h1 { color: #ef4444; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <h1>❌ Error</h1>
+              <p>An error occurred while processing your request. Please try again later.</p>
+            </div>
+          </body>
+        </html>
+      `);
+    }
+  });
+
+  // Unsubscribe endpoint - POST version for API calls (public - no authentication required)
   app.post("/api/unsubscribe", async (req, res) => {
     try {
       // Validate email format with Zod
