@@ -50,6 +50,7 @@ import { eq, and, desc, asc, count, sum, sql, like, or, inArray } from "drizzle-
 import session from "express-session";
 import connectPg from "connect-pg-simple";
 import MemoryStore from "memorystore";
+import { deductMinutes } from "./services/voice-minutes";
 
 const PostgresSessionStore = connectPg(session);
 
@@ -1923,8 +1924,8 @@ export class DatabaseStorage implements IStorage {
       // Don't throw - let voice minute update continue
     }
 
-    // Update user's voice usage regardless of session table status
-    await this.updateUserVoiceUsage(userId, minutesUsed);
+    // Use the new hybrid minute tracking system with trial/subscription/purchased minutes
+    await deductMinutes(userId, minutesUsed);
   }
 }
 

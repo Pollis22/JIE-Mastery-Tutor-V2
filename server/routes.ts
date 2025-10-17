@@ -613,6 +613,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Update user settings
+  app.put("/api/settings", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const user = req.user as any;
+      
+      // Validate and sanitize settings data
+      const settingsSchema = z.object({
+        firstName: z.string().optional(),
+        lastName: z.string().optional(),
+        email: z.string().email().optional(),
+        preferredLanguage: z.string().optional(),
+        voiceStyle: z.string().optional(),
+        speechSpeed: z.string().optional(),
+        volumeLevel: z.number().min(0).max(100).optional(),
+        marketingOptIn: z.boolean().optional(),
+      });
+      
+      const validation = settingsSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ 
+          message: "Invalid settings data",
+          errors: validation.error.issues 
+        });
+      }
+      
+      const settings = validation.data;
+      
+      // Only include defined fields to prevent overwriting with undefined
+      const updateData: any = { updatedAt: new Date() };
+      if (settings.firstName !== undefined) updateData.firstName = settings.firstName;
+      if (settings.lastName !== undefined) updateData.lastName = settings.lastName;
+      if (settings.email !== undefined) updateData.email = settings.email;
+      if (settings.preferredLanguage !== undefined) updateData.preferredLanguage = settings.preferredLanguage;
+      if (settings.voiceStyle !== undefined) updateData.voiceStyle = settings.voiceStyle;
+      if (settings.speechSpeed !== undefined) updateData.speechSpeed = settings.speechSpeed;
+      if (settings.volumeLevel !== undefined) updateData.volumeLevel = settings.volumeLevel;
+      if (settings.marketingOptIn !== undefined) updateData.marketingOptIn = settings.marketingOptIn;
+      
+      // Update user settings
+      const updatedUser = await storage.updateUserSettings(user.id, updateData);
+      
+      res.json({ success: true, message: "Settings updated successfully", user: updatedUser });
+    } catch (error: any) {
+      console.error('[Settings] Error updating settings:', error);
+      res.status(500).json({ message: "Error updating settings: " + error.message });
+    }
+  });
+
   app.post("/api/lessons/:lessonId/progress", async (req, res) => {
     if (!req.isAuthenticated()) {
       return res.status(401).json({ message: "Unauthorized" });
