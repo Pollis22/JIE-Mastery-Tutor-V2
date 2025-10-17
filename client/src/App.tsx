@@ -33,6 +33,7 @@ import SessionDetailsPage from "@/pages/session-details";
 import ForgotPasswordPage from "@/pages/forgot-password";
 import ResetPasswordPage from "@/pages/reset-password";
 import VerifyEmailPage from "@/pages/verify-email";
+import TrialSuccessPage from "@/pages/TrialSuccessPage";
 
 function Router() {
   return (
@@ -55,6 +56,7 @@ function Router() {
       <ProtectedRoute path="/admin/contacts" component={AdminContacts} />
       <ProtectedRoute path="/admin/logs" component={AdminLogs} />
       <ProtectedRoute path="/subscribe" component={SubscribePage} />
+      <ProtectedRoute path="/trial-success" component={TrialSuccessPage} />
       <Route path="/auth" component={AuthPage} />
       <Route path="/login" component={AuthPage} />
       <Route path="/forgot-password" component={ForgotPasswordPage} />
