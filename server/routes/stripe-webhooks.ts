@@ -61,6 +61,46 @@ router.post(
             break;
           }
 
+          // Handle trial signup
+          if (type === 'trial_signup' && session.subscription) {
+            console.log(`[Stripe Webhook] Trial started for user ${userId}`);
+            
+            // Get subscription details
+            const subscription = await stripe.subscriptions.retrieve(session.subscription as string);
+            
+            // Calculate trial end date
+            const trialEnd = subscription.trial_end ? new Date(subscription.trial_end * 1000) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+            const trialStart = new Date();
+
+            // Update user with trial information
+            await storage.updateUserStripeInfo(userId, session.customer as string, session.subscription as string);
+            
+            // Set trial status in database
+            await storage.updateUserTrial(userId, {
+              isTrialActive: true,
+              trialStartedAt: trialStart,
+              trialEndsAt: trialEnd,
+              trialMinutesLimit: 30,
+              trialMinutesUsed: 0,
+              trialReminderSent: false,
+              subscriptionStatus: 'trialing',
+              billingCycleStart: trialEnd // Will start after trial
+            });
+
+            const user = await storage.getUser(userId);
+            if (user) {
+              // Send trial started email
+              await emailService.sendTrialStarted({
+                email: user.email,
+                name: user.parentName || user.studentName || 'there',
+                trialEndsAt: trialEnd
+              }).catch(error => console.error('[Stripe Webhook] Trial started email failed:', error));
+
+              console.log(`[Stripe Webhook] Trial activated for user ${userId}, ends ${trialEnd.toISOString()}`);
+            }
+            break;
+          }
+
           // Handle minute top-up purchases (hybrid rollover policy)
           if (type === 'minute_topup') {
             const minutesToAdd = parseInt(session.metadata?.minutesToAdd || '0');
@@ -161,6 +201,32 @@ router.post(
           if (!user) {
             console.error(`[Stripe Webhook] User not found for customer ${customerId}`);
             break;
+          }
+
+          // Check if this is the first payment after trial (trial conversion)
+          if (user.isTrialActive && invoice.billing_reason === 'subscription_cycle') {
+            console.log(`[Stripe Webhook] Trial converted to paid for user ${user.id}`);
+            
+            // Mark trial as inactive and update subscription status
+            await storage.updateUserTrial(user.id, {
+              isTrialActive: false,
+              subscriptionStatus: 'active'
+            });
+
+            // Send trial conversion email
+            const minutesMap: Record<string, number> = {
+              'starter': 60,
+              'standard': 240,
+              'pro': 600,
+            };
+            const monthlyMinutes = minutesMap[user.subscriptionPlan || 'starter'] || 60;
+            
+            await emailService.sendTrialConverted({
+              email: user.email,
+              name: user.parentName || user.studentName || 'there',
+              plan: user.subscriptionPlan || 'starter',
+              minutesPerMonth: monthlyMinutes
+            }).catch(error => console.error('[Stripe Webhook] Trial converted email failed:', error));
           }
 
           // Reset monthly minutes on successful payment (monthly billing cycle)
