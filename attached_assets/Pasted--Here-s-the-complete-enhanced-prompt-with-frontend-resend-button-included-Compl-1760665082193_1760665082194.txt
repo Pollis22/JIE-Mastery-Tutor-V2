@@ -1,0 +1,784 @@
+**Here's the complete, enhanced prompt with frontend resend button included:**
+
+---
+
+## 📧 Complete Email Verification System with Resend Button
+
+**Give Agent3 this comprehensive prompt:**
+
+```
+TASK: Add complete email verification system to JIE-Mastery-Tutor-V2
+
+This adds email verification to signup, prevents login until verified, and includes a "Resend Verification Email" button on the login page for unverified users.
+
+---
+
+## STEP 1: Update Database Schema
+
+File: `scripts/init-railway-db.js`
+
+Add after existing ALTER TABLE statements in the initializeDatabase() function:
+
+```javascript
+// Ensure email verification columns exist
+await pool.query(`
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT false;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verification_token TEXT;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verification_expiry TIMESTAMPTZ;
+`);
+console.log('✅ Email verification columns verified');
+```
+
+---
+
+## STEP 2: Install Dependencies
+
+```bash
+npm install resend
+```
+
+---
+
+## STEP 3: Create Email Service
+
+Create new file: `server/services/email.js`
+
+```javascript
+const { Resend } = require('resend');
+
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+async function sendVerificationEmail(email, token) {
+  const verificationLink = `${process.env.APP_BASE_URL}/api/verify-email?token=${token}`;
+  
+  try {
+    await resend.emails.send({
+      from: 'JIE Mastery Tutor <noreply@jiemastery.ai>', // Update with your verified domain
+      to: email,
+      subject: 'Verify Your Email - JIE Mastery Tutor',
+      html: `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <style>
+              body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+              .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+              .header { background: #dc2626; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+              .content { background: #f9fafb; padding: 30px; border: 1px solid #e5e7eb; }
+              .button { display: inline-block; background: #dc2626; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+              .footer { text-align: center; padding: 20px; color: #6b7280; font-size: 12px; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <div class="header">
+                <h1>🎓 Welcome to JIE Mastery Tutor!</h1>
+              </div>
+              <div class="content">
+                <h2>Verify Your Email Address</h2>
+                <p>Thank you for signing up! Please verify your email address by clicking the button below:</p>
+                <a href="${verificationLink}" class="button">Verify Email</a>
+                <p>Or copy and paste this link into your browser:</p>
+                <p style="word-break: break-all; color: #6b7280; font-size: 12px;">${verificationLink}</p>
+                <p><strong>⏰ This link will expire in 30 minutes.</strong></p>
+                <p>If you didn't create an account, you can safely ignore this email.</p>
+              </div>
+              <div class="footer">
+                <p>© ${new Date().getFullYear()} JIE Mastery Tutor. All rights reserved.</p>
+              </div>
+            </div>
+          </body>
+        </html>
+      `
+    });
+    console.log(`✅ Verification email sent to ${email}`);
+    return true;
+  } catch (error) {
+    console.error('❌ Failed to send verification email:', error);
+    return false;
+  }
+}
+
+async function sendPasswordResetEmail(email, token) {
+  const resetLink = `${process.env.APP_BASE_URL}/reset-password?token=${token}`;
+  
+  try {
+    await resend.emails.send({
+      from: 'JIE Mastery Tutor <noreply@jiemastery.ai>',
+      to: email,
+      subject: 'Reset Your Password - JIE Mastery Tutor',
+      html: `
+        <!DOCTYPE html>
+        <html>
+          <body style="font-family: Arial, sans-serif; line-height: 1.6; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <h2>🔐 Reset Your Password</h2>
+            <p>Click the button below to reset your password:</p>
+            <a href="${resetLink}" style="display: inline-block; background: #dc2626; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0;">Reset Password</a>
+            <p style="word-break: break-all; color: #6b7280; font-size: 12px;">${resetLink}</p>
+            <p><strong>⏰ This link will expire in 1 hour.</strong></p>
+            <p>If you didn't request a password reset, you can safely ignore this email.</p>
+          </body>
+        </html>
+      `
+    });
+    console.log(`✅ Password reset email sent to ${email}`);
+    return true;
+  } catch (error) {
+    console.error('❌ Failed to send password reset email:', error);
+    return false;
+  }
+}
+
+module.exports = {
+  sendVerificationEmail,
+  sendPasswordResetEmail
+};
+```
+
+---
+
+## STEP 4: Update Signup Handler
+
+Find your signup route (likely in `server/routes/auth.js` or `server/index.js`) and update:
+
+```javascript
+const crypto = require('crypto');
+const { sendVerificationEmail } = require('../services/email');
+
+// In your POST /api/signup or similar route, AFTER creating the user:
+
+// Generate verification token
+const verificationToken = crypto.randomBytes(32).toString('hex');
+const verificationExpiry = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
+
+// Store token in database
+await pool.query(
+  `UPDATE users 
+   SET email_verification_token = $1, 
+       email_verification_expiry = $2,
+       email_verified = false
+   WHERE id = $3`,
+  [verificationToken, verificationExpiry, userId]
+);
+
+// Send verification email
+const emailSent = await sendVerificationEmail(email, verificationToken);
+
+if (!emailSent) {
+  console.error('⚠️ Failed to send verification email, but user was created');
+}
+
+// Return success response
+return res.status(201).json({ 
+  success: true,
+  message: 'Account created! Please check your email to verify your account before logging in.',
+  requiresVerification: true,
+  email: email
+});
+```
+
+---
+
+## STEP 5: Create Verification Endpoint
+
+Add this route in `server/routes/auth.js` (or wherever your auth routes are):
+
+```javascript
+// GET /api/verify-email?token=...
+router.get('/verify-email', async (req, res) => {
+  const { token } = req.query;
+
+  if (!token) {
+    return res.status(400).send(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <style>
+            body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f9fafb; }
+            .container { max-width: 500px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+            h1 { color: #dc2626; }
+            a { color: #dc2626; text-decoration: none; font-weight: bold; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <h1>❌ Invalid Verification Link</h1>
+            <p>No verification token provided.</p>
+            <a href="/auth">← Return to Login</a>
+          </div>
+        </body>
+      </html>
+    `);
+  }
+
+  try {
+    // Find user with this token
+    const result = await pool.query(
+      `SELECT id, email, email_verification_expiry 
+       FROM users 
+       WHERE email_verification_token = $1`,
+      [token]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(400).send(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <style>
+              body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f9fafb; }
+              .container { max-width: 500px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+              h1 { color: #dc2626; }
+              a { color: #dc2626; text-decoration: none; font-weight: bold; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <h1>❌ Invalid Token</h1>
+              <p>This verification link is invalid or has already been used.</p>
+              <a href="/auth">← Return to Login</a>
+            </div>
+          </body>
+        </html>
+      `);
+    }
+
+    const user = result.rows[0];
+
+    // Check if token expired
+    if (new Date() > new Date(user.email_verification_expiry)) {
+      return res.status(400).send(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <style>
+              body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f9fafb; }
+              .container { max-width: 500px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+              h1 { color: #f59e0b; }
+              a { display: inline-block; margin-top: 20px; padding: 12px 30px; background: #dc2626; color: white; text-decoration: none; border-radius: 5px; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <h1>⏰ Token Expired</h1>
+              <p>This verification link has expired (links are valid for 30 minutes).</p>
+              <p>Please log in and request a new verification email.</p>
+              <a href="/auth">Go to Login</a>
+            </div>
+          </body>
+        </html>
+      `);
+    }
+
+    // Mark email as verified
+    await pool.query(
+      `UPDATE users 
+       SET email_verified = true,
+           email_verification_token = NULL,
+           email_verification_expiry = NULL
+       WHERE id = $1`,
+      [user.id]
+    );
+
+    console.log(`✅ Email verified for user: ${user.email}`);
+
+    return res.send(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <style>
+            body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f9fafb; }
+            .container { max-width: 500px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+            h1 { color: #10b981; }
+            a { display: inline-block; margin-top: 20px; padding: 12px 30px; background: #dc2626; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <h1>✅ Email Verified!</h1>
+            <p>Your email has been successfully verified.</p>
+            <p>You can now log in to your account and start learning!</p>
+            <a href="/auth">Go to Login</a>
+          </div>
+        </body>
+      </html>
+    `);
+
+  } catch (error) {
+    console.error('❌ Error verifying email:', error);
+    return res.status(500).send(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <style>
+            body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f9fafb; }
+            .container { max-width: 500px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+            h1 { color: #dc2626; }
+            a { color: #dc2626; text-decoration: none; font-weight: bold; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <h1>❌ Error</h1>
+            <p>An error occurred while verifying your email. Please try again.</p>
+            <a href="/auth">← Return to Login</a>
+          </div>
+        </body>
+      </html>
+    `);
+  }
+});
+```
+
+---
+
+## STEP 6: Add Resend Verification Endpoint
+
+```javascript
+// POST /api/resend-verification
+router.post('/resend-verification', async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ error: 'Email is required' });
+  }
+
+  try {
+    // Find user
+    const result = await pool.query(
+      'SELECT id, email, email_verified FROM users WHERE email = $1',
+      [email]
+    );
+
+    if (result.rows.length === 0) {
+      // Don't reveal if email exists or not (security)
+      return res.json({ 
+        success: true, 
+        message: 'If that email exists and is unverified, a verification email has been sent.' 
+      });
+    }
+
+    const user = result.rows[0];
+
+    if (user.email_verified) {
+      return res.status(400).json({ error: 'This email is already verified. You can log in now.' });
+    }
+
+    // Generate new token
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    const verificationExpiry = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
+
+    // Update database
+    await pool.query(
+      `UPDATE users 
+       SET email_verification_token = $1, 
+           email_verification_expiry = $2
+       WHERE id = $3`,
+      [verificationToken, verificationExpiry, user.id]
+    );
+
+    // Send email
+    const emailSent = await sendVerificationEmail(user.email, verificationToken);
+
+    if (!emailSent) {
+      return res.status(500).json({ error: 'Failed to send email. Please try again.' });
+    }
+
+    return res.json({ 
+      success: true, 
+      message: 'Verification email sent! Please check your inbox.' 
+    });
+
+  } catch (error) {
+    console.error('❌ Error resending verification:', error);
+    return res.status(500).json({ error: 'Failed to resend verification email. Please try again.' });
+  }
+});
+```
+
+---
+
+## STEP 7: Update Login Handler
+
+In your login route, add email verification check BEFORE allowing login:
+
+```javascript
+// In your POST /api/login handler, after password verification succeeds:
+
+// Check if email is verified
+if (!user.email_verified) {
+  return res.status(403).json({ 
+    error: 'Please verify your email before logging in. Check your inbox for the verification link.',
+    needsVerification: true,
+    email: user.email
+  });
+}
+
+// Continue with normal login flow (create session, etc.)...
+```
+
+---
+
+## STEP 8: Update Login Frontend (HTML)
+
+Find your login page HTML (likely `public/auth.html` or similar) and add the verification message section:
+
+Add this HTML right after your login form (before the closing form div):
+
+```html
+<!-- Email Verification Alert (hidden by default) -->
+<div id="verificationAlert" style="display: none; margin-top: 20px; padding: 15px; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 5px;">
+  <p style="margin: 0 0 10px 0; color: #92400e; font-weight: bold;">
+    ⚠️ Email Not Verified
+  </p>
+  <p style="margin: 0 0 10px 0; color: #92400e;">
+    Please check your email inbox for the verification link.
+  </p>
+  <button 
+    id="resendVerificationBtn" 
+    type="button"
+    style="
+      background: #dc2626;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 5px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: bold;
+    "
+  >
+    📧 Resend Verification Email
+  </button>
+  <p id="resendMessage" style="margin-top: 10px; color: #10b981; display: none;"></p>
+</div>
+```
+
+---
+
+## STEP 9: Update Login Frontend (JavaScript)
+
+Find your login JavaScript (likely in the same file or a separate JS file) and update the login function:
+
+```javascript
+// Store unverified email globally
+let unverifiedEmail = null;
+
+// Update your existing login function to handle verification errors:
+async function handleLogin(event) {
+  event.preventDefault();
+  
+  const email = document.getElementById('email').value;
+  const password = document.getElementById('password').value;
+  
+  try {
+    const response = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    
+    const data = await response.json();
+    
+    if (response.ok) {
+      // Login successful
+      window.location.href = '/dashboard';
+    } else {
+      // Check if it's a verification error
+      if (data.needsVerification) {
+        unverifiedEmail = data.email;
+        showVerificationAlert(data.error);
+      } else {
+        // Regular login error
+        showError(data.error || 'Login failed');
+      }
+    }
+  } catch (error) {
+    console.error('Login error:', error);
+    showError('An error occurred. Please try again.');
+  }
+}
+
+// Function to show verification alert
+function showVerificationAlert(message) {
+  const alert = document.getElementById('verificationAlert');
+  const errorDiv = document.getElementById('errorMessage'); // Hide regular error if exists
+  
+  if (errorDiv) errorDiv.style.display = 'none';
+  
+  // Show verification alert
+  alert.style.display = 'block';
+  alert.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// Handle resend verification button click
+document.getElementById('resendVerificationBtn')?.addEventListener('click', async function() {
+  if (!unverifiedEmail) {
+    showError('No email address found. Please try logging in again.');
+    return;
+  }
+  
+  const btn = this;
+  const originalText = btn.textContent;
+  const messageEl = document.getElementById('resendMessage');
+  
+  // Disable button and show loading
+  btn.disabled = true;
+  btn.textContent = '⏳ Sending...';
+  messageEl.style.display = 'none';
+  
+  try {
+    const response = await fetch('/api/resend-verification', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: unverifiedEmail })
+    });
+    
+    const data = await response.json();
+    
+    if (response.ok) {
+      messageEl.textContent = '✅ ' + data.message;
+      messageEl.style.color = '#10b981';
+      messageEl.style.display = 'block';
+      
+      // Re-enable button after 30 seconds
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.textContent = originalText;
+      }, 30000);
+    } else {
+      messageEl.textContent = '❌ ' + (data.error || 'Failed to send email');
+      messageEl.style.color = '#dc2626';
+      messageEl.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  } catch (error) {
+    console.error('Resend error:', error);
+    messageEl.textContent = '❌ Network error. Please try again.';
+    messageEl.style.color = '#dc2626';
+    messageEl.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
+});
+
+// Helper function to show regular errors
+function showError(message) {
+  const verificationAlert = document.getElementById('verificationAlert');
+  if (verificationAlert) verificationAlert.style.display = 'none';
+  
+  // Show error in your existing error display element
+  const errorDiv = document.getElementById('errorMessage') || createErrorDiv();
+  errorDiv.textContent = message;
+  errorDiv.style.display = 'block';
+}
+
+function createErrorDiv() {
+  const div = document.createElement('div');
+  div.id = 'errorMessage';
+  div.style.cssText = 'margin-top: 15px; padding: 10px; background: #fee2e2; color: #dc2626; border-radius: 5px;';
+  document.querySelector('form').appendChild(div);
+  return div;
+}
+```
+
+---
+
+## STEP 10: Update Signup Frontend
+
+Update your signup success handler to show verification message:
+
+```javascript
+// In your signup function, after successful signup:
+async function handleSignup(event) {
+  event.preventDefault();
+  
+  const formData = {
+    email: document.getElementById('signupEmail').value,
+    password: document.getElementById('signupPassword').value,
+    // ... other fields
+  };
+  
+  try {
+    const response = await fetch('/api/signup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(formData)
+    });
+    
+    const data = await response.json();
+    
+    if (response.ok) {
+      // Show success message with verification instruction
+      showSuccessMessage(
+        '✅ Account created successfully! ' +
+        'Please check your email inbox for a verification link. ' +
+        'You must verify your email before you can log in.'
+      );
+      
+      // Optionally switch to login tab after 3 seconds
+      setTimeout(() => {
+        document.getElementById('loginTab').click();
+      }, 3000);
+    } else {
+      showError(data.error || 'Signup failed');
+    }
+  } catch (error) {
+    console.error('Signup error:', error);
+    showError('An error occurred. Please try again.');
+  }
+}
+
+function showSuccessMessage(message) {
+  const successDiv = document.getElementById('successMessage') || createSuccessDiv();
+  successDiv.textContent = message;
+  successDiv.style.display = 'block';
+  successDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function createSuccessDiv() {
+  const div = document.createElement('div');
+  div.id = 'successMessage';
+  div.style.cssText = 'margin-top: 15px; padding: 15px; background: #d1fae5; color: #065f46; border-radius: 5px; border: 1px solid #10b981;';
+  document.querySelector('form').appendChild(div);
+  return div;
+}
+```
+
+---
+
+## STEP 11: Environment Variables
+
+Add these to Railway:
+
+1. Go to Railway Dashboard → Your Project → Variables
+2. Add these variables:
+
+```
+RESEND_API_KEY=re_xxxxxxxxxxxxx
+APP_BASE_URL=https://jie-mastery-tutor-v2-production.up.railway.app
+```
+
+**To get RESEND_API_KEY:**
+1. Sign up at https://resend.com (free tier: 100 emails/day, 3,000/month)
+2. Go to API Keys section
+3. Create a new API key
+4. Copy and add to Railway
+
+**Note:** You can use Resend's test domain initially (emails will have "via resend.dev" in the from address). To use your own domain:
+1. Add your domain in Resend dashboard
+2. Add the DNS records they provide
+3. Verify domain
+4. Update the `from` address in email.js to use your domain
+
+---
+
+## STEP 12: Commit and Push
+
+```bash
+git add .
+git commit -m "Add complete email verification system with resend functionality"
+git push origin main
+```
+
+Railway will automatically redeploy.
+
+---
+
+## TESTING CHECKLIST:
+
+After deployment, test this complete flow:
+
+1. ✅ **Sign up with new email**
+   - Should see success message about checking email
+   
+2. ✅ **Check inbox**
+   - Should receive verification email within 1 minute
+   - Email should be well-formatted with button
+   
+3. ✅ **Click verification link**
+   - Should see success page
+   - Should say "Email Verified"
+   
+4. ✅ **Go back and try to log in**
+   - Should work now
+   
+5. ✅ **Sign up with another email but DON'T verify**
+   - Try to log in
+   - Should see yellow verification alert box
+   - Should see "Resend Verification Email" button
+   
+6. ✅ **Click "Resend Verification Email" button**
+   - Button should show "⏳ Sending..."
+   - Should see success message
+   - Should receive new email
+   
+7. ✅ **Test expired token**
+   - Wait 31 minutes OR manually update database:
+     ```sql
+     UPDATE users SET email_verification_expiry = NOW() - INTERVAL '1 hour' WHERE email = 'test@example.com';
+     ```
+   - Click old verification link
+   - Should see "Token Expired" message
+   
+8. ✅ **Test invalid token**
+   - Go to /api/verify-email?token=invalid123
+   - Should see "Invalid Token" message
+
+---
+
+## OPTIONAL: Add Verification Status to Dashboard
+
+After users log in, you can show their verification status:
+
+In your dashboard, add:
+
+```html
+<!-- Show this if NOT verified -->
+<div style="padding: 15px; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 5px; margin-bottom: 20px;">
+  <p style="margin: 0; color: #92400e;">
+    ⚠️ Your email is not verified. <a href="#" onclick="resendVerification()">Resend verification email</a>
+  </p>
+</div>
+```
+
+---
+
+## TROUBLESHOOTING:
+
+**Emails not sending?**
+- Check RESEND_API_KEY is correct in Railway variables
+- Check Resend dashboard for error logs
+- Verify you haven't exceeded free tier limits (100/day)
+
+**"Invalid credentials" error?**
+- Make sure email_verified column exists in database
+- Check if user.email_verified is properly set to false on signup
+
+**Verification link not working?**
+- Check APP_BASE_URL is correct (no trailing slash)
+- Verify the route is properly registered in your router
+- Check Railway logs for errors
+
+Let me know when deployed and I'll help test!
+```
+
+---
+
+**This complete prompt includes:**
+- ✅ Full backend implementation
+- ✅ Full frontend UI with yellow alert box
+- ✅ "Resend Verification Email" button with loading states
+- ✅ Success/error messages
+- ✅ All error handling
+- ✅ Beautiful email templates
+- ✅ Complete testing checklist
+- ✅ Troubleshooting guide
+
+**Ready to give to Agent3!** 🚀
