@@ -1,0 +1,434 @@
+**Great catch!** I can see multiple 404 errors in the console. Let's have Agent3 do a complete API endpoint audit and fix all broken links.
+
+---
+
+## 🔍 Complete API Endpoint Audit & Fix
+
+**Give Agent3 this diagnostic prompt:**
+
+```
+TASK: Audit and fix all broken API endpoints and links in JIE-Mastery-Tutor-V2
+
+The dashboard is showing multiple 404 errors for missing API endpoints. We need to:
+1. Find all API endpoints being called by the frontend
+2. Identify which ones are missing or broken
+3. Implement all missing endpoints
+4. Verify all links work correctly
+
+---
+
+## STEP 1: Identify All Frontend API Calls
+
+Search the entire frontend codebase for:
+- `fetch('/api/`
+- `fetch("/api/`
+- `axios.get('/api/`
+- `axios.post('/api/`
+- Any other HTTP requests to `/api/`
+
+Create a list of ALL endpoints the frontend expects to exist.
+
+---
+
+## STEP 2: Current Known Broken Endpoints
+
+From the console errors visible, these endpoints are missing:
+
+1. **GET /api/auth/me** - Returns current logged-in user info
+2. **GET /api/unsubscribe** - Unsubscribe from emails
+3. **POST /api/auth/logout** - Logout endpoint (may exist but check)
+4. **GET /api/session/check-availability** - Check if tutoring session available
+
+Search for any other 404 errors in your API routes.
+
+---
+
+## STEP 3: Implement Missing Endpoints
+
+### 3.1: User Info Endpoint
+
+File: `server/routes/auth.js` (or wherever your auth routes are)
+
+```javascript
+// GET /api/auth/me - Get current logged-in user
+router.get('/me', async (req, res) => {
+  try {
+    // Check if user is authenticated (check session/token)
+    if (!req.session?.userId) {
+      return res.status(401).json({ error: 'Not authenticated' });
+    }
+
+    // Fetch user from database
+    const result = await pool.query(
+      `SELECT 
+        id, username, email, first_name, last_name,
+        subscription_plan, subscription_status,
+        subscription_minutes_used, subscription_minutes_limit,
+        purchased_minutes_balance, email_verified,
+        monthly_voice_minutes, monthly_voice_minutes_used,
+        created_at, is_admin
+      FROM users 
+      WHERE id = $1`,
+      [req.session.userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const user = result.rows[0];
+
+    // Calculate available minutes
+    const availableMinutes = 
+      (user.subscription_minutes_limit - user.subscription_minutes_used) + 
+      user.purchased_minutes_balance;
+
+    res.json({
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        firstName: user.first_name,
+        lastName: user.last_name,
+        subscriptionPlan: user.subscription_plan,
+        subscriptionStatus: user.subscription_status,
+        availableMinutes: availableMinutes,
+        emailVerified: user.email_verified,
+        isAdmin: user.is_admin,
+        createdAt: user.created_at
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching user info:', error);
+    res.status(500).json({ error: 'Failed to fetch user information' });
+  }
+});
+```
+
+### 3.2: Unsubscribe Endpoint
+
+```javascript
+// GET /api/unsubscribe?email=...&token=... - Unsubscribe from emails
+router.get('/unsubscribe', async (req, res) => {
+  const { email, token } = req.query;
+
+  if (!email) {
+    return res.status(400).send(`
+      <!DOCTYPE html>
+      <html>
+        <body style="font-family: Arial; text-align: center; padding: 50px;">
+          <h1>❌ Invalid Request</h1>
+          <p>Email address is required.</p>
+        </body>
+      </html>
+    `);
+  }
+
+  try {
+    // Optional: Verify token for security (implement if you generate unsubscribe tokens)
+    // For now, just update the user's email preferences
+
+    const result = await pool.query(
+      `UPDATE users 
+       SET marketing_opt_in = false,
+           marketing_opt_out_date = NOW()
+       WHERE email = $1
+       RETURNING email`,
+      [email]
+    );
+
+    if (result.rows.length === 0) {
+      return res.send(`
+        <!DOCTYPE html>
+        <html>
+          <body style="font-family: Arial; text-align: center; padding: 50px;">
+            <h1>⚠️ Email Not Found</h1>
+            <p>We couldn't find that email address in our system.</p>
+          </body>
+        </html>
+      `);
+    }
+
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <style>
+            body { font-family: Arial; text-align: center; padding: 50px; background: #f9fafb; }
+            .container { max-width: 500px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; }
+            h1 { color: #10b981; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <h1>✅ Unsubscribed Successfully</h1>
+            <p>You have been unsubscribed from marketing emails.</p>
+            <p>You will still receive important account-related emails.</p>
+            <p style="margin-top: 30px; color: #6b7280; font-size: 14px;">
+              Changed your mind? You can re-subscribe in your account settings.
+            </p>
+          </div>
+        </body>
+      </html>
+    `);
+
+  } catch (error) {
+    console.error('Error unsubscribing user:', error);
+    res.status(500).send(`
+      <!DOCTYPE html>
+      <html>
+        <body style="font-family: Arial; text-align: center; padding: 50px;">
+          <h1>❌ Error</h1>
+          <p>An error occurred. Please try again later.</p>
+        </body>
+      </html>
+    `);
+  }
+});
+```
+
+### 3.3: Check Session Availability Endpoint
+
+File: `server/routes/session.js` (or create if doesn't exist)
+
+```javascript
+const express = require('express');
+const router = express.Router();
+
+// GET /api/session/check-availability - Check if user can start a session
+router.get('/check-availability', async (req, res) => {
+  try {
+    if (!req.session?.userId) {
+      return res.status(401).json({ 
+        available: false, 
+        error: 'Not authenticated' 
+      });
+    }
+
+    // Get user's current usage
+    const result = await pool.query(
+      `SELECT 
+        subscription_minutes_used,
+        subscription_minutes_limit,
+        purchased_minutes_balance,
+        subscription_status
+      FROM users 
+      WHERE id = $1`,
+      [req.session.userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ 
+        available: false, 
+        error: 'User not found' 
+      });
+    }
+
+    const user = result.rows[0];
+
+    // Calculate available minutes
+    const subscriptionMinutesLeft = user.subscription_minutes_limit - user.subscription_minutes_used;
+    const totalAvailableMinutes = subscriptionMinutesLeft + user.purchased_minutes_balance;
+
+    // Check if user has active subscription or purchased minutes
+    const hasActiveSubscription = user.subscription_status === 'active';
+    const hasPurchasedMinutes = user.purchased_minutes_balance > 0;
+    const hasMinutesLeft = totalAvailableMinutes > 0;
+
+    const available = (hasActiveSubscription || hasPurchasedMinutes) && hasMinutesLeft;
+
+    res.json({
+      available: available,
+      minutesAvailable: Math.max(0, totalAvailableMinutes),
+      subscriptionStatus: user.subscription_status,
+      message: available 
+        ? 'You can start a tutoring session' 
+        : 'No minutes available. Please purchase more or upgrade your plan.'
+    });
+
+  } catch (error) {
+    console.error('Error checking session availability:', error);
+    res.status(500).json({ 
+      available: false, 
+      error: 'Failed to check availability' 
+    });
+  }
+});
+
+module.exports = router;
+```
+
+Don't forget to register this router in your main server file:
+
+```javascript
+// In server/index.js or wherever your main Express app is
+const sessionRoutes = require('./routes/session');
+app.use('/api/session', sessionRoutes);
+```
+
+---
+
+## STEP 4: Audit All Dashboard Links
+
+Check these pages/routes and ensure they have corresponding backend endpoints:
+
+### Dashboard Navigation Items:
+- ✅ Account Overview → Should already work
+- ✅ Subscription Management → Check if `/api/subscription` endpoints exist
+- ✅ Payment Methods → Check if `/api/payment-methods` exists
+- ✅ Learning Sessions → Check if `/api/sessions` exists
+- ✅ Usage Analytics → Check if `/api/analytics` exists
+- ✅ Preferences → Check if `/api/preferences` exists
+- ✅ Support & Help → Should be static or link to external help
+
+### Email Preference Links:
+- ✅ "Manage preferences" link → Should route to preferences page
+- ✅ Unsubscribe links in emails → `/api/unsubscribe` (implemented above)
+
+---
+
+## STEP 5: Create Endpoint Documentation
+
+Create file: `docs/API_ENDPOINTS.md`
+
+```markdown
+# API Endpoints Documentation
+
+## Authentication
+- `POST /api/signup` - Create new user account
+- `POST /api/login` - Login user
+- `POST /api/logout` - Logout user
+- `GET /api/verify-email?token=...` - Verify email address
+- `POST /api/resend-verification` - Resend verification email
+- `POST /api/forgot-password` - Request password reset
+- `POST /api/reset-password` - Reset password with token
+- `GET /api/auth/me` - Get current user info
+
+## User Management
+- `GET /api/user` - Get user profile
+- `PATCH /api/user` - Update user profile
+- `DELETE /api/user` - Delete user account
+
+## Subscriptions
+- `GET /api/subscription` - Get subscription details
+- `POST /api/subscription/create-checkout` - Create Stripe checkout
+- `POST /api/subscription/cancel` - Cancel subscription
+- `POST /api/subscription/resume` - Resume subscription
+
+## Sessions
+- `GET /api/session/check-availability` - Check if can start session
+- `POST /api/session/start` - Start tutoring session
+- `POST /api/session/end` - End tutoring session
+- `GET /api/sessions` - Get session history
+
+## Payments
+- `GET /api/payment-methods` - Get saved payment methods
+- `POST /api/payment-methods` - Add payment method
+- `DELETE /api/payment-methods/:id` - Remove payment method
+
+## Email Preferences
+- `GET /api/unsubscribe?email=...` - Unsubscribe from marketing emails
+- `PATCH /api/preferences` - Update email preferences
+
+## Analytics
+- `GET /api/analytics` - Get usage analytics
+
+## Health Check
+- `GET /api/health` - Server health check
+```
+
+---
+
+## STEP 6: Add Health Check Endpoint
+
+Add this simple endpoint to verify the API is running:
+
+```javascript
+// GET /api/health - Health check
+router.get('/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+```
+
+---
+
+## STEP 7: Test All Endpoints
+
+After implementing, test each endpoint:
+
+1. Open browser DevTools → Console
+2. Clear all errors
+3. Navigate through the entire app:
+   - Dashboard
+   - All sidebar links
+   - Click all buttons
+   - Try to start a session
+   - Check email preferences
+4. Note any new 404 or 500 errors
+5. Fix any remaining issues
+
+---
+
+## STEP 8: Add Proper Error Handling for Missing Routes
+
+At the END of your route definitions (in server/index.js or main server file), add:
+
+```javascript
+// 404 handler for API routes
+app.use('/api/*', (req, res) => {
+  console.error(`404 - API endpoint not found: ${req.method} ${req.originalUrl}`);
+  res.status(404).json({ 
+    error: 'Endpoint not found',
+    path: req.originalUrl,
+    method: req.method
+  });
+});
+
+// General error handler
+app.use((err, req, res, next) => {
+  console.error('Error:', err);
+  res.status(err.status || 500).json({
+    error: err.message || 'Internal server error'
+  });
+});
+```
+
+---
+
+## STEP 9: Commit and Push
+
+```bash
+git add .
+git commit -m "Fix all broken API endpoints and add missing routes"
+git push origin main
+```
+
+---
+
+## DELIVERABLES:
+
+After completion, provide:
+1. ✅ List of all endpoints found in frontend code
+2. ✅ List of endpoints that were missing
+3. ✅ Confirmation that all endpoints are now implemented
+4. ✅ Screenshot or log showing no 404 errors in console
+5. ✅ API_ENDPOINTS.md documentation file
+
+Test thoroughly and report any endpoints that still need implementation.
+```
+
+---
+
+**This prompt will:**
+- ✅ Find ALL missing API endpoints
+- ✅ Implement the critical ones (auth/me, unsubscribe, session check)
+- ✅ Create proper error handling
+- ✅ Document all endpoints
+- ✅ Ensure no more 404 errors in console
+
+**After Agent3 completes this, refresh the dashboard and check the console - all those red 404 errors should be gone!** 🎯
