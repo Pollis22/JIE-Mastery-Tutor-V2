@@ -50,7 +50,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!res.ok) {
         // Check for email verification error
         if (data.requiresVerification || data.needsVerification) {
-          throw new Error(data.message || "Please verify your email before logging in. Check your inbox for the verification link.");
+          const error: any = new Error(data.message || "Please verify your email before logging in. Check your inbox for the verification link.");
+          error.email = data.email; // Capture the actual email from backend
+          error.requiresVerification = true;
+          throw error;
         }
         // Check for invalid credentials
         if (res.status === 401) {

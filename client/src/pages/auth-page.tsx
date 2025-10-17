@@ -12,7 +12,10 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { useEffect, useState } from "react";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, Mail } from "lucide-react";
+import { useMutation } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import jieLogo from "@/assets/jie-mastery-logo.png";
 import authHeroImage from "@assets/Create_an_image_of_an_AI_robot_tutoring_a_real_tee-1759437278109_1759521800759.png";
 
@@ -44,9 +47,31 @@ type RegisterForm = z.infer<typeof registerSchema>;
 
 export default function AuthPage() {
   const { user, loginMutation, registerMutation } = useAuth();
+  const { toast } = useToast();
   const [, setLocation] = useLocation();
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [showRegisterPassword, setShowRegisterPassword] = useState(false);
+  const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
+
+  const resendVerificationMutation = useMutation({
+    mutationFn: async (email: string) => {
+      const res = await apiRequest("POST", "/api/auth/resend-verification", { email });
+      return await res.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Verification email sent!",
+        description: "Please check your inbox for the verification link.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to send verification email",
+        description: error.message || "Please try again later.",
+        variant: "destructive",
+      });
+    },
+  });
 
   const loginForm = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
@@ -83,9 +108,21 @@ export default function AuthPage() {
     console.log('[FORM] handleLogin called with:', { email: data.email, hasPassword: !!data.password });
     try {
       console.log('[FORM] Calling mutateAsync...');
+      setUnverifiedEmail(null); // Reset verification state
       await loginMutation.mutateAsync(data);
       console.log('[FORM] mutateAsync completed successfully');
-    } catch (error) {
+    } catch (error: any) {
+      // Check if this is a verification error and capture the email from the error
+      if (error.requiresVerification && error.email) {
+        // Use the email provided by the backend (works even if user logged in with username)
+        setUnverifiedEmail(error.email);
+      } else if (error.message && (error.message.includes("verify your email") || error.message.includes("verification"))) {
+        // Fallback: if the input looks like an email, use it
+        const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (emailPattern.test(data.email)) {
+          setUnverifiedEmail(data.email);
+        }
+      }
       // Error is handled by mutation's onError
       console.error('[FORM] Login error:', error);
     }
@@ -214,6 +251,32 @@ export default function AuthPage() {
                         >
                           {loginMutation.isPending ? "Signing in..." : "Sign In"}
                         </Button>
+                        
+                        {/* Email Verification Alert */}
+                        {unverifiedEmail && (
+                          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4 space-y-3" data-testid="alert-email-verification">
+                            <div className="flex items-start gap-3">
+                              <Mail className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5" />
+                              <div className="flex-1">
+                                <h4 className="font-semibold text-amber-900 dark:text-amber-100">Email Not Verified</h4>
+                                <p className="text-sm text-amber-800 dark:text-amber-200 mt-1">
+                                  Please check your inbox and click the verification link we sent to <strong>{unverifiedEmail}</strong>
+                                </p>
+                              </div>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => resendVerificationMutation.mutate(unverifiedEmail)}
+                              disabled={resendVerificationMutation.isPending}
+                              className="w-full border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/30"
+                              data-testid="button-resend-verification"
+                            >
+                              {resendVerificationMutation.isPending ? "Sending..." : "Resend Verification Email"}
+                            </Button>
+                          </div>
+                        )}
                         
                         <div className="text-center">
                           <Button 
