@@ -63,6 +63,16 @@ export interface IStorage {
   updateUserSettings(userId: string, settings: Partial<User>): Promise<User>;
   updateUserStripeInfo(userId: string, customerId: string, subscriptionId?: string | null): Promise<User>;
   updateUserSubscription(userId: string, plan: 'starter' | 'standard' | 'pro' | 'single' | 'all', status: 'active' | 'canceled' | 'paused', monthlyMinutes?: number): Promise<User>;
+  updateUserTrial(userId: string, trialData: {
+    isTrialActive?: boolean;
+    trialStartedAt?: Date;
+    trialEndsAt?: Date;
+    trialMinutesLimit?: number;
+    trialMinutesUsed?: number;
+    trialReminderSent?: boolean;
+    subscriptionStatus?: string;
+    billingCycleStart?: Date;
+  }): Promise<User>;
   updateUserVoiceUsage(userId: string, minutesUsed: number): Promise<void>;
   resetUserVoiceUsage(userId: string): Promise<void>;
   canUserUseVoice(userId: string): Promise<boolean>;
@@ -305,6 +315,29 @@ export class DatabaseStorage implements IStorage {
     if (monthlyMinutes !== undefined) {
       updateData.monthlyVoiceMinutes = monthlyMinutes;
     }
+
+    const [user] = await db
+      .update(users)
+      .set(updateData)
+      .where(eq(users.id, userId))
+      .returning();
+    return user;
+  }
+
+  async updateUserTrial(userId: string, trialData: {
+    isTrialActive?: boolean;
+    trialStartedAt?: Date;
+    trialEndsAt?: Date;
+    trialMinutesLimit?: number;
+    trialMinutesUsed?: number;
+    trialReminderSent?: boolean;
+    subscriptionStatus?: string;
+    billingCycleStart?: Date;
+  }): Promise<User> {
+    const updateData: any = {
+      ...trialData,
+      updatedAt: new Date(),
+    };
 
     const [user] = await db
       .update(users)
