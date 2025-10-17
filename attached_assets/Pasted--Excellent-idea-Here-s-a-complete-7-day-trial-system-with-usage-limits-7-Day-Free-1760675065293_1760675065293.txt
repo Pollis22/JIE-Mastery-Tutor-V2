@@ -1,0 +1,892 @@
+**Excellent idea! Here’s a complete 7-day trial system with usage limits:**
+
+-----
+
+## 🎁 7-Day Free Trial System (30 Minutes Max)
+
+**Give Agent3 this comprehensive prompt:**
+
+```
+TASK: Add 7-day free trial system with 30-minute usage limit
+
+Users get a 7-day free trial with 30 minutes of tutoring. Credit card required upfront. They receive a reminder email 1 day before trial ends. After 7 days, they're automatically charged.
+
+---
+
+## OVERVIEW OF TRIAL FLOW:
+
+1. User signs up → Provides credit card → Trial starts (7 days, 30 min limit)
+2. User can use up to 30 minutes of tutoring during trial
+3. 6 days later → Automatic reminder email sent ("Trial ends tomorrow")
+4. After 7 days → Stripe automatically charges the card
+5. User continues with paid plan (60 min/month or whatever they selected)
+
+---
+
+## STEP 1: Update Database Schema
+
+File: `scripts/init-railway-db.js`
+
+Add trial tracking columns:
+
+```javascript
+await pool.query(`
+  -- Trial management columns
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_started_at TIMESTAMPTZ;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMPTZ;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_minutes_limit INTEGER DEFAULT 30;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_minutes_used INTEGER DEFAULT 0;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_reminder_sent BOOLEAN DEFAULT false;
+  ALTER TABLE users ADD COLUMN IF NOT EXISTS is_trial BOOLEAN DEFAULT false;
+`);
+console.log('✅ Trial management columns added');
+```
+
+-----
+
+## STEP 2: Update Email Service
+
+File: `server/services/email.js`
+
+Add trial reminder email function:
+
+```javascript
+async function sendTrialEndingEmail(email, userName, hoursRemaining) {
+  try {
+    await resend.emails.send({
+      from: 'JIE Mastery Tutor <noreply@jiemastery.ai>',
+      to: email,
+      subject: '⏰ Your Free Trial Ends Tomorrow - JIE Mastery Tutor',
+      html: `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <style>
+              body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+              .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+              .header { background: #dc2626; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+              .content { background: #f9fafb; padding: 30px; border: 1px solid #e5e7eb; }
+              .highlight-box { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin: 20px 0; }
+              .button { display: inline-block; background: #dc2626; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+              .footer { text-align: center; padding: 20px; color: #6b7280; font-size: 12px; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <div class="header">
+                <h1>⏰ Your Trial Ends Tomorrow</h1>
+              </div>
+              <div class="content">
+                <h2>Hi ${userName}! 👋</h2>
+                <p>Your 7-day free trial of JIE Mastery Tutor is ending soon!</p>
+                
+                <div class="highlight-box">
+                  <strong>⏰ Time Remaining:</strong> Approximately ${hoursRemaining} hours<br>
+                  <strong>📅 Trial Ends:</strong> Tomorrow at this time<br>
+                  <strong>💳 Next Step:</strong> Your subscription will automatically start
+                </div>
+                
+                <h3>What happens next?</h3>
+                <ul>
+                  <li>Your trial will end tomorrow</li>
+                  <li>Your card will be charged for your selected plan</li>
+                  <li>You'll get full access to unlimited tutoring sessions</li>
+                </ul>
+                
+                <h3>Want to cancel?</h3>
+                <p>No problem! You can cancel anytime before your trial ends:</p>
+                <a href="${process.env.APP_BASE_URL}/dashboard/subscription" class="button">Manage Subscription</a>
+                
+                <p>If you have any questions, just reply to this email!</p>
+                
+                <p>Thanks for trying JIE Mastery Tutor! 🎓</p>
+              </div>
+              <div class="footer">
+                <p>© ${new Date().getFullYear()} JIE Mastery Tutor. All rights reserved.</p>
+              </div>
+            </div>
+          </body>
+        </html>
+      `
+    });
+    console.log(`✅ Trial ending email sent to ${email}`);
+    return true;
+  } catch (error) {
+    console.error('❌ Failed to send trial ending email:', error);
+    return false;
+  }
+}
+
+async function sendTrialExpiredEmail(email, userName) {
+  try {
+    await resend.emails.send({
+      from: 'JIE Mastery Tutor <noreply@jiemastery.ai>',
+      to: email,
+      subject: '🎉 Welcome to Your Paid Subscription - JIE Mastery Tutor',
+      html: `
+        <!DOCTYPE html>
+        <html>
+          <body style="font-family: Arial, sans-serif; line-height: 1.6; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <h2>🎉 Welcome to JIE Mastery Tutor!</h2>
+            <p>Hi ${userName},</p>
+            <p>Your 7-day trial has ended and your paid subscription is now active!</p>
+            
+            <div style="background: #d1fae5; border-left: 4px solid #10b981; padding: 15px; margin: 20px 0;">
+              <strong>✅ Your subscription is now active</strong><br>
+              You now have full access to all tutoring features!
+            </div>
+            
+            <p>Thank you for choosing JIE Mastery Tutor. We're excited to continue your learning journey!</p>
+            
+            <a href="${process.env.APP_BASE_URL}/dashboard" style="display: inline-block; background: #dc2626; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0;">Start Learning</a>
+          </body>
+        </html>
+      `
+    });
+    console.log(`✅ Trial expired email sent to ${email}`);
+    return true;
+  } catch (error) {
+    console.error('❌ Failed to send trial expired email:', error);
+    return false;
+  }
+}
+
+module.exports = {
+  sendVerificationEmail,
+  sendPasswordResetEmail,
+  sendTrialEndingEmail,
+  sendTrialExpiredEmail
+};
+```
+
+-----
+
+## STEP 3: Update Stripe Subscription Creation
+
+File: `server/routes/subscription.js` (or wherever Stripe checkout is handled)
+
+Update to create subscription with trial:
+
+```javascript
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+
+// POST /api/create-checkout-session (or similar route)
+router.post('/create-checkout-session', async (req, res) => {
+  const { userId, priceId, planName } = req.body;
+
+  try {
+    // Get user from database
+    const userResult = await pool.query(
+      'SELECT * FROM users WHERE id = $1',
+      [userId]
+    );
+    
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const user = userResult.rows[0];
+
+    // Create or retrieve Stripe customer
+    let stripeCustomerId = user.stripe_customer_id;
+    
+    if (!stripeCustomerId) {
+      const customer = await stripe.customers.create({
+        email: user.email,
+        metadata: {
+          userId: user.id,
+          userName: `${user.first_name} ${user.last_name}`
+        }
+      });
+      
+      stripeCustomerId = customer.id;
+      
+      // Save Stripe customer ID
+      await pool.query(
+        'UPDATE users SET stripe_customer_id = $1 WHERE id = $2',
+        [stripeCustomerId, user.id]
+      );
+    }
+
+    // Create checkout session with 7-day trial
+    const session = await stripe.checkout.sessions.create({
+      customer: stripeCustomerId,
+      payment_method_types: ['card'],
+      line_items: [
+        {
+          price: priceId, // Your Stripe price ID (e.g., price_xxxxx)
+          quantity: 1,
+        }
+      ],
+      mode: 'subscription',
+      
+      // TRIAL CONFIGURATION - This is the key part!
+      subscription_data: {
+        trial_period_days: 7, // 7-day free trial
+        metadata: {
+          userId: user.id,
+          trialMinutesLimit: 30
+        }
+      },
+      
+      // Payment required upfront (card is authorized but not charged until trial ends)
+      payment_method_collection: 'always',
+      
+      success_url: `${process.env.APP_BASE_URL}/subscription-success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.APP_BASE_URL}/pricing`,
+      
+      allow_promotion_codes: true, // Allow promo codes
+    });
+
+    res.json({ url: session.url });
+
+  } catch (error) {
+    console.error('❌ Error creating checkout session:', error);
+    res.status(500).json({ error: 'Failed to create checkout session' });
+  }
+});
+```
+
+-----
+
+## STEP 4: Handle Successful Subscription
+
+Create/update route to handle successful trial start:
+
+```javascript
+// GET /subscription-success?session_id=...
+router.get('/subscription-success', async (req, res) => {
+  const { session_id } = req.query;
+
+  if (!session_id) {
+    return res.redirect('/pricing');
+  }
+
+  try {
+    // Retrieve the session from Stripe
+    const session = await stripe.checkout.sessions.retrieve(session_id);
+    
+    if (!session) {
+      return res.redirect('/pricing');
+    }
+
+    // Get subscription details
+    const subscription = await stripe.subscriptions.retrieve(session.subscription);
+    
+    // Calculate trial end date
+    const trialEnd = new Date(subscription.trial_end * 1000); // Convert Unix timestamp
+    const trialStart = new Date();
+
+    // Update user in database
+    const result = await pool.query(
+      `UPDATE users SET 
+        stripe_subscription_id = $1,
+        subscription_status = 'trialing',
+        subscription_plan = $2,
+        is_trial = true,
+        trial_started_at = $3,
+        trial_ends_at = $4,
+        trial_minutes_limit = 30,
+        trial_minutes_used = 0,
+        trial_reminder_sent = false,
+        billing_cycle_start = $4
+      WHERE stripe_customer_id = $5
+      RETURNING id, email, first_name`,
+      [
+        subscription.id,
+        subscription.items.data[0].price.nickname || 'starter',
+        trialStart,
+        trialEnd,
+        session.customer
+      ]
+    );
+
+    if (result.rows.length === 0) {
+      console.error('❌ Failed to update user with trial info');
+      return res.redirect('/dashboard?error=update_failed');
+    }
+
+    console.log(`✅ Trial started for user ${result.rows[0].email}`);
+
+    // Redirect to success page
+    res.redirect('/trial-started');
+
+  } catch (error) {
+    console.error('❌ Error processing subscription success:', error);
+    res.redirect('/dashboard?error=processing_failed');
+  }
+});
+```
+
+-----
+
+## STEP 5: Create Trial Success Page
+
+Create file: `public/trial-started.html`
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trial Started - JIE Mastery Tutor</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f9fafb;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+      padding: 20px;
+    }
+    .container {
+      max-width: 600px;
+      background: white;
+      padding: 40px;
+      border-radius: 10px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+      text-align: center;
+    }
+    h1 { color: #10b981; margin-bottom: 10px; }
+    .trial-info {
+      background: #d1fae5;
+      border-left: 4px solid #10b981;
+      padding: 20px;
+      margin: 30px 0;
+      text-align: left;
+    }
+    .trial-info strong { color: #065f46; }
+    .button {
+      display: inline-block;
+      background: #dc2626;
+      color: white;
+      padding: 15px 40px;
+      text-decoration: none;
+      border-radius: 5px;
+      margin-top: 20px;
+      font-weight: bold;
+    }
+    .button:hover { background: #b91c1c; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎉 Your Free Trial Has Started!</h1>
+    <p>Welcome to JIE Mastery Tutor! Your 7-day free trial is now active.</p>
+    
+    <div class="trial-info">
+      <p><strong>✅ Trial Duration:</strong> 7 days</p>
+      <p><strong>⏱️ Free Minutes:</strong> 30 minutes of AI tutoring</p>
+      <p><strong>💳 Billing:</strong> No charge until trial ends</p>
+      <p><strong>📧 Reminder:</strong> We'll email you 1 day before your trial ends</p>
+    </div>
+    
+    <p><strong>What's next?</strong></p>
+    <p>Start your first tutoring session and experience personalized AI learning!</p>
+    
+    <a href="/dashboard" class="button">Start Learning Now</a>
+    
+    <p style="margin-top: 30px; color: #6b7280; font-size: 14px;">
+      You can cancel anytime from your dashboard. No questions asked.
+    </p>
+  </div>
+</body>
+</html>
+```
+
+-----
+
+## STEP 6: Track Trial Minutes Usage
+
+Update your session tracking code to respect trial limits:
+
+File: `server/routes/session.js` (or wherever session tracking happens)
+
+```javascript
+// Before starting a tutoring session, check trial limits
+router.post('/session/start', async (req, res) => {
+  const { userId } = req.body;
+
+  try {
+    // Get user's trial status
+    const result = await pool.query(
+      `SELECT 
+        is_trial, 
+        trial_minutes_used, 
+        trial_minutes_limit,
+        trial_ends_at,
+        subscription_minutes_used,
+        subscription_minutes_limit
+      FROM users WHERE id = $1`,
+      [userId]
+    );
+
+    const user = result.rows[0];
+
+    // Check if user is on trial
+    if (user.is_trial) {
+      // Check if trial has expired
+      if (new Date() > new Date(user.trial_ends_at)) {
+        return res.status(403).json({ 
+          error: 'Your trial has expired. Please subscribe to continue.',
+          trialExpired: true
+        });
+      }
+
+      // Check if trial minutes exhausted
+      if (user.trial_minutes_used >= user.trial_minutes_limit) {
+        return res.status(403).json({ 
+          error: `You've used all ${user.trial_minutes_limit} trial minutes. Upgrade to continue!`,
+          minutesExhausted: true,
+          remainingDays: Math.ceil((new Date(user.trial_ends_at) - new Date()) / (1000 * 60 * 60 * 24))
+        });
+      }
+
+      // Calculate remaining trial minutes
+      const remainingMinutes = user.trial_minutes_limit - user.trial_minutes_used;
+      
+      res.json({
+        success: true,
+        isTrial: true,
+        remainingMinutes: remainingMinutes,
+        message: `You have ${remainingMinutes} minutes remaining in your trial`
+      });
+
+    } else {
+      // Regular subscription logic
+      if (user.subscription_minutes_used >= user.subscription_minutes_limit) {
+        return res.status(403).json({ 
+          error: 'Monthly minute limit reached. Purchase more minutes or wait for reset.',
+          minutesExhausted: true
+        });
+      }
+
+      res.json({
+        success: true,
+        isTrial: false,
+        remainingMinutes: user.subscription_minutes_limit - user.subscription_minutes_used
+      });
+    }
+
+  } catch (error) {
+    console.error('❌ Error checking session limits:', error);
+    res.status(500).json({ error: 'Failed to start session' });
+  }
+});
+
+// After session ends, update minutes used
+router.post('/session/end', async (req, res) => {
+  const { userId, minutesUsed } = req.body;
+
+  try {
+    // Get user's trial status
+    const result = await pool.query(
+      'SELECT is_trial FROM users WHERE id = $1',
+      [userId]
+    );
+
+    const user = result.rows[0];
+
+    if (user.is_trial) {
+      // Update trial minutes
+      await pool.query(
+        `UPDATE users 
+         SET trial_minutes_used = trial_minutes_used + $1 
+         WHERE id = $2`,
+        [minutesUsed, userId]
+      );
+    } else {
+      // Update subscription minutes
+      await pool.query(
+        `UPDATE users 
+         SET subscription_minutes_used = subscription_minutes_used + $1 
+         WHERE id = $2`,
+        [minutesUsed, userId]
+      );
+    }
+
+    res.json({ success: true });
+
+  } catch (error) {
+    console.error('❌ Error updating minutes:', error);
+    res.status(500).json({ error: 'Failed to update session minutes' });
+  }
+});
+```
+
+-----
+
+## STEP 7: Create Trial Monitoring Cron Job
+
+Create file: `server/jobs/trial-monitor.js`
+
+```javascript
+const { Pool } = require('pg');
+const { sendTrialEndingEmail } = require('../services/email');
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL
+});
+
+async function checkTrialReminders() {
+  console.log('🔍 Checking for trials ending soon...');
+
+  try {
+    // Find users whose trial ends in 24 hours and haven't been sent a reminder
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const today = new Date();
+
+    const result = await pool.query(
+      `SELECT id, email, first_name, trial_ends_at 
+       FROM users 
+       WHERE is_trial = true 
+         AND trial_reminder_sent = false 
+         AND trial_ends_at > $1 
+         AND trial_ends_at <= $2`,
+      [today, tomorrow]
+    );
+
+    console.log(`📧 Found ${result.rows.length} users to remind`);
+
+    for (const user of result.rows) {
+      const hoursRemaining = Math.ceil(
+        (new Date(user.trial_ends_at) - new Date()) / (1000 * 60 * 60)
+      );
+
+      // Send reminder email
+      const sent = await sendTrialEndingEmail(
+        user.email,
+        user.first_name || 'there',
+        hoursRemaining
+      );
+
+      if (sent) {
+        // Mark reminder as sent
+        await pool.query(
+          'UPDATE users SET trial_reminder_sent = true WHERE id = $1',
+          [user.id]
+        );
+        console.log(`✅ Reminder sent to ${user.email}`);
+      }
+    }
+
+  } catch (error) {
+    console.error('❌ Error checking trial reminders:', error);
+  }
+}
+
+// Run every hour
+setInterval(checkTrialReminders, 60 * 60 * 1000);
+
+// Run immediately on startup
+checkTrialReminders();
+
+module.exports = { checkTrialReminders };
+```
+
+-----
+
+## STEP 8: Start Cron Job in Server
+
+File: `server/index.js` (or your main server file)
+
+Add at the top after other imports:
+
+```javascript
+// Start trial monitoring (after other imports)
+require('./jobs/trial-monitor');
+
+console.log('✅ Trial monitoring service started');
+```
+
+-----
+
+## STEP 9: Handle Stripe Webhooks
+
+Create/update webhook handler to detect when trial ends:
+
+File: `server/routes/webhooks.js`
+
+```javascript
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const { sendTrialExpiredEmail } = require('../services/email');
+
+router.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  let event;
+
+  try {
+    event = stripe.webhooks.constructEvent(
+      req.body,
+      sig,
+      process.env.STRIPE_WEBHOOK_SECRET
+    );
+  } catch (err) {
+    console.error('⚠️ Webhook signature verification failed:', err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  // Handle the event
+  switch (event.type) {
+    case 'customer.subscription.trial_will_end':
+      // Stripe sends this 3 days before trial ends (backup to our own reminder)
+      console.log('⏰ Trial ending soon event received');
+      break;
+
+    case 'customer.subscription.updated':
+      // This fires when trial ends and becomes active subscription
+      const subscription = event.data.object;
+      
+      if (subscription.status === 'active' && subscription.trial_end) {
+        // Trial just ended and subscription is now active
+        await handleTrialEnded(subscription);
+      }
+      break;
+
+    case 'invoice.payment_succeeded':
+      // First payment after trial
+      console.log('💰 Payment succeeded:', event.data.object.id);
+      break;
+
+    case 'invoice.payment_failed':
+      // Payment failed after trial
+      console.log('❌ Payment failed:', event.data.object.id);
+      break;
+
+    default:
+      console.log(`Unhandled event type ${event.type}`);
+  }
+
+  res.json({ received: true });
+});
+
+async function handleTrialEnded(subscription) {
+  console.log('🎉 Trial ended, converting to paid subscription');
+
+  try {
+    // Update user in database
+    const result = await pool.query(
+      `UPDATE users SET 
+        is_trial = false,
+        subscription_status = 'active',
+        trial_reminder_sent = true
+      WHERE stripe_subscription_id = $1
+      RETURNING email, first_name`,
+      [subscription.id]
+    );
+
+    if (result.rows.length > 0) {
+      const user = result.rows[0];
+      
+      // Send welcome-to-paid email
+      await sendTrialExpiredEmail(user.email, user.first_name || 'there');
+      
+      console.log(`✅ User ${user.email} converted from trial to paid`);
+    }
+
+  } catch (error) {
+    console.error('❌ Error handling trial end:', error);
+  }
+}
+
+module.exports = router;
+```
+
+-----
+
+## STEP 10: Update Dashboard to Show Trial Status
+
+Update your dashboard HTML to display trial information:
+
+```html
+<!-- Add to dashboard -->
+<div id="trialBanner" style="display: none; background: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; margin-bottom: 20px; border-radius: 5px;">
+  <h3 style="margin: 0 0 10px 0; color: #92400e;">🎁 Free Trial Active</h3>
+  <p style="margin: 0; color: #78350f;">
+    <strong id="trialDaysRemaining"></strong> days remaining • 
+    <strong id="trialMinutesRemaining"></strong> minutes left
+  </p>
+  <p style="margin: 10px 0 0 0; font-size: 14px; color: #78350f;">
+    Your card will be charged when your trial ends.
+    <a href="/dashboard/subscription" style="color: #dc2626; font-weight: bold;">Manage subscription</a>
+  </p>
+</div>
+
+<script>
+// Fetch and display trial status
+async function loadTrialStatus() {
+  try {
+    const response = await fetch('/api/user/trial-status');
+    const data = await response.json();
+    
+    if (data.isTrial) {
+      document.getElementById('trialBanner').style.display = 'block';
+      document.getElementById('trialDaysRemaining').textContent = data.daysRemaining;
+      document.getElementById('trialMinutesRemaining').textContent = data.minutesRemaining;
+    }
+  } catch (error) {
+    console.error('Error loading trial status:', error);
+  }
+}
+
+loadTrialStatus();
+</script>
+```
+
+Add the API endpoint:
+
+```javascript
+// GET /api/user/trial-status
+router.get('/user/trial-status', async (req, res) => {
+  const userId = req.session.userId; // Or however you get current user
+
+  try {
+    const result = await pool.query(
+      `SELECT 
+        is_trial,
+        trial_ends_at,
+        trial_minutes_used,
+        trial_minutes_limit
+      FROM users WHERE id = $1`,
+      [userId]
+    );
+
+    const user = result.rows[0];
+
+    if (user.is_trial) {
+      const daysRemaining = Math.ceil(
+        (new Date(user.trial_ends_at) - new Date()) / (1000 * 60 * 60 * 24)
+      );
+      const minutesRemaining = user.trial_minutes_limit - user.trial_minutes_used;
+
+      res.json({
+        isTrial: true,
+        daysRemaining,
+        minutesRemaining,
+        trialEndsAt: user.trial_ends_at
+      });
+    } else {
+      res.json({ isTrial: false });
+    }
+
+  } catch (error) {
+    console.error('Error getting trial status:', error);
+    res.status(500).json({ error: 'Failed to get trial status' });
+  }
+});
+```
+
+-----
+
+## STEP 11: Set Up Stripe Webhook
+
+1. Go to Stripe Dashboard → Developers → Webhooks
+1. Click “Add endpoint”
+1. Enter URL: `https://jie-mastery-tutor-v2-production.up.railway.app/api/webhook`
+1. Select events to listen for:
+
+- `customer.subscription.trial_will_end`
+- `customer.subscription.updated`
+- `invoice.payment_succeeded`
+- `invoice.payment_failed`
+
+1. Copy the webhook signing secret
+1. Add to Railway environment variables as `STRIPE_WEBHOOK_SECRET`
+
+-----
+
+## STEP 12: Environment Variables
+
+Add these to Railway:
+
+```
+STRIPE_SECRET_KEY=sk_live_xxxxxxxxxxxxx
+STRIPE_WEBHOOK_SECRET=whsec_xxxxxxxxxxxxx
+```
+
+-----
+
+## STEP 13: Commit and Push
+
+```bash
+git add .
+git commit -m "Add 7-day free trial system with 30-minute limit and email reminders"
+git push origin main
+```
+
+-----
+
+## TESTING CHECKLIST:
+
+1. ✅ **Sign up with test card** (use Stripe test mode)
+
+- Card: 4242 4242 4242 4242
+- Should redirect to trial-started page
+
+1. ✅ **Check database**
+
+- Verify trial columns populated
+- `is_trial` should be true
+- `trial_ends_at` should be 7 days from now
+
+1. ✅ **Start tutoring session**
+
+- Should show “X minutes remaining in trial”
+- Use some minutes
+- Check database that `trial_minutes_used` incremented
+
+1. ✅ **Try to exceed 30 minutes**
+
+- Should block with error message
+
+1. ✅ **Check trial reminder (testing)**
+
+- Manually set `trial_ends_at` to tomorrow in database
+- Wait for cron job to run (or trigger manually)
+- Should receive reminder email
+
+1. ✅ **Test trial expiry**
+
+- In Stripe dashboard, end trial early
+- Should trigger webhook
+- Database should update to `is_trial = false`
+- Should receive “welcome to paid” email
+
+-----
+
+## PRODUCTION NOTES:
+
+**Stripe Test Mode vs Live Mode:**
+
+- Test everything in Stripe test mode first
+- Use test cards (4242 4242 4242 4242)
+- Switch to live mode only when ready for real customers
+- Create separate webhook endpoints for test and live
+
+**Trial vs Promo Code:**
+
+- Trial = 7 days, 30 minutes, requires card upfront, auto-charges
+- Promo code = Can be longer, can be more minutes, may not require card
+
+You can offer BOTH - promo code for completely free testing, trial for serious users who want to continue.
+
+Let me know if you want me to create the promo code system too!
+
+```
+---
+
+**This complete system includes:**
+- ✅ 7-day trial with credit card required
+- ✅ 30-minute usage limit during trial
+- ✅ Automatic email reminder 1 day before expiry
+- ✅ Automatic billing after trial ends
+- ✅ Trial status displayed on dashboard
+- ✅ Proper webhook handling
+- ✅ Cron job for monitoring
+- ✅ Complete testing guide
+
+**Ready for Agent3!** 🚀​​​​​​​​​​​​​​​​
+```

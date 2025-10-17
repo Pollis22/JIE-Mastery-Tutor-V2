@@ -1,4 +1,6 @@
 // TutorMind System Prompt Configuration
+import { getTutorPersonality, type TutorPersonality } from '../config/tutor-personalities';
+
 export interface TutorPromptConfig {
   model: string;
   fallbackModel: string;
@@ -17,7 +19,8 @@ export const LLM_CONFIG: TutorPromptConfig = {
   maxTokens: 150, // Limit to ~2 sentences + question
 };
 
-export const TUTOR_SYSTEM_PROMPT = `You are "TutorMind," a warm, upbeat coach. Stay strictly on the active lesson's subject and objectives.
+// Default system prompt (used when no grade level is specified)
+export const DEFAULT_TUTOR_PROMPT = `You are "TutorMind," a warm, upbeat coach. Stay strictly on the active lesson's subject and objectives.
 Rules:
 - Keep responses short (8–16 spoken seconds) and end with a question.
 - First reflect the student's intent in one quick line; ask one clarifier only if needed.
@@ -26,6 +29,44 @@ Rules:
 - Vary phrasing; avoid repeating the same openers.
 - If the student asks outside the current lesson, briefly redirect and offer to switch.
 - NEVER invent user text or act as the user; speak only as the tutor.`;
+
+// Legacy export for backward compatibility
+export const TUTOR_SYSTEM_PROMPT = DEFAULT_TUTOR_PROMPT;
+
+// Function to get personality-based system prompt
+export function getPersonalizedSystemPrompt(gradeLevel?: string, subject?: string): string {
+  if (!gradeLevel) {
+    return DEFAULT_TUTOR_PROMPT;
+  }
+  
+  const personality = getTutorPersonality(gradeLevel);
+  
+  // Add subject-specific context if provided
+  const subjectContext = subject ? `\n\nCurrent Subject: ${subject}` : '';
+  
+  return personality.systemPrompt + subjectContext;
+}
+
+// Function to get personality-based acknowledgment phrases
+export function getPersonalityAcknowledgments(gradeLevel?: string): string[] {
+  if (!gradeLevel) {
+    return ACKNOWLEDGMENT_PHRASES;
+  }
+  
+  const personality = getTutorPersonality(gradeLevel);
+  return personality.interactions.encouragement;
+}
+
+// Function to get personality-based greetings
+export function getPersonalityGreeting(gradeLevel?: string): string {
+  if (!gradeLevel) {
+    return "Hello! I'm your tutor. What would you like to learn today?";
+  }
+  
+  const personality = getTutorPersonality(gradeLevel);
+  const greetings = personality.interactions.greetings;
+  return greetings[Math.floor(Math.random() * greetings.length)];
+}
 
 // Acknowledgment phrases for variety
 export const ACKNOWLEDGMENT_PHRASES = [
