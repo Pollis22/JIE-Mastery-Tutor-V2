@@ -143,7 +143,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const emailStr = Array.isArray(email) ? email[0] : email;
-      const user = await storage.getUserByEmail(emailStr);
+      const user = await storage.getUserByEmail(emailStr as string);
       
       if (!user) {
         return res.send(`
