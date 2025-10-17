@@ -10,7 +10,12 @@ export function TrialStatusBanner() {
   const [timeRemaining, setTimeRemaining] = useState<string>('');
 
   // Fetch user data to get trial information
-  const { data: user } = useQuery({
+  const { data: user } = useQuery<{
+    isTrialActive?: boolean;
+    trialEndsAt?: string;
+    trialMinutesUsed?: number;
+    trialMinutesLimit?: number;
+  }>({
     queryKey: ['/api/auth/me'],
     refetchInterval: 60000, // Refresh every minute
   });
@@ -19,6 +24,8 @@ export function TrialStatusBanner() {
     if (!user?.isTrialActive || !user?.trialEndsAt) return;
 
     const updateTimeRemaining = () => {
+      if (!user?.trialEndsAt) return;
+      
       const now = new Date();
       const trialEnd = new Date(user.trialEndsAt);
       const diff = trialEnd.getTime() - now.getTime();
@@ -64,7 +71,7 @@ export function TrialStatusBanner() {
   const percentageUsed = (minutesUsed / minutesLimit) * 100;
 
   // Determine alert variant based on time remaining
-  const trialEnd = new Date(user.trialEndsAt);
+  const trialEnd = user?.trialEndsAt ? new Date(user.trialEndsAt) : new Date();
   const now = new Date();
   const hoursRemaining = (trialEnd.getTime() - now.getTime()) / (1000 * 60 * 60);
   

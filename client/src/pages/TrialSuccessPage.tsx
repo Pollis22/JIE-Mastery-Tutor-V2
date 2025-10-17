@@ -16,8 +16,11 @@ export default function TrialSuccessPage() {
     // Fetch user info and trial details
     const fetchUserInfo = async () => {
       try {
-        const user = await apiRequest('/api/auth/me');
-        if (user) {
+        const response = await fetch('/api/auth/me', {
+          credentials: 'include'
+        });
+        if (response.ok) {
+          const user = await response.json();
           setUserInfo({ studentName: user.studentName, email: user.email });
           
           // Calculate trial end date
