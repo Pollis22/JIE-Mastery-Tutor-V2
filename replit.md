@@ -32,6 +32,12 @@ The platform uses a **session-first** data priority model where session configur
 -   **Primary AI Model**: OpenAI GPT-4o with fallback to GPT-4o-mini, utilizing an enhanced TutorMind system prompt for Socratic teaching.
 -   **Teaching Method**: Advanced Socratic approach with adaptive questioning.
 -   **Adaptive Learning**: AI adapts based on user progress and learning patterns.
+-   **Tutor Personalities**: Five distinct age-specific personalities:
+     - **Buddy Bear (K-2)**: Super friendly, playful, uses simple language with lots of encouragement
+     - **Max Explorer (3-5)**: Adventurous, curious, creates learning adventures with real-world connections
+     - **Dr. Nova (6-8)**: Knowledgeable, cool, balances fun with academic rigor
+     - **Professor Ace (9-12)**: Expert, professional, college-prep focused with critical thinking emphasis
+     - **Dr. Morgan (College/Adult)**: Collaborative peer, efficient, focuses on practical application
 
 ### RAG (Retrieval-Augmented Generation) System
 -   **Document Processing**: Supports PDF, DOCX, and TXT files with intelligent text segmentation.
