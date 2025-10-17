@@ -18,6 +18,7 @@ import { sql } from "drizzle-orm";
 import { db } from "./db";
 import Stripe from "stripe";
 import { z } from "zod";
+import { createHmac, timingSafeEqual } from "crypto";
 
 // Stripe is optional - if not configured, subscription features will be disabled
 const stripeKey = process.env.STRIPE_SECRET_KEY;
@@ -30,6 +31,41 @@ if (!isStripeEnabled) {
 const stripe = isStripeEnabled ? new Stripe(stripeKey, {
   apiVersion: "2025-08-27.basil",
 }) : null;
+
+// Generate unsubscribe token using HMAC
+// Exported for use in email service
+export function generateUnsubscribeToken(email: string): string {
+  const secret = process.env.SESSION_SECRET || 'development-session-secret-only';
+  const hmac = createHmac('sha256', secret);
+  hmac.update(email.toLowerCase());
+  return hmac.digest('hex');
+}
+
+// Validate unsubscribe token using constant-time comparison
+function validateUnsubscribeToken(email: string, token: string): boolean {
+  try {
+    const expectedToken = generateUnsubscribeToken(email);
+    
+    // Ensure both tokens are the same length before comparing
+    if (token.length !== expectedToken.length) {
+      return false;
+    }
+    
+    // Use constant-time comparison to prevent timing attacks
+    const tokenBuffer = Buffer.from(token, 'hex');
+    const expectedBuffer = Buffer.from(expectedToken, 'hex');
+    
+    // Check if both are valid hex strings of the same length
+    if (tokenBuffer.length !== expectedBuffer.length) {
+      return false;
+    }
+    
+    return timingSafeEqual(tokenBuffer, expectedBuffer);
+  } catch (error) {
+    // Invalid hex string or other error
+    return false;
+  }
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Apply security middleware
@@ -121,7 +157,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { email, token } = req.query;
 
-      if (!email) {
+      if (!email || !token) {
         return res.status(400).send(`
           <!DOCTYPE html>
           <html>
@@ -135,7 +171,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             <body>
               <div class="container">
                 <h1>❌ Invalid Request</h1>
-                <p>Email address is required to unsubscribe.</p>
+                <p>Email address and token are required to unsubscribe.</p>
               </div>
             </body>
           </html>
@@ -143,6 +179,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const emailStr = Array.isArray(email) ? email[0] : email;
+      const tokenStr = Array.isArray(token) ? token[0] : token;
+
+      // Validate the unsubscribe token
+      if (!validateUnsubscribeToken(emailStr as string, tokenStr as string)) {
+        return res.status(403).send(`
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <style>
+                body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f9fafb; }
+                .container { max-width: 500px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+                h1 { color: #ef4444; }
+              </style>
+            </head>
+            <body>
+              <div class="container">
+                <h1>❌ Invalid Token</h1>
+                <p>The unsubscribe link is invalid or has expired. Please use the link from the most recent email.</p>
+              </div>
+            </body>
+          </html>
+        `);
+      }
+
       const user = await storage.getUserByEmail(emailStr as string);
       
       if (!user) {
