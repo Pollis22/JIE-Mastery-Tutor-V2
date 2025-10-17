@@ -21,11 +21,9 @@ async function resetPasswordOnRailway() {
   console.log('');
   
   // Connect to Railway PostgreSQL
+  // Railway internal connections don't use SSL
   const client = new Client({
-    connectionString: process.env.DATABASE_URL,
-    ssl: process.env.NODE_ENV === 'production' ? {
-      rejectUnauthorized: false
-    } : undefined
+    connectionString: process.env.DATABASE_URL
   });
   
   try {

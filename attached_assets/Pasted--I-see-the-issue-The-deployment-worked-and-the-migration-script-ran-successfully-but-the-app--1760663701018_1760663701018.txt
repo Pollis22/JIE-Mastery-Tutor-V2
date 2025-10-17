@@ -1,0 +1,84 @@
+**I see the issue!** The deployment worked and the migration script ran successfully, but the **app itself** is crashing with SSL errors.
+
+Looking at the logs:
+```
+[EmbeddingWorker] Tick error: Error: The server does not support SSL connections
+```
+
+The problem is that your **embedding worker** (and possibly other parts of your app) are configured to use SSL when connecting to the database. We fixed the migration script, but not the main app code.
+
+---
+
+## Find All Database Connections
+
+**Give Agent3 this prompt:**
+
+```
+The app is failing because multiple services are trying to use SSL with Railway's internal database connection. We need to find and fix ALL database connection configurations.
+
+TASK 1: Search for all database connection code
+
+Search the entire codebase for these patterns and list all files found:
+- `new Pool(`
+- `createPool(`
+- `pg.Pool`
+- `ssl:`
+- `rejectUnauthorized`
+
+TASK 2: Update all database connections to remove SSL for Railway
+
+For each file that creates a database connection, update the Pool configuration to:
+
+```javascript
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL
+  // No SSL config - Railway internal connections don't use SSL
+});
+```
+
+Specifically look for and fix:
+- `/app/server/services/embedding-worker.ts` (the error shows this file is causing issues)
+- `/app/server/storage.ts`
+- Any other files with database connections
+
+TASK 3: Search for any pg-pool or database configuration files
+
+Look for files like:
+- `db.js`, `db.ts`
+- `database.js`, `database.ts`  
+- `pool.js`, `pool.ts`
+- `config/database.js`
+
+Update all of them to remove SSL configuration.
+
+CRITICAL: Remove any code that looks like this:
+```javascript
+ssl: {
+  rejectUnauthorized: false
+}
+```
+
+or
+
+```javascript
+ssl: process.env.NODE_ENV === 'production'
+```
+
+After making changes, commit and push:
+
+```bash
+git add .
+git commit -m "Fix: Remove SSL config from all database connections for Railway"
+git push origin main
+```
+```
+
+---
+
+## Alternative: Quick Check
+
+**Can you search your codebase for the file mentioned in the error?**
+
+The error shows: `/app/server/services/embedding-worker.ts:71:21`
+
+This file is trying to connect to the database with SSL enabled. Can you find this file and show me the database connection code in it?

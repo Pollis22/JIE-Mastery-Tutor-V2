@@ -13,11 +13,10 @@ if (!connectionString) {
 }
 
 // Configure PostgreSQL pool
+// Railway internal connections don't use SSL
 const pool = new Pool({
   connectionString: connectionString || 'postgresql://localhost:5432/dummy',
-  ssl: process.env.NODE_ENV === 'production' ? { 
-    rejectUnauthorized: false 
-  } : false,
+  // No SSL config - Railway internal connections don't use SSL
   max: 10,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,
