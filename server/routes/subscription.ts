@@ -125,10 +125,15 @@ router.post('/change', async (req, res) => {
     }
 
     const baseUrl = `${req.protocol}://${req.get('host')}`;
+    
+    // Check if user is a new subscriber (no previous subscription)
+    const isNewSubscriber = !user.stripeSubscriptionId;
+    
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
       mode: 'subscription',
       payment_method_types: ['card'],
+      payment_method_collection: 'always', // Always collect payment method for trials
       line_items: [{ 
         price: priceId, 
         quantity: 1 
@@ -136,16 +141,22 @@ router.post('/change', async (req, res) => {
       metadata: {
         userId,
         plan,
-        type: 'subscription_change'
+        type: isNewSubscriber ? 'trial_signup' : 'subscription_change'
       },
       subscription_data: {
+        // Add 7-day trial for new subscribers
+        ...(isNewSubscriber ? { trial_period_days: 7 } : {}),
         metadata: {
           userId,
-          plan
+          plan,
+          trialMinutesLimit: isNewSubscriber ? '30' : '0'
         }
       },
-      success_url: `${baseUrl}/dashboard?subscription=success&plan=${plan}`,
+      success_url: isNewSubscriber 
+        ? `${baseUrl}/trial-started?session_id={CHECKOUT_SESSION_ID}`
+        : `${baseUrl}/dashboard?subscription=success&plan=${plan}`,
       cancel_url: `${baseUrl}/dashboard?subscription=cancelled`,
+      allow_promotion_codes: true,
     });
 
     console.log('✅ [Subscription] Checkout session created:', session.id);
