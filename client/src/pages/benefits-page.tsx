@@ -4,7 +4,7 @@ import { useLocation } from "wouter";
 import jieLogo from "@/assets/jie-mastery-logo.png";
 import aiTutorImage from "@assets/Create_an_image_of_an_AI_robot_tutoring_a_real_tee-1759438453563_1759521545083.png";
 import aiTutorImage2 from "@assets/Create_an_image_of_an_AI_robot_tutoring_a_real_tee-1759521647218_1759521666544.png";
-import { Clock, DollarSign, Target, Calendar, BookOpen, TrendingUp } from "lucide-react";
+import { Clock, DollarSign, Target, Calendar, BookOpen, TrendingUp, Users } from "lucide-react";
 
 export default function BenefitsPage() {
   const [, setLocation] = useLocation();
@@ -38,11 +38,16 @@ export default function BenefitsPage() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
               {/* Text Content */}
               <div className="space-y-6 text-center lg:text-left">
+                <div className="inline-block mb-2">
+                  <span className="text-sm font-bold text-white/90 uppercase tracking-wide bg-white/20 px-4 py-2 rounded-full backdrop-blur-sm">
+                    🚀 The Future of Family Tutoring
+                  </span>
+                </div>
                 <h1 className="text-5xl font-bold leading-tight" data-testid="heading-benefits">
-                  Why JIE Mastery AI Tutors?
+                  One Subscription.<br/>Whole Family Learns.
                 </h1>
                 <p className="text-2xl text-primary-foreground/90">
-                  Experience the future of personalized learning with AI-powered tutoring that adapts to your schedule, pace, and learning style.
+                  Experience personalized AI tutoring that adapts to every family member's schedule, pace, and learning style. From kindergarten to college, all on one account with shared minutes.
                 </p>
                 <Button 
                   size="lg" 
@@ -147,7 +152,20 @@ export default function BenefitsPage() {
                 </CardContent>
               </Card>
 
-              {/* Benefit 6: Track Progress */}
+              {/* Benefit 6: Family Sharing */}
+              <Card className="shadow-sm border-2 border-green-200 dark:border-green-800">
+                <CardContent className="pt-6 space-y-4">
+                  <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                    <Users className="w-6 h-6 text-green-600" />
+                  </div>
+                  <h3 className="text-xl font-semibold text-foreground">Perfect for Families 👨‍👩‍👧‍👦</h3>
+                  <p className="text-muted-foreground">
+                    One subscription for the whole family! Create separate profiles for each child with age-appropriate tutoring. Minute-based billing means siblings share the pool—maximum flexibility, maximum value.
+                  </p>
+                </CardContent>
+              </Card>
+
+              {/* Benefit 7: Track Progress */}
               <Card className="shadow-sm">
                 <CardContent className="pt-6 space-y-4">
                   <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
