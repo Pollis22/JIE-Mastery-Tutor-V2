@@ -125,11 +125,26 @@ router.post('/', async (req, res) => {
       }
     }
 
-    // Build instructions with document context
-    const instructions = `You are a friendly, patient AI tutor helping students learn.
+    // Get personalized system prompt based on grade level
+    const { getPersonalizedSystemPrompt } = await import('../llm/systemPrompt');
+    const { getTutorPersonality } = await import('../config/tutor-personalities');
+    
+    // Get the personality configuration for this grade level
+    const personality = data.ageGroup ? getTutorPersonality(data.ageGroup) : null;
+    
+    // Build personalized instructions with personality
+    const baseInstructions = getPersonalizedSystemPrompt(data.ageGroup, data.subject);
+    
+    // Combine personality prompt with document context
+    const instructions = `${baseInstructions}
 ${documentContext ? documentContext : ''}
-Please reference the student's documents when relevant to provide personalized help.
-Be encouraging and adapt your teaching style to the student's needs.`;
+${documentContext ? '\nPlease reference the student\'s documents when relevant to provide personalized help.' : ''}`;
+    
+    // Log personality selection
+    if (personality) {
+      console.log(`🎭 [Realtime] Using personality: ${personality.name} for ${data.ageGroup}`);
+      console.log(`   Voice style: ${personality.voice.style}, Speed: ${personality.voice.speed}`);
+    }
 
     // Request ephemeral session from OpenAI
     console.log('🔑 Requesting ephemeral session from OpenAI...');

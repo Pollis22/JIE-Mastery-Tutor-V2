@@ -153,7 +153,7 @@ router.post('/change', async (req, res) => {
         }
       },
       success_url: isNewSubscriber 
-        ? `${baseUrl}/trial-started?session_id={CHECKOUT_SESSION_ID}`
+        ? `${baseUrl}/trial-success?session_id={CHECKOUT_SESSION_ID}`
         : `${baseUrl}/dashboard?subscription=success&plan=${plan}`,
       cancel_url: `${baseUrl}/dashboard?subscription=cancelled`,
       allow_promotion_codes: true,
