@@ -77,8 +77,13 @@ npm run init-db
 
 ### Troubleshooting
 
+**Error: SSL connection required**
+- ✅ FIXED: Railway internal connections don't use SSL
+- The script now correctly handles Railway's `.railway.internal` connections
+
 **Error: pgvector extension not found**
-- Solution: Enable pgvector in Railway PostgreSQL settings
+- The script will continue without pgvector (RAG features may be limited)
+- To enable: Contact Railway support to enable pgvector extension
 
 **Error: column already exists**
 - This is normal - the script uses `IF NOT EXISTS` and continues
@@ -86,6 +91,10 @@ npm run init-db
 **Error: relation does not exist**
 - Ensure base tables (users, sessions, subjects, lessons, etc.) exist
 - Run Drizzle push first: `npm run db:push`
+
+**Migration fails but app still starts**
+- This is intentional - the script allows the app to start even if some migrations fail
+- Check Railway logs to see which specific operations failed
 
 ### Database Schema Sync
 
