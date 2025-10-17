@@ -10,6 +10,11 @@ export interface MinuteBalance {
   resetDate: Date;
   subscriptionUsed: number;
   purchasedUsed: number;
+  // Trial fields
+  isTrialActive?: boolean;
+  trialMinutesRemaining?: number;
+  trialMinutesLimit?: number;
+  trialEndsAt?: Date;
 }
 
 export async function getUserMinuteBalance(userId: string): Promise<MinuteBalance> {
@@ -19,7 +24,11 @@ export async function getUserMinuteBalance(userId: string): Promise<MinuteBalanc
       subscription_minutes_limit,
       purchased_minutes_balance,
       billing_cycle_start,
-      last_reset_at
+      last_reset_at,
+      is_trial_active,
+      trial_minutes_used,
+      trial_minutes_limit,
+      trial_ends_at
     FROM users 
     WHERE id = ${userId}
   `);
@@ -31,6 +40,48 @@ export async function getUserMinuteBalance(userId: string): Promise<MinuteBalanc
   const userData = userResult.rows[0] as any;
   
   const now = new Date();
+  
+  // Check if trial is active
+  if (userData.is_trial_active && userData.trial_ends_at) {
+    const trialEndsAt = new Date(userData.trial_ends_at);
+    const isTrialExpired = now > trialEndsAt;
+    
+    if (isTrialExpired) {
+      // Trial expired, mark as inactive
+      console.log(`⏰ [VoiceMinutes] Trial expired for user ${userId}`);
+      await db.execute(sql`
+        UPDATE users 
+        SET is_trial_active = false
+        WHERE id = ${userId}
+      `);
+      userData.is_trial_active = false;
+    }
+  }
+  
+  // If user is on trial, return trial balance
+  if (userData.is_trial_active) {
+    const trialMinutesRemaining = Math.max(
+      0, 
+      (userData.trial_minutes_limit || 30) - (userData.trial_minutes_used || 0)
+    );
+    
+    return {
+      subscriptionMinutes: 0,
+      subscriptionLimit: 0,
+      purchasedMinutes: 0,
+      totalAvailable: trialMinutesRemaining,
+      resetDate: new Date(userData.trial_ends_at),
+      subscriptionUsed: 0,
+      purchasedUsed: 0,
+      // Trial fields
+      isTrialActive: true,
+      trialMinutesRemaining: trialMinutesRemaining,
+      trialMinutesLimit: userData.trial_minutes_limit || 30,
+      trialEndsAt: new Date(userData.trial_ends_at)
+    };
+  }
+  
+  // Regular subscription logic
   const lastReset = new Date(userData.last_reset_at || userData.billing_cycle_start);
   const daysSinceReset = (now.getTime() - lastReset.getTime()) / (1000 * 60 * 60 * 24);
   
@@ -76,7 +127,8 @@ export async function getUserMinuteBalance(userId: string): Promise<MinuteBalanc
     resetDate: nextReset,
     // Add total used minutes including both subscription and purchased
     subscriptionUsed: userData.subscription_minutes_used || 0,
-    purchasedUsed: purchasedUsed
+    purchasedUsed: purchasedUsed,
+    isTrialActive: false
   };
 }
 
@@ -87,7 +139,11 @@ export async function deductMinutes(userId: string, minutesUsed: number): Promis
     SELECT 
       subscription_minutes_used,
       subscription_minutes_limit,
-      purchased_minutes_balance
+      purchased_minutes_balance,
+      is_trial_active,
+      trial_minutes_used,
+      trial_minutes_limit,
+      trial_ends_at
     FROM users 
     WHERE id = ${userId}
   `);
@@ -97,6 +153,35 @@ export async function deductMinutes(userId: string, minutesUsed: number): Promis
   }
 
   const userData = userResult.rows[0] as any;
+  
+  // Handle trial users
+  if (userData.is_trial_active) {
+    const now = new Date();
+    const trialEndsAt = new Date(userData.trial_ends_at);
+    
+    // Check if trial expired
+    if (now > trialEndsAt) {
+      console.log('⏰ [VoiceMinutes] Trial expired during session');
+      throw new Error('Your trial has expired. Please subscribe to continue.');
+    }
+    
+    const trialRemaining = Math.max(0, (userData.trial_minutes_limit || 30) - (userData.trial_minutes_used || 0));
+    
+    if (trialRemaining < minutesUsed) {
+      console.error(`❌ [VoiceMinutes] Insufficient trial minutes. User ${userId} needs ${minutesUsed} but only has ${trialRemaining} remaining.`);
+      throw new Error(`Insufficient trial minutes. You need ${minutesUsed} minutes but only have ${trialRemaining} trial minutes remaining.`);
+    }
+    
+    // Deduct from trial minutes
+    await db.execute(sql`
+      UPDATE users 
+      SET trial_minutes_used = trial_minutes_used + ${minutesUsed}
+      WHERE id = ${userId}
+    `);
+    
+    console.log(`✅ [VoiceMinutes] Deducted ${minutesUsed} trial minutes`);
+    return;
+  }
   const subscriptionRemaining = Math.max(0, (userData.subscription_minutes_limit || 60) - (userData.subscription_minutes_used || 0));
   const purchasedBalance = userData.purchased_minutes_balance || 0;
   const totalAvailable = subscriptionRemaining + purchasedBalance;
