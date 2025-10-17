@@ -184,8 +184,8 @@ export default function BenefitsPage() {
                       </svg>
                     </div>
                     <div>
-                      <h4 className="font-semibold text-foreground">Paste Your Homework</h4>
-                      <p className="text-muted-foreground">Copy and paste your homework questions directly into the chat for specific, targeted help.</p>
+                      <h4 className="font-semibold text-foreground">Upload Your Documents</h4>
+                      <p className="text-muted-foreground">Upload homework, worksheets, or study materials (PDF, DOCX, or images). The AI reads and understands your documents to provide personalized help based on your actual assignments.</p>
                     </div>
                   </li>
                   <li className="flex items-start space-x-3">
