@@ -44,7 +44,6 @@ import SupportCenter from "@/components/dashboard/support-center";
 import NewsletterSubscribe from "@/components/dashboard/newsletter-subscribe";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { TrialStatusBanner } from "@/components/TrialStatusBanner";
 
 export default function DashboardPage() {
   const { user, logoutMutation } = useAuth();
@@ -136,9 +135,6 @@ export default function DashboardPage() {
       </header>
 
       <div className="container mx-auto px-4 py-6">
-        {/* Trial Status Banner - shows only during trial */}
-        <TrialStatusBanner />
-        
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           {/* Sidebar */}
           <div className="lg:col-span-1">
