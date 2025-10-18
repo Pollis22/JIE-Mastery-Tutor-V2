@@ -8,11 +8,11 @@ export const AGENTS = {
 } as const;
 
 export const GREETINGS = {
-  k2:      "Hi there, it's your favorite JIE tutor! Let's play with numbers or letters. Do you want to start with counting, reading, or something fun?",
-  g3_5:    "Hello it's your JIE Tutor! I can help you with math, reading, or Spanish. Which one do you want to start with today?",
-  g6_8:    "Hello it's your JIE Tutor! I can help you with math, reading, science or languages. Which one do you want to start with today? Don't forget to choose your language.",
-  g9_12:   "Hello it's your JIE Tutor! Hey, welcome! I can help with algebra, essays, or exam prep. What subject are you working on now? Don't forget to choose your language.",
-  college: "Hello it's your Tutor Mind Tutor! I'm here to help with advanced topics like calculus, essay writing, or languages. Which class or subject do you want to dive into today? Don't forget to choose your language.",
+  k2:      "Hi {studentName}! Ready to learn? What do you want to work on?",
+  g3_5:    "Hi {studentName}! What subject should we start with?",
+  g6_8:    "Hello {studentName}! Which subject are you working on today?",
+  g9_12:   "Hey {studentName}! What do you need help with?",
+  college: "Hi {studentName}! What topic should we dive into?",
 } as const;
 
 export type AgentLevel = keyof typeof AGENTS;
