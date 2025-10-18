@@ -60,11 +60,11 @@ An AI-powered tutoring platform that provides **personalized voice conversations
 
 ### Subscription Plans
 - **Starter:** $19.99/month → 60 minutes
-- **Standard:** $29.99/month → 120 minutes
-- **Pro:** $49.99/month → 240 minutes
+- **Standard:** $59.99/month → 240 minutes
+- **Pro:** $99.99/month → 600 minutes
 
 ### One-Time Purchases
-- **Top-up:** $9.99 → 60 minutes (never expires!)
+- **Top-up:** $19.99 → 60 minutes (never expires!)
 
 **Key Insight:** Purchased minutes rollover indefinitely, encouraging users to buy extra minutes without fear of losing them.
 
@@ -354,7 +354,7 @@ npm run dev
 - **Progress Tracking:** Visible improvement over time
 
 ### Advantages Over Traditional Tutoring
-- **Cost:** $19.99/mo vs $50-100/hr for human tutors
+- **Cost:** Starting at $19.99/mo vs $50-100/hr for human tutors
 - **Availability:** Anytime vs scheduled appointments
 - **Patience:** AI never gets frustrated
 - **Subjects:** All subjects vs specialized tutors

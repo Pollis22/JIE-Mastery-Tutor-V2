@@ -82,8 +82,8 @@
   - FIFO Consumption: Uses subscription minutes first, then purchased
 - **Minute Packages:**
   - Starter: 60 min/month
-  - Standard: 120 min/month  
-  - Pro: 240 min/month
+  - Standard: 240 min/month  
+  - Pro: 600 min/month
   - Top-up: 60 minutes one-time purchase
 - **Balance Display:** Real-time tracking with detailed breakdown
 
@@ -556,9 +556,9 @@ jie-mastery-tutor/
 
 ### Pricing Tiers
 - **Starter:** $19.99/mo - 60 minutes
-- **Standard:** $29.99/mo - 120 minutes
-- **Pro:** $49.99/mo - 240 minutes
-- **Top-up:** $9.99 - 60 minutes (never expires)
+- **Standard:** $59.99/mo - 240 minutes
+- **Pro:** $99.99/mo - 600 minutes
+- **Top-up:** $19.99 - 60 minutes (never expires)
 
 ### Revenue Streams
 1. Monthly subscriptions (recurring)
