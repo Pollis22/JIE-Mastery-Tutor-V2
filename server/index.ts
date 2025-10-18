@@ -128,12 +128,6 @@ app.use((req, res, next) => {
     startEmbeddingWorker();
     log('Embedding worker started for background document processing');
 
-    // Start trial monitoring for reminder emails
-    console.log('Starting trial monitoring service...');
-    const { startTrialMonitoring } = await import('./jobs/trial-monitor');
-    startTrialMonitoring();
-    log('Trial monitoring service started for reminder emails');
-
     app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
       const status = err.status || err.statusCode || 500;
       const message = err.message || "Internal Server Error";

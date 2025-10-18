@@ -79,13 +79,6 @@ export const users = pgTable("users", {
   speechSpeed: decimal("speech_speed").default('1.0'),
   volumeLevel: integer("volume_level").default(75),
   isAdmin: boolean("is_admin").default(false),
-  // Trial management fields
-  trialStartedAt: timestamp("trial_started_at"),
-  trialEndsAt: timestamp("trial_ends_at"),
-  trialMinutesLimit: integer("trial_minutes_limit").default(30),
-  trialMinutesUsed: integer("trial_minutes_used").default(0),
-  trialReminderSent: boolean("trial_reminder_sent").default(false),
-  isTrialActive: boolean("is_trial_active").default(false),
   // Email verification fields
   emailVerified: boolean("email_verified").default(false),
   emailVerificationToken: text("email_verification_token"),
