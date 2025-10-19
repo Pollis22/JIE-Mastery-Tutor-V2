@@ -13,8 +13,8 @@ export interface MinuteBalance {
 }
 
 export async function getUserMinuteBalance(userId: string): Promise<MinuteBalance> {
-  // Special handling for test user
-  if (userId === 'test-user-id') {
+  // Special handling for test user only in development
+  if (userId === 'test-user-id' && process.env.NODE_ENV === 'development') {
     const now = new Date();
     const nextReset = new Date(now);
     nextReset.setDate(nextReset.getDate() + 30);

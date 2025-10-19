@@ -249,10 +249,24 @@ export function setupAuth(app: Express) {
       return res.status(400).send("Username already exists");
     }
 
+    // Set default plan and minutes for new users
+    const defaultPlan = 'starter';
+    const minutesMap: Record<string, number> = {
+      'starter': 60,
+      'standard': 240,
+      'pro': 600,
+    };
+    
     const user = await storage.createUser({
       ...validation.data,
       password: await hashPassword(validation.data.password),
       marketingOptInDate: validation.data.marketingOptIn ? new Date() : null,
+      subscriptionPlan: defaultPlan,
+      subscriptionStatus: 'active', // New users start with active status
+      subscriptionMinutesLimit: minutesMap[defaultPlan], // Set correct minutes for plan
+      subscriptionMinutesUsed: 0,
+      purchasedMinutesBalance: 0,
+      billingCycleStart: new Date(),
     });
 
     req.login(user, async (err) => {

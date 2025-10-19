@@ -302,9 +302,17 @@ export class DatabaseStorage implements IStorage {
       updatedAt: new Date(),
     };
 
-    // Set monthly allowance if provided
+    // Set monthly allowance if provided - update BOTH legacy and new fields
     if (monthlyMinutes !== undefined) {
-      updateData.monthlyVoiceMinutes = monthlyMinutes;
+      updateData.monthlyVoiceMinutes = monthlyMinutes; // Legacy field
+      updateData.subscriptionMinutesLimit = monthlyMinutes; // New hybrid tracking field
+      
+      // If this is a plan upgrade/change, reset the usage counter for new billing cycle
+      if (status === 'active') {
+        updateData.subscriptionMinutesUsed = 0;
+        updateData.billingCycleStart = new Date();
+        updateData.lastResetAt = new Date();
+      }
     }
 
     const [user] = await db
