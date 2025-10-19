@@ -126,11 +126,11 @@ export default function UsageAnalytics() {
                 <div className="flex justify-between text-sm">
                   <span>Voice Minutes Used</span>
                   <span className="font-medium">
-                    {user?.monthlyVoiceMinutesUsed || 0} / {user?.monthlyVoiceMinutes || 0}
+                    {user?.subscriptionMinutesUsed || user?.monthlyVoiceMinutesUsed || 0} / {user?.subscriptionMinutesLimit || user?.monthlyVoiceMinutes || 60}
                   </span>
                 </div>
                 <Progress 
-                  value={(user?.monthlyVoiceMinutesUsed || 0) / (user?.monthlyVoiceMinutes || 1) * 100} 
+                  value={(user?.subscriptionMinutesUsed || user?.monthlyVoiceMinutesUsed || 0) / (user?.subscriptionMinutesLimit || user?.monthlyVoiceMinutes || 1) * 100} 
                 />
                 
                 <div className="flex justify-between text-sm">
