@@ -82,7 +82,7 @@ export function useRealtimeVoice() {
       }
 
       // Store sessionId for transcript persistence
-      sessionIdRef.current = data.sessionId;
+      sessionIdRef.current = data.session_id || data.sessionId;
 
       // Step 2: Establish WebRTC to OpenAI
       await connectWebRTC(data.client_secret.value, data.model);

@@ -218,38 +218,42 @@ ${documentContext ? '\nPlease reference the student\'s documents when relevant t
       hasClientSecret: !!sessionData.client_secret?.value 
     });
 
-    // Save to database asynchronously (fail-safe, don't block on error)
+    // Save to database and get the DB session ID for transcript tracking
+    let dbSessionId = sessionId; // Default to OpenAI session ID
     if (sessionUserId && storage.createRealtimeSession) {
-      storage.createRealtimeSession({
-        userId: sessionUserId,
-        studentId: data.studentId,
-        subject: data.subject,
-        language: data.language,
-        ageGroup: data.ageGroup,
-        voice: selectedVoice,
-        model,
-        status: 'active',
-        transcript: [],
-        contextDocuments: data.contextDocumentIds || [],
-      }).then(session => {
-        console.log('✅ Session saved to DB:', session.id);
-      }).catch((err: any) => {
+      try {
+        const dbSession = await storage.createRealtimeSession({
+          userId: sessionUserId,
+          studentId: data.studentId,
+          subject: data.subject,
+          language: data.language,
+          ageGroup: data.ageGroup,
+          voice: selectedVoice,
+          model,
+          status: 'active',
+          transcript: [],
+          contextDocuments: data.contextDocumentIds || [],
+        });
+        dbSessionId = dbSession.id; // Use database session ID
+        console.log('✅ Session saved to DB:', dbSession.id);
+      } catch (err: any) {
         // PostgreSQL error code 42P01 = "undefined_table"
         if (err.code === '42P01') {
-          console.warn('⚠️ realtime_sessions table missing; skipping DB save');
+          console.warn('⚠️ realtime_sessions table missing; using OpenAI session ID');
         } else {
           console.warn('⚠️ DB save failed (non-blocking):', err.message);
         }
-      });
+      }
     }
 
-    // Return credentials immediately
+    // Return credentials immediately with database session ID
     const duration = Date.now() - startTime;
     console.log(`✅ [RealtimeAPI] Session ready in ${duration}ms`);
 
     res.json({
       success: true,
-      sessionId,
+      sessionId: dbSessionId,  // Return DB session ID for transcript tracking
+      session_id: dbSessionId,  // Also include for backwards compatibility
       client_secret: sessionData.client_secret,
       model: sessionData.model,
       voice: selectedVoice,
