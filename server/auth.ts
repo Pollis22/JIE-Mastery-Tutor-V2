@@ -78,14 +78,14 @@ export function setupAuth(app: Express) {
             parentName: 'Test Parent',
             studentName: 'Test Student',
             studentAge: 10,
-            gradeLevel: 'grades-3-5',
-            primarySubject: 'Math',
+            gradeLevel: 'grades-3-5' as const,
+            primarySubject: 'math' as const,
             subscriptionPlan: 'all' as const,
             subscriptionStatus: 'active' as const,
             stripeCustomerId: null,
             stripeSubscriptionId: null,
             subscriptionMinutesUsed: 0, // New hybrid minute field
-            subscriptionMinutesLimit: 600, // New hybrid minute field
+            subscriptionMinutesLimit: 600, // Test user gets 600 minutes
             purchasedMinutesBalance: 0, // New hybrid minute field
             billingCycleStart: new Date(), // New hybrid minute field
             lastResetAt: null, // New hybrid minute field
@@ -176,7 +176,7 @@ export function setupAuth(app: Express) {
         parentName: 'Test Parent',
         studentName: 'Test Student',
         studentAge: 10,
-        gradeLevel: '3-5',
+        gradeLevel: 'grades-3-5' as const,
         primarySubject: 'Math',
         subscriptionPlan: 'all' as const,
         subscriptionStatus: 'active' as const,

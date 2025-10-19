@@ -13,6 +13,23 @@ export interface MinuteBalance {
 }
 
 export async function getUserMinuteBalance(userId: string): Promise<MinuteBalance> {
+  // Special handling for test user
+  if (userId === 'test-user-id') {
+    const now = new Date();
+    const nextReset = new Date(now);
+    nextReset.setDate(nextReset.getDate() + 30);
+    
+    return {
+      subscriptionMinutes: 600, // Test user has full 600 minutes
+      subscriptionLimit: 600,
+      purchasedMinutes: 0,
+      totalAvailable: 600,
+      resetDate: nextReset,
+      subscriptionUsed: 0,
+      purchasedUsed: 0
+    };
+  }
+
   const userResult = await db.execute(sql`
     SELECT 
       subscription_minutes_used,

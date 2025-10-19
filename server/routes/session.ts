@@ -90,46 +90,78 @@ sessionRouter.post('/check-availability', async (req, res) => {
       return res.status(404).json({ 
         allowed: false, 
         reason: 'user_not_found',
-        message: 'User not found' 
+        message: 'User not found',
+        // Frontend expects these fields
+        total: 0,
+        used: 0,
+        remaining: 0,
+        bonusMinutes: 0
       });
     }
 
-    // Check if user has an active subscription
-    if (!user.subscriptionStatus || user.subscriptionStatus !== 'active') {
+    // Check if user has an active subscription or purchased minutes
+    const hasPurchasedMinutes = (user.purchasedMinutesBalance || 0) > 0;
+    if ((!user.subscriptionStatus || user.subscriptionStatus !== 'active') && !hasPurchasedMinutes) {
       return res.json({ 
         allowed: false, 
         reason: 'no_subscription',
         message: 'Please subscribe to start tutoring sessions',
-        remainingMinutes: 0
+        // Frontend expects these fields
+        total: 0,
+        used: 0,
+        remaining: 0,
+        bonusMinutes: 0
       });
     }
 
-    // Get available minutes
-    const minutesData = await storage.getAvailableMinutes(userId);
+    // Get hybrid minute balance using the voice minutes service
+    const { getUserMinuteBalance } = await import('../services/voice-minutes');
+    const balance = await getUserMinuteBalance(userId);
     
-    if (minutesData.remaining <= 0) {
+    // Convert hybrid balance to expected format
+    // Total should be remaining + used for consistency
+    const used = balance.subscriptionUsed + balance.purchasedUsed;
+    const remaining = balance.totalAvailable;
+    const total = used + remaining; // This ensures total = used + remaining
+    const bonusMinutes = balance.purchasedMinutes; // Purchased minutes act as "bonus"
+
+    if (remaining <= 0) {
       return res.json({ 
         allowed: false, 
         reason: 'no_minutes',
         message: 'You\'ve used all your minutes. Purchase more to continue.',
-        remainingMinutes: 0,
-        totalMinutes: minutesData.total,
-        usedMinutes: minutesData.used
+        // Frontend expects these fields
+        total,
+        used,
+        remaining: 0,
+        bonusMinutes
       });
     }
 
     res.json({ 
-      allowed: true, 
-      remainingMinutes: minutesData.remaining,
-      totalMinutes: minutesData.total,
-      usedMinutes: minutesData.used,
-      warningThreshold: minutesData.remaining < 10 
+      allowed: true,
+      // Frontend expects these fields
+      total,
+      used,
+      remaining,
+      bonusMinutes,
+      // Additional metadata
+      warningThreshold: remaining < 10,
+      subscriptionUsed: balance.subscriptionUsed,
+      subscriptionLimit: balance.subscriptionLimit,
+      purchasedMinutes: balance.purchasedMinutes,
+      purchasedUsed: balance.purchasedUsed
     });
   } catch (error) {
     console.error('Error checking session availability:', error);
     res.status(500).json({ 
       error: 'Failed to check session availability',
-      details: error instanceof Error ? error.message : 'Unknown error'
+      details: error instanceof Error ? error.message : 'Unknown error',
+      // Frontend expects these fields even on error
+      total: 0,
+      used: 0,
+      remaining: 0,
+      bonusMinutes: 0
     });
   }
 });
