@@ -84,7 +84,9 @@ export async function getUserMinuteBalance(userId: string): Promise<MinuteBalanc
     (userData.subscription_minutes_limit || 60) - (userData.subscription_minutes_used || 0)
   );
 
+  // Calculate next reset date based on billing cycle (monthly on same day)
   const nextReset = new Date(lastReset);
+  // Add 30 days for monthly cycle
   nextReset.setDate(nextReset.getDate() + 30);
 
   return {

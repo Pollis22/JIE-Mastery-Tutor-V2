@@ -296,6 +296,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateUserSubscription(userId: string, plan: 'starter' | 'standard' | 'pro' | 'single' | 'all', status: 'active' | 'canceled' | 'paused', monthlyMinutes?: number): Promise<User> {
+    const now = new Date();
     const updateData: any = {
       subscriptionPlan: plan,
       subscriptionStatus: status,
@@ -310,8 +311,9 @@ export class DatabaseStorage implements IStorage {
       // If this is a plan upgrade/change, reset the usage counter for new billing cycle
       if (status === 'active') {
         updateData.subscriptionMinutesUsed = 0;
-        updateData.billingCycleStart = new Date();
-        updateData.lastResetAt = new Date();
+        updateData.billingCycleStart = now;
+        updateData.lastResetAt = now;
+        updateData.monthlyResetDate = now; // Sync all dates!
       }
     }
 
@@ -324,15 +326,18 @@ export class DatabaseStorage implements IStorage {
   }
 
   async resetUserVoiceUsage(userId: string): Promise<void> {
-    // Reset monthly usage counter and set next reset date to 30 days from now
-    const nextResetDate = new Date();
-    nextResetDate.setDate(nextResetDate.getDate() + 30);
-
+    // Reset monthly usage counter and sync reset date with billing cycle
+    const now = new Date();
+    
+    // Set both billing cycle start and reset dates to NOW (when subscription renews/starts)
     await db
       .update(users)
       .set({
         monthlyVoiceMinutesUsed: 0,
-        monthlyResetDate: nextResetDate,
+        monthlyResetDate: now, // Sync with billing cycle
+        billingCycleStart: now, // Update billing cycle start to match
+        lastResetAt: now, // Update last reset timestamp
+        subscriptionMinutesUsed: 0, // Reset hybrid tracking counter
         updatedAt: new Date(),
       })
       .where(eq(users.id, userId));
