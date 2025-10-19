@@ -20,6 +20,7 @@ export function useRealtimeVoice() {
   const micStreamRef = useRef<MediaStream | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const currentAssistantMessage = useRef<RealtimeMessage | null>(null);
+  const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const connect = useCallback(async (config: {
     sessionId?: string;
@@ -121,6 +122,9 @@ export function useRealtimeVoice() {
 
       console.log('✅ [RealtimeVoice] Connected successfully!');
       setIsConnected(true);
+      
+      // Step 3: Start heartbeat polling to detect auto-timeout
+      startSessionHeartbeat(sessionId);
 
     } catch (err: any) {
       console.error('❌ [RealtimeVoice] Connection failed:', err);
@@ -234,6 +238,29 @@ export function useRealtimeVoice() {
         if (message.type === 'error') {
           console.error('❌ [OpenAI] Error:', message.error);
           setError(message.error.message);
+        }
+        
+        // Track user activity for inactivity timeout
+        if (message.type === 'input_audio_buffer.speech_started' || 
+            message.type === 'conversation.item.created') {
+          // User is active - notify server and check if session was auto-ended
+          fetch('/api/session/activity', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId: sessionIdRef.current }),
+          })
+            .then(res => res.json())
+            .then(data => {
+              // If session was auto-ended due to inactivity, disconnect
+              if (data.sessionEnded) {
+                console.log('⏰ [RealtimeVoice] Session auto-ended by server, disconnecting...');
+                setError('Session ended due to inactivity');
+                disconnect();
+              }
+            })
+            .catch(() => {
+              // Fail silently - activity tracking is non-critical
+            });
         }
         
         // Capture transcript messages
@@ -450,10 +477,52 @@ export function useRealtimeVoice() {
     console.log('✅ [WebRTC] Setup complete, waiting for connection...');
   };
 
+  // Start heartbeat polling to detect auto-timeout
+  const startSessionHeartbeat = (sessionId: string) => {
+    // Poll every 10 seconds to check if session is still active
+    // NOTE: With WebRTC, the connection is peer-to-peer (browser <-> OpenAI)
+    // Server cannot directly close it, so we poll to detect server-side timeout
+    console.log('💓 [Heartbeat] Starting session heartbeat polling (10s intervals)');
+    
+    const checkSessionStatus = async () => {
+      try {
+        const response = await fetch('/api/session/activity', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId }),
+        });
+        
+        const data = await response.json();
+        
+        // If session was auto-ended, disconnect immediately
+        if (data.sessionEnded) {
+          console.log('⏰ [Heartbeat] Session auto-ended by server, disconnecting...');
+          setError('Session ended due to inactivity');
+          disconnect();
+        }
+      } catch (error) {
+        console.warn('⚠️ [Heartbeat] Failed to check session status:', error);
+      }
+    };
+    
+    // Initial check
+    checkSessionStatus();
+    
+    // Set up interval for periodic checks (every 10 seconds for faster response)
+    heartbeatIntervalRef.current = setInterval(checkSessionStatus, 10000);
+  };
+
   const disconnect = useCallback(() => {
     console.log('🔴 [RealtimeVoice] Disconnecting...');
 
     try {
+      // 0. Stop heartbeat polling
+      if (heartbeatIntervalRef.current) {
+        console.log('💓 [Heartbeat] Stopping heartbeat polling');
+        clearInterval(heartbeatIntervalRef.current);
+        heartbeatIntervalRef.current = null;
+      }
+
       // 1. Close data channel first
       if (dataChannelRef.current) {
         console.log('🔴 [DataChannel] Closing...');

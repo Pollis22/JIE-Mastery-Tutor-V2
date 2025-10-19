@@ -262,6 +262,39 @@ ${documentContext ? '\nPlease reference the student\'s documents when relevant t
         });
         dbSessionId = dbSession.id; // Use database session ID
         console.log('✅ Session saved to DB:', dbSession.id);
+        
+        // Start activity tracking with auto-timeout after 5 minutes
+        const { startActivityTracking } = await import('../services/session-activity-tracker');
+        startActivityTracking(
+          sessionUserId,
+          dbSessionId,
+          // Warning callback (4 minutes) - could send a system message to frontend
+          () => {
+            console.log(`⚠️ [ActivityTracker] Inactivity warning for user ${sessionUserId}`);
+            // TODO: Could optionally send a warning via WebSocket or data channel
+          },
+          // End callback (5 minutes) - auto-end the session
+          async () => {
+            console.log(`⏰ [ActivityTracker] Auto-ending session ${dbSessionId} due to inactivity`);
+            try {
+              // Calculate duration for minute tracking
+              const session = await storage.getRealtimeSession(dbSessionId, sessionUserId);
+              if (session && session.status === 'active') {
+                const endTime = new Date();
+                const startTime = session.startedAt ? new Date(session.startedAt) : endTime;
+                const durationMs = endTime.getTime() - startTime.getTime();
+                const minutesUsed = Math.ceil(durationMs / 60000);
+                
+                // End session and deduct minutes
+                await storage.endRealtimeSession(dbSessionId, sessionUserId, session.transcript || [], minutesUsed);
+                console.log(`✅ [ActivityTracker] Auto-ended session. Minutes used: ${minutesUsed}`);
+              }
+            } catch (error) {
+              console.error('[ActivityTracker] Error auto-ending session:', error);
+            }
+          }
+        );
+        console.log('⏱️ [ActivityTracker] Started activity tracking for session');
       } catch (err: any) {
         // PostgreSQL error code 42P01 = "undefined_table"
         if (err.code === '42P01') {
@@ -586,6 +619,11 @@ router.post('/:sessionId/end', async (req, res) => {
       }
     }
 
+    // Stop activity tracking when session ends
+    const { stopActivityTracking } = await import('../services/session-activity-tracker');
+    stopActivityTracking(userId);
+    console.log('🛑 [ActivityTracker] Stopped tracking for user');
+
     res.json({ 
       success: true,
       sessionId: session.id,
@@ -598,6 +636,61 @@ router.post('/:sessionId/end', async (req, res) => {
   } catch (error) {
     console.error('[RealtimeAPI] Error ending session:', error);
     res.status(500).json({ error: 'Failed to end session' });
+  }
+});
+
+/**
+ * POST /api/session/activity - Update activity timestamp
+ * Prevents auto-timeout by updating last activity time
+ * Returns session status so frontend can disconnect if session was ended
+ */
+router.post('/activity', async (req, res) => {
+  try {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    const userId = req.user!.id;
+    const { sessionId } = req.body;
+    
+    // Check if session is still active in database
+    let sessionStatus = 'active';
+    if (sessionId) {
+      const session = await storage.getRealtimeSession(sessionId, userId);
+      if (session) {
+        sessionStatus = session.status || 'active';
+      }
+    }
+    
+    // If session was auto-ended, return that info so frontend can disconnect
+    if (sessionStatus === 'ended') {
+      console.log(`⏰ [ActivityAPI] Session ${sessionId} was auto-ended, notifying frontend to disconnect`);
+      return res.json({
+        success: true,
+        sessionEnded: true,
+        reason: 'inactivity_timeout',
+        message: 'Session was automatically ended due to inactivity'
+      });
+    }
+    
+    // Import activity tracker
+    const { updateActivity, getActivityInfo } = await import('../services/session-activity-tracker');
+    
+    // Update activity timestamp
+    updateActivity(userId);
+    
+    // Return current activity info
+    const info = getActivityInfo(userId);
+    
+    res.json({ 
+      success: true,
+      sessionEnded: false,
+      activityInfo: info,
+    });
+    
+  } catch (error) {
+    console.error('[RealtimeAPI] Error updating activity:', error);
+    res.status(500).json({ error: 'Failed to update activity' });
   }
 });
 
