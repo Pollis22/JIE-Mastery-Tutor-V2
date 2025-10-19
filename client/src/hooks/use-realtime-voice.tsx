@@ -22,6 +22,8 @@ export function useRealtimeVoice() {
   const currentAssistantMessage = useRef<RealtimeMessage | null>(null);
 
   const connect = useCallback(async (config: {
+    sessionId?: string;
+    clientSecret?: any;
     model?: string;
     voice?: string;
     userId?: string;
@@ -43,34 +45,55 @@ export function useRealtimeVoice() {
         console.log('📚 Processing', config.contextDocumentIds.length, 'documents...');
       }
 
-      // Step 1: Get credentials via HTTP (working!)
-      console.log('🔑 [RealtimeVoice] Requesting credentials...');
-      const response = await fetch('/api/session/realtime', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: config.model || 'gpt-4o-realtime-preview-2024-10-01',
-          voice: config.voice || 'alloy',
-          userId: config.userId,
-          studentId: config.studentId,
-          studentName: config.studentName,
-          subject: config.subject,
-          language: config.language || 'en',
-          ageGroup: config.ageGroup,
-          contextDocumentIds: config.contextDocumentIds || [],
-        }),
-      });
+      let clientSecret: any;
+      let sessionId: string;
+      let model: string;
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(`HTTP ${response.status}: ${JSON.stringify(errorData)}`);
+      // Check if we already have credentials passed from parent
+      if (config.clientSecret && config.sessionId) {
+        // Use the passed credentials (avoids creating duplicate session)
+        console.log('✅ [RealtimeVoice] Using provided credentials');
+        clientSecret = config.clientSecret;
+        sessionId = config.sessionId;
+        model = config.model || 'gpt-4o-realtime-preview-2024-10-01';
+      } else {
+        // Fallback: Get credentials via HTTP (for backward compatibility)
+        console.log('🔑 [RealtimeVoice] Requesting credentials...');
+        const response = await fetch('/api/session/realtime', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: config.model || 'gpt-4o-realtime-preview-2024-10-01',
+            voice: config.voice || 'alloy',
+            userId: config.userId,
+            studentId: config.studentId,
+            studentName: config.studentName,
+            subject: config.subject,
+            language: config.language || 'en',
+            ageGroup: config.ageGroup,
+            contextDocumentIds: config.contextDocumentIds || [],
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(`HTTP ${response.status}: ${JSON.stringify(errorData)}`);
+        }
+
+        const data = await response.json();
+        console.log('✅ [RealtimeVoice] Got credentials:', {
+          sessionId: data.sessionId,
+          hasSecret: !!data.client_secret?.value
+        });
+
+        if (!data.client_secret?.value) {
+          throw new Error('No client_secret in response');
+        }
+
+        clientSecret = data.client_secret;
+        sessionId = data.session_id || data.sessionId;
+        model = data.model || 'gpt-4o-realtime-preview-2024-10-01';
       }
-
-      const data = await response.json();
-      console.log('✅ [RealtimeVoice] Got credentials:', {
-        sessionId: data.sessionId,
-        hasSecret: !!data.client_secret?.value
-      });
 
       // Documents processed!
       setIsProcessingDocuments(false);
@@ -79,15 +102,16 @@ export function useRealtimeVoice() {
         console.log('✅ Documents ready for AI context');
       }
 
-      if (!data.client_secret?.value) {
-        throw new Error('No client_secret in response');
+      if (!clientSecret?.value && !clientSecret) {
+        throw new Error('No client_secret available');
       }
 
       // Store sessionId for transcript persistence
-      sessionIdRef.current = data.session_id || data.sessionId;
+      sessionIdRef.current = sessionId;
 
       // Step 2: Establish WebRTC to OpenAI
-      await connectWebRTC(data.client_secret.value, data.model);
+      const secretValue = typeof clientSecret === 'string' ? clientSecret : clientSecret.value;
+      await connectWebRTC(secretValue, model);
 
       console.log('✅ [RealtimeVoice] Connected successfully!');
       setIsConnected(true);

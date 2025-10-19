@@ -207,6 +207,8 @@ export function RealtimeVoiceHost({
   useEffect(() => {
     if (clientSecret && sessionId && !isConnected) {
       connect({
+        sessionId: sessionId,  // Pass the sessionId we already have
+        clientSecret: clientSecret,  // Pass the clientSecret we already have
         model: model || 'gpt-4o-realtime-preview-2024-10-01',
         voice: voice || 'alloy',
         language: language || 'en',
