@@ -41,6 +41,7 @@ router.get('/recent', async (req, res) => {
     .orderBy(desc(realtimeSessions.startedAt))
     .limit(10);
     
+    console.log(`[Sessions] Found ${sessions.length} recent sessions for user ${userId}`);
     res.json({ sessions });
     
   } catch (error) {
