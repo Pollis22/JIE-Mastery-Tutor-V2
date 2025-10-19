@@ -10,49 +10,52 @@ import { useAuth } from "@/hooks/use-auth";
 const plans = [
   {
     id: 'starter',
-    name: 'Starter',
+    name: 'Starter Family',
     price: 19.99,
     minutes: 60,
+    description: 'Perfect for small families',
     features: [
-      '60 voice minutes per month',
-      'Math, English, Science, Spanish & More tutoring',
-      'AI-powered learning',
-      'Multiple family profiles',
-      'Real-time transcripts',
-      'Progress tracking'
+      '60 minutes shared by entire family',
+      'Unlimited student profiles for siblings',
+      'Math, English, Science, Spanish & More',
+      'Each child gets personalized tutoring',
+      'Real-time transcripts for parents',
+      'Individual progress tracking per child'
     ],
     popular: false,
   },
   {
     id: 'standard',
-    name: 'Standard',
+    name: 'Standard Family',
     price: 59.99,
     minutes: 240,
+    description: 'Best value for active families',
     features: [
-      '240 voice minutes per month',
-      'Math, English, Science, Spanish & More tutoring',
-      'AI-powered learning',
-      'Multiple family profiles',
-      'Real-time transcripts',
-      'Progress tracking',
-      'Priority support'
+      '240 minutes shared by entire family',
+      'Unlimited student profiles for siblings',
+      'Math, English, Science, Spanish & More',
+      'Each child gets personalized tutoring',
+      'Real-time transcripts for parents',
+      'Individual progress tracking per child',
+      'Priority support for parents'
     ],
     popular: true,
   },
   {
     id: 'pro',
-    name: 'Pro',
+    name: 'Pro Family',
     price: 99.99,
     minutes: 600,
+    description: 'For families with multiple learners',
     features: [
-      '600 voice minutes per month',
-      'Math, English, Science, Spanish & More tutoring',
-      'AI-powered learning',
-      'Multiple family profiles',
-      'Real-time transcripts',
-      'Progress tracking',
-      'Priority support',
-      'Custom learning paths'
+      '600 minutes shared by entire family',
+      'Unlimited student profiles for siblings',
+      'Math, English, Science, Spanish & More',
+      'Each child gets personalized tutoring',
+      'Real-time transcripts for parents',
+      'Individual progress tracking per child',
+      'Priority support for parents',
+      'Custom learning paths per child'
     ],
     popular: false,
   },
@@ -131,11 +134,11 @@ export default function PricingPage() {
               </span>
             </div>
             <h1 className="text-5xl font-bold text-foreground mb-6" data-testid="text-hero-title">
-              One Plan. Entire Family. Unlimited Potential.
+              One Family Plan. All Your Kids Learn.
             </h1>
             <p className="text-xl text-muted-foreground mb-8 max-w-3xl mx-auto">
-              Master Math, English, Science, Spanish and More with interactive voice lessons and progress tracking. 
-              Create profiles for each family member and share minutes across all learners—from kindergarten to college.
+              <strong>Save hundreds per month!</strong> Instead of separate tutors for each child, get one family plan that all siblings share. 
+              Create unlimited profiles - each child gets personalized tutoring from kindergarten through college.
             </p>
             
             {/* Feature highlights */}
@@ -186,11 +189,7 @@ export default function PricingPage() {
                 <CardContent className="p-8">
                   <div className="mb-8">
                     <h3 className="text-2xl font-bold text-foreground mb-2">{plan.name}</h3>
-                    <p className="text-muted-foreground">
-                      {plan.id === 'starter' && 'Perfect for getting started'}
-                      {plan.id === 'standard' && 'Best value for regular learners'}
-                      {plan.id === 'pro' && 'Maximum learning time'}
-                    </p>
+                    <p className="text-muted-foreground">{plan.description}</p>
                   </div>
                   
                   <div className="mb-8">
@@ -256,9 +255,9 @@ export default function PricingPage() {
                     </div>
                   </div>
                   <div className="flex-1 text-center md:text-left">
-                    <h3 className="text-3xl font-bold text-foreground mb-3">Perfect for Families! 👨‍👩‍👧‍👦</h3>
+                    <h3 className="text-3xl font-bold text-foreground mb-3">Why Families Choose Us 👨‍👩‍👧‍👦</h3>
                     <p className="text-lg text-foreground mb-4">
-                      <strong>One subscription, whole family learns together!</strong> Since billing is minute-based, siblings can share the account seamlessly.
+                      <strong>Save $100s vs Individual Tutors!</strong> One family plan covers ALL your children. Create unlimited sibling profiles and share minutes across everyone.
                     </p>
                     <div className="grid md:grid-cols-3 gap-4 text-sm">
                       <div className="bg-white/50 dark:bg-black/20 rounded-lg p-3">
@@ -301,16 +300,17 @@ export default function PricingPage() {
               <h3 className="text-2xl font-bold text-foreground text-center mb-8">Frequently Asked Questions</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <h4 className="font-semibold text-foreground mb-2">How do voice minutes work?</h4>
+                  <h4 className="font-semibold text-foreground mb-2">Can siblings share the same account?</h4>
                   <p className="text-muted-foreground text-sm">
-                    Each plan includes a monthly allocation of voice minutes for AI tutoring sessions. 
-                    Minutes reset at the beginning of each billing cycle.
+                    <strong>Yes!</strong> That's the beauty of our family plans. Create unlimited profiles for all your children. 
+                    They share the monthly minutes but each gets their own personalized learning experience.
                   </p>
                 </div>
                 <div>
-                  <h4 className="font-semibold text-foreground mb-2">Can I cancel anytime?</h4>
+                  <h4 className="font-semibold text-foreground mb-2">How much will I save with a family plan?</h4>
                   <p className="text-muted-foreground text-sm">
-                    Yes, you can cancel your subscription at any time through your account settings. No cancellation fees.
+                    Huge savings! Traditional tutors cost $50-100/hour per child. With our family plan, all siblings 
+                    share one affordable subscription - saving hundreds monthly!
                   </p>
                 </div>
                 <div>

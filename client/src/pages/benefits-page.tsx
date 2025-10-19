@@ -44,10 +44,11 @@ export default function BenefitsPage() {
                   </span>
                 </div>
                 <h1 className="text-5xl font-bold leading-tight" data-testid="heading-benefits">
-                  One Subscription.<br/>Whole Family Learns.
+                  One Family Plan.<br/>All Siblings Learn.
                 </h1>
                 <p className="text-2xl text-primary-foreground/90">
-                  Experience personalized AI tutoring that adapts to every family member's schedule, pace, and learning style. From kindergarten to college, all on one account with shared minutes.
+                  <strong>Save hundreds monthly!</strong> Replace expensive individual tutors with one affordable family plan. 
+                  Create unlimited profiles - each child gets personalized AI tutoring from kindergarten through college.
                 </p>
                 <Button 
                   size="lg" 
@@ -100,15 +101,16 @@ export default function BenefitsPage() {
                 </CardContent>
               </Card>
 
-              {/* Benefit 2: Affordable Learning */}
-              <Card className="shadow-sm">
+              {/* Benefit 2: Affordable Family Plans */}
+              <Card className="shadow-sm border-2 border-green-500">
                 <CardContent className="pt-6 space-y-4">
                   <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
                     <DollarSign className="w-6 h-6 text-green-600" />
                   </div>
-                  <h3 className="text-xl font-semibold text-foreground">Fraction of the Cost</h3>
+                  <h3 className="text-xl font-semibold text-foreground">One Plan, All Siblings</h3>
                   <p className="text-muted-foreground">
-                    Get premium tutoring for just a fraction of what traditional tutors charge. Where private tutors can cost $50-150 per hour, our AI tutors start at less than $0.32 per minute with unlimited access.
+                    <strong>Save hundreds monthly!</strong> Instead of paying $50-100/hour per child for separate tutors, 
+                    get one family plan that ALL siblings share. Create unlimited profiles - everyone learns!
                   </p>
                 </CardContent>
               </Card>
@@ -152,15 +154,16 @@ export default function BenefitsPage() {
                 </CardContent>
               </Card>
 
-              {/* Benefit 6: Family Sharing */}
-              <Card className="shadow-sm border-2 border-green-200 dark:border-green-800">
+              {/* Benefit 6: Family Sharing - HIGHLIGHTED */}
+              <Card className="shadow-xl border-2 border-green-500 bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20">
                 <CardContent className="pt-6 space-y-4">
-                  <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
-                    <Users className="w-6 h-6 text-green-600" />
+                  <div className="w-12 h-12 bg-green-500 rounded-lg flex items-center justify-center">
+                    <Users className="w-6 h-6 text-white" />
                   </div>
-                  <h3 className="text-xl font-semibold text-foreground">Perfect for Families 👨‍👩‍👧‍👦</h3>
+                  <h3 className="text-xl font-semibold text-foreground">Unlimited Sibling Profiles 👨‍👩‍👧‍👦</h3>
                   <p className="text-muted-foreground">
-                    One subscription for the whole family! Create separate profiles for each child with age-appropriate tutoring. Minute-based billing means siblings share the pool—maximum flexibility, maximum value.
+                    <strong>The smart way for families!</strong> Create unlimited profiles for all your children. 
+                    Each sibling gets personalized tutoring but shares the family minutes. Save $100s vs separate tutors!
                   </p>
                 </CardContent>
               </Card>
