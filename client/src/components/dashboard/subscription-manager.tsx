@@ -33,45 +33,61 @@ interface VoiceBalance {
   purchasedUsed: number;
 }
 
-const plans = [
+interface Plan {
+  id: string;
+  name: string;
+  price: string;
+  minutes: number;
+  subtitle: string;
+  features: string[];
+  popular?: boolean;
+}
+
+const plans: Plan[] = [
   {
     id: "starter",
-    name: "Starter",
+    name: "Starter Family",
     price: "$19.99",
     minutes: 60,
+    subtitle: "Perfect for small families",
     features: [
-      "60 voice minutes per month",
-      "All subjects included",
-      "Personalized tutoring",
-      "Progress tracking"
+      "60 minutes shared by entire family",
+      "Unlimited student profiles for siblings",
+      "Math, English, Science, Spanish & More",
+      "Each child gets personalized tutoring",
+      "Real-time transcripts for parents"
     ]
   },
   {
     id: "standard",
-    name: "Standard",
+    name: "Standard Family",
     price: "$59.99",
     minutes: 240,
+    subtitle: "Best value for active families",
     features: [
-      "240 voice minutes per month",
-      "All subjects included",
-      "Personalized tutoring",
-      "Priority support",
-      "Advanced analytics"
+      "240 minutes shared by entire family",
+      "Unlimited student profiles for siblings",
+      "Math, English, Science, Spanish & More",
+      "Each child gets personalized tutoring",
+      "Real-time transcripts for parents",
+      "Priority support"
     ],
     popular: true
   },
   {
     id: "pro",
-    name: "Pro",
+    name: "Pro Family",
     price: "$99.99",
     minutes: 600,
+    subtitle: "For families with multiple learners",
     features: [
-      "600 voice minutes per month",
-      "All subjects included",
-      "Personalized tutoring",
+      "600 minutes shared by entire family",
+      "Unlimited student profiles for siblings",
+      "Math, English, Science, Spanish & More",
+      "Each child gets personalized tutoring",
+      "Real-time transcripts for parents",
       "Priority support",
-      "Advanced analytics",
-      "Custom learning paths"
+      "Advanced progress analytics"
     ]
   }
 ];
@@ -316,8 +332,8 @@ export default function SubscriptionManager() {
       {/* Available Plans */}
       <Card>
         <CardHeader>
-          <CardTitle>Change Plan</CardTitle>
-          <CardDescription>Upgrade or downgrade your subscription</CardDescription>
+          <CardTitle>Family Plans</CardTitle>
+          <CardDescription>One plan. All your kids learn. Save hundreds per month with minutes shared across siblings.</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -335,7 +351,8 @@ export default function SubscriptionManager() {
                 )}
                 
                 <h4 className="font-semibold text-lg">{plan.name}</h4>
-                <p className="text-2xl font-bold mt-2">{plan.price}</p>
+                <p className="text-xs text-muted-foreground mb-2">{plan.subtitle}</p>
+                <p className="text-2xl font-bold">{plan.price}</p>
                 <p className="text-sm text-muted-foreground">per month</p>
                 
                 <ul className="mt-4 space-y-2">
