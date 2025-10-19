@@ -11,7 +11,6 @@ async function testDateSync() {
   const activeUsers = await db
     .select()
     .from(users)
-    .where(users.subscriptionStatus.eq('active'))
     .limit(3);
   
   if (activeUsers.length === 0) {
