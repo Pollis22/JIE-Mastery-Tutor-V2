@@ -456,6 +456,16 @@ router.get('/:sessionId', async (req, res) => {
       return res.status(404).json({ error: 'Session not found' });
     }
 
+    // Transform transcript from database format (role/content) to frontend format (speaker/text)
+    const transformedTranscript = session.transcript && Array.isArray(session.transcript)
+      ? session.transcript.map((entry: any) => ({
+          speaker: entry.role === 'assistant' ? 'tutor' : 'student',
+          text: entry.content || entry.text || '',
+          timestamp: entry.timestamp,
+          messageId: entry.messageId || crypto.randomUUID()
+        }))
+      : [];
+
     res.json({
       id: session.id,
       status: session.status,
@@ -464,7 +474,7 @@ router.get('/:sessionId', async (req, res) => {
       startedAt: session.startedAt,
       endedAt: session.endedAt,
       minutesUsed: session.minutesUsed,
-      transcript: session.transcript,
+      transcript: transformedTranscript,
     });
 
   } catch (error) {

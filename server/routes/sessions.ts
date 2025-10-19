@@ -173,7 +173,20 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Session not found' });
     }
     
-    res.json({ session });
+    // Transform transcript from database format (role/content) to frontend format (speaker/text)
+    const transformedSession = {
+      ...session,
+      transcript: session.transcript && Array.isArray(session.transcript)
+        ? session.transcript.map((entry: any) => ({
+            speaker: entry.role === 'assistant' ? 'tutor' : 'student',
+            text: entry.content || entry.text || '',
+            timestamp: entry.timestamp,
+            messageId: entry.messageId || crypto.randomUUID()
+          }))
+        : []
+    };
+    
+    res.json({ session: transformedSession });
     
   } catch (error) {
     console.error('[Sessions] Failed to fetch session:', error);
