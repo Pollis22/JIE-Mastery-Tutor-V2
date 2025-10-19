@@ -29,6 +29,8 @@ interface VoiceBalance {
   purchasedMinutes: number;
   totalAvailable: number;
   resetDate: string;
+  subscriptionUsed: number;
+  purchasedUsed: number;
 }
 
 const plans = [
@@ -226,14 +228,14 @@ export default function SubscriptionManager() {
                 <div className="flex justify-between items-center">
                   <span className="text-sm font-medium flex items-center gap-2">
                     <Calendar className="h-4 w-4" />
-                    This Month's Allocation
+                    This Month's Usage
                   </span>
                   <span className="text-sm font-semibold">
-                    {voiceBalance?.subscriptionMinutes || 0} / {voiceBalance?.subscriptionLimit || 0} minutes
+                    {voiceBalance?.subscriptionUsed || 0} / {voiceBalance?.subscriptionLimit || 0} minutes
                   </span>
                 </div>
                 <Progress 
-                  value={((voiceBalance?.subscriptionLimit || 1) - (voiceBalance?.subscriptionMinutes || 0)) / (voiceBalance?.subscriptionLimit || 1) * 100} 
+                  value={((voiceBalance?.subscriptionUsed || 0) / (voiceBalance?.subscriptionLimit || 1)) * 100} 
                   className="h-2" 
                 />
                 {voiceBalance?.resetDate && (
