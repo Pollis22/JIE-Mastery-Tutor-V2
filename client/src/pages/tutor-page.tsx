@@ -636,6 +636,7 @@ export default function TutorPage() {
                   {/* OpenAI Realtime Voice System */}
                   <RealtimeVoiceHost
                     studentId={selectedStudentId || undefined}
+                    studentName={studentName}
                     subject={subject}
                     language={mapLanguageToISO(user?.preferredLanguage)}
                     ageGroup={level === 'k2' ? 'K-2' : level === 'g3_5' ? '3-5' : level === 'g6_8' ? '6-8' : level === 'g9_12' ? '9-12' : 'College/Adult'}

@@ -7,6 +7,7 @@ const router = Router();
 // Schema for starting a realtime session
 const startSessionSchema = z.object({
   studentId: z.string().optional(),
+  studentName: z.string().optional(),
   subject: z.string().optional(),
   language: z.enum(['en', 'es', 'hi', 'zh']).default('en'),
   ageGroup: z.enum(['K-2', '3-5', '6-8', '9-12', 'College/Adult']).default('3-5'),
@@ -171,8 +172,24 @@ router.post('/', async (req, res) => {
     // Build personalized instructions with personality
     const baseInstructions = getPersonalizedSystemPrompt(data.ageGroup, data.subject);
     
+    // Add personalized greeting with student name
+    const studentGreeting = data.studentName ? `
+IMPORTANT: The student's name is ${data.studentName}. Start your first message by greeting them warmly by name. For example:
+- "Hello ${data.studentName}! I'm so glad you're here to learn with me today!"
+- "Hi ${data.studentName}! What would you like to work on in ${data.subject || 'our lessons'} today?"
+- "Welcome ${data.studentName}! I'm excited to help you learn!"
+
+Throughout the conversation:
+- Use ${data.studentName}'s name naturally every 3-4 exchanges
+- Examples: "Great question, ${data.studentName}!" or "You're doing really well with this, ${data.studentName}!"
+- Keep it natural and encouraging, don't overuse the name
+
+Remember: You're not just teaching content, you're building ${data.studentName}'s confidence and love of learning!
+` : '';
+    
     // Combine personality prompt with document context
     const instructions = `${baseInstructions}
+${studentGreeting}
 ${documentContext ? documentContext : ''}
 ${documentContext ? '\nPlease reference the student\'s documents when relevant to provide personalized help.' : ''}`;
     
@@ -225,6 +242,7 @@ ${documentContext ? '\nPlease reference the student\'s documents when relevant t
         const dbSession = await storage.createRealtimeSession({
           userId: sessionUserId,
           studentId: data.studentId,
+          studentName: data.studentName,
           subject: data.subject,
           language: data.language,
           ageGroup: data.ageGroup,

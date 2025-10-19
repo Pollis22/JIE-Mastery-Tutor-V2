@@ -9,6 +9,7 @@ import { useAuth } from '@/hooks/use-auth';
 
 interface RealtimeVoiceHostProps {
   studentId?: string;
+  studentName?: string;
   subject?: string;
   language?: 'en' | 'es' | 'hi' | 'zh';
   ageGroup?: 'K-2' | '3-5' | '6-8' | '9-12' | 'College/Adult';
@@ -19,6 +20,7 @@ interface RealtimeVoiceHostProps {
 
 export function RealtimeVoiceHost({
   studentId,
+  studentName,
   subject,
   language = 'en',
   ageGroup = '3-5',
@@ -60,6 +62,7 @@ export function RealtimeVoiceHost({
       // Call the unified endpoint (without /start)
       const response = await apiRequest('POST', '/api/session/realtime', {
         studentId,
+        studentName,
         subject,
         language,
         ageGroup,
@@ -212,9 +215,10 @@ export function RealtimeVoiceHost({
         contextDocumentIds: contextDocumentIds || [],
         userId: user?.id,
         studentId: studentId,
+        studentName: studentName,
       });
     }
-  }, [clientSecret, sessionId, isConnected, connect, model, voice, language, ageGroup, selectedSubject, contextDocumentIds, user?.id, studentId]);
+  }, [clientSecret, sessionId, isConnected, connect, model, voice, language, ageGroup, selectedSubject, contextDocumentIds, user?.id, studentId, studentName]);
 
   // Auto-start microphone and send greeting when connected
   useEffect(() => {

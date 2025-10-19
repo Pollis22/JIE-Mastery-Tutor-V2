@@ -26,6 +26,7 @@ export function useRealtimeVoice() {
     voice?: string;
     userId?: string;
     studentId?: string;
+    studentName?: string;
     subject?: string;
     language?: string;
     ageGroup?: string;
@@ -52,6 +53,7 @@ export function useRealtimeVoice() {
           voice: config.voice || 'alloy',
           userId: config.userId,
           studentId: config.studentId,
+          studentName: config.studentName,
           subject: config.subject,
           language: config.language || 'en',
           ageGroup: config.ageGroup,
