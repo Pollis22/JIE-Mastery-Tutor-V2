@@ -1848,6 +1848,9 @@ export class DatabaseStorage implements IStorage {
 
   async saveRealtimeTranscript(sessionId: string, message: any): Promise<void> {
     try {
+      // Import transcript corrector
+      const { correctTranscript } = await import('./services/transcript-corrector');
+      
       // Get the current session to append to existing transcript
       const session = await db.query.realtimeSessions.findFirst({
         where: eq(realtimeSessions.id, sessionId),
@@ -1855,7 +1858,14 @@ export class DatabaseStorage implements IStorage {
       
       if (session) {
         const currentTranscript = Array.isArray(session.transcript) ? session.transcript : [];
-        const updatedTranscript = [...currentTranscript, message];
+        
+        // Apply transcript correction to the message content
+        const correctedMessage = {
+          ...message,
+          content: message.content ? correctTranscript(message.content) : message.content,
+        };
+        
+        const updatedTranscript = [...currentTranscript, correctedMessage];
         
         await db.update(realtimeSessions)
           .set({ transcript: updatedTranscript })
@@ -1874,11 +1884,17 @@ export class DatabaseStorage implements IStorage {
 
   async endRealtimeSession(sessionId: string, userId: string, transcript: any[], minutesUsed: number): Promise<void> {
     try {
+      // Import transcript corrector
+      const { correctTranscriptEntries } = await import('./services/transcript-corrector');
+      
+      // Apply corrections to entire transcript before saving
+      const correctedTranscript = correctTranscriptEntries(transcript);
+      
       await db.update(realtimeSessions)
         .set({
           status: 'ended',
           endedAt: new Date(),
-          transcript,
+          transcript: correctedTranscript,
           minutesUsed,
         })
         .where(and(eq(realtimeSessions.id, sessionId), eq(realtimeSessions.userId, userId)));
