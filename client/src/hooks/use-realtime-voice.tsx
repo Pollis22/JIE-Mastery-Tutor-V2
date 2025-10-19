@@ -50,15 +50,19 @@ export function useRealtimeVoice() {
       let model: string;
 
       // Check if we already have credentials passed from parent
-      if (config.clientSecret && config.sessionId) {
+      const hasProvidedCredentials = !!(config.clientSecret && config.sessionId);
+      
+      if (hasProvidedCredentials) {
         // Use the passed credentials (avoids creating duplicate session)
-        console.log('✅ [RealtimeVoice] Using provided credentials');
+        console.log('✅ [RealtimeVoice] Using provided credentials from parent, SKIPPING API CALL');
+        console.log('   Session ID:', config.sessionId);
+        console.log('   Has client secret:', !!config.clientSecret);
         clientSecret = config.clientSecret;
         sessionId = config.sessionId;
         model = config.model || 'gpt-4o-realtime-preview-2024-10-01';
       } else {
         // Fallback: Get credentials via HTTP (for backward compatibility)
-        console.log('🔑 [RealtimeVoice] Requesting credentials...');
+        console.log('🔑 [RealtimeVoice] No credentials provided, requesting from API...');
         const response = await fetch('/api/session/realtime', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -102,8 +106,10 @@ export function useRealtimeVoice() {
         console.log('✅ Documents ready for AI context');
       }
 
-      if (!clientSecret?.value && !clientSecret) {
-        throw new Error('No client_secret available');
+      // Check if we have a valid client secret
+      const hasValidSecret = clientSecret && (typeof clientSecret === 'string' || clientSecret.value);
+      if (!hasValidSecret) {
+        throw new Error('No valid client_secret available');
       }
 
       // Store sessionId for transcript persistence

@@ -206,6 +206,12 @@ export function RealtimeVoiceHost({
   // Auto-connect when we have clientSecret and sessionId
   useEffect(() => {
     if (clientSecret && sessionId && !isConnected) {
+      console.log('🔗 [RealtimeVoiceHost] Connecting with credentials:', { 
+        sessionId, 
+        hasClientSecret: !!clientSecret, 
+        clientSecretType: typeof clientSecret,
+        clientSecretValue: clientSecret?.value ? 'has value' : 'no value'
+      });
       connect({
         sessionId: sessionId,  // Pass the sessionId we already have
         clientSecret: clientSecret,  // Pass the clientSecret we already have
