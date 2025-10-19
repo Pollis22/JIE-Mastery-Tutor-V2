@@ -211,7 +211,15 @@ ${documentContext ? '\nPlease reference the student\'s documents when relevant t
         model,
         voice: selectedVoice,
         modalities: ['text', 'audio'],
-        instructions
+        instructions,
+        // Configure turn detection for better conversation flow
+        turn_detection: {
+          type: 'server_vad',           // Voice Activity Detection
+          threshold: 0.5,                // Sensitivity (0.0 - 1.0)
+          prefix_padding_ms: 300,        // Wait 300ms before user starts
+          silence_duration_ms: 1200      // Wait 1.2 seconds of silence before AI responds
+        },
+        temperature: 0.8  // More natural, conversational responses
       }),
     });
 
