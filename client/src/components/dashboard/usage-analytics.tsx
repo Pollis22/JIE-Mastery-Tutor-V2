@@ -81,7 +81,7 @@ export default function UsageAnalytics() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm text-muted-foreground">Total Sessions</p>
-                      <p className="text-2xl font-bold">{analytics?.totalSessions || 0}</p>
+                      <p className="text-2xl font-bold">{analytics?.total_sessions || 0}</p>
                     </div>
                     <BookOpen className="h-8 w-8 text-primary opacity-20" />
                   </div>
@@ -93,7 +93,7 @@ export default function UsageAnalytics() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm text-muted-foreground">Total Minutes</p>
-                      <p className="text-2xl font-bold">{analytics?.totalMinutes || 0}</p>
+                      <p className="text-2xl font-bold">{analytics?.total_minutes_used || 0}</p>
                     </div>
                     <Clock className="h-8 w-8 text-primary opacity-20" />
                   </div>
@@ -106,8 +106,8 @@ export default function UsageAnalytics() {
                     <div>
                       <p className="text-sm text-muted-foreground">Avg. Session</p>
                       <p className="text-2xl font-bold">
-                        {analytics?.totalSessions 
-                          ? Math.round(analytics.totalMinutes / analytics.totalSessions) 
+                        {analytics?.total_sessions 
+                          ? Math.round(analytics.total_minutes_used / analytics.total_sessions) 
                           : 0} min
                       </p>
                     </div>
