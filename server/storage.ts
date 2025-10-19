@@ -371,25 +371,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async canUserUseVoice(userId: string): Promise<boolean> {
-    // Always allow voice usage when in test mode
-    const isTestMode = process.env.AUTH_TEST_MODE === 'true' || process.env.NODE_ENV === 'development';
-    if (isTestMode) {
-      return true;
-    }
+    // Use the new hybrid minute tracking system
+    const { getUserMinuteBalance } = await import('./services/voice-minutes');
+    const balance = await getUserMinuteBalance(userId);
     
-    const user = await this.getUser(userId);
-    if (!user) return false;
-
-    // Check subscription status
-    if (!user.subscriptionStatus || user.subscriptionStatus !== 'active') {
-      return false;
-    }
-
-    // Check monthly allowance vs usage
-    const monthlyLimit = user.monthlyVoiceMinutes || 60;
-    const monthlyUsed = user.monthlyVoiceMinutesUsed || 0;
-    
-    return monthlyUsed < monthlyLimit;
+    // User can use voice if they have ANY minutes available (subscription or purchased)
+    return balance.totalAvailable > 0;
   }
 
   async getAvailableMinutes(userId: string): Promise<{ total: number; used: number; remaining: number; bonusMinutes: number }> {

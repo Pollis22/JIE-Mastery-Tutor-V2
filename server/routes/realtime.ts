@@ -60,6 +60,42 @@ router.post('/', async (req, res) => {
     const data = startSessionSchema.parse(req.body);
     const model = data.model || 'gpt-4o-realtime-preview-2024-10-01';
     
+    // CRITICAL: Check if user has available minutes before creating session
+    const checkUserId = req.user?.id || data.userId;
+    if (checkUserId) {
+      const { getUserMinuteBalance } = await import('../services/voice-minutes');
+      const balance = await getUserMinuteBalance(checkUserId);
+      
+      // Block session if no minutes available
+      if (balance.totalAvailable <= 0) {
+        console.log(`⛔ [RealtimeAPI] Session blocked - User ${checkUserId} has no available minutes`);
+        console.log(`   Subscription: ${balance.subscriptionUsed}/${balance.subscriptionLimit} used`);
+        console.log(`   Purchased: ${balance.purchasedMinutes} available`);
+        
+        // Check if they need to wait for reset or purchase minutes
+        const user = await storage.getUser(checkUserId);
+        const needsReset = user && user.billingCycleStart ? 
+          new Date(user.billingCycleStart).getTime() + (30 * 24 * 60 * 60 * 1000) : null;
+        const resetDate = needsReset ? new Date(needsReset) : null;
+        
+        return res.status(403).json({ 
+          error: 'No minutes available',
+          message: balance.purchasedMinutes === 0 && resetDate ? 
+            `You've used all ${balance.subscriptionLimit} minutes in your plan. Your minutes will reset on ${resetDate.toLocaleDateString()} or you can purchase additional minutes.` :
+            `You've used all your minutes. Please purchase additional minutes to continue.`,
+          minuteBalance: {
+            subscriptionUsed: balance.subscriptionUsed,
+            subscriptionLimit: balance.subscriptionLimit,
+            purchasedAvailable: balance.purchasedMinutes,
+            totalAvailable: balance.totalAvailable,
+            nextResetDate: resetDate?.toISOString()
+          }
+        });
+      }
+      
+      console.log(`✅ [RealtimeAPI] User ${checkUserId} has ${balance.totalAvailable} minutes available`);
+    }
+    
     // Determine voice based on language and age group
     let selectedVoice = data.voice || 'alloy'; // default
     try {
