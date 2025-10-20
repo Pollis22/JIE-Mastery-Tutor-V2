@@ -167,7 +167,7 @@ export default function AdminOverview() {
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Monthly Revenue</span>
-                  <span className="font-bold">${stats?.monthlyRevenue || 0}</span>
+                  <span className="font-bold">{stats?.monthlyRevenue ? `$${stats.monthlyRevenue}` : '$0'}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Avg Session Time</span>
