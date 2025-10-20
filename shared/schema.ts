@@ -58,8 +58,9 @@ export const users = pgTable("users", {
   marketingOptOutDate: timestamp("marketing_opt_out_date"),
   stripeCustomerId: text("stripe_customer_id"),
   stripeSubscriptionId: text("stripe_subscription_id"),
-  subscriptionPlan: text("subscription_plan").$type<'starter' | 'standard' | 'pro' | 'single' | 'all'>(),
+  subscriptionPlan: text("subscription_plan").$type<'starter' | 'standard' | 'pro' | 'elite' | 'single' | 'all'>(),
   subscriptionStatus: text("subscription_status").$type<'active' | 'canceled' | 'paused'>(),
+  maxConcurrentSessions: integer("max_concurrent_sessions").default(1), // Elite tier allows up to 3
   // Hybrid Minute Tracking System
   subscriptionMinutesUsed: integer("subscription_minutes_used").default(0), // Monthly usage counter
   subscriptionMinutesLimit: integer("subscription_minutes_limit").default(60), // Monthly allowance
