@@ -31,7 +31,8 @@ import {
   TrendingUp,
   Calendar,
   Volume2,
-  Mic
+  Mic,
+  UserCog
 } from "lucide-react";
 import AccountSettings from "@/components/dashboard/account-settings";
 import SubscriptionManager from "@/components/dashboard/subscription-manager";
@@ -93,6 +94,11 @@ export default function DashboardPage() {
     { id: "preferences", label: "Preferences", icon: Settings },
     { id: "support", label: "Support & Help", icon: HelpCircle },
   ];
+
+  // Add Admin link for admin users
+  if (user?.isAdmin) {
+    sidebarItems.splice(1, 0, { id: "admin", label: "Admin Dashboard", icon: UserCog });
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -160,7 +166,13 @@ export default function DashboardPage() {
                           key={item.id}
                           variant={activeTab === item.id ? "secondary" : "ghost"}
                           className="w-full justify-start"
-                          onClick={() => setActiveTab(item.id)}
+                          onClick={() => {
+                            if (item.id === "admin") {
+                              setLocation("/admin");
+                            } else {
+                              setActiveTab(item.id);
+                            }
+                          }}
                         >
                           <Icon className="mr-2 h-4 w-4" />
                           {item.label}
