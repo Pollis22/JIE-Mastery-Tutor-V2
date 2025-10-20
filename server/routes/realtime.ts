@@ -1,6 +1,9 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { storage } from '../storage';
+import { db } from '../db';
+import { realtimeSessions } from '@shared/schema';
+import { and, eq, inArray } from 'drizzle-orm';
 
 const router = Router();
 
@@ -61,9 +64,46 @@ router.post('/', async (req, res) => {
     const data = startSessionSchema.parse(req.body);
     const model = data.model || 'gpt-4o-realtime-preview-2024-10-01';
     
-    // CRITICAL: Check if user has available minutes before creating session
+    // CRITICAL: Check for active sessions on this account
     const checkUserId = req.user?.id || data.userId;
     if (checkUserId) {
+      // First check for any active sessions on this account
+      const activeSessions = await db.select({
+        id: realtimeSessions.id,
+        studentName: realtimeSessions.studentName,
+        startedAt: realtimeSessions.startedAt,
+        status: realtimeSessions.status
+      })
+      .from(realtimeSessions)
+      .where(and(
+        eq(realtimeSessions.userId, checkUserId),
+        inArray(realtimeSessions.status, ['connecting', 'active'])
+      ))
+      .limit(1);
+      
+      if (activeSessions && activeSessions.length > 0) {
+        const activeSession = activeSessions[0];
+        const studentInUse = activeSession.studentName || 'another family member';
+        
+        console.log(`🚫 [RealtimeAPI] Session blocked - Account ${checkUserId} already has an active session`);
+        console.log(`   Active session ID: ${activeSession.id}`);
+        console.log(`   Student using: ${studentInUse}`);
+        
+        return res.status(409).json({ 
+          error: 'Session in use',
+          code: 'CONCURRENT_SESSION_BLOCKED',
+          message: `A tutoring session is already in progress with ${studentInUse}. Only one voice session is allowed per family account at a time. Please wait for the current session to end.`,
+          activeSession: {
+            sessionId: activeSession.id,
+            studentName: activeSession.studentName,
+            startedAt: activeSession.startedAt,
+            estimatedEndTime: new Date(activeSession.startedAt.getTime() + 15 * 60 * 1000) // Estimate 15 min session
+          },
+          suggestion: 'Family members can take turns using the voice tutor. The current session will automatically end after 5 minutes of inactivity.'
+        });
+      }
+      
+      // Check if user has available minutes before creating session
       const { getUserMinuteBalance } = await import('../services/voice-minutes');
       const balance = await getUserMinuteBalance(checkUserId);
       
