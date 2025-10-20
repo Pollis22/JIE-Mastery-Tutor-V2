@@ -19,6 +19,10 @@ import SubscribePage from "@/pages/subscribe-page";
 import TutorPage from "@/pages/tutor-page";
 import BenefitsPage from "@/pages/benefits-page";
 import UnsubscribePage from "@/pages/unsubscribe-page";
+import DemoPage from "@/pages/demo-page";
+import FAQPage from "@/pages/faq-page";
+import SupportPage from "@/pages/support-page";
+import ContactPage from "@/pages/contact-page";
 import AdminOverview from "@/pages/admin-overview";
 import AdminUsers from "@/pages/admin-users";
 import AdminSubscriptions from "@/pages/admin-subscriptions";
@@ -65,6 +69,10 @@ function Router() {
       <Route path="/admin-setup" component={AdminSetupPage} />
       <Route path="/pricing" component={PricingPage} />
       <Route path="/benefits" component={BenefitsPage} />
+      <Route path="/demo" component={DemoPage} />
+      <Route path="/faq" component={FAQPage} />
+      <Route path="/support" component={SupportPage} />
+      <Route path="/contact" component={ContactPage} />
       <Route path="/terms" component={TermsPage} />
       <Route path="/unsubscribe" component={UnsubscribePage} />
       <Route component={NotFound} />

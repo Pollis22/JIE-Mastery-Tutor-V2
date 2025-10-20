@@ -190,8 +190,8 @@ export default function SupportCenter() {
               <Mail className="h-4 w-4" />
               <AlertDescription>
                 For general inquiries, email us at{" "}
-                <a href="mailto:support@jiemastery.ai" className="font-medium underline">
-                  support@jiemastery.ai
+                <a href="mailto:support@JIEmastery.ai" className="font-medium underline">
+                  support@JIEmastery.ai
                 </a>
               </AlertDescription>
             </Alert>
@@ -251,7 +251,7 @@ export default function SupportCenter() {
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <Mail className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm">support@jiemastery.ai</span>
+                  <span className="text-sm">support@JIEmastery.ai</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <MessageCircle className="h-4 w-4 text-muted-foreground" />

@@ -306,6 +306,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Contact form endpoint (public - no authentication required)
+  app.post("/api/contact", async (req, res) => {
+    try {
+      const contactSchema = z.object({
+        name: z.string().min(1, "Name is required"),
+        email: z.string().email("Invalid email address"),
+        subject: z.string().min(1, "Subject is required"),
+        message: z.string().min(10, "Message must be at least 10 characters"),
+      });
+
+      const validation = contactSchema.safeParse(req.body);
+      
+      if (!validation.success) {
+        return res.status(400).json({ 
+          error: validation.error.errors[0].message 
+        });
+      }
+
+      const { name, email, subject, message } = validation.data;
+      
+      // Log contact submission (future: could send email to support)
+      console.log('[Contact] New message:', { name, email, subject, message });
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('[Contact] Error:', error);
+      res.status(500).json({ error: "Failed to send message" });
+    }
+  });
+
   // Enhanced voice API routes (use existing voiceRoutes but add enhancedVoiceRoutes functionality if needed)
   app.use("/api/voice", voiceRoutes);
   
