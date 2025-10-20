@@ -106,9 +106,8 @@ const plans: Plan[] = [
       "Math, English, Science, Spanish & More",
       "Each child gets personalized tutoring",
       "Real-time transcripts for parents",
-      "Premium 24/7 support",
-      "Advanced progress analytics",
-      "Family progress dashboard"
+      "Priority support",
+      "Custom learning paths per child"
     ]
   }
 ];

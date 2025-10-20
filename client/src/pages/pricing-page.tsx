@@ -73,15 +73,14 @@ const plans = [
     description: '👑 BEST VALUE - For large families',
     features: [
       '1,800 minutes/month (30 hours!)',
-      'Unlimited student profiles',
+      'Unlimited student profiles for siblings',
       '🎉 3 CONCURRENT DEVICES - Multiple kids learn at once!',
       'Math, English, Science, Spanish & More',
       'Each child gets personalized tutoring',
       'Real-time transcripts for parents',
       'Individual progress tracking per child',
-      'Premium 24/7 support',
-      'Family progress dashboard',
-      'Downloadable reports'
+      'Priority support',
+      'Custom learning paths per child'
     ],
     popular: false,
     elite: true,
