@@ -12,7 +12,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { useEffect, useState } from "react";
-import { Eye, EyeOff, Mail, FileText, Upload, Scan, Users } from "lucide-react";
+import { Eye, EyeOff, Mail, FileText, Upload, Scan, Users, TrendingUp } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -544,10 +544,8 @@ export default function AuthPage() {
                 </div>
                 
                 <div className="flex items-center space-x-3">
-                  <div className="w-8 h-8 bg-secondary/10 rounded-lg flex items-center justify-center">
-                    <svg className="w-4 h-4 text-secondary" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
-                    </svg>
+                  <div className="w-8 h-8 bg-orange-500/10 rounded-lg flex items-center justify-center">
+                    <TrendingUp className="w-4 h-4 text-orange-500" />
                   </div>
                   <span className="text-foreground font-medium">Adaptive Learning Paths</span>
                 </div>
