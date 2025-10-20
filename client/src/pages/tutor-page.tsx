@@ -583,8 +583,9 @@ export default function TutorPage() {
             <ol className="text-sm text-blue-800 dark:text-blue-200 space-y-1.5 list-decimal list-inside">
               <li><strong>Enter your name</strong> above (required for a personalized experience)</li>
               <li><strong>Select your grade level and subject</strong> you want help with</li>
-              <li><strong>Upload your materials (optional)</strong> - Share homework, worksheets, or study guides (PDF, DOCX, or images). The AI will read and understand your documents to provide targeted help!</li>
-              <li><strong>Click "Start Tutoring Session"</strong> to connect with your AI tutor</li>
+              <li><strong>Upload your materials (optional)</strong> - Share homework, worksheets, or study guides (PDF, DOCX, or images). After uploading, <span className="text-red-600 dark:text-red-400 font-bold">check the "Use" box</span> to include each document in your tutoring session</li>
+              <li><strong>Wait a few seconds</strong> after uploading for documents to process completely</li>
+              <li><strong>Click "Talk to Your Tutor"</strong> to start your voice conversation</li>
               <li><strong>Start speaking</strong> - Ask questions about your homework or discuss any topic. The tutor uses your uploaded documents to give personalized guidance!</li>
               <li><strong>View the transcript</strong> below to see your conversation in real-time</li>
             </ol>

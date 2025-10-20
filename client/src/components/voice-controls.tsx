@@ -72,11 +72,11 @@ export function VoiceControls({ lessonId }: VoiceControlsProps) {
                 className="bg-primary hover:bg-primary/90 text-primary-foreground px-8 py-4 rounded-xl font-semibold text-lg"
                 data-testid="button-start-voice"
               >
-                🎤 Start Voice Learning
+                🎤 Talk to Your Tutor
               </Button>
               
               <p className="text-sm text-muted-foreground">
-                Click to enable voice conversation with your AI tutor
+                Click to start your voice conversation with your AI tutor
               </p>
               
               {error && (

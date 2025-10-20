@@ -243,13 +243,13 @@ export function AssignmentsPanel({ userId, onSelectionChange }: AssignmentsPanel
     <div className="assignments-panel bg-white dark:bg-gray-800 rounded-lg p-6 shadow-sm border border-gray-200 dark:border-gray-700" data-testid="assignments-panel">
       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
         <FileText className="w-5 h-5" />
-        📚 Study Materials
+        📚 Load Your Study Materials
       </h3>
 
       {/* Upload Section */}
       <div className="upload-section mb-6" data-testid="upload-section">
         <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
-          <h4 className="font-medium text-gray-900 dark:text-white mb-3">Upload Assignments or Documents</h4>
+          <h4 className="font-medium text-gray-900 dark:text-white mb-3">Upload homework, study guides, or syllabus for targeted instruction</h4>
           
           {/* File Selection and Preview */}
           <div className="space-y-3">
