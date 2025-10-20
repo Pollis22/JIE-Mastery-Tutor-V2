@@ -67,6 +67,24 @@ router.post('/', async (req, res) => {
     // CRITICAL: Check for active sessions on this account
     const checkUserId = req.user?.id || data.userId;
     if (checkUserId) {
+      // First, clean up any expired or stuck sessions (older than 30 minutes)
+      const cleanupResult = await db.update(realtimeSessions)
+        .set({ 
+          status: 'ended', 
+          endedAt: new Date(),
+          errorMessage: 'Session auto-ended due to timeout'
+        })
+        .where(and(
+          eq(realtimeSessions.userId, checkUserId),
+          inArray(realtimeSessions.status, ['connecting', 'active']),
+          sql`${realtimeSessions.startedAt} < NOW() - INTERVAL '30 minutes'`
+        ))
+        .returning({ id: realtimeSessions.id });
+      
+      if (cleanupResult.length > 0) {
+        console.log(`🧹 [RealtimeAPI] Cleaned up ${cleanupResult.length} expired sessions for user ${checkUserId}`);
+      }
+      
       // Get user's concurrent session limit
       const user = await storage.getUser(checkUserId);
       const maxConcurrentSessions = user?.maxConcurrentSessions || 1;
@@ -696,6 +714,47 @@ router.post('/:sessionId/end', async (req, res) => {
   } catch (error) {
     console.error('[RealtimeAPI] Error ending session:', error);
     res.status(500).json({ error: 'Failed to end session' });
+  }
+});
+
+/**
+ * POST /api/session/realtime/cleanup - Clean up stuck sessions for current user
+ * This is a maintenance endpoint to help users who get stuck due to crashed sessions
+ */
+router.post('/cleanup', async (req, res) => {
+  try {
+    const userId = req.user?.id || req.body.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    // Clean up ALL stuck sessions for this user
+    const cleanupResult = await db.update(realtimeSessions)
+      .set({ 
+        status: 'ended', 
+        endedAt: new Date(),
+        errorMessage: 'Session manually cleaned up'
+      })
+      .where(and(
+        eq(realtimeSessions.userId, userId),
+        inArray(realtimeSessions.status, ['connecting', 'active'])
+      ))
+      .returning({ 
+        id: realtimeSessions.id, 
+        studentName: realtimeSessions.studentName,
+        startedAt: realtimeSessions.startedAt 
+      });
+    
+    console.log(`🧹 [RealtimeAPI] Manual cleanup: Ended ${cleanupResult.length} sessions for user ${userId}`);
+    
+    res.json({ 
+      success: true,
+      cleanedSessions: cleanupResult.length,
+      sessions: cleanupResult
+    });
+  } catch (error) {
+    console.error('[RealtimeAPI] Cleanup error:', error);
+    res.status(500).json({ error: 'Failed to cleanup sessions' });
   }
 });
 

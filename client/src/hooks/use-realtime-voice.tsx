@@ -512,7 +512,7 @@ export function useRealtimeVoice() {
     heartbeatIntervalRef.current = setInterval(checkSessionStatus, 10000);
   };
 
-  const disconnect = useCallback(() => {
+  const disconnect = useCallback(async () => {
     console.log('🔴 [RealtimeVoice] Disconnecting...');
 
     try {
@@ -521,6 +521,22 @@ export function useRealtimeVoice() {
         console.log('💓 [Heartbeat] Stopping heartbeat polling');
         clearInterval(heartbeatIntervalRef.current);
         heartbeatIntervalRef.current = null;
+      }
+
+      // 0.5 End the session on the backend to mark it as ended
+      if (sessionIdRef.current) {
+        console.log('📡 [RealtimeVoice] Ending session on backend:', sessionIdRef.current);
+        try {
+          await fetch(`/api/session/realtime/${sessionIdRef.current}/end`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+          });
+          console.log('✅ [RealtimeVoice] Session ended on backend');
+        } catch (error) {
+          console.warn('⚠️ [RealtimeVoice] Failed to end session on backend:', error);
+          // Continue with cleanup even if backend call fails
+        }
+        sessionIdRef.current = null;
       }
 
       // 1. Close data channel first
@@ -594,6 +610,12 @@ export function useRealtimeVoice() {
   // Cleanup on unmount or page unload
   useEffect(() => {
     const handleBeforeUnload = () => {
+      // Use beacon API for page unload since async operations might not complete
+      if (sessionIdRef.current && navigator.sendBeacon) {
+        const data = new Blob([JSON.stringify({ sessionId: sessionIdRef.current })], { type: 'application/json' });
+        navigator.sendBeacon(`/api/session/realtime/${sessionIdRef.current}/end`, data);
+        console.log('🚀 [RealtimeVoice] Sent beacon to end session on page unload');
+      }
       disconnect();
     };
 
