@@ -507,4 +507,112 @@ export function setupAuth(app: Express) {
       res.status(500).json({ error: 'Failed to verify email' });
     }
   });
+
+  // One-time admin setup endpoint for production
+  app.post("/api/setup/admin", async (req, res) => {
+    try {
+      console.log('[Setup] Admin setup request received');
+      
+      // Check if any admin users exist
+      const adminCount = await storage.getAdminCount();
+      
+      if (adminCount > 0) {
+        console.log('[Setup] Admin already exists, refusing setup');
+        return res.status(403).json({ 
+          error: 'Admin already exists',
+          message: 'An admin user has already been created. This endpoint can only be used once.'
+        });
+      }
+      
+      // Validate the setup data
+      const setupSchema = z.object({
+        email: z.string().email(),
+        password: z.string().min(8),
+        firstName: z.string().min(1),
+        lastName: z.string().min(1),
+        setupKey: z.string(), // Require a setup key for security
+      });
+      
+      const validation = setupSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: validation.error.errors 
+        });
+      }
+      
+      // Check setup key matches (you can set this in Railway env vars)
+      const expectedSetupKey = process.env.ADMIN_SETUP_KEY || 'JIEMastery2025Admin!';
+      if (validation.data.setupKey !== expectedSetupKey) {
+        console.log('[Setup] Invalid setup key provided');
+        return res.status(403).json({ 
+          error: 'Invalid setup key',
+          message: 'The setup key is incorrect. Check your deployment configuration.'
+        });
+      }
+      
+      console.log('[Setup] Creating admin user:', validation.data.email);
+      
+      // Create the admin user
+      const adminUser = await storage.createUser({
+        email: validation.data.email,
+        username: validation.data.email, // Use email as username
+        password: await hashPassword(validation.data.password),
+        firstName: validation.data.firstName,
+        lastName: validation.data.lastName,
+        parentName: validation.data.firstName + ' ' + validation.data.lastName,
+        studentName: 'Admin',
+        studentAge: null,
+        gradeLevel: 'college-adult',
+        primarySubject: 'general',
+        isAdmin: true, // Set as admin
+        emailVerified: true, // Pre-verify admin
+        subscriptionPlan: 'elite', // Give admin elite plan
+        subscriptionStatus: 'active',
+        subscriptionMinutesLimit: 1800, // Elite minutes
+        subscriptionMinutesUsed: 0,
+        purchasedMinutesBalance: 0,
+        billingCycleStart: new Date(),
+        maxConcurrentSessions: 3, // Elite concurrent sessions
+        marketingOptIn: false,
+      });
+      
+      console.log('[Setup] Admin user created successfully:', adminUser.email);
+      
+      // Log them in automatically
+      req.login(adminUser, (err) => {
+        if (err) {
+          console.error('[Setup] Auto-login failed:', err);
+          return res.status(201).json({ 
+            success: true,
+            message: 'Admin user created successfully. Please login manually.',
+            user: {
+              id: adminUser.id,
+              email: adminUser.email,
+              isAdmin: true
+            }
+          });
+        }
+        
+        res.status(201).json({ 
+          success: true,
+          message: 'Admin user created and logged in successfully',
+          user: {
+            id: adminUser.id,
+            email: adminUser.email,
+            isAdmin: true,
+            firstName: adminUser.firstName,
+            lastName: adminUser.lastName
+          }
+        });
+      });
+      
+    } catch (error) {
+      console.error('[Setup] Admin setup error:', error);
+      res.status(500).json({ 
+        error: 'Failed to create admin user',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
 }

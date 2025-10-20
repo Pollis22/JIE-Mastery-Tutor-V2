@@ -104,6 +104,7 @@ export interface IStorage {
   // Admin operations
   getAdminUsers(options: { page: number; limit: number; search: string }): Promise<any>;
   getAdminStats(): Promise<any>;
+  getAdminCount(): Promise<number>;
   exportUsersCSV(): Promise<string>;
   
   // Admin audit log operations
@@ -1193,6 +1194,15 @@ export class DatabaseStorage implements IStorage {
       monthlyRevenue: `$${monthlyRevenue.toLocaleString()}`,
       avgSessionTime: `${Math.round(avgSessionTime.avg || 0)} min`,
     };
+  }
+
+  async getAdminCount(): Promise<number> {
+    const [adminCount] = await db
+      .select({ count: count() })
+      .from(users)
+      .where(eq(users.isAdmin, true));
+    
+    return adminCount.count;
   }
 
   async exportUsersCSV(): Promise<string> {
