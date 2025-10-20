@@ -95,14 +95,23 @@ router.post(
 
           console.log(`[Stripe Webhook] Checkout completed for user ${userId}, plan: ${plan}`);
 
-          // Map plan to monthly minutes
+          // Map plan to monthly minutes and concurrent sessions
           const minutesMap: Record<string, number> = {
             'starter': 60,
             'standard': 240,
             'pro': 600,
+            'elite': 1800,
+          };
+          
+          const concurrentSessionsMap: Record<string, number> = {
+            'starter': 1,
+            'standard': 1,
+            'pro': 1,
+            'elite': 3, // Elite tier gets 3 concurrent devices
           };
 
           const monthlyMinutes = minutesMap[plan] || 60;
+          const maxConcurrentSessions = concurrentSessionsMap[plan] || 1;
 
           // Update subscription in database with customer and subscription IDs
           await storage.updateUserStripeInfo(
@@ -111,12 +120,13 @@ router.post(
             session.subscription as string
           );
 
-          // Update subscription status, plan, and monthly minute allowance
+          // Update subscription status, plan, monthly minute allowance, and concurrent sessions
           await storage.updateUserSubscription(
             userId,
-            plan as 'starter' | 'standard' | 'pro',
+            plan as 'starter' | 'standard' | 'pro' | 'elite',
             'active',
-            monthlyMinutes
+            monthlyMinutes,
+            maxConcurrentSessions
           );
 
           // Reset monthly usage counter
@@ -128,9 +138,10 @@ router.post(
           const user = await storage.getUser(userId);
           if (user && user.parentName && user.studentName) {
             const planNames: Record<string, string> = {
-              'starter': 'Starter',
-              'standard': 'Standard',
-              'pro': 'Pro',
+              'starter': 'Starter Family',
+              'standard': 'Standard Family',
+              'pro': 'Pro Family',
+              'elite': 'Elite Family',
             };
             
             emailService.sendSubscriptionConfirmation({

@@ -23,13 +23,15 @@ const plans = [
       'Individual progress tracking per child'
     ],
     popular: false,
+    concurrentSessions: 1,
+    pricePerMinute: '$0.33'
   },
   {
     id: 'standard',
     name: 'Standard Family',
     price: 59.99,
     minutes: 240,
-    description: 'Best value for active families',
+    description: 'Most popular for active families',
     features: [
       '240 minutes shared by entire family',
       'Unlimited student profiles for siblings',
@@ -40,6 +42,8 @@ const plans = [
       'Priority support for parents'
     ],
     popular: true,
+    concurrentSessions: 1,
+    pricePerMinute: '$0.25'
   },
   {
     id: 'pro',
@@ -58,6 +62,32 @@ const plans = [
       'Custom learning paths per child'
     ],
     popular: false,
+    concurrentSessions: 1,
+    pricePerMinute: '$0.17'
+  },
+  {
+    id: 'elite',
+    name: 'Elite Family',
+    price: 199.99,
+    minutes: 1800,
+    description: '👑 BEST VALUE - For large families',
+    features: [
+      '1,800 minutes/month (30 hours!)',
+      'Unlimited student profiles',
+      '🎉 3 CONCURRENT DEVICES - Multiple kids learn at once!',
+      'Math, English, Science, Spanish & More',
+      'Each child gets personalized tutoring',
+      'Real-time transcripts for parents',
+      'Individual progress tracking per child',
+      'Premium 24/7 support',
+      'Family progress dashboard',
+      'Downloadable reports'
+    ],
+    popular: false,
+    elite: true,
+    concurrentSessions: 3,
+    pricePerMinute: '$0.11',
+    savings: 'Save 40% per minute!'
   },
 ];
 
@@ -149,10 +179,12 @@ export default function PricingPage() {
                 </svg>
                 <div>
                   <p className="text-sm font-semibold text-amber-800 dark:text-amber-200 mb-1">
-                    One Active Voice Session Per Family Account
+                    Device Usage Policy
                   </p>
                   <p className="text-sm text-amber-700 dark:text-amber-300">
-                    To ensure quality tutoring and prevent minute abuse, only one child can use the voice tutor at a time. Family members take turns - when one session ends, another can begin. Sessions automatically end after 5 minutes of inactivity.
+                    <strong>Starter, Standard & Pro:</strong> One device at a time - family members take turns.<br/>
+                    <strong>Elite Family:</strong> 3 concurrent devices - multiple kids can learn simultaneously! 🎉<br/>
+                    <span className="text-xs mt-1 block">Sessions automatically end after 5 minutes of inactivity.</span>
                   </p>
                 </div>
               </div>
@@ -188,18 +220,27 @@ export default function PricingPage() {
           </div>
 
           {/* Pricing Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-16">
-            {plans.map((plan) => (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-16">
+            {plans.map((plan: any) => (
               <Card
                 key={plan.id}
                 className={`shadow-lg relative ${
                   plan.popular ? 'border-2 border-primary shadow-xl' : ''
+                } ${
+                  plan.elite ? 'border-3 border-yellow-400 bg-gradient-to-br from-yellow-50 to-amber-50 dark:from-yellow-900/20 dark:to-amber-900/20 shadow-2xl' : ''
                 }`}
                 data-testid={`card-${plan.id}-plan`}
               >
                 {plan.popular && (
                   <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
                     <Badge className="bg-primary text-primary-foreground px-4 py-2">Most Popular</Badge>
+                  </div>
+                )}
+                {plan.elite && (
+                  <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
+                    <Badge className="bg-gradient-to-r from-yellow-400 to-amber-500 text-amber-900 px-4 py-2 text-sm font-bold">
+                      👑 BEST VALUE
+                    </Badge>
                   </div>
                 )}
                 
@@ -210,6 +251,13 @@ export default function PricingPage() {
                   </div>
                   
                   <div className="mb-8">
+                    {plan.savings && (
+                      <div className="mb-3">
+                        <Badge className="bg-green-500 text-white px-3 py-1 text-xs">
+                          {plan.savings}
+                        </Badge>
+                      </div>
+                    )}
                     <div className="flex items-baseline">
                       <span className="text-5xl font-bold text-foreground">${plan.price}</span>
                       <span className="text-xl text-muted-foreground ml-2">/month</span>
@@ -217,10 +265,13 @@ export default function PricingPage() {
                     <p className="text-sm text-muted-foreground mt-2">
                       {plan.minutes} minutes of voice tutoring
                     </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {plan.pricePerMinute} per minute • {plan.concurrentSessions} device{plan.concurrentSessions > 1 ? 's' : ''}
+                    </p>
                   </div>
 
                   <div className="space-y-4 mb-6">
-                    {plan.features.map((feature, idx) => (
+                    {plan.features.map((feature: string, idx: number) => (
                       <div key={idx} className="flex items-center space-x-3" data-testid={`feature-${plan.id}-${idx}`}>
                         <svg className="w-5 h-5 text-secondary flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                           <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>

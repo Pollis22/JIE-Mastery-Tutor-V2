@@ -67,7 +67,11 @@ router.post('/', async (req, res) => {
     // CRITICAL: Check for active sessions on this account
     const checkUserId = req.user?.id || data.userId;
     if (checkUserId) {
-      // First check for any active sessions on this account
+      // Get user's concurrent session limit
+      const user = await storage.getUser(checkUserId);
+      const maxConcurrentSessions = user?.maxConcurrentSessions || 1;
+      
+      // Check for any active sessions on this account
       const activeSessions = await db.select({
         id: realtimeSessions.id,
         studentName: realtimeSessions.studentName,
@@ -78,28 +82,34 @@ router.post('/', async (req, res) => {
       .where(and(
         eq(realtimeSessions.userId, checkUserId),
         inArray(realtimeSessions.status, ['connecting', 'active'])
-      ))
-      .limit(1);
+      ));
       
-      if (activeSessions && activeSessions.length > 0) {
+      // Block if at or over limit
+      if (activeSessions && activeSessions.length >= maxConcurrentSessions) {
         const activeSession = activeSessions[0];
         const studentInUse = activeSession.studentName || 'another family member';
         
-        console.log(`🚫 [RealtimeAPI] Session blocked - Account ${checkUserId} already has an active session`);
-        console.log(`   Active session ID: ${activeSession.id}`);
+        console.log(`🚫 [RealtimeAPI] Session blocked - Account ${checkUserId} at concurrent session limit`);
+        console.log(`   Active sessions: ${activeSessions.length}/${maxConcurrentSessions}`);
         console.log(`   Student using: ${studentInUse}`);
         
         return res.status(409).json({ 
           error: 'Session in use',
           code: 'CONCURRENT_SESSION_BLOCKED',
-          message: `A tutoring session is already in progress with ${studentInUse}. Only one voice session is allowed per family account at a time. Please wait for the current session to end.`,
+          message: maxConcurrentSessions === 1 
+            ? `A tutoring session is already in progress with ${studentInUse}. Only one voice session is allowed per family account at a time. Please wait for the current session to end.`
+            : `Your account has reached its limit of ${maxConcurrentSessions} concurrent sessions. ${activeSessions.length} session(s) are currently active. Please wait for one to end before starting another.`,
           activeSession: {
             sessionId: activeSession.id,
             studentName: activeSession.studentName,
             startedAt: activeSession.startedAt,
-            estimatedEndTime: new Date(activeSession.startedAt.getTime() + 15 * 60 * 1000) // Estimate 15 min session
+            estimatedEndTime: activeSession.startedAt ? new Date(activeSession.startedAt.getTime() + 15 * 60 * 1000) : null
           },
-          suggestion: 'Family members can take turns using the voice tutor. The current session will automatically end after 5 minutes of inactivity.'
+          activeSessions: activeSessions.length,
+          maxAllowed: maxConcurrentSessions,
+          suggestion: maxConcurrentSessions === 1 
+            ? 'Family members can take turns using the voice tutor. The current session will automatically end after 5 minutes of inactivity.'
+            : `Your ${user?.subscriptionPlan || 'current'} plan allows up to ${maxConcurrentSessions} simultaneous sessions. Upgrade to Elite Family ($199.99/mo) for 3 concurrent devices!`
         });
       }
       
