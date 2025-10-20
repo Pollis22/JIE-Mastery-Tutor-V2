@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { storage } from '../storage';
 import { db } from '../db';
 import { realtimeSessions } from '@shared/schema';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 
 const router = Router();
 
