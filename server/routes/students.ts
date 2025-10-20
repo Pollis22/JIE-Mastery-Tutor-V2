@@ -21,7 +21,16 @@ router.get('/', async (req, res) => {
   try {
     const user = req.user as any;
     const students = await storage.getStudentsByOwner(user.id);
-    res.json(students);
+    
+    // Map backend fields to frontend field names
+    const mappedStudents = students.map((student: any) => ({
+      ...student,
+      grade: student.gradeBand,
+      learningPace: student.pace,
+      encouragementLevel: student.encouragement,
+    }));
+    
+    res.json(mappedStudents);
   } catch (error: any) {
     res.status(500).json({ message: 'Error fetching students: ' + error.message });
   }
@@ -31,13 +40,30 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const user = req.user as any;
-    const data = insertStudentSchema.parse({
-      ...req.body,
+    
+    // Map frontend field names to backend schema field names
+    const mappedData = {
+      name: req.body.name,
+      gradeBand: req.body.grade || 'k-2', // Map 'grade' to 'gradeBand' with a default
+      pace: req.body.learningPace || 'normal', // Map 'learningPace' to 'pace'
+      encouragement: req.body.encouragementLevel || 'medium', // Map 'encouragementLevel' to 'encouragement'
+      goals: req.body.goals || [],
       ownerUserId: user.id,
-    });
+    };
+    
+    const data = insertStudentSchema.parse(mappedData);
     
     const student = await storage.createStudent(data);
-    res.status(201).json(student);
+    
+    // Map backend fields back to frontend field names
+    const responseStudent = {
+      ...student,
+      grade: student.gradeBand,
+      learningPace: student.pace,
+      encouragementLevel: student.encouragement,
+    };
+    
+    res.status(201).json(responseStudent);
   } catch (error: any) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ message: 'Validation error', errors: error.errors });
@@ -57,7 +83,15 @@ router.get('/:studentId', async (req, res) => {
       return res.status(404).json({ message: 'Student not found' });
     }
     
-    res.json(student);
+    // Map backend fields to frontend field names
+    const mappedStudent = {
+      ...student,
+      grade: student.gradeBand,
+      learningPace: student.pace,
+      encouragementLevel: student.encouragement,
+    };
+    
+    res.json(mappedStudent);
   } catch (error: any) {
     res.status(500).json({ message: 'Error fetching student: ' + error.message });
   }
@@ -69,11 +103,28 @@ router.put('/:studentId', async (req, res) => {
     const user = req.user as any;
     const { studentId } = req.params;
     
+    // Map frontend field names to backend schema field names
+    const mappedData: any = {};
+    if (req.body.name !== undefined) mappedData.name = req.body.name;
+    if (req.body.grade !== undefined) mappedData.gradeBand = req.body.grade;
+    if (req.body.learningPace !== undefined) mappedData.pace = req.body.learningPace;
+    if (req.body.encouragementLevel !== undefined) mappedData.encouragement = req.body.encouragementLevel;
+    if (req.body.goals !== undefined) mappedData.goals = req.body.goals;
+    
     const updateSchema = insertStudentSchema.partial().omit({ ownerUserId: true });
-    const updates = updateSchema.parse(req.body);
+    const updates = updateSchema.parse(mappedData);
     
     const student = await storage.updateStudent(studentId, user.id, updates);
-    res.json(student);
+    
+    // Map backend fields back to frontend field names
+    const responseStudent = {
+      ...student,
+      grade: student.gradeBand,
+      learningPace: student.pace,
+      encouragementLevel: student.encouragement,
+    };
+    
+    res.json(responseStudent);
   } catch (error: any) {
     if (error instanceof z.ZodError) {
       return res.status(400).json({ message: 'Validation error', errors: error.errors });
