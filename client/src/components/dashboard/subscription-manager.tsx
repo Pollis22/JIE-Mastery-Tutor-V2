@@ -333,7 +333,12 @@ export default function SubscriptionManager() {
       <Card>
         <CardHeader>
           <CardTitle>Family Plans</CardTitle>
-          <CardDescription>One plan. All your kids learn. Save hundreds per month with minutes shared across siblings.</CardDescription>
+          <CardDescription>
+            One plan. All your kids learn. Save hundreds per month with minutes shared across siblings.
+            <span className="block mt-2 text-xs text-amber-600 dark:text-amber-400 font-medium">
+              ⚠️ Only one voice session can be active at a time per account - family members take turns.
+            </span>
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

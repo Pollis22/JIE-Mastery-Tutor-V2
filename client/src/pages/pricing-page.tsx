@@ -136,10 +136,27 @@ export default function PricingPage() {
             <h1 className="text-5xl font-bold text-foreground mb-6" data-testid="text-hero-title">
               One Family Plan. All Your Kids Learn.
             </h1>
-            <p className="text-xl text-muted-foreground mb-8 max-w-3xl mx-auto">
+            <p className="text-xl text-muted-foreground mb-4 max-w-3xl mx-auto">
               <strong>Save hundreds per month!</strong> Instead of separate tutors for each child, get one family plan that all siblings share. 
               Create unlimited profiles - each child gets personalized tutoring from kindergarten through college.
             </p>
+            
+            {/* Session Limitation Notice */}
+            <div className="bg-amber-50 dark:bg-amber-950/30 border-2 border-amber-300 dark:border-amber-700 rounded-xl p-4 max-w-3xl mx-auto mb-8">
+              <div className="flex items-start space-x-3">
+                <svg className="w-6 h-6 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd"/>
+                </svg>
+                <div>
+                  <p className="text-sm font-semibold text-amber-800 dark:text-amber-200 mb-1">
+                    One Active Voice Session Per Family Account
+                  </p>
+                  <p className="text-sm text-amber-700 dark:text-amber-300">
+                    To ensure quality tutoring and prevent minute abuse, only one child can use the voice tutor at a time. Family members take turns - when one session ends, another can begin. Sessions automatically end after 5 minutes of inactivity.
+                  </p>
+                </div>
+              </div>
+            </div>
             
             {/* Feature highlights */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
