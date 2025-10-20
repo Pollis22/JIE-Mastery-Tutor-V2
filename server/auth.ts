@@ -82,6 +82,7 @@ export function setupAuth(app: Express) {
             primarySubject: 'math' as const,
             subscriptionPlan: 'all' as const,
             subscriptionStatus: 'active' as const,
+            maxConcurrentSessions: 3, // Test user gets full concurrent access
             stripeCustomerId: null,
             stripeSubscriptionId: null,
             subscriptionMinutesUsed: 0, // New hybrid minute field
@@ -177,9 +178,10 @@ export function setupAuth(app: Express) {
         studentName: 'Test Student',
         studentAge: 10,
         gradeLevel: 'grades-3-5' as const,
-        primarySubject: 'Math',
+        primarySubject: 'math' as const,
         subscriptionPlan: 'all' as const,
         subscriptionStatus: 'active' as const,
+        maxConcurrentSessions: 3, // Test user gets full concurrent access
         stripeCustomerId: null,
         stripeSubscriptionId: null,
         subscriptionMinutesUsed: 0, // New hybrid minute field
