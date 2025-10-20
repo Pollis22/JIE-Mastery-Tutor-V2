@@ -28,10 +28,10 @@ export default function AdminAgentsPage() {
     <div className="container mx-auto p-6 space-y-6">
       <div>
         <h1 className="text-3xl font-bold mb-2" data-testid="heading-agents">
-          ElevenLabs Agent Monitoring
+          Voice AI System Monitoring
         </h1>
         <p className="text-muted-foreground">
-          Monitor the status and usage of all age-specific ConvAI agents
+          Monitor the status and usage of OpenAI Realtime API voice tutoring sessions
         </p>
       </div>
 
@@ -183,27 +183,73 @@ export default function AdminAgentsPage() {
       {/* Configuration Info */}
       <Card>
         <CardHeader>
-          <CardTitle data-testid="heading-info">Configuration Information</CardTitle>
+          <CardTitle data-testid="heading-info">Voice Technology Configuration</CardTitle>
           <CardDescription>
-            ElevenLabs ConvAI agents are configured via environment variables
+            OpenAI Realtime API powers the voice tutoring experience
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-2">
-          <div className="text-sm space-y-1">
+        <CardContent className="space-y-4">
+          <div className="text-sm space-y-2">
+            <p className="font-medium">Primary Voice Technology:</p>
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5">
+                  <CheckCircle className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div>
+                  <p className="font-medium text-blue-900 dark:text-blue-100">OpenAI Realtime API (WebRTC)</p>
+                  <p className="text-sm text-blue-800 dark:text-blue-200 mt-1">
+                    Native browser-to-OpenAI audio streaming with GPT-4o and GPT-4o-mini models
+                  </p>
+                  <ul className="list-disc list-inside space-y-1 text-sm text-blue-700 dark:text-blue-300 mt-2 ml-2">
+                    <li>Multi-language support (English, Spanish, Hindi, Chinese)</li>
+                    <li>Age-specific voice personalities (5 tutor profiles)</li>
+                    <li>RAG integration for document-aware tutoring</li>
+                    <li>Live transcript with real-time updates</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="text-sm space-y-2">
             <p className="font-medium">Required Environment Variables:</p>
             <ul className="list-disc list-inside space-y-1 text-muted-foreground ml-2">
-              <li><code className="text-xs bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">ELEVENLABS_AGENT_K2</code> - Kindergarten to 2nd grade</li>
-              <li><code className="text-xs bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">ELEVENLABS_AGENT_35</code> - 3rd to 5th grade</li>
-              <li><code className="text-xs bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">ELEVENLABS_AGENT_68</code> - 6th to 8th grade</li>
-              <li><code className="text-xs bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">ELEVENLABS_AGENT_912</code> - 9th to 12th grade</li>
-              <li><code className="text-xs bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">ELEVENLABS_AGENT_COLLEGE</code> - College/Adult</li>
+              <li><code className="text-xs bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">OPENAI_API_KEY</code> - OpenAI API authentication</li>
+              <li><code className="text-xs bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">USE_REALTIME=true</code> - Enable Realtime API (default)</li>
             </ul>
           </div>
+
+          <div className="text-sm space-y-2">
+            <p className="font-medium">Age-Specific Tutor Personalities:</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
+              <div className="border rounded p-2">
+                <p className="font-medium text-xs">🐻 Buddy Bear (K-2)</p>
+                <p className="text-xs text-muted-foreground">Playful, simple language</p>
+              </div>
+              <div className="border rounded p-2">
+                <p className="font-medium text-xs">🔍 Max Explorer (3-5)</p>
+                <p className="text-xs text-muted-foreground">Adventurous, curious</p>
+              </div>
+              <div className="border rounded p-2">
+                <p className="font-medium text-xs">🌟 Dr. Nova (6-8)</p>
+                <p className="text-xs text-muted-foreground">Knowledgeable, cool</p>
+              </div>
+              <div className="border rounded p-2">
+                <p className="font-medium text-xs">🎓 Professor Ace (9-12)</p>
+                <p className="text-xs text-muted-foreground">Expert, college-prep</p>
+              </div>
+              <div className="border rounded p-2 md:col-span-2">
+                <p className="font-medium text-xs">👨‍🔬 Dr. Morgan (College/Adult)</p>
+                <p className="text-xs text-muted-foreground">Collaborative peer, practical application</p>
+              </div>
+            </div>
+          </div>
+
           <div className="text-sm text-muted-foreground mt-4">
             <p>
-              Each agent is optimized for its target age group with appropriate complexity,
-              vocabulary, and teaching approaches. Sessions are automatically routed to the
-              correct agent based on the user's grade level.
+              The system automatically selects the appropriate tutor personality based on the student's grade level,
+              ensuring age-appropriate complexity, vocabulary, and teaching approaches.
             </p>
           </div>
         </CardContent>
