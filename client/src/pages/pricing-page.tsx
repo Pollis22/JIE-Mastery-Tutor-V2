@@ -19,8 +19,7 @@ const plans = [
       'Unlimited student profiles for siblings',
       'Math, English, Science, Spanish & More',
       'Each child gets personalized tutoring',
-      'Real-time transcripts for parents',
-      'Individual progress tracking per child'
+      'Real-time transcripts for parents'
     ],
     popular: false,
     concurrentSessions: 1,
@@ -31,17 +30,16 @@ const plans = [
     name: 'Standard Family',
     price: 59.99,
     minutes: 240,
-    description: 'Most popular for active families',
+    description: 'Great for active families',
     features: [
       '240 minutes shared by entire family',
       'Unlimited student profiles for siblings',
       'Math, English, Science, Spanish & More',
       'Each child gets personalized tutoring',
       'Real-time transcripts for parents',
-      'Individual progress tracking per child',
       'Priority support for parents'
     ],
-    popular: true,
+    popular: false,
     concurrentSessions: 1,
     pricePerMinute: '$0.25'
   },
@@ -50,18 +48,17 @@ const plans = [
     name: 'Pro Family',
     price: 99.99,
     minutes: 600,
-    description: 'For families with multiple learners',
+    description: 'Most popular for families with multiple learners',
     features: [
       '600 minutes shared by entire family',
       'Unlimited student profiles for siblings',
       'Math, English, Science, Spanish & More',
       'Each child gets personalized tutoring',
       'Real-time transcripts for parents',
-      'Individual progress tracking per child',
       'Priority support for parents',
       'Custom learning paths per child'
     ],
-    popular: false,
+    popular: true,
     concurrentSessions: 1,
     pricePerMinute: '$0.17'
   },
@@ -78,7 +75,6 @@ const plans = [
       'Math, English, Science, Spanish & More',
       'Each child gets personalized tutoring',
       'Real-time transcripts for parents',
-      'Individual progress tracking per child',
       'Priority support',
       'Custom learning paths per child'
     ],

@@ -55,8 +55,7 @@ const plans: Plan[] = [
       "Unlimited student profiles for siblings",
       "Math, English, Science, Spanish & More",
       "Each child gets personalized tutoring",
-      "Real-time transcripts for parents",
-      "1 device at a time"
+      "Real-time transcripts for parents"
     ]
   },
   {
@@ -64,24 +63,23 @@ const plans: Plan[] = [
     name: "Standard Family",
     price: "$59.99",
     minutes: 240,
-    subtitle: "Most popular for active families",
+    subtitle: "Great for active families",
     features: [
       "240 minutes shared by entire family",
       "Unlimited student profiles for siblings",
       "Math, English, Science, Spanish & More",
       "Each child gets personalized tutoring",
       "Real-time transcripts for parents",
-      "Priority support",
-      "1 device at a time"
+      "Priority support"
     ],
-    popular: true
+    popular: false
   },
   {
     id: "pro",
     name: "Pro Family",
     price: "$99.99",
     minutes: 600,
-    subtitle: "For families with multiple learners",
+    subtitle: "Most popular for families with multiple learners",
     features: [
       "600 minutes shared by entire family",
       "Unlimited student profiles for siblings",
@@ -89,9 +87,9 @@ const plans: Plan[] = [
       "Each child gets personalized tutoring",
       "Real-time transcripts for parents",
       "Priority support",
-      "Advanced progress analytics",
-      "1 device at a time"
-    ]
+      "Custom learning paths per child"
+    ],
+    popular: true
   },
   {
     id: "elite",
@@ -101,7 +99,7 @@ const plans: Plan[] = [
     subtitle: "👑 BEST VALUE - For large families",
     features: [
       "1,800 minutes/month (30 hours!)",
-      "Unlimited student profiles",
+      "Unlimited student profiles for siblings",
       "🎉 3 CONCURRENT DEVICES",
       "Math, English, Science, Spanish & More",
       "Each child gets personalized tutoring",
