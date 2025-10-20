@@ -168,15 +168,15 @@ export default function BenefitsPage() {
                 </CardContent>
               </Card>
 
-              {/* Benefit 7: Track Progress */}
+              {/* Benefit 7: Transcript Saving */}
               <Card className="shadow-sm">
                 <CardContent className="pt-6 space-y-4">
                   <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
                     <TrendingUp className="w-6 h-6 text-red-600" />
                   </div>
-                  <h3 className="text-xl font-semibold text-foreground">Real Progress Tracking</h3>
+                  <h3 className="text-xl font-semibold text-foreground">Complete Transcript Saving</h3>
                   <p className="text-muted-foreground">
-                    Watch your improvement with detailed conversation transcripts, progress reports, and performance analytics. See exactly where you're excelling and where to focus next.
+                    Every conversation is automatically saved! Review what was discussed, share transcripts with teachers or parents, and reference past lessons anytime. Perfect for homework help and test prep.
                   </p>
                 </CardContent>
               </Card>
