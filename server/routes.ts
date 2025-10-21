@@ -472,23 +472,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = req.user as any;
       
-      // Get total sessions count
+      // Get total sessions count from realtime_sessions table
       const sessionsResult = await db.execute(sql`
         SELECT COUNT(*) as count
-        FROM learning_sessions
+        FROM realtime_sessions
         WHERE user_id = ${user.id}
+          AND status = 'ended'
       `);
       const totalSessions = Number((sessionsResult.rows[0] as any)?.count || 0);
       
-      // Get minutes used in the past 7 days
+      // Get minutes used in the past 7 days from realtime_sessions
       const weekAgo = new Date();
       weekAgo.setDate(weekAgo.getDate() - 7);
       
       const weeklyResult = await db.execute(sql`
-        SELECT COALESCE(SUM(duration), 0) as weekly_minutes
-        FROM learning_sessions
+        SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (ended_at - started_at)) / 60), 0) as weekly_minutes
+        FROM realtime_sessions
         WHERE user_id = ${user.id}
-          AND created_at >= ${weekAgo.toISOString()}
+          AND status = 'ended'
+          AND started_at >= ${weekAgo.toISOString()}
+          AND ended_at IS NOT NULL
       `);
       const weeklyMinutes = Number((weeklyResult.rows[0] as any)?.weekly_minutes || 0);
       

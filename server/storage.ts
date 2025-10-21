@@ -1181,18 +1181,59 @@ export class DatabaseStorage implements IStorage {
     // Calculate monthly revenue (mock calculation)
     const monthlyRevenue = activeSubscriptions.count * 150; // Average plan price
 
+    // Get total document count
+    const [documentStats] = await db.select({ count: count() }).from(userDocuments);
+    
+    // Get active sessions (currently ongoing)
+    const [activeSessionStats] = await db
+      .select({ count: count() })
+      .from(realtimeSessions)
+      .where(eq(realtimeSessions.status, 'active'));
+
+    // Get total sessions count
+    const [totalSessionStats] = await db
+      .select({ count: count() })
+      .from(realtimeSessions)
+      .where(eq(realtimeSessions.status, 'ended'));
+
+    // Calculate average session time from realtime_sessions
     const [avgSessionTime] = await db
       .select({
-        avg: sql<number>`AVG(EXTRACT(EPOCH FROM (${learningSessions.endedAt} - ${learningSessions.startedAt})) / 60)`.as('avg')
+        avg: sql<number>`AVG(EXTRACT(EPOCH FROM (${realtimeSessions.endedAt} - ${realtimeSessions.startedAt})) / 60)`.as('avg')
       })
-      .from(learningSessions)
-      .where(sql`${learningSessions.endedAt} IS NOT NULL`);
+      .from(realtimeSessions)
+      .where(sql`${realtimeSessions.endedAt} IS NOT NULL AND ${realtimeSessions.status} = 'ended'`);
+
+    // Get storage used (sum of document file sizes)
+    const storageResult = await db.execute(sql`
+      SELECT COALESCE(SUM(file_size), 0) as total_size
+      FROM user_documents
+    `);
+    const storageBytes = Number((storageResult.rows[0] as any)?.total_size || 0);
+    const storageMB = Math.round(storageBytes / (1024 * 1024));
+
+    // Get recent users (last 5)
+    const recentUsers = await db
+      .select({
+        id: users.id,
+        username: users.username,
+        email: users.email,
+        createdAt: users.createdAt,
+      })
+      .from(users)
+      .orderBy(desc(users.createdAt))
+      .limit(5);
 
     return {
       totalUsers: totalUsers.count,
       activeSubscriptions: activeSubscriptions.count,
-      monthlyRevenue: `$${monthlyRevenue.toLocaleString()}`,
+      totalDocuments: documentStats.count,
+      activeSessions: activeSessionStats.count,
+      monthlyRevenue: monthlyRevenue,
       avgSessionTime: `${Math.round(avgSessionTime.avg || 0)} min`,
+      totalSessions: totalSessionStats.count,
+      storageUsed: `${storageMB} MB`,
+      recentUsers,
     };
   }
 
