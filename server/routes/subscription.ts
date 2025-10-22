@@ -168,6 +168,63 @@ router.post('/change', async (req, res) => {
   }
 });
 
+// POST /api/subscription/cancel - Cancel subscription
+router.post('/cancel', async (req, res) => {
+  try {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const userId = req.user!.id;
+    
+    console.log('🚫 [Subscription] Cancellation requested for user:', userId);
+    
+    const user = await storage.getUserById(userId);
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    // If has Stripe subscription, cancel it
+    if (user.stripeSubscriptionId && stripe) {
+      try {
+        await stripe.subscriptions.cancel(user.stripeSubscriptionId);
+        console.log('✅ [Subscription] Cancelled Stripe subscription:', user.stripeSubscriptionId);
+      } catch (stripeError: any) {
+        console.error('❌ [Subscription] Stripe cancellation error:', stripeError.message);
+        // Continue with local cancellation even if Stripe fails
+      }
+    }
+    
+    // Update user status to cancelled
+    await storage.updateUserSubscription(
+      userId,
+      user.subscriptionPlan || 'starter', // Keep existing plan name
+      'canceled',
+      0, // Zero minutes
+      0  // Zero concurrent sessions
+    );
+    
+    // Clear Stripe IDs
+    await storage.updateUserStripeInfo(userId, user.stripeCustomerId || '', null);
+    
+    console.log('✅ [Subscription] Subscription cancelled for:', user.email);
+    
+    res.json({
+      success: true,
+      message: 'Subscription cancelled successfully',
+      note: 'Your account remains active but you no longer have access to tutoring sessions. You can resubscribe anytime.'
+    });
+    
+  } catch (error: any) {
+    console.error('❌ [Subscription] Error cancelling subscription:', error);
+    res.status(500).json({ 
+      error: 'Failed to cancel subscription',
+      details: error.message 
+    });
+  }
+});
+
 // GET /api/subscription/status - Get current subscription status
 router.get('/status', async (req, res) => {
   try {
