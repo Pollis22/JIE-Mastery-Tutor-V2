@@ -228,9 +228,9 @@ export function setupAuth(app: Express) {
       email: z.string().email(),
       username: z.string().min(1),
       password: z.string().min(8),
-      firstName: z.string().min(1, "First name is required"),
-      lastName: z.string().min(1, "Last name is required"),
-      parentName: z.string().optional(),
+      firstName: z.string().optional(),
+      lastName: z.string().optional(),
+      parentName: z.string().min(1, "Parent/Guardian name is required"),
       studentName: z.string().min(1, "Student name is required"),
       studentAge: z.number().optional(),
       gradeLevel: z.string().min(1, "Grade level is required"),
@@ -240,10 +240,21 @@ export function setupAuth(app: Express) {
 
     const validation = registerSchema.safeParse(req.body);
     if (!validation.success) {
+      console.error('[Register] Validation failed:', validation.error.errors);
       return res.status(400).json({ 
         error: "Validation failed", 
         details: validation.error.errors 
       });
+    }
+
+    // Split parentName into firstName and lastName if not provided separately
+    let firstName = validation.data.firstName;
+    let lastName = validation.data.lastName;
+    
+    if (!firstName && !lastName && validation.data.parentName) {
+      const nameParts = validation.data.parentName.trim().split(/\s+/);
+      firstName = nameParts[0];
+      lastName = nameParts.slice(1).join(' ') || nameParts[0];
     }
 
     const existingUser = await storage.getUserByUsername(validation.data.username);
@@ -261,6 +272,8 @@ export function setupAuth(app: Express) {
     
     const user = await storage.createUser({
       ...validation.data,
+      firstName: firstName || validation.data.parentName?.split(' ')[0] || 'User',
+      lastName: lastName || validation.data.parentName?.split(' ').slice(1).join(' ') || '',
       password: await hashPassword(validation.data.password),
       marketingOptInDate: validation.data.marketingOptIn ? new Date() : null,
       subscriptionPlan: defaultPlan,
