@@ -349,8 +349,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // User analytics and subscription management routes
   const { default: userAnalyticsRoutes } = await import('./routes/user-analytics');
   const { default: subscriptionRoutes } = await import('./routes/subscription');
+  const { default: accountManagementRoutes } = await import('./routes/account-management');
   app.use("/api/user", userAnalyticsRoutes);
   app.use("/api/subscription", subscriptionRoutes);
+  app.use("/api/account", accountManagementRoutes);
   
   // Document and context routes for RAG system
   const { default: documentRoutes } = await import('./routes/documents');
