@@ -101,11 +101,9 @@ export default function PricingPage() {
 
     setLoading(planId);
     try {
-      const response = await apiRequest('POST', '/api/create-checkout-session', {
+      const data = await apiRequest('/api/create-checkout-session', 'POST', {
         plan: planId,
       });
-      
-      const data = await response.json();
       
       if (data.url) {
         window.location.href = data.url;

@@ -46,6 +46,8 @@ import NewsletterSubscribe from "@/components/dashboard/newsletter-subscribe";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 
+import { RequireSubscription } from "@/components/require-subscription";
+
 export default function DashboardPage() {
   const { user, logoutMutation } = useAuth();
   const [, setLocation] = useLocation();
@@ -101,7 +103,8 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <RequireSubscription>
+      <div className="min-h-screen bg-background">
       {/* Top Navigation Bar */}
       <header className="border-b bg-card">
         <div className="container mx-auto px-4 py-4">
@@ -379,5 +382,6 @@ export default function DashboardPage() {
         </div>
       </div>
     </div>
+    </RequireSubscription>
   );
 }

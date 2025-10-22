@@ -20,6 +20,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { DebugPanel } from "@/components/realtime/DebugPanel";
+import { RequireSubscription } from "@/components/require-subscription";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -402,7 +403,8 @@ export default function TutorPage() {
   }, [sessionStartTime]);
 
   return (
-    <NetworkAwareWrapper>
+    <RequireSubscription>
+      <NetworkAwareWrapper>
       <TutorErrorBoundary>
         <div className="tutor-page max-w-3xl mx-auto p-4 space-y-4">
           {/* Header with Logo and Student Switcher */}
@@ -702,5 +704,6 @@ export default function TutorPage() {
         )}
       </TutorErrorBoundary>
     </NetworkAwareWrapper>
+    </RequireSubscription>
   );
 }

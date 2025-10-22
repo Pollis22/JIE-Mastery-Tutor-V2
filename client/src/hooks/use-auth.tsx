@@ -94,6 +94,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     onSuccess: (user: SelectUser) => {
       queryClient.setQueryData(["/api/user"], user);
+      
+      // Check if user has pending subscription (needs to pay)
+      if (user.subscriptionStatus === 'pending' || !user.subscriptionPlan) {
+        toast({
+          title: "Account Created!",
+          description: "Please select a subscription plan to start learning.",
+        });
+        // Redirect to pricing page
+        window.location.href = '/pricing';
+      } else {
+        toast({
+          title: "Welcome!",
+          description: `Account created for ${user.username}`,
+        });
+      }
     },
     onError: (error: Error) => {
       console.error('Register error:', error);
