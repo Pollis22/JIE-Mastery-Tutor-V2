@@ -1,7 +1,10 @@
 import { Router, Request, Response } from "express";
-import bcrypt from "bcrypt";
+import { scrypt, timingSafeEqual } from "crypto";
+import { promisify } from "util";
 import { storage } from "../storage";
 import Stripe from "stripe";
+
+const scryptAsync = promisify(scrypt);
 
 const router = Router();
 
@@ -86,8 +89,11 @@ router.post('/request-deletion', requireAuth, async (req: Request, res: Response
       return res.status(404).json({ error: 'User not found' });
     }
     
-    // Verify password for security
-    const passwordValid = await bcrypt.compare(confirmPassword, user.password);
+    // Verify password for security using scrypt (same as auth.ts)
+    const [salt, key] = user.password.split(':');
+    const keyBuffer = Buffer.from(key, 'hex');
+    const derivedKey = (await scryptAsync(confirmPassword, salt, 64)) as Buffer;
+    const passwordValid = timingSafeEqual(keyBuffer, derivedKey);
     
     if (!passwordValid) {
       console.log('[Account] Invalid password for deletion request');
