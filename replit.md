@@ -26,6 +26,13 @@ The platform uses a **session-first** data priority model where session configur
 
 ### Voice Technology Integration
 -   **OpenAI Realtime API (Primary)**: Utilizes WebRTC for native browser-to-OpenAI audio streaming, supporting multi-language and age-specific voice selections. It includes RAG integration for contextual learning and live transcript UI.
+    -   **Model Workaround**: Using `gpt-4o-mini-realtime-preview-2024-12-17` as workaround for October 2025 API bugs (no audio output issue)
+    -   **Response State Management**: Implemented comprehensive fixes for `conversation_already_has_active_response` errors including:
+        -   Response lifecycle tracking (`isResponseInProgressRef`)
+        -   Request queueing system (`responseQueueRef`)
+        -   Automatic retry logic for stuck response states
+        -   Enhanced error handling for OpenAI API errors
+    -   **Known Issues**: OpenAI Realtime API has active bugs affecting October 18-22, 2025 causing audio generation failures
 -   **ElevenLabs ConvAI (Legacy/Backup)**: Pre-configured, age-specific AI tutors for reliable production deployment.
 
 ### AI & Learning Engine

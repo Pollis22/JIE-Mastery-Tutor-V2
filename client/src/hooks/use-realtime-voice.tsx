@@ -21,6 +21,12 @@ export function useRealtimeVoice() {
   const sessionIdRef = useRef<string | null>(null);
   const currentAssistantMessage = useRef<RealtimeMessage | null>(null);
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Response state management - FIX for "conversation_already_has_active_response" error
+  const isResponseInProgressRef = useRef<boolean>(false);
+  const responseQueueRef = useRef<Array<any>>([]);
+  const reconnectAttemptsRef = useRef<number>(0);
+  const maxReconnectAttempts = 3;
 
   const connect = useCallback(async (config: {
     sessionId?: string;
@@ -59,8 +65,8 @@ export function useRealtimeVoice() {
         console.log('   Session ID:', config.sessionId);
         console.log('   Has client secret:', !!config.clientSecret);
         clientSecret = config.clientSecret;
-        sessionId = config.sessionId;
-        model = config.model || 'gpt-4o-realtime-preview-2024-10-01';
+        sessionId = config.sessionId || '';
+        model = config.model || 'gpt-4o-mini-realtime-preview-2024-12-17';
       } else {
         // Fallback: Get credentials via HTTP (for backward compatibility)
         console.log('🔑 [RealtimeVoice] No credentials provided, requesting from API...');
@@ -156,6 +162,65 @@ export function useRealtimeVoice() {
     }
   };
 
+  // Helper function to safely create responses with queue management
+  // FIX for "conversation_already_has_active_response" error
+  const createResponse = useCallback((responseConfig: any = {}) => {
+    const dc = dataChannelRef.current;
+    if (!dc || dc.readyState !== 'open') {
+      console.warn('⚠️ [Response] DataChannel not open, cannot create response');
+      return;
+    }
+
+    // Check if response is already in progress
+    if (isResponseInProgressRef.current) {
+      console.log('⏸️ [Response] Response in progress, queuing request');
+      responseQueueRef.current.push(responseConfig);
+      return;
+    }
+
+    // Mark response as in progress
+    isResponseInProgressRef.current = true;
+    console.log('▶️ [Response] Creating response');
+
+    // Send response.create to OpenAI
+    try {
+      dc.send(JSON.stringify({
+        type: 'response.create',
+        response: responseConfig
+      }));
+    } catch (error) {
+      console.error('❌ [Response] Failed to send response.create:', error);
+      isResponseInProgressRef.current = false;
+    }
+  }, []);
+
+  // Helper function to process queued responses
+  const processResponseQueue = useCallback(() => {
+    if (responseQueueRef.current.length > 0 && !isResponseInProgressRef.current) {
+      console.log('📤 [Response] Processing queued request');
+      const nextConfig = responseQueueRef.current.shift();
+      createResponse(nextConfig);
+    }
+  }, [createResponse]);
+
+  // Helper function to cancel current response (for interruptions)
+  const cancelCurrentResponse = useCallback(() => {
+    const dc = dataChannelRef.current;
+    if (!dc || dc.readyState !== 'open') return;
+
+    if (isResponseInProgressRef.current) {
+      console.log('🛑 [Response] Cancelling current response');
+      try {
+        dc.send(JSON.stringify({ type: 'response.cancel' }));
+        isResponseInProgressRef.current = false;
+        // Process next queued item after cancellation
+        setTimeout(processResponseQueue, 100);
+      } catch (error) {
+        console.error('❌ [Response] Failed to cancel response:', error);
+      }
+    }
+  }, [processResponseQueue]);
+
   const connectWebRTC = async (clientSecret: string, model: string) => {
     console.log('🔵 [WebRTC] Creating peer connection...');
 
@@ -221,23 +286,56 @@ export function useRealtimeVoice() {
         }
       }));
       
-      // Request initial greeting (without overriding server instructions)
+      // Request initial greeting using safe createResponse helper
       setTimeout(() => {
-        dc.send(JSON.stringify({
-          type: 'response.create'
-        }));
-        console.log('✅ [DataChannel] Initial response requested');
+        console.log('🎤 [DataChannel] Requesting initial greeting...');
+        createResponse({});
       }, 100);
     };
 
     dc.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
-        console.log('📨 [DataChannel] Message:', message.type);
         
+        // Log all important events for debugging
+        const debugEvents = [
+          'response.created', 'response.done', 'response.output_item.added',
+          'response.output_item.done', 'input_audio_buffer.speech_started',
+          'input_audio_buffer.speech_stopped', 'error'
+        ];
+        if (debugEvents.includes(message.type)) {
+          console.log('📨 [DataChannel] Message:', message.type);
+        }
+        
+        // Handle response lifecycle - FIX for response state management
+        if (message.type === 'response.created') {
+          console.log('✅ [Response] Response created');
+          isResponseInProgressRef.current = true;
+        }
+        
+        if (message.type === 'response.done') {
+          console.log('✅ [Response] Response completed');
+          isResponseInProgressRef.current = false;
+          // Process any queued responses
+          setTimeout(processResponseQueue, 100);
+        }
+        
+        // Enhanced error handling
         if (message.type === 'error') {
           console.error('❌ [OpenAI] Error:', message.error);
-          setError(message.error.message);
+          
+          // Handle specific error: conversation_already_has_active_response
+          if (message.error?.code === 'conversation_already_has_active_response') {
+            console.log('🔄 [Response] Clearing stuck response state');
+            isResponseInProgressRef.current = false;
+            
+            // Wait briefly then process queue
+            setTimeout(() => {
+              processResponseQueue();
+            }, 500);
+          } else {
+            setError(message.error.message || 'OpenAI API Error');
+          }
         }
         
         // Track user activity for inactivity timeout
