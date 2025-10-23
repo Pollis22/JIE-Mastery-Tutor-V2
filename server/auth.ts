@@ -25,6 +25,10 @@ async function hashPassword(password: string) {
 
 async function comparePasswords(supplied: string, stored: string) {
   const [hashed, salt] = stored.split(".");
+  if (!hashed || !salt) {
+    console.error('[comparePasswords] Invalid password format - missing hash or salt');
+    return false;
+  }
   const hashedBuf = Buffer.from(hashed, "hex");
   const suppliedBuf = (await scryptAsync(supplied, salt, 64)) as Buffer;
   return timingSafeEqual(hashedBuf, suppliedBuf);
@@ -111,6 +115,8 @@ export function setupAuth(app: Express) {
             marketingOptOutDate: null,
             createdAt: new Date(),
             updatedAt: new Date(),
+            deletedAt: null,
+            deletionRequestedAt: null,
           };
           return done(null, testUser);
         }
@@ -210,6 +216,8 @@ export function setupAuth(app: Express) {
         marketingOptOutDate: null,
         createdAt: new Date(),
         updatedAt: new Date(),
+        deletedAt: null,
+        deletionRequestedAt: null,
       };
       return done(null, testUser);
     }

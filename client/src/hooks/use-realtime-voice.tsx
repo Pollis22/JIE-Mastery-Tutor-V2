@@ -48,8 +48,8 @@ export function useRealtimeVoice() {
       }
 
       let clientSecret: any;
-      let sessionId: string;
-      let model: string;
+      let sessionId: string = '';
+      let model: string = '';
       let instructions: string = '';
 
       // Check if we already have credentials passed from parent
@@ -61,7 +61,7 @@ export function useRealtimeVoice() {
         console.log('   Session ID:', config.sessionId);
         console.log('   Has client secret:', !!config.clientSecret);
         clientSecret = config.clientSecret;
-        sessionId = config.sessionId;
+        sessionId = config.sessionId || '';
         model = config.model || 'gpt-4o-realtime-preview-2024-10-01';
       } else {
         // Fallback: Get credentials via HTTP (for backward compatibility)
@@ -248,32 +248,13 @@ export function useRealtimeVoice() {
       setTimeout(() => {
         console.log('🎤 [DataChannel] Requesting AI greeting...');
         
-        // Create an initial system message to trigger greeting
+        // Simply request a response - the session instructions already tell it to greet
         dc.send(JSON.stringify({
-          type: 'conversation.item.create',
-          item: {
-            type: 'message',
-            role: 'system',
-            content: [
-              {
-                type: 'input_text',
-                text: 'Please greet the student now.'
-              }
-            ]
-          }
+          type: 'response.create'
         }));
         
-        // Request response with audio
-        dc.send(JSON.stringify({
-          type: 'response.create',
-          response: {
-            modalities: ['text', 'audio'],
-            instructions: 'Greet the student warmly by name as specified in your instructions.'
-          }
-        }));
-        
-        console.log('✅ [DataChannel] Initial greeting triggered');
-      }, 500);  // Wait for session.update to process
+        console.log('✅ [DataChannel] Greeting response requested');
+      }, 1000);  // Give session.update more time to process
     };
 
     dc.onmessage = (event) => {
