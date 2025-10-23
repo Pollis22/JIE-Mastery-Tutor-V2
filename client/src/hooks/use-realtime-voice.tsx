@@ -263,11 +263,11 @@ export function useRealtimeVoice() {
       setTimeout(() => {
         console.log('🎤 [DataChannel] Requesting AI greeting...');
         
-        // Request audio response - CRITICAL: Must specify modalities
+        // Request audio response - CRITICAL: Must specify modalities (audio first!)
         dc.send(JSON.stringify({
           type: 'response.create',
           response: {
-            modalities: ['text', 'audio']
+            modalities: ['audio', 'text']
           }
         }));
         
@@ -291,7 +291,7 @@ export function useRealtimeVoice() {
           dc.send(JSON.stringify({
             type: 'response.create',
             response: {
-              modalities: ['text', 'audio']
+              modalities: ['audio', 'text']  // Audio first for priority
             }
           }));
         }
