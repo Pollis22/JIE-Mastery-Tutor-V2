@@ -1,5 +1,6 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useRealtimeVoice } from '@/hooks/use-realtime-voice';
+import { useGeminiVoice } from '@/hooks/use-gemini-voice';
 import { RealtimeVoiceTranscript } from './realtime-voice-transcript';
 import { Button } from '@/components/ui/button';
 import { Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
@@ -31,99 +32,161 @@ export function RealtimeVoiceHost({
   const { user } = useAuth();
   const { toast } = useToast();
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [wsUrl, setWsUrl] = useState<string | null>(null);
-  const [token, setToken] = useState<string | null>(null);
-  const [voice, setVoice] = useState<string>('alloy');
-  const [clientSecret, setClientSecret] = useState<any>(null);
-  const [model, setModel] = useState<string>('gpt-4o-realtime-preview-2024-10-01');
+  const [voiceProvider, setVoiceProvider] = useState<'gemini' | 'openai'>('gemini'); // Default to Gemini
   const [isRecording, setIsRecording] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
-  const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
-  const [voiceProvider, setVoiceProvider] = useState<'gemini' | 'openai'>('gemini'); // Default to Gemini
-  const hasGreetedRef = useRef(false);
+  const [transcriptMessages, setTranscriptMessages] = useState<Array<{
+    speaker: 'tutor' | 'student';
+    text: string;
+    timestamp: string;
+  }>>([]);
   
-  // Use props for these
-  const selectedSubject = subject;
-  const student = { id: studentId };
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const audioProcessorRef = useRef<ScriptProcessorNode | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const fallbackAttemptedRef = useRef(false);
+  
+  // Gemini Voice Hook
+  const geminiVoice = useGeminiVoice({
+    onTranscript: (text: string, isUser: boolean) => {
+      setTranscriptMessages(prev => [...prev, {
+        speaker: isUser ? 'student' : 'tutor',
+        text,
+        timestamp: new Date().toISOString()
+      }]);
+    },
+    onError: (error: Error) => {
+      console.error('[Voice Host] Gemini error:', error);
+      
+      // If Gemini fails and we haven't tried OpenAI yet, trigger fallback
+      if (!fallbackAttemptedRef.current && voiceProvider === 'gemini') {
+        fallbackAttemptedRef.current = true;
+        console.log('🔄 [VoiceHost] Gemini error, triggering OpenAI fallback...');
+        
+        // CRITICAL: Stop Gemini microphone before switching to OpenAI
+        stopMicrophone();
+        geminiVoice.endSession();
+        
+        toast({
+          title: "Switching to OpenAI",
+          description: "Gemini unavailable, using OpenAI as backup...",
+        });
+        
+        setVoiceProvider('openai');
+        
+        // Trigger OpenAI fallback
+        startOpenAISession().catch(err => {
+          console.error('[VoiceHost] OpenAI fallback failed:', err);
+          toast({
+            title: "All Providers Failed",
+            description: "Unable to start voice session. Please try again later.",
+            variant: "destructive",
+          });
+        });
+      } else {
+        // Regular error toast (not a fallback scenario)
+        toast({
+          title: "Voice Error",
+          description: error.message,
+          variant: "destructive",
+        });
+      }
+    },
+    onConnected: () => {
+      console.log('[Voice Host] Gemini connected successfully');
+    },
+    onDisconnected: () => {
+      console.log('[Voice Host] Gemini disconnected');
+    }
+  });
 
+  // OpenAI Voice Hook (Fallback)
   const {
-    isConnected,
-    status,
-    messages,
-    connect,
-    disconnect,
-    sendAudio,
-    isConnecting,
-    isProcessingDocuments,
+    isConnected: openaiConnected,
+    status: openaiStatus,
+    messages: openaiMessages,
+    connect: openaiConnect,
+    disconnect: openaiDisconnect,
+    sendAudio: openaiSendAudio,
+    isConnecting: openaiConnecting,
+    isProcessingDocuments: openaiProcessingDocs,
   } = useRealtimeVoice();
+
+  // Determine which provider is active
+  const isConnected = voiceProvider === 'gemini' ? geminiVoice.isConnected : openaiConnected;
+  const isSpeaking = voiceProvider === 'gemini' ? false : false; // Can add geminiVoice.isSpeaking if needed
 
   const startSession = async () => {
     try {
-      // Try Gemini first (cheaper and working), fallback to OpenAI if needed
-      let endpoint = '/api/session/gemini';
-      let provider: 'gemini' | 'openai' = 'gemini';
+      // Reset fallback flag
+      fallbackAttemptedRef.current = false;
       
-      // Check if user prefers OpenAI or if Gemini fails
+      // Route to correct endpoint based on provider
       if (voiceProvider === 'openai') {
-        endpoint = '/api/session/realtime';
-        provider = 'openai';
+        // User explicitly wants OpenAI - go straight there
+        await startOpenAISession();
+        return;
       }
-
-      console.log(`🎯 [VoiceHost] Starting ${provider} session...`);
       
-      const response = await apiRequest('POST', endpoint, {
+      // Default: Try Gemini first (93% cheaper)
+      console.log('🎯 [VoiceHost] Starting Gemini session...');
+      
+      const response = await apiRequest('POST', '/api/session/gemini', {
         studentId,
         studentName,
         subject,
         language,
         ageGroup,
-        contextDocumentIds,
-        model: provider === 'openai' ? 'gpt-4o-mini-realtime-preview-2024-12-17' : undefined
+        contextDocumentIds
       });
 
       const data = await response.json();
       
-      if (data.provider === 'gemini') {
-        // Gemini session
+      if (data.success && data.provider === 'gemini' && data.geminiApiKey && data.systemInstruction) {
+        // Gemini session - establish WebSocket connection
+        console.log('[VoiceHost] ✅ Got Gemini credentials, connecting...');
+        
         setSessionId(data.sessionId);
         setVoiceProvider('gemini');
+        
+        // Start Gemini WebSocket session
+        await geminiVoice.startSession(
+          data.geminiApiKey,
+          data.systemInstruction,
+          data.sessionId  // Database session ID for tracking
+        );
+        
+        // Start microphone capture for Gemini
+        await startMicrophoneForGemini();
+        
         onSessionStart?.();
         
         toast({
           title: "Gemini Voice Session Started",
-          description: `Connected with ${data.metadata?.studentName || 'your tutor'} - 93% cheaper than OpenAI!`,
+          description: `Connected with ${data.metadata?.studentName || studentName} - Saving 93% vs OpenAI!`,
         });
-      } else if (data.success && data.sessionId && data.client_secret) {
-        // OpenAI session
-        setSessionId(data.sessionId);
-        setClientSecret(data.client_secret);
-        setModel(data.model || 'gpt-4o-mini-realtime-preview-2024-12-17');
-        setVoice(data.voice || 'alloy');
-        setToken(data.sessionId);
-        setVoiceProvider('openai');
-        onSessionStart?.();
         
-        toast({
-          title: "OpenAI Voice Session Started",
-          description: `Connected with ${data.voice} voice in ${language.toUpperCase()}`,
-        });
       } else {
-        throw new Error(data.error || 'Failed to start session');
+        throw new Error(data.error || 'Invalid Gemini session response');
       }
-    } catch (error: any) {
-      console.error('[RealtimeVoiceHost] Failed to start session:', error);
       
-      // If Gemini fails and we haven't tried OpenAI yet, fallback
-      if (voiceProvider === 'gemini') {
+    } catch (error: any) {
+      console.error('[VoiceHost] Gemini failed:', error);
+      
+      // If Gemini fails and we haven't tried fallback yet, try OpenAI
+      if (!fallbackAttemptedRef.current) {
+        fallbackAttemptedRef.current = true;
         console.log('🔄 [VoiceHost] Gemini failed, trying OpenAI fallback...');
-        setVoiceProvider('openai');
+        
         toast({
           title: "Switching to OpenAI",
           description: "Gemini unavailable, using OpenAI as backup...",
         });
-        // Retry with OpenAI
-        setTimeout(() => startSession(), 1000);
+        
+        setVoiceProvider('openai');
+        
+        // Try OpenAI fallback
+        await startOpenAISession();
         return;
       }
       
@@ -135,8 +198,143 @@ export function RealtimeVoiceHost({
     }
   };
 
+  // OpenAI fallback session starter
+  const startOpenAISession = async () => {
+    try {
+      console.log('[VoiceHost] Starting OpenAI session...');
+      
+      const response = await apiRequest('POST', '/api/session/realtime', {
+        studentId,
+        studentName,
+        subject,
+        language,
+        ageGroup,
+        contextDocumentIds,
+        model: 'gpt-4o-mini-realtime-preview-2024-12-17'
+      });
+
+      const data = await response.json();
+      
+      if (data.success && data.sessionId && data.client_secret) {
+        console.log('[VoiceHost] ✅ Got OpenAI credentials, connecting...');
+        
+        setSessionId(data.sessionId);
+        setVoiceProvider('openai');
+        
+        // Connect OpenAI WebRTC with credentials
+        await openaiConnect({
+          sessionId: data.sessionId,
+          clientSecret: data.client_secret,
+          model: data.model || 'gpt-4o-mini-realtime-preview-2024-12-17',
+          voice: data.voice || 'alloy',
+          language: language,
+          ageGroup: ageGroup,
+          subject: subject,
+          contextDocumentIds: contextDocumentIds,
+          userId: user?.id,
+          studentId: studentId,
+          studentName: studentName,
+        });
+        
+        console.log('[VoiceHost] OpenAI WebRTC connection initiated');
+        
+        onSessionStart?.();
+        
+        toast({
+          title: "OpenAI Voice Session Started",
+          description: `Connected with ${data.voice} voice${voiceProvider === 'openai' ? '' : ' (fallback mode)'}`,
+        });
+      } else {
+        throw new Error(data.error || 'Failed to start OpenAI session');
+      }
+    } catch (error: any) {
+      console.error('[VoiceHost] OpenAI session failed:', error);
+      toast({
+        title: voiceProvider === 'openai' ? "OpenAI Session Failed" : "All Providers Failed",
+        description: error.message || "Unable to start voice session. Please try again later.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Start microphone capture for Gemini
+  const startMicrophoneForGemini = async () => {
+    try {
+      console.log('[Microphone] 🎤 Requesting access...');
+      
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+      
+      // Create audio context for processing
+      const audioContext = new AudioContext({ sampleRate: 24000 });
+      audioContextRef.current = audioContext;
+      
+      const source = audioContext.createMediaStreamSource(stream);
+      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      audioProcessorRef.current = processor;
+      
+      processor.onaudioprocess = (e) => {
+        if (!isMuted && geminiVoice.isConnected) {
+          const inputData = e.inputBuffer.getChannelData(0);
+          
+          // Convert Float32 to PCM16
+          const pcm16 = new Int16Array(inputData.length);
+          for (let i = 0; i < inputData.length; i++) {
+            const s = Math.max(-1, Math.min(1, inputData[i]));
+            pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+          }
+          
+          // Send to Gemini
+          geminiVoice.sendAudio(pcm16.buffer);
+        }
+      };
+      
+      source.connect(processor);
+      processor.connect(audioContext.destination);
+      
+      setIsRecording(true);
+      console.log('[Microphone] ✅ Active and streaming to Gemini');
+      
+      toast({
+        title: "Microphone Active",
+        description: "You can now speak to the AI tutor",
+      });
+      
+    } catch (error: any) {
+      console.error('[Microphone] ❌ Access error:', error);
+      toast({
+        title: "Microphone Error",
+        description: "Could not access microphone. Please check permissions.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Stop microphone capture
+  const stopMicrophone = () => {
+    console.log('[Microphone] 🛑 Stopping...');
+    
+    if (audioProcessorRef.current) {
+      audioProcessorRef.current.disconnect();
+      audioProcessorRef.current = null;
+    }
+    
+    if (audioContextRef.current) {
+      audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
+    
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach(track => track.stop());
+      mediaStreamRef.current = null;
+    }
+    
+    setIsRecording(false);
+    console.log('[Microphone] ✅ Stopped');
+  };
+
   const endSession = async () => {
-    console.log('🔴 [RealtimeVoiceHost] Ending session...');
+    console.log('🔴 [VoiceHost] Ending session...');
     
     // Save session and track minutes used
     if (sessionId) {
@@ -145,13 +343,13 @@ export function RealtimeVoiceHost({
         const data = await response.json();
         
         if (data.success) {
-          console.log(`✅ [RealtimeVoiceHost] Session saved. Minutes used: ${data.minutesUsed}`);
+          console.log(`✅ [VoiceHost] Session saved. Minutes used: ${data.minutesUsed}`);
           
           // Show appropriate message based on minute deduction status
           if (data.insufficientMinutes) {
             toast({
               title: "Session Ended - Out of Minutes",
-              description: `Voice session completed (${data.minutesUsed} minutes). You've run out of voice minutes. Please upgrade your plan or purchase additional minutes to continue.`,
+              description: `Voice session completed (${data.minutesUsed} minutes). You've run out of voice minutes.`,
               variant: "destructive",
             });
           } else {
@@ -162,8 +360,7 @@ export function RealtimeVoiceHost({
           }
         }
       } catch (error: any) {
-        console.error('[RealtimeVoiceHost] Failed to save session:', error);
-        // Continue with cleanup even if API call fails
+        console.error('[VoiceHost] Failed to save session:', error);
         toast({
           title: "Session Ended",
           description: "Voice session has been closed",
@@ -171,128 +368,42 @@ export function RealtimeVoiceHost({
       }
     }
     
-    // Clean up WebRTC connection
-    disconnect();
-    stopRecording();
+    // Stop microphone
+    stopMicrophone();
+    
+    // Disconnect provider
+    if (voiceProvider === 'gemini') {
+      geminiVoice.endSession();
+    } else {
+      openaiDisconnect();
+    }
     
     // Clear local state
     setSessionId(null);
-    setWsUrl(null);
-    setToken(null);
-    setClientSecret(null);
-    hasGreetedRef.current = false; // Reset for next session
+    setTranscriptMessages([]);
+    fallbackAttemptedRef.current = false;
     
     // Notify parent component
     onSessionEnd?.();
     
-    console.log('✅ [RealtimeVoiceHost] Session ended successfully');
-  };
-
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const ctx = new AudioContext({ sampleRate: 24000 });
-      setAudioContext(ctx);
-
-      const source = ctx.createMediaStreamSource(stream);
-      const processor = ctx.createScriptProcessor(4096, 1, 1);
-
-      processor.onaudioprocess = (e) => {
-        if (!isMuted) {
-          const inputData = e.inputBuffer.getChannelData(0);
-          const pcm16 = new Int16Array(inputData.length);
-          for (let i = 0; i < inputData.length; i++) {
-            pcm16[i] = Math.max(-32768, Math.min(32767, inputData[i] * 32768));
-          }
-          sendAudio(pcm16.buffer);
-        }
-      };
-
-      source.connect(processor);
-      processor.connect(ctx.destination);
-
-      setIsRecording(true);
-      toast({
-        title: "Microphone Active",
-        description: "You can now speak to the AI tutor",
-      });
-    } catch (error: any) {
-      console.error('[RealtimeVoiceHost] Microphone access error:', error);
-      toast({
-        title: "Microphone Error",
-        description: "Could not access microphone. Please check permissions.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const stopRecording = () => {
-    if (audioContext) {
-      audioContext.close();
-      setAudioContext(null);
-    }
-    setIsRecording(false);
+    console.log('✅ [VoiceHost] Session ended successfully');
   };
 
   const toggleMute = () => {
     setIsMuted(!isMuted);
   };
 
-  // Auto-connect when we have clientSecret and sessionId
-  useEffect(() => {
-    if (clientSecret && sessionId && !isConnected) {
-      console.log('🔗 [RealtimeVoiceHost] Connecting with credentials:', { 
-        sessionId, 
-        hasClientSecret: !!clientSecret, 
-        clientSecretType: typeof clientSecret,
-        clientSecretValue: clientSecret?.value ? 'has value' : 'no value'
-      });
-      connect({
-        sessionId: sessionId,  // Pass the sessionId we already have
-        clientSecret: clientSecret,  // Pass the clientSecret we already have
-        model: model || 'gpt-4o-realtime-preview-2024-10-01',
-        voice: voice || 'alloy',
-        language: language || 'en',
-        ageGroup: ageGroup || '3-5',
-        subject: selectedSubject || 'Math',
-        contextDocumentIds: contextDocumentIds || [],
-        userId: user?.id,
-        studentId: studentId,
-        studentName: studentName,
-      });
-    }
-  }, [clientSecret, sessionId, isConnected, connect, model, voice, language, ageGroup, selectedSubject, contextDocumentIds, user?.id, studentId, studentName]);
-
-  // Auto-start microphone and send greeting when connected
-  useEffect(() => {
-    const initializeSession = async () => {
-      if (isConnected && sessionId && !hasGreetedRef.current && !isRecording) {
-        hasGreetedRef.current = true;
-        
-        // Auto-start microphone
-        try {
-          await startRecording();
-          console.log('[RealtimeVoiceHost] Microphone auto-started');
-        } catch (error) {
-          console.error('[RealtimeVoiceHost] Failed to auto-start mic:', error);
-        }
-        
-        // Send greeting - the greeting will come from server-side system prompt
-        // No need to send explicit greeting message
-        console.log('[RealtimeVoiceHost] Session initialized with auto-mic');
-      }
-    };
-    
-    initializeSession();
-  }, [isConnected, sessionId, isRecording]);
-
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      stopRecording();
-      disconnect();
+      stopMicrophone();
+      if (voiceProvider === 'gemini') {
+        geminiVoice.endSession();
+      } else {
+        openaiDisconnect();
+      }
     };
-  }, []);
+  }, [voiceProvider, geminiVoice, openaiDisconnect]);
 
   return (
     <div className="space-y-4" data-testid="realtime-voice-host">
@@ -304,17 +415,8 @@ export function RealtimeVoiceHost({
         ) : (
           <>
             <Button
-              onClick={isRecording ? stopRecording : startRecording}
-              variant={isRecording ? "destructive" : "default"}
-              data-testid="button-toggle-recording"
-            >
-              {isRecording ? <MicOff className="w-4 h-4 mr-2" /> : <Mic className="w-4 h-4 mr-2" />}
-              {isRecording ? 'Stop Mic' : 'Start Mic'}
-            </Button>
-            
-            <Button
               onClick={toggleMute}
-              variant="outline"
+              variant={isMuted ? "destructive" : "default"}
               disabled={!isRecording}
               data-testid="button-toggle-mute"
             >
@@ -325,18 +427,33 @@ export function RealtimeVoiceHost({
             <Button onClick={endSession} variant="secondary" data-testid="button-end-voice">
               End Session
             </Button>
+            
+            {isConnected && (
+              <div className="text-sm text-muted-foreground">
+                Connected via {voiceProvider === 'gemini' ? '🔵 Gemini' : '🟠 OpenAI'}
+              </div>
+            )}
           </>
         )}
       </div>
 
       {sessionId && (
-        <RealtimeVoiceTranscript
-          messages={messages}
-          isConnected={isConnected}
-          status={status}
-          language={language}
-          voice={voice}
-        />
+        <div className="mt-4 p-4 border rounded-lg">
+          <h3 className="font-semibold mb-2">Conversation Transcript</h3>
+          <div className="space-y-2 max-h-96 overflow-y-auto">
+            {transcriptMessages.map((msg, idx) => (
+              <div key={idx} className={`p-2 rounded ${msg.speaker === 'tutor' ? 'bg-blue-50' : 'bg-gray-50'}`}>
+                <div className="text-xs text-muted-foreground">{msg.speaker === 'tutor' ? '🤖 AI Tutor' : '👤 Student'}</div>
+                <div className="text-sm">{msg.text}</div>
+              </div>
+            ))}
+            {transcriptMessages.length === 0 && (
+              <div className="text-sm text-muted-foreground text-center py-4">
+                Speak to start the conversation...
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
