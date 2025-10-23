@@ -365,6 +365,14 @@ export function useRealtimeVoice() {
           }
         }
         
+        // Handle audio delta - PLAY THE AUDIO!
+        if (message.type === 'response.audio.delta') {
+          if (message.delta) {
+            console.log('🎵 [Audio] Received audio delta, playing...');
+            playAudioDelta(message.delta);
+          }
+        }
+        
         // Capture streaming AI response transcript
         if (message.type === 'response.audio_transcript.delta') {
           // This fires for each chunk of AI speech - accumulate
@@ -635,9 +643,98 @@ export function useRealtimeVoice() {
     }
   }, []);
 
+  // Audio playback setup
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const audioQueueRef = useRef<AudioBuffer[]>([]);
+  const isPlayingRef = useRef(false);
+  
   const sendAudio = useCallback((audioData: ArrayBuffer) => {
-    // This can be implemented later for sending audio chunks
-    console.log('[RealtimeVoice] sendAudio not yet implemented');
+    // This can be implemented later for sending audio chunks to the server
+    console.log('[RealtimeVoice] sendAudio called with', audioData.byteLength, 'bytes');
+  }, []);
+  
+  // Function to play audio from OpenAI response
+  const playAudioDelta = useCallback(async (base64Audio: string) => {
+    try {
+      if (!base64Audio) {
+        console.warn('[RealtimeVoice] No audio data to play');
+        return;
+      }
+      
+      console.log('[RealtimeVoice] Playing AI audio response...');
+      
+      // Initialize audio context if not exists
+      if (!audioContextRef.current) {
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ 
+          sampleRate: 24000 
+        });
+        console.log('[RealtimeVoice] Audio context created with sample rate:', audioContextRef.current.sampleRate);
+      }
+      
+      // Decode base64 to binary
+      const binaryString = atob(base64Audio);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      
+      // Create Int16Array from bytes (PCM16 format)
+      const int16Array = new Int16Array(bytes.buffer);
+      
+      // Convert to Float32Array for Web Audio API
+      const float32Array = new Float32Array(int16Array.length);
+      for (let i = 0; i < int16Array.length; i++) {
+        // Convert from Int16 range (-32768 to 32767) to Float32 range (-1 to 1)
+        float32Array[i] = int16Array[i] / 32768.0;
+      }
+      
+      // Create audio buffer
+      const audioBuffer = audioContextRef.current.createBuffer(
+        1, // mono
+        float32Array.length,
+        24000 // sample rate
+      );
+      
+      // Copy our data to the audio buffer
+      audioBuffer.copyToChannel(float32Array, 0);
+      
+      // Add to queue
+      audioQueueRef.current.push(audioBuffer);
+      
+      // Start playing if not already playing
+      if (!isPlayingRef.current) {
+        playNextInQueue();
+      }
+      
+    } catch (error) {
+      console.error('[RealtimeVoice] Audio playback error:', error);
+    }
+  }, []);
+  
+  // Play audio buffers from queue
+  const playNextInQueue = useCallback(() => {
+    if (audioQueueRef.current.length === 0) {
+      isPlayingRef.current = false;
+      return;
+    }
+    
+    if (!audioContextRef.current) return;
+    
+    isPlayingRef.current = true;
+    const audioBuffer = audioQueueRef.current.shift()!;
+    
+    // Create source and play
+    const source = audioContextRef.current.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(audioContextRef.current.destination);
+    
+    source.onended = () => {
+      // Play next in queue
+      playNextInQueue();
+    };
+    
+    source.start();
+    console.log('[RealtimeVoice] Playing audio chunk, queue size:', audioQueueRef.current.length);
   }, []);
 
   // Cleanup on unmount or page unload
