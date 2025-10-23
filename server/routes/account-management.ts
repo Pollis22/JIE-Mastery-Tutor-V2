@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import { scrypt, timingSafeEqual } from "crypto";
+import { Buffer } from "buffer";
 import { promisify } from "util";
 import { storage } from "../storage";
 import Stripe from "stripe";
@@ -10,7 +11,7 @@ const router = Router();
 
 // Initialize Stripe if configured
 const stripe = process.env.STRIPE_SECRET_KEY 
-  ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2024-11-20.acacia' })
+  ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2025-08-27.basil' })
   : null;
 
 // Middleware - check authentication
@@ -54,8 +55,8 @@ router.post('/cancel', requireAuth, async (req: Request, res: Response) => {
       0 // Zero minutes
     );
     
-    // Clear Stripe IDs
-    await storage.updateUserStripeInfo(userId, null, null);
+    // Clear Stripe IDs - use empty string instead of null
+    await storage.updateUserStripeInfo(userId, '', '');
     
     console.log('[Subscription] Subscription cancelled for:', user.email);
     
@@ -138,8 +139,11 @@ router.post('/delete-now', requireAuth, async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'User not found' });
     }
     
-    // Verify password
-    const passwordValid = await bcrypt.compare(confirmPassword, user.password);
+    // Verify password using scrypt (same as auth.ts)
+    const [salt, key] = user.password.split(':');
+    const keyBuffer = Buffer.from(key, 'hex');
+    const derivedKey = (await scryptAsync(confirmPassword, salt, 64)) as Buffer;
+    const passwordValid = timingSafeEqual(keyBuffer, derivedKey);
     
     if (!passwordValid) {
       return res.status(401).json({ error: 'Invalid password' });
@@ -226,8 +230,11 @@ router.get('/status', requireAuth, async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'User not found' });
     }
     
-    // Calculate minutes
-    const minutesRemaining = user.subscriptionMinutesLimit - user.subscriptionMinutesUsed + user.purchasedMinutesBalance;
+    // Calculate minutes with null safety
+    const subscriptionLimit = user.subscriptionMinutesLimit || 0;
+    const subscriptionUsed = user.subscriptionMinutesUsed || 0;
+    const purchasedBalance = user.purchasedMinutesBalance || 0;
+    const minutesRemaining = subscriptionLimit - subscriptionUsed + purchasedBalance;
     
     let deletionInfo = null;
     if (user.deletionRequestedAt) {
@@ -241,7 +248,9 @@ router.get('/status', requireAuth, async (req: Request, res: Response) => {
       };
     }
     
-    const accountAge = Math.floor((Date.now() - new Date(user.createdAt).getTime()) / (1000 * 60 * 60 * 24));
+    const accountAge = user.createdAt 
+      ? Math.floor((Date.now() - new Date(user.createdAt).getTime()) / (1000 * 60 * 60 * 24))
+      : 0;
     
     res.json({
       email: user.email,
