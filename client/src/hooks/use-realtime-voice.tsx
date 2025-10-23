@@ -211,10 +211,16 @@ export function useRealtimeVoice() {
       // Configure session for transcript capture
       console.log('🎙️ [DataChannel] Configuring audio input...');
       
-      // Enable input audio transcription
+      // Enable input audio transcription and turn detection
       dc.send(JSON.stringify({
         type: 'session.update',
         session: {
+          turn_detection: {
+            type: 'server_vad',
+            threshold: 0.5,
+            prefix_padding_ms: 300,
+            silence_duration_ms: 500
+          },
           input_audio_transcription: {
             model: 'whisper-1'
           }
