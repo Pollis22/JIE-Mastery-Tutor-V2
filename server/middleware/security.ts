@@ -2,16 +2,13 @@
 import { Request, Response, NextFunction } from 'express';
 
 export function setupSecurityHeaders(req: Request, res: Response, next: NextFunction) {
-  // TEMPORARILY DISABLED CSP TO GET ELEVENLABS WORKING
-  // We'll re-enable security headers once the voice agent is functional
-  
-  // Only set minimal security headers that won't interfere with ElevenLabs
+  // Security headers for OpenAI Realtime API voice tutoring
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   
-  // Permissions Policy for microphone access (still needed)
+  // Permissions Policy for microphone access
   res.setHeader('Permissions-Policy', [
     'microphone=(self)',
     'camera=()',

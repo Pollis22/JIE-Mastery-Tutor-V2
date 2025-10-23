@@ -87,15 +87,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       timestamp: new Date().toISOString(),
       env: process.env.NODE_ENV,
       voiceTestMode: testMode,
-      ttsEnabled: testMode || hasAzureTTS, // Always true in test mode or with Azure TTS
+      ttsEnabled: testMode || hasAzureTTS,
       hasOpenAI: !!process.env.OPENAI_API_KEY,
-      multiAgent: true, // Flag indicating multi-agent ConvAI system is active
       hasAzureTTS: hasAzureTTS,
       useRealtime: process.env.USE_REALTIME === 'true' || process.env.USE_REALTIME === '1',
-      debugMode: process.env.DEBUG_TUTOR === '1',
-      // Voice system selection
-      convai: true, // Multi-agent system - agents are hardcoded in frontend
-      useConvai: process.env.USE_CONVAI?.toLowerCase() === 'true' // Use ConvAI when explicitly true
+      debugMode: process.env.DEBUG_TUTOR === '1'
     });
   });
   
