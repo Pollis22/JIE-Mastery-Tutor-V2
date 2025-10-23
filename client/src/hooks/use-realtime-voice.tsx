@@ -21,6 +21,7 @@ export function useRealtimeVoice() {
   const sessionIdRef = useRef<string | null>(null);
   const currentAssistantMessage = useRef<RealtimeMessage | null>(null);
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const isEndingSessionRef = useRef<boolean>(false); // Prevent duplicate session ending
 
   const connect = useCallback(async (config: {
     sessionId?: string;
@@ -167,6 +168,11 @@ export function useRealtimeVoice() {
     // Create peer connection
     const pc = new RTCPeerConnection();
     peerConnectionRef.current = pc;
+
+    // CRITICAL: Add audio transceiver to receive audio from OpenAI
+    // Without this, OpenAI drops the media channel and disconnects immediately
+    console.log('🎤 [WebRTC] Adding audio transceiver for receiving OpenAI audio...');
+    pc.addTransceiver('audio', { direction: 'recvonly' });
 
     // Log state changes
     pc.onconnectionstatechange = () => {
@@ -564,6 +570,13 @@ export function useRealtimeVoice() {
   const disconnect = useCallback(async () => {
     console.log('🔴 [RealtimeVoice] Disconnecting...');
 
+    // Prevent duplicate disconnection
+    if (isEndingSessionRef.current) {
+      console.log('⚠️ [RealtimeVoice] Already disconnecting, skipping duplicate call');
+      return;
+    }
+    isEndingSessionRef.current = true;
+
     try {
       // 0. Stop heartbeat polling
       if (heartbeatIntervalRef.current) {
@@ -585,7 +598,12 @@ export function useRealtimeVoice() {
           console.warn('⚠️ [RealtimeVoice] Failed to end session on backend:', error);
           // Continue with cleanup even if backend call fails
         }
+        const endedSessionId = sessionIdRef.current;
         sessionIdRef.current = null;
+        
+        // Mark this session as ended to prevent beacon from ending it again
+        (window as any)._endedSessionIds = (window as any)._endedSessionIds || new Set();
+        (window as any)._endedSessionIds.add(endedSessionId);
       }
 
       // 1. Close data channel first
@@ -648,6 +666,9 @@ export function useRealtimeVoice() {
       console.error('❌ [RealtimeVoice] Error during disconnect:', error);
       // Force state update even if cleanup failed
       setIsConnected(false);
+    } finally {
+      // Always reset the flag after disconnect completes or fails
+      isEndingSessionRef.current = false;
     }
   }, []);
 
@@ -756,10 +777,16 @@ export function useRealtimeVoice() {
   useEffect(() => {
     const handleBeforeUnload = () => {
       // Use beacon API for page unload since async operations might not complete
+      // Only send beacon if session wasn't already ended
       if (sessionIdRef.current && navigator.sendBeacon) {
-        const data = new Blob([JSON.stringify({ sessionId: sessionIdRef.current })], { type: 'application/json' });
-        navigator.sendBeacon(`/api/session/realtime/${sessionIdRef.current}/end`, data);
-        console.log('🚀 [RealtimeVoice] Sent beacon to end session on page unload');
+        const endedSessions = (window as any)._endedSessionIds || new Set();
+        if (!endedSessions.has(sessionIdRef.current)) {
+          const data = new Blob([JSON.stringify({ sessionId: sessionIdRef.current })], { type: 'application/json' });
+          navigator.sendBeacon(`/api/session/realtime/${sessionIdRef.current}/end`, data);
+          console.log('🚀 [RealtimeVoice] Sent beacon to end session on page unload');
+        } else {
+          console.log('⏭️ [RealtimeVoice] Session already ended, skipping beacon');
+        }
       }
       disconnect();
     };
