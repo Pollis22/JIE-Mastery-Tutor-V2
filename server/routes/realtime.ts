@@ -294,10 +294,6 @@ ${documentContext ? '\nPlease reference the student\'s documents when relevant t
         voice: selectedVoice,
         modalities: ['text', 'audio'],
         instructions,
-        // CRITICAL: Enable input audio transcription (REQUIRED for AI to hear user)
-        input_audio_transcription: {
-          model: 'whisper-1'
-        },
         // Configure turn detection for better conversation flow
         turn_detection: {
           type: 'server_vad',           // Voice Activity Detection
