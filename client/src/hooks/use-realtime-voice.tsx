@@ -273,6 +273,14 @@ export function useRealtimeVoice() {
           setError(message.error.message);
         }
         
+        // CRITICAL: Trigger AI response when user audio is committed
+        if (message.type === 'input_audio_buffer.committed') {
+          console.log('📝 [DataChannel] User audio committed, triggering AI response...');
+          dc.send(JSON.stringify({
+            type: 'response.create'
+          }));
+        }
+        
         // Track user activity for inactivity timeout
         if (message.type === 'input_audio_buffer.speech_started' || 
             message.type === 'conversation.item.created') {
