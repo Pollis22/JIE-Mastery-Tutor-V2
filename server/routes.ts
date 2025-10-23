@@ -356,9 +356,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const { default: documentRoutes } = await import('./routes/documents');
   const { default: contextRoutes } = await import('./routes/context');
   const { default: realtimeRoutes } = await import('./routes/realtime');
+  const { default: geminiRealtimeRoutes } = await import('./routes/gemini-realtime');
   app.use("/api/documents", documentRoutes);
   app.use("/api/context", contextRoutes);
   app.use("/api/session/realtime", realtimeRoutes);
+  app.use("/api/session/gemini", geminiRealtimeRoutes);
   
   // Debug endpoint to verify route mounting
   app.get("/api/routes", (req, res) => {
