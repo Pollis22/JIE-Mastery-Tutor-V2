@@ -470,7 +470,7 @@ export function useRealtimeVoice() {
         echoCancellation: true,
         noiseSuppression: true,
         autoGainControl: true,
-        sampleRate: 24000,
+        sampleRate: 16000,  // CRITICAL: Match OpenAI's expected sample rate for PCM16
       }
     });
     micStreamRef.current = stream;
