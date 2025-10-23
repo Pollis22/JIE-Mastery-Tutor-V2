@@ -20,6 +20,7 @@
     "test": "npm run test:acceptance"
   },
   "dependencies": {
+    "@google/genai": "^1.26.0",
     "@hookform/resolvers": "^3.10.0",
     "@jest/globals": "^30.2.0",
     "@jridgewell/trace-mapping": "^0.3.25",
