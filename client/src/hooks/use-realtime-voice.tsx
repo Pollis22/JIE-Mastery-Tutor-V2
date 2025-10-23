@@ -239,7 +239,10 @@ export function useRealtimeVoice() {
         type: 'session.update',
         session: {
           modalities: ['text', 'audio'],
+          voice: 'echo', // CRITICAL: Must specify voice for audio generation!
           instructions: instructions || `You are an AI tutor. Start EVERY session by greeting the student warmly saying "Hello! I'm your AI tutor. I'm here to help you learn. What subject would you like to work on today?" Then wait for their response.`,
+          input_audio_format: 'pcm16',
+          output_audio_format: 'pcm16',
           turn_detection: {
             type: 'server_vad',
             threshold: 0.5,
