@@ -248,12 +248,31 @@ export function useRealtimeVoice() {
       setTimeout(() => {
         console.log('🎤 [DataChannel] Requesting AI greeting...');
         
-        // Simply request a response - let the instructions handle the greeting
+        // Create an initial system message to trigger greeting
         dc.send(JSON.stringify({
-          type: 'response.create'
+          type: 'conversation.item.create',
+          item: {
+            type: 'message',
+            role: 'system',
+            content: [
+              {
+                type: 'input_text',
+                text: 'Please greet the student now.'
+              }
+            ]
+          }
         }));
         
-        console.log('✅ [DataChannel] Initial response requested');
+        // Request response with audio
+        dc.send(JSON.stringify({
+          type: 'response.create',
+          response: {
+            modalities: ['text', 'audio'],
+            instructions: 'Greet the student warmly by name as specified in your instructions.'
+          }
+        }));
+        
+        console.log('✅ [DataChannel] Initial greeting triggered');
       }, 500);  // Wait for session.update to process
     };
 
