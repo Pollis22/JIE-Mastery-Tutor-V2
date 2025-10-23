@@ -279,11 +279,50 @@ export function useRealtimeVoice() {
     dc.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
-        console.log('📨 [DataChannel] Message:', message.type);
+        
+        // Comprehensive logging for all audio-related events
+        if (message.type.includes('audio')) {
+          console.log(`📨 [DataChannel] ${message.type}`, {
+            hasAudio: message.type.includes('audio'),
+            hasDelta: !!message.delta,
+            deltaLength: message.delta?.length,
+            hasTranscript: !!message.transcript
+          });
+        } else {
+          console.log('📨 [DataChannel] Message:', message.type);
+        }
         
         if (message.type === 'error') {
           console.error('❌ [OpenAI] Error:', message.error);
           setError(message.error.message);
+        }
+        
+        // Handle audio response chunks
+        if (message.type === 'response.audio.delta') {
+          console.log('🎵 [Audio] Audio delta received!', {
+            deltaSize: message.delta?.length,
+            responseId: message.response_id
+          });
+          
+          if (message.delta) {
+            console.log('🎯 [Audio] Calling playAudioDelta...');
+            playAudioDelta(message.delta);
+          } else {
+            console.warn('⚠️ [Audio] No delta in audio event!');
+          }
+        }
+        
+        // Log audio completion
+        if (message.type === 'response.audio.done') {
+          console.log('✅ [Audio] Audio stream complete');
+        }
+        
+        // Log transcription failures
+        if (message.type === 'conversation.item.input_audio_transcription.failed') {
+          console.error('❌ [Transcription] Failed:', {
+            error: message.error,
+            item_id: message.item_id
+          });
         }
         
         // CRITICAL: Trigger AI response when user audio is committed
@@ -494,7 +533,7 @@ export function useRealtimeVoice() {
         echoCancellation: true,
         noiseSuppression: true,
         autoGainControl: true,
-        sampleRate: 16000,  // CRITICAL: Match OpenAI's expected sample rate for PCM16
+        sampleRate: 24000,  // CRITICAL: OpenAI expects 24kHz for PCM16 audio!
       }
     });
     micStreamRef.current = stream;
@@ -723,26 +762,64 @@ export function useRealtimeVoice() {
   const isPlayingRef = useRef(false);
   
   const sendAudio = useCallback((audioData: ArrayBuffer) => {
-    // This can be implemented later for sending audio chunks to the server
-    console.log('[RealtimeVoice] sendAudio called with', audioData.byteLength, 'bytes');
+    // Send audio through WebRTC data channel to OpenAI
+    if (dataChannelRef.current && dataChannelRef.current.readyState === 'open') {
+      // Convert ArrayBuffer to base64 for sending through data channel
+      const uint8Array = new Uint8Array(audioData);
+      let binaryString = '';
+      for (let i = 0; i < uint8Array.length; i++) {
+        binaryString += String.fromCharCode(uint8Array[i]);
+      }
+      const base64Audio = btoa(binaryString);
+      
+      // Send audio to OpenAI using the input_audio_buffer.append message
+      const audioMessage = {
+        type: 'input_audio_buffer.append',
+        audio: base64Audio
+      };
+      
+      dataChannelRef.current.send(JSON.stringify(audioMessage));
+      console.log('[RealtimeVoice] Sent audio to OpenAI:', audioData.byteLength, 'bytes');
+    } else {
+      console.warn('[RealtimeVoice] Cannot send audio - data channel not open');
+    }
   }, []);
   
   // Function to play audio from OpenAI response
   const playAudioDelta = useCallback(async (base64Audio: string) => {
+    console.log('🎯 [Audio] playAudioDelta CALLED!', {
+      hasAudio: !!base64Audio,
+      length: base64Audio?.length,
+      type: typeof base64Audio
+    });
+
     try {
       if (!base64Audio) {
-        console.warn('[RealtimeVoice] No audio data to play');
+        console.error('❌ [Audio] playAudioDelta called with empty audio!');
         return;
       }
       
-      console.log('[RealtimeVoice] Playing AI audio response...');
+      console.log('🎵 [Audio] Processing AI audio response...');
       
       // Initialize audio context if not exists
       if (!audioContextRef.current) {
         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ 
           sampleRate: 24000 
         });
-        console.log('[RealtimeVoice] Audio context created with sample rate:', audioContextRef.current.sampleRate);
+        console.log('🎵 [Audio] NEW AudioContext created:', {
+          sampleRate: audioContextRef.current.sampleRate,
+          state: audioContextRef.current.state,
+          maxChannels: audioContextRef.current.destination.maxChannelCount
+        });
+      }
+      
+      // Check and resume AudioContext if suspended
+      if (audioContextRef.current.state === 'suspended') {
+        console.warn('⚠️ [Audio] AudioContext SUSPENDED, resuming...');
+        await audioContextRef.current.resume();
+        console.log('▶️ [Audio] AudioContext RESUMED successfully');
+      } else {
+        console.log('✅ [Audio] AudioContext state:', audioContextRef.current.state);
       }
       
       // Decode base64 to binary
@@ -775,13 +852,25 @@ export function useRealtimeVoice() {
       // Add to queue
       audioQueueRef.current.push(audioBuffer);
       
+      console.log('🔊 [Audio] Added to queue, queue size:', audioQueueRef.current.length);
+      
       // Start playing if not already playing
       if (!isPlayingRef.current) {
+        console.log('▶️ [Audio] Starting playback...');
         playNextInQueue();
+      } else {
+        console.log('⏸️ [Audio] Already playing, queued for later');
       }
       
+      console.log('🔊 [Audio] Processing complete:', {
+        duration: `${audioBuffer.duration}s`,
+        sampleRate: audioBuffer.sampleRate,
+        length: audioBuffer.length
+      });
+      
     } catch (error) {
-      console.error('[RealtimeVoice] Audio playback error:', error);
+      console.error('❌ [Audio] Audio playback error:', error);
+      console.error('Stack trace:', error.stack);
     }
   }, []);
   
@@ -790,14 +879,23 @@ export function useRealtimeVoice() {
   
   const playNextInQueue = () => {
     if (audioQueueRef.current.length === 0) {
+      console.log('🔇 [Audio] Queue empty, stopping playback');
       isPlayingRef.current = false;
       return;
     }
     
-    if (!audioContextRef.current) return;
+    if (!audioContextRef.current) {
+      console.error('❌ [Audio] No AudioContext available!');
+      return;
+    }
     
     isPlayingRef.current = true;
     const audioBuffer = audioQueueRef.current.shift()!;
+    
+    console.log('🎵 [Audio] Playing chunk from queue:', {
+      duration: audioBuffer.duration,
+      queueRemaining: audioQueueRef.current.length
+    });
     
     // Create source and play
     const source = audioContextRef.current.createBufferSource();
@@ -805,6 +903,7 @@ export function useRealtimeVoice() {
     source.connect(audioContextRef.current.destination);
     
     source.onended = () => {
+      console.log('🔚 [Audio] Chunk finished, checking queue...');
       // Play next in queue
       if (playNextInQueueRef.current) {
         playNextInQueueRef.current();
@@ -812,7 +911,7 @@ export function useRealtimeVoice() {
     };
     
     source.start();
-    console.log('[RealtimeVoice] Playing audio chunk, queue size:', audioQueueRef.current.length);
+    console.log('🔊 [Audio] Audio source started!');
   };
   
   // Store the function in ref for self-reference
