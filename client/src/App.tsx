@@ -46,6 +46,7 @@ function Router() {
       <ProtectedRoute path="/dashboard" component={DashboardPage} />
       <ProtectedRoute path="/sessions/:id" component={SessionDetailsPage} />
       <ProtectedRoute path="/tutor" component={TutorPage} />
+      <ProtectedRoute path="/ai-tutor" component={TutorPage} />
       <ProtectedRoute path="/old-lessons" component={HomePage} />
       <ProtectedRoute path="/lessons" component={LessonsPage} />
       <ProtectedRoute path="/lesson/:lessonId" component={LessonPage} />
