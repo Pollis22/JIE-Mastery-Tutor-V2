@@ -561,14 +561,16 @@ export default function TutorPage() {
                   <Paperclip className="w-4 h-4" />
                   Study Materials
                 </h3>
-                <AssignmentsPanel 
-                  userId={user.id}
-                  onSelectionChange={(selectedIds) => {
-                    // Update selected documents for AI context
-                    setSelectedDocumentIds(selectedIds);
-                    console.log('Documents selected for AI context:', selectedIds);
-                  }}
-                />
+                <div className="max-h-64 overflow-y-auto">
+                  <AssignmentsPanel 
+                    userId={user.id}
+                    onSelectionChange={(selectedIds) => {
+                      // Update selected documents for AI context
+                      setSelectedDocumentIds(selectedIds);
+                      console.log('Documents selected for AI context:', selectedIds);
+                    }}
+                  />
+                </div>
               </CardContent>
             </Card>
           )}
