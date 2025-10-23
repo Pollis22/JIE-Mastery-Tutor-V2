@@ -40,6 +40,7 @@ export function RealtimeVoiceHost({
   const [isMuted, setIsMuted] = useState(false);
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
+  const [voiceProvider, setVoiceProvider] = useState<'gemini' | 'openai'>('gemini'); // Default to Gemini
   const hasGreetedRef = useRef(false);
   
   // Use props for these
@@ -59,32 +60,52 @@ export function RealtimeVoiceHost({
 
   const startSession = async () => {
     try {
-      // Call the unified endpoint (without /start)
-      const response = await apiRequest('POST', '/api/session/realtime', {
+      // Try Gemini first (cheaper and working), fallback to OpenAI if needed
+      let endpoint = '/api/session/gemini';
+      let provider: 'gemini' | 'openai' = 'gemini';
+      
+      // Check if user prefers OpenAI or if Gemini fails
+      if (voiceProvider === 'openai') {
+        endpoint = '/api/session/realtime';
+        provider = 'openai';
+      }
+
+      console.log(`🎯 [VoiceHost] Starting ${provider} session...`);
+      
+      const response = await apiRequest('POST', endpoint, {
         studentId,
         studentName,
         subject,
         language,
         ageGroup,
         contextDocumentIds,
-        model: 'gpt-4o-realtime-preview-2024-10-01'
+        model: provider === 'openai' ? 'gpt-4o-mini-realtime-preview-2024-12-17' : undefined
       });
 
       const data = await response.json();
       
-      // The new endpoint returns success flag and client_secret directly
-      if (data.success && data.sessionId && data.client_secret) {
+      if (data.provider === 'gemini') {
+        // Gemini session
         setSessionId(data.sessionId);
-        setClientSecret(data.client_secret); // Store the client_secret for WebRTC
-        setModel(data.model || 'gpt-4o-realtime-preview-2024-10-01');
-        setVoice(data.voice || 'alloy');
-        setToken(data.sessionId); // Use sessionId as token for backward compatibility
+        setVoiceProvider('gemini');
         onSessionStart?.();
         
-        // The hook will automatically connect when clientSecret is set
+        toast({
+          title: "Gemini Voice Session Started",
+          description: `Connected with ${data.metadata?.studentName || 'your tutor'} - 93% cheaper than OpenAI!`,
+        });
+      } else if (data.success && data.sessionId && data.client_secret) {
+        // OpenAI session
+        setSessionId(data.sessionId);
+        setClientSecret(data.client_secret);
+        setModel(data.model || 'gpt-4o-mini-realtime-preview-2024-12-17');
+        setVoice(data.voice || 'alloy');
+        setToken(data.sessionId);
+        setVoiceProvider('openai');
+        onSessionStart?.();
         
         toast({
-          title: "Voice Session Started",
+          title: "OpenAI Voice Session Started",
           description: `Connected with ${data.voice} voice in ${language.toUpperCase()}`,
         });
       } else {
@@ -92,6 +113,20 @@ export function RealtimeVoiceHost({
       }
     } catch (error: any) {
       console.error('[RealtimeVoiceHost] Failed to start session:', error);
+      
+      // If Gemini fails and we haven't tried OpenAI yet, fallback
+      if (voiceProvider === 'gemini') {
+        console.log('🔄 [VoiceHost] Gemini failed, trying OpenAI fallback...');
+        setVoiceProvider('openai');
+        toast({
+          title: "Switching to OpenAI",
+          description: "Gemini unavailable, using OpenAI as backup...",
+        });
+        // Retry with OpenAI
+        setTimeout(() => startSession(), 1000);
+        return;
+      }
+      
       toast({
         title: "Session Error",
         description: error.message || 'Failed to start voice session',

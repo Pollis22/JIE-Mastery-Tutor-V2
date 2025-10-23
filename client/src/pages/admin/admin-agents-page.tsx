@@ -31,8 +31,12 @@ export default function AdminAgentsPage() {
           Voice AI System Monitoring
         </h1>
         <p className="text-muted-foreground">
-          Monitor the status and usage of OpenAI Realtime API voice tutoring sessions
+          Monitor voice tutoring sessions - Now supporting Gemini Live API (93% cheaper) with OpenAI Realtime API fallback
         </p>
+        <div className="mt-2 flex gap-2">
+          <Badge variant="default" className="bg-blue-600">Gemini Live (Primary)</Badge>
+          <Badge variant="outline">OpenAI Realtime (Fallback)</Badge>
+        </div>
       </div>
 
       {/* Summary Cards */}

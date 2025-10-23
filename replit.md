@@ -25,7 +25,13 @@ The application uses a modern full-stack architecture:
 The platform uses a **session-first** data priority model where session configuration is the primary source for grade level, subject, and language, with user profiles serving as defaults. This enables sibling sharing on a single account.
 
 ### Voice Technology Integration
--   **OpenAI Realtime API (Primary)**: Utilizes WebRTC for native browser-to-OpenAI audio streaming, supporting multi-language and age-specific voice selections. It includes RAG integration for contextual learning and live transcript UI.
+-   **Gemini Live API (Primary - Oct 2025)**: Google's multimodal voice conversation API with WebSocket streaming. Offers superior cost efficiency (93% cheaper than OpenAI), emotion-aware responses, and 30 HD voices.
+    -   **Model**: `gemini-2.0-flash-live` with automatic voice activity detection
+    -   **Voice Mapping**: Age-appropriate voices (Puck for K-2, Charon for 3-5, Kore for 6-8, Fenrir for 9-12, Aoede for College)
+    -   **Cost**: ~$0.0225/minute (vs $0.30/minute for OpenAI) - saves ~$500/month at 1,800 min/month scale
+    -   **Features**: Emotion awareness (affective dialog), proactive audio filtering, 30 voices, video support (future)
+    -   **API Endpoint**: `/api/session/gemini`
+-   **OpenAI Realtime API (Fallback)**: Utilizes WebRTC for native browser-to-OpenAI audio streaming, supporting multi-language and age-specific voice selections. It includes RAG integration for contextual learning and live transcript UI.
     -   **Model Workaround**: Using `gpt-4o-mini-realtime-preview-2024-12-17` as workaround for October 2025 API bugs (no audio output issue)
     -   **Response State Management**: Implemented comprehensive fixes for `conversation_already_has_active_response` errors including:
         -   Response lifecycle tracking (`isResponseInProgressRef`)
@@ -33,6 +39,7 @@ The platform uses a **session-first** data priority model where session configur
         -   Automatic retry logic for stuck response states
         -   Enhanced error handling for OpenAI API errors
     -   **Known Issues**: OpenAI Realtime API has active bugs affecting October 18-22, 2025 causing audio generation failures
+    -   **Fallback Strategy**: If Gemini fails, system automatically retries with OpenAI
 -   **ElevenLabs ConvAI (Legacy/Backup)**: Pre-configured, age-specific AI tutors for reliable production deployment.
 
 ### AI & Learning Engine

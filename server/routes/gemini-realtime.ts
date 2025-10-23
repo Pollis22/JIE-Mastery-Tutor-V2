@@ -228,10 +228,9 @@ router.post('/', async (req, res) => {
       studentName: data.studentName,
       subject: data.subject,
       language: data.language,
-      gradeLevel: data.ageGroup,
+      ageGroup: data.ageGroup,
       voice: data.voice || geminiLiveService.getVoiceForAgeGroup(data.ageGroup),
       model: geminiLiveService.getModelName(),
-      provider: 'gemini', // Track provider
       status: 'connecting',
       startedAt: new Date(),
     }).returning();
