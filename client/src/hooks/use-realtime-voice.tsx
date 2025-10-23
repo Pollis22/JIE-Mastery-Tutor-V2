@@ -63,6 +63,8 @@ export function useRealtimeVoice() {
         clientSecret = config.clientSecret;
         sessionId = config.sessionId || '';
         model = config.model || 'gpt-4o-realtime-preview-2024-10-01';
+        instructions = config.instructions || '';  // CRITICAL: Use instructions passed from host!
+        console.log('📋 [RealtimeVoice] Using provided instructions, length:', instructions.length);
       } else {
         // Fallback: Get credentials via HTTP (for backward compatibility)
         console.log('🔑 [RealtimeVoice] No credentials provided, requesting from API...');
@@ -227,7 +229,7 @@ export function useRealtimeVoice() {
       console.log('🎙️ [DataChannel] Configuring session with instructions...');
       
       // Send complete session configuration
-      dc.send(JSON.stringify({
+      const sessionConfig = {
         type: 'session.update',
         session: {
           modalities: ['text', 'audio'],
@@ -242,7 +244,11 @@ export function useRealtimeVoice() {
             model: 'whisper-1'
           }
         }
-      }));
+      };
+      
+      console.log('📋 [DataChannel] Sending session config with instructions length:', sessionConfig.session.instructions.length);
+      console.log('📋 [DataChannel] Instructions preview:', sessionConfig.session.instructions.substring(0, 200) + '...');
+      dc.send(JSON.stringify(sessionConfig));
       
       // Request initial greeting immediately after configuration
       setTimeout(() => {
