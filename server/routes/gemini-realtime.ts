@@ -241,11 +241,19 @@ router.post('/', async (req, res) => {
     console.log(`   Model: ${geminiLiveService.getModelName()}`);
     console.log(`   Voice: ${config}`);
     
+    // Get Gemini API key for frontend WebSocket connection
+    const geminiApiKey = process.env.GEMINI_API_KEY;
+    if (!geminiApiKey) {
+      throw new Error('GEMINI_API_KEY not configured');
+    }
+
     // Return configuration for client-side connection
     res.json({
       success: true,
       provider: 'gemini',
       sessionId: dbSession.id, // Our database session ID for tracking
+      geminiApiKey, // Frontend needs this to establish WebSocket connection
+      systemInstruction: fullInstructions, // Full system prompt for Gemini
       model: geminiLiveService.getModelName(),
       config: config,
       metadata: {
