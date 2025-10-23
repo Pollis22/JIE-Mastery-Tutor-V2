@@ -201,6 +201,18 @@ export function useRealtimeVoice() {
       if (audioEl.srcObject !== event.streams[0]) {
         audioEl.srcObject = event.streams[0];
         console.log('🔊 [WebRTC] Audio stream attached to element');
+        
+        // CRITICAL: Force audio to play (handle browser autoplay policies)
+        audioEl.play().then(() => {
+          console.log('✅ [Audio] Playing successfully');
+        }).catch((err) => {
+          console.error('❌ [Audio] Playback failed:', err);
+          console.log('⚠️ [Audio] User interaction may be needed to enable audio');
+          // Try to play again on next user interaction
+          document.addEventListener('click', () => {
+            audioEl.play().catch(() => {});
+          }, { once: true });
+        });
       }
     };
 
@@ -232,34 +244,16 @@ export function useRealtimeVoice() {
         }
       }));
       
-      // CRITICAL: Trigger AI greeting immediately after configuration
+      // Request initial greeting immediately after configuration
       setTimeout(() => {
-        console.log('🎤 [DataChannel] Triggering AI greeting...');
+        console.log('🎤 [DataChannel] Requesting AI greeting...');
         
-        // Send a conversation item to prompt the AI
+        // Simply request a response - let the instructions handle the greeting
         dc.send(JSON.stringify({
-          type: 'conversation.item.create',
-          item: {
-            type: 'message',
-            role: 'user',
-            content: [
-              {
-                type: 'input_text',
-                text: 'Hello'  // Simple greeting to trigger AI response
-              }
-            ]
-          }
+          type: 'response.create'
         }));
         
-        // Immediately request AI response
-        dc.send(JSON.stringify({
-          type: 'response.create',
-          response: {
-            modalities: ['text', 'audio']
-          }
-        }));
-        
-        console.log('✅ [DataChannel] AI greeting triggered');
+        console.log('✅ [DataChannel] Initial response requested');
       }, 500);  // Wait for session.update to process
     };
 

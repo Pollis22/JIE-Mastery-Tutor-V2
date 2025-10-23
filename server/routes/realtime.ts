@@ -240,12 +240,16 @@ router.post('/', async (req, res) => {
     // Build personalized instructions with personality
     const baseInstructions = getPersonalizedSystemPrompt(data.ageGroup, data.subject);
     
-    // Add personalized greeting with student name
+    // Add personalized greeting with student name and document awareness
+    const hasDocuments = documentContext && documentContext.length > 0;
     const studentGreeting = data.studentName ? `
-IMPORTANT: The student's name is ${data.studentName}. Start your first message by greeting them warmly by name. For example:
-- "Hello ${data.studentName}! I'm so glad you're here to learn with me today!"
-- "Hi ${data.studentName}! What would you like to work on in ${data.subject || 'our lessons'} today?"
-- "Welcome ${data.studentName}! I'm excited to help you learn!"
+IMPORTANT: The student's name is ${data.studentName}. Start your first message by greeting them warmly by name. 
+${hasDocuments ? `Also mention that you see they've uploaded ${data.contextDocumentIds?.length} document(s) and you're ready to help with them.` : ''}
+
+For example:
+- "Hello ${data.studentName}! I'm so glad you're here to learn with me today!${hasDocuments ? ` I see you've uploaded some materials - I'm ready to help you work through them!`  : ''}"
+- "Hi ${data.studentName}! ${hasDocuments ? `I noticed you have some documents uploaded. ` : ''}What would you like to work on in ${data.subject || 'our lessons'} today?"
+- "Welcome ${data.studentName}! I'm excited to help you learn!${hasDocuments ? ` I can see your uploaded assignments, so let's dive in!` : ''}"
 
 Throughout the conversation:
 - Use ${data.studentName}'s name naturally every 3-4 exchanges
