@@ -165,3 +165,50 @@ sessionRouter.post('/check-availability', async (req, res) => {
     });
   }
 });
+
+// POST /api/session/activity - Track session activity and prevent timeout
+sessionRouter.post('/activity', async (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  try {
+    const userId = req.user!.id;
+    const { sessionId } = req.body;
+    
+    // Check if session is still active in database
+    let sessionStatus = 'active';
+    if (sessionId) {
+      const session = await storage.getRealtimeSession(sessionId, userId);
+      if (session) {
+        sessionStatus = session.status || 'active';
+      }
+    }
+    
+    // If session was auto-ended, return that info so frontend can disconnect
+    if (sessionStatus === 'ended') {
+      console.log(`⏰ [ActivityAPI] Session ${sessionId} was auto-ended, notifying frontend to disconnect`);
+      return res.json({
+        success: true,
+        sessionEnded: true,
+        reason: 'inactivity_timeout',
+        message: 'Session was automatically ended due to inactivity'
+      });
+    }
+    
+    // Update activity timestamp to prevent timeout
+    console.log(`✅ [ActivityAPI] Activity updated for session ${sessionId}`);
+    res.json({ 
+      success: true,
+      sessionEnded: false,
+      sessionStatus 
+    });
+    
+  } catch (error) {
+    console.error('[ActivityAPI] Error updating activity:', error);
+    res.status(500).json({ 
+      error: 'Failed to update activity',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
