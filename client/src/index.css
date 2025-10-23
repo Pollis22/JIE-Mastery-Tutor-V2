@@ -103,9 +103,21 @@
     @apply border-border;
   }
 
+  html, body {
+    height: auto;
+    min-height: 100vh;
+    overflow-y: auto;
+  }
+
   body {
     @apply font-sans antialiased bg-background text-foreground;
     font-family: var(--font-sans);
+  }
+
+  #root {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
   }
 }
 

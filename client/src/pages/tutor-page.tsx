@@ -366,7 +366,7 @@ export default function TutorPage() {
     <RequireSubscription>
       <NetworkAwareWrapper>
       <TutorErrorBoundary>
-        <div className="tutor-page max-w-3xl mx-auto p-4 space-y-4">
+        <div className="tutor-page max-w-3xl mx-auto p-4 pb-12 space-y-4">
           {/* Header with Logo and Student Switcher */}
           <div className="mb-6">
             <div className="flex items-center justify-between mb-4">
