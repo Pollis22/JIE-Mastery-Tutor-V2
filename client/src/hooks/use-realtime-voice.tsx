@@ -711,8 +711,10 @@ export function useRealtimeVoice() {
     }
   }, []);
   
-  // Play audio buffers from queue
-  const playNextInQueue = useCallback(() => {
+  // Play audio buffers from queue - not using useCallback to avoid circular dependency
+  const playNextInQueueRef = useRef<(() => void) | null>(null);
+  
+  const playNextInQueue = () => {
     if (audioQueueRef.current.length === 0) {
       isPlayingRef.current = false;
       return;
@@ -730,12 +732,17 @@ export function useRealtimeVoice() {
     
     source.onended = () => {
       // Play next in queue
-      playNextInQueue();
+      if (playNextInQueueRef.current) {
+        playNextInQueueRef.current();
+      }
     };
     
     source.start();
     console.log('[RealtimeVoice] Playing audio chunk, queue size:', audioQueueRef.current.length);
-  }, []);
+  };
+  
+  // Store the function in ref for self-reference
+  playNextInQueueRef.current = playNextInQueue;
 
   // Cleanup on unmount or page unload
   useEffect(() => {
