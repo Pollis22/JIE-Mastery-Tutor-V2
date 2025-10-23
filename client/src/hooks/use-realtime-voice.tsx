@@ -32,6 +32,7 @@ export function useRealtimeVoice() {
   const currentAssistantMessage = useRef<RealtimeMessage | null>(null);
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const isEndingSessionRef = useRef<boolean>(false); // Prevent duplicate session ending
+  const isResponseInProgress = useRef<boolean>(false); // Track active responses
 
   const connect = useCallback(async (config: {
     sessionId?: string;
@@ -266,32 +267,8 @@ export function useRealtimeVoice() {
       console.log('📋 [DataChannel] Instructions preview:', sessionConfig.session.instructions.substring(0, 200) + '...');
       dc.send(JSON.stringify(sessionConfig));
       
-      // Request initial greeting after session is configured
-      setTimeout(() => {
-        console.log('🎤 [DataChannel] Triggering initial greeting...');
-        
-        // Add a simple user message to trigger the greeting
-        dc.send(JSON.stringify({
-          type: 'conversation.item.create',
-          item: {
-            type: 'message',
-            role: 'user',
-            content: [
-              {
-                type: 'input_text',
-                text: 'Hello'
-              }
-            ]
-          }
-        }));
-        
-        // Now request the response
-        dc.send(JSON.stringify({
-          type: 'response.create'
-        }));
-        
-        console.log('✅ [DataChannel] Initial greeting triggered');
-      }, 1000);  // Give session.update time to process
+      // Don't automatically request greeting - wait for user to speak first
+      console.log('✅ [DataChannel] Session configured, waiting for user input...');
     };
 
     dc.onmessage = (event) => {
@@ -302,14 +279,29 @@ export function useRealtimeVoice() {
         if (message.type === 'error') {
           console.error('❌ [OpenAI] Error:', message.error);
           setError(message.error.message);
+          // Reset response flag on error
+          isResponseInProgress.current = false;
         }
         
-        // CRITICAL: Trigger AI response when user audio is committed
+        // Track response lifecycle
+        if (message.type === 'response.created') {
+          isResponseInProgress.current = true;
+        }
+        
+        if (message.type === 'response.done' || message.type === 'response.cancelled') {
+          isResponseInProgress.current = false;
+        }
+        
+        // CRITICAL: Trigger AI response when user audio is committed (if not already responding)
         if (message.type === 'input_audio_buffer.committed') {
-          console.log('📝 [DataChannel] User audio committed, triggering AI response...');
-          dc.send(JSON.stringify({
-            type: 'response.create'
-          }));
+          if (!isResponseInProgress.current) {
+            console.log('📝 [DataChannel] User audio committed, triggering AI response...');
+            dc.send(JSON.stringify({
+              type: 'response.create'
+            }));
+          } else {
+            console.log('⏸️ [DataChannel] Response already in progress, skipping...');
+          }
         }
         
         // Track user activity for inactivity timeout
