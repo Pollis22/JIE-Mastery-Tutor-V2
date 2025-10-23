@@ -44,8 +44,18 @@ router.get('/test', (req, res) => {
 router.post('/', async (req, res) => {
   const startTime = Date.now();
   
+  // SECURITY FIX: Require authentication for ALL voice sessions
+  if (!req.isAuthenticated() || !req.user) {
+    console.log('🚫 [RealtimeAPI] BLOCKED: Unauthorized voice session attempt');
+    return res.status(401).json({ 
+      error: 'Authentication required',
+      message: 'You must be logged in to start a voice session. Please login first.'
+    });
+  }
+  
   try {
     console.log('🎬 [RealtimeAPI] Creating session via HTTP');
+    console.log('   User authenticated:', req.user.email);
     
     // Check if Realtime is enabled
     const realtimeEnabled = process.env.REALTIME_ENABLED !== 'false';
@@ -61,8 +71,8 @@ router.post('/', async (req, res) => {
     const data = startSessionSchema.parse(req.body);
     const model = data.model || 'gpt-4o-realtime-preview-2024-10-01';
     
-    // CRITICAL: Check for active sessions on this account
-    const checkUserId = req.user?.id || data.userId;
+    // CRITICAL: Always use authenticated user ID, never accept from request body
+    const checkUserId = req.user.id; // SECURITY: Only use authenticated user
     if (checkUserId) {
       // First, clean up any expired or stuck sessions (older than 30 minutes)
       const cleanupResult = await db.update(realtimeSessions)

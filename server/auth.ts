@@ -317,6 +317,7 @@ export function setupAuth(app: Express) {
     });
   });
 
+  // Support both /api/login and /api/auth/login for compatibility
   app.post("/api/login", (req, res, next) => {
     passport.authenticate("local", (err: any, user: any, info: any) => {
       if (err) {
@@ -366,8 +367,65 @@ export function setupAuth(app: Express) {
       });
     })(req, res, next);
   });
+  
+  // Add /api/auth/login alias for frontend compatibility
+  app.post("/api/auth/login", (req, res, next) => {
+    passport.authenticate("local", (err: Error, user: SelectUser | false) => {
+      if (err) {
+        console.error('[Auth] Authentication error:', err);
+        const errorMessage = err.message || err.toString() || 'Unknown authentication error';
+        return res.status(500).json({ error: 'Authentication error', details: errorMessage });
+      }
+      if (!user) {
+        return res.status(401).json({ error: 'Invalid credentials' });
+      }
+      
+      // Check if email is verified - but only for NEW users
+      const verificationCutoffDate = new Date('2025-10-13');
+      const accountCreatedAt = new Date(user.createdAt);
+      
+      // Only require verification for users created after the feature was added
+      if (accountCreatedAt > verificationCutoffDate && !user.emailVerified) {
+        console.log('[Auth] Login with unverified email (new user):', user.email);
+        return res.status(403).json({ 
+          error: 'Email not verified',
+          message: 'Please verify your email address to continue. Check your inbox for the verification link.',
+          email: user.email,
+          requiresVerification: true
+        });
+      }
+      
+      // Auto-verify old users if not already verified
+      if (accountCreatedAt <= verificationCutoffDate && !user.emailVerified) {
+        console.log('[Auth] Auto-verifying existing user:', user.email);
+        // Mark as verified in background (non-blocking)
+        storage.markUserEmailAsVerified(user.id).catch(err => 
+          console.error('[Auth] Failed to auto-verify user:', err)
+        );
+      }
+      
+      req.login(user, (err) => {
+        if (err) {
+          console.error('[Auth] Session error:', err);
+          const errorMessage = err.message || err.toString() || 'Unknown session error';
+          return res.status(500).json({ error: 'Session error', details: errorMessage });
+        }
+        // Sanitize user response to exclude sensitive fields
+        const { password, ...safeUser } = user as any;
+        res.status(200).json(safeUser);
+      });
+    })(req, res, next);
+  });
 
+  // Support both /api/logout and /api/auth/logout for compatibility
   app.post("/api/logout", (req, res, next) => {
+    req.logout((err) => {
+      if (err) return next(err);
+      res.sendStatus(200);
+    });
+  });
+  
+  app.post("/api/auth/logout", (req, res, next) => {
     req.logout((err) => {
       if (err) return next(err);
       res.sendStatus(200);
