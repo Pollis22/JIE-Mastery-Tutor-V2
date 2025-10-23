@@ -268,14 +268,29 @@ export function useRealtimeVoice() {
       
       // Request initial greeting after session is configured
       setTimeout(() => {
-        console.log('🎤 [DataChannel] Requesting initial greeting...');
+        console.log('🎤 [DataChannel] Triggering initial greeting...');
         
-        // Simply request a response - let session defaults handle everything
+        // Add a simple user message to trigger the greeting
+        dc.send(JSON.stringify({
+          type: 'conversation.item.create',
+          item: {
+            type: 'message',
+            role: 'user',
+            content: [
+              {
+                type: 'input_text',
+                text: 'Hello'
+              }
+            ]
+          }
+        }));
+        
+        // Now request the response
         dc.send(JSON.stringify({
           type: 'response.create'
         }));
         
-        console.log('✅ [DataChannel] Initial greeting requested');
+        console.log('✅ [DataChannel] Initial greeting triggered');
       }, 1000);  // Give session.update time to process
     };
 
