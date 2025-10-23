@@ -260,12 +260,15 @@ export function useRealtimeVoice() {
       setTimeout(() => {
         console.log('🎤 [DataChannel] Requesting AI greeting...');
         
-        // Simply request a response - the session instructions already tell it to greet
+        // Request audio response - CRITICAL: Must specify modalities
         dc.send(JSON.stringify({
-          type: 'response.create'
+          type: 'response.create',
+          response: {
+            modalities: ['text', 'audio']
+          }
         }));
         
-        console.log('✅ [DataChannel] Greeting response requested');
+        console.log('✅ [DataChannel] Greeting response requested with audio');
       }, 1000);  // Give session.update more time to process
     };
 
@@ -283,7 +286,10 @@ export function useRealtimeVoice() {
         if (message.type === 'input_audio_buffer.committed') {
           console.log('📝 [DataChannel] User audio committed, triggering AI response...');
           dc.send(JSON.stringify({
-            type: 'response.create'
+            type: 'response.create',
+            response: {
+              modalities: ['text', 'audio']
+            }
           }));
         }
         
