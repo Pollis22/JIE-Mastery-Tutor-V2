@@ -31,8 +31,7 @@ router.get('/test', (req, res) => {
     env: {
       hasOpenAIKey: !!process.env.OPENAI_API_KEY,
       nodeEnv: process.env.NODE_ENV,
-      realtimeEnabled: process.env.REALTIME_ENABLED !== 'false',
-      useConvai: process.env.USE_CONVAI?.toLowerCase() === 'true'
+      realtimeEnabled: process.env.REALTIME_ENABLED !== 'false'
     }
   });
 });
@@ -50,13 +49,11 @@ router.post('/', async (req, res) => {
     
     // Check if Realtime is enabled
     const realtimeEnabled = process.env.REALTIME_ENABLED !== 'false';
-    const useConvai = process.env.USE_CONVAI?.toLowerCase() === 'true';
     
-    if (!realtimeEnabled || useConvai) {
+    if (!realtimeEnabled) {
       return res.status(503).json({ 
         error: 'OpenAI Realtime is currently disabled',
-        realtimeEnabled,
-        useConvai
+        realtimeEnabled
       });
     }
 
@@ -414,13 +411,11 @@ router.post('/start', async (req, res) => {
   try {
     // Check if Realtime is enabled
     const realtimeEnabled = process.env.REALTIME_ENABLED !== 'false';
-    const useConvai = process.env.USE_CONVAI?.toLowerCase() === 'true';
     
-    if (!realtimeEnabled || useConvai) {
+    if (!realtimeEnabled) {
       return res.status(503).json({ 
         error: 'OpenAI Realtime is currently disabled',
-        realtimeEnabled,
-        useConvai
+        realtimeEnabled
       });
     }
 

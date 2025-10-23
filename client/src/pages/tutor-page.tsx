@@ -246,14 +246,10 @@ export default function TutorPage() {
       updatedAt: new Date().toISOString(),
     });
 
-    // Reset transcript and connection state for fresh session
-    setTranscriptMessages([]);
-    setIsTranscriptConnected(false);
-    
     // Start session tracking
     setSessionStartTime(new Date());
     
-    // Simple static agent connection - no dynamic session creation
+    // Start OpenAI Realtime voice session
     setMounted(true);
     
     toast({
@@ -273,10 +269,7 @@ export default function TutorPage() {
   };
 
   const switchAgent = () => {
-    // Reset transcript for new agent
-    setTranscriptMessages([]);
-    setIsTranscriptConnected(false);
-    // Remount widget
+    // Remount voice host
     setMounted(false);
     setTimeout(() => setMounted(true), 100);
   };
