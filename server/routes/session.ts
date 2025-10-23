@@ -167,6 +167,29 @@ sessionRouter.post('/check-availability', async (req, res) => {
 });
 
 // POST /api/session/activity - Track session activity and prevent timeout
+// GET /api/sessions/history - Get user's session history
+sessionRouter.get('/history', async (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  try {
+    const userId = req.user!.id;
+    const sessions = await storage.getUserRealtimeSessions(userId);
+    
+    res.json({
+      sessions: sessions || [],
+      count: sessions?.length || 0
+    });
+  } catch (error) {
+    console.error('Error fetching session history:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch session history',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
 sessionRouter.post('/activity', async (req, res) => {
   if (!req.isAuthenticated()) {
     return res.status(401).json({ error: 'Unauthorized' });
