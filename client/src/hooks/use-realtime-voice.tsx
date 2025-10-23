@@ -7,6 +7,16 @@ export interface RealtimeMessage {
   timestamp: Date;
 }
 
+// Helper to safely extract client_secret (string or {value: string})
+export function extractClientSecret(raw: unknown): string {
+  if (typeof raw === "string" && raw.trim()) return raw.trim();
+  if (raw && typeof raw === "object" && "value" in (raw as any)) {
+    const v = (raw as any).value;
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  throw new Error("Invalid client_secret in response");
+}
+
 export function useRealtimeVoice() {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -61,7 +71,7 @@ export function useRealtimeVoice() {
         console.log('✅ [RealtimeVoice] Using provided credentials from parent, SKIPPING API CALL');
         console.log('   Session ID:', config.sessionId);
         console.log('   Has client secret:', !!config.clientSecret);
-        clientSecret = config.clientSecret;
+        clientSecret = extractClientSecret(config.clientSecret);
         sessionId = config.sessionId || '';
         model = config.model || 'gpt-4o-realtime-preview-2024-10-01';
         instructions = config.instructions || '';  // CRITICAL: Use instructions passed from host!
@@ -259,17 +269,32 @@ export function useRealtimeVoice() {
       console.log('📋 [DataChannel] Instructions preview:', sessionConfig.session.instructions.substring(0, 200) + '...');
       dc.send(JSON.stringify(sessionConfig));
       
-      // Request initial greeting immediately after configuration
+      // CRITICAL: Give model something to respond to!
       setTimeout(() => {
-        console.log('🎤 [DataChannel] Requesting AI greeting...');
+        console.log('🎤 [DataChannel] Sending greeting prompt...');
         
-        // Request audio response with explicit instructions
+        // First, send input text to give model something to respond to
+        dc.send(JSON.stringify({
+          type: 'conversation.item.create',
+          item: {
+            type: 'message',
+            role: 'user',
+            content: [
+              {
+                type: 'input_text',
+                text: 'Please greet the student and ask what subject they would like help with today.'
+              }
+            ]
+          }
+        }));
+        
+        // Then request response (inherits session defaults)
         dc.send(JSON.stringify({
           type: 'response.create'
         }));
         
-        console.log('✅ [DataChannel] Greeting response requested');
-      }, 1000);  // Give session.update more time to process
+        console.log('✅ [DataChannel] Greeting prompt sent, response requested');
+      }, 1000);  // Give session.update time to process
     };
 
     dc.onmessage = (event) => {
