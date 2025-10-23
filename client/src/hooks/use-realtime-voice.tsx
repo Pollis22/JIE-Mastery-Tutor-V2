@@ -558,9 +558,17 @@ export function useRealtimeVoice() {
         
         const data = await response.json();
         
-        // If session was auto-ended, disconnect immediately
+        // If session was auto-ended, stop heartbeat FIRST then disconnect
         if (data.sessionEnded) {
           console.log('⏰ [Heartbeat] Session auto-ended by server, disconnecting...');
+          
+          // CRITICAL: Stop heartbeat FIRST to prevent infinite loop
+          if (heartbeatIntervalRef.current) {
+            console.log('💓 [Heartbeat] Stopping heartbeat to prevent loop');
+            clearInterval(heartbeatIntervalRef.current);
+            heartbeatIntervalRef.current = null;
+          }
+          
           setError('Session ended due to inactivity');
           disconnect();
         }
