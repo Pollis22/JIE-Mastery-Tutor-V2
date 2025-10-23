@@ -258,9 +258,6 @@ export function useRealtimeVoice() {
             threshold: 0.5,
             prefix_padding_ms: 300,
             silence_duration_ms: 500
-          },
-          input_audio_transcription: {
-            model: 'whisper-1'
           }
         }
       };
@@ -269,31 +266,16 @@ export function useRealtimeVoice() {
       console.log('📋 [DataChannel] Instructions preview:', sessionConfig.session.instructions.substring(0, 200) + '...');
       dc.send(JSON.stringify(sessionConfig));
       
-      // CRITICAL: Give model something to respond to!
+      // Request initial greeting after session is configured
       setTimeout(() => {
-        console.log('🎤 [DataChannel] Sending greeting prompt...');
+        console.log('🎤 [DataChannel] Requesting initial greeting...');
         
-        // First, send input text to give model something to respond to
-        dc.send(JSON.stringify({
-          type: 'conversation.item.create',
-          item: {
-            type: 'message',
-            role: 'user',
-            content: [
-              {
-                type: 'input_text',
-                text: 'Please greet the student and ask what subject they would like help with today.'
-              }
-            ]
-          }
-        }));
-        
-        // Then request response (inherits session defaults)
+        // Simply request a response - let session defaults handle everything
         dc.send(JSON.stringify({
           type: 'response.create'
         }));
         
-        console.log('✅ [DataChannel] Greeting prompt sent, response requested');
+        console.log('✅ [DataChannel] Initial greeting requested');
       }, 1000);  // Give session.update time to process
     };
 
