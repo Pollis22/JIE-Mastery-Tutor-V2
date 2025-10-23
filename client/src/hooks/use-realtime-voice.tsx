@@ -99,7 +99,7 @@ export function useRealtimeVoice() {
           throw new Error('No client_secret in response');
         }
 
-        clientSecret = data.client_secret;
+        clientSecret = data.client_secret.value;  // ✅ Extract the actual value string
         sessionId = data.session_id || data.sessionId;
         model = data.model || 'gpt-4o-realtime-preview-2024-10-01';
         instructions = data.instructions || '';  // Get instructions from backend
