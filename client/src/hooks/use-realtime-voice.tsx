@@ -22,7 +22,6 @@ export function useRealtimeVoice() {
   const currentAssistantMessage = useRef<RealtimeMessage | null>(null);
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const isEndingSessionRef = useRef<boolean>(false); // Prevent duplicate session ending
-  const isDisconnectingRef = useRef<boolean>(false); // Prevent heartbeat re-entry
 
   const connect = useCallback(async (config: {
     sessionId?: string;
@@ -279,50 +278,11 @@ export function useRealtimeVoice() {
     dc.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
-        
-        // Comprehensive logging for all audio-related events
-        if (message.type.includes('audio')) {
-          console.log(`📨 [DataChannel] ${message.type}`, {
-            hasAudio: message.type.includes('audio'),
-            hasDelta: !!message.delta,
-            deltaLength: message.delta?.length,
-            hasTranscript: !!message.transcript
-          });
-        } else {
-          console.log('📨 [DataChannel] Message:', message.type);
-        }
+        console.log('📨 [DataChannel] Message:', message.type);
         
         if (message.type === 'error') {
           console.error('❌ [OpenAI] Error:', message.error);
           setError(message.error.message);
-        }
-        
-        // Handle audio response chunks
-        if (message.type === 'response.audio.delta') {
-          console.log('🎵 [Audio] Audio delta received!', {
-            deltaSize: message.delta?.length,
-            responseId: message.response_id
-          });
-          
-          if (message.delta) {
-            console.log('🎯 [Audio] Calling playAudioDelta...');
-            playAudioDelta(message.delta);
-          } else {
-            console.warn('⚠️ [Audio] No delta in audio event!');
-          }
-        }
-        
-        // Log audio completion
-        if (message.type === 'response.audio.done') {
-          console.log('✅ [Audio] Audio stream complete');
-        }
-        
-        // Log transcription failures
-        if (message.type === 'conversation.item.input_audio_transcription.failed') {
-          console.error('❌ [Transcription] Failed:', {
-            error: message.error,
-            item_id: message.item_id
-          });
         }
         
         // CRITICAL: Trigger AI response when user audio is committed
@@ -533,7 +493,7 @@ export function useRealtimeVoice() {
         echoCancellation: true,
         noiseSuppression: true,
         autoGainControl: true,
-        sampleRate: 24000,  // CRITICAL: OpenAI expects 24kHz for PCM16 audio!
+        sampleRate: 16000,  // CRITICAL: Match OpenAI's expected sample rate for PCM16
       }
     });
     micStreamRef.current = stream;
@@ -588,19 +548,7 @@ export function useRealtimeVoice() {
     // Server cannot directly close it, so we poll to detect server-side timeout
     console.log('💓 [Heartbeat] Starting session heartbeat polling (10s intervals)');
     
-    // Clear any existing heartbeat first
-    if (heartbeatIntervalRef.current) {
-      clearInterval(heartbeatIntervalRef.current);
-      heartbeatIntervalRef.current = null;
-    }
-    
     const checkSessionStatus = async () => {
-      // Check if already disconnecting to prevent re-entry
-      if (isDisconnectingRef.current) {
-        console.log('💓 [Heartbeat] Already disconnecting, skipping check');
-        return;
-      }
-      
       try {
         const response = await fetch('/api/session/activity', {
           method: 'POST',
@@ -608,31 +556,13 @@ export function useRealtimeVoice() {
           body: JSON.stringify({ sessionId }),
         });
         
-        if (!response.ok) {
-          console.warn('⚠️ [Heartbeat] Activity check failed:', response.status);
-          return;
-        }
-        
         const data = await response.json();
         
-        // If session was auto-ended, stop heartbeat FIRST then disconnect
+        // If session was auto-ended, disconnect immediately
         if (data.sessionEnded) {
           console.log('⏰ [Heartbeat] Session auto-ended by server, disconnecting...');
-          
-          // CRITICAL: Stop heartbeat FIRST to prevent infinite loop
-          if (heartbeatIntervalRef.current) {
-            console.log('💓 [Heartbeat] Stopping heartbeat to prevent loop');
-            clearInterval(heartbeatIntervalRef.current);
-            heartbeatIntervalRef.current = null;
-          }
-          
-          // Set flag to prevent re-entry
-          isDisconnectingRef.current = true;
-          
           setError('Session ended due to inactivity');
           disconnect();
-        } else {
-          console.log('💓 [Heartbeat] Session active');
         }
       } catch (error) {
         console.warn('⚠️ [Heartbeat] Failed to check session status:', error);
@@ -650,15 +580,14 @@ export function useRealtimeVoice() {
     console.log('🔴 [RealtimeVoice] Disconnecting...');
 
     // Prevent duplicate disconnection
-    if (isEndingSessionRef.current || isDisconnectingRef.current) {
+    if (isEndingSessionRef.current) {
       console.log('⚠️ [RealtimeVoice] Already disconnecting, skipping duplicate call');
       return;
     }
     isEndingSessionRef.current = true;
-    isDisconnectingRef.current = true;
 
     try {
-      // 0. Stop heartbeat polling FIRST
+      // 0. Stop heartbeat polling
       if (heartbeatIntervalRef.current) {
         console.log('💓 [Heartbeat] Stopping heartbeat polling');
         clearInterval(heartbeatIntervalRef.current);
@@ -747,12 +676,8 @@ export function useRealtimeVoice() {
       // Force state update even if cleanup failed
       setIsConnected(false);
     } finally {
-      // Always reset the flags after disconnect completes or fails
+      // Always reset the flag after disconnect completes or fails
       isEndingSessionRef.current = false;
-      // Reset isDisconnecting flag after a delay to ensure everything is cleaned up
-      setTimeout(() => {
-        isDisconnectingRef.current = false;
-      }, 1000);
     }
   }, []);
 
@@ -779,47 +704,25 @@ export function useRealtimeVoice() {
       };
       
       dataChannelRef.current.send(JSON.stringify(audioMessage));
-      console.log('[RealtimeVoice] Sent audio to OpenAI:', audioData.byteLength, 'bytes');
-    } else {
-      console.warn('[RealtimeVoice] Cannot send audio - data channel not open');
     }
   }, []);
   
   // Function to play audio from OpenAI response
   const playAudioDelta = useCallback(async (base64Audio: string) => {
-    console.log('🎯 [Audio] playAudioDelta CALLED!', {
-      hasAudio: !!base64Audio,
-      length: base64Audio?.length,
-      type: typeof base64Audio
-    });
-
     try {
       if (!base64Audio) {
-        console.error('❌ [Audio] playAudioDelta called with empty audio!');
+        console.warn('[RealtimeVoice] No audio data to play');
         return;
       }
       
-      console.log('🎵 [Audio] Processing AI audio response...');
+      console.log('[RealtimeVoice] Playing AI audio response...');
       
       // Initialize audio context if not exists
       if (!audioContextRef.current) {
         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ 
           sampleRate: 24000 
         });
-        console.log('🎵 [Audio] NEW AudioContext created:', {
-          sampleRate: audioContextRef.current.sampleRate,
-          state: audioContextRef.current.state,
-          maxChannels: audioContextRef.current.destination.maxChannelCount
-        });
-      }
-      
-      // Check and resume AudioContext if suspended
-      if (audioContextRef.current.state === 'suspended') {
-        console.warn('⚠️ [Audio] AudioContext SUSPENDED, resuming...');
-        await audioContextRef.current.resume();
-        console.log('▶️ [Audio] AudioContext RESUMED successfully');
-      } else {
-        console.log('✅ [Audio] AudioContext state:', audioContextRef.current.state);
+        console.log('[RealtimeVoice] Audio context created with sample rate:', audioContextRef.current.sampleRate);
       }
       
       // Decode base64 to binary
@@ -852,25 +755,13 @@ export function useRealtimeVoice() {
       // Add to queue
       audioQueueRef.current.push(audioBuffer);
       
-      console.log('🔊 [Audio] Added to queue, queue size:', audioQueueRef.current.length);
-      
       // Start playing if not already playing
       if (!isPlayingRef.current) {
-        console.log('▶️ [Audio] Starting playback...');
         playNextInQueue();
-      } else {
-        console.log('⏸️ [Audio] Already playing, queued for later');
       }
       
-      console.log('🔊 [Audio] Processing complete:', {
-        duration: `${audioBuffer.duration}s`,
-        sampleRate: audioBuffer.sampleRate,
-        length: audioBuffer.length
-      });
-      
     } catch (error) {
-      console.error('❌ [Audio] Audio playback error:', error);
-      console.error('Stack trace:', error.stack);
+      console.error('[RealtimeVoice] Audio playback error:', error);
     }
   }, []);
   
@@ -879,23 +770,14 @@ export function useRealtimeVoice() {
   
   const playNextInQueue = () => {
     if (audioQueueRef.current.length === 0) {
-      console.log('🔇 [Audio] Queue empty, stopping playback');
       isPlayingRef.current = false;
       return;
     }
     
-    if (!audioContextRef.current) {
-      console.error('❌ [Audio] No AudioContext available!');
-      return;
-    }
+    if (!audioContextRef.current) return;
     
     isPlayingRef.current = true;
     const audioBuffer = audioQueueRef.current.shift()!;
-    
-    console.log('🎵 [Audio] Playing chunk from queue:', {
-      duration: audioBuffer.duration,
-      queueRemaining: audioQueueRef.current.length
-    });
     
     // Create source and play
     const source = audioContextRef.current.createBufferSource();
@@ -903,7 +785,6 @@ export function useRealtimeVoice() {
     source.connect(audioContextRef.current.destination);
     
     source.onended = () => {
-      console.log('🔚 [Audio] Chunk finished, checking queue...');
       // Play next in queue
       if (playNextInQueueRef.current) {
         playNextInQueueRef.current();
@@ -911,7 +792,7 @@ export function useRealtimeVoice() {
     };
     
     source.start();
-    console.log('🔊 [Audio] Audio source started!');
+    console.log('[RealtimeVoice] Playing audio chunk, queue size:', audioQueueRef.current.length);
   };
   
   // Store the function in ref for self-reference

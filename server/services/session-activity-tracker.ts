@@ -16,8 +16,8 @@ interface ActivityTracker {
 // Map of userId -> activity tracker
 const sessionActivity = new Map<string, ActivityTracker>();
 
-const INACTIVITY_TIMEOUT = 15 * 60 * 1000; // 15 minutes (better for tutoring sessions where users pause to think)
-const WARNING_TIME = 13 * 60 * 1000; // 13 minutes - send warning (2 minutes before timeout)
+const INACTIVITY_TIMEOUT = 5 * 60 * 1000; // 5 minutes in milliseconds
+const WARNING_TIME = 4 * 60 * 1000; // 4 minutes - send warning
 
 /**
  * Start tracking activity for a session
@@ -80,9 +80,9 @@ function scheduleTimeouts(userId: string): void {
     }
   }, WARNING_TIME);
   
-  // Final timeout (at 15 minutes)
+  // Final timeout (at 5 minutes)
   tracker.finalTimeoutId = setTimeout(async () => {
-    console.log(`⏰ [ActivityTracker] Session timeout for user ${userId} - no activity for 15 minutes`);
+    console.log(`⏰ [ActivityTracker] Session timeout for user ${userId} - no activity for 5 minutes`);
     if (tracker.endCallback) {
       await tracker.endCallback();
     }
