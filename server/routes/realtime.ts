@@ -62,7 +62,8 @@ router.post('/', async (req, res) => {
 
     // Parse request body with defaults
     const data = startSessionSchema.parse(req.body);
-    const model = data.model || 'gpt-4o-realtime-preview-2024-10-01';
+    // Use mini model as workaround for Oct 2025 Realtime API bugs (no audio output issue)
+    const model = data.model || 'gpt-4o-mini-realtime-preview-2024-12-17';
     
     // CRITICAL: Check for active sessions on this account
     const checkUserId = req.user?.id || data.userId;
