@@ -22,6 +22,7 @@ export function useRealtimeVoice() {
   const currentAssistantMessage = useRef<RealtimeMessage | null>(null);
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const isEndingSessionRef = useRef<boolean>(false); // Prevent duplicate session ending
+  const isDisconnectingRef = useRef<boolean>(false); // Prevent heartbeat re-entry
 
   const connect = useCallback(async (config: {
     sessionId?: string;
@@ -548,13 +549,30 @@ export function useRealtimeVoice() {
     // Server cannot directly close it, so we poll to detect server-side timeout
     console.log('💓 [Heartbeat] Starting session heartbeat polling (10s intervals)');
     
+    // Clear any existing heartbeat first
+    if (heartbeatIntervalRef.current) {
+      clearInterval(heartbeatIntervalRef.current);
+      heartbeatIntervalRef.current = null;
+    }
+    
     const checkSessionStatus = async () => {
+      // Check if already disconnecting to prevent re-entry
+      if (isDisconnectingRef.current) {
+        console.log('💓 [Heartbeat] Already disconnecting, skipping check');
+        return;
+      }
+      
       try {
         const response = await fetch('/api/session/activity', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ sessionId }),
         });
+        
+        if (!response.ok) {
+          console.warn('⚠️ [Heartbeat] Activity check failed:', response.status);
+          return;
+        }
         
         const data = await response.json();
         
@@ -569,8 +587,13 @@ export function useRealtimeVoice() {
             heartbeatIntervalRef.current = null;
           }
           
+          // Set flag to prevent re-entry
+          isDisconnectingRef.current = true;
+          
           setError('Session ended due to inactivity');
           disconnect();
+        } else {
+          console.log('💓 [Heartbeat] Session active');
         }
       } catch (error) {
         console.warn('⚠️ [Heartbeat] Failed to check session status:', error);
@@ -588,14 +611,15 @@ export function useRealtimeVoice() {
     console.log('🔴 [RealtimeVoice] Disconnecting...');
 
     // Prevent duplicate disconnection
-    if (isEndingSessionRef.current) {
+    if (isEndingSessionRef.current || isDisconnectingRef.current) {
       console.log('⚠️ [RealtimeVoice] Already disconnecting, skipping duplicate call');
       return;
     }
     isEndingSessionRef.current = true;
+    isDisconnectingRef.current = true;
 
     try {
-      // 0. Stop heartbeat polling
+      // 0. Stop heartbeat polling FIRST
       if (heartbeatIntervalRef.current) {
         console.log('💓 [Heartbeat] Stopping heartbeat polling');
         clearInterval(heartbeatIntervalRef.current);
@@ -684,8 +708,12 @@ export function useRealtimeVoice() {
       // Force state update even if cleanup failed
       setIsConnected(false);
     } finally {
-      // Always reset the flag after disconnect completes or fails
+      // Always reset the flags after disconnect completes or fails
       isEndingSessionRef.current = false;
+      // Reset isDisconnecting flag after a delay to ensure everything is cleaned up
+      setTimeout(() => {
+        isDisconnectingRef.current = false;
+      }, 1000);
     }
   }, []);
 

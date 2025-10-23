@@ -7,6 +7,9 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 
 const router = Router();
 
+// Track sessions being ended to prevent duplicate end requests
+const endingSessionsCache = new Set<string>();
+
 // Schema for starting a realtime session
 const startSessionSchema = z.object({
   studentId: z.string().optional(),
@@ -671,10 +674,30 @@ router.post('/:sessionId/end', async (req, res) => {
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
-    const session = await storage.getRealtimeSession(req.params.sessionId, userId);
-    if (!session) {
-      return res.status(404).json({ error: 'Session not found' });
+    const sessionId = req.params.sessionId;
+    
+    // Check if already ending to prevent duplicate processing
+    if (endingSessionsCache.has(sessionId)) {
+      console.log(`⏭️ [SessionEnd] Already ending session ${sessionId}, skipping duplicate`);
+      return res.json({ success: true, alreadyEnding: true });
     }
+    
+    // Mark as ending
+    endingSessionsCache.add(sessionId);
+    
+    try {
+      const session = await storage.getRealtimeSession(sessionId, userId);
+      if (!session) {
+        endingSessionsCache.delete(sessionId);
+        return res.status(404).json({ error: 'Session not found' });
+      }
+      
+      // Check if already ended
+      if (session.status === 'ended' && session.endedAt) {
+        console.log(`⏭️ [SessionEnd] Session ${sessionId} already ended`);
+        endingSessionsCache.delete(sessionId);
+        return res.json({ success: true, alreadyEnded: true });
+      }
 
     // Calculate duration and minutes used
     const endTime = new Date();
@@ -716,14 +739,25 @@ router.post('/:sessionId/end', async (req, res) => {
     stopActivityTracking(userId);
     console.log('🛑 [ActivityTracker] Stopped tracking for user');
 
-    res.json({ 
-      success: true,
-      sessionId: session.id,
-      minutesUsed: minutesUsed,
-      duration: durationMs,
-      minutesDeducted: minutesDeducted,
-      insufficientMinutes: insufficientMinutes
-    });
+      res.json({ 
+        success: true,
+        sessionId: session.id,
+        minutesUsed: minutesUsed,
+        duration: durationMs,
+        minutesDeducted: minutesDeducted,
+        insufficientMinutes: insufficientMinutes
+      });
+      
+    } catch (innerError) {
+      console.error('[RealtimeAPI] Error during session end:', innerError);
+      throw innerError;
+    } finally {
+      // Remove from cache after 5 seconds to handle any delayed duplicate requests
+      setTimeout(() => {
+        endingSessionsCache.delete(sessionId);
+        console.log(`🧹 [SessionEnd] Removed ${sessionId} from deduplication cache`);
+      }, 5000);
+    }
 
   } catch (error) {
     console.error('[RealtimeAPI] Error ending session:', error);
