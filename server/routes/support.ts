@@ -37,7 +37,7 @@ router.post('/contact', async (req, res) => {
 
     // If email service is available, send the support email
     try {
-      const { emailService } = await import('../services/email-service');
+      const { emailService } = await import('../services/email');
       if (emailService) {
         await emailService.sendAdminNotification(`Support Request: ${subject}`, {
           from: user.email,

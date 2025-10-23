@@ -15,10 +15,7 @@ export function NavigationHeader() {
   const { user, logoutMutation } = useAuth();
   const [location, setLocation] = useLocation();
 
-  const { data: dashboard } = useQuery<{
-    user?: { name?: string; initials?: string; plan?: string };
-    usage?: { voiceMinutes?: string };
-  }>({
+  const { data: dashboard } = useQuery({
     queryKey: ["/api/dashboard"],
     enabled: !!user,
   });

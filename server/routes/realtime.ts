@@ -7,9 +7,6 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 
 const router = Router();
 
-// Track sessions being ended to prevent duplicate end requests
-const endingSessionsCache = new Set<string>();
-
 // Schema for starting a realtime session
 const startSessionSchema = z.object({
   studentId: z.string().optional(),
@@ -34,7 +31,8 @@ router.get('/test', (req, res) => {
     env: {
       hasOpenAIKey: !!process.env.OPENAI_API_KEY,
       nodeEnv: process.env.NODE_ENV,
-      realtimeEnabled: process.env.REALTIME_ENABLED !== 'false'
+      realtimeEnabled: process.env.REALTIME_ENABLED !== 'false',
+      useConvai: process.env.USE_CONVAI?.toLowerCase() === 'true'
     }
   });
 });
@@ -47,26 +45,18 @@ router.get('/test', (req, res) => {
 router.post('/', async (req, res) => {
   const startTime = Date.now();
   
-  // SECURITY FIX: Require authentication for ALL voice sessions
-  if (!req.isAuthenticated() || !req.user) {
-    console.log('🚫 [RealtimeAPI] BLOCKED: Unauthorized voice session attempt');
-    return res.status(401).json({ 
-      error: 'Authentication required',
-      message: 'You must be logged in to start a voice session. Please login first.'
-    });
-  }
-  
   try {
     console.log('🎬 [RealtimeAPI] Creating session via HTTP');
-    console.log('   User authenticated:', req.user.email);
     
     // Check if Realtime is enabled
     const realtimeEnabled = process.env.REALTIME_ENABLED !== 'false';
+    const useConvai = process.env.USE_CONVAI?.toLowerCase() === 'true';
     
-    if (!realtimeEnabled) {
+    if (!realtimeEnabled || useConvai) {
       return res.status(503).json({ 
         error: 'OpenAI Realtime is currently disabled',
-        realtimeEnabled
+        realtimeEnabled,
+        useConvai
       });
     }
 
@@ -74,8 +64,8 @@ router.post('/', async (req, res) => {
     const data = startSessionSchema.parse(req.body);
     const model = data.model || 'gpt-4o-realtime-preview-2024-10-01';
     
-    // CRITICAL: Always use authenticated user ID, never accept from request body
-    const checkUserId = req.user.id; // SECURITY: Only use authenticated user
+    // CRITICAL: Check for active sessions on this account
+    const checkUserId = req.user?.id || data.userId;
     if (checkUserId) {
       // First, clean up any expired or stuck sessions (older than 30 minutes)
       const cleanupResult = await db.update(realtimeSessions)
@@ -250,16 +240,12 @@ router.post('/', async (req, res) => {
     // Build personalized instructions with personality
     const baseInstructions = getPersonalizedSystemPrompt(data.ageGroup, data.subject);
     
-    // Add personalized greeting with student name and document awareness
-    const hasDocuments = documentContext && documentContext.length > 0;
+    // Add personalized greeting with student name
     const studentGreeting = data.studentName ? `
-IMPORTANT: The student's name is ${data.studentName}. Start your first message by greeting them warmly by name. 
-${hasDocuments ? `Also mention that you see they've uploaded ${data.contextDocumentIds?.length} document(s) and you're ready to help with them.` : ''}
-
-For example:
-- "Hello ${data.studentName}! I'm so glad you're here to learn with me today!${hasDocuments ? ` I see you've uploaded some materials - I'm ready to help you work through them!`  : ''}"
-- "Hi ${data.studentName}! ${hasDocuments ? `I noticed you have some documents uploaded. ` : ''}What would you like to work on in ${data.subject || 'our lessons'} today?"
-- "Welcome ${data.studentName}! I'm excited to help you learn!${hasDocuments ? ` I can see your uploaded assignments, so let's dive in!` : ''}"
+IMPORTANT: The student's name is ${data.studentName}. Start your first message by greeting them warmly by name. For example:
+- "Hello ${data.studentName}! I'm so glad you're here to learn with me today!"
+- "Hi ${data.studentName}! What would you like to work on in ${data.subject || 'our lessons'} today?"
+- "Welcome ${data.studentName}! I'm excited to help you learn!"
 
 Throughout the conversation:
 - Use ${data.studentName}'s name naturally every 3-4 exchanges
@@ -399,7 +385,6 @@ ${documentContext ? '\nPlease reference the student\'s documents when relevant t
       model: sessionData.model,
       voice: selectedVoice,
       expires_at: sessionData.expires_at,
-      instructions: instructions,  // CRITICAL: Send instructions to frontend!
     });
 
   } catch (error: any) {
@@ -424,11 +409,13 @@ router.post('/start', async (req, res) => {
   try {
     // Check if Realtime is enabled
     const realtimeEnabled = process.env.REALTIME_ENABLED !== 'false';
+    const useConvai = process.env.USE_CONVAI?.toLowerCase() === 'true';
     
-    if (!realtimeEnabled) {
+    if (!realtimeEnabled || useConvai) {
       return res.status(503).json({ 
         error: 'OpenAI Realtime is currently disabled',
-        realtimeEnabled
+        realtimeEnabled,
+        useConvai
       });
     }
 
@@ -670,30 +657,10 @@ router.post('/:sessionId/end', async (req, res) => {
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
-    const sessionId = req.params.sessionId;
-    
-    // Check if already ending to prevent duplicate processing
-    if (endingSessionsCache.has(sessionId)) {
-      console.log(`⏭️ [SessionEnd] Already ending session ${sessionId}, skipping duplicate`);
-      return res.json({ success: true, alreadyEnding: true });
+    const session = await storage.getRealtimeSession(req.params.sessionId, userId);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
     }
-    
-    // Mark as ending
-    endingSessionsCache.add(sessionId);
-    
-    try {
-      const session = await storage.getRealtimeSession(sessionId, userId);
-      if (!session) {
-        endingSessionsCache.delete(sessionId);
-        return res.status(404).json({ error: 'Session not found' });
-      }
-      
-      // Check if already ended
-      if (session.status === 'ended' && session.endedAt) {
-        console.log(`⏭️ [SessionEnd] Session ${sessionId} already ended`);
-        endingSessionsCache.delete(sessionId);
-        return res.json({ success: true, alreadyEnded: true });
-      }
 
     // Calculate duration and minutes used
     const endTime = new Date();
@@ -735,25 +702,14 @@ router.post('/:sessionId/end', async (req, res) => {
     stopActivityTracking(userId);
     console.log('🛑 [ActivityTracker] Stopped tracking for user');
 
-      res.json({ 
-        success: true,
-        sessionId: session.id,
-        minutesUsed: minutesUsed,
-        duration: durationMs,
-        minutesDeducted: minutesDeducted,
-        insufficientMinutes: insufficientMinutes
-      });
-      
-    } catch (innerError) {
-      console.error('[RealtimeAPI] Error during session end:', innerError);
-      throw innerError;
-    } finally {
-      // Remove from cache after 5 seconds to handle any delayed duplicate requests
-      setTimeout(() => {
-        endingSessionsCache.delete(sessionId);
-        console.log(`🧹 [SessionEnd] Removed ${sessionId} from deduplication cache`);
-      }, 5000);
-    }
+    res.json({ 
+      success: true,
+      sessionId: session.id,
+      minutesUsed: minutesUsed,
+      duration: durationMs,
+      minutesDeducted: minutesDeducted,
+      insufficientMinutes: insufficientMinutes
+    });
 
   } catch (error) {
     console.error('[RealtimeAPI] Error ending session:', error);

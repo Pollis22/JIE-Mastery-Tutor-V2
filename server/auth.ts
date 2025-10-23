@@ -25,10 +25,6 @@ async function hashPassword(password: string) {
 
 async function comparePasswords(supplied: string, stored: string) {
   const [hashed, salt] = stored.split(".");
-  if (!hashed || !salt) {
-    console.error('[comparePasswords] Invalid password format - missing hash or salt');
-    return false;
-  }
   const hashedBuf = Buffer.from(hashed, "hex");
   const suppliedBuf = (await scryptAsync(supplied, salt, 64)) as Buffer;
   return timingSafeEqual(hashedBuf, suppliedBuf);
@@ -115,8 +111,6 @@ export function setupAuth(app: Express) {
             marketingOptOutDate: null,
             createdAt: new Date(),
             updatedAt: new Date(),
-            deletedAt: null,
-            deletionRequestedAt: null,
           };
           return done(null, testUser);
         }
@@ -216,8 +210,6 @@ export function setupAuth(app: Express) {
         marketingOptOutDate: null,
         createdAt: new Date(),
         updatedAt: new Date(),
-        deletedAt: null,
-        deletionRequestedAt: null,
       };
       return done(null, testUser);
     }
@@ -236,9 +228,9 @@ export function setupAuth(app: Express) {
       email: z.string().email(),
       username: z.string().min(1),
       password: z.string().min(8),
-      firstName: z.string().optional(),
-      lastName: z.string().optional(),
-      parentName: z.string().min(1, "Parent/Guardian name is required"),
+      firstName: z.string().min(1, "First name is required"),
+      lastName: z.string().min(1, "Last name is required"),
+      parentName: z.string().optional(),
       studentName: z.string().min(1, "Student name is required"),
       studentAge: z.number().optional(),
       gradeLevel: z.string().min(1, "Grade level is required"),
@@ -248,21 +240,10 @@ export function setupAuth(app: Express) {
 
     const validation = registerSchema.safeParse(req.body);
     if (!validation.success) {
-      console.error('[Register] Validation failed:', validation.error.errors);
       return res.status(400).json({ 
         error: "Validation failed", 
         details: validation.error.errors 
       });
-    }
-
-    // Split parentName into firstName and lastName if not provided separately
-    let firstName = validation.data.firstName;
-    let lastName = validation.data.lastName;
-    
-    if (!firstName && !lastName && validation.data.parentName) {
-      const nameParts = validation.data.parentName.trim().split(/\s+/);
-      firstName = nameParts[0];
-      lastName = nameParts.slice(1).join(' ') || nameParts[0];
     }
 
     const existingUser = await storage.getUserByUsername(validation.data.username);
@@ -270,19 +251,24 @@ export function setupAuth(app: Express) {
       return res.status(400).send("Username already exists");
     }
 
-    // New users start WITHOUT an active subscription - they must pay first
+    // Set default plan and minutes for new users
+    const defaultPlan = 'starter';
+    const minutesMap: Record<string, number> = {
+      'starter': 60,
+      'standard': 240,
+      'pro': 600,
+    };
+    
     const user = await storage.createUser({
       ...validation.data,
-      firstName: firstName || validation.data.parentName?.split(' ')[0] || 'User',
-      lastName: lastName || validation.data.parentName?.split(' ').slice(1).join(' ') || '',
       password: await hashPassword(validation.data.password),
       marketingOptInDate: validation.data.marketingOptIn ? new Date() : null,
-      subscriptionPlan: null, // No plan until payment
-      subscriptionStatus: 'pending', // Pending until payment
-      subscriptionMinutesLimit: 0, // No minutes until payment
+      subscriptionPlan: defaultPlan,
+      subscriptionStatus: 'active', // New users start with active status
+      subscriptionMinutesLimit: minutesMap[defaultPlan], // Set correct minutes for plan
       subscriptionMinutesUsed: 0,
       purchasedMinutesBalance: 0,
-      billingCycleStart: null, // No billing cycle until subscription starts
+      billingCycleStart: new Date(),
     });
 
     req.login(user, async (err) => {
@@ -317,7 +303,6 @@ export function setupAuth(app: Express) {
     });
   });
 
-  // Support both /api/login and /api/auth/login for compatibility
   app.post("/api/login", (req, res, next) => {
     passport.authenticate("local", (err: any, user: any, info: any) => {
       if (err) {
@@ -367,65 +352,8 @@ export function setupAuth(app: Express) {
       });
     })(req, res, next);
   });
-  
-  // Add /api/auth/login alias for frontend compatibility
-  app.post("/api/auth/login", (req, res, next) => {
-    passport.authenticate("local", (err: Error, user: SelectUser | false) => {
-      if (err) {
-        console.error('[Auth] Authentication error:', err);
-        const errorMessage = err.message || err.toString() || 'Unknown authentication error';
-        return res.status(500).json({ error: 'Authentication error', details: errorMessage });
-      }
-      if (!user) {
-        return res.status(401).json({ error: 'Invalid credentials' });
-      }
-      
-      // Check if email is verified - but only for NEW users
-      const verificationCutoffDate = new Date('2025-10-13');
-      const accountCreatedAt = user.createdAt ? new Date(user.createdAt) : new Date();
-      
-      // Only require verification for users created after the feature was added
-      if (accountCreatedAt > verificationCutoffDate && !user.emailVerified) {
-        console.log('[Auth] Login with unverified email (new user):', user.email);
-        return res.status(403).json({ 
-          error: 'Email not verified',
-          message: 'Please verify your email address to continue. Check your inbox for the verification link.',
-          email: user.email,
-          requiresVerification: true
-        });
-      }
-      
-      // Auto-verify old users if not already verified
-      if (accountCreatedAt <= verificationCutoffDate && !user.emailVerified) {
-        console.log('[Auth] Auto-verifying existing user:', user.email);
-        // Mark as verified in background (non-blocking)
-        storage.markUserEmailAsVerified(user.id).catch(err => 
-          console.error('[Auth] Failed to auto-verify user:', err)
-        );
-      }
-      
-      req.login(user, (err) => {
-        if (err) {
-          console.error('[Auth] Session error:', err);
-          const errorMessage = err.message || err.toString() || 'Unknown session error';
-          return res.status(500).json({ error: 'Session error', details: errorMessage });
-        }
-        // Sanitize user response to exclude sensitive fields
-        const { password, ...safeUser } = user as any;
-        res.status(200).json(safeUser);
-      });
-    })(req, res, next);
-  });
 
-  // Support both /api/logout and /api/auth/logout for compatibility
   app.post("/api/logout", (req, res, next) => {
-    req.logout((err) => {
-      if (err) return next(err);
-      res.sendStatus(200);
-    });
-  });
-  
-  app.post("/api/auth/logout", (req, res, next) => {
     req.logout((err) => {
       if (err) return next(err);
       res.sendStatus(200);

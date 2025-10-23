@@ -87,11 +87,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       timestamp: new Date().toISOString(),
       env: process.env.NODE_ENV,
       voiceTestMode: testMode,
-      ttsEnabled: testMode || hasAzureTTS,
+      ttsEnabled: testMode || hasAzureTTS, // Always true in test mode or with Azure TTS
       hasOpenAI: !!process.env.OPENAI_API_KEY,
+      multiAgent: true, // Flag indicating multi-agent ConvAI system is active
       hasAzureTTS: hasAzureTTS,
       useRealtime: process.env.USE_REALTIME === 'true' || process.env.USE_REALTIME === '1',
-      debugMode: process.env.DEBUG_TUTOR === '1'
+      debugMode: process.env.DEBUG_TUTOR === '1',
+      // Voice system selection
+      convai: true, // Multi-agent system - agents are hardcoded in frontend
+      useConvai: process.env.USE_CONVAI?.toLowerCase() === 'true' // Use ConvAI when explicitly true
     });
   });
   
@@ -345,10 +349,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // User analytics and subscription management routes
   const { default: userAnalyticsRoutes } = await import('./routes/user-analytics');
   const { default: subscriptionRoutes } = await import('./routes/subscription');
-  const { default: accountManagementRoutes } = await import('./routes/account-management');
   app.use("/api/user", userAnalyticsRoutes);
   app.use("/api/subscription", subscriptionRoutes);
-  app.use("/api/account", accountManagementRoutes);
   
   // Document and context routes for RAG system
   const { default: documentRoutes } = await import('./routes/documents');
@@ -470,26 +472,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = req.user as any;
       
-      // Get total sessions count from realtime_sessions table
+      // Get total sessions count
       const sessionsResult = await db.execute(sql`
         SELECT COUNT(*) as count
-        FROM realtime_sessions
+        FROM learning_sessions
         WHERE user_id = ${user.id}
-          AND status = 'ended'
       `);
       const totalSessions = Number((sessionsResult.rows[0] as any)?.count || 0);
       
-      // Get minutes used in the past 7 days from realtime_sessions
+      // Get minutes used in the past 7 days
       const weekAgo = new Date();
       weekAgo.setDate(weekAgo.getDate() - 7);
       
       const weeklyResult = await db.execute(sql`
-        SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (ended_at - started_at)) / 60), 0) as weekly_minutes
-        FROM realtime_sessions
+        SELECT COALESCE(SUM(duration), 0) as weekly_minutes
+        FROM learning_sessions
         WHERE user_id = ${user.id}
-          AND status = 'ended'
-          AND started_at >= ${weekAgo.toISOString()}
-          AND ended_at IS NOT NULL
+          AND created_at >= ${weekAgo.toISOString()}
       `);
       const weeklyMinutes = Number((weeklyResult.rows[0] as any)?.weekly_minutes || 0);
       

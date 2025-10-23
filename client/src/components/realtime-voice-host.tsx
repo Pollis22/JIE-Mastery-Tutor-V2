@@ -36,7 +36,6 @@ export function RealtimeVoiceHost({
   const [voice, setVoice] = useState<string>('alloy');
   const [clientSecret, setClientSecret] = useState<any>(null);
   const [model, setModel] = useState<string>('gpt-4o-realtime-preview-2024-10-01');
-  const [instructions, setInstructions] = useState<string>(''); // Store personalized instructions
   const [isRecording, setIsRecording] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
@@ -79,11 +78,7 @@ export function RealtimeVoiceHost({
         setClientSecret(data.client_secret); // Store the client_secret for WebRTC
         setModel(data.model || 'gpt-4o-realtime-preview-2024-10-01');
         setVoice(data.voice || 'alloy');
-        setInstructions(data.instructions || ''); // CRITICAL: Save personalized instructions!
         setToken(data.sessionId); // Use sessionId as token for backward compatibility
-        
-        console.log('✅ [RealtimeVoiceHost] Received instructions from backend, length:', data.instructions?.length || 0);
-        
         onSessionStart?.();
         
         // The hook will automatically connect when clientSecret is set
@@ -220,7 +215,6 @@ export function RealtimeVoiceHost({
       connect({
         sessionId: sessionId,  // Pass the sessionId we already have
         clientSecret: clientSecret,  // Pass the clientSecret we already have
-        instructions: instructions,  // CRITICAL: Pass personalized instructions with student name!
         model: model || 'gpt-4o-realtime-preview-2024-10-01',
         voice: voice || 'alloy',
         language: language || 'en',
@@ -232,7 +226,7 @@ export function RealtimeVoiceHost({
         studentName: studentName,
       });
     }
-  }, [clientSecret, sessionId, isConnected, connect, model, voice, language, ageGroup, selectedSubject, contextDocumentIds, user?.id, studentId, studentName, instructions]);
+  }, [clientSecret, sessionId, isConnected, connect, model, voice, language, ageGroup, selectedSubject, contextDocumentIds, user?.id, studentId, studentName]);
 
   // Auto-start microphone and send greeting when connected
   useEffect(() => {

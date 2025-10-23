@@ -20,7 +20,6 @@ import {
   Save,
   Edit3
 } from "lucide-react";
-import { AccountDeletion } from "@/components/account-deletion";
 
 export default function AccountSettings() {
   const { user, refetch } = useAuth();
@@ -355,7 +354,26 @@ export default function AccountSettings() {
           </TabsContent>
 
           <TabsContent value="danger" className="space-y-4">
-            <AccountDeletion />
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                These actions are irreversible. Please proceed with caution.
+              </AlertDescription>
+            </Alert>
+
+            <div className="p-4 border border-destructive rounded-lg">
+              <h4 className="font-medium text-destructive mb-2">Delete Account</h4>
+              <p className="text-sm text-muted-foreground mb-4">
+                Permanently delete your account and all associated data. This action cannot be undone.
+              </p>
+              <Button 
+                variant="destructive" 
+                onClick={handleDeleteAccount}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete Account
+              </Button>
+            </div>
           </TabsContent>
         </Tabs>
       </CardContent>

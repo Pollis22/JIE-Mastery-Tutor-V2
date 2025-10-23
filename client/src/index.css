@@ -103,21 +103,9 @@
     @apply border-border;
   }
 
-  html, body {
-    height: auto;
-    min-height: 100vh;
-    overflow-y: auto;
-  }
-
   body {
     @apply font-sans antialiased bg-background text-foreground;
     font-family: var(--font-sans);
-  }
-
-  #root {
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
   }
 }
 
@@ -186,6 +174,9 @@
   }
   button {
     border: 2px solid currentColor;
+  }
+  .convai-container {
+    border: 3px solid black;
   }
 }
 

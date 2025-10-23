@@ -171,11 +171,6 @@ export interface IStorage {
   updateRealtimeSession(sessionId: string, userId: string, updates: Partial<RealtimeSession>): Promise<RealtimeSession>;
   endRealtimeSession(sessionId: string, userId: string, transcript: any[], minutesUsed: number): Promise<void>;
 
-  // Account deletion operations
-  markAccountForDeletion(userId: string): Promise<void>;
-  cancelAccountDeletion(userId: string): Promise<void>;
-  deleteUserAccount(userId: string): Promise<boolean>;
-
   // Session store
   sessionStore: session.Store;
 }
@@ -1186,59 +1181,18 @@ export class DatabaseStorage implements IStorage {
     // Calculate monthly revenue (mock calculation)
     const monthlyRevenue = activeSubscriptions.count * 150; // Average plan price
 
-    // Get total document count
-    const [documentStats] = await db.select({ count: count() }).from(userDocuments);
-    
-    // Get active sessions (currently ongoing)
-    const [activeSessionStats] = await db
-      .select({ count: count() })
-      .from(realtimeSessions)
-      .where(eq(realtimeSessions.status, 'active'));
-
-    // Get total sessions count
-    const [totalSessionStats] = await db
-      .select({ count: count() })
-      .from(realtimeSessions)
-      .where(eq(realtimeSessions.status, 'ended'));
-
-    // Calculate average session time from realtime_sessions
     const [avgSessionTime] = await db
       .select({
-        avg: sql<number>`AVG(EXTRACT(EPOCH FROM (${realtimeSessions.endedAt} - ${realtimeSessions.startedAt})) / 60)`.as('avg')
+        avg: sql<number>`AVG(EXTRACT(EPOCH FROM (${learningSessions.endedAt} - ${learningSessions.startedAt})) / 60)`.as('avg')
       })
-      .from(realtimeSessions)
-      .where(sql`${realtimeSessions.endedAt} IS NOT NULL AND ${realtimeSessions.status} = 'ended'`);
-
-    // Get storage used (sum of document file sizes)
-    const storageResult = await db.execute(sql`
-      SELECT COALESCE(SUM(file_size), 0) as total_size
-      FROM user_documents
-    `);
-    const storageBytes = Number((storageResult.rows[0] as any)?.total_size || 0);
-    const storageMB = Math.round(storageBytes / (1024 * 1024));
-
-    // Get recent users (last 5)
-    const recentUsers = await db
-      .select({
-        id: users.id,
-        username: users.username,
-        email: users.email,
-        createdAt: users.createdAt,
-      })
-      .from(users)
-      .orderBy(desc(users.createdAt))
-      .limit(5);
+      .from(learningSessions)
+      .where(sql`${learningSessions.endedAt} IS NOT NULL`);
 
     return {
       totalUsers: totalUsers.count,
       activeSubscriptions: activeSubscriptions.count,
-      totalDocuments: documentStats.count,
-      activeSessions: activeSessionStats.count,
-      monthlyRevenue: monthlyRevenue,
+      monthlyRevenue: `$${monthlyRevenue.toLocaleString()}`,
       avgSessionTime: `${Math.round(avgSessionTime.avg || 0)} min`,
-      totalSessions: totalSessionStats.count,
-      storageUsed: `${storageMB} MB`,
-      recentUsers,
     };
   }
 
@@ -1970,141 +1924,6 @@ export class DatabaseStorage implements IStorage {
 
     // Use the new hybrid minute tracking system with trial/subscription/purchased minutes
     await deductMinutes(userId, minutesUsed);
-  }
-
-  // Account deletion operations
-  async markAccountForDeletion(userId: string): Promise<void> {
-    try {
-      await db.update(users)
-        .set({
-          deletionRequestedAt: new Date(),
-          subscriptionStatus: 'canceled',
-          updatedAt: new Date(),
-        })
-        .where(eq(users.id, userId));
-      
-      console.log(`[Account] Marked account ${userId} for deletion`);
-    } catch (error) {
-      console.error('[Account] Error marking account for deletion:', error);
-      throw error;
-    }
-  }
-
-  async cancelAccountDeletion(userId: string): Promise<void> {
-    try {
-      await db.update(users)
-        .set({
-          deletionRequestedAt: null,
-          updatedAt: new Date(),
-        })
-        .where(eq(users.id, userId));
-      
-      console.log(`[Account] Cancelled deletion for account ${userId}`);
-    } catch (error) {
-      console.error('[Account] Error cancelling account deletion:', error);
-      throw error;
-    }
-  }
-
-  async deleteUserAccount(userId: string): Promise<boolean> {
-    try {
-      // Begin transaction equivalent - delete all related data
-      console.log(`[Account] Starting full deletion for user ${userId}`);
-      
-      // Delete realtime sessions
-      await db.delete(realtimeSessions)
-        .where(eq(realtimeSessions.userId, userId))
-        .catch(err => console.warn('[Account] No realtime sessions to delete:', err.message));
-      
-      // Delete learning sessions
-      await db.delete(learningSessions)
-        .where(eq(learningSessions.userId, userId))
-        .catch(err => console.warn('[Account] No learning sessions to delete:', err.message));
-      
-      // Delete quiz attempts
-      await db.delete(quizAttempts)
-        .where(eq(quizAttempts.userId, userId))
-        .catch(err => console.warn('[Account] No quiz attempts to delete:', err.message));
-      
-      // Delete user progress
-      await db.delete(userProgress)
-        .where(eq(userProgress.userId, userId))
-        .catch(err => console.warn('[Account] No user progress to delete:', err.message));
-      
-      // Delete usage logs
-      await db.delete(usageLogs)
-        .where(eq(usageLogs.userId, userId))
-        .catch(err => console.warn('[Account] No usage logs to delete:', err.message));
-      
-      // Delete document embeddings for user documents
-      const userDocs = await db.select({ id: userDocuments.id })
-        .from(userDocuments)
-        .where(eq(userDocuments.userId, userId));
-      
-      if (userDocs.length > 0) {
-        const docIds = userDocs.map(d => d.id);
-        
-        // Delete embeddings
-        await db.delete(documentEmbeddings)
-          .where(inArray(documentEmbeddings.chunkId, 
-            db.select({ id: documentChunks.id })
-              .from(documentChunks)
-              .where(inArray(documentChunks.documentId, docIds))
-          ))
-          .catch(err => console.warn('[Account] No embeddings to delete:', err.message));
-        
-        // Delete chunks
-        await db.delete(documentChunks)
-          .where(inArray(documentChunks.documentId, docIds))
-          .catch(err => console.warn('[Account] No chunks to delete:', err.message));
-      }
-      
-      // Delete user documents
-      await db.delete(userDocuments)
-        .where(eq(userDocuments.userId, userId))
-        .catch(err => console.warn('[Account] No documents to delete:', err.message));
-      
-      // Delete student doc pins for user's students
-      const userStudents = await db.select({ id: students.id })
-        .from(students)
-        .where(eq(students.userId, userId));
-      
-      if (userStudents.length > 0) {
-        const studentIds = userStudents.map(s => s.id);
-        
-        // Delete doc pins
-        await db.delete(studentDocPins)
-          .where(inArray(studentDocPins.studentId, studentIds))
-          .catch(err => console.warn('[Account] No doc pins to delete:', err.message));
-        
-        // Delete tutor sessions
-        await db.delete(tutorSessions)
-          .where(inArray(tutorSessions.studentId, studentIds))
-          .catch(err => console.warn('[Account] No tutor sessions to delete:', err.message));
-      }
-      
-      // Delete students
-      await db.delete(students)
-        .where(eq(students.userId, userId))
-        .catch(err => console.warn('[Account] No students to delete:', err.message));
-      
-      // Finally, delete the user
-      const result = await db.delete(users)
-        .where(eq(users.id, userId))
-        .returning({ id: users.id });
-      
-      if (result.length > 0) {
-        console.log(`[Account] Successfully deleted user account ${userId}`);
-        return true;
-      } else {
-        console.warn(`[Account] User ${userId} not found for deletion`);
-        return false;
-      }
-      
-    } catch (error) {
-      console.error('[Account] Error deleting user account:', error);
-      throw error;
-    }
   }
 }
 

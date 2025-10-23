@@ -2,12 +2,15 @@ import { useAuth } from "@/hooks/use-auth";
 import { useEffect, useState } from "react";
 import { TutorErrorBoundary } from "@/components/tutor-error-boundary";
 import { NetworkAwareWrapper } from "@/components/network-aware-wrapper";
+import ConvaiHost, { type ConvaiMessage } from "@/components/convai-host";
+import { ConvaiTranscript } from "@/components/convai-transcript";
 import { RealtimeVoiceHost } from "@/components/realtime-voice-host";
 import { AssignmentsPanel } from "@/components/AssignmentsPanel";
 import { StudentSwitcher } from "@/components/StudentSwitcher";
 import { StudentProfilePanel } from "@/components/StudentProfilePanel";
 import { SessionSummaryModal } from "@/components/SessionSummaryModal";
 import { TopUpModal } from "@/components/TopUpModal";
+import { AGENTS, GREETINGS, type AgentLevel } from "@/agents";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -17,7 +20,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { DebugPanel } from "@/components/realtime/DebugPanel";
-import { RequireSubscription } from "@/components/require-subscription";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -69,8 +71,6 @@ const mapLanguageToISO = (language?: string | null): 'en' | 'es' | 'hi' | 'zh' =
   }
 };
 
-type AgentLevel = 'k2' | 'g3_5' | 'g6_8' | 'g9_12' | 'college';
-
 export default function TutorPage() {
   const { user, logoutMutation } = useAuth();
   const { toast } = useToast();
@@ -88,6 +88,8 @@ export default function TutorPage() {
   const [profileDrawerOpen, setProfileDrawerOpen] = useState(false);
   const [editingStudentId, setEditingStudentId] = useState<string | undefined>();
   const [summaryModalOpen, setSummaryModalOpen] = useState(false);
+  const [transcriptMessages, setTranscriptMessages] = useState<ConvaiMessage[]>([]);
+  const [isTranscriptConnected, setIsTranscriptConnected] = useState(false);
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
 
   // Debug state for Realtime debugging
@@ -132,7 +134,16 @@ export default function TutorPage() {
     refetchInterval: 30000, // Refresh every 30 seconds
   });
 
-  // Using OpenAI Realtime API only (no ElevenLabs)
+  // Fetch voice system configuration
+  const { data: systemConfig } = useQuery<{ useConvai: boolean }>({
+    queryKey: ['/api/health'],
+    queryFn: async () => {
+      const response = await fetch('/api/health');
+      return response.json();
+    },
+  });
+
+  const useConvai = systemConfig?.useConvai ?? true; // Default to ConvAI for backward compatibility
 
   // Fetch selected student data
   const { data: selectedStudent } = useQuery<{ id: string; name: string }>({
@@ -246,10 +257,14 @@ export default function TutorPage() {
       updatedAt: new Date().toISOString(),
     });
 
+    // Reset transcript and connection state for fresh session
+    setTranscriptMessages([]);
+    setIsTranscriptConnected(false);
+    
     // Start session tracking
     setSessionStartTime(new Date());
     
-    // Start OpenAI Realtime voice session
+    // Simple static agent connection - no dynamic session creation
     setMounted(true);
     
     toast({
@@ -269,7 +284,10 @@ export default function TutorPage() {
   };
 
   const switchAgent = () => {
-    // Remount voice host
+    // Reset transcript for new agent
+    setTranscriptMessages([]);
+    setIsTranscriptConnected(false);
+    // Remount widget
     setMounted(false);
     setTimeout(() => setMounted(true), 100);
   };
@@ -305,6 +323,8 @@ export default function TutorPage() {
     }
 
     setMounted(false);
+    setTranscriptMessages([]);
+    setIsTranscriptConnected(false);
     
     // Show summary modal if we have a student profile
     if (selectedStudentId) {
@@ -318,6 +338,25 @@ export default function TutorPage() {
       });
     }
   };
+
+  // Use static agent ID based on selected level
+  const agentId = AGENTS[level as keyof typeof AGENTS];
+  
+  const levelGreetings = GREETINGS[level as keyof typeof GREETINGS];
+  const greetingPreview = (levelGreetings as any)?.[subject] || 
+                         (levelGreetings as any)?.["general"] || 
+                         "Hello! I'm your AI tutor, ready to help you learn.";
+
+  const metadata = {
+    ...(studentName && { student_name: studentName }),
+    ...(gradeText && { grade: gradeText }),
+    subject,
+    level
+  };
+
+  const firstUserMessage = lastSummary ? 
+    `Previous session summary: ${lastSummary}. Please continue our learning journey from here.` : 
+    undefined;
 
   // Save progress when level or subject changes
   useEffect(() => {
@@ -363,10 +402,9 @@ export default function TutorPage() {
   }, [sessionStartTime]);
 
   return (
-    <RequireSubscription>
-      <NetworkAwareWrapper>
+    <NetworkAwareWrapper>
       <TutorErrorBoundary>
-        <div className="tutor-page max-w-3xl mx-auto p-4 pb-12 space-y-4">
+        <div className="tutor-page max-w-3xl mx-auto p-4 space-y-4">
           {/* Header with Logo and Student Switcher */}
           <div className="mb-6">
             <div className="flex items-center justify-between mb-4">
@@ -561,33 +599,54 @@ export default function TutorPage() {
                   <Paperclip className="w-4 h-4" />
                   Study Materials
                 </h3>
-                <div className="max-h-64 overflow-y-auto">
-                  <AssignmentsPanel 
-                    userId={user.id}
-                    onSelectionChange={(selectedIds) => {
-                      // Update selected documents for AI context
-                      setSelectedDocumentIds(selectedIds);
-                      console.log('Documents selected for AI context:', selectedIds);
-                    }}
-                  />
-                </div>
+                <AssignmentsPanel 
+                  userId={user.id}
+                  onSelectionChange={(selectedIds) => {
+                    // Update selected documents for AI context
+                    setSelectedDocumentIds(selectedIds);
+                    console.log('Documents selected for AI context:', selectedIds);
+                  }}
+                />
               </CardContent>
             </Card>
           )}
 
-          {/* Voice System Widget - OpenAI Realtime API */}
+          {/* Voice System Widget */}
           {mounted && (
             <div className="mt-6 space-y-4">
-              <RealtimeVoiceHost
-                studentId={selectedStudentId || undefined}
-                studentName={studentName}
-                subject={subject}
-                language={mapLanguageToISO(user?.preferredLanguage)}
-                ageGroup={level === 'k2' ? 'K-2' : level === 'g3_5' ? '3-5' : level === 'g6_8' ? '6-8' : level === 'g9_12' ? '9-12' : 'College/Adult'}
-                contextDocumentIds={[...contextDocumentIds, ...selectedDocumentIds]}
-                onSessionStart={() => setSessionStartTime(new Date())}
-                onSessionEnd={() => setSessionStartTime(null)}
-              />
+              {useConvai ? (
+                <>
+                  {/* ElevenLabs ConvAI System */}
+                  <ConvaiHost
+                    agentId={agentId}
+                    onMessage={(message) => {
+                      setTranscriptMessages(prev => [...prev, message]);
+                    }}
+                    onConnectionStatus={(connected) => {
+                      setIsTranscriptConnected(connected);
+                    }}
+                  />
+                  
+                  <ConvaiTranscript 
+                    messages={transcriptMessages}
+                    isConnected={isTranscriptConnected}
+                  />
+                </>
+              ) : (
+                <>
+                  {/* OpenAI Realtime Voice System */}
+                  <RealtimeVoiceHost
+                    studentId={selectedStudentId || undefined}
+                    studentName={studentName}
+                    subject={subject}
+                    language={mapLanguageToISO(user?.preferredLanguage)}
+                    ageGroup={level === 'k2' ? 'K-2' : level === 'g3_5' ? '3-5' : level === 'g6_8' ? '6-8' : level === 'g9_12' ? '9-12' : 'College/Adult'}
+                    contextDocumentIds={[...contextDocumentIds, ...selectedDocumentIds]}
+                    onSessionStart={() => setSessionStartTime(new Date())}
+                    onSessionEnd={() => setSessionStartTime(null)}
+                  />
+                </>
+              )}
             </div>
           )}
         </div>
@@ -628,8 +687,8 @@ export default function TutorPage() {
           remainingMinutes={minutesData?.remaining}
         />
 
-        {/* Debug Panel */}
-        {process.env.NODE_ENV === 'development' && (
+        {/* Debug Panel - only show for OpenAI Realtime */}
+        {!useConvai && process.env.NODE_ENV === 'development' && (
           <DebugPanel
             transport={debugInfo.transport || 'websocket'}
             sessionStatus={debugInfo.sessionStatus}
@@ -643,6 +702,5 @@ export default function TutorPage() {
         )}
       </TutorErrorBoundary>
     </NetworkAwareWrapper>
-    </RequireSubscription>
   );
 }

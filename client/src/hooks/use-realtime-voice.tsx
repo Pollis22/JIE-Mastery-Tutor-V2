@@ -7,16 +7,6 @@ export interface RealtimeMessage {
   timestamp: Date;
 }
 
-// Helper to safely extract client_secret (string or {value: string})
-export function extractClientSecret(raw: unknown): string {
-  if (typeof raw === "string" && raw.trim()) return raw.trim();
-  if (raw && typeof raw === "object" && "value" in (raw as any)) {
-    const v = (raw as any).value;
-    if (typeof v === "string" && v.trim()) return v.trim();
-  }
-  throw new Error("Invalid client_secret in response");
-}
-
 export function useRealtimeVoice() {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -31,15 +21,12 @@ export function useRealtimeVoice() {
   const sessionIdRef = useRef<string | null>(null);
   const currentAssistantMessage = useRef<RealtimeMessage | null>(null);
   const heartbeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const isEndingSessionRef = useRef<boolean>(false); // Prevent duplicate session ending
-  const isResponseInProgress = useRef<boolean>(false); // Track active responses
 
   const connect = useCallback(async (config: {
     sessionId?: string;
     clientSecret?: any;
     model?: string;
     voice?: string;
-    instructions?: string;
     userId?: string;
     studentId?: string;
     studentName?: string;
@@ -60,9 +47,8 @@ export function useRealtimeVoice() {
       }
 
       let clientSecret: any;
-      let sessionId: string = '';
-      let model: string = '';
-      let instructions: string = '';
+      let sessionId: string;
+      let model: string;
 
       // Check if we already have credentials passed from parent
       const hasProvidedCredentials = !!(config.clientSecret && config.sessionId);
@@ -72,11 +58,9 @@ export function useRealtimeVoice() {
         console.log('✅ [RealtimeVoice] Using provided credentials from parent, SKIPPING API CALL');
         console.log('   Session ID:', config.sessionId);
         console.log('   Has client secret:', !!config.clientSecret);
-        clientSecret = extractClientSecret(config.clientSecret);
-        sessionId = config.sessionId || '';
+        clientSecret = config.clientSecret;
+        sessionId = config.sessionId;
         model = config.model || 'gpt-4o-realtime-preview-2024-10-01';
-        instructions = config.instructions || '';  // CRITICAL: Use instructions passed from host!
-        console.log('📋 [RealtimeVoice] Using provided instructions, length:', instructions.length);
       } else {
         // Fallback: Get credentials via HTTP (for backward compatibility)
         console.log('🔑 [RealtimeVoice] No credentials provided, requesting from API...');
@@ -111,10 +95,9 @@ export function useRealtimeVoice() {
           throw new Error('No client_secret in response');
         }
 
-        clientSecret = data.client_secret.value;  // ✅ Extract the actual value string
+        clientSecret = data.client_secret;
         sessionId = data.session_id || data.sessionId;
         model = data.model || 'gpt-4o-realtime-preview-2024-10-01';
-        instructions = data.instructions || '';  // Get instructions from backend
       }
 
       // Documents processed!
@@ -135,7 +118,7 @@ export function useRealtimeVoice() {
 
       // Step 2: Establish WebRTC to OpenAI
       const secretValue = typeof clientSecret === 'string' ? clientSecret : clientSecret.value;
-      await connectWebRTC(secretValue, model, instructions);
+      await connectWebRTC(secretValue, model);
 
       console.log('✅ [RealtimeVoice] Connected successfully!');
       setIsConnected(true);
@@ -173,17 +156,12 @@ export function useRealtimeVoice() {
     }
   };
 
-  const connectWebRTC = async (clientSecret: string, model: string, instructions: string = '') => {
+  const connectWebRTC = async (clientSecret: string, model: string) => {
     console.log('🔵 [WebRTC] Creating peer connection...');
 
     // Create peer connection
     const pc = new RTCPeerConnection();
     peerConnectionRef.current = pc;
-
-    // CRITICAL: Add audio transceiver to receive audio from OpenAI
-    // Without this, OpenAI drops the media channel and disconnects immediately
-    console.log('🎤 [WebRTC] Adding audio transceiver for receiving OpenAI audio...');
-    pc.addTransceiver('audio', { direction: 'recvonly' });
 
     // Log state changes
     pc.onconnectionstatechange = () => {
@@ -220,18 +198,6 @@ export function useRealtimeVoice() {
       if (audioEl.srcObject !== event.streams[0]) {
         audioEl.srcObject = event.streams[0];
         console.log('🔊 [WebRTC] Audio stream attached to element');
-        
-        // CRITICAL: Force audio to play (handle browser autoplay policies)
-        audioEl.play().then(() => {
-          console.log('✅ [Audio] Playing successfully');
-        }).catch((err) => {
-          console.error('❌ [Audio] Playback failed:', err);
-          console.log('⚠️ [Audio] User interaction may be needed to enable audio');
-          // Try to play again on next user interaction
-          document.addEventListener('click', () => {
-            audioEl.play().catch(() => {});
-          }, { once: true });
-        });
       }
     };
 
@@ -242,33 +208,26 @@ export function useRealtimeVoice() {
     dc.onopen = () => {
       console.log('✅ [DataChannel] Opened');
       
-      // Configure session with FULL configuration including instructions
-      console.log('🎙️ [DataChannel] Configuring session with instructions...');
+      // Configure session for transcript capture
+      console.log('🎙️ [DataChannel] Configuring audio input...');
       
-      // Send complete session configuration
-      const sessionConfig = {
+      // Enable input audio transcription
+      dc.send(JSON.stringify({
         type: 'session.update',
         session: {
-          modalities: ['text', 'audio'],
-          voice: 'echo', // CRITICAL: Must specify voice for audio generation!
-          instructions: instructions || `You are an AI tutor. Start EVERY session by greeting the student warmly saying "Hello! I'm your AI tutor. I'm here to help you learn. What subject would you like to work on today?" Then wait for their response.`,
-          input_audio_format: 'pcm16',
-          output_audio_format: 'pcm16',
-          turn_detection: {
-            type: 'server_vad',
-            threshold: 0.5,
-            prefix_padding_ms: 300,
-            silence_duration_ms: 500
+          input_audio_transcription: {
+            model: 'whisper-1'
           }
         }
-      };
+      }));
       
-      console.log('📋 [DataChannel] Sending session config with instructions length:', sessionConfig.session.instructions.length);
-      console.log('📋 [DataChannel] Instructions preview:', sessionConfig.session.instructions.substring(0, 200) + '...');
-      dc.send(JSON.stringify(sessionConfig));
-      
-      // Don't automatically request greeting - wait for user to speak first
-      console.log('✅ [DataChannel] Session configured, waiting for user input...');
+      // Request initial greeting (without overriding server instructions)
+      setTimeout(() => {
+        dc.send(JSON.stringify({
+          type: 'response.create'
+        }));
+        console.log('✅ [DataChannel] Initial response requested');
+      }, 100);
     };
 
     dc.onmessage = (event) => {
@@ -279,29 +238,6 @@ export function useRealtimeVoice() {
         if (message.type === 'error') {
           console.error('❌ [OpenAI] Error:', message.error);
           setError(message.error.message);
-          // Reset response flag on error
-          isResponseInProgress.current = false;
-        }
-        
-        // Track response lifecycle
-        if (message.type === 'response.created') {
-          isResponseInProgress.current = true;
-        }
-        
-        if (message.type === 'response.done' || message.type === 'response.cancelled') {
-          isResponseInProgress.current = false;
-        }
-        
-        // CRITICAL: Trigger AI response when user audio is committed (if not already responding)
-        if (message.type === 'input_audio_buffer.committed') {
-          if (!isResponseInProgress.current) {
-            console.log('📝 [DataChannel] User audio committed, triggering AI response...');
-            dc.send(JSON.stringify({
-              type: 'response.create'
-            }));
-          } else {
-            console.log('⏸️ [DataChannel] Response already in progress, skipping...');
-          }
         }
         
         // Track user activity for inactivity timeout
@@ -393,14 +329,6 @@ export function useRealtimeVoice() {
                 saveTranscriptMessage(sessionIdRef.current, newMessage);
               }
             }
-          }
-        }
-        
-        // Handle audio delta - PLAY THE AUDIO!
-        if (message.type === 'response.audio.delta') {
-          if (message.delta) {
-            console.log('🎵 [Audio] Received audio delta, playing...');
-            playAudioDelta(message.delta);
           }
         }
         
@@ -501,7 +429,7 @@ export function useRealtimeVoice() {
         echoCancellation: true,
         noiseSuppression: true,
         autoGainControl: true,
-        sampleRate: 16000,  // CRITICAL: Match OpenAI's expected sample rate for PCM16
+        sampleRate: 24000,
       }
     });
     micStreamRef.current = stream;
@@ -587,13 +515,6 @@ export function useRealtimeVoice() {
   const disconnect = useCallback(async () => {
     console.log('🔴 [RealtimeVoice] Disconnecting...');
 
-    // Prevent duplicate disconnection
-    if (isEndingSessionRef.current) {
-      console.log('⚠️ [RealtimeVoice] Already disconnecting, skipping duplicate call');
-      return;
-    }
-    isEndingSessionRef.current = true;
-
     try {
       // 0. Stop heartbeat polling
       if (heartbeatIntervalRef.current) {
@@ -615,12 +536,7 @@ export function useRealtimeVoice() {
           console.warn('⚠️ [RealtimeVoice] Failed to end session on backend:', error);
           // Continue with cleanup even if backend call fails
         }
-        const endedSessionId = sessionIdRef.current;
         sessionIdRef.current = null;
-        
-        // Mark this session as ended to prevent beacon from ending it again
-        (window as any)._endedSessionIds = (window as any)._endedSessionIds || new Set();
-        (window as any)._endedSessionIds.add(endedSessionId);
       }
 
       // 1. Close data channel first
@@ -683,143 +599,22 @@ export function useRealtimeVoice() {
       console.error('❌ [RealtimeVoice] Error during disconnect:', error);
       // Force state update even if cleanup failed
       setIsConnected(false);
-    } finally {
-      // Always reset the flag after disconnect completes or fails
-      isEndingSessionRef.current = false;
     }
   }, []);
 
-  // Audio playback setup
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const audioQueueRef = useRef<AudioBuffer[]>([]);
-  const isPlayingRef = useRef(false);
-  
   const sendAudio = useCallback((audioData: ArrayBuffer) => {
-    // Send audio through WebRTC data channel to OpenAI
-    if (dataChannelRef.current && dataChannelRef.current.readyState === 'open') {
-      // Convert ArrayBuffer to base64 for sending through data channel
-      const uint8Array = new Uint8Array(audioData);
-      let binaryString = '';
-      for (let i = 0; i < uint8Array.length; i++) {
-        binaryString += String.fromCharCode(uint8Array[i]);
-      }
-      const base64Audio = btoa(binaryString);
-      
-      // Send audio to OpenAI using the input_audio_buffer.append message
-      const audioMessage = {
-        type: 'input_audio_buffer.append',
-        audio: base64Audio
-      };
-      
-      dataChannelRef.current.send(JSON.stringify(audioMessage));
-    }
+    // This can be implemented later for sending audio chunks
+    console.log('[RealtimeVoice] sendAudio not yet implemented');
   }, []);
-  
-  // Function to play audio from OpenAI response
-  const playAudioDelta = useCallback(async (base64Audio: string) => {
-    try {
-      if (!base64Audio) {
-        console.warn('[RealtimeVoice] No audio data to play');
-        return;
-      }
-      
-      console.log('[RealtimeVoice] Playing AI audio response...');
-      
-      // Initialize audio context if not exists
-      if (!audioContextRef.current) {
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ 
-          sampleRate: 24000 
-        });
-        console.log('[RealtimeVoice] Audio context created with sample rate:', audioContextRef.current.sampleRate);
-      }
-      
-      // Decode base64 to binary
-      const binaryString = atob(base64Audio);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-      
-      // Create Int16Array from bytes (PCM16 format)
-      const int16Array = new Int16Array(bytes.buffer);
-      
-      // Convert to Float32Array for Web Audio API
-      const float32Array = new Float32Array(int16Array.length);
-      for (let i = 0; i < int16Array.length; i++) {
-        // Convert from Int16 range (-32768 to 32767) to Float32 range (-1 to 1)
-        float32Array[i] = int16Array[i] / 32768.0;
-      }
-      
-      // Create audio buffer
-      const audioBuffer = audioContextRef.current.createBuffer(
-        1, // mono
-        float32Array.length,
-        24000 // sample rate
-      );
-      
-      // Copy our data to the audio buffer
-      audioBuffer.copyToChannel(float32Array, 0);
-      
-      // Add to queue
-      audioQueueRef.current.push(audioBuffer);
-      
-      // Start playing if not already playing
-      if (!isPlayingRef.current) {
-        playNextInQueue();
-      }
-      
-    } catch (error) {
-      console.error('[RealtimeVoice] Audio playback error:', error);
-    }
-  }, []);
-  
-  // Play audio buffers from queue - not using useCallback to avoid circular dependency
-  const playNextInQueueRef = useRef<(() => void) | null>(null);
-  
-  const playNextInQueue = () => {
-    if (audioQueueRef.current.length === 0) {
-      isPlayingRef.current = false;
-      return;
-    }
-    
-    if (!audioContextRef.current) return;
-    
-    isPlayingRef.current = true;
-    const audioBuffer = audioQueueRef.current.shift()!;
-    
-    // Create source and play
-    const source = audioContextRef.current.createBufferSource();
-    source.buffer = audioBuffer;
-    source.connect(audioContextRef.current.destination);
-    
-    source.onended = () => {
-      // Play next in queue
-      if (playNextInQueueRef.current) {
-        playNextInQueueRef.current();
-      }
-    };
-    
-    source.start();
-    console.log('[RealtimeVoice] Playing audio chunk, queue size:', audioQueueRef.current.length);
-  };
-  
-  // Store the function in ref for self-reference
-  playNextInQueueRef.current = playNextInQueue;
 
   // Cleanup on unmount or page unload
   useEffect(() => {
     const handleBeforeUnload = () => {
       // Use beacon API for page unload since async operations might not complete
-      // Only send beacon if session wasn't already ended
       if (sessionIdRef.current && navigator.sendBeacon) {
-        const endedSessions = (window as any)._endedSessionIds || new Set();
-        if (!endedSessions.has(sessionIdRef.current)) {
-          const data = new Blob([JSON.stringify({ sessionId: sessionIdRef.current })], { type: 'application/json' });
-          navigator.sendBeacon(`/api/session/realtime/${sessionIdRef.current}/end`, data);
-          console.log('🚀 [RealtimeVoice] Sent beacon to end session on page unload');
-        } else {
-          console.log('⏭️ [RealtimeVoice] Session already ended, skipping beacon');
-        }
+        const data = new Blob([JSON.stringify({ sessionId: sessionIdRef.current })], { type: 'application/json' });
+        navigator.sendBeacon(`/api/session/realtime/${sessionIdRef.current}/end`, data);
+        console.log('🚀 [RealtimeVoice] Sent beacon to end session on page unload');
       }
       disconnect();
     };

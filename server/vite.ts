@@ -40,27 +40,6 @@ export async function setupVite(app: Express, server: Server) {
     appType: "custom",
   });
 
-  // Security: Block path traversal attempts BEFORE any other middleware
-  app.use((req, res, next) => {
-    const url = req.originalUrl;
-    
-    // Block any path traversal attempts
-    if (url.includes('../') || url.includes('..\\') || url.includes('%2e%2e')) {
-      console.error(`[SECURITY] Path traversal attempt blocked: ${url}`);
-      return res.status(403).json({ error: 'Forbidden: Path traversal detected' });
-    }
-    
-    // Block direct access to sensitive SERVER files only
-    // Allow /src/ for Vite development but block /server/ and config files
-    const blockedPaths = ['/etc/', '/server/', '/.env', '/package.json', '/tsconfig', '/drizzle.config'];
-    if (blockedPaths.some(path => url.toLowerCase().includes(path))) {
-      console.error(`[SECURITY] Access to sensitive path blocked: ${url}`);
-      return res.status(403).json({ error: 'Forbidden: Access to sensitive files denied' });
-    }
-    
-    next();
-  });
-  
   // Wrap Vite middleware to skip API routes
   app.use((req, res, next) => {
     if (req.originalUrl.startsWith('/api/')) {

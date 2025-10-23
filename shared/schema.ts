@@ -89,9 +89,6 @@ export const users = pgTable("users", {
   resetTokenExpiry: timestamp("reset_token_expiry"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-  // Account deletion tracking
-  deletedAt: timestamp("deleted_at"),
-  deletionRequestedAt: timestamp("deletion_requested_at"),
 });
 
 // Subjects table
