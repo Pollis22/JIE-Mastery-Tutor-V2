@@ -385,6 +385,7 @@ ${documentContext ? '\nPlease reference the student\'s documents when relevant t
       model: sessionData.model,
       voice: selectedVoice,
       expires_at: sessionData.expires_at,
+      instructions: instructions,  // CRITICAL: Send instructions to frontend!
     });
 
   } catch (error: any) {

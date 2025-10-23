@@ -27,6 +27,7 @@ export function useRealtimeVoice() {
     clientSecret?: any;
     model?: string;
     voice?: string;
+    instructions?: string;
     userId?: string;
     studentId?: string;
     studentName?: string;
@@ -49,6 +50,7 @@ export function useRealtimeVoice() {
       let clientSecret: any;
       let sessionId: string;
       let model: string;
+      let instructions: string = '';
 
       // Check if we already have credentials passed from parent
       const hasProvidedCredentials = !!(config.clientSecret && config.sessionId);
@@ -98,6 +100,7 @@ export function useRealtimeVoice() {
         clientSecret = data.client_secret;
         sessionId = data.session_id || data.sessionId;
         model = data.model || 'gpt-4o-realtime-preview-2024-10-01';
+        instructions = data.instructions || '';  // Get instructions from backend
       }
 
       // Documents processed!
@@ -118,7 +121,7 @@ export function useRealtimeVoice() {
 
       // Step 2: Establish WebRTC to OpenAI
       const secretValue = typeof clientSecret === 'string' ? clientSecret : clientSecret.value;
-      await connectWebRTC(secretValue, model);
+      await connectWebRTC(secretValue, model, instructions);
 
       console.log('✅ [RealtimeVoice] Connected successfully!');
       setIsConnected(true);
@@ -156,7 +159,7 @@ export function useRealtimeVoice() {
     }
   };
 
-  const connectWebRTC = async (clientSecret: string, model: string) => {
+  const connectWebRTC = async (clientSecret: string, model: string, instructions: string = '') => {
     console.log('🔵 [WebRTC] Creating peer connection...');
 
     // Create peer connection
@@ -208,13 +211,15 @@ export function useRealtimeVoice() {
     dc.onopen = () => {
       console.log('✅ [DataChannel] Opened');
       
-      // Configure session for transcript capture
-      console.log('🎙️ [DataChannel] Configuring audio input...');
+      // Configure session with FULL configuration including instructions
+      console.log('🎙️ [DataChannel] Configuring session with instructions...');
       
-      // Enable input audio transcription and turn detection
+      // Send complete session configuration
       dc.send(JSON.stringify({
         type: 'session.update',
         session: {
+          modalities: ['text', 'audio'],
+          instructions: instructions || `You are an AI tutor. Start EVERY session by greeting the student warmly saying "Hello! I'm your AI tutor. I'm here to help you learn. What subject would you like to work on today?" Then wait for their response.`,
           turn_detection: {
             type: 'server_vad',
             threshold: 0.5,
@@ -227,13 +232,35 @@ export function useRealtimeVoice() {
         }
       }));
       
-      // Request initial greeting (without overriding server instructions)
+      // CRITICAL: Trigger AI greeting immediately after configuration
       setTimeout(() => {
+        console.log('🎤 [DataChannel] Triggering AI greeting...');
+        
+        // Send a conversation item to prompt the AI
         dc.send(JSON.stringify({
-          type: 'response.create'
+          type: 'conversation.item.create',
+          item: {
+            type: 'message',
+            role: 'user',
+            content: [
+              {
+                type: 'input_text',
+                text: 'Hello'  // Simple greeting to trigger AI response
+              }
+            ]
+          }
         }));
-        console.log('✅ [DataChannel] Initial response requested');
-      }, 100);
+        
+        // Immediately request AI response
+        dc.send(JSON.stringify({
+          type: 'response.create',
+          response: {
+            modalities: ['text', 'audio']
+          }
+        }));
+        
+        console.log('✅ [DataChannel] AI greeting triggered');
+      }, 500);  // Wait for session.update to process
     };
 
     dc.onmessage = (event) => {
