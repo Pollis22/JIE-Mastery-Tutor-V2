@@ -382,7 +382,7 @@ export function setupAuth(app: Express) {
       
       // Check if email is verified - but only for NEW users
       const verificationCutoffDate = new Date('2025-10-13');
-      const accountCreatedAt = new Date(user.createdAt);
+      const accountCreatedAt = user.createdAt ? new Date(user.createdAt) : new Date();
       
       // Only require verification for users created after the feature was added
       if (accountCreatedAt > verificationCutoffDate && !user.emailVerified) {
