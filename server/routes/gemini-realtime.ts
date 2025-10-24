@@ -297,4 +297,93 @@ router.post('/', requireSubscription, async (req, res) => {
   }
 });
 
+/**
+ * POST /api/session/gemini/:sessionId/end - End Gemini Live session
+ * Calculates duration, updates database, deducts minutes from user account
+ */
+router.post('/:sessionId/end', async (req, res) => {
+  const { sessionId } = req.params;
+  
+  try {
+    console.log(`🛑 [GeminiLive] Ending session: ${sessionId}`);
+    
+    // CRITICAL: Require authentication
+    if (!req.isAuthenticated || !req.isAuthenticated()) {
+      console.log('⛔ [GeminiLive] Unauthorized request - no authentication');
+      return res.status(401).json({ 
+        error: 'Unauthorized',
+        message: 'You must be logged in to end a session'
+      });
+    }
+    
+    const userId = req.user!.id;
+    
+    // Get session from database
+    const [session] = await db.select()
+      .from(realtimeSessions)
+      .where(and(
+        eq(realtimeSessions.id, sessionId),
+        eq(realtimeSessions.userId, userId)
+      ))
+      .limit(1);
+
+    if (!session) {
+      console.log(`⚠️ [GeminiLive] Session ${sessionId} not found for user ${userId}`);
+      return res.status(404).json({ 
+        success: false,
+        error: 'Session not found' 
+      });
+    }
+
+    // Calculate duration in minutes
+    const startTime = session.startedAt ? new Date(session.startedAt) : new Date();
+    const endTime = new Date();
+    const durationMs = endTime.getTime() - startTime.getTime();
+    const durationMinutes = Math.ceil(durationMs / (1000 * 60)); // Round up to nearest minute
+
+    // Update session in database
+    await db.update(realtimeSessions)
+      .set({
+        status: 'ended',
+        endedAt: endTime,
+        minutesUsed: durationMinutes,
+      })
+      .where(eq(realtimeSessions.id, sessionId));
+
+    // Deduct minutes from user account using voice-minutes service
+    let insufficientMinutes = false;
+    try {
+      const { deductMinutes } = await import('../services/voice-minutes');
+      await deductMinutes(userId, durationMinutes);
+      console.log(`✅ [GeminiLive] Deducted ${durationMinutes} minutes from user ${userId}`);
+    } catch (error: any) {
+      console.error(`⚠️ [GeminiLive] Failed to deduct minutes:`, error.message);
+      // Mark insufficient minutes but don't fail the request
+      if (error.message.includes('insufficient')) {
+        insufficientMinutes = true;
+      }
+    }
+
+    console.log(`✅ [GeminiLive] Session ${sessionId} ended successfully - ${durationMinutes} minute(s)`);
+
+    res.json({
+      success: true,
+      sessionId,
+      minutesUsed: durationMinutes,
+      insufficientMinutes,
+      duration: {
+        minutes: durationMinutes,
+        seconds: Math.floor(durationMs / 1000),
+      }
+    });
+
+  } catch (error: any) {
+    console.error(`❌ [GeminiLive] Failed to end session ${sessionId}:`, error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message 
+    });
+  }
+});
+
 export default router;

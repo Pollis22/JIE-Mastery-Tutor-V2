@@ -201,7 +201,7 @@ export function RealtimeVoiceHost({
     // Save session and track minutes used
     if (sessionId) {
       try {
-        const response = await apiRequest('POST', `/api/session/realtime/${sessionId}/end`, {});
+        const response = await apiRequest('POST', `/api/session/gemini/${sessionId}/end`, {});
         const data = await response.json();
         
         if (data.success) {

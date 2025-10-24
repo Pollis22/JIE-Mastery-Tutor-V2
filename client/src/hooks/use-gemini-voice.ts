@@ -135,7 +135,7 @@ export function useGeminiVoice() {
       }
 
       // Connect to Gemini Live API
-      const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${geminiApiKey}`;
+      const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService/BidiGenerateContent?key=${geminiApiKey}`;
       
       console.log('[Gemini] Connecting to WebSocket...');
       const ws = new WebSocket(wsUrl);

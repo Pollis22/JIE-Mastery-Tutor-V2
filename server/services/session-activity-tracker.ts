@@ -16,8 +16,8 @@ interface ActivityTracker {
 // Map of userId -> activity tracker
 const sessionActivity = new Map<string, ActivityTracker>();
 
-const INACTIVITY_TIMEOUT = 5 * 60 * 1000; // 5 minutes in milliseconds
-const WARNING_TIME = 4 * 60 * 1000; // 4 minutes - send warning
+const INACTIVITY_TIMEOUT = 30 * 60 * 1000; // 30 minutes in milliseconds - generous timeout to prevent premature session termination
+const WARNING_TIME = 25 * 60 * 1000; // 25 minutes - send warning
 
 /**
  * Start tracking activity for a session
