@@ -25,27 +25,18 @@ The application uses a modern full-stack architecture:
 The platform uses a **session-first** data priority model where session configuration is the primary source for grade level, subject, and language, with user profiles serving as defaults. This enables sibling sharing on a single account.
 
 ### Voice Technology Integration
--   **Gemini Live API (Primary - Oct 2025)**: Google's multimodal voice conversation API with WebSocket streaming. Offers superior cost efficiency (93% cheaper than OpenAI), emotion-aware responses, and 30 HD voices.
+-   **Gemini Live API (ONLY PROVIDER - Oct 2025)**: Google's multimodal voice conversation API with WebSocket streaming. Provides exceptional cost efficiency, emotion-aware responses, and 30 HD voices. OpenAI Realtime API has been completely removed due to reliability issues and 5x higher costs.
     -   **Model**: `gemini-2.0-flash-live` with automatic voice activity detection
     -   **Voice Mapping**: Age-appropriate voices (Puck for K-2, Charon for 3-5, Kore for 6-8, Fenrir for 9-12, Aoede for College)
-    -   **Cost**: ~$0.0225/minute (vs $0.30/minute for OpenAI) - saves ~$500/month at 1,800 min/month scale
-    -   **Features**: Emotion awareness (affective dialog), proactive audio filtering, 30 voices, video support (future)
+    -   **Cost**: ~$0.0225/minute - 93% cheaper than OpenAI ($0.30/min), saving ~$500/month at 1,800 min/month scale
+    -   **Features**: Emotion awareness (affective dialog), proactive audio filtering, 30 voices, video support (future), automatic greeting on session start
     -   **API Endpoint**: `/api/session/gemini`
--   **OpenAI Realtime API (Fallback)**: Utilizes WebRTC for native browser-to-OpenAI audio streaming, supporting multi-language and age-specific voice selections. It includes RAG integration for contextual learning and live transcript UI.
-    -   **Model Workaround**: Using `gpt-4o-mini-realtime-preview-2024-12-17` as workaround for October 2025 API bugs (no audio output issue)
-    -   **Response State Management**: Implemented comprehensive fixes for `conversation_already_has_active_response` errors including:
-        -   Response lifecycle tracking (`isResponseInProgressRef`)
-        -   Request queueing system (`responseQueueRef`)
-        -   Automatic retry logic for stuck response states
-        -   Enhanced error handling for OpenAI API errors
-    -   **Known Issues**: OpenAI Realtime API has active bugs affecting October 18-22, 2025 causing audio generation failures
-    -   **Fallback Strategy**: If Gemini fails, system automatically retries with OpenAI
--   **ElevenLabs ConvAI (Legacy/Backup)**: Pre-configured, age-specific AI tutors for reliable production deployment.
+    -   **Architecture**: Single-provider design for simplicity and reliability - no fallback complexity
 
 ### AI & Learning Engine
--   **Primary AI Model**: OpenAI GPT-4o with fallback to GPT-4o-mini, utilizing an enhanced TutorMind system prompt for Socratic teaching.
--   **Teaching Method**: Advanced Socratic approach with adaptive questioning.
--   **Adaptive Learning**: AI adapts based on user progress and learning patterns.
+-   **Primary AI Model**: Gemini 2.0 Flash Live for voice conversations, utilizing an enhanced TutorMind system prompt for Socratic teaching.
+-   **Teaching Method**: Advanced Socratic approach with adaptive questioning and emotion-aware responses.
+-   **Adaptive Learning**: AI adapts based on user progress and learning patterns, greeting students warmly by name at session start.
 -   **Tutor Personalities**: Five distinct age-specific personalities:
      - **Buddy Bear (K-2)**: Super friendly, playful, uses simple language with lots of encouragement
      - **Max Explorer (3-5)**: Adventurous, curious, creates learning adventures with real-world connections
@@ -55,9 +46,9 @@ The platform uses a **session-first** data priority model where session configur
 
 ### RAG (Retrieval-Augmented Generation) System
 -   **Document Processing**: Supports PDF, DOCX, and TXT files with intelligent text segmentation.
--   **Vector Embeddings**: OpenAI text-embedding-3-small for semantic similarity.
--   **Context Integration**: Limited document content is included in the first user message for agent awareness.
--   **Background Worker**: An EmbeddingWorker asynchronously processes documents.
+-   **Document Upload**: Students can upload documents during live Gemini voice sessions for immediate AI analysis.
+-   **Context Integration**: Documents are processed and discussed in real-time with the AI tutor.
+-   **Background Worker**: An EmbeddingWorker asynchronously processes documents for future reference.
 
 ### Database Schema & Data Management
 Core entities include Users, Subjects, Lessons, User Progress, Learning Sessions, and Quiz Attempts. The RAG system incorporates User Documents, Document Chunks, and Document Embeddings. The Users table includes comprehensive student profile data and marketing preferences. Lazy database initialization is employed.
@@ -92,9 +83,7 @@ The application is configured for Replit Autoscale Deployment, supporting WebSoc
 ## External Dependencies
 
 ### AI & Voice Services
--   **ElevenLabs ConvAI**: Primary voice conversation system for AI tutors.
--   **OpenAI API**: Provides GPT-4o and GPT-4o-mini for tutoring responses and text embeddings.
--   **Azure Speech Services**: Used for Neural Text-to-Speech (fallback option).
+-   **Google Gemini AI**: Primary and only voice conversation provider via Gemini Live API. Handles all real-time voice tutoring with emotion-aware responses at $0.0225/minute.
 
 ### Payment Processing
 -   **Stripe**: Used for subscription management, payments, and customer portal.
