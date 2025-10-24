@@ -165,15 +165,21 @@ export function RealtimeVoiceHost({
         if (!isMuted && geminiVoice.isConnected) {
           const inputData = e.inputBuffer.getChannelData(0);
           
-          // Convert Float32 to PCM16 for Gemini
-          const pcm16 = new Int16Array(inputData.length);
-          for (let i = 0; i < inputData.length; i++) {
-            const s = Math.max(-1, Math.min(1, inputData[i]));
-            pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-          }
+          // Check if there's actual audio (not silence)
+          const hasAudio = inputData.some(sample => Math.abs(sample) > 0.01);
           
-          // Send to Gemini
-          geminiVoice.sendAudio(pcm16.buffer);
+          if (hasAudio) {
+            // Convert Float32 to PCM16 for Gemini
+            const pcm16 = new Int16Array(inputData.length);
+            for (let i = 0; i < inputData.length; i++) {
+              const s = Math.max(-1, Math.min(1, inputData[i]));
+              pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+            }
+            
+            // Send to Gemini
+            console.log('[Microphone] 🎤 Sending audio to Gemini, size:', pcm16.buffer.byteLength);
+            geminiVoice.sendAudio(pcm16.buffer);
+          }
         }
       };
       

@@ -99,6 +99,7 @@ export function setupGeminiWebSocketProxy(server: Server) {
           
         } else if (message.type === 'audio' && isSetup && geminiWs) {
           // Forward audio to Gemini (EXACT format from official docs!)
+          console.log('[WS Proxy] 🎤 Received audio from client, forwarding to Gemini');
           if (geminiWs.readyState === WebSocket.OPEN) {
             geminiWs.send(JSON.stringify({
               realtimeInput: {
