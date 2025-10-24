@@ -37,12 +37,12 @@ export function setupGeminiWebSocketProxy(server: Server) {
             console.log('[WS Proxy] ✅ Connected to Gemini Live API!');
             isSetup = true;
             
-            // Send setup message to Gemini (correct format from docs!)
+            // Send setup message to Gemini (EXACT format from official docs!)
             const setupMessage = {
               setup: {
                 model: model,
                 generationConfig: {
-                  responseModalities: "audio",  // LOWERCASE 'audio' is correct!
+                  responseModalities: ["audio"],  // MUST BE ARRAY per Google docs!
                   speechConfig: {
                     voiceConfig: {
                       prebuiltVoiceConfig: {
@@ -92,12 +92,12 @@ export function setupGeminiWebSocketProxy(server: Server) {
           });
           
         } else if (message.type === 'audio' && isSetup && geminiWs) {
-          // Forward audio to Gemini
+          // Forward audio to Gemini (EXACT format from official docs!)
           if (geminiWs.readyState === WebSocket.OPEN) {
             geminiWs.send(JSON.stringify({
               realtimeInput: {
                 mediaChunks: [{
-                  mimeType: 'audio/pcm',
+                  mimeType: 'audio/pcm;rate=16000',  // MUST include sample rate!
                   data: message.data
                 }]
               }
