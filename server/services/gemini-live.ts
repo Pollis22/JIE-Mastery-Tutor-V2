@@ -89,7 +89,7 @@ class GeminiLiveService {
    * Get model name for Gemini Live
    */
   getModelName(): string {
-    return 'gemini-2.0-flash-live';
+    return 'gemini-2.0-flash-exp';  // ONLY model that supports bidiGenerateContent!
   }
 
   /**

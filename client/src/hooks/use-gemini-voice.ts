@@ -167,7 +167,7 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
         // Send setup message
         const setupMessage = {
           setup: {
-            model: 'models/gemini-2.0-flash-live',
+            model: 'models/gemini-2.0-flash-exp',  // ONLY model that supports bidiGenerateContent!
             generation_config: {
               response_modalities: ['AUDIO'],
               temperature: 0.8
