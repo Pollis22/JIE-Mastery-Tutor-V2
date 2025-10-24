@@ -43,6 +43,9 @@ export function RealtimeVoiceHost({
   const audioProcessorRef = useRef<ScriptProcessorNode | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   
+  // CRITICAL FIX: Use a ref to track Gemini connection state for MediaRecorder callback
+  const geminiConnectedRef = useRef<boolean>(false);
+  
   // Gemini Voice Hook (ONLY PROVIDER - 93% cheaper than OpenAI!)
   const geminiVoice = useGeminiVoice({
     onTranscript: (text: string, isUser: boolean) => {
@@ -62,9 +65,13 @@ export function RealtimeVoiceHost({
     },
     onConnected: () => {
       console.log('[Voice Host] Gemini connected successfully');
+      // CRITICAL FIX: Set the ref to true when Gemini connects
+      geminiConnectedRef.current = true;
+      console.log('[Voice Host] 🟢 geminiConnectedRef set to TRUE - audio processing enabled!');
     },
     onDisconnected: () => {
       console.log('[Voice Host] Gemini disconnected');
+      geminiConnectedRef.current = false;
     }
   });
 
@@ -252,11 +259,11 @@ export function RealtimeVoiceHost({
             // Log the current state
             console.log('🎤 [MediaRecorder] Check state:', {
               isMuted,
-              isConnected: geminiVoice.isConnected,
-              willProcess: !isMuted && geminiVoice.isConnected
+              isConnected: geminiConnectedRef.current,  // FIX: Use ref instead
+              willProcess: !isMuted && geminiConnectedRef.current
             });
             
-            if (!isMuted && geminiVoice.isConnected) {
+            if (!isMuted && geminiConnectedRef.current) {  // FIX: Use ref instead
               try {
                 console.log('🎤 [MediaRecorder] Converting WebM to PCM16...');
                 
@@ -311,7 +318,7 @@ export function RealtimeVoiceHost({
               }
             } else {
               console.warn('⚠️ [MediaRecorder] Not processing audio:', {
-                reason: isMuted ? 'Muted' : !geminiVoice.isConnected ? 'Not connected' : 'Unknown'
+                reason: isMuted ? 'Muted' : !geminiConnectedRef.current ? 'Not connected' : 'Unknown'
               });
             }
           }
