@@ -77,11 +77,26 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
     try {
       const message = JSON.parse(event.data);
       
+      // Handle proxy connection acknowledgment
+      if (message.type === 'proxyConnected') {
+        console.log('[Gemini] ✅ Proxy connected to Gemini successfully');
+        return;
+      }
+      
+      // Handle proxy errors
+      if (message.type === 'error') {
+        console.error('[Gemini] Proxy error:', message.error);
+        options.onError?.(new Error(message.error));
+        return;
+      }
+      
       console.log('[Gemini] Message type:', message.setupComplete ? 'setupComplete' : message.serverContent ? 'serverContent' : 'unknown');
 
       // Setup complete
       if (message.setupComplete) {
         console.log('[Gemini] 🎉 Setup complete');
+        setIsConnected(true);
+        options.onConnected?.();
         
         // Send initial greeting request
         setTimeout(() => {
@@ -147,40 +162,39 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
         console.log('[Gemini] 🔊 Audio context resumed');
       }
 
-      // CRITICAL FIX: Use PERIOD before BidiGenerateContent, not slash
-      const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${geminiApiKey}`;
+      // Connect to OUR WebSocket proxy (bypasses CORS!)
+      // Use ws:// in development, wss:// in production
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/api/gemini-ws`;
       
-      console.log('[Gemini] 🌐 WebSocket URL (sanitized):', 
-        wsUrl.replace(/key=.+$/, 'key=***HIDDEN***')
-      );
+      console.log('[Gemini] 🌐 Connecting to proxy:', wsUrl);
+      console.log('[Gemini] 🔌 Creating WebSocket connection via proxy...');
       
-      console.log('[Gemini] 🔌 Creating WebSocket connection...');
       const ws = new WebSocket(wsUrl);
-      
       wsRef.current = ws;
 
       ws.onopen = () => {
-        console.log('[Gemini] ✅ WebSocket OPENED successfully!');
-        setIsConnected(true);
-        options.onConnected?.();
-
-        // Send setup message
+        console.log('[Gemini] ✅ WebSocket OPENED to proxy!');
+        
+        // Send API key and setup message to proxy
+        // Proxy will forward to Gemini
         const setupMessage = {
-          setup: {
-            model: 'models/gemini-2.0-flash-exp',  // ONLY model that supports bidiGenerateContent!
-            generation_config: {
-              response_modalities: ['AUDIO'],
-              temperature: 0.8
-            },
-            system_instruction: {
-              parts: [{ text: systemInstruction }]
-            },
-            tools: []
-          }
+          model: 'models/gemini-2.0-flash-exp',  // ONLY model that supports bidiGenerateContent!
+          generation_config: {
+            response_modalities: ['AUDIO'],
+            temperature: 0.8
+          },
+          system_instruction: {
+            parts: [{ text: systemInstruction }]
+          },
+          tools: []
         };
 
-        console.log('[Gemini] 📤 Sending setup message...');
-        ws.send(JSON.stringify(setupMessage));
+        console.log('[Gemini] 📤 Sending API key and setup to proxy...');
+        ws.send(JSON.stringify({
+          apiKey: geminiApiKey,
+          setup: setupMessage
+        }));
       };
 
       ws.onmessage = handleMessage;
