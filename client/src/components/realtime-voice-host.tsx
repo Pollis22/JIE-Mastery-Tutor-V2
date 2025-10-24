@@ -70,7 +70,7 @@ export function RealtimeVoiceHost({
 
   const startSession = async () => {
     try {
-      console.log('🎯 [VoiceHost] Starting Gemini session...');
+      console.log('🎯 [VoiceHost] 📞 Requesting Gemini session from backend...');
       
       const response = await apiRequest('POST', '/api/session/gemini', {
         studentId,
@@ -83,16 +83,35 @@ export function RealtimeVoiceHost({
 
       const data = await response.json();
       
+      console.log('[VoiceHost] 📦 Backend response:', {
+        success: data.success,
+        sessionId: data.sessionId,
+        provider: data.provider,
+        hasApiKey: !!data.geminiApiKey,
+        apiKeyLength: data.geminiApiKey?.length,
+        hasSystemInstruction: !!data.systemInstruction,
+        instructionLength: data.systemInstruction?.length,
+        documentsLoaded: data.metadata?.documentsLoaded
+      });
+      
+      // CRITICAL: Verify we got the API key
+      if (!data.geminiApiKey) {
+        throw new Error('Backend did not provide Gemini API key!');
+      }
+
+      if (data.geminiApiKey.length < 30) {
+        throw new Error('Gemini API key seems too short - might be invalid');
+      }
+      
       if (data.success && data.provider === 'gemini' && data.geminiApiKey && data.systemInstruction) {
-        console.log('[VoiceHost] ✅ Got Gemini credentials, connecting...');
+        console.log('[VoiceHost] ✅ Got valid credentials, starting Gemini...');
         
         setSessionId(data.sessionId);
         
         // Start Gemini WebSocket session
         await geminiVoice.startSession(
           data.geminiApiKey,
-          data.systemInstruction,
-          data.sessionId
+          data.systemInstruction
         );
         
         // Start microphone capture
@@ -110,7 +129,7 @@ export function RealtimeVoiceHost({
       }
       
     } catch (error: any) {
-      console.error('[VoiceHost] Session failed:', error);
+      console.error('[VoiceHost] ❌ Session failed:', error);
       toast({
         title: "Session Error",
         description: error.message || 'Failed to start voice session',

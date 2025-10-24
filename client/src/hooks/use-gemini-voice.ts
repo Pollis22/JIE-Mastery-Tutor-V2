@@ -5,7 +5,14 @@ interface AudioQueueItem {
   timestamp: number;
 }
 
-export function useGeminiVoice() {
+interface UseGeminiVoiceOptions {
+  onTranscript?: (text: string, isUser: boolean) => void;
+  onError?: (error: Error) => void;
+  onConnected?: () => void;
+  onDisconnected?: () => void;
+}
+
+export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioQueueRef = useRef<AudioQueueItem[]>([]);
@@ -123,7 +130,12 @@ export function useGeminiVoice() {
 
   const startSession = useCallback(async (geminiApiKey: string, systemInstruction: string) => {
     try {
-      console.log('[Gemini] Starting session...');
+      console.log('[Gemini] 🚀 Starting session...');
+      console.log('[Gemini] 🔑 API Key check:', {
+        provided: !!geminiApiKey,
+        length: geminiApiKey?.length,
+        firstChars: geminiApiKey?.substring(0, 10) + '...',
+      });
       
       // Initialize audio context
       if (!audioContextRef.current) {
@@ -132,19 +144,25 @@ export function useGeminiVoice() {
       
       if (audioContextRef.current.state === 'suspended') {
         await audioContextRef.current.resume();
+        console.log('[Gemini] 🔊 Audio context resumed');
       }
 
-      // Connect to Gemini Live API
-      const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService/BidiGenerateContent?key=${geminiApiKey}`;
+      // CRITICAL FIX: Use PERIOD before BidiGenerateContent, not slash
+      const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${geminiApiKey}`;
       
-      console.log('[Gemini] Connecting to WebSocket...');
+      console.log('[Gemini] 🌐 WebSocket URL (sanitized):', 
+        wsUrl.replace(/key=.+$/, 'key=***HIDDEN***')
+      );
+      
+      console.log('[Gemini] 🔌 Creating WebSocket connection...');
       const ws = new WebSocket(wsUrl);
       
       wsRef.current = ws;
 
       ws.onopen = () => {
-        console.log('[Gemini] ✅ Connected');
+        console.log('[Gemini] ✅ WebSocket OPENED successfully!');
         setIsConnected(true);
+        options.onConnected?.();
 
         // Send setup message
         const setupMessage = {
@@ -161,7 +179,7 @@ export function useGeminiVoice() {
           }
         };
 
-        console.log('[Gemini] Sending setup message...');
+        console.log('[Gemini] 📤 Sending setup message...');
         ws.send(JSON.stringify(setupMessage));
       };
 
@@ -169,20 +187,53 @@ export function useGeminiVoice() {
 
       ws.onerror = (error) => {
         console.error('[Gemini] ❌ WebSocket error:', error);
+        console.error('[Gemini] Error details:', {
+          type: error.type,
+          readyState: ws.readyState,
+          readyStateText: ['CONNECTING', 'OPEN', 'CLOSING', 'CLOSED'][ws.readyState]
+        });
         setIsConnected(false);
+        options.onError?.(new Error('WebSocket connection failed'));
       };
 
       ws.onclose = (event) => {
-        console.log('[Gemini] 🔌 Disconnected:', event.code, event.reason);
+        console.log('[Gemini] 🔌 WebSocket closed:', {
+          code: event.code,
+          reason: event.reason || 'No reason provided',
+          wasClean: event.wasClean
+        });
+        
+        // Decode close codes
+        const closeReasons: Record<number, string> = {
+          1000: 'Normal closure',
+          1001: 'Going away',
+          1006: 'Abnormal closure (no close frame)',
+          1009: 'Message too big',
+          1011: 'Server error',
+          1015: 'TLS handshake failure'
+        };
+        
+        console.log('[Gemini] Close reason:', closeReasons[event.code] || 'Unknown');
+        
+        if (event.code === 1006) {
+          console.error('[Gemini] ⚠️ Code 1006 means:');
+          console.error('  1. WebSocket URL might be wrong');
+          console.error('  2. API key might be invalid');
+          console.error('  3. CORS might be blocking connection');
+          console.error('  4. Server might have rejected connection');
+        }
+        
         setIsConnected(false);
         setIsPlaying(false);
+        options.onDisconnected?.();
       };
 
     } catch (error) {
       console.error('[Gemini] Failed to start:', error);
+      options.onError?.(error as Error);
       throw error;
     }
-  }, [handleMessage]);
+  }, [handleMessage, options]);
 
   const sendAudio = useCallback((audioData: ArrayBuffer) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
