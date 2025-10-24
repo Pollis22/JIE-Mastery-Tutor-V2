@@ -185,6 +185,22 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
             }
           }
         }
+        
+        // Check for text in other locations (Gemini might send it differently)
+        const allText = content.modelTurn?.parts
+          ?.map((p: any) => p.text)
+          ?.filter((t: any) => t)
+          ?.join(' ') || '';
+        
+        if (allText && !content.modelTurn?.parts?.some((p: any) => p.text)) {
+          console.log('[Gemini Transcript] 📝 Found text in serverContent:', allText);
+          setTranscript(prev => [...prev, {
+            speaker: 'tutor',
+            text: allText,
+            timestamp: new Date().toISOString()
+          }]);
+          options.onTranscript?.(allText, false);
+        }
       }
 
       // Error from server
