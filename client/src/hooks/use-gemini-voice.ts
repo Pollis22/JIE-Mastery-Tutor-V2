@@ -167,15 +167,15 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
         // Send setup message
         const setupMessage = {
           setup: {
-            model: 'models/gemini-2.0-flash-exp',
+            model: 'models/gemini-2.0-flash-live',
             generation_config: {
-              temperature: 0.8,
-              max_output_tokens: 1000,
-              response_modalities: ['AUDIO']
+              response_modalities: ['AUDIO'],
+              temperature: 0.8
             },
             system_instruction: {
               parts: [{ text: systemInstruction }]
-            }
+            },
+            tools: []
           }
         };
 
