@@ -269,13 +269,14 @@ export function RealtimeVoiceHost({
     setIsMuted(!isMuted);
   };
 
-  // Cleanup on unmount
+  // Cleanup on unmount - no dependencies to avoid infinite loop
   useEffect(() => {
     return () => {
       stopMicrophone();
       geminiVoice.endSession();
     };
-  }, [geminiVoice]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="space-y-4" data-testid="realtime-voice-host">
