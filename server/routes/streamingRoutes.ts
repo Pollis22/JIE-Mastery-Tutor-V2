@@ -3,11 +3,13 @@ import { getAzureTTSService } from '../services/azureTTS';
 import { openaiService } from '../services/openai';
 import { lessonService } from '../services/lessonService';
 import { PassThrough } from 'stream';
+import { requireSubscription } from '../middleware/require-subscription';
 
 const router = express.Router();
 
 // Server-sent events for streaming TTS with barge-in capability
-router.get('/stream-response', async (req, res) => {
+// CRITICAL: Requires active subscription and available minutes
+router.get('/stream-response', requireSubscription, async (req, res) => {
   // Set SSE headers
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',

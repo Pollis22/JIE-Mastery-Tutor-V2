@@ -13,6 +13,7 @@ import { answerChecker } from '../services/answerChecker';
 import { latencyTracker } from '../services/latencyTracker';
 import { latencyConfig, microAckPool, fallbackPools, getRandomFromPool } from '../config/latencyConfig';
 import { answerFeedbackService } from '../services/answerFeedback';
+import { requireSubscription } from '../middleware/require-subscription';
 
 const router = express.Router();
 
@@ -79,7 +80,8 @@ const extractExpectedAnswer = (question: string): string | null => {
 };
 
 // Generate voice response with lesson grounding and turn gating
-router.post('/generate-response', async (req, res) => {
+// CRITICAL: Requires active subscription and available minutes
+router.post('/generate-response', requireSubscription, async (req, res) => {
   try {
     const { message, lessonId, sessionId, energyLevel, speechDuration, speechConfidence } = req.body;
     
