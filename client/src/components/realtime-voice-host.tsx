@@ -245,17 +245,34 @@ export function RealtimeVoiceHost({
         
         let chunkCount = 0;
         mediaRecorder.ondataavailable = async (event) => {
+          chunkCount++;
+          console.log(`🎤 [MediaRecorder] Captured chunk ${chunkCount}:`, event.data.size, 'bytes');
+          
           if (event.data.size > 0) {
-            chunkCount++;
-            console.log(`🎤 [MediaRecorder] Captured chunk ${chunkCount}:`, event.data.size, 'bytes');
+            // Log the current state
+            console.log('🎤 [MediaRecorder] Check state:', {
+              isMuted,
+              isConnected: geminiVoice.isConnected,
+              willProcess: !isMuted && geminiVoice.isConnected
+            });
             
             if (!isMuted && geminiVoice.isConnected) {
               try {
+                console.log('🎤 [MediaRecorder] Converting WebM to PCM16...');
+                
                 // Convert WebM blob to ArrayBuffer
                 const arrayBuffer = await event.data.arrayBuffer();
+                console.log('🎤 [MediaRecorder] ArrayBuffer size:', arrayBuffer.byteLength);
                 
                 // Decode audio data using Web Audio API
                 const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                console.log('🎤 [MediaRecorder] Decoded:', {
+                  duration: audioBuffer.duration,
+                  sampleRate: audioBuffer.sampleRate,
+                  channels: audioBuffer.numberOfChannels,
+                  length: audioBuffer.length
+                });
+                
                 const pcmData = audioBuffer.getChannelData(0);
                 
                 // Resample to 16kHz if needed
@@ -264,6 +281,8 @@ export function RealtimeVoiceHost({
                 const resampleRatio = targetRate / sourceRate;
                 const outputLength = Math.floor(pcmData.length * resampleRatio);
                 const resampledData = new Float32Array(outputLength);
+                
+                console.log('🎤 [MediaRecorder] Resampling:', sourceRate, 'Hz → 16000 Hz');
                 
                 for (let i = 0; i < outputLength; i++) {
                   const sourceIndex = i / resampleRatio;
@@ -280,12 +299,20 @@ export function RealtimeVoiceHost({
                   pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
                 }
                 
+                console.log('🎤 [MediaRecorder] Converted to PCM16:', pcm16.length, 'samples');
+                
                 // Send to Gemini
-                console.log('[Microphone] 🎤 Sending audio to Gemini, size:', pcm16.buffer.byteLength);
+                console.log('✅ [MediaRecorder] Sending to Gemini, size:', pcm16.buffer.byteLength);
                 geminiVoice.sendAudio(pcm16.buffer);
-              } catch (decodeError) {
-                console.error('🎤 [MediaRecorder] Decode error:', decodeError);
+                console.log('✅ [MediaRecorder] Sent to Gemini successfully!');
+              } catch (decodeError: any) {
+                console.error('❌ [MediaRecorder] Processing error:', decodeError);
+                console.error('Error details:', decodeError.message);
               }
+            } else {
+              console.warn('⚠️ [MediaRecorder] Not processing audio:', {
+                reason: isMuted ? 'Muted' : !geminiVoice.isConnected ? 'Not connected' : 'Unknown'
+              });
             }
           }
         };
