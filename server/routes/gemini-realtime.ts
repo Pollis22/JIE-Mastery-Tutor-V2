@@ -5,6 +5,7 @@ import { db } from '../db';
 import { realtimeSessions } from '@shared/schema';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { geminiLiveService } from '../services/gemini-live';
+import { requireSubscription } from '../middleware/require-subscription';
 
 const router = Router();
 
@@ -38,8 +39,9 @@ router.get('/test', (req, res) => {
 /**
  * POST /api/session/gemini - Create Gemini Live session
  * Returns session configuration for client-side WebSocket connection
+ * Protected by requireSubscription middleware to enforce subscription + minute balance
  */
-router.post('/', async (req, res) => {
+router.post('/', requireSubscription, async (req, res) => {
   const startTime = Date.now();
   
   try {

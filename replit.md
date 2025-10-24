@@ -21,6 +21,35 @@ The application uses a modern full-stack architecture:
 -   Role-based access control with admin privileges.
 -   Password hashing using Node.js scrypt.
 
+### Access Control & Subscription Enforcement
+The platform implements a three-tier access control system ensuring only subscribed users with available minutes can access tutoring services:
+
+-   **requireSubscription Middleware** (`server/middleware/require-subscription.ts`):
+    -   Enforces authentication + active subscription + available minute balance
+    -   Automatically blocks access when subscription expires or minutes run out
+    -   Returns detailed error messages for unauthorized/expired/no-minutes states
+    
+-   **Protected Voice Endpoints**:
+    -   `/api/voice/generate-response` - Legacy voice endpoint (protected)
+    -   `/api/streaming/stream-response` - Streaming voice endpoint (protected)
+    -   `/api/session/gemini` - Primary Gemini Live voice endpoint (has built-in protection with concurrent session limits + minute checks)
+    
+-   **Session-Based Minute Deduction**:
+    -   When voice sessions end, `storage.endRealtimeSession()` calls `deductMinutes()`
+    -   Minutes deducted using subscription-first, then purchased (FIFO) strategy
+    -   Deduction happens automatically at session completion
+    -   If insufficient minutes, session is prevented from starting (not mid-session cutoff)
+
+-   **Minute Balance Checking**:
+    -   Gemini endpoint checks minute balance BEFORE creating sessions
+    -   Returns clear error if user has 0 minutes available
+    -   Prevents session start rather than cutting off mid-conversation
+    
+-   **Document Access Policy**:
+    -   Document upload allowed for ALL authenticated users (encourages engagement)
+    -   Document USAGE during tutoring sessions is automatically protected via session endpoint guards
+    -   RAG system integration only accessible when user has active subscription + minutes
+
 ### Session Priority System
 The platform uses a **session-first** data priority model where session configuration is the primary source for grade level, subject, and language, with user profiles serving as defaults. This enables sibling sharing on a single account.
 
