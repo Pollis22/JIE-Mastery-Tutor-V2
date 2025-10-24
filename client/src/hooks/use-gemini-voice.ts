@@ -1,5 +1,4 @@
 import { useCallback, useRef, useState } from 'react';
-import { GoogleGenAI, LiveConnectConfig, LiveServerMessage, Session } from '@google/genai';
 
 interface UseGeminiVoiceOptions {
   onTranscript?: (text: string, isUser: boolean) => void;
@@ -17,9 +16,10 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
     timestamp: string;
   }>>([]);
 
-  const clientRef = useRef<GoogleGenAI | null>(null);
-  const sessionRef = useRef<Session | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const audioQueueRef = useRef<AudioBuffer[]>([]);
+  const isPlayingRef = useRef(false);
 
   // Helper to convert base64 to ArrayBuffer
   const base64ToArrayBuffer = (base64: string): ArrayBuffer => {
@@ -31,8 +31,34 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
     return bytes.buffer;
   };
 
-  // Play audio chunk (PCM16 format from Gemini)
-  const playAudioChunk = useCallback(async (base64Data: string) => {
+  // Play audio queue sequentially
+  const playNextInQueue = useCallback(async () => {
+    if (isPlayingRef.current || audioQueueRef.current.length === 0) {
+      return;
+    }
+
+    isPlayingRef.current = true;
+    setIsPlaying(true);
+
+    const audioBuffer = audioQueueRef.current.shift()!;
+    const audioContext = audioContextRef.current!;
+
+    const source = audioContext.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(audioContext.destination);
+    
+    source.onended = () => {
+      isPlayingRef.current = false;
+      setIsPlaying(false);
+      playNextInQueue(); // Play next chunk
+    };
+
+    source.start();
+    console.log('[Gemini Audio] 🎵 Playing chunk:', audioBuffer.duration.toFixed(2), 'seconds');
+  }, []);
+
+  // Add audio chunk to queue
+  const queueAudioChunk = useCallback(async (base64Data: string) => {
     try {
       if (!audioContextRef.current) {
         console.error('[Gemini Audio] No audio context available');
@@ -53,72 +79,79 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
       const audioBuffer = audioContext.createBuffer(1, float32Array.length, 24000);
       audioBuffer.getChannelData(0).set(float32Array);
 
-      // Play immediately
-      const source = audioContext.createBufferSource();
-      source.buffer = audioBuffer;
-      source.connect(audioContext.destination);
-      source.start();
-      setIsPlaying(true);
+      // Add to queue
+      audioQueueRef.current.push(audioBuffer);
+      console.log('[Gemini Audio] 📦 Queued chunk:', float32Array.length, 'samples');
 
-      console.log('[Gemini Audio] 🎵 Playing chunk:', float32Array.length, 'samples');
+      // Start playing if not already playing
+      playNextInQueue();
 
     } catch (error) {
-      console.error('[Gemini Audio] ❌ Play error:', error);
+      console.error('[Gemini Audio] ❌ Queue error:', error);
     }
-  }, []);
+  }, [playNextInQueue]);
 
-  // Handle messages from Gemini
-  const handleMessage = useCallback((message: LiveServerMessage) => {
-    console.log('[Gemini] 📨 Message received:', Object.keys(message)[0]);
+  // Handle messages from proxy
+  const handleMessage = useCallback((event: MessageEvent) => {
+    try {
+      const message = JSON.parse(event.data);
+      console.log('[Gemini WS] 📨 Message type:', message.type || Object.keys(message)[0]);
 
-    // Setup complete
-    if (message.setupComplete) {
-      console.log('[Gemini] ✅ Setup complete!');
-      setIsConnected(true);
-      options.onConnected?.();
-      return;
-    }
-
-    // Server content (AI response)
-    if (message.serverContent) {
-      const content = message.serverContent;
-
-      // Turn complete
-      if ('turnComplete' in content) {
-        console.log('[Gemini] ✅ Turn complete');
-        setIsPlaying(false);
+      // Setup complete
+      if (message.setupComplete) {
+        console.log('[Gemini] ✅ Setup complete!');
+        setIsConnected(true);
+        options.onConnected?.();
+        return;
       }
 
-      // Model turn (AI output)
-      if ('modelTurn' in content && content.modelTurn) {
-        const parts = content.modelTurn.parts || [];
+      // Server content (AI response)
+      if (message.serverContent) {
+        const content = message.serverContent;
 
-        for (const part of parts) {
-          // Audio data
-          if (part.inlineData?.mimeType === 'audio/pcm' && part.inlineData.data) {
-            console.log('[Gemini Audio] 🎵 Received audio chunk');
-            playAudioChunk(part.inlineData.data);
-          }
+        // Turn complete
+        if (content.turnComplete) {
+          console.log('[Gemini] ✅ Turn complete');
+        }
 
-          // Text transcript
-          if (part.text && typeof part.text === 'string') {
-            console.log('[Gemini Transcript] 🤖', part.text);
-            setTranscript(prev => [...prev, {
-              speaker: 'tutor',
-              text: part.text as string,
-              timestamp: new Date().toISOString()
-            }]);
-            options.onTranscript?.(part.text as string, false);
+        // Model turn (AI output)
+        if (content.modelTurn?.parts) {
+          for (const part of content.modelTurn.parts) {
+            // Audio data
+            if (part.inlineData?.mimeType === 'audio/pcm' && part.inlineData.data) {
+              console.log('[Gemini Audio] 🎵 Received audio chunk');
+              queueAudioChunk(part.inlineData.data);
+            }
+
+            // Text transcript
+            if (part.text && typeof part.text === 'string') {
+              console.log('[Gemini Transcript] 🤖', part.text);
+              setTranscript(prev => [...prev, {
+                speaker: 'tutor',
+                text: part.text as string,
+                timestamp: new Date().toISOString()
+              }]);
+              options.onTranscript?.(part.text as string, false);
+            }
           }
         }
       }
-    }
-  }, [playAudioChunk, options]);
 
-  // Start session using Google's SDK
+      // Error from server
+      if (message.error) {
+        console.error('[Gemini] ❌ Server error:', message.error);
+        options.onError?.(new Error(message.error.message || 'Server error'));
+      }
+
+    } catch (error) {
+      console.error('[Gemini WS] ❌ Message parse error:', error);
+    }
+  }, [queueAudioChunk, options]);
+
+  // Start session using WebSocket proxy
   const startSession = useCallback(async (geminiApiKey: string, systemInstruction: string) => {
     try {
-      console.log('[Gemini] 🚀 Starting session using @google/genai SDK...');
+      console.log('[Gemini] 🚀 Starting session via WebSocket PROXY...');
       console.log('[Gemini] 🔑 API Key:', geminiApiKey.substring(0, 10) + '...');
 
       // Initialize audio context
@@ -131,55 +164,57 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
         console.log('[Gemini] 🔊 Audio context resumed');
       }
 
-      // Create GoogleGenAI client (Google's official SDK)
-      console.log('[Gemini] 📦 Creating GoogleGenAI client...');
-      const client = new GoogleGenAI({ apiKey: geminiApiKey });
-      clientRef.current = client;
+      // Connect to our WebSocket proxy (not directly to Gemini!)
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const host = window.location.host;
+      const wsUrl = `${protocol}//${host}/api/gemini-ws`;
+      
+      console.log('[Gemini] 🌐 Connecting to proxy:', wsUrl);
 
-      // Configure the Live session
-      const config: LiveConnectConfig = {
-        systemInstruction: {
-          parts: [{ text: systemInstruction }]
-        },
-        generationConfig: {
-          responseModalities: ['audio'] as any,
-          speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } }
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        console.log('[Gemini WS] ✅ WebSocket OPENED to proxy!');
+        
+        // Send initialization message with API key and config
+        const initMessage = {
+          type: 'init',
+          apiKey: geminiApiKey,
+          model: 'models/gemini-2.0-flash-exp',
+          config: {
+            systemInstruction: {
+              parts: [{ text: systemInstruction }]
+            },
+            generationConfig: {
+              responseModalities: 'audio',
+              speechConfig: {
+                voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } }
+              }
+            }
           }
-        }
+        };
+        
+        console.log('[Gemini WS] 📤 Sending init message...');
+        ws.send(JSON.stringify(initMessage));
       };
 
-      // Callbacks for the Live session
-      const callbacks = {
-        onopen: () => {
-          console.log('[Gemini] ✅ WebSocket OPENED successfully!');
-        },
-        onmessage: handleMessage,
-        onerror: (error: ErrorEvent) => {
-          console.error('[Gemini] ❌ Error:', error);
-          setIsConnected(false);
-          options.onError?.(new Error(error.message || 'Connection error'));
-        },
-        onclose: (event: CloseEvent) => {
-          console.log('[Gemini] 🔌 Connection closed:', {
-            code: event.code,
-            reason: event.reason || 'No reason provided'
-          });
-          setIsConnected(false);
-          options.onDisconnected?.();
-        }
+      ws.onmessage = handleMessage;
+
+      ws.onerror = (error) => {
+        console.error('[Gemini WS] ❌ WebSocket error:', error);
+        setIsConnected(false);
+        options.onError?.(new Error('WebSocket connection error'));
       };
 
-      // Connect to Gemini Live API (this handles WebSocket internally)
-      console.log('[Gemini] 🌐 Connecting to Gemini Live API...');
-      const session = await client.live.connect({
-        model: 'models/gemini-2.0-flash-exp',
-        config,
-        callbacks
-      });
-
-      sessionRef.current = session;
-      console.log('[Gemini] ✅ Session created successfully!');
+      ws.onclose = (event) => {
+        console.log('[Gemini WS] 🔌 Connection closed:', {
+          code: event.code,
+          reason: event.reason || 'No reason provided'
+        });
+        setIsConnected(false);
+        options.onDisconnected?.();
+      };
 
     } catch (error: any) {
       console.error('[Gemini] ❌ Failed to start session:', error);
@@ -189,10 +224,9 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
     }
   }, [handleMessage, options]);
 
-  // Send audio to Gemini
+  // Send audio to Gemini via proxy
   const sendAudio = useCallback((audioData: ArrayBuffer) => {
-    if (!sessionRef.current || !isConnected) {
-      console.warn('[Gemini] Cannot send audio: not connected');
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
       return;
     }
 
@@ -204,47 +238,45 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
         .join('');
       const base64 = btoa(binaryString);
 
-      // Send to Gemini using SDK method
-      sessionRef.current.sendRealtimeInput({
-        media: {
-          mimeType: 'audio/pcm',
-          data: base64
-        }
-      });
+      // Send to proxy
+      wsRef.current.send(JSON.stringify({
+        type: 'audio',
+        data: base64
+      }));
     } catch (error) {
       console.error('[Gemini] ❌ Failed to send audio:', error);
     }
-  }, [isConnected]);
+  }, []);
 
-  // Send text message to Gemini
+  // Send text message to Gemini via proxy
   const sendTextMessage = useCallback((text: string) => {
-    if (!sessionRef.current || !isConnected) {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
       console.warn('[Gemini] Cannot send text: not connected');
       return;
     }
 
     try {
       console.log('[Gemini] 📤 Sending text:', text);
-      sessionRef.current.sendClientContent({
-        turns: [{ parts: [{ text }] }],
-        turnComplete: true
-      });
+      wsRef.current.send(JSON.stringify({
+        type: 'text',
+        text
+      }));
     } catch (error) {
       console.error('[Gemini] ❌ Failed to send text:', error);
     }
-  }, [isConnected]);
+  }, []);
 
   // End session
   const endSession = useCallback(() => {
     console.log('[Gemini] 🛑 Ending session');
 
-    if (sessionRef.current) {
+    if (wsRef.current) {
       try {
-        sessionRef.current.close();
+        wsRef.current.close();
       } catch (error) {
-        console.error('[Gemini] Error closing session:', error);
+        console.error('[Gemini] Error closing WebSocket:', error);
       }
-      sessionRef.current = null;
+      wsRef.current = null;
     }
 
     if (audioContextRef.current) {
@@ -256,7 +288,10 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
       audioContextRef.current = null;
     }
 
+    audioQueueRef.current = [];
+    isPlayingRef.current = false;
     setIsConnected(false);
+    setIsPlaying(false);
     setTranscript([]);
   }, []);
 
