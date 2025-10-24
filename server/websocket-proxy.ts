@@ -55,17 +55,12 @@ export function setupGeminiWebSocketProxy(server: Server) {
               }
             };
             
-            console.log('[WS Proxy] 📤 Sending setup to Gemini (full JSON):', JSON.stringify(setupMessage, null, 2));
-            console.log('[WS Proxy] 📋 Config received from client:', JSON.stringify(config, null, 2));
-            console.log('[WS Proxy] 📋 Model:', model);
+            console.log('[WS Proxy] 📤 Sending setup to Gemini');
             
             geminiWs!.send(JSON.stringify(setupMessage));
             
-            // Notify client that proxy connection is established
-            clientWs.send(JSON.stringify({ 
-              type: 'proxyReady',
-              message: 'Proxy connected to Gemini'
-            }));
+            // Client will know when ready from Gemini's setupComplete message
+            // No need to send proxyReady
           });
           
           geminiWs.on('message', (geminiData: Buffer) => {
