@@ -235,12 +235,30 @@ export function RealtimeVoiceHost({
         const processor = audioContext.createScriptProcessor(4096, 1, 1);
         audioProcessorRef.current = processor;
         
+        let audioChunkCount = 0;
         processor.onaudioprocess = (e) => {
+          audioChunkCount++;
+          
+          // Log every 50 chunks to confirm it's running
+          if (audioChunkCount % 50 === 0) {
+            console.log('[Microphone] 📊 ScriptProcessor running, chunks processed:', audioChunkCount);
+          }
+          
           if (!isMuted && geminiVoice.isConnected) {
             const inputData = e.inputBuffer.getChannelData(0);
             
-            // Check if there's actual audio (not silence)
-            const hasAudio = inputData.some(sample => Math.abs(sample) > 0.01);
+            // Check if there's actual audio (not silence) - VERY lenient threshold
+            const maxAmplitude = Math.max(...Array.from(inputData).map(Math.abs));
+            const hasAudio = maxAmplitude > 0.001; // Much more lenient!
+            
+            if (audioChunkCount % 50 === 0) {
+              console.log('[Microphone] 📈 Audio level check:', {
+                maxAmplitude,
+                hasAudio,
+                isMuted,
+                isConnected: geminiVoice.isConnected
+              });
+            }
             
             if (hasAudio) {
               // Convert Float32 to PCM16 for Gemini
@@ -251,8 +269,15 @@ export function RealtimeVoiceHost({
               }
               
               // Send to Gemini
-              console.log('[Microphone] 🎤 Sending audio to Gemini, size:', pcm16.buffer.byteLength);
+              console.log('[Microphone] 🎤 Sending audio to Gemini, size:', pcm16.buffer.byteLength, 'amplitude:', maxAmplitude.toFixed(4));
               geminiVoice.sendAudio(pcm16.buffer);
+            }
+          } else {
+            if (audioChunkCount % 50 === 0) {
+              console.log('[Microphone] ⚠️ Not sending audio:', {
+                isMuted,
+                isConnected: geminiVoice.isConnected
+              });
             }
           }
         };
