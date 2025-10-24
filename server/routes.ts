@@ -13,7 +13,6 @@ import { setupSecurityHeaders, setupCORS } from "./middleware/security";
 import { requireAdmin } from "./middleware/admin-auth";
 import { auditActions } from "./middleware/audit-log";
 import { convertUsersToCSV, generateFilename } from "./utils/csv-export";
-import { RealtimeServer } from "./realtime-server";
 import { sql } from "drizzle-orm";
 import { db } from "./db";
 import Stripe from "stripe";
@@ -97,18 +96,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       convai: true, // Multi-agent system - agents are hardcoded in frontend
       useConvai: process.env.USE_CONVAI?.toLowerCase() === 'true' // Use ConvAI when explicitly true
     });
-  });
-  
-  // Realtime health check endpoint
-  app.get("/api/health/realtime", (req, res) => {
-    if (!realtimeServer) {
-      return res.status(503).json({ 
-        error: 'Realtime server not initialized'
-      });
-    }
-    
-    const status = realtimeServer.getHealthStatus();
-    res.status(200).json(status);
   });
 
   // Database health check endpoint - verify realtime_sessions table exists
@@ -355,11 +342,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Document and context routes for RAG system
   const { default: documentRoutes } = await import('./routes/documents');
   const { default: contextRoutes } = await import('./routes/context');
-  const { default: realtimeRoutes } = await import('./routes/realtime');
   const { default: geminiRealtimeRoutes } = await import('./routes/gemini-realtime');
   app.use("/api/documents", documentRoutes);
   app.use("/api/context", contextRoutes);
-  app.use("/api/session/realtime", realtimeRoutes);
   app.use("/api/session/gemini", geminiRealtimeRoutes);
   
   // Debug endpoint to verify route mounting
@@ -1517,10 +1502,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   const httpServer = createServer(app);
-  
-  // Initialize WebSocket server for OpenAI Realtime API
-  const realtimeServer = new RealtimeServer(httpServer);
-  console.log('[RealtimeServer] WebSocket server initialized on /ws/realtime');
   
   return httpServer;
 }
