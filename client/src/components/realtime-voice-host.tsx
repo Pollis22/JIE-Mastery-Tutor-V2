@@ -153,9 +153,11 @@ export function RealtimeVoiceHost({
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
       
-      // Create audio context for processing (24kHz for Gemini)
-      const audioContext = new AudioContext({ sampleRate: 24000 });
+      // Create audio context for processing (16kHz - MUST match what we tell Gemini!)
+      const audioContext = new AudioContext({ sampleRate: 16000 });
       audioContextRef.current = audioContext;
+      
+      console.log('[Microphone] 📊 AudioContext sample rate:', audioContext.sampleRate);
       
       const source = audioContext.createMediaStreamSource(stream);
       const processor = audioContext.createScriptProcessor(4096, 1, 1);
