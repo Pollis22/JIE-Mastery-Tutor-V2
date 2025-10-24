@@ -235,13 +235,23 @@ export function RealtimeVoiceHost({
         const processor = audioContext.createScriptProcessor(4096, 1, 1);
         audioProcessorRef.current = processor;
         
-        let audioChunkCount = 0;
+        console.log('🎤 [DEBUG] ScriptProcessor created:', {
+          exists: !!processor,
+          bufferSize: processor.bufferSize
+        });
+        
+        source.connect(processor);
+        processor.connect(audioContext.destination);
+        
+        console.log('🎤 [DEBUG] ScriptProcessor connected to audio chain');
+        
+        let callbackCount = 0;
         processor.onaudioprocess = (e) => {
-          audioChunkCount++;
+          callbackCount++;
           
-          // Log every 50 chunks to confirm it's running
-          if (audioChunkCount % 50 === 0) {
-            console.log('[Microphone] 📊 ScriptProcessor running, chunks processed:', audioChunkCount);
+          // Log every 10 callbacks to prove it's working (more frequent for debugging)
+          if (callbackCount % 10 === 0) {
+            console.log(`🎤 [DEBUG] Callback firing! Count: ${callbackCount}`);
           }
           
           if (!isMuted && geminiVoice.isConnected) {
@@ -251,7 +261,7 @@ export function RealtimeVoiceHost({
             const maxAmplitude = Math.max(...Array.from(inputData).map(Math.abs));
             const hasAudio = maxAmplitude > 0.001; // Much more lenient!
             
-            if (audioChunkCount % 50 === 0) {
+            if (callbackCount % 50 === 0) {
               console.log('[Microphone] 📈 Audio level check:', {
                 maxAmplitude,
                 hasAudio,
@@ -273,7 +283,7 @@ export function RealtimeVoiceHost({
               geminiVoice.sendAudio(pcm16.buffer);
             }
           } else {
-            if (audioChunkCount % 50 === 0) {
+            if (callbackCount % 50 === 0) {
               console.log('[Microphone] ⚠️ Not sending audio:', {
                 isMuted,
                 isConnected: geminiVoice.isConnected
@@ -282,8 +292,7 @@ export function RealtimeVoiceHost({
           }
         };
         
-        source.connect(processor);
-        processor.connect(audioContext.destination);
+        console.log('🎤 [DEBUG] Callback assigned:', !!processor.onaudioprocess);
       }
       
       setIsRecording(true);
