@@ -181,6 +181,13 @@ export function RealtimeVoiceHost({
         const workletNode = new AudioWorkletNode(audioContext, 'audio-processor');
         
         workletNode.port.onmessage = (event) => {
+          console.log('[Microphone] 📨 Received audio from worklet:', {
+            type: event.data.type,
+            hasData: !!event.data.data,
+            isMuted,
+            isConnected: geminiVoice.isConnected
+          });
+          
           if (!isMuted && geminiVoice.isConnected && event.data.type === 'audio') {
             const audioData = event.data.data; // Float32Array, 16kHz, mono
             
@@ -194,6 +201,10 @@ export function RealtimeVoiceHost({
             // Send to Gemini
             console.log('[Microphone] 🎤 Sending audio to Gemini, size:', pcm16.buffer.byteLength);
             geminiVoice.sendAudio(pcm16.buffer);
+          } else {
+            console.log('[Microphone] ⚠️ Skipping audio send:', {
+              reason: !geminiVoice.isConnected ? 'Not connected' : isMuted ? 'Muted' : 'Unknown'
+            });
           }
         };
         

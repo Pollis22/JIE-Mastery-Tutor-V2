@@ -258,7 +258,7 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
               parts: [{ text: systemInstruction }]
             },
             generationConfig: {
-              responseModalities: 'audio',
+              responseModalities: ['audio', 'text'],  // Request BOTH audio and text
               speechConfig: {
                 voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } }
               }
