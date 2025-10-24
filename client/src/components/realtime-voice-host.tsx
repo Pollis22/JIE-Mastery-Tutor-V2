@@ -229,76 +229,85 @@ export function RealtimeVoiceHost({
         console.log('[Microphone] ✅ Using AudioWorklet for optimal performance');
         
       } catch (workletError) {
-        console.warn('[Microphone] ⚠️ AudioWorklet not available, using ScriptProcessor fallback');
+        console.warn('[Microphone] ⚠️ AudioWorklet not available, using MediaRecorder fallback');
         
-        // Fallback to ScriptProcessor for older browsers
-        const processor = audioContext.createScriptProcessor(4096, 1, 1);
-        audioProcessorRef.current = processor;
-        
-        console.log('🎤 [DEBUG] ScriptProcessor created:', {
-          exists: !!processor,
-          bufferSize: processor.bufferSize
+        // Use MediaRecorder as fallback since ScriptProcessor isn't working
+        const mediaRecorder = new MediaRecorder(stream, {
+          mimeType: 'audio/webm',
+          audioBitsPerSecond: 128000
         });
         
-        source.connect(processor);
-        processor.connect(audioContext.destination);
+        console.log('🎤 [MediaRecorder] Created:', {
+          state: mediaRecorder.state,
+          mimeType: mediaRecorder.mimeType,
+          audioBitsPerSecond: mediaRecorder.audioBitsPerSecond
+        });
         
-        console.log('🎤 [DEBUG] ScriptProcessor connected to audio chain');
-        
-        let callbackCount = 0;
-        processor.onaudioprocess = (e) => {
-          callbackCount++;
-          
-          // Log every 10 callbacks to prove it's working (more frequent for debugging)
-          if (callbackCount % 10 === 0) {
-            console.log(`🎤 [DEBUG] Callback firing! Count: ${callbackCount}`);
-          }
-          
-          if (!isMuted && geminiVoice.isConnected) {
-            const inputData = e.inputBuffer.getChannelData(0);
+        let chunkCount = 0;
+        mediaRecorder.ondataavailable = async (event) => {
+          if (event.data.size > 0) {
+            chunkCount++;
+            console.log(`🎤 [MediaRecorder] Captured chunk ${chunkCount}:`, event.data.size, 'bytes');
             
-            // Check if there's actual audio (not silence) - VERY lenient threshold
-            const maxAmplitude = Math.max(...Array.from(inputData).map(Math.abs));
-            const hasAudio = maxAmplitude > 0.001; // Much more lenient!
-            
-            if (callbackCount % 50 === 0) {
-              console.log('[Microphone] 📈 Audio level check:', {
-                maxAmplitude,
-                hasAudio,
-                isMuted,
-                isConnected: geminiVoice.isConnected
-              });
-            }
-            
-            if (hasAudio) {
-              // Convert Float32 to PCM16 for Gemini
-              const pcm16 = new Int16Array(inputData.length);
-              for (let i = 0; i < inputData.length; i++) {
-                const s = Math.max(-1, Math.min(1, inputData[i]));
-                pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+            if (!isMuted && geminiVoice.isConnected) {
+              try {
+                // Convert WebM blob to ArrayBuffer
+                const arrayBuffer = await event.data.arrayBuffer();
+                
+                // Decode audio data using Web Audio API
+                const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                const pcmData = audioBuffer.getChannelData(0);
+                
+                // Resample to 16kHz if needed
+                const sourceRate = audioBuffer.sampleRate;
+                const targetRate = 16000;
+                const resampleRatio = targetRate / sourceRate;
+                const outputLength = Math.floor(pcmData.length * resampleRatio);
+                const resampledData = new Float32Array(outputLength);
+                
+                for (let i = 0; i < outputLength; i++) {
+                  const sourceIndex = i / resampleRatio;
+                  const index0 = Math.floor(sourceIndex);
+                  const index1 = Math.min(index0 + 1, pcmData.length - 1);
+                  const fraction = sourceIndex - index0;
+                  resampledData[i] = pcmData[index0] * (1 - fraction) + pcmData[index1] * fraction;
+                }
+                
+                // Convert Float32 to PCM16
+                const pcm16 = new Int16Array(resampledData.length);
+                for (let i = 0; i < resampledData.length; i++) {
+                  const s = Math.max(-1, Math.min(1, resampledData[i]));
+                  pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                }
+                
+                // Send to Gemini
+                console.log('[Microphone] 🎤 Sending audio to Gemini, size:', pcm16.buffer.byteLength);
+                geminiVoice.sendAudio(pcm16.buffer);
+              } catch (decodeError) {
+                console.error('🎤 [MediaRecorder] Decode error:', decodeError);
               }
-              
-              // Send to Gemini
-              console.log('[Microphone] 🎤 Sending audio to Gemini, size:', pcm16.buffer.byteLength, 'amplitude:', maxAmplitude.toFixed(4));
-              geminiVoice.sendAudio(pcm16.buffer);
-            }
-          } else {
-            if (callbackCount % 50 === 0) {
-              console.log('[Microphone] ⚠️ Not sending audio:', {
-                isMuted,
-                isConnected: geminiVoice.isConnected
-              });
             }
           }
         };
         
-        console.log('🎤 [DEBUG] Callback assigned:', !!processor.onaudioprocess);
+        mediaRecorder.onerror = (error) => {
+          console.error('🎤 [MediaRecorder] Error:', error);
+        };
+        
+        mediaRecorder.onstart = () => {
+          console.log('🎤 [MediaRecorder] Started recording');
+        };
+        
+        // Start recording with 100ms chunks
+        mediaRecorder.start(100);
+        mediaStreamRef.current = stream;
+        audioProcessorRef.current = mediaRecorder as any;
       }
       
       setIsRecording(true);
       console.log('[Microphone] ✅ Active and streaming to Gemini at standardized 16kHz');
       console.log('[Microphone] 🎯 Compatible with ALL microphones:', {
-        method: useWorklet ? 'AudioWorklet' : 'ScriptProcessor',
+        method: useWorklet ? 'AudioWorklet' : 'MediaRecorder',
         input: settings.sampleRate || 'any',
         output: '16000 Hz mono PCM16'
       });
@@ -323,7 +332,17 @@ export function RealtimeVoiceHost({
     console.log('[Microphone] 🛑 Stopping...');
     
     if (audioProcessorRef.current) {
-      audioProcessorRef.current.disconnect();
+      // Check if it's a MediaRecorder
+      if ('stop' in audioProcessorRef.current && typeof audioProcessorRef.current.stop === 'function') {
+        try {
+          audioProcessorRef.current.stop();
+          console.log('[MediaRecorder] 🛑 Stopped recording');
+        } catch (e) {
+          console.log('[MediaRecorder] Already stopped');
+        }
+      } else if ('disconnect' in audioProcessorRef.current) {
+        audioProcessorRef.current.disconnect();
+      }
       audioProcessorRef.current = null;
     }
     
