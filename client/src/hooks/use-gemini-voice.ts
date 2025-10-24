@@ -159,9 +159,17 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
         // Model turn (AI output)
         if (content.modelTurn?.parts) {
           for (const part of content.modelTurn.parts) {
-            // Audio data
-            if (part.inlineData?.mimeType === 'audio/pcm' && part.inlineData.data) {
-              console.log('[Gemini Audio] 🎵 Received audio chunk');
+            // DEBUG: Log what we're receiving
+            console.log('[Gemini] 📦 Part received:', {
+              hasInlineData: !!part.inlineData,
+              mimeType: part.inlineData?.mimeType,
+              hasData: !!part.inlineData?.data,
+              hasText: !!part.text
+            });
+            
+            // Audio data - check for ANY audio/* MIME type
+            if (part.inlineData?.mimeType?.startsWith('audio/') && part.inlineData.data) {
+              console.log('[Gemini Audio] 🎵 Received audio chunk, MIME:', part.inlineData.mimeType);
               queueAudioChunk(part.inlineData.data);
             }
 
