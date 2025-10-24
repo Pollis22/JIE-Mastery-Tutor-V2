@@ -46,7 +46,12 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
     // CRITICAL: Ensure AudioContext is running
     if (audioContext.state === 'suspended') {
       console.log('[Gemini Audio] 🔊 Resuming suspended AudioContext...');
-      await audioContext.resume();
+      try {
+        await audioContext.resume();
+      } catch (err) {
+        console.error('[Gemini Audio] Failed to resume:', err);
+        return;
+      }
     }
 
     isPlayingRef.current = true;
@@ -62,12 +67,16 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
       console.log('[Gemini Audio] ✅ Chunk finished');
       isPlayingRef.current = false;
       setIsPlaying(false);
-      playNextInQueue(); // Play next chunk
+      
+      // Use setTimeout to avoid stack overflow
+      setTimeout(() => {
+        playNextInQueue();
+      }, 0);
     };
 
     console.log('[Gemini Audio] 🔊 STARTING PLAYBACK - Duration:', audioBuffer.duration.toFixed(2), 's, State:', audioContext.state);
     source.start(0);
-  }, []);
+  }, [setIsPlaying]);
 
   // Add audio chunk to queue
   const queueAudioChunk = useCallback(async (base64Data: string) => {
@@ -93,15 +102,17 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
 
       // Add to queue
       audioQueueRef.current.push(audioBuffer);
-      console.log('[Gemini Audio] 📦 Queued chunk:', float32Array.length, 'samples');
+      console.log('[Gemini Audio] 📦 Queued chunk:', float32Array.length, 'samples, queue length:', audioQueueRef.current.length);
 
-      // Start playing if not already playing
-      playNextInQueue();
+      // Start playing if not already playing (non-blocking)
+      if (!isPlayingRef.current) {
+        setTimeout(() => playNextInQueue(), 0);
+      }
 
     } catch (error) {
       console.error('[Gemini Audio] ❌ Queue error:', error);
     }
-  }, [playNextInQueue]);
+  }, []);
 
   // Handle messages from proxy
   const handleMessage = useCallback((event: MessageEvent) => {
@@ -158,7 +169,7 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
     } catch (error) {
       console.error('[Gemini WS] ❌ Message parse error:', error);
     }
-  }, [queueAudioChunk, options]);
+  }, [setIsConnected, setTranscript]);
 
   // Start session using WebSocket proxy
   const startSession = useCallback(async (geminiApiKey: string, systemInstruction: string) => {
