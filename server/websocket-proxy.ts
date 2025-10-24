@@ -28,8 +28,8 @@ export function setupGeminiWebSocketProxy(server: Server) {
           console.log('[WS Proxy] 📦 Model:', model);
           console.log('[WS Proxy] 🌐 Connecting to Gemini Live API...');
           
-          // Connect to Gemini with API key
-          const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${apiKey}`;
+          // Connect to Gemini with API key (use v1beta for better stability)
+          const geminiUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${apiKey}`;
           
           geminiWs = new WebSocket(geminiUrl);
           
@@ -37,15 +37,21 @@ export function setupGeminiWebSocketProxy(server: Server) {
             console.log('[WS Proxy] ✅ Connected to Gemini Live API!');
             isSetup = true;
             
-            // Send setup message to Gemini (proper format!)
+            // Send setup message to Gemini (correct format from docs!)
             const setupMessage = {
               setup: {
                 model: model,
-                systemInstruction: config.systemInstruction,
                 generationConfig: {
-                  responseModalities: "AUDIO",  // UPPERCASE required!
-                  speechConfig: config.generationConfig?.speechConfig
-                }
+                  responseModalities: "audio",  // LOWERCASE 'audio' is correct!
+                  speechConfig: {
+                    voiceConfig: {
+                      prebuiltVoiceConfig: {
+                        voiceName: config.generationConfig?.speechConfig?.voiceConfig?.prebuiltVoiceConfig?.voiceName || "Aoede"
+                      }
+                    }
+                  }
+                },
+                systemInstruction: config.systemInstruction
               }
             };
             
