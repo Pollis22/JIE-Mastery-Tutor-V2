@@ -1,7 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import mammoth from 'mammoth';
-import OpenAI from 'openai';
 import { PdfJsTextExtractor } from './pdf-extractor';
 import xlsx from 'xlsx';
 import { parse } from 'csv-parse/sync';
@@ -19,15 +18,11 @@ export interface ProcessedDocument {
 }
 
 export class DocumentProcessor {
-  private openai: OpenAI;
   private pdfExtractor: PdfJsTextExtractor;
   private readonly maxChunkSize = 800; // tokens per chunk (400-800 range)
   private readonly chunkOverlap = 100; // token overlap between chunks
 
   constructor() {
-    this.openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
     this.pdfExtractor = new PdfJsTextExtractor();
   }
 
@@ -294,12 +289,26 @@ export class DocumentProcessor {
    */
   async generateEmbedding(text: string): Promise<number[]> {
     try {
-      const response = await this.openai.embeddings.create({
-        model: 'text-embedding-3-small',
-        input: text,
-      });
-
-      return response.data[0].embedding;
+      // Simple hash-based embedding for document similarity (replacing OpenAI)
+      // This creates a deterministic vector based on text content
+      const vector = new Array(384).fill(0); // Smaller dimension without OpenAI
+      const words = text.toLowerCase().split(/\s+/);
+      
+      // Create simple frequency-based embedding
+      for (let i = 0; i < Math.min(words.length, 100); i++) {
+        const word = words[i];
+        let hash = 0;
+        for (let j = 0; j < word.length; j++) {
+          hash = ((hash << 5) - hash) + word.charCodeAt(j);
+          hash = hash & hash;
+        }
+        const index = Math.abs(hash) % 384;
+        vector[index] += 1 / (i + 1); // Weight by position
+      }
+      
+      // Normalize
+      const magnitude = Math.sqrt(vector.reduce((sum, val) => sum + val * val, 0));
+      return magnitude > 0 ? vector.map(v => v / magnitude) : vector;
     } catch (error) {
       console.error('Failed to generate embedding:', error);
       throw new Error('Failed to generate text embedding');

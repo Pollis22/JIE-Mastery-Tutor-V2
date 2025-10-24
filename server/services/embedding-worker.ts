@@ -1,7 +1,7 @@
 import { storage } from '../storage';
 import { DocumentProcessor } from './document-processor';
 import { UserDocument } from '@shared/schema';
-import OpenAI from 'openai';
+// OpenAI removed - using simple hash-based embeddings
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -12,15 +12,11 @@ const BATCH_SIZE = 3; // Process 3 documents at a time to avoid overwhelming the
 
 export class EmbeddingWorker {
   private processor: DocumentProcessor;
-  private openai: OpenAI;
   private isRunning = false;
   private intervalId: NodeJS.Timeout | null = null;
-  private readonly embeddingModel: string;
 
   constructor() {
     this.processor = new DocumentProcessor();
-    this.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    this.embeddingModel = process.env.EMBED_MODEL || 'text-embedding-3-small';
   }
 
   start() {
@@ -197,14 +193,12 @@ export class EmbeddingWorker {
       
       while (attempts < 3) {
         try {
-          const response = await this.openai.embeddings.create({
-            model: this.embeddingModel,
-            input: text,
-          });
+          // Use document processor's simple embedding
+          const embedding = await this.processor.generateEmbedding(text);
           
           results.push({
             chunkId,
-            embedding: response.data[0].embedding,
+            embedding: embedding,
           });
           
           break; // Success, move to next chunk

@@ -19,7 +19,6 @@ import { Clock, AlertCircle, Upload, File, X, Paperclip, LogOut, Settings, Layou
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
-import { DebugPanel } from "@/components/realtime/DebugPanel";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -53,7 +52,7 @@ const saveProgress = (data: ProgressData) => {
   }
 };
 
-// Map full language names to ISO codes for OpenAI Realtime API
+// Map full language names to ISO codes for Gemini API
 const mapLanguageToISO = (language?: string | null): 'en' | 'es' | 'hi' | 'zh' => {
   if (!language) return 'en';
   
@@ -634,7 +633,7 @@ export default function TutorPage() {
                 </>
               ) : (
                 <>
-                  {/* OpenAI Realtime Voice System */}
+                  {/* Gemini Voice System */}
                   <RealtimeVoiceHost
                     studentId={selectedStudentId || undefined}
                     studentName={studentName}
@@ -687,19 +686,6 @@ export default function TutorPage() {
           remainingMinutes={minutesData?.remaining}
         />
 
-        {/* Debug Panel - only show for OpenAI Realtime */}
-        {!useConvai && process.env.NODE_ENV === 'development' && (
-          <DebugPanel
-            transport={debugInfo.transport || 'websocket'}
-            sessionStatus={debugInfo.sessionStatus}
-            lastError={debugInfo.lastError}
-            helloProbeStatus={debugInfo.helloProbeStatus}
-            vadEnabled={debugInfo.vadEnabled}
-            modelName={debugInfo.modelName}
-            connectionStatus={debugInfo.connectionStatus}
-            lastEvent={debugInfo.lastEvent}
-          />
-        )}
       </TutorErrorBoundary>
     </NetworkAwareWrapper>
   );

@@ -4,10 +4,7 @@ import { setupAuth } from "./auth";
 import { storage } from "./storage";
 import { voiceService } from "./services/voice";
 import { lessonsService } from "./services/lessons";
-import { openaiService } from "./services/openai";
-import voiceRoutes from "./routes/voiceRoutes";
 import conversationRoutes from "./routes/conversationRoutes";
-import streamingRoutes from "./routes/streamingRoutes";
 import { debugRoutes } from "./routes/debugRoutes";
 import { setupSecurityHeaders, setupCORS } from "./middleware/security";
 import { requireAdmin } from "./middleware/admin-auth";
@@ -324,11 +321,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Enhanced voice API routes (use existing voiceRoutes but add enhancedVoiceRoutes functionality if needed)
-  app.use("/api/voice", voiceRoutes);
   
   // Conversation management routes
   app.use("/api/conversation", conversationRoutes);
-  app.use("/api/streaming", streamingRoutes);
   
   // Debug routes for monitoring and troubleshooting
   app.use("/api/debug", debugRoutes);
