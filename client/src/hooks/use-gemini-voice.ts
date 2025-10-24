@@ -282,6 +282,7 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
   // Send audio to Gemini via proxy
   const sendAudio = useCallback((audioData: ArrayBuffer) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      console.log('[Gemini] ⚠️ Cannot send audio - WebSocket not open');
       return;
     }
 
@@ -292,6 +293,9 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
         .map(byte => String.fromCharCode(byte))
         .join('');
       const base64 = btoa(binaryString);
+
+      // Log audio being sent
+      console.log('[Gemini] 🎤 Sending microphone audio, size:', audioData.byteLength);
 
       // Send to proxy
       wsRef.current.send(JSON.stringify({

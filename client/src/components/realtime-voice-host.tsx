@@ -115,7 +115,14 @@ export function RealtimeVoiceHost({
         );
         
         // Start microphone capture
-        await startMicrophone();
+        console.log('[VoiceHost] 🎤 About to start microphone...');
+        try {
+          await startMicrophone();
+          console.log('[VoiceHost] ✅ Microphone started successfully');
+        } catch (micError) {
+          console.error('[VoiceHost] ❌ Microphone failed to start:', micError);
+          // Continue anyway - user can still hear AI even without mic
+        }
         
         onSessionStart?.();
         
