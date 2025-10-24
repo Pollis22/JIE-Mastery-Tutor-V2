@@ -48,6 +48,15 @@ router.post('/', async (req, res) => {
   try {
     console.log('🎬 [RealtimeAPI] Creating session via HTTP');
     
+    // CRITICAL: Require authentication
+    if (!req.isAuthenticated || !req.isAuthenticated()) {
+      console.log('⛔ [RealtimeAPI] Unauthorized request - no authentication');
+      return res.status(401).json({ 
+        error: 'Unauthorized',
+        message: 'You must be logged in to start a voice session'
+      });
+    }
+    
     // Check if Realtime is enabled
     const realtimeEnabled = process.env.REALTIME_ENABLED !== 'false';
     const useConvai = process.env.USE_CONVAI?.toLowerCase() === 'true';
@@ -66,7 +75,8 @@ router.post('/', async (req, res) => {
     const model = data.model || 'gpt-4o-mini-realtime-preview-2024-12-17';
     
     // CRITICAL: Check for active sessions on this account
-    const checkUserId = req.user?.id || data.userId;
+    // Now that we've verified authentication, req.user.id is guaranteed to exist
+    const checkUserId = req.user!.id;
     if (checkUserId) {
       // First, clean up any expired or stuck sessions (older than 30 minutes)
       const cleanupResult = await db.update(realtimeSessions)
@@ -187,12 +197,12 @@ router.post('/', async (req, res) => {
 
     // Fetch document context if documents are selected
     let documentContext = '';
-    const sessionUserId = req.user?.id || data.userId;
-    console.log(`🔍 [Realtime] Checking for documents. User: ${sessionUserId}, Document IDs:`, data.contextDocumentIds);
+    // Use authenticated user ID for document fetching
+    console.log(`🔍 [Realtime] Checking for documents. User: ${checkUserId}, Document IDs:`, data.contextDocumentIds);
     
-    if (sessionUserId && data.contextDocumentIds && data.contextDocumentIds.length > 0) {
+    if (data.contextDocumentIds && data.contextDocumentIds.length > 0) {
       try {
-        const { chunks, documents } = await storage.getDocumentContext(sessionUserId, data.contextDocumentIds);
+        const { chunks, documents } = await storage.getDocumentContext(checkUserId, data.contextDocumentIds);
         console.log(`📄 [Realtime] Found ${documents.length} documents with ${chunks.length} total chunks`);
         
         if (documents.length > 0) {
@@ -314,10 +324,10 @@ ${documentContext ? '\nPlease reference the student\'s documents when relevant t
 
     // Save to database and get the DB session ID for transcript tracking
     let dbSessionId = sessionId; // Default to OpenAI session ID
-    if (sessionUserId && storage.createRealtimeSession) {
+    if (storage.createRealtimeSession) {
       try {
         const dbSession = await storage.createRealtimeSession({
-          userId: sessionUserId,
+          userId: checkUserId,
           studentId: data.studentId,
           studentName: data.studentName,
           subject: data.subject,
@@ -335,11 +345,11 @@ ${documentContext ? '\nPlease reference the student\'s documents when relevant t
         // Start activity tracking with auto-timeout after 5 minutes
         const { startActivityTracking } = await import('../services/session-activity-tracker');
         startActivityTracking(
-          sessionUserId,
+          checkUserId,
           dbSessionId,
           // Warning callback (4 minutes) - could send a system message to frontend
           () => {
-            console.log(`⚠️ [ActivityTracker] Inactivity warning for user ${sessionUserId}`);
+            console.log(`⚠️ [ActivityTracker] Inactivity warning for user ${checkUserId}`);
             // TODO: Could optionally send a warning via WebSocket or data channel
           },
           // End callback (5 minutes) - auto-end the session
@@ -347,7 +357,7 @@ ${documentContext ? '\nPlease reference the student\'s documents when relevant t
             console.log(`⏰ [ActivityTracker] Auto-ending session ${dbSessionId} due to inactivity`);
             try {
               // Calculate duration for minute tracking
-              const session = await storage.getRealtimeSession(dbSessionId, sessionUserId);
+              const session = await storage.getRealtimeSession(dbSessionId, checkUserId);
               if (session && session.status === 'active') {
                 const endTime = new Date();
                 const startTime = session.startedAt ? new Date(session.startedAt) : endTime;
@@ -355,7 +365,7 @@ ${documentContext ? '\nPlease reference the student\'s documents when relevant t
                 const minutesUsed = Math.ceil(durationMs / 60000);
                 
                 // End session and deduct minutes
-                await storage.endRealtimeSession(dbSessionId, sessionUserId, session.transcript || [], minutesUsed);
+                await storage.endRealtimeSession(dbSessionId, checkUserId, session.transcript || [], minutesUsed);
                 console.log(`✅ [ActivityTracker] Auto-ended session. Minutes used: ${minutesUsed}`);
               }
             } catch (error) {

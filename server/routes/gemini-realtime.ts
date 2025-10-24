@@ -45,6 +45,15 @@ router.post('/', async (req, res) => {
   try {
     console.log('🎬 [GeminiLive] Creating session via HTTP');
     
+    // CRITICAL: Require authentication
+    if (!req.isAuthenticated || !req.isAuthenticated()) {
+      console.log('⛔ [GeminiLive] Unauthorized request - no authentication');
+      return res.status(401).json({ 
+        error: 'Unauthorized',
+        message: 'You must be logged in to start a voice session'
+      });
+    }
+    
     // Check if Gemini Live is enabled
     if (!geminiLiveService.isEnabled()) {
       return res.status(503).json({ 
@@ -57,7 +66,8 @@ router.post('/', async (req, res) => {
     const data = startSessionSchema.parse(req.body);
     
     // CRITICAL: Check for active sessions on this account
-    const checkUserId = req.user?.id || data.userId;
+    // Now that we've verified authentication, req.user.id is guaranteed to exist
+    const checkUserId = req.user!.id;
     if (checkUserId) {
       // First, clean up any expired or stuck sessions (older than 30 minutes)
       const cleanupResult = await db.update(realtimeSessions)
@@ -157,12 +167,12 @@ router.post('/', async (req, res) => {
     
     // Fetch document context if documents are selected
     let documentContext = '';
-    const sessionUserId = req.user?.id || data.userId;
-    console.log(`🔍 [GeminiLive] Checking for documents. User: ${sessionUserId}, Document IDs:`, data.contextDocumentIds);
+    // Use authenticated user ID for document fetching
+    console.log(`🔍 [GeminiLive] Checking for documents. User: ${checkUserId}, Document IDs:`, data.contextDocumentIds);
     
-    if (sessionUserId && data.contextDocumentIds && data.contextDocumentIds.length > 0) {
+    if (data.contextDocumentIds && data.contextDocumentIds.length > 0) {
       try {
-        const { chunks, documents } = await storage.getDocumentContext(sessionUserId, data.contextDocumentIds);
+        const { chunks, documents } = await storage.getDocumentContext(checkUserId, data.contextDocumentIds);
         console.log(`📄 [GeminiLive] Found ${documents.length} documents with ${chunks.length} total chunks`);
         
         if (documents.length > 0) {
@@ -223,7 +233,7 @@ router.post('/', async (req, res) => {
     
     // Create database session record
     const [dbSession] = await db.insert(realtimeSessions).values({
-      userId: checkUserId || 'anonymous',
+      userId: checkUserId, // Authentication verified - always valid
       studentId: data.studentId,
       studentName: data.studentName,
       subject: data.subject,
