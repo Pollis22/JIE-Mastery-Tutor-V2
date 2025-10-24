@@ -247,12 +247,12 @@ export default function AdminPageEnhanced() {
                   <CardContent className="space-y-4">
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-muted-foreground">Total Voice Minutes</span>
-                      <span className="text-lg font-bold">{analytics?.totalMinutesUsed || 0} min</span>
+                      <span className="text-lg font-bold">{analytics?.totalVoiceMinutes || analytics?.totalMinutesUsed || 0} min</span>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-muted-foreground">Avg Minutes Per User</span>
                       <span className="text-lg font-bold">
-                        {stats?.totalUsers > 0 ? ((analytics?.totalMinutesUsed || 0) / stats.totalUsers).toFixed(1) : '0'} min
+                        {stats?.totalUsers > 0 ? ((analytics?.totalVoiceMinutes || analytics?.totalMinutesUsed || 0) / stats.totalUsers).toFixed(1) : '0'} min
                       </span>
                     </div>
                     <div className="flex justify-between items-center">
@@ -422,27 +422,167 @@ export default function AdminPageEnhanced() {
               <Card>
                 <CardHeader>
                   <CardTitle>Recent Sessions</CardTitle>
-                  <CardDescription>Live tracking of all voice tutoring sessions</CardDescription>
+                  <CardDescription>All voice tutoring sessions across the platform</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-center py-8 text-muted-foreground">
-                    Session tracking feature - coming soon in the enhanced dashboard
-                  </div>
+                  {analytics?.recentSessions && analytics.recentSessions.length > 0 ? (
+                    <div className="space-y-4">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Student</TableHead>
+                            <TableHead>Subject</TableHead>
+                            <TableHead>Age Group</TableHead>
+                            <TableHead>Duration</TableHead>
+                            <TableHead>Minutes Used</TableHead>
+                            <TableHead>Date</TableHead>
+                            <TableHead>Status</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {analytics.recentSessions.slice(0, 20).map((session: any, index: number) => (
+                            <TableRow key={session.id || index}>
+                              <TableCell className="font-medium">
+                                {session.studentName || 'Unknown'}
+                              </TableCell>
+                              <TableCell>{session.subject || 'N/A'}</TableCell>
+                              <TableCell>
+                                <Badge variant="outline">{session.ageGroup || 'N/A'}</Badge>
+                              </TableCell>
+                              <TableCell>
+                                {session.duration || 'N/A'}
+                              </TableCell>
+                              <TableCell>{session.minutesUsed || 0} min</TableCell>
+                              <TableCell className="text-sm text-muted-foreground">
+                                {session.startedAt ? new Date(session.startedAt).toLocaleDateString() : 'N/A'}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={session.status === 'ended' ? 'default' : 'secondary'}>
+                                  {session.status || 'unknown'}
+                                </Badge>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                      <div className="text-sm text-muted-foreground text-center pt-4">
+                        Showing {Math.min(20, analytics.recentSessions.length)} of {analytics.recentSessions.length} total sessions
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground">
+                      No sessions found
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>
 
             {/* Usage Reports Tab */}
             <TabsContent value="usage" className="space-y-4">
+              {/* Voice Minutes Usage */}
               <Card>
                 <CardHeader>
-                  <CardTitle>Usage Reports</CardTitle>
-                  <CardDescription>Detailed usage analytics per user and platform-wide</CardDescription>
+                  <CardTitle>Voice Minutes Usage</CardTitle>
+                  <CardDescription>Detailed breakdown of platform-wide minute consumption</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="text-center py-8 text-muted-foreground">
-                    Usage reports feature - coming soon in the enhanced dashboard
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                    <div className="space-y-2">
+                      <div className="text-sm font-medium text-muted-foreground">Total Minutes Used</div>
+                      <div className="text-3xl font-bold">{analytics?.totalVoiceMinutes || analytics?.totalMinutesUsed || 0}</div>
+                      <div className="text-xs text-muted-foreground">Across all users</div>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="text-sm font-medium text-muted-foreground">Average per User</div>
+                      <div className="text-3xl font-bold">
+                        {analytics?.totalUsers > 0 
+                          ? Math.round(((analytics?.totalVoiceMinutes || analytics?.totalMinutesUsed || 0) / analytics.totalUsers)) 
+                          : 0}
+                      </div>
+                      <div className="text-xs text-muted-foreground">Minutes per user</div>
+                    </div>
+                    <div className="space-y-2">
+                      <div className="text-sm font-medium text-muted-foreground">Total Sessions</div>
+                      <div className="text-3xl font-bold">{analytics?.totalSessions || 0}</div>
+                      <div className="text-xs text-muted-foreground">Voice conversations</div>
+                    </div>
                   </div>
+
+                  {analytics?.usageBySubject && analytics.usageBySubject.length > 0 && (
+                    <div className="space-y-3">
+                      <h4 className="text-sm font-semibold">Usage by Subject</h4>
+                      {analytics.usageBySubject.map((item: any, index: number) => (
+                        <div key={index} className="flex items-center justify-between">
+                          <div className="flex items-center space-x-3">
+                            <Badge variant="secondary">{item.subject}</Badge>
+                            <span className="text-sm text-muted-foreground">{item.sessions} sessions</span>
+                          </div>
+                          <span className="text-sm font-medium">{item.minutes || 0} min</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Top Users by Usage */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Top Users by Minutes</CardTitle>
+                  <CardDescription>Highest minute consumers on the platform</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {usersData?.users && usersData.users.length > 0 ? (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>User</TableHead>
+                          <TableHead>Email</TableHead>
+                          <TableHead>Plan</TableHead>
+                          <TableHead>Minutes Used</TableHead>
+                          <TableHead>Purchased Minutes</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {usersData.users
+                          .sort((a: any, b: any) => 
+                            (b.subscriptionMinutesUsed || 0) - (a.subscriptionMinutesUsed || 0)
+                          )
+                          .slice(0, 10)
+                          .map((user: any, index: number) => (
+                            <TableRow key={user.id || index}>
+                              <TableCell className="font-medium">
+                                {user.parentName || user.studentName || user.firstName || 'Unknown'}
+                              </TableCell>
+                              <TableCell className="text-sm text-muted-foreground">{user.email}</TableCell>
+                              <TableCell>
+                                <Badge variant={user.subscriptionPlan === 'elite' ? 'default' : 'secondary'}>
+                                  {user.subscriptionPlan?.toUpperCase() || 'Starter'}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <div className="text-sm">
+                                  <div className="font-medium">
+                                    {user.subscriptionMinutesUsed || 0} / {user.subscriptionMinutesLimit || 60}
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {Math.round(((user.subscriptionMinutesUsed || 0) / (user.subscriptionMinutesLimit || 60)) * 100)}% used
+                                  </div>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline">{user.purchasedMinutesBalance || 0} min</Badge>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                      </TableBody>
+                    </Table>
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground">
+                      No user data available
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>

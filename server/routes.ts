@@ -1300,8 +1300,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Calculate sessions this week (mock)
       const sessionsThisWeek = Math.floor((stats.totalSessions || 0) * 0.25);
       
-      // Calculate total minutes used (mock - would query from sessions table)
-      const totalMinutesUsed = Math.floor((stats.totalSessions || 0) * 12); // Avg 12 min per session
+      // Get recent sessions from database
+      let recentSessions: any[] = [];
+      let totalVoiceMinutes = 0;
+      let usageBySubject: any[] = [];
+      
+      try {
+        const { realtimeSessions } = await import('@shared/schema');
+        const { desc, sql } = await import('drizzle-orm');
+        
+        // Fetch recent sessions (last 50)
+        const sessions = await db.select({
+          id: realtimeSessions.id,
+          studentName: realtimeSessions.studentName,
+          subject: realtimeSessions.subject,
+          ageGroup: realtimeSessions.ageGroup,
+          minutesUsed: realtimeSessions.minutesUsed,
+          startedAt: realtimeSessions.startedAt,
+          endedAt: realtimeSessions.endedAt,
+          status: realtimeSessions.status,
+        })
+        .from(realtimeSessions)
+        .orderBy(desc(realtimeSessions.startedAt))
+        .limit(50);
+        
+        recentSessions = sessions.map(s => ({
+          ...s,
+          duration: s.startedAt && s.endedAt 
+            ? `${Math.round((new Date(s.endedAt).getTime() - new Date(s.startedAt).getTime()) / 60000)} min`
+            : 'N/A'
+        }));
+        
+        // Calculate total voice minutes
+        const minutesResult = await db.execute(sql`
+          SELECT COALESCE(SUM(minutes_used), 0) as total_minutes
+          FROM realtime_sessions
+          WHERE status = 'ended'
+        `);
+        totalVoiceMinutes = Number(minutesResult.rows[0]?.total_minutes || 0);
+        
+        // Calculate usage by subject
+        const subjectResult = await db.execute(sql`
+          SELECT 
+            subject,
+            COUNT(*) as sessions,
+            COALESCE(SUM(minutes_used), 0) as minutes
+          FROM realtime_sessions
+          WHERE status = 'ended' AND subject IS NOT NULL
+          GROUP BY subject
+          ORDER BY sessions DESC
+          LIMIT 10
+        `);
+        usageBySubject = (subjectResult.rows || []).map((row: any) => ({
+          subject: row.subject,
+          sessions: Number(row.sessions),
+          minutes: Number(row.minutes)
+        }));
+      } catch (error) {
+        console.error('[Admin Analytics] Error fetching session data:', error);
+        // Continue with empty arrays if session data fetch fails
+      }
       
       const analytics = {
         totalUsers: stats.totalUsers || 0,
@@ -1316,7 +1374,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         retentionChange: 2,
         totalSessions: stats.totalSessions || 0,
         avgSessionLength: stats.avgSessionTime || "0 min",
-        totalMinutesUsed,
+        totalVoiceMinutes,
+        totalMinutesUsed: totalVoiceMinutes,
         totalDocuments: stats.totalDocuments || 0,
         gradeDistribution: {
           k2: Math.floor((stats.totalUsers || 0) * 0.2),
@@ -1331,6 +1390,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           pro: stats.activeSubscriptions * 180,
           elite: stats.activeSubscriptions * 200,
         },
+        recentSessions,
+        usageBySubject,
       };
 
       res.json(analytics);
