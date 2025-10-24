@@ -71,12 +71,9 @@ export function setupGeminiWebSocketProxy(server: Server) {
                 const messageType = Object.keys(parsed)[0];
                 console.log('[WS Proxy] 📥 From Gemini:', messageType);
                 
-                // Log full message for debugging
-                if (messageType === 'setupComplete' || messageType === 'serverContent') {
-                  console.log('[WS Proxy] 📋 Full message:', JSON.stringify(parsed, null, 2));
-                }
-                
-                clientWs.send(geminiData);
+                // CRITICAL FIX: Send as STRING not Buffer!
+                // Browser WebSocket expects text data, not binary
+                clientWs.send(geminiData.toString());
               } catch (error) {
                 console.error('[WS Proxy] ❌ Failed to parse Gemini message:', error);
               }
