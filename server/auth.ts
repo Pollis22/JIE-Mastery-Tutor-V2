@@ -8,7 +8,7 @@ import { storage } from "./storage";
 import { User as SelectUser } from "@shared/schema";
 import { emailService } from "./services/email-service";
 import { z } from "zod";
-import { enforceConcurrentLogins } from "./middleware/enforce-concurrent-logins";
+import { enforceConcurrentLoginsAfterAuth } from "./middleware/enforce-concurrent-logins";
 
 declare global {
   namespace Express {
@@ -306,7 +306,7 @@ export function setupAuth(app: Express) {
     });
   });
 
-  app.post("/api/login", enforceConcurrentLogins, (req, res, next) => {
+  app.post("/api/login", (req, res, next) => {
     passport.authenticate("local", (err: any, user: any, info: any) => {
       if (err) {
         console.error('[Auth] Login error:', err);
@@ -343,12 +343,19 @@ export function setupAuth(app: Express) {
         );
       }
       
-      req.login(user, (err) => {
+      req.login(user, async (err) => {
         if (err) {
           console.error('[Auth] Session error:', err);
           const errorMessage = err.message || err.toString() || 'Unknown session error';
           return res.status(500).json({ error: 'Session error', details: errorMessage });
         }
+        
+        // Enforce concurrent login limits AFTER successful authentication
+        // This ensures old sessions are only terminated when new login succeeds
+        await enforceConcurrentLoginsAfterAuth(user.id).catch(err => 
+          console.error('[Auth] Concurrent login enforcement failed:', err)
+        );
+        
         // Sanitize user response to exclude sensitive fields
         const { password, ...safeUser } = user as any;
         res.status(200).json(safeUser);

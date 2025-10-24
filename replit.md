@@ -50,6 +50,14 @@ The platform implements a three-tier access control system ensuring only subscri
     -   Document USAGE during tutoring sessions is automatically protected via session endpoint guards
     -   RAG system integration only accessible when user has active subscription + minutes
 
+-   **Concurrent Login Enforcement** (`server/middleware/enforce-concurrent-logins.ts`):
+    -   Default tiers (Starter, Standard, Pro): 1 concurrent device login at a time
+    -   Elite tier: 3 concurrent device logins simultaneously
+    -   All tiers: Unlimited student profiles supported
+    -   When user reaches login limit, oldest session is automatically terminated before allowing new login
+    -   Enforced via `maxConcurrentLogins` user attribute (default 1, Elite gets 3)
+    -   Separate from voice tutoring session limits (`maxConcurrentSessions`)
+
 ### Session Priority System
 The platform uses a **session-first** data priority model where session configuration is the primary source for grade level, subject, and language, with user profiles serving as defaults. This enables sibling sharing on a single account.
 
