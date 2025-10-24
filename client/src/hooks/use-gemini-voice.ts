@@ -187,6 +187,7 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
 
     } catch (error) {
       console.error('[Gemini WS] ❌ Message parse error:', error);
+      console.error('[Gemini WS] 📦 Raw event data:', event.data);
     }
   }, [options, queueAudioChunk]);
 
