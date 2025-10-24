@@ -107,11 +107,19 @@ router.post(
             'starter': 1,
             'standard': 1,
             'pro': 1,
-            'elite': 3, // Elite tier gets 3 concurrent devices
+            'elite': 3, // Elite tier gets 3 concurrent voice tutoring sessions
+          };
+
+          const concurrentLoginsMap: Record<string, number> = {
+            'starter': 1,
+            'standard': 1,
+            'pro': 1,
+            'elite': 3, // Elite tier gets 3 concurrent device logins
           };
 
           const monthlyMinutes = minutesMap[plan] || 60;
           const maxConcurrentSessions = concurrentSessionsMap[plan] || 1;
+          const maxConcurrentLogins = concurrentLoginsMap[plan] || 1;
 
           // Update subscription in database with customer and subscription IDs
           await storage.updateUserStripeInfo(
@@ -120,13 +128,14 @@ router.post(
             session.subscription as string
           );
 
-          // Update subscription status, plan, monthly minute allowance, and concurrent sessions
+          // Update subscription status, plan, monthly minute allowance, and concurrent limits
           await storage.updateUserSubscription(
             userId,
             plan as 'starter' | 'standard' | 'pro' | 'elite',
             'active',
             monthlyMinutes,
-            maxConcurrentSessions
+            maxConcurrentSessions,
+            maxConcurrentLogins
           );
 
           // Reset monthly usage counter

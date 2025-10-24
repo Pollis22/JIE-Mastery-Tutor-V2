@@ -63,7 +63,7 @@ export interface IStorage {
   createUser(user: InsertUser): Promise<User>;
   updateUserSettings(userId: string, settings: Partial<User>): Promise<User>;
   updateUserStripeInfo(userId: string, customerId: string, subscriptionId?: string | null): Promise<User>;
-  updateUserSubscription(userId: string, plan: 'starter' | 'standard' | 'pro' | 'elite' | 'single' | 'all', status: 'active' | 'canceled' | 'paused', monthlyMinutes?: number, maxConcurrentSessions?: number): Promise<User>;
+  updateUserSubscription(userId: string, plan: 'starter' | 'standard' | 'pro' | 'elite' | 'single' | 'all', status: 'active' | 'canceled' | 'paused', monthlyMinutes?: number, maxConcurrentSessions?: number, maxConcurrentLogins?: number): Promise<User>;
   updateUserVoiceUsage(userId: string, minutesUsed: number): Promise<void>;
   resetUserVoiceUsage(userId: string): Promise<void>;
   canUserUseVoice(userId: string): Promise<boolean>;
@@ -296,7 +296,7 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  async updateUserSubscription(userId: string, plan: 'starter' | 'standard' | 'pro' | 'elite' | 'single' | 'all', status: 'active' | 'canceled' | 'paused', monthlyMinutes?: number, maxConcurrentSessions?: number): Promise<User> {
+  async updateUserSubscription(userId: string, plan: 'starter' | 'standard' | 'pro' | 'elite' | 'single' | 'all', status: 'active' | 'canceled' | 'paused', monthlyMinutes?: number, maxConcurrentSessions?: number, maxConcurrentLogins?: number): Promise<User> {
     const now = new Date();
     const updateData: any = {
       subscriptionPlan: plan,
@@ -304,9 +304,14 @@ export class DatabaseStorage implements IStorage {
       updatedAt: new Date(),
     };
 
-    // Set concurrent sessions limit if provided (Elite tier gets 3, others get 1)
+    // Set concurrent sessions limit if provided (Elite tier gets 3 voice sessions, others get 1)
     if (maxConcurrentSessions !== undefined) {
       updateData.maxConcurrentSessions = maxConcurrentSessions;
+    }
+
+    // Set concurrent logins limit if provided (Elite tier gets 3 device logins, others get 1)
+    if (maxConcurrentLogins !== undefined) {
+      updateData.maxConcurrentLogins = maxConcurrentLogins;
     }
 
     // Set monthly allowance if provided - update BOTH legacy and new fields

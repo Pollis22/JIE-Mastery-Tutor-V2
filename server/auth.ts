@@ -8,6 +8,7 @@ import { storage } from "./storage";
 import { User as SelectUser } from "@shared/schema";
 import { emailService } from "./services/email-service";
 import { z } from "zod";
+import { enforceConcurrentLogins } from "./middleware/enforce-concurrent-logins";
 
 declare global {
   namespace Express {
@@ -72,7 +73,7 @@ export function setupAuth(app: Express) {
             id: 'test-user-id',
             username: testEmail,
             email: testEmail,
-            password: await hashPassword(testPassword),
+            password: await hashPassword(process.env.TEST_USER_PASSWORD || 'TestPass123!'),
             firstName: 'Test',
             lastName: 'User',
             parentName: 'Test Parent',
@@ -80,9 +81,10 @@ export function setupAuth(app: Express) {
             studentAge: 10,
             gradeLevel: 'grades-3-5' as const,
             primarySubject: 'math' as const,
-            subscriptionPlan: 'all' as const,
+            subscriptionPlan: 'elite' as const,
             subscriptionStatus: 'active' as const,
-            maxConcurrentSessions: 3, // Test user gets full concurrent access
+            maxConcurrentSessions: 3, // Test user gets 3 concurrent voice sessions
+            maxConcurrentLogins: 3, // Test user gets 3 concurrent device logins (Elite tier)
             stripeCustomerId: null,
             stripeSubscriptionId: null,
             subscriptionMinutesUsed: 0, // New hybrid minute field
@@ -179,9 +181,10 @@ export function setupAuth(app: Express) {
         studentAge: 10,
         gradeLevel: 'grades-3-5' as const,
         primarySubject: 'math' as const,
-        subscriptionPlan: 'all' as const,
+        subscriptionPlan: 'elite' as const,
         subscriptionStatus: 'active' as const,
-        maxConcurrentSessions: 3, // Test user gets full concurrent access
+        maxConcurrentSessions: 3, // Test user gets 3 concurrent voice sessions
+        maxConcurrentLogins: 3, // Test user gets 3 concurrent device logins (Elite tier)
         stripeCustomerId: null,
         stripeSubscriptionId: null,
         subscriptionMinutesUsed: 0, // New hybrid minute field
@@ -303,7 +306,7 @@ export function setupAuth(app: Express) {
     });
   });
 
-  app.post("/api/login", (req, res, next) => {
+  app.post("/api/login", enforceConcurrentLogins, (req, res, next) => {
     passport.authenticate("local", (err: any, user: any, info: any) => {
       if (err) {
         console.error('[Auth] Login error:', err);
@@ -573,7 +576,8 @@ export function setupAuth(app: Express) {
         subscriptionMinutesUsed: 0,
         purchasedMinutesBalance: 0,
         billingCycleStart: new Date(),
-        maxConcurrentSessions: 3, // Elite concurrent sessions
+        maxConcurrentSessions: 3, // Elite concurrent voice tutoring sessions
+        maxConcurrentLogins: 3, // Elite concurrent device logins
         marketingOptIn: false,
       });
       
