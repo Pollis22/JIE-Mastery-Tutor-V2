@@ -1,10 +1,8 @@
 import crypto from 'crypto';
 import * as sdk from 'microsoft-cognitiveservices-speech-sdk';
-import OpenAI from 'openai';
 
 class VoiceService {
   private testMode: boolean;
-  private openai: OpenAI | null = null;
 
   constructor() {
     // Check if ElevenLabs ConvAI should be used instead (case-insensitive check)
@@ -17,74 +15,33 @@ class VoiceService {
       return;
     }
     
-    // Check for OpenAI API and Azure Speech credentials
-    const hasOpenAI = !!process.env.OPENAI_API_KEY?.trim();
+    // Check for Azure Speech credentials
     const hasAzure = !!process.env.AZURE_SPEECH_KEY?.trim() && !!process.env.AZURE_SPEECH_REGION?.trim();
     
     // Use test mode unless explicitly disabled and all services are available
-    this.testMode = process.env.VOICE_TEST_MODE !== '0' || !hasOpenAI || !hasAzure;
+    this.testMode = process.env.VOICE_TEST_MODE !== '0' || !hasAzure;
     
-    console.log(`Voice service init: OpenAI=${hasOpenAI}, Azure=${hasAzure}, TestMode=${this.testMode}`);
-    
-    if (!this.testMode && hasOpenAI) {
-      this.openai = new OpenAI({
-        apiKey: process.env.OPENAI_API_KEY,
-      });
-    }
+    console.log(`Voice service init: Azure=${hasAzure}, TestMode=${this.testMode}`);
     
     if (this.testMode) {
       console.log('Voice service running in TEST MODE - using browser TTS and simplified conversation logic');
     } else {
-      console.log('Voice service running in PRODUCTION MODE - using OpenAI + Azure TTS');
+      console.log('Voice service running in PRODUCTION MODE - using Azure TTS');
     }
   }
 
   async generateLiveToken(userId: string): Promise<string> {
-    if (this.testMode) {
-      // Return mock token for testing
-      return `mock_token_${userId}_${Date.now()}`;
-    }
-
-    if (!this.openai) {
-      throw new Error('OpenAI API key not configured');
-    }
-
-    // Generate secure ephemeral token without exposing API key
-    // Token is server-side only and will be validated on backend
-    const payload = {
-      userId,
-      timestamp: Date.now(),
-      service: 'openai_realtime',
-      // Never include actual API key in payload sent to client
-      sessionId: crypto.randomUUID(),
-    };
-
-    const token = crypto
-      .createHmac('sha256', process.env.SESSION_SECRET!)
-      .update(JSON.stringify(payload))
-      .digest('hex');
-
-    return `${Buffer.from(JSON.stringify(payload)).toString('base64')}.${token}`;
+    // Return mock token for testing
+    return `mock_token_${userId}_${Date.now()}`;
   }
 
   getRealtimeConfig() {
-    if (this.testMode) {
-      return {
-        testMode: true,
-        mockAudio: true,
-        mockMicrophone: true,
-      };
-    }
-
+    // VoiceService is now a legacy service - Gemini Live API is the only voice provider
+    // This method is kept for backward compatibility but always returns test mode config
     return {
-      url: 'wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview',
-      model: 'gpt-4o-realtime-preview',
-      voice: 'alloy',
-      instructions: `You are a friendly, patient AI tutor. Use a Socratic teaching method - guide students to discover answers rather than giving direct answers immediately. Be encouraging and adapt your teaching style to the student's pace. Keep responses conversational and age-appropriate.`,
-      input_audio_format: 'pcm16',
-      output_audio_format: 'pcm16',
-      temperature: 0.7,
-      max_response_output_tokens: 2048,
+      testMode: true,
+      provider: 'gemini',
+      message: 'Voice now uses Gemini Live API exclusively - see /api/session/gemini endpoint'
     };
   }
 
