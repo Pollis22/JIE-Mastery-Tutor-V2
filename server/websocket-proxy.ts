@@ -113,9 +113,17 @@ export function setupGeminiWebSocketProxy(server: Server) {
             }));
           }
           
+        } else if (message.clientContent && isSetup && geminiWs) {
+          // Forward clientContent directly to Gemini (e.g., initial greeting)
+          if (geminiWs.readyState === WebSocket.OPEN) {
+            console.log('[WS Proxy] 📤 Forwarding clientContent to Gemini');
+            geminiWs.send(JSON.stringify(message));
+          }
+          
         } else {
           console.warn('[WS Proxy] ⚠️ Unexpected message or not ready:', {
             type: message.type,
+            hasClientContent: !!message.clientContent,
             isSetup,
             hasGeminiWs: !!geminiWs
           });

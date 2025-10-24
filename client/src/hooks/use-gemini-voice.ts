@@ -129,6 +129,21 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
         console.log('[Gemini] ✅ Setup complete!');
         setIsConnected(true);
         options.onConnected?.();
+        
+        // CRITICAL: Send initial message to trigger Gemini's greeting
+        // Gemini does NOT speak first automatically - we must prompt it
+        console.log('[Gemini] 📤 Sending initial greeting prompt to trigger AI response...');
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({
+            clientContent: {
+              turns: [{
+                role: "user",
+                parts: [{ text: "Hello" }]
+              }],
+              turnComplete: true
+            }
+          }));
+        }
         return;
       }
 
