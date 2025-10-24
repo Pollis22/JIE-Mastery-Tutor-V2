@@ -150,7 +150,20 @@ export function RealtimeVoiceHost({
     try {
       console.log('[Microphone] 🎤 Requesting access...');
       
+      // Check current permission status
+      try {
+        const permissionStatus = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+        console.log('[Microphone] 📋 Current permission state:', permissionStatus.state);
+        
+        if (permissionStatus.state === 'denied') {
+          throw new Error('Microphone permission denied. Please enable it in browser settings.');
+        }
+      } catch (permError) {
+        console.warn('[Microphone] ⚠️ Could not check permission status:', permError);
+      }
+      
       // Get user's microphone at WHATEVER sample rate their hardware uses
+      console.log('[Microphone] 📞 Calling getUserMedia...');
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: {
           echoCancellation: true,
@@ -159,6 +172,7 @@ export function RealtimeVoiceHost({
           // NO sampleRate constraint - accept whatever the hardware provides
         }
       });
+      console.log('[Microphone] ✅ getUserMedia succeeded!');
       mediaStreamRef.current = stream;
       
       // Log the actual microphone settings
