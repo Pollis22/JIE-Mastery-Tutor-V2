@@ -37,12 +37,19 @@ export function setupGeminiWebSocketProxy(server: Server) {
             console.log('[WS Proxy] ✅ Connected to Gemini Live API!');
             isSetup = true;
             
-            // Send setup message to Gemini
+            // Send setup message to Gemini (proper format!)
             const setupMessage = {
-              setup: config
+              setup: {
+                model: model,
+                systemInstruction: config.systemInstruction,
+                generationConfig: {
+                  responseModalities: "AUDIO",  // UPPERCASE required!
+                  speechConfig: config.generationConfig?.speechConfig
+                }
+              }
             };
             
-            console.log('[WS Proxy] 📤 Sending setup to Gemini');
+            console.log('[WS Proxy] 📤 Sending setup to Gemini:', JSON.stringify(setupMessage, null, 2));
             geminiWs!.send(JSON.stringify(setupMessage));
             
             // Notify client that proxy connection is established
