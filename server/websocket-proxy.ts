@@ -42,11 +42,11 @@ export function setupGeminiWebSocketProxy(server: Server) {
               setup: {
                 model: model,
                 generationConfig: {
-                  responseModalities: ["audio"],  // MUST BE ARRAY per Google docs!
+                  responseModalities: ["audio"],  // MUST be lowercase "audio" in array
                   speechConfig: {
                     voiceConfig: {
                       prebuiltVoiceConfig: {
-                        voiceName: config.generationConfig?.speechConfig?.voiceConfig?.prebuiltVoiceConfig?.voiceName || "Aoede"
+                        voiceName: "Aoede"  // One of: Aoede, Puck, Charon, Kore, Fenrir
                       }
                     }
                   }
@@ -55,7 +55,10 @@ export function setupGeminiWebSocketProxy(server: Server) {
               }
             };
             
-            console.log('[WS Proxy] 📤 Sending setup to Gemini:', JSON.stringify(setupMessage, null, 2));
+            console.log('[WS Proxy] 📤 Sending setup to Gemini (full JSON):', JSON.stringify(setupMessage, null, 2));
+            console.log('[WS Proxy] 📋 Config received from client:', JSON.stringify(config, null, 2));
+            console.log('[WS Proxy] 📋 Model:', model);
+            
             geminiWs!.send(JSON.stringify(setupMessage));
             
             // Notify client that proxy connection is established
