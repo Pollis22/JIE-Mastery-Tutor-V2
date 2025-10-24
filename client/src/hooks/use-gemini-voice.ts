@@ -20,6 +20,7 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
   const audioContextRef = useRef<AudioContext | null>(null);
   const audioQueueRef = useRef<AudioBuffer[]>([]);
   const isPlayingRef = useRef(false);
+  const playNextInQueueRef = useRef<() => Promise<void>>();
 
   // Helper to convert base64 to ArrayBuffer
   const base64ToArrayBuffer = (base64: string): ArrayBuffer => {
@@ -31,7 +32,7 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
     return bytes.buffer;
   };
 
-  // Play audio queue sequentially
+  // Play audio queue sequentially (no dependencies to avoid loops)
   const playNextInQueue = useCallback(async () => {
     if (isPlayingRef.current || audioQueueRef.current.length === 0) {
       return;
@@ -70,15 +71,18 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
       
       // Use setTimeout to avoid stack overflow
       setTimeout(() => {
-        playNextInQueue();
+        playNextInQueueRef.current?.();
       }, 0);
     };
 
     console.log('[Gemini Audio] 🔊 STARTING PLAYBACK - Duration:', audioBuffer.duration.toFixed(2), 's, State:', audioContext.state);
     source.start(0);
-  }, [setIsPlaying]);
+  }, []);
 
-  // Add audio chunk to queue
+  // Store reference to playNextInQueue
+  playNextInQueueRef.current = playNextInQueue;
+
+  // Add audio chunk to queue (no dependencies to avoid loops)
   const queueAudioChunk = useCallback(async (base64Data: string) => {
     try {
       if (!audioContextRef.current) {
@@ -106,7 +110,7 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
 
       // Start playing if not already playing (non-blocking)
       if (!isPlayingRef.current) {
-        setTimeout(() => playNextInQueue(), 0);
+        setTimeout(() => playNextInQueueRef.current?.(), 0);
       }
 
     } catch (error) {
@@ -114,7 +118,7 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
     }
   }, []);
 
-  // Handle messages from proxy
+  // Handle messages from proxy (using refs to avoid dependency loops)
   const handleMessage = useCallback((event: MessageEvent) => {
     try {
       const message = JSON.parse(event.data);
@@ -169,7 +173,7 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
     } catch (error) {
       console.error('[Gemini WS] ❌ Message parse error:', error);
     }
-  }, [setIsConnected, setTranscript]);
+  }, [options, queueAudioChunk]);
 
   // Start session using WebSocket proxy
   const startSession = useCallback(async (geminiApiKey: string, systemInstruction: string) => {
