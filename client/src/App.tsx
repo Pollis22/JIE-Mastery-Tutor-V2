@@ -14,6 +14,7 @@ import LessonPage from "@/pages/lesson-page";
 import QuizPage from "@/pages/quiz-page";
 import SettingsPage from "@/pages/settings-page";
 import AdminPage from "@/pages/admin-page";
+import AdminPageEnhanced from "@/pages/admin-page-enhanced";
 import PricingPage from "@/pages/pricing-page";
 import SubscribePage from "@/pages/subscribe-page";
 import TutorPage from "@/pages/tutor-page";
@@ -51,7 +52,7 @@ function Router() {
       <ProtectedRoute path="/lesson/:lessonId" component={LessonPage} />
       <ProtectedRoute path="/quiz/:lessonId" component={QuizPage} />
       <ProtectedRoute path="/settings" component={SettingsPage} />
-      <ProtectedRoute path="/admin" component={AdminOverview} />
+      <ProtectedRoute path="/admin" component={AdminPageEnhanced} />
       <ProtectedRoute path="/admin/users" component={AdminUsers} />
       <ProtectedRoute path="/admin/subscriptions" component={AdminSubscriptions} />
       <ProtectedRoute path="/admin/documents" component={AdminDocuments} />
