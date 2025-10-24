@@ -37,24 +37,36 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
       return;
     }
 
+    const audioContext = audioContextRef.current;
+    if (!audioContext) {
+      console.error('[Gemini Audio] ❌ No audio context!');
+      return;
+    }
+
+    // CRITICAL: Ensure AudioContext is running
+    if (audioContext.state === 'suspended') {
+      console.log('[Gemini Audio] 🔊 Resuming suspended AudioContext...');
+      await audioContext.resume();
+    }
+
     isPlayingRef.current = true;
     setIsPlaying(true);
 
     const audioBuffer = audioQueueRef.current.shift()!;
-    const audioContext = audioContextRef.current!;
 
     const source = audioContext.createBufferSource();
     source.buffer = audioBuffer;
     source.connect(audioContext.destination);
     
     source.onended = () => {
+      console.log('[Gemini Audio] ✅ Chunk finished');
       isPlayingRef.current = false;
       setIsPlaying(false);
       playNextInQueue(); // Play next chunk
     };
 
-    source.start();
-    console.log('[Gemini Audio] 🎵 Playing chunk:', audioBuffer.duration.toFixed(2), 'seconds');
+    console.log('[Gemini Audio] 🔊 STARTING PLAYBACK - Duration:', audioBuffer.duration.toFixed(2), 's, State:', audioContext.state);
+    source.start(0);
   }, []);
 
   // Add audio chunk to queue
@@ -154,15 +166,19 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
       console.log('[Gemini] 🚀 Starting session via WebSocket PROXY...');
       console.log('[Gemini] 🔑 API Key:', geminiApiKey.substring(0, 10) + '...');
 
-      // Initialize audio context
+      // Initialize audio context (MUST do this on user interaction!)
       if (!audioContextRef.current) {
         audioContextRef.current = new AudioContext({ sampleRate: 24000 });
+        console.log('[Gemini] 🔊 AudioContext created, state:', audioContextRef.current.state);
       }
 
+      // CRITICAL: Resume AudioContext (browsers block audio without user gesture)
       if (audioContextRef.current.state === 'suspended') {
         await audioContextRef.current.resume();
-        console.log('[Gemini] 🔊 Audio context resumed');
+        console.log('[Gemini] 🔊 AudioContext RESUMED from suspended state');
       }
+      
+      console.log('[Gemini] 🔊 AudioContext ready, state:', audioContextRef.current.state);
 
       // Connect to our WebSocket proxy (not directly to Gemini!)
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
