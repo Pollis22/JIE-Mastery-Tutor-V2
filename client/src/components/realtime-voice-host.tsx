@@ -150,31 +150,44 @@ export function RealtimeVoiceHost({
     try {
       console.log('[Microphone] 🎤 Requesting access...');
       
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Get user's microphone at WHATEVER sample rate their hardware uses
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+          // NO sampleRate constraint - accept whatever the hardware provides
+        }
+      });
       mediaStreamRef.current = stream;
       
-      // Create audio context for processing (16kHz - MUST match what we tell Gemini!)
+      // Log the actual microphone settings
+      const audioTrack = stream.getAudioTracks()[0];
+      const settings = audioTrack.getSettings();
+      console.log('[Microphone] 📊 User microphone settings:', settings);
+      
+      // Create audio context at 16kHz - this automatically resamples ANY input to 16kHz!
       const audioContext = new AudioContext({ sampleRate: 16000 });
       audioContextRef.current = audioContext;
       
-      console.log('[Microphone] 📊 AudioContext sample rate:', audioContext.sampleRate);
+      console.log('[Microphone] 🔄 Resampling:', settings.sampleRate || 'unknown', 'Hz → 16000 Hz');
       
       const source = audioContext.createMediaStreamSource(stream);
-      const processor = audioContext.createScriptProcessor(4096, 1, 1);
-      audioProcessorRef.current = processor;
       
-      processor.onaudioprocess = (e) => {
-        if (!isMuted && geminiVoice.isConnected) {
-          const inputData = e.inputBuffer.getChannelData(0);
-          
-          // Check if there's actual audio (not silence)
-          const hasAudio = inputData.some(sample => Math.abs(sample) > 0.01);
-          
-          if (hasAudio) {
+      // Try to use AudioWorklet for better performance (fallback to ScriptProcessor if needed)
+      let useWorklet = false;
+      try {
+        await audioContext.audioWorklet.addModule('/audio-processor.js');
+        const workletNode = new AudioWorkletNode(audioContext, 'audio-processor');
+        
+        workletNode.port.onmessage = (event) => {
+          if (!isMuted && geminiVoice.isConnected && event.data.type === 'audio') {
+            const audioData = event.data.data; // Float32Array, 16kHz, mono
+            
             // Convert Float32 to PCM16 for Gemini
-            const pcm16 = new Int16Array(inputData.length);
-            for (let i = 0; i < inputData.length; i++) {
-              const s = Math.max(-1, Math.min(1, inputData[i]));
+            const pcm16 = new Int16Array(audioData.length);
+            for (let i = 0; i < audioData.length; i++) {
+              const s = Math.max(-1, Math.min(1, audioData[i]));
               pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
             }
             
@@ -182,14 +195,54 @@ export function RealtimeVoiceHost({
             console.log('[Microphone] 🎤 Sending audio to Gemini, size:', pcm16.buffer.byteLength);
             geminiVoice.sendAudio(pcm16.buffer);
           }
-        }
-      };
-      
-      source.connect(processor);
-      processor.connect(audioContext.destination);
+        };
+        
+        source.connect(workletNode);
+        workletNode.connect(audioContext.destination);
+        audioProcessorRef.current = workletNode as any;
+        useWorklet = true;
+        console.log('[Microphone] ✅ Using AudioWorklet for optimal performance');
+        
+      } catch (workletError) {
+        console.warn('[Microphone] ⚠️ AudioWorklet not available, using ScriptProcessor fallback');
+        
+        // Fallback to ScriptProcessor for older browsers
+        const processor = audioContext.createScriptProcessor(4096, 1, 1);
+        audioProcessorRef.current = processor;
+        
+        processor.onaudioprocess = (e) => {
+          if (!isMuted && geminiVoice.isConnected) {
+            const inputData = e.inputBuffer.getChannelData(0);
+            
+            // Check if there's actual audio (not silence)
+            const hasAudio = inputData.some(sample => Math.abs(sample) > 0.01);
+            
+            if (hasAudio) {
+              // Convert Float32 to PCM16 for Gemini
+              const pcm16 = new Int16Array(inputData.length);
+              for (let i = 0; i < inputData.length; i++) {
+                const s = Math.max(-1, Math.min(1, inputData[i]));
+                pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+              }
+              
+              // Send to Gemini
+              console.log('[Microphone] 🎤 Sending audio to Gemini, size:', pcm16.buffer.byteLength);
+              geminiVoice.sendAudio(pcm16.buffer);
+            }
+          }
+        };
+        
+        source.connect(processor);
+        processor.connect(audioContext.destination);
+      }
       
       setIsRecording(true);
-      console.log('[Microphone] ✅ Active and streaming to Gemini');
+      console.log('[Microphone] ✅ Active and streaming to Gemini at standardized 16kHz');
+      console.log('[Microphone] 🎯 Compatible with ALL microphones:', {
+        method: useWorklet ? 'AudioWorklet' : 'ScriptProcessor',
+        input: settings.sampleRate || 'any',
+        output: '16000 Hz mono PCM16'
+      });
       
       toast({
         title: "Microphone Active",
