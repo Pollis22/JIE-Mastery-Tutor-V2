@@ -27,6 +27,8 @@ interface AdminAnalytics {
   newUsersThisMonth?: number;
   totalSessions?: number;
   sessionsThisWeek?: number;
+  totalUsers?: number;
+  totalDocuments?: number;
   recentSessions?: Array<{
     id: string;
     studentName: string;
@@ -52,6 +54,7 @@ interface AdminUsersData {
   users: AdminUser[];
   total: number;
   totalPages?: number;
+  totalCount?: number;
 }
 
 export default function AdminPageEnhanced() {
@@ -215,7 +218,7 @@ export default function AdminPageEnhanced() {
                       {stats?.activeSubscriptions || 0}
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      {((stats?.activeSubscriptions / stats?.totalUsers) * 100).toFixed(1)}% conversion
+                      {((stats?.activeSubscriptions || 0) / (stats?.totalUsers || 1) * 100).toFixed(1)}% conversion
                     </p>
                   </CardContent>
                 </Card>
@@ -268,7 +271,7 @@ export default function AdminPageEnhanced() {
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-muted-foreground">Avg Revenue Per User</span>
                       <span className="text-lg font-bold">
-                        ${stats?.totalUsers > 0 ? ((stats?.monthlyRevenue || 0) / stats.totalUsers).toFixed(2) : '0.00'}
+                        ${(stats && stats.totalUsers && stats.totalUsers > 0) ? ((stats.monthlyRevenue || 0) / stats.totalUsers).toFixed(2) : '0.00'}
                       </span>
                     </div>
                     <div className="flex justify-between items-center">
@@ -293,7 +296,7 @@ export default function AdminPageEnhanced() {
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-muted-foreground">Avg Minutes Per User</span>
                       <span className="text-lg font-bold">
-                        {stats?.totalUsers > 0 ? ((analytics?.totalVoiceMinutes || analytics?.totalMinutesUsed || 0) / stats.totalUsers).toFixed(1) : '0'} min
+                        {(stats && stats.totalUsers && stats.totalUsers > 0) ? ((analytics?.totalVoiceMinutes || analytics?.totalMinutesUsed || 0) / stats.totalUsers).toFixed(1) : '0'} min
                       </span>
                     </div>
                     <div className="flex justify-between items-center">
@@ -426,10 +429,10 @@ export default function AdminPageEnhanced() {
                     </div>
                   )}
 
-                  {usersData?.totalPages > 1 && (
+                  {usersData && usersData.totalPages && usersData.totalPages > 1 && (
                     <div className="mt-4 flex items-center justify-between">
                       <div className="text-sm text-muted-foreground">
-                        Showing {((currentPage - 1) * 10) + 1} to {Math.min(currentPage * 10, usersData.totalCount)} of {usersData.totalCount} users
+                        Showing {((currentPage - 1) * 10) + 1} to {Math.min(currentPage * 10, usersData.total || 0)} of {usersData.total} users
                       </div>
                       <div className="flex space-x-2">
                         <Button 
@@ -447,7 +450,7 @@ export default function AdminPageEnhanced() {
                           variant="outline" 
                           size="sm"
                           onClick={() => setCurrentPage(currentPage + 1)}
-                          disabled={currentPage >= usersData.totalPages}
+                          disabled={!usersData.totalPages || currentPage >= usersData.totalPages}
                         >
                           Next
                         </Button>
@@ -537,8 +540,8 @@ export default function AdminPageEnhanced() {
                     <div className="space-y-2">
                       <div className="text-sm font-medium text-muted-foreground">Average per User</div>
                       <div className="text-3xl font-bold">
-                        {analytics?.totalUsers > 0 
-                          ? Math.round(((analytics?.totalVoiceMinutes || analytics?.totalMinutesUsed || 0) / analytics.totalUsers)) 
+                        {(analytics && analytics.totalUsers && analytics.totalUsers > 0) 
+                          ? Math.round(((analytics.totalVoiceMinutes || analytics.totalMinutesUsed || 0) / analytics.totalUsers)) 
                           : 0}
                       </div>
                       <div className="text-xs text-muted-foreground">Minutes per user</div>
