@@ -252,8 +252,10 @@ export function RealtimeVoiceHost({
         let isProcessing = false;
         let totalSamples = 0;
         let silenceCount = 0;
-        const SPEAKING_THRESHOLD = 0.01;  // LOWER threshold for faster detection
+        let consecutiveSpeechFrames = 0;  // Track consecutive frames with speech
+        const SPEAKING_THRESHOLD = 0.03;  // BALANCED: Only interrupt on clear speech (not background noise)
         const SILENCE_THRESHOLD = 0.001;  // Threshold for silence
+        const FRAMES_BEFORE_INTERRUPT = 3; // Must detect speech for 3 consecutive frames
         let lastInterruptTime = 0;  // Track last interruption to avoid rapid-fire interrupts
         
         scriptProcessor.onaudioprocess = (audioProcessingEvent) => {
@@ -274,17 +276,28 @@ export function RealtimeVoiceHost({
               maxAmplitude = Math.max(maxAmplitude, Math.abs(inputData[i]));
             }
             
-            // INTERRUPTION DETECTION: Check if user is speaking loud enough to interrupt
-            if (maxAmplitude > SPEAKING_THRESHOLD && geminiVoice.isPlaying) {
+            // Track speech patterns for intelligent interruption
+            const userIsSpeaking = maxAmplitude > SPEAKING_THRESHOLD;
+            
+            if (userIsSpeaking) {
+              consecutiveSpeechFrames++;
+            } else {
+              consecutiveSpeechFrames = 0;  // Reset if no speech detected
+            }
+            
+            // INTERRUPTION DETECTION: Only interrupt after sustained speech (not random noise)
+            if (consecutiveSpeechFrames >= FRAMES_BEFORE_INTERRUPT && geminiVoice.isPlaying) {
               const now = Date.now();
               // Avoid rapid-fire interrupts (wait at least 500ms between interrupts)
               if (now - lastInterruptTime > 500) {
-                console.log('🛑 [INTERRUPTION] User speaking - stopping AI immediately!');
+                console.log('🛑 [INTERRUPTION] Clear user speech detected - interrupting AI');
                 console.log(`  Amplitude: ${maxAmplitude.toFixed(4)} (threshold: ${SPEAKING_THRESHOLD})`);
+                console.log(`  Consecutive speech frames: ${consecutiveSpeechFrames}`);
                 
                 // CRITICAL: Stop AI audio immediately
                 geminiVoice.stopPlayback();
                 lastInterruptTime = now;
+                consecutiveSpeechFrames = 0;  // Reset counter after interruption
                 
                 // Log success
                 console.log('✅ AI interrupted - ready for user input');
