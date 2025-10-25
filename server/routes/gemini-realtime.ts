@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import crypto from 'crypto';
 import { storage } from '../storage';
 import { db } from '../db';
 import { realtimeSessions } from '@shared/schema';
@@ -294,6 +295,67 @@ router.post('/', requireSubscription, async (req, res) => {
       error: 'Failed to create Gemini Live session',
       message: error.message 
     });
+  }
+});
+
+/**
+ * POST /api/session/gemini/:sessionId/transcript - Save transcript entry
+ * Adds a transcript entry to an active session
+ */
+router.post('/:sessionId/transcript', async (req, res) => {
+  const { sessionId } = req.params;
+  
+  try {
+    // Require authentication
+    if (!req.isAuthenticated || !req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    const userId = req.user!.id;
+    
+    // Validate transcript entry
+    const entrySchema = z.object({
+      speaker: z.enum(['tutor', 'student']),
+      text: z.string(),
+      timestamp: z.string().optional(),
+    });
+    
+    const entry = entrySchema.parse(req.body);
+    
+    // Get current session
+    const [session] = await db.select()
+      .from(realtimeSessions)
+      .where(and(
+        eq(realtimeSessions.id, sessionId),
+        eq(realtimeSessions.userId, userId)
+      ))
+      .limit(1);
+    
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    
+    // Append to transcript
+    const currentTranscript = Array.isArray(session.transcript) ? session.transcript : [];
+    const transcriptEntry = {
+      speaker: entry.speaker,
+      text: entry.text,
+      timestamp: entry.timestamp || new Date().toISOString(),
+      messageId: crypto.randomUUID(),
+    };
+    
+    const updatedTranscript = [...currentTranscript, transcriptEntry];
+    
+    // Update session with new transcript
+    await db.update(realtimeSessions)
+      .set({ transcript: updatedTranscript as any })
+      .where(eq(realtimeSessions.id, sessionId));
+    
+    res.json({ success: true, entry: transcriptEntry });
+    
+  } catch (error: any) {
+    console.error(`❌ [GeminiLive] Failed to save transcript:`, error);
+    res.status(500).json({ error: error.message });
   }
 });
 
