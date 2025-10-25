@@ -69,6 +69,8 @@ The platform uses a **session-first** data priority model where session configur
     -   **Features**: Emotion awareness (affective dialog), proactive audio filtering, 30 voices, video support (future), automatic greeting on session start
     -   **API Endpoint**: `/api/session/gemini`
     -   **Architecture**: Single-provider design for simplicity and reliability - no fallback complexity
+    -   **Audio Pipeline**: Direct PCM16 capture at 16kHz → WebSocket → Gemini → 24kHz playback at 1.0x natural speed (no speed manipulation for educational quality)
+    -   **Transcript Storage**: Real-time transcript capture with automatic persistence to `realtime_sessions` table via `/api/session/gemini/:sessionId/transcript` endpoint
 
 ### AI & Learning Engine
 -   **Primary AI Model**: Gemini 2.0 Flash Live for voice conversations, utilizing an enhanced TutorMind system prompt for Socratic teaching.
