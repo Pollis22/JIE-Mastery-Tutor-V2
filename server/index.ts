@@ -128,6 +128,12 @@ app.use((req, res, next) => {
     setupGeminiWebSocketProxy(server);
     console.log('✓ Gemini WebSocket proxy ready at /api/gemini-ws');
 
+    // Setup Custom Voice WebSocket (Deepgram + Claude + ElevenLabs)
+    console.log('Setting up Custom Voice WebSocket...');
+    const { setupCustomVoiceWebSocket } = await import('./routes/custom-voice-ws');
+    setupCustomVoiceWebSocket(server);
+    console.log('✓ Custom Voice WebSocket ready at /api/custom-voice-ws');
+
     // Start embedding worker for background document processing
     console.log('Starting embedding worker...');
     const { startEmbeddingWorker } = await import('./services/embedding-worker');
