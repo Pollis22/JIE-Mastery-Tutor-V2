@@ -21,7 +21,6 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
   const audioQueueRef = useRef<AudioBuffer[]>([]);
   const isPlayingRef = useRef(false);
   const playNextInQueueRef = useRef<() => Promise<void>>();
-  const droppedChunkCountRef = useRef(0);  // Track dropped chunks for less verbose logging
 
   // Helper to convert base64 to ArrayBuffer
   const base64ToArrayBuffer = (base64: string): ArrayBuffer => {
@@ -63,10 +62,26 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
 
     const source = audioContext.createBufferSource();
     source.buffer = audioBuffer;
+    
+    // DYNAMIC PLAYBACK RATE: Speed up slightly when queue is large to prevent buildup
+    let playbackRate = 1.0; // Normal speed
+    const queueLength = audioQueueRef.current.length;
+    
+    if (queueLength > 15) {
+      playbackRate = 1.15; // 15% faster when queue is very large
+      console.log('[Gemini Audio] ⚡ Queue large, speeding up to 1.15x');
+    } else if (queueLength > 10) {
+      playbackRate = 1.10; // 10% faster when queue is getting large
+      console.log('[Gemini Audio] ⚡ Queue building, speeding up to 1.10x');
+    } else if (queueLength > 7) {
+      playbackRate = 1.05; // 5% faster when queue is moderate
+    }
+    
+    source.playbackRate.value = playbackRate;
     source.connect(audioContext.destination);
     
     source.onended = () => {
-      console.log('[Gemini Audio] ✅ Chunk finished');
+      console.log('[Gemini Audio] ✅ Chunk finished, queue remaining:', audioQueueRef.current.length);
       isPlayingRef.current = false;
       setIsPlaying(false);
       
@@ -76,7 +91,7 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
       }, 0);
     };
 
-    console.log('[Gemini Audio] 🔊 STARTING PLAYBACK - Duration:', audioBuffer.duration.toFixed(2), 's, State:', audioContext.state);
+    console.log(`[Gemini Audio] 🔊 PLAYING - Duration: ${audioBuffer.duration.toFixed(2)}s, Rate: ${playbackRate}x, Queue: ${queueLength}, State: ${audioContext.state}`);
     source.start(0);
   }, []);
 
@@ -105,25 +120,21 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
       const audioBuffer = audioContext.createBuffer(1, float32Array.length, 24000);
       audioBuffer.getChannelData(0).set(float32Array);
 
-      // BALANCED QUEUE MANAGEMENT: Sweet spot between smooth audio and low latency
-      const MAX_QUEUE_SIZE = 8;           // Allow smooth playback without extreme lag
+      // NEVER DROP AUDIO! Allow queue to buffer like Netflix for smooth playback
+      const SOFT_QUEUE_LIMIT = 10;        // Prefer to keep queue around this size
+      const HARD_QUEUE_LIMIT = 20;        // Only warn if queue exceeds this
       const MIN_CHUNKS_TO_START = 3;      // Start playing after 3 chunks (0.6s buffer)
       
-      // Only drop chunks if queue gets REALLY big (prevents extreme lag)
-      if (audioQueueRef.current.length >= MAX_QUEUE_SIZE) {
-        // Drop oldest chunk only when necessary
-        const dropped = audioQueueRef.current.shift();
-        droppedChunkCountRef.current++;
-        
-        // Only log every 10th dropped chunk to reduce spam
-        if (droppedChunkCountRef.current % 10 === 0) {
-          console.warn(`⚠️ [Gemini Audio] Dropped ${droppedChunkCountRef.current} chunks total (queue overflow prevention)`);
-        }
-      }
-      
-      // Add to queue
+      // ALWAYS queue the audio chunk - NEVER drop it for intelligible speech
       audioQueueRef.current.push(audioBuffer);
       console.log('[Gemini Audio] 📦 Queued chunk:', float32Array.length, 'samples, queue length:', audioQueueRef.current.length);
+      
+      // Warn if queue is growing large (but still play everything)
+      if (audioQueueRef.current.length > HARD_QUEUE_LIMIT) {
+        console.warn(`⚠️ [Gemini Audio] Queue large: ${audioQueueRef.current.length} chunks (playback may have latency, but audio will be complete)`);
+      } else if (audioQueueRef.current.length > SOFT_QUEUE_LIMIT && audioQueueRef.current.length % 5 === 0) {
+        console.log(`📊 [Gemini Audio] Queue building: ${audioQueueRef.current.length} chunks (normal for longer responses)`);
+      }
 
       // Start playing after minimum buffer achieved
       if (!isPlayingRef.current && audioQueueRef.current.length >= MIN_CHUNKS_TO_START) {
