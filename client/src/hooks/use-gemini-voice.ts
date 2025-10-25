@@ -123,7 +123,7 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
       // NEVER DROP AUDIO! Allow queue to buffer like Netflix for smooth playback
       const SOFT_QUEUE_LIMIT = 10;        // Prefer to keep queue around this size
       const HARD_QUEUE_LIMIT = 20;        // Only warn if queue exceeds this
-      const MIN_CHUNKS_TO_START = 3;      // Start playing after 3 chunks (0.6s buffer)
+      const MIN_CHUNKS_TO_START = 2;      // Start playing after just 2 chunks (0.4s buffer) for lower latency
       
       // ALWAYS queue the audio chunk - NEVER drop it for intelligible speech
       audioQueueRef.current.push(audioBuffer);
@@ -138,7 +138,7 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
 
       // Start playing after minimum buffer achieved
       if (!isPlayingRef.current && audioQueueRef.current.length >= MIN_CHUNKS_TO_START) {
-        console.log('[Gemini Audio] 🎵 Starting playback with smooth buffer');
+        console.log(`[Gemini Audio] 🎵 Starting playback (${MIN_CHUNKS_TO_START} chunk buffer for low latency)`);
         setTimeout(() => playNextInQueueRef.current?.(), 0);
       }
 
