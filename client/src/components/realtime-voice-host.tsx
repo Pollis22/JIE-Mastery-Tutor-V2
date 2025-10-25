@@ -236,115 +236,83 @@ export function RealtimeVoiceHost({
         console.log('[Microphone] ✅ Using AudioWorklet for optimal performance');
         
       } catch (workletError) {
-        console.warn('[Microphone] ⚠️ AudioWorklet not available, using MediaRecorder fallback');
+        console.warn('[Microphone] ⚠️ AudioWorklet not available, using direct PCM capture');
         
-        // Use MediaRecorder as fallback since ScriptProcessor isn't working
-        const mediaRecorder = new MediaRecorder(stream, {
-          mimeType: 'audio/webm',
-          audioBitsPerSecond: 128000
-        });
+        // Use ScriptProcessor with a different approach - capture at 16kHz directly
+        const audioCtx16k = new AudioContext({ sampleRate: 16000 });
+        const streamSource = audioCtx16k.createMediaStreamSource(stream);
         
-        console.log('🎤 [MediaRecorder] Created:', {
-          state: mediaRecorder.state,
-          mimeType: mediaRecorder.mimeType,
-          audioBitsPerSecond: mediaRecorder.audioBitsPerSecond
-        });
+        // Create a gain node to control volume
+        const gainNode = audioCtx16k.createGain();
+        gainNode.gain.value = 1.0;
         
-        // Accumulate WebM chunks into larger blobs for decoding
-        let audioChunks: Blob[] = [];
-        let chunkCount = 0;
+        // Use larger buffer for more stable capture
+        const scriptProcessor = audioCtx16k.createScriptProcessor(2048, 1, 1);
         
-        mediaRecorder.ondataavailable = async (event) => {
-          chunkCount++;
+        let isProcessing = false;
+        let totalSamples = 0;
+        
+        scriptProcessor.onaudioprocess = (audioProcessingEvent) => {
+          // Check if we should process
+          if (!geminiConnectedRef.current || isMuted || isProcessing) {
+            return;
+          }
           
-          if (event.data.size > 0) {
-            console.log(`🎤 [MediaRecorder] Captured chunk ${chunkCount}:`, event.data.size, 'bytes');
+          isProcessing = true;
+          
+          try {
+            const inputBuffer = audioProcessingEvent.inputBuffer;
+            const inputData = inputBuffer.getChannelData(0);
             
-            // Check connection state
-            if (!isMuted && geminiConnectedRef.current) {
-              // Accumulate chunks (collect 5 chunks = ~500ms of audio for better decoding)
-              audioChunks.push(event.data);
-              
-              if (audioChunks.length >= 5) {
-                try {
-                  console.log('🎤 [MediaRecorder] Processing', audioChunks.length, 'accumulated chunks...');
-                  
-                  // Combine chunks into one blob
-                  const combinedBlob = new Blob(audioChunks, { type: 'audio/webm' });
-                  audioChunks = []; // Clear for next batch
-                  
-                  console.log('🎤 [MediaRecorder] Combined blob size:', combinedBlob.size, 'bytes');
-                  
-                  // Convert to ArrayBuffer
-                  const arrayBuffer = await combinedBlob.arrayBuffer();
-                  
-                  // Decode using Web Audio API
-                  const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-                  console.log('🎤 [MediaRecorder] Decoded:', {
-                    duration: audioBuffer.duration.toFixed(2) + 's',
-                    sampleRate: audioBuffer.sampleRate,
-                    channels: audioBuffer.numberOfChannels
-                  });
-                  
-                  const pcmData = audioBuffer.getChannelData(0);
-                  
-                  // Resample to 16kHz for Gemini
-                  const sourceRate = audioBuffer.sampleRate;
-                  const targetRate = 16000;
-                  const resampleRatio = targetRate / sourceRate;
-                  const outputLength = Math.floor(pcmData.length * resampleRatio);
-                  const resampledData = new Float32Array(outputLength);
-                  
-                  for (let i = 0; i < outputLength; i++) {
-                    const sourceIndex = i / resampleRatio;
-                    const index0 = Math.floor(sourceIndex);
-                    const index1 = Math.min(index0 + 1, pcmData.length - 1);
-                    const fraction = sourceIndex - index0;
-                    resampledData[i] = pcmData[index0] * (1 - fraction) + pcmData[index1] * fraction;
-                  }
-                  
-                  // Convert Float32 to PCM16
-                  const pcm16 = new Int16Array(resampledData.length);
-                  for (let i = 0; i < resampledData.length; i++) {
-                    const s = Math.max(-1, Math.min(1, resampledData[i]));
-                    pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-                  }
-                  
-                  console.log('✅ [MediaRecorder] Converted to PCM16:', pcm16.length, 'samples');
-                  
-                  // Send to Gemini
-                  geminiVoice.sendAudio(pcm16.buffer);
-                  console.log('✅ [MediaRecorder] Sent to Gemini!');
-                  
-                } catch (decodeError: any) {
-                  console.error('❌ [MediaRecorder] Processing error:', decodeError);
-                  console.error('Error details:', decodeError.message);
-                  // Clear chunks on error to avoid accumulation
-                  audioChunks = [];
-                }
-              }
+            // Check if there's actual audio (not silence)
+            let maxAmplitude = 0;
+            for (let i = 0; i < inputData.length; i++) {
+              maxAmplitude = Math.max(maxAmplitude, Math.abs(inputData[i]));
             }
+            
+            // Only process if there's meaningful audio
+            if (maxAmplitude > 0.001) {
+              // Convert Float32 to PCM16
+              const pcm16 = new Int16Array(inputData.length);
+              for (let i = 0; i < inputData.length; i++) {
+                const s = Math.max(-1, Math.min(1, inputData[i]));
+                pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+              }
+              
+              totalSamples += pcm16.length;
+              
+              // Log every ~1 second of audio
+              if (totalSamples > 16000) {
+                console.log('🎤 [PCM] Sending audio:', pcm16.length, 'samples, amplitude:', maxAmplitude.toFixed(4));
+                totalSamples = 0;
+              }
+              
+              // Send directly to Gemini
+              geminiVoice.sendAudio(pcm16.buffer);
+            }
+          } catch (error) {
+            console.error('❌ [PCM] Processing error:', error);
+          } finally {
+            isProcessing = false;
           }
         };
         
-        mediaRecorder.onerror = (error) => {
-          console.error('🎤 [MediaRecorder] Error:', error);
-        };
+        // Connect the audio graph
+        streamSource.connect(gainNode);
+        gainNode.connect(scriptProcessor);
+        scriptProcessor.connect(audioCtx16k.destination);
         
-        mediaRecorder.onstart = () => {
-          console.log('🎤 [MediaRecorder] Started recording');
-        };
+        // Store references
+        audioContextRef.current = audioCtx16k;
+        audioProcessorRef.current = scriptProcessor;
         
-        // Start recording with 100ms chunks
-        mediaRecorder.start(100);
-        mediaStreamRef.current = stream;
-        audioProcessorRef.current = mediaRecorder as any;
+        console.log('✅ [PCM] Direct audio capture started at 16kHz');
       }
       
       setIsRecording(true);
       console.log('[Microphone] ✅ Active and streaming to Gemini at standardized 16kHz');
       console.log('[Microphone] 🎯 Compatible with ALL microphones:', {
-        method: useWorklet ? 'AudioWorklet' : 'MediaRecorder',
+        method: useWorklet ? 'AudioWorklet' : 'DirectPCM',
         input: settings.sampleRate || 'any',
         output: '16000 Hz mono PCM16'
       });
