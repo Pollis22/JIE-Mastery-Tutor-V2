@@ -252,8 +252,9 @@ export function RealtimeVoiceHost({
         let isProcessing = false;
         let totalSamples = 0;
         let silenceCount = 0;
-        const SPEAKING_THRESHOLD = 0.02;  // Threshold for voice detection
+        const SPEAKING_THRESHOLD = 0.01;  // LOWER threshold for faster detection
         const SILENCE_THRESHOLD = 0.001;  // Threshold for silence
+        let lastInterruptTime = 0;  // Track last interruption to avoid rapid-fire interrupts
         
         scriptProcessor.onaudioprocess = (audioProcessingEvent) => {
           // Check if we should process
@@ -275,11 +276,19 @@ export function RealtimeVoiceHost({
             
             // INTERRUPTION DETECTION: Check if user is speaking loud enough to interrupt
             if (maxAmplitude > SPEAKING_THRESHOLD && geminiVoice.isPlaying) {
-              console.log('🛑 [Interruption] User speaking - stopping AI playback');
-              geminiVoice.stopPlayback();  // Stop current AI audio
-              
-              // Note: Interrupt signal could be sent via geminiVoice.sendTextMessage if needed
-              // For now, just stopping playback is sufficient
+              const now = Date.now();
+              // Avoid rapid-fire interrupts (wait at least 500ms between interrupts)
+              if (now - lastInterruptTime > 500) {
+                console.log('🛑 [INTERRUPTION] User speaking - stopping AI immediately!');
+                console.log(`  Amplitude: ${maxAmplitude.toFixed(4)} (threshold: ${SPEAKING_THRESHOLD})`);
+                
+                // CRITICAL: Stop AI audio immediately
+                geminiVoice.stopPlayback();
+                lastInterruptTime = now;
+                
+                // Log success
+                console.log('✅ AI interrupted - ready for user input');
+              }
             }
             
             // Only process and send audio if there's meaningful sound

@@ -104,12 +104,21 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
       const audioBuffer = audioContext.createBuffer(1, float32Array.length, 24000);
       audioBuffer.getChannelData(0).set(float32Array);
 
+      // AGGRESSIVE QUEUE MANAGEMENT: Cap queue at 3 chunks max to prevent buffering delay
+      const MAX_QUEUE_SIZE = 3; // CRITICAL: Never buffer more than 3 chunks (0.6s max)
+      
+      if (audioQueueRef.current.length >= MAX_QUEUE_SIZE) {
+        // Drop oldest chunk to prevent buffering delay
+        const dropped = audioQueueRef.current.shift();
+        console.log('⚠️ [Gemini Audio] Queue full, dropping old chunk to prevent lag');
+      }
+      
       // Add to queue
       audioQueueRef.current.push(audioBuffer);
       console.log('[Gemini Audio] 📦 Queued chunk:', float32Array.length, 'samples, queue length:', audioQueueRef.current.length);
 
-      // LATENCY FIX: Start playing immediately with minimal buffering (3 chunks = ~0.6s)
-      const AUDIO_BUFFER_THRESHOLD = 2; // Reduced from waiting for many chunks
+      // Start playing immediately with minimal buffering
+      const AUDIO_BUFFER_THRESHOLD = 2; // Start at 2 chunks
       if (!isPlayingRef.current && audioQueueRef.current.length >= AUDIO_BUFFER_THRESHOLD) {
         console.log('[Gemini Audio] 🚀 Starting playback with minimal buffer');
         setTimeout(() => playNextInQueueRef.current?.(), 0);
@@ -262,8 +271,8 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
               }]
             },
             generationConfig: {
-              responseModalities: ['audio'],  // LATENCY FIX: Audio only, no text processing
-              maxOutputTokens: 150,  // LATENCY FIX: Limit response length
+              responseModalities: ['AUDIO'],  // LATENCY FIX: Audio only (uppercase as per API)
+              maxOutputTokens: 100,  // REDUCED: Even shorter responses for faster interaction
               temperature: 0.7,
               candidateCount: 1,
               speechConfig: {
