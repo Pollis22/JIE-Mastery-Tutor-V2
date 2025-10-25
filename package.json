@@ -20,7 +20,7 @@
     "test": "npm run test:acceptance"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.67.0",
+    "@anthropic-ai/sdk": "^0.37.0",
     "@deepgram/sdk": "^4.11.2",
     "@google/genai": "^1.26.0",
     "@hookform/resolvers": "^3.10.0",
