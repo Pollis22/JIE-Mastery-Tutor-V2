@@ -13,6 +13,47 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import { Download, Users, Clock, Activity, TrendingUp, FileText, DollarSign } from "lucide-react";
 
+interface AdminStats {
+  totalUsers?: number;
+  activeSubscriptions?: number;
+  avgSessionTime?: string;
+  monthlyRevenue?: number;
+  totalVoiceMinutes?: number;
+  totalMinutesUsed?: number;
+  totalDocuments?: number;
+}
+
+interface AdminAnalytics {
+  newUsersThisMonth?: number;
+  totalSessions?: number;
+  sessionsThisWeek?: number;
+  recentSessions?: Array<{
+    id: string;
+    studentName: string;
+    subject: string;
+    startedAt: string;
+    minutesUsed: number;
+  }>;
+  totalVoiceMinutes?: number;
+  totalMinutesUsed?: number;
+  usageBySubject?: Array<{ subject: string; sessions: number }>;
+}
+
+interface AdminUser {
+  id: string;
+  username: string;
+  email: string;
+  isAdmin: boolean;
+  subscriptionStatus?: string;
+  voiceMinutesRemaining?: number;
+}
+
+interface AdminUsersData {
+  users: AdminUser[];
+  total: number;
+  totalPages?: number;
+}
+
 export default function AdminPageEnhanced() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -27,17 +68,17 @@ export default function AdminPageEnhanced() {
     return null;
   }
 
-  const { data: stats, isLoading: statsLoading } = useQuery({
+  const { data: stats, isLoading: statsLoading } = useQuery<AdminStats>({
     queryKey: ["/api/admin/stats"],
     enabled: !!user?.isAdmin,
   });
 
-  const { data: usersData, isLoading: usersLoading } = useQuery({
+  const { data: usersData, isLoading: usersLoading } = useQuery<AdminUsersData>({
     queryKey: ["/api/admin/users", currentPage, searchTerm],
     enabled: !!user?.isAdmin,
   });
 
-  const { data: analytics } = useQuery({
+  const { data: analytics } = useQuery<AdminAnalytics>({
     queryKey: ["/api/admin/analytics"],
     enabled: !!user?.isAdmin,
   });
