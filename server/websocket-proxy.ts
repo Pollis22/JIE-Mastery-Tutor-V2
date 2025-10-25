@@ -71,6 +71,16 @@ export function setupGeminiWebSocketProxy(server: Server) {
                 const messageType = Object.keys(parsed)[0];
                 console.log('[WS Proxy] 📥 From Gemini:', messageType);
                 
+                // Extract text content from serverContent for transcripts
+                if (parsed.serverContent && parsed.serverContent.modelTurn) {
+                  const parts = parsed.serverContent.modelTurn.parts || [];
+                  parts.forEach((part: any) => {
+                    if (part.text) {
+                      console.log('[WS Proxy] 📝 Text from AI:', part.text);
+                    }
+                  });
+                }
+                
                 // CRITICAL FIX: Send as STRING not Buffer!
                 // Browser WebSocket expects text data, not binary
                 clientWs.send(geminiData.toString());
