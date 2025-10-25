@@ -63,36 +63,14 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
     const source = audioContext.createBufferSource();
     source.buffer = audioBuffer;
     
-    // AGGRESSIVE EARLY-PREVENTION: Stop queue buildup before it happens
-    let playbackRate = 1.0; // Start with natural speed
-    const queueLength = audioQueueRef.current.length;
-    
-    // Much more aggressive speed management to prevent initial buildup
-    if (queueLength > 20) {
-      playbackRate = 1.15;  // 15% faster - emergency catch-up for extreme cases
-      console.log('[Gemini Audio] 🚨 Queue critical (>20), emergency 1.15x speed!');
-    } else if (queueLength > 15) {
-      playbackRate = 1.10;  // 10% faster - aggressive reduction
-      console.log('[Gemini Audio] ⚡ Queue large (>15), aggressive 1.10x speed');
-    } else if (queueLength > 10) {
-      playbackRate = 1.06;  // 6% faster - moderate reduction
-      console.log('[Gemini Audio] 📈 Queue building (>10), moderate 1.06x speed');
-    } else if (queueLength > 5) {
-      playbackRate = 1.03;  // 3% faster - early prevention
-      console.log('[Gemini Audio] 🎵 Queue growing (>5), preventive 1.03x speed');
-    } else if (queueLength > 2) {
-      playbackRate = 1.01;  // 1% faster - subtle prevention
-      console.log('[Gemini Audio] ⚡ Queue starting (>2), subtle 1.01x speed');
-    } else {
-      // Natural speed only when queue is very small
-      console.log(`[Gemini Audio] ✅ Queue minimal (${queueLength} chunks), natural speed`);
-    }
-    
-    source.playbackRate.value = playbackRate;
+    // ALWAYS NATURAL SPEED: Professional voice quality > Low latency
+    // For a tutoring platform, consistent natural voice is non-negotiable
+    source.playbackRate.value = 1.0; // Never change this - always natural speed
     source.connect(audioContext.destination);
     
+    const queueLength = audioQueueRef.current.length;
+    
     source.onended = () => {
-      console.log('[Gemini Audio] ✅ Chunk finished, queue remaining:', audioQueueRef.current.length);
       isPlayingRef.current = false;
       setIsPlaying(false);
       
@@ -102,9 +80,8 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
       }, 0);
     };
 
-    // Log playback details with current speed
-    const speedLabel = playbackRate === 1.0 ? 'natural' : `${playbackRate.toFixed(2)}x`;
-    console.log(`[Gemini Audio] 🔊 PLAYING - Duration: ${audioBuffer.duration.toFixed(2)}s, Speed: ${speedLabel}, Queue: ${queueLength} chunks`);
+    // Simple log without speed references - always natural
+    console.log(`🔊 [Audio] Playing chunk (natural speed), queue: ${queueLength}`);
     source.start(0);
   }, []);
 
@@ -133,25 +110,24 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
       const audioBuffer = audioContext.createBuffer(1, float32Array.length, 24000);
       audioBuffer.getChannelData(0).set(float32Array);
 
-      // NEVER DROP AUDIO! Allow queue to buffer like Netflix for smooth playback
-      const SOFT_QUEUE_LIMIT = 10;        // Prefer to keep queue around this size
-      const HARD_QUEUE_LIMIT = 20;        // Only warn if queue exceeds this
-      const MIN_CHUNKS_TO_START = 2;      // Start playing after just 2 chunks (0.4s buffer) for lower latency
+      // Configuration for queue management
+      const MAX_QUEUE_SIZE = 8;           // Maximum chunks to buffer
+      const MIN_CHUNKS_TO_START = 2;      // Start playing after 2 chunks (~0.5s buffer)
+      const DROP_OLD_THRESHOLD = 10;      // Drop old chunks if queue exceeds this
       
-      // ALWAYS queue the audio chunk - NEVER drop it for intelligible speech
-      audioQueueRef.current.push(audioBuffer);
-      console.log('[Gemini Audio] 📦 Queued chunk:', float32Array.length, 'samples, queue length:', audioQueueRef.current.length);
-      
-      // Warn if queue is growing large (but still play everything)
-      if (audioQueueRef.current.length > HARD_QUEUE_LIMIT) {
-        console.warn(`⚠️ [Gemini Audio] Queue large: ${audioQueueRef.current.length} chunks (playback may have latency, but audio will be complete)`);
-      } else if (audioQueueRef.current.length > SOFT_QUEUE_LIMIT && audioQueueRef.current.length % 5 === 0) {
-        console.log(`📊 [Gemini Audio] Queue building: ${audioQueueRef.current.length} chunks (normal for longer responses)`);
+      // If queue is getting too large, DROP oldest chunks to maintain low latency
+      if (audioQueueRef.current.length > DROP_OLD_THRESHOLD) {
+        const dropped = audioQueueRef.current.shift(); // Remove oldest chunk
+        console.log(`⚠️ [Audio] Dropping old chunk to prevent latency, queue: ${audioQueueRef.current.length}`);
       }
+      
+      // Add new chunk
+      audioQueueRef.current.push(audioBuffer);
+      console.log(`📦 [Audio] Queued chunk, queue size: ${audioQueueRef.current.length}`);
 
       // Start playing after minimum buffer achieved
       if (!isPlayingRef.current && audioQueueRef.current.length >= MIN_CHUNKS_TO_START) {
-        console.log(`[Gemini Audio] 🎵 Starting playback (${MIN_CHUNKS_TO_START} chunk buffer for low latency)`);
+        console.log('▶️ [Audio] Starting playback');
         setTimeout(() => playNextInQueueRef.current?.(), 0);
       }
 
