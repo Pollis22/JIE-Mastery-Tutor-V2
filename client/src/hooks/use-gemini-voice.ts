@@ -111,17 +111,10 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
       audioBuffer.getChannelData(0).set(float32Array);
 
       // Configuration for queue management
-      const MAX_QUEUE_SIZE = 8;           // Maximum chunks to buffer
       const MIN_CHUNKS_TO_START = 2;      // Start playing after 2 chunks (~0.5s buffer)
-      const DROP_OLD_THRESHOLD = 10;      // Drop old chunks if queue exceeds this
       
-      // If queue is getting too large, DROP oldest chunks to maintain low latency
-      if (audioQueueRef.current.length > DROP_OLD_THRESHOLD) {
-        const dropped = audioQueueRef.current.shift(); // Remove oldest chunk
-        console.log(`⚠️ [Audio] Dropping old chunk to prevent latency, queue: ${audioQueueRef.current.length}`);
-      }
-      
-      // Add new chunk
+      // NEVER DROP AUDIO CHUNKS - Educational quality requires every word to be heard
+      // Accept latency as a tradeoff for complete, intelligible speech
       audioQueueRef.current.push(audioBuffer);
       console.log(`📦 [Audio] Queued chunk, queue size: ${audioQueueRef.current.length}`);
 
