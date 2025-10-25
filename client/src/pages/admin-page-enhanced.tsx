@@ -33,12 +33,19 @@ interface AdminAnalytics {
     id: string;
     studentName: string;
     subject: string;
+    ageGroup?: string;
+    duration?: string;
     startedAt: string;
     minutesUsed: number;
+    status?: string;
   }>;
   totalVoiceMinutes?: number;
   totalMinutesUsed?: number;
-  usageBySubject?: Array<{ subject: string; sessions: number }>;
+  usageBySubject?: Array<{ 
+    subject: string; 
+    sessions: number;
+    minutes?: number;
+  }>;
 }
 
 interface AdminUser {
@@ -47,7 +54,16 @@ interface AdminUser {
   email: string;
   isAdmin: boolean;
   subscriptionStatus?: string;
+  subscriptionPlan?: string;
   voiceMinutesRemaining?: number;
+  purchasedMinutesBalance?: number;
+  subscriptionMinutesUsed?: number;
+  subscriptionMinutesLimit?: number;
+  maxConcurrentLogins?: number;
+  firstName?: string;
+  lastName?: string;
+  studentName?: string;
+  parentName?: string;
 }
 
 interface AdminUsersData {
@@ -358,7 +374,7 @@ export default function AdminPageEnhanced() {
                               </TableCell>
                             </TableRow>
                           ) : (
-                            usersData?.users?.map((userData: any, index: number) => (
+                            usersData?.users?.map((userData, index: number) => (
                               <TableRow key={userData.id} data-testid={`row-user-${index}`}>
                                 <TableCell>
                                   <div className="flex items-center">
@@ -484,7 +500,7 @@ export default function AdminPageEnhanced() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {analytics.recentSessions.slice(0, 20).map((session: any, index: number) => (
+                          {analytics.recentSessions.slice(0, 20).map((session, index: number) => (
                             <TableRow key={session.id || index}>
                               <TableCell className="font-medium">
                                 {session.studentName || 'Unknown'}
@@ -556,7 +572,7 @@ export default function AdminPageEnhanced() {
                   {analytics?.usageBySubject && analytics.usageBySubject.length > 0 && (
                     <div className="space-y-3">
                       <h4 className="text-sm font-semibold">Usage by Subject</h4>
-                      {analytics.usageBySubject.map((item: any, index: number) => (
+                      {analytics.usageBySubject.map((item, index: number) => (
                         <div key={index} className="flex items-center justify-between">
                           <div className="flex items-center space-x-3">
                             <Badge variant="secondary">{item.subject}</Badge>
@@ -590,11 +606,11 @@ export default function AdminPageEnhanced() {
                       </TableHeader>
                       <TableBody>
                         {usersData.users
-                          .sort((a: any, b: any) => 
+                          .sort((a, b) => 
                             (b.subscriptionMinutesUsed || 0) - (a.subscriptionMinutesUsed || 0)
                           )
                           .slice(0, 10)
-                          .map((user: any, index: number) => (
+                          .map((user, index: number) => (
                             <TableRow key={user.id || index}>
                               <TableCell className="font-medium">
                                 {user.parentName || user.studentName || user.firstName || 'Unknown'}

@@ -2,8 +2,15 @@
 
 ## Executive Summary
 ✅ **System Architecture: COMPLETE**
-⚠️ **Current Status: Transcripts NOT saving to database**  
-📋 **Action Needed: Test live voice session to verify transcript capture**
+⚠️ **Current Status: Transcript persistence UNVERIFIED (requires testing)**  
+📋 **Action Needed: Test live voice session to confirm transcript capture works**
+
+**Note:** All existing sessions in database show 0 transcripts. This could be because:
+1. Sessions were created before transcript feature was implemented
+2. Transcript capture has a bug that needs debugging
+3. Gemini Live API may not be generating transcripts in current configuration
+
+**Next Step:** Create a NEW voice session and verify transcripts appear in the database.
 
 ---
 
