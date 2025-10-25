@@ -62,15 +62,33 @@ The platform implements a three-tier access control system ensuring only subscri
 The platform uses a **session-first** data priority model where session configuration is the primary source for grade level, subject, and language, with user profiles serving as defaults. This enables sibling sharing on a single account.
 
 ### Voice Technology Integration
--   **Gemini Live API (ONLY PROVIDER - Oct 2025)**: Google's multimodal voice conversation API with WebSocket streaming. Provides exceptional cost efficiency, emotion-aware responses, and 30 HD voices. OpenAI Realtime API has been completely removed due to reliability issues and 5x higher costs.
-    -   **Model**: `gemini-2.0-flash-live` with automatic voice activity detection
-    -   **Voice Mapping**: Age-appropriate voices (Puck for K-2, Charon for 3-5, Kore for 6-8, Fenrir for 9-12, Aoede for College)
-    -   **Cost**: ~$0.0225/minute - 93% cheaper than OpenAI ($0.30/min), saving ~$500/month at 1,800 min/month scale
-    -   **Features**: Emotion awareness (affective dialog), proactive audio filtering, 30 voices, video support (future), automatic greeting on session start
-    -   **API Endpoint**: `/api/session/gemini`
-    -   **Architecture**: Single-provider design for simplicity and reliability - no fallback complexity
-    -   **Audio Pipeline**: Direct PCM16 capture at 16kHz → WebSocket → Gemini → 24kHz playback at 1.0x natural speed (no speed manipulation for educational quality)
-    -   **Transcript Storage**: Real-time transcript capture with automatic persistence to `realtime_sessions` table via `/api/session/gemini/:sessionId/transcript` endpoint
+
+#### Custom Voice Stack (PRIMARY - Oct 2025)
+Production-ready modular voice pipeline providing full control and transparency:
+-   **Architecture**: Deepgram (STT) → Claude Sonnet (AI) → ElevenLabs (TTS)
+-   **Endpoint**: `/api/custom-voice-ws` (WebSocket)
+-   **Cost**: ~$1.50-2.50/hour of tutoring
+    -   Deepgram STT: $0.0077/min ($0.46/hour) for real-time streaming
+    -   Claude Sonnet 4: $3/1M input tokens + $15/1M output tokens (~$0.02/hour for typical tutoring)
+    -   ElevenLabs TTS: $0.05-0.10/min ($1-2/hour for AI speech)
+-   **Latency**: 1-2 seconds end-to-end (acceptable for tutoring, more reliable than Gemini)
+-   **Features**:
+    -   Session authentication and ownership validation
+    -   Transcript queueing (prevents audio loss during processing)
+    -   Incremental persistence (auto-saves every 10 seconds + on disconnect)
+    -   Age-appropriate voice selection (K-2, 3-5, 6-8, 9-12, College)
+    -   Full document context integration
+    -   Natural conversation flow with Socratic teaching method
+-   **Security**: WebSocket validates sessionId ownership before accepting traffic
+
+#### Gemini Live API (LEGACY FALLBACK)
+Google's multimodal voice conversation API (deprecated due to 10+ second latency issues):
+-   **Model**: `gemini-2.0-flash-live` with automatic voice activity detection
+-   **Cost**: ~$0.0225/minute
+-   **API Endpoint**: `/api/session/gemini`
+-   **Status**: Available as fallback but experiencing production reliability issues (Oct 2025)
+-   **Audio Pipeline**: Direct PCM16 capture at 16kHz → WebSocket → Gemini → 24kHz playback
+-   **Transcript Storage**: Real-time transcript capture with automatic persistence
 
 ### AI & Learning Engine
 -   **Primary AI Model**: Gemini 2.0 Flash Live for voice conversations, utilizing an enhanced TutorMind system prompt for Socratic teaching.

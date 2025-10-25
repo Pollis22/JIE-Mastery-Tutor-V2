@@ -8,9 +8,10 @@ import { realtimeSessions } from "@shared/schema";
 import { eq } from "drizzle-orm";
 
 interface TranscriptEntry {
-  speaker: string;
+  speaker: 'tutor' | 'student';
   text: string;
   timestamp: string;
+  messageId: string;
 }
 
 interface SessionState {
@@ -34,9 +35,10 @@ async function persistTranscript(sessionId: string, transcript: TranscriptEntry[
   if (!sessionId || transcript.length === 0) return;
   
   try {
+    // Type-safe persistence: transcript column expects JSONB array of {speaker, text, timestamp}
     await db.update(realtimeSessions)
       .set({
-        transcript: transcript as any,
+        transcript: transcript,
       })
       .where(eq(realtimeSessions.id, sessionId));
     console.log(`[Custom Voice] 💾 Persisted ${transcript.length} transcript entries`);
@@ -95,6 +97,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
           speaker: "student",
           text: transcript,
           timestamp: new Date().toISOString(),
+          messageId: crypto.randomUUID(),
         };
         state.transcript.push(transcriptEntry);
 
@@ -128,6 +131,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
           speaker: "tutor",
           text: aiResponse,
           timestamp: new Date().toISOString(),
+          messageId: crypto.randomUUID(),
         };
         state.transcript.push(aiTranscriptEntry);
 
@@ -230,7 +234,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
             state.systemInstruction = message.systemInstruction || "";
             state.uploadedDocuments = message.documents || [];
 
-            // Start Deepgram connection
+            // Start Deepgram connection with cleanup on close
             state.deepgramConnection = await startDeepgramStream(
               async (transcript: string, isFinal: boolean) => {
                 // FIX #1: Queue transcripts instead of dropping them
@@ -244,9 +248,23 @@ export function setupCustomVoiceWebSocket(server: Server) {
                   }
                 }
               },
-              (error: Error) => {
+              async (error: Error) => {
                 console.error("[Custom Voice] ❌ Deepgram error:", error);
+                
+                // FIX #3: Persist on Deepgram error
+                if (state.sessionId && state.transcript.length > 0) {
+                  await persistTranscript(state.sessionId, state.transcript);
+                }
+                
                 ws.send(JSON.stringify({ type: "error", error: error.message }));
+              },
+              async () => {
+                console.log("[Custom Voice] 🔌 Deepgram connection closed");
+                
+                // FIX #3: Critical - Persist on Deepgram close
+                if (state.sessionId && state.transcript.length > 0) {
+                  await persistTranscript(state.sessionId, state.transcript);
+                }
               }
             );
 
@@ -269,12 +287,21 @@ export function setupCustomVoiceWebSocket(server: Server) {
             const durationSeconds = Math.floor((Date.now() - state.sessionStartTime) / 1000);
             const durationMinutes = Math.max(1, Math.ceil(durationSeconds / 60));
 
-            // FIX #3: Final persist
+            // Close Deepgram connection first
+            if (state.deepgramConnection) {
+              state.deepgramConnection.close();
+              state.deepgramConnection = null;
+            }
+
+            // Clear persistence interval
+            clearInterval(persistInterval);
+
+            // FIX #3: Final persist with endedAt timestamp
             if (state.transcript.length > 0 && state.sessionId) {
               try {
                 await db.update(realtimeSessions)
                   .set({
-                    transcript: state.transcript as any,
+                    transcript: state.transcript,
                     endedAt: new Date(),
                   })
                   .where(eq(realtimeSessions.id, state.sessionId));
@@ -283,14 +310,6 @@ export function setupCustomVoiceWebSocket(server: Server) {
                 console.error("[Custom Voice] ❌ Error saving transcript:", error);
               }
             }
-
-            // Close Deepgram connection
-            if (state.deepgramConnection) {
-              state.deepgramConnection.close();
-            }
-
-            // Clear persistence interval
-            clearInterval(persistInterval);
 
             ws.send(JSON.stringify({ 
               type: "ended",
@@ -316,22 +335,31 @@ export function setupCustomVoiceWebSocket(server: Server) {
     ws.on("close", async () => {
       console.log("[Custom Voice] 🔌 Connection closed");
       
-      // FIX #3: Persist on disconnect
+      // Close Deepgram first
+      if (state.deepgramConnection) {
+        state.deepgramConnection.close();
+        state.deepgramConnection = null;
+      }
+      
+      // Clear interval
+      clearInterval(persistInterval);
+      
+      // FIX #3: Final persist on unexpected disconnect
       if (state.sessionId && state.transcript.length > 0) {
         await persistTranscript(state.sessionId, state.transcript);
       }
-      
-      if (state.deepgramConnection) {
-        state.deepgramConnection.close();
-      }
-      
-      clearInterval(persistInterval);
     });
 
     ws.on("error", async (error) => {
       console.error("[Custom Voice] ❌ WebSocket error:", error);
       
-      // FIX #3: Persist on error
+      // Close Deepgram first
+      if (state.deepgramConnection) {
+        state.deepgramConnection.close();
+        state.deepgramConnection = null;
+      }
+      
+      // FIX #3: Final persist on error
       if (state.sessionId && state.transcript.length > 0) {
         await persistTranscript(state.sessionId, state.transcript);
       }

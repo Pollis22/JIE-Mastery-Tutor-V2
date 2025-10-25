@@ -9,7 +9,8 @@ export interface DeepgramConnection {
 
 export async function startDeepgramStream(
   onTranscript: (text: string, isFinal: boolean) => void,
-  onError: (error: Error) => void
+  onError: (error: Error) => void,
+  onClose?: () => void
 ): Promise<DeepgramConnection> {
   
   const connection = deepgram.listen.live({
@@ -44,6 +45,9 @@ export async function startDeepgramStream(
 
   connection.on(LiveTranscriptionEvents.Close, () => {
     console.log("[Deepgram] 🔌 Connection closed");
+    if (onClose) {
+      onClose();
+    }
   });
 
   // Wait for connection to open
