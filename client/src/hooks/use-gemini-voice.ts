@@ -63,23 +63,29 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
     const source = audioContext.createBufferSource();
     source.buffer = audioBuffer;
     
-    // PROGRESSIVE SPEED ADJUSTMENT: Prevent queue buildup while maintaining natural voice
+    // AGGRESSIVE EARLY-PREVENTION: Stop queue buildup before it happens
     let playbackRate = 1.0; // Start with natural speed
     const queueLength = audioQueueRef.current.length;
     
-    // Early intervention with progressive speed tiers to prevent lag buildup
-    if (queueLength > 15) {
-      playbackRate = 1.06;  // 6% faster - noticeable but acceptable for large queues
-      console.log('[Gemini Audio] ⚡ Queue large (>15), speed 1.06x to catch up');
+    // Much more aggressive speed management to prevent initial buildup
+    if (queueLength > 20) {
+      playbackRate = 1.15;  // 15% faster - emergency catch-up for extreme cases
+      console.log('[Gemini Audio] 🚨 Queue critical (>20), emergency 1.15x speed!');
+    } else if (queueLength > 15) {
+      playbackRate = 1.10;  // 10% faster - aggressive reduction
+      console.log('[Gemini Audio] ⚡ Queue large (>15), aggressive 1.10x speed');
     } else if (queueLength > 10) {
-      playbackRate = 1.04;  // 4% faster - slightly noticeable
-      console.log('[Gemini Audio] ⚡ Queue building (>10), speed 1.04x');
-    } else if (queueLength > 6) {
-      playbackRate = 1.02;  // 2% faster - imperceptible but helps prevent buildup
-      console.log('[Gemini Audio] 🎵 Queue moderate (>6), subtle 1.02x speed');
+      playbackRate = 1.06;  // 6% faster - moderate reduction
+      console.log('[Gemini Audio] 📈 Queue building (>10), moderate 1.06x speed');
+    } else if (queueLength > 5) {
+      playbackRate = 1.03;  // 3% faster - early prevention
+      console.log('[Gemini Audio] 🎵 Queue growing (>5), preventive 1.03x speed');
+    } else if (queueLength > 2) {
+      playbackRate = 1.01;  // 1% faster - subtle prevention
+      console.log('[Gemini Audio] ⚡ Queue starting (>2), subtle 1.01x speed');
     } else {
-      // Natural speed when queue is small
-      console.log(`[Gemini Audio] ✅ Queue healthy (${queueLength} chunks), natural speed`);
+      // Natural speed only when queue is very small
+      console.log(`[Gemini Audio] ✅ Queue minimal (${queueLength} chunks), natural speed`);
     }
     
     source.playbackRate.value = playbackRate;
