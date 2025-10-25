@@ -21,6 +21,7 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
   const audioQueueRef = useRef<AudioBuffer[]>([]);
   const isPlayingRef = useRef(false);
   const playNextInQueueRef = useRef<() => Promise<void>>();
+  const droppedChunkCountRef = useRef(0);  // Track dropped chunks for less verbose logging
 
   // Helper to convert base64 to ArrayBuffer
   const base64ToArrayBuffer = (base64: string): ArrayBuffer => {
@@ -112,7 +113,12 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
       if (audioQueueRef.current.length >= MAX_QUEUE_SIZE) {
         // Drop oldest chunk only when necessary
         const dropped = audioQueueRef.current.shift();
-        console.log('⚠️ [Gemini Audio] Queue overflow - dropping old chunk (queue was:', audioQueueRef.current.length + 1, ')');
+        droppedChunkCountRef.current++;
+        
+        // Only log every 10th dropped chunk to reduce spam
+        if (droppedChunkCountRef.current % 10 === 0) {
+          console.warn(`⚠️ [Gemini Audio] Dropped ${droppedChunkCountRef.current} chunks total (queue overflow prevention)`);
+        }
       }
       
       // Add to queue
