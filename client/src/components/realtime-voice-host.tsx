@@ -246,11 +246,14 @@ export function RealtimeVoiceHost({
         const gainNode = audioCtx16k.createGain();
         gainNode.gain.value = 1.0;
         
-        // Use larger buffer for more stable capture
-        const scriptProcessor = audioCtx16k.createScriptProcessor(2048, 1, 1);
+        // LATENCY FIX: Use smaller buffer for faster transmission
+        const scriptProcessor = audioCtx16k.createScriptProcessor(1024, 1, 1);
         
         let isProcessing = false;
         let totalSamples = 0;
+        let silenceCount = 0;
+        const SPEAKING_THRESHOLD = 0.02;  // Threshold for voice detection
+        const SILENCE_THRESHOLD = 0.001;  // Threshold for silence
         
         scriptProcessor.onaudioprocess = (audioProcessingEvent) => {
           // Check if we should process
@@ -264,14 +267,25 @@ export function RealtimeVoiceHost({
             const inputBuffer = audioProcessingEvent.inputBuffer;
             const inputData = inputBuffer.getChannelData(0);
             
-            // Check if there's actual audio (not silence)
+            // Check audio amplitude
             let maxAmplitude = 0;
             for (let i = 0; i < inputData.length; i++) {
               maxAmplitude = Math.max(maxAmplitude, Math.abs(inputData[i]));
             }
             
-            // Only process if there's meaningful audio
-            if (maxAmplitude > 0.001) {
+            // INTERRUPTION DETECTION: Check if user is speaking loud enough to interrupt
+            if (maxAmplitude > SPEAKING_THRESHOLD && geminiVoice.isPlaying) {
+              console.log('🛑 [Interruption] User speaking - stopping AI playback');
+              geminiVoice.stopPlayback();  // Stop current AI audio
+              
+              // Note: Interrupt signal could be sent via geminiVoice.sendTextMessage if needed
+              // For now, just stopping playback is sufficient
+            }
+            
+            // Only process and send audio if there's meaningful sound
+            if (maxAmplitude > SILENCE_THRESHOLD) {
+              silenceCount = 0;
+              
               // Convert Float32 to PCM16
               const pcm16 = new Int16Array(inputData.length);
               for (let i = 0; i < inputData.length; i++) {
@@ -283,12 +297,15 @@ export function RealtimeVoiceHost({
               
               // Log every ~1 second of audio
               if (totalSamples > 16000) {
-                console.log('🎤 [PCM] Sending audio:', pcm16.length, 'samples, amplitude:', maxAmplitude.toFixed(4));
+                const speakingStatus = maxAmplitude > SPEAKING_THRESHOLD ? '🗣️ SPEAKING' : '🎤 Audio';
+                console.log(`${speakingStatus} [PCM]:`, pcm16.length, 'samples, amplitude:', maxAmplitude.toFixed(4));
                 totalSamples = 0;
               }
               
               // Send directly to Gemini
               geminiVoice.sendAudio(pcm16.buffer);
+            } else {
+              silenceCount++;
             }
           } catch (error) {
             console.error('❌ [PCM] Processing error:', error);

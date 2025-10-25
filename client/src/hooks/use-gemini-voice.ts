@@ -108,8 +108,10 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
       audioQueueRef.current.push(audioBuffer);
       console.log('[Gemini Audio] 📦 Queued chunk:', float32Array.length, 'samples, queue length:', audioQueueRef.current.length);
 
-      // Start playing if not already playing (non-blocking)
-      if (!isPlayingRef.current) {
+      // LATENCY FIX: Start playing immediately with minimal buffering (3 chunks = ~0.6s)
+      const AUDIO_BUFFER_THRESHOLD = 2; // Reduced from waiting for many chunks
+      if (!isPlayingRef.current && audioQueueRef.current.length >= AUDIO_BUFFER_THRESHOLD) {
+        console.log('[Gemini Audio] 🚀 Starting playback with minimal buffer');
         setTimeout(() => playNextInQueueRef.current?.(), 0);
       }
 
@@ -248,19 +250,27 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
       ws.onopen = () => {
         console.log('[Gemini WS] ✅ WebSocket OPENED to proxy!');
         
-        // Send initialization message with API key and config
+        // LATENCY FIX: Optimized config for faster, shorter responses
         const initMessage = {
           type: 'init',
           apiKey: geminiApiKey,
           model: 'models/gemini-2.0-flash-exp',
           config: {
             systemInstruction: {
-              parts: [{ text: systemInstruction }]
+              parts: [{ 
+                text: systemInstruction + '\n\nIMPORTANT: Keep responses CONCISE (2-3 sentences max) unless specifically asked for detailed explanations. Respond quickly and naturally, like a real conversation.'
+              }]
             },
             generationConfig: {
-              responseModalities: ['audio', 'text'],  // Request BOTH audio and text
+              responseModalities: ['audio'],  // LATENCY FIX: Audio only, no text processing
+              maxOutputTokens: 150,  // LATENCY FIX: Limit response length
+              temperature: 0.7,
+              candidateCount: 1,
               speechConfig: {
-                voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } }
+                voiceConfig: { 
+                  prebuiltVoiceConfig: { voiceName: 'Aoede' },
+                  preemptibleSpeech: true  // Allow interruption
+                }
               }
             }
           }
@@ -341,6 +351,18 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
     }
   }, []);
 
+  // Stop audio playback (for interruption)
+  const stopPlayback = useCallback(() => {
+    // Clear the audio queue
+    audioQueueRef.current = [];
+    
+    // Reset playing state
+    isPlayingRef.current = false;
+    setIsPlaying(false);
+    
+    console.log('[Gemini Audio] 🛑 Playback stopped and queue cleared');
+  }, []);
+
   // End session
   const endSession = useCallback(() => {
     console.log('[Gemini] 🛑 Ending session');
@@ -377,6 +399,7 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
     startSession,
     sendAudio,
     sendTextMessage,
+    stopPlayback,
     endSession
   };
 }
