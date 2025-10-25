@@ -46,14 +46,49 @@ export function RealtimeVoiceHost({
   // CRITICAL FIX: Use a ref to track Gemini connection state for MediaRecorder callback
   const geminiConnectedRef = useRef<boolean>(false);
   
+  // CRITICAL FIX: Use ref for sessionId to avoid async state race condition
+  const sessionIdRef = useRef<string | null>(null);
+  
+  // Save transcript entry to backend
+  const saveTranscriptEntry = useCallback(async (speaker: 'tutor' | 'student', text: string) => {
+    const currentSessionId = sessionIdRef.current;
+    
+    if (!currentSessionId) {
+      console.warn('[Transcript] No sessionId in ref, skipping save');
+      return;
+    }
+    
+    try {
+      const response = await apiRequest('POST', `/api/session/gemini/${currentSessionId}/transcript`, {
+        speaker,
+        text,
+        timestamp: new Date().toISOString()
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+      }
+      
+      console.log(`✅ [Transcript] Saved ${speaker} message to session ${currentSessionId}`);
+    } catch (error) {
+      console.error(`❌ [Transcript] Failed to save ${speaker} message:`, error);
+      // Don't throw - log and continue
+    }
+  }, []);
+  
   // Gemini Voice Hook (ONLY PROVIDER - 93% cheaper than OpenAI!)
   const geminiVoice = useGeminiVoice({
     onTranscript: (text: string, isUser: boolean) => {
-      setTranscriptMessages(prev => [...prev, {
-        speaker: isUser ? 'student' : 'tutor',
+      const speaker: 'tutor' | 'student' = isUser ? 'student' : 'tutor';
+      const entry = {
+        speaker,
         text,
         timestamp: new Date().toISOString()
-      }]);
+      };
+      setTranscriptMessages(prev => [...prev, entry]);
+      
+      // Save to backend
+      saveTranscriptEntry(speaker, text);
     },
     onError: (error: Error) => {
       console.error('[Voice Host] Gemini error:', error);
@@ -113,7 +148,10 @@ export function RealtimeVoiceHost({
       if (data.success && data.provider === 'gemini' && data.geminiApiKey && data.systemInstruction) {
         console.log('[VoiceHost] ✅ Got valid credentials, starting Gemini...');
         
+        // CRITICAL FIX: Set both state and ref immediately to avoid race condition
         setSessionId(data.sessionId);
+        sessionIdRef.current = data.sessionId;
+        console.log(`📝 [VoiceHost] SessionId set: ${data.sessionId} - transcript saving enabled`);
         
         // Start Gemini WebSocket session
         await geminiVoice.startSession(
@@ -445,8 +483,9 @@ export function RealtimeVoiceHost({
     // Disconnect Gemini
     geminiVoice.endSession();
     
-    // Clear local state
+    // Clear local state and ref
     setSessionId(null);
+    sessionIdRef.current = null;
     setTranscriptMessages([]);
     
     // Notify parent component
