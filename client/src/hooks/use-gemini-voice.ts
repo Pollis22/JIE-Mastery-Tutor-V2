@@ -63,18 +63,18 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
     const source = audioContext.createBufferSource();
     source.buffer = audioBuffer;
     
-    // DYNAMIC PLAYBACK RATE: Speed up slightly when queue is large to prevent buildup
-    let playbackRate = 1.0; // Normal speed
+    // NATURAL VOICE SPEED: Always use 1.0x for clarity in educational content
+    // Only apply minimal adjustment in extreme cases to prevent major lag
+    let playbackRate = 1.0; // Natural speed - prioritize clarity over latency
     const queueLength = audioQueueRef.current.length;
     
-    if (queueLength > 15) {
-      playbackRate = 1.15; // 15% faster when queue is very large
-      console.log('[Gemini Audio] ⚡ Queue large, speeding up to 1.15x');
-    } else if (queueLength > 10) {
-      playbackRate = 1.10; // 10% faster when queue is getting large
-      console.log('[Gemini Audio] ⚡ Queue building, speeding up to 1.10x');
-    } else if (queueLength > 7) {
-      playbackRate = 1.05; // 5% faster when queue is moderate
+    // Only speed up VERY slightly in EXTREME cases (barely noticeable)
+    if (queueLength > 20) {
+      playbackRate = 1.03; // Only 3% faster - almost imperceptible
+      console.log('[Gemini Audio] ⚡ Large queue detected (>20), applying subtle 1.03x adjustment');
+    } else if (queueLength > 12) {
+      // Just log for monitoring, no speed change
+      console.log(`📊 [Gemini Audio] Queue size: ${queueLength} chunks (within normal range, natural speed)`);
     }
     
     source.playbackRate.value = playbackRate;
@@ -91,7 +91,7 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
       }, 0);
     };
 
-    console.log(`[Gemini Audio] 🔊 PLAYING - Duration: ${audioBuffer.duration.toFixed(2)}s, Rate: ${playbackRate}x, Queue: ${queueLength}, State: ${audioContext.state}`);
+    console.log(`[Gemini Audio] 🔊 PLAYING - Duration: ${audioBuffer.duration.toFixed(2)}s, Rate: ${playbackRate.toFixed(2)}x, Queue: ${queueLength}, State: ${audioContext.state}`);
     source.start(0);
   }, []);
 
