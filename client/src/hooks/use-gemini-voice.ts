@@ -110,17 +110,14 @@ export function useGeminiVoice(options: UseGeminiVoiceOptions = {}) {
       const audioBuffer = audioContext.createBuffer(1, float32Array.length, 24000);
       audioBuffer.getChannelData(0).set(float32Array);
 
-      // Configuration for queue management
-      const MIN_CHUNKS_TO_START = 2;      // Start playing after 2 chunks (~0.5s buffer)
-      
       // NEVER DROP AUDIO CHUNKS - Educational quality requires every word to be heard
-      // Accept latency as a tradeoff for complete, intelligible speech
+      // Start playback IMMEDIATELY (no buffering) for lowest latency
       audioQueueRef.current.push(audioBuffer);
       console.log(`📦 [Audio] Queued chunk, queue size: ${audioQueueRef.current.length}`);
 
-      // Start playing after minimum buffer achieved
-      if (!isPlayingRef.current && audioQueueRef.current.length >= MIN_CHUNKS_TO_START) {
-        console.log('▶️ [Audio] Starting playback');
+      // Start playing immediately when first chunk arrives
+      if (!isPlayingRef.current && audioQueueRef.current.length > 0) {
+        console.log('▶️ [Audio] Starting playback (immediate - low latency mode)');
         setTimeout(() => playNextInQueueRef.current?.(), 0);
       }
 
