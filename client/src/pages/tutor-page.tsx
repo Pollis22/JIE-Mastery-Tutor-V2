@@ -52,7 +52,7 @@ const saveProgress = (data: ProgressData) => {
   }
 };
 
-// Map full language names to ISO codes for Gemini API
+// Map full language names to ISO codes for voice API
 const mapLanguageToISO = (language?: string | null): 'en' | 'es' | 'hi' | 'zh' => {
   if (!language) return 'en';
   
@@ -633,7 +633,7 @@ export default function TutorPage() {
                 </>
               ) : (
                 <>
-                  {/* Gemini Voice System */}
+                  {/* Custom Voice System (Deepgram + Claude + ElevenLabs) */}
                   <RealtimeVoiceHost
                     studentId={selectedStudentId || undefined}
                     studentName={studentName}
