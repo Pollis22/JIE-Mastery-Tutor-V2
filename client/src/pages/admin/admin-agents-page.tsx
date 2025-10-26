@@ -31,11 +31,11 @@ export default function AdminAgentsPage() {
           Voice AI System Monitoring
         </h1>
         <p className="text-muted-foreground">
-          Monitor voice tutoring sessions - Now supporting Gemini Live API (93% cheaper) with OpenAI Realtime API fallback
+          Monitor voice tutoring sessions - Using custom voice stack with Deepgram, Claude, and ElevenLabs
         </p>
         <div className="mt-2 flex gap-2">
-          <Badge variant="default" className="bg-blue-600">Gemini Live (Primary)</Badge>
-          <Badge variant="outline">OpenAI Realtime (Fallback)</Badge>
+          <Badge variant="default" className="bg-blue-600">Custom Voice Stack (Primary)</Badge>
+          <Badge variant="outline">Deepgram + Claude + ElevenLabs</Badge>
         </div>
       </div>
 

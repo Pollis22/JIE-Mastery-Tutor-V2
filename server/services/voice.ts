@@ -36,12 +36,12 @@ class VoiceService {
   }
 
   getRealtimeConfig() {
-    // VoiceService is now a legacy service - Gemini Live API is the only voice provider
+    // VoiceService is now a legacy service - Custom voice stack is the only voice provider
     // This method is kept for backward compatibility but always returns test mode config
     return {
       testMode: true,
-      provider: 'gemini',
-      message: 'Voice now uses Gemini Live API exclusively - see /api/session/gemini endpoint'
+      provider: 'custom',
+      message: 'Voice now uses custom voice stack exclusively - see /api/custom-voice-ws endpoint'
     };
   }
 
