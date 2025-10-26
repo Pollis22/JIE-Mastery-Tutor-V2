@@ -63,15 +63,15 @@ The platform uses a **session-first** data priority model where session configur
 
 ### Voice Technology Integration
 
-#### Custom Voice Stack (PRIMARY - Oct 2025)
+#### Custom Voice Stack (PRIMARY - Production Ready)
 Production-ready modular voice pipeline providing full control and transparency:
--   **Architecture**: Deepgram (STT) → Claude Sonnet (AI) → ElevenLabs (TTS)
+-   **Architecture**: Deepgram (STT) → Claude Sonnet 4 (AI) → ElevenLabs (TTS)
 -   **Endpoint**: `/api/custom-voice-ws` (WebSocket)
 -   **Cost**: ~$1.50-2.50/hour of tutoring
     -   Deepgram STT: $0.0077/min ($0.46/hour) for real-time streaming
     -   Claude Sonnet 4: $3/1M input tokens + $15/1M output tokens (~$0.02/hour for typical tutoring)
     -   ElevenLabs TTS: $0.05-0.10/min ($1-2/hour for AI speech)
--   **Latency**: 1-2 seconds end-to-end (acceptable for tutoring, more reliable than Gemini)
+-   **Latency**: 1-2 seconds end-to-end (optimal for natural tutoring conversations)
 -   **Features**:
     -   Session authentication and ownership validation
     -   Transcript queueing (prevents audio loss during processing)
@@ -81,17 +81,8 @@ Production-ready modular voice pipeline providing full control and transparency:
     -   Natural conversation flow with Socratic teaching method
 -   **Security**: WebSocket validates sessionId ownership before accepting traffic
 
-#### Gemini Live API (LEGACY FALLBACK)
-Google's multimodal voice conversation API (deprecated due to 10+ second latency issues):
--   **Model**: `gemini-2.0-flash-live` with automatic voice activity detection
--   **Cost**: ~$0.0225/minute
--   **API Endpoint**: `/api/session/gemini`
--   **Status**: Available as fallback but experiencing production reliability issues (Oct 2025)
--   **Audio Pipeline**: Direct PCM16 capture at 16kHz → WebSocket → Gemini → 24kHz playback
--   **Transcript Storage**: Real-time transcript capture with automatic persistence
-
 ### AI & Learning Engine
--   **Primary AI Model**: Gemini 2.0 Flash Live for voice conversations, utilizing an enhanced TutorMind system prompt for Socratic teaching.
+-   **Primary AI Model**: Claude Sonnet 4 for voice conversations, utilizing an enhanced TutorMind system prompt for Socratic teaching.
 -   **Teaching Method**: Advanced Socratic approach with adaptive questioning and emotion-aware responses.
 -   **Adaptive Learning**: AI adapts based on user progress and learning patterns, greeting students warmly by name at session start.
 -   **Tutor Personalities**: Five distinct age-specific personalities:
@@ -103,7 +94,7 @@ Google's multimodal voice conversation API (deprecated due to 10+ second latency
 
 ### RAG (Retrieval-Augmented Generation) System
 -   **Document Processing**: Supports PDF, DOCX, and TXT files with intelligent text segmentation.
--   **Document Upload**: Students can upload documents during live Gemini voice sessions for immediate AI analysis.
+-   **Document Upload**: Students can upload documents during live voice sessions for immediate AI analysis.
 -   **Context Integration**: Documents are processed and discussed in real-time with the AI tutor.
 -   **Background Worker**: An EmbeddingWorker asynchronously processes documents for future reference.
 
@@ -140,7 +131,9 @@ The application is configured for Replit Autoscale Deployment, supporting WebSoc
 ## External Dependencies
 
 ### AI & Voice Services
--   **Google Gemini AI**: Primary and only voice conversation provider via Gemini Live API. Handles all real-time voice tutoring with emotion-aware responses at $0.0225/minute.
+-   **Deepgram**: Speech-to-text service for real-time voice transcription.
+-   **Claude (Anthropic)**: AI model providing intelligent tutoring responses.
+-   **ElevenLabs**: Text-to-speech service for natural voice synthesis.
 
 ### Payment Processing
 -   **Stripe**: Used for subscription management, payments, and customer portal.
