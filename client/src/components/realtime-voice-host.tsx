@@ -1,10 +1,9 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { useGeminiVoice } from '@/hooks/use-gemini-voice';
+import { useCustomVoice } from '@/hooks/use-custom-voice';
 import { RealtimeVoiceTranscript } from './realtime-voice-transcript';
 import { Button } from '@/components/ui/button';
 import { Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { apiRequest } from '@/lib/queryClient';
 import { useAuth } from '@/hooks/use-auth';
 
 interface RealtimeVoiceHostProps {
@@ -33,528 +32,230 @@ export function RealtimeVoiceHost({
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-  const [transcriptMessages, setTranscriptMessages] = useState<Array<{
-    speaker: 'tutor' | 'student';
-    text: string;
-    timestamp: string;
-  }>>([]);
   
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const audioProcessorRef = useRef<ScriptProcessorNode | null>(null);
-  const mediaStreamRef = useRef<MediaStream | null>(null);
+  // Use Custom Voice Stack (Deepgram + Claude + ElevenLabs)
+  const customVoice = useCustomVoice();
   
-  // CRITICAL FIX: Use a ref to track Gemini connection state for MediaRecorder callback
-  const geminiConnectedRef = useRef<boolean>(false);
-  
-  // CRITICAL FIX: Use ref for sessionId to avoid async state race condition
-  const sessionIdRef = useRef<string | null>(null);
-  
-  // Save transcript entry to backend
-  const saveTranscriptEntry = useCallback(async (speaker: 'tutor' | 'student', text: string) => {
-    const currentSessionId = sessionIdRef.current;
-    
-    if (!currentSessionId) {
-      console.warn('[Transcript] No sessionId in ref, skipping save');
-      return;
-    }
-    
-    try {
-      const response = await apiRequest('POST', `/api/session/gemini/${currentSessionId}/transcript`, {
-        speaker,
-        text,
-        timestamp: new Date().toISOString()
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${await response.text()}`);
-      }
-      
-      console.log(`✅ [Transcript] Saved ${speaker} message to session ${currentSessionId}`);
-    } catch (error) {
-      console.error(`❌ [Transcript] Failed to save ${speaker} message:`, error);
-      // Don't throw - log and continue
-    }
-  }, []);
-  
-  // Gemini Voice Hook (ONLY PROVIDER - 93% cheaper than OpenAI!)
-  const geminiVoice = useGeminiVoice({
-    onTranscript: (text: string, isUser: boolean) => {
-      const speaker: 'tutor' | 'student' = isUser ? 'student' : 'tutor';
-      const entry = {
-        speaker,
-        text,
-        timestamp: new Date().toISOString()
-      };
-      setTranscriptMessages(prev => [...prev, entry]);
-      
-      // Save to backend
-      saveTranscriptEntry(speaker, text);
-    },
-    onError: (error: Error) => {
-      console.error('[Voice Host] Gemini error:', error);
-      toast({
-        title: "Voice Error",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-    onConnected: () => {
-      console.log('[Voice Host] Gemini connected successfully');
-      // CRITICAL FIX: Set the ref to true when Gemini connects
-      geminiConnectedRef.current = true;
-      console.log('[Voice Host] 🟢 geminiConnectedRef set to TRUE - audio processing enabled!');
-    },
-    onDisconnected: () => {
-      console.log('[Voice Host] Gemini disconnected');
-      geminiConnectedRef.current = false;
-    }
-  });
+  // Generate a unique session ID
+  const generateSessionId = () => {
+    return `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  };
+
+  // Create the system instruction for the AI tutor
+  const createSystemInstruction = () => {
+    const ageSpecificInstructions = {
+      'K-2': 'Use simple words and short sentences. Be very encouraging and patient. Use fun comparisons.',
+      '3-5': 'Explain things clearly with examples. Be encouraging and help build confidence.',
+      '6-8': 'Balance fun with learning. Use relatable examples and encourage critical thinking.',
+      '9-12': 'Be more sophisticated. Focus on college preparation and deeper understanding.',
+      'College/Adult': 'Treat as a peer. Be efficient and focus on practical applications.'
+    };
+
+    return `You are an AI tutor helping ${studentName || 'a student'} (${ageGroup} level) with ${subject || 'their studies'}. 
+    ${ageSpecificInstructions[ageGroup]}
+    Keep responses concise (2-3 sentences) suitable for voice conversation.
+    Speak in ${language === 'es' ? 'Spanish' : language === 'hi' ? 'Hindi' : language === 'zh' ? 'Chinese' : 'English'}.`;
+  };
 
   const startSession = async () => {
     try {
-      console.log('🎯 [VoiceHost] 📞 Requesting Gemini session from backend...');
+      console.log('🎯 [VoiceHost] Starting custom voice session...');
       
-      const response = await apiRequest('POST', '/api/session/gemini', {
-        studentId,
-        studentName,
-        subject,
-        language,
+      if (!user?.id) {
+        throw new Error('User not authenticated');
+      }
+
+      const newSessionId = generateSessionId();
+      setSessionId(newSessionId);
+      
+      // Trigger onSessionStart callback if provided
+      onSessionStart?.();
+      
+      // Load any document context if provided
+      let documents: string[] = [];
+      if (contextDocumentIds && contextDocumentIds.length > 0) {
+        console.log('[VoiceHost] Loading document context:', contextDocumentIds);
+        // TODO: Fetch document content from backend if needed
+        // For now, passing empty array as documents are handled server-side
+      }
+      
+      // Connect to custom voice WebSocket
+      await customVoice.connect(
+        newSessionId,
+        user.id,
+        studentName || 'Student',
         ageGroup,
-        contextDocumentIds
-      });
-
-      const data = await response.json();
-      
-      console.log('[VoiceHost] 📦 Backend response:', {
-        success: data.success,
-        sessionId: data.sessionId,
-        provider: data.provider,
-        hasApiKey: !!data.geminiApiKey,
-        apiKeyLength: data.geminiApiKey?.length,
-        hasSystemInstruction: !!data.systemInstruction,
-        instructionLength: data.systemInstruction?.length,
-        documentsLoaded: data.metadata?.documentsLoaded
-      });
-      
-      // CRITICAL: Verify we got the API key
-      if (!data.geminiApiKey) {
-        throw new Error('Backend did not provide Gemini API key!');
-      }
-
-      if (data.geminiApiKey.length < 30) {
-        throw new Error('Gemini API key seems too short - might be invalid');
-      }
-      
-      if (data.success && data.provider === 'gemini' && data.geminiApiKey && data.systemInstruction) {
-        console.log('[VoiceHost] ✅ Got valid credentials, starting Gemini...');
-        
-        // CRITICAL FIX: Set both state and ref immediately to avoid race condition
-        setSessionId(data.sessionId);
-        sessionIdRef.current = data.sessionId;
-        console.log(`📝 [VoiceHost] SessionId set: ${data.sessionId} - transcript saving enabled`);
-        
-        // Start Gemini WebSocket session
-        await geminiVoice.startSession(
-          data.geminiApiKey,
-          data.systemInstruction
-        );
-        
-        // Start microphone capture
-        console.log('[VoiceHost] 🎤 About to start microphone...');
-        try {
-          await startMicrophone();
-          console.log('[VoiceHost] ✅ Microphone started successfully');
-        } catch (micError) {
-          console.error('[VoiceHost] ❌ Microphone failed to start:', micError);
-          // Continue anyway - user can still hear AI even without mic
-        }
-        
-        onSessionStart?.();
-        
-        toast({
-          title: "Voice Session Started",
-          description: `Connected with Gemini - ${data.metadata?.studentName || studentName}`,
-        });
-        
-      } else {
-        throw new Error(data.error || 'Invalid session response');
-      }
-      
-    } catch (error: any) {
-      console.error('[VoiceHost] ❌ Session failed:', error);
-      toast({
-        title: "Session Error",
-        description: error.message || 'Failed to start voice session',
-        variant: "destructive",
-      });
-    }
-  };
-
-  // Start microphone capture for Gemini
-  const startMicrophone = async () => {
-    try {
-      console.log('[Microphone] 🎤 Requesting access...');
-      
-      // Check current permission status
-      try {
-        const permissionStatus = await navigator.permissions.query({ name: 'microphone' as PermissionName });
-        console.log('[Microphone] 📋 Current permission state:', permissionStatus.state);
-        
-        if (permissionStatus.state === 'denied') {
-          throw new Error('Microphone permission denied. Please enable it in browser settings.');
-        }
-      } catch (permError) {
-        console.warn('[Microphone] ⚠️ Could not check permission status:', permError);
-      }
-      
-      // Get user's microphone at WHATEVER sample rate their hardware uses
-      console.log('[Microphone] 📞 Calling getUserMedia...');
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-          // NO sampleRate constraint - accept whatever the hardware provides
-        }
-      });
-      console.log('[Microphone] ✅ getUserMedia succeeded!');
-      mediaStreamRef.current = stream;
-      
-      // Log the actual microphone settings
-      const audioTrack = stream.getAudioTracks()[0];
-      const settings = audioTrack.getSettings();
-      console.log('[Microphone] 📊 User microphone settings:', settings);
-      
-      // Create audio context at 16kHz - this automatically resamples ANY input to 16kHz!
-      const audioContext = new AudioContext({ sampleRate: 16000 });
-      audioContextRef.current = audioContext;
-      
-      console.log('[Microphone] 🔄 Resampling:', settings.sampleRate || 'unknown', 'Hz → 16000 Hz');
-      
-      const source = audioContext.createMediaStreamSource(stream);
-      
-      // Try to use AudioWorklet for better performance (fallback to ScriptProcessor if needed)
-      let useWorklet = false;
-      try {
-        await audioContext.audioWorklet.addModule('/audio-processor.js');
-        const workletNode = new AudioWorkletNode(audioContext, 'audio-processor');
-        
-        workletNode.port.onmessage = (event) => {
-          console.log('[Microphone] 📨 Received audio from worklet:', {
-            type: event.data.type,
-            hasData: !!event.data.data,
-            isMuted,
-            isConnected: geminiVoice.isConnected
-          });
-          
-          if (!isMuted && geminiVoice.isConnected && event.data.type === 'audio') {
-            const audioData = event.data.data; // Float32Array, 16kHz, mono
-            
-            // Convert Float32 to PCM16 for Gemini
-            const pcm16 = new Int16Array(audioData.length);
-            for (let i = 0; i < audioData.length; i++) {
-              const s = Math.max(-1, Math.min(1, audioData[i]));
-              pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-            }
-            
-            // Send to Gemini
-            console.log('[Microphone] 🎤 Sending audio to Gemini, size:', pcm16.buffer.byteLength);
-            geminiVoice.sendAudio(pcm16.buffer);
-          } else {
-            console.log('[Microphone] ⚠️ Skipping audio send:', {
-              reason: !geminiVoice.isConnected ? 'Not connected' : isMuted ? 'Muted' : 'Unknown'
-            });
-          }
-        };
-        
-        source.connect(workletNode);
-        workletNode.connect(audioContext.destination);
-        audioProcessorRef.current = workletNode as any;
-        useWorklet = true;
-        console.log('[Microphone] ✅ Using AudioWorklet for optimal performance');
-        
-      } catch (workletError) {
-        console.warn('[Microphone] ⚠️ AudioWorklet not available, using direct PCM capture');
-        
-        // Use ScriptProcessor with a different approach - capture at 16kHz directly
-        const audioCtx16k = new AudioContext({ sampleRate: 16000 });
-        const streamSource = audioCtx16k.createMediaStreamSource(stream);
-        
-        // Create a gain node to control volume
-        const gainNode = audioCtx16k.createGain();
-        gainNode.gain.value = 1.0;
-        
-        // LATENCY FIX: Use smaller buffer for faster transmission
-        const scriptProcessor = audioCtx16k.createScriptProcessor(1024, 1, 1);
-        
-        let isProcessing = false;
-        let totalSamples = 0;
-        let silenceCount = 0;
-        let consecutiveSpeechFrames = 0;  // Track consecutive frames with speech
-        const SPEAKING_THRESHOLD = 0.03;  // BALANCED: Only interrupt on clear speech (not background noise)
-        const SILENCE_THRESHOLD = 0.001;  // Threshold for silence
-        const FRAMES_BEFORE_INTERRUPT = 3; // Must detect speech for 3 consecutive frames
-        let lastInterruptTime = 0;  // Track last interruption to avoid rapid-fire interrupts
-        
-        scriptProcessor.onaudioprocess = (audioProcessingEvent) => {
-          // Check if we should process
-          if (!geminiConnectedRef.current || isMuted || isProcessing) {
-            return;
-          }
-          
-          isProcessing = true;
-          
-          try {
-            const inputBuffer = audioProcessingEvent.inputBuffer;
-            const inputData = inputBuffer.getChannelData(0);
-            
-            // Check audio amplitude
-            let maxAmplitude = 0;
-            for (let i = 0; i < inputData.length; i++) {
-              maxAmplitude = Math.max(maxAmplitude, Math.abs(inputData[i]));
-            }
-            
-            // Track speech patterns for intelligent interruption
-            const userIsSpeaking = maxAmplitude > SPEAKING_THRESHOLD;
-            
-            if (userIsSpeaking) {
-              consecutiveSpeechFrames++;
-            } else {
-              consecutiveSpeechFrames = 0;  // Reset if no speech detected
-            }
-            
-            // INTERRUPTION DETECTION: Only interrupt after sustained speech (not random noise)
-            if (consecutiveSpeechFrames >= FRAMES_BEFORE_INTERRUPT && geminiVoice.isPlaying) {
-              const now = Date.now();
-              // Avoid rapid-fire interrupts (wait at least 500ms between interrupts)
-              if (now - lastInterruptTime > 500) {
-                console.log('🛑 [INTERRUPTION] Clear user speech detected - interrupting AI');
-                console.log(`  Amplitude: ${maxAmplitude.toFixed(4)} (threshold: ${SPEAKING_THRESHOLD})`);
-                console.log(`  Consecutive speech frames: ${consecutiveSpeechFrames}`);
-                
-                // CRITICAL: Stop AI audio immediately
-                geminiVoice.stopPlayback();
-                lastInterruptTime = now;
-                consecutiveSpeechFrames = 0;  // Reset counter after interruption
-                
-                // Log success
-                console.log('✅ AI interrupted - ready for user input');
-              }
-            }
-            
-            // Only process and send audio if there's meaningful sound
-            if (maxAmplitude > SILENCE_THRESHOLD) {
-              silenceCount = 0;
-              
-              // Convert Float32 to PCM16
-              const pcm16 = new Int16Array(inputData.length);
-              for (let i = 0; i < inputData.length; i++) {
-                const s = Math.max(-1, Math.min(1, inputData[i]));
-                pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-              }
-              
-              totalSamples += pcm16.length;
-              
-              // Log every ~1 second of audio
-              if (totalSamples > 16000) {
-                const speakingStatus = maxAmplitude > SPEAKING_THRESHOLD ? '🗣️ SPEAKING' : '🎤 Audio';
-                console.log(`${speakingStatus} [PCM]:`, pcm16.length, 'samples, amplitude:', maxAmplitude.toFixed(4));
-                totalSamples = 0;
-              }
-              
-              // Send directly to Gemini
-              geminiVoice.sendAudio(pcm16.buffer);
-            } else {
-              silenceCount++;
-            }
-          } catch (error) {
-            console.error('❌ [PCM] Processing error:', error);
-          } finally {
-            isProcessing = false;
-          }
-        };
-        
-        // Connect the audio graph
-        streamSource.connect(gainNode);
-        gainNode.connect(scriptProcessor);
-        scriptProcessor.connect(audioCtx16k.destination);
-        
-        // Store references
-        audioContextRef.current = audioCtx16k;
-        audioProcessorRef.current = scriptProcessor;
-        
-        console.log('✅ [PCM] Direct audio capture started at 16kHz');
-      }
+        createSystemInstruction(),
+        documents
+      );
       
       setIsRecording(true);
-      console.log('[Microphone] ✅ Active and streaming to Gemini at standardized 16kHz');
-      console.log('[Microphone] 🎯 Compatible with ALL microphones:', {
-        method: useWorklet ? 'AudioWorklet' : 'DirectPCM',
-        input: settings.sampleRate || 'any',
-        output: '16000 Hz mono PCM16'
-      });
       
       toast({
-        title: "Microphone Active",
-        description: "You can now speak to the AI tutor",
+        title: "Voice Session Started",
+        description: `Connected to AI Tutor for ${studentName || 'Student'}`,
       });
       
+      console.log('[VoiceHost] ✅ Custom voice session started successfully');
     } catch (error: any) {
-      console.error('[Microphone] ❌ Access error:', error);
+      console.error('[VoiceHost] ❌ Failed to start session:', error);
       toast({
-        title: "Microphone Error",
-        description: "Could not access microphone. Please check permissions.",
+        title: "Connection Failed",
+        description: error.message || "Could not start voice session",
         variant: "destructive",
       });
     }
-  };
-
-  // Stop microphone capture
-  const stopMicrophone = () => {
-    console.log('[Microphone] 🛑 Stopping...');
-    
-    if (audioProcessorRef.current) {
-      // Check if it's a MediaRecorder
-      if ('stop' in audioProcessorRef.current && typeof audioProcessorRef.current.stop === 'function') {
-        try {
-          audioProcessorRef.current.stop();
-          console.log('[MediaRecorder] 🛑 Stopped recording');
-        } catch (e) {
-          console.log('[MediaRecorder] Already stopped');
-        }
-      } else if ('disconnect' in audioProcessorRef.current) {
-        audioProcessorRef.current.disconnect();
-      }
-      audioProcessorRef.current = null;
-    }
-    
-    if (audioContextRef.current) {
-      audioContextRef.current.close();
-      audioContextRef.current = null;
-    }
-    
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach(track => track.stop());
-      mediaStreamRef.current = null;
-    }
-    
-    setIsRecording(false);
-    console.log('[Microphone] ✅ Stopped');
   };
 
   const endSession = async () => {
-    console.log('🔴 [VoiceHost] Ending session...');
-    
-    // Save session and track minutes used
-    if (sessionId) {
-      try {
-        const response = await apiRequest('POST', `/api/session/gemini/${sessionId}/end`, {});
-        const data = await response.json();
-        
-        if (data.success) {
-          console.log(`✅ [VoiceHost] Session saved. Minutes used: ${data.minutesUsed}`);
-          
-          // Show appropriate message based on minute deduction status
-          if (data.insufficientMinutes) {
-            toast({
-              title: "Session Ended - Out of Minutes",
-              description: `Voice session completed (${data.minutesUsed} minutes). You've run out of voice minutes.`,
-              variant: "destructive",
-            });
-          } else {
-            toast({
-              title: "Session Ended",
-              description: `Voice session completed. ${data.minutesUsed} minute${data.minutesUsed !== 1 ? 's' : ''} used.`,
-            });
-          }
-        }
-      } catch (error: any) {
-        console.error('[VoiceHost] Failed to save session:', error);
-        toast({
-          title: "Session Ended",
-          description: "Voice session has been closed",
-        });
-      }
+    try {
+      console.log('[VoiceHost] 🛑 Ending session...');
+      
+      // Disconnect custom voice
+      customVoice.disconnect();
+      
+      // Reset state
+      setIsRecording(false);
+      setIsMuted(false);
+      setSessionId(null);
+      
+      // Trigger onSessionEnd callback if provided
+      onSessionEnd?.();
+      
+      toast({
+        title: "Session Ended",
+        description: "Voice tutoring session has ended",
+      });
+      
+      console.log('[VoiceHost] ✅ Session ended successfully');
+    } catch (error: any) {
+      console.error('[VoiceHost] ❌ Error ending session:', error);
+      toast({
+        title: "Error",
+        description: "Failed to end session properly",
+        variant: "destructive",
+      });
     }
-    
-    // Stop microphone
-    stopMicrophone();
-    
-    // Disconnect Gemini
-    geminiVoice.endSession();
-    
-    // Clear local state and ref
-    setSessionId(null);
-    sessionIdRef.current = null;
-    setTranscriptMessages([]);
-    
-    // Notify parent component
-    onSessionEnd?.();
-    
-    console.log('✅ [VoiceHost] Session ended successfully');
   };
 
   const toggleMute = () => {
-    setIsMuted(!isMuted);
+    setIsMuted(prev => !prev);
+    console.log('[VoiceHost]', isMuted ? 'Unmuted' : 'Muted');
   };
 
-  // Cleanup on unmount - no dependencies to avoid infinite loop
+  // Watch for connection status changes
+  useEffect(() => {
+    if (!customVoice.isConnected && isRecording) {
+      console.log('[VoiceHost] Lost connection, ending session');
+      endSession();
+    }
+  }, [customVoice.isConnected]);
+
+  // Watch for errors from the custom voice hook
+  useEffect(() => {
+    if (customVoice.error) {
+      console.error('[Voice Host] Custom voice error:', customVoice.error);
+      toast({
+        title: "Voice Error",
+        description: customVoice.error,
+        variant: "destructive",
+      });
+    }
+  }, [customVoice.error, toast]);
+
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      stopMicrophone();
-      geminiVoice.endSession();
+      if (customVoice.isConnected) {
+        customVoice.disconnect();
+      }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
-    <div className="space-y-4" data-testid="realtime-voice-host">
-      <div className="flex items-center gap-2">
-        {!sessionId ? (
-          <Button onClick={startSession} data-testid="button-start-voice">
-            Start Voice Session
-          </Button>
-        ) : (
-          <>
+    <div className="w-full space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          {!isRecording ? (
             <Button
-              onClick={toggleMute}
-              variant={isMuted ? "destructive" : "default"}
-              disabled={!isRecording}
-              data-testid="button-toggle-mute"
+              onClick={startSession}
+              variant="default"
+              size="sm"
+              className="gap-2"
+              disabled={!user}
             >
-              {isMuted ? <VolumeX className="w-4 h-4 mr-2" /> : <Volume2 className="w-4 h-4 mr-2" />}
-              {isMuted ? 'Unmute' : 'Mute'}
+              <Mic className="h-4 w-4" />
+              Start Voice Tutoring
             </Button>
-            
-            <Button onClick={endSession} variant="secondary" data-testid="button-end-voice">
-              End Session
-            </Button>
-            
-            {geminiVoice.isConnected && (
-              <div className="text-sm text-muted-foreground">
-                Connected via 🔵 Gemini Live
-              </div>
-            )}
-          </>
+          ) : (
+            <>
+              <Button
+                onClick={endSession}
+                variant="destructive"
+                size="sm"
+                className="gap-2"
+              >
+                <MicOff className="h-4 w-4" />
+                End Session
+              </Button>
+              
+              <Button
+                onClick={toggleMute}
+                variant="outline"
+                size="sm"
+                className="gap-2"
+              >
+                {isMuted ? (
+                  <>
+                    <VolumeX className="h-4 w-4" />
+                    Unmute
+                  </>
+                ) : (
+                  <>
+                    <Volume2 className="h-4 w-4" />
+                    Mute
+                  </>
+                )}
+              </Button>
+            </>
+          )}
+          
+          {customVoice.isConnected && (
+            <div className="text-sm text-muted-foreground">
+              Connected via 🎙️ AI Voice Tutor
+            </div>
+          )}
+        </div>
+        
+        {isRecording && (
+          <div className="flex items-center gap-2 text-sm">
+            <div className="h-2 w-2 bg-red-500 rounded-full animate-pulse" />
+            <span className="text-muted-foreground">Recording</span>
+          </div>
         )}
       </div>
-
-      {sessionId && (
-        <div className="mt-4 p-4 border rounded-lg">
-          <h3 className="font-semibold mb-2">Conversation Transcript</h3>
-          <div className="space-y-2 max-h-96 overflow-y-auto">
-            {transcriptMessages.map((msg, idx) => (
-              <div key={idx} className={`p-2 rounded ${msg.speaker === 'tutor' ? 'bg-blue-50 dark:bg-blue-900' : 'bg-gray-50 dark:bg-gray-800'}`}>
-                <div className="text-xs text-muted-foreground">{msg.speaker === 'tutor' ? '🤖 AI Tutor' : '👤 Student'}</div>
-                <div className="text-sm">{msg.text}</div>
-              </div>
-            ))}
-            {transcriptMessages.length === 0 && (
-              <div className="text-sm text-muted-foreground text-center py-4">
-                Speak to start the conversation...
-              </div>
-            )}
-          </div>
+      
+      {/* Transcript Display */}
+      <RealtimeVoiceTranscript
+        messages={customVoice.transcript}
+        isConnected={customVoice.isConnected}
+        status={customVoice.isConnected ? 'active' : sessionId ? 'ended' : 'idle'}
+        language={language}
+        voice={`${ageGroup} Tutor`}
+      />
+      
+      {/* Debug Info (remove in production) */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="text-xs text-muted-foreground p-2 bg-muted/50 rounded">
+          <div>Session ID: {sessionId || 'None'}</div>
+          <div>Connected: {customVoice.isConnected ? 'Yes' : 'No'}</div>
+          <div>Recording: {isRecording ? 'Yes' : 'No'}</div>
+          <div>Muted: {isMuted ? 'Yes' : 'No'}</div>
+          <div>Student: {studentName || 'Unknown'}</div>
+          <div>Subject: {subject || 'General'}</div>
+          <div>Age Group: {ageGroup}</div>
+          <div>Language: {language}</div>
+          <div>Documents: {contextDocumentIds?.length || 0}</div>
         </div>
       )}
     </div>
