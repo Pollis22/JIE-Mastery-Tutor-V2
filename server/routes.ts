@@ -10,8 +10,9 @@ import { setupSecurityHeaders, setupCORS } from "./middleware/security";
 import { requireAdmin } from "./middleware/admin-auth";
 import { auditActions } from "./middleware/audit-log";
 import { convertUsersToCSV, generateFilename } from "./utils/csv-export";
-import { sql } from "drizzle-orm";
+import { sql, desc } from "drizzle-orm";
 import { db } from "./db";
+import { realtimeSessions } from "@shared/schema";
 import Stripe from "stripe";
 import { z } from "zod";
 import { createHmac, timingSafeEqual } from "crypto";
@@ -337,10 +338,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Document and context routes for RAG system
   const { default: documentRoutes } = await import('./routes/documents');
   const { default: contextRoutes } = await import('./routes/context');
-  const { default: geminiRealtimeRoutes } = await import('./routes/gemini-realtime');
   app.use("/api/documents", documentRoutes);
   app.use("/api/context", contextRoutes);
-  app.use("/api/session/gemini", geminiRealtimeRoutes);
   
   // Debug endpoint to verify route mounting
   app.get("/api/routes", (req, res) => {
@@ -1555,7 +1554,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // AI tutor chat endpoint
+  // AI tutor chat endpoint (Legacy - replaced by custom voice WebSocket)
+  // Commented out as we're using the custom voice stack now
+  /*
   app.post("/api/chat", async (req, res) => {
     if (!req.isAuthenticated()) {
       return res.status(401).json({ message: "Unauthorized" });
@@ -1565,17 +1566,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const user = req.user as any;
       const { message, lessonId, sessionId } = req.body;
 
-      const response = await openaiService.generateTutorResponse(message, {
-        userId: user.id,
-        lessonId,
-        sessionId,
-      });
+      // This used OpenAI which is no longer used
+      // const response = await openaiService.generateTutorResponse(message, {
+      //   userId: user.id,
+      //   lessonId,
+      //   sessionId,
+      // });
 
-      res.json({ response });
+      // res.json({ response });
+      res.status(501).json({ message: "Chat endpoint deprecated - use voice WebSocket instead" });
     } catch (error: any) {
       res.status(500).json({ message: "Error generating response: " + error.message });
     }
   });
+  */
 
   // Settings API
   app.put("/api/settings", async (req, res) => {

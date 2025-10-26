@@ -122,12 +122,6 @@ app.use((req, res, next) => {
     const server = await registerRoutes(app);
     console.log('Routes registered successfully ✓');
 
-    // Setup WebSocket proxy for Gemini Live API (bypasses CORS)
-    console.log('Setting up Gemini WebSocket proxy...');
-    const { setupGeminiWebSocketProxy } = await import('./websocket-proxy');
-    setupGeminiWebSocketProxy(server);
-    console.log('✓ Gemini WebSocket proxy ready at /api/gemini-ws');
-
     // Setup Custom Voice WebSocket (Deepgram + Claude + ElevenLabs)
     console.log('Setting up Custom Voice WebSocket...');
     const { setupCustomVoiceWebSocket } = await import('./routes/custom-voice-ws');
