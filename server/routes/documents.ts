@@ -240,6 +240,54 @@ router.delete('/:id', async (req, res) => {
 });
 
 /**
+ * Get document content/text
+ */
+router.get('/:id/content', async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    const documentId = req.params.id;
+    
+    console.log(`[Documents API] 📖 Fetching content for document: ${documentId}`);
+    
+    // Get document metadata and chunks
+    const contextData = await storage.getDocumentContext(userId, [documentId]);
+    
+    if (contextData.documents.length === 0) {
+      console.log(`[Documents API] ❌ Document not found: ${documentId}`);
+      return res.status(404).json({ error: 'Document not found' });
+    }
+    
+    const document = contextData.documents[0];
+    console.log(`[Documents API] ✅ Found document: ${document.originalName}`);
+    
+    // Concatenate all chunks to get full text
+    const fullText = contextData.chunks
+      .sort((a, b) => a.chunkIndex - b.chunkIndex)
+      .map(chunk => chunk.content)
+      .join('\n\n');
+    
+    console.log(`[Documents API] 📄 Document has ${contextData.chunks.length} chunks, total text length: ${fullText.length} chars`);
+    
+    res.json({
+      id: document.id,
+      filename: document.originalName,
+      title: document.title || document.originalName,
+      text: fullText,
+      contentType: document.fileType,
+      chunkCount: contextData.chunks.length
+    });
+    
+  } catch (error) {
+    console.error('[Documents API] ❌ Error fetching document content:', error);
+    res.status(500).json({ error: 'Failed to fetch document content' });
+  }
+});
+
+/**
  * Update document metadata
  */
 router.put('/:id', async (req, res) => {

@@ -97,12 +97,55 @@ export function RealtimeVoiceHost({
       // Trigger onSessionStart callback if provided
       onSessionStart?.();
       
-      // Load any document context if provided
+      // Load document content if provided
       let documents: string[] = [];
       if (contextDocumentIds && contextDocumentIds.length > 0) {
-        console.log('[VoiceHost] Loading document context:', contextDocumentIds);
-        // TODO: Fetch document content from backend if needed
-        // For now, passing empty array as documents are handled server-side
+        console.log('[VoiceHost] 📚 Loading document content for:', contextDocumentIds);
+        
+        for (const docId of contextDocumentIds) {
+          try {
+            console.log(`[VoiceHost] 📖 Fetching document: ${docId}`);
+            
+            const docResponse = await fetch(`/api/documents/${docId}/content`, {
+              method: 'GET',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+            });
+            
+            if (!docResponse.ok) {
+              console.warn(`[VoiceHost] ⚠️ Failed to fetch document ${docId}: ${docResponse.status}`);
+              continue;
+            }
+            
+            const docData = await docResponse.json();
+            
+            if (docData.text) {
+              // Format document text with header for AI context
+              const docText = `[Document: ${docData.title || docData.filename}]\n${docData.text}`;
+              documents.push(docText);
+              console.log(`[VoiceHost] ✅ Loaded: ${docData.filename} (${docData.text.length} chars)`);
+            } else {
+              console.warn(`[VoiceHost] ⚠️ No text content in document: ${docId}`);
+            }
+          } catch (error) {
+            console.error(`[VoiceHost] ❌ Error loading document ${docId}:`, error);
+          }
+        }
+        
+        console.log(`[VoiceHost] 📚 Total documents loaded: ${documents.length}`);
+        
+        if (documents.length === 0 && contextDocumentIds.length > 0) {
+          toast({
+            title: "Document Loading",
+            description: "Documents selected but couldn't extract text. Continuing without documents.",
+            variant: "default",
+          });
+        } else if (documents.length > 0) {
+          toast({
+            title: "Documents Ready",
+            description: `Loaded ${documents.length} document(s) for this session`,
+          });
+        }
       }
       
       // Step 2: Connect to custom voice WebSocket with valid session

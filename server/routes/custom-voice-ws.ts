@@ -28,6 +28,7 @@ interface SessionState {
   transcriptQueue: string[]; // FIX #1: Queue for incoming transcripts
   sessionStartTime: number;
   lastPersisted: number;
+  lastTranscript: string; // FIX #1A: Track last transcript to avoid duplicates
 }
 
 // FIX #3: Incremental persistence helper
@@ -75,6 +76,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
       transcriptQueue: [], // FIX #1: Initialize queue
       sessionStartTime: Date.now(),
       lastPersisted: Date.now(),
+      lastTranscript: "", // FIX #1A: Initialize duplicate tracker
     };
 
     // FIX #3: Auto-persist every 10 seconds
@@ -253,18 +255,35 @@ export function setupCustomVoiceWebSocket(server: Server) {
             // Start Deepgram connection with cleanup on close
             state.deepgramConnection = await startDeepgramStream(
               async (transcript: string, isFinal: boolean) => {
-                // FIX #2: Only respond to FINAL transcripts
+                // Log EVERYTHING for debugging
+                console.log(`[Deepgram] ${isFinal ? '✅ FINAL' : '⏳ interim'}: "${transcript}" (isFinal=${isFinal})`);
+                
+                // CRITICAL: Strict checks before processing
                 if (!isFinal) {
-                  console.log(`[Custom Voice] ⏳ Skipping interim: "${transcript}"`);
+                  console.log("[Custom Voice] ⏭️ Skipping interim (isFinal=false)");
                   return;
                 }
                 
-                if (transcript.length === 0) {
-                  console.log("[Custom Voice] ⏭️ Skipping empty transcript");
+                if (!transcript || transcript.trim().length < 3) {
+                  console.log("[Custom Voice] ⏭️ Skipping short/empty transcript");
                   return;
                 }
                 
-                console.log(`[Custom Voice] 📝 Final transcript: "${transcript}"`);
+                if (state.isProcessing) {
+                  console.log("[Custom Voice] ⏭️ Already processing previous request");
+                  return;
+                }
+                
+                // Additional check: Avoid duplicate transcripts
+                // Deepgram may send is_final=true multiple times, we want unique ones
+                if (state.lastTranscript === transcript) {
+                  console.log("[Custom Voice] ⏭️ Duplicate transcript, skipping");
+                  return;
+                }
+                
+                state.lastTranscript = transcript;
+                
+                console.log(`[Custom Voice] ✅ Processing FINAL transcript: "${transcript}"`);
                 
                 // FIX #2C: Add turn-taking timeout
                 // Clear any existing timer
@@ -273,7 +292,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
                   responseTimer = null;
                 }
                 
-                // Wait 300ms to see if student continues speaking
+                // Wait 500ms to see if student continues speaking (increased from 300ms)
                 responseTimer = setTimeout(() => {
                   console.log("[Custom Voice] ⏰ Processing after pause");
                   state.transcriptQueue.push(transcript);
@@ -283,7 +302,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
                     processTranscriptQueue();
                   }
                   responseTimer = null;
-                }, 300); // Wait 300ms before responding
+                }, 500); // Wait 500ms before responding (increased for better turn-taking)
               },
               async (error: Error) => {
                 console.error("[Custom Voice] ❌ Deepgram error:", error);

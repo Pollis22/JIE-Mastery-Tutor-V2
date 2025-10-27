@@ -40,18 +40,32 @@ export async function generateTutorResponse(
   systemInstruction?: string
 ): Promise<string> {
   
+  console.log("[AI Service] 📝 Generating response");
+  console.log("[AI Service] 📚 Documents available:", uploadedDocuments.length);
+  
   // Build context with uploaded documents
   const documentContext = uploadedDocuments.length > 0
-    ? `\n\nSTUDENT'S UPLOADED DOCUMENTS:\n${uploadedDocuments.map((doc, i) => 
-        `\n[Document ${i + 1}]\n${doc}`
-      ).join('\n\n')}`
+    ? `\n\nSTUDENT'S UPLOADED DOCUMENTS:\n────────────────────────\n${uploadedDocuments.map((doc, i) => 
+        `${doc}`
+      ).join('\n────────────────────────\n')}\n────────────────────────`
     : "";
+
+  console.log("[AI Service] 📄 Document context length:", documentContext.length, "chars");
 
   const systemPrompt = systemInstruction || 
     `You are an expert AI tutor helping students with homework and learning. 
-Be encouraging, patient, and clear. Use the Socratic method - ask questions to guide understanding rather than just giving answers.
-Keep responses concise (2-3 sentences max) since this is voice conversation.
-If referencing uploaded documents, be specific about which part you're discussing.${documentContext}`;
+
+IMPORTANT INSTRUCTIONS:
+- Be encouraging, patient, and clear
+- Use the Socratic method - ask questions to guide understanding
+- Keep responses VERY CONCISE (1-2 sentences max) since this is voice conversation
+${uploadedDocuments.length > 0 ? 
+`- The student has uploaded documents for this session - ALWAYS reference them specifically
+- Use phrases like "Looking at your document..." or "In the problem you uploaded..." or "Based on what you've shared..."
+- Make it clear you can see their materials and are helping with their specific homework` 
+: '- Help with general understanding since no specific materials were uploaded'}
+- Wait for the student to FINISH speaking before responding
+- Don't interrupt or rush to respond${documentContext}`;
 
   try {
     const anthropicClient = getAnthropicClient();
