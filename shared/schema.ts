@@ -211,6 +211,47 @@ export const minutePurchases = pgTable("minute_purchases", {
   index("idx_minute_purchases_user").on(table.userId, table.status),
 ]);
 
+// Content violations table for tracking inappropriate behavior
+export const contentViolations = pgTable("content_violations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  sessionId: varchar("session_id"),
+  violationType: text("violation_type").$type<'profanity' | 'sexual' | 'harmful' | 'hate' | 'other'>().notNull(),
+  severity: text("severity").$type<'low' | 'medium' | 'high'>().notNull(),
+  userMessage: text("user_message").notNull(),
+  aiResponse: text("ai_response"),
+  confidence: decimal("confidence", { precision: 3, scale: 2 }),
+  reviewStatus: text("review_status").$type<'pending' | 'reviewed' | 'dismissed'>().default('pending'),
+  actionTaken: text("action_taken").$type<'warning' | 'suspension' | 'ban' | 'none'>(),
+  reviewedBy: varchar("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at"),
+  reviewNotes: text("review_notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_violations_user").on(table.userId),
+  index("idx_violations_status").on(table.reviewStatus),
+  index("idx_violations_created").on(table.createdAt),
+]);
+
+// User suspensions table for tracking banned/suspended users
+export const userSuspensions = pgTable("user_suspensions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  reason: text("reason").notNull(),
+  violationIds: text("violation_ids").array(), // Array of violation IDs that led to suspension
+  suspendedUntil: timestamp("suspended_until"),
+  isPermanent: boolean("is_permanent").default(false),
+  suspendedBy: varchar("suspended_by").references(() => users.id), // Admin who suspended
+  isActive: boolean("is_active").default(true), // Can be lifted early
+  liftedAt: timestamp("lifted_at"),
+  liftedBy: varchar("lifted_by").references(() => users.id),
+  liftReason: text("lift_reason"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_suspensions_user").on(table.userId),
+  index("idx_suspensions_active").on(table.isActive),
+]);
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   progress: many(userProgress),

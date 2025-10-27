@@ -4,9 +4,10 @@ import { startDeepgramStream, DeepgramConnection } from "../services/deepgram-se
 import { generateTutorResponse } from "../services/ai-service";
 import { generateSpeech } from "../services/tts-service";
 import { db } from "../db";
-import { realtimeSessions } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { realtimeSessions, contentViolations, userSuspensions } from "@shared/schema";
+import { eq, and, or, gte } from "drizzle-orm";
 import { getTutorPersonality } from "../config/tutor-personalities";
+import { moderateContent, shouldWarnUser, getModerationResponse } from "../services/content-moderation";
 
 interface TranscriptEntry {
   speaker: 'tutor' | 'student';
@@ -30,6 +31,8 @@ interface SessionState {
   sessionStartTime: number;
   lastPersisted: number;
   lastTranscript: string; // FIX #1A: Track last transcript to avoid duplicates
+  violationCount: number; // Track content violations in this session
+  isSessionEnded: boolean; // Flag to prevent further processing after termination
 }
 
 // FIX #3: Incremental persistence helper
@@ -78,6 +81,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
       sessionStartTime: Date.now(),
       lastPersisted: Date.now(),
       lastTranscript: "", // FIX #1A: Initialize duplicate tracker
+      violationCount: 0, // Initialize violation counter
+      isSessionEnded: false, // Initialize session termination flag
     };
 
     // FIX #3: Auto-persist every 10 seconds
@@ -90,7 +95,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
 
     // FIX #1: Process queued transcripts sequentially
     async function processTranscriptQueue() {
-      if (state.isProcessing || state.transcriptQueue.length === 0) {
+      if (state.isProcessing || state.transcriptQueue.length === 0 || state.isSessionEnded) {
         return;
       }
 
@@ -115,6 +120,151 @@ export function setupCustomVoiceWebSocket(server: Server) {
         }));
 
         console.log(`[Custom Voice] 👤 ${state.studentName}: "${transcript}"`);
+
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        // 🛡️ CONTENT MODERATION - Check for inappropriate content
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        
+        console.log("[Custom Voice] 🔍 Moderating content...");
+        const moderation = await moderateContent(transcript);
+        
+        if (!moderation.isAppropriate) {
+          console.log(`[Custom Voice] ⚠️  Content violation detected: ${moderation.violationType}`);
+          
+          // Increment violation count
+          state.violationCount++;
+          const warningLevel = shouldWarnUser(state.violationCount - 1);
+          
+          // Get appropriate response based on warning level (should never be 'none' here)
+          if (warningLevel === 'none') {
+            console.error("[Custom Voice] ❌ Unexpected warning level 'none'");
+            return; // Skip if somehow 'none' is returned
+          }
+          
+          const moderationResponse = getModerationResponse(warningLevel);
+          
+          // Log violation to database with FULL context (user message + AI warning response)
+          await db.insert(contentViolations).values({
+            userId: state.userId,
+            sessionId: state.sessionId,
+            violationType: moderation.violationType!,
+            severity: moderation.severity,
+            userMessage: transcript,
+            aiResponse: moderationResponse, // Store the warning message for admin review
+            confidence: moderation.confidence?.toString(),
+            reviewStatus: 'pending',
+            actionTaken: warningLevel === 'final' ? 'suspension' : 'warning',
+          });
+          
+          // If final warning, suspend user and end session
+          if (warningLevel === 'final') {
+            console.log("[Custom Voice] 🚫 Suspending user due to repeated violations");
+            
+            // Create suspension record (24 hour suspension)
+            const suspendedUntil = new Date();
+            suspendedUntil.setHours(suspendedUntil.getHours() + 24);
+            
+            await db.insert(userSuspensions).values({
+              userId: state.userId,
+              reason: `Repeated inappropriate content violations (${moderation.violationType})`,
+              violationIds: [], // Could track specific violation IDs
+              suspendedUntil: suspendedUntil,
+              isPermanent: false,
+              isActive: true,
+            });
+            
+            // Mark session as ended
+            state.isSessionEnded = true;
+            
+            // Send moderation response
+            const aiResponse = moderationResponse;
+            
+            // Add to conversation history
+            state.conversationHistory.push(
+              { role: "user", content: transcript },
+              { role: "assistant", content: aiResponse }
+            );
+            
+            // Add to transcript
+            const aiTranscriptEntry: TranscriptEntry = {
+              speaker: "tutor",
+              text: aiResponse,
+              timestamp: new Date().toISOString(),
+              messageId: crypto.randomUUID(),
+            };
+            state.transcript.push(aiTranscriptEntry);
+            
+            // Send response
+            ws.send(JSON.stringify({
+              type: "transcript",
+              speaker: "tutor",
+              text: aiResponse,
+            }));
+            
+            // Generate and send speech
+            const audioBuffer = await generateSpeech(aiResponse, state.ageGroup);
+            ws.send(JSON.stringify({
+              type: "audio",
+              data: audioBuffer.toString("base64"),
+              mimeType: "audio/pcm;rate=16000"
+            }));
+            
+            // Persist and close
+            await persistTranscript(state.sessionId, state.transcript);
+            
+            // Send session end notification
+            ws.send(JSON.stringify({
+              type: "session_ended",
+              reason: "content_violation"
+            }));
+            
+            // Close WebSocket
+            setTimeout(() => ws.close(), 2000); // Give time for audio to play
+            return;
+          } else {
+            // Send warning (1st or 2nd)
+            console.log(`[Custom Voice] ⚠️  Sending ${warningLevel} warning to user`);
+            const aiResponse = moderationResponse;
+            
+            // Add to conversation history
+            state.conversationHistory.push(
+              { role: "user", content: transcript },
+              { role: "assistant", content: aiResponse }
+            );
+            
+            // Add to transcript
+            const aiTranscriptEntry: TranscriptEntry = {
+              speaker: "tutor",
+              text: aiResponse,
+              timestamp: new Date().toISOString(),
+              messageId: crypto.randomUUID(),
+            };
+            state.transcript.push(aiTranscriptEntry);
+            
+            // Send response
+            ws.send(JSON.stringify({
+              type: "transcript",
+              speaker: "tutor",
+              text: aiResponse,
+            }));
+            
+            // Generate and send speech
+            const audioBuffer = await generateSpeech(aiResponse, state.ageGroup);
+            ws.send(JSON.stringify({
+              type: "audio",
+              data: audioBuffer.toString("base64"),
+              mimeType: "audio/pcm;rate=16000"
+            }));
+            
+            // Persist
+            await persistTranscript(state.sessionId, state.transcript);
+            return; // Don't continue to normal AI processing
+          }
+        }
+        
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        // ✅ Content passed moderation - Continue normal processing
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
         // Generate AI response
         const aiResponse = await generateTutorResponse(
@@ -170,8 +320,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
       } finally {
         state.isProcessing = false;
         
-        // FIX #1: Process next item in queue if any
-        if (state.transcriptQueue.length > 0) {
+        // FIX #1: Process next item in queue if any (only if session not ended)
+        if (state.transcriptQueue.length > 0 && !state.isSessionEnded) {
           setImmediate(() => processTranscriptQueue());
         }
       }
@@ -236,6 +386,41 @@ export function setupCustomVoiceWebSocket(server: Server) {
               }
 
               console.log(`[Custom Voice] ✅ Session validated for user ${userIdStr}`);
+              
+              // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+              // 🛡️ CHECK FOR ACTIVE SUSPENSIONS
+              // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+              
+              const suspension = await db.select()
+                .from(userSuspensions)
+                .where(and(
+                  eq(userSuspensions.userId, userIdStr),
+                  eq(userSuspensions.isActive, true),
+                  or(
+                    eq(userSuspensions.isPermanent, true),
+                    gte(userSuspensions.suspendedUntil, new Date())
+                  )
+                ))
+                .limit(1);
+              
+              if (suspension.length > 0) {
+                const susp = suspension[0];
+                console.log("[Custom Voice] ⛔ User is suspended");
+                
+                const message = susp.isPermanent
+                  ? `Your account has been permanently suspended due to violations of our terms of service. Reason: ${susp.reason}. Please contact support.`
+                  : `Your account is temporarily suspended until ${susp.suspendedUntil ? new Date(susp.suspendedUntil).toLocaleString() : 'further notice'}. Reason: ${susp.reason}`;
+                
+                ws.send(JSON.stringify({
+                  type: "error",
+                  error: message
+                }));
+                
+                ws.close();
+                return;
+              }
+              
+              console.log("[Custom Voice] ✅ No active suspensions found");
             } catch (error) {
               console.error("[Custom Voice] ❌ Session validation error:", error);
               ws.send(JSON.stringify({ 
