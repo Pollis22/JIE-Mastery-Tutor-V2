@@ -7,9 +7,22 @@ If the user doesn't specify a model, always prefer using "claude-sonnet-4-202505
 </important_code_snippet_instructions>
 */
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+// Lazy initialization for Anthropic client
+let anthropic: Anthropic | null = null;
+
+function getAnthropicClient(): Anthropic {
+  if (!anthropic) {
+    if (!process.env.ANTHROPIC_API_KEY) {
+      console.error("[AI Service] ❌ ANTHROPIC_API_KEY not found in environment variables");
+      throw new Error("Missing ANTHROPIC_API_KEY environment variable");
+    }
+    console.log("[AI Service] ✅ Anthropic API key found");
+    anthropic = new Anthropic({
+      apiKey: process.env.ANTHROPIC_API_KEY,
+    });
+  }
+  return anthropic;
+}
 
 // <important_do_not_delete>
 const DEFAULT_MODEL_STR = "claude-sonnet-4-20250514";
@@ -41,7 +54,8 @@ Keep responses concise (2-3 sentences max) since this is voice conversation.
 If referencing uploaded documents, be specific about which part you're discussing.${documentContext}`;
 
   try {
-    const response = await anthropic.messages.create({
+    const anthropicClient = getAnthropicClient();
+    const response = await anthropicClient.messages.create({
       model: DEFAULT_MODEL_STR, // "claude-sonnet-4-20250514"
       max_tokens: 300, // Keep voice responses concise
       system: systemPrompt,

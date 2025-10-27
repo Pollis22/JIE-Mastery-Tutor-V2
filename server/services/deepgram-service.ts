@@ -1,6 +1,28 @@
-import { createClient, LiveTranscriptionEvents } from "@deepgram/sdk";
+import { createClient, LiveTranscriptionEvents, type DeepgramClient } from "@deepgram/sdk";
 
-const deepgram = createClient(process.env.DEEPGRAM_API_KEY!);
+// Lazy initialization - only create client when actually needed
+let deepgram: DeepgramClient | null = null;
+
+function getDeepgramClient(): DeepgramClient {
+  if (!deepgram) {
+    // Validate API key exists
+    if (!process.env.DEEPGRAM_API_KEY) {
+      console.error("[Deepgram] ❌ DEEPGRAM_API_KEY not found in environment variables");
+      console.error("[Deepgram] ❌ Available env vars:", Object.keys(process.env).filter(k => k.includes('DEEPGRAM')));
+      throw new Error("Missing DEEPGRAM_API_KEY environment variable");
+    }
+
+    // Log API key status (partial for security)
+    console.log("[Deepgram] ✅ API key found:", 
+      process.env.DEEPGRAM_API_KEY.substring(0, 15) + "..."
+    );
+
+    // Initialize Deepgram client with explicit API key
+    deepgram = createClient(process.env.DEEPGRAM_API_KEY);
+    console.log("[Deepgram] ✅ Client initialized");
+  }
+  return deepgram;
+}
 
 export interface DeepgramConnection {
   send: (audioData: Buffer) => void;
@@ -13,7 +35,11 @@ export async function startDeepgramStream(
   onClose?: () => void
 ): Promise<DeepgramConnection> {
   
-  const connection = deepgram.listen.live({
+  console.log("[Deepgram] 🎤 Starting stream...");
+  
+  try {
+    const deepgramClient = getDeepgramClient();
+    const connection = deepgramClient.listen.live({
     model: "nova-2",
     language: "en-US",
     smart_format: true,
@@ -22,49 +48,56 @@ export async function startDeepgramStream(
     vad_events: true,
     encoding: "linear16",
     sample_rate: 16000,
-  });
+    });
 
-  connection.on(LiveTranscriptionEvents.Open, () => {
-    console.log("[Deepgram] ✅ Connection opened");
-  });
+    console.log("[Deepgram] 📡 Connection object created");
 
-  connection.on(LiveTranscriptionEvents.Transcript, (data) => {
-    const transcript = data.channel?.alternatives?.[0]?.transcript;
-    const isFinal = data.is_final;
+    connection.on(LiveTranscriptionEvents.Open, () => {
+      console.log("[Deepgram] ✅ Connection opened");
+    });
+
+    connection.on(LiveTranscriptionEvents.Transcript, (data) => {
+      const transcript = data.channel?.alternatives?.[0]?.transcript;
+      const isFinal = data.is_final;
+      
+      if (transcript && transcript.length > 0) {
+        console.log(`[Deepgram] ${isFinal ? '📝 FINAL' : '⏳ interim'}: ${transcript}`);
+        onTranscript(transcript, isFinal);
+      }
+    });
+
+    connection.on(LiveTranscriptionEvents.Error, (error) => {
+      console.error("[Deepgram] ❌ Error:", error);
+      onError(error);
+    });
+
+    connection.on(LiveTranscriptionEvents.Close, () => {
+      console.log("[Deepgram] 🔌 Connection closed");
+      if (onClose) {
+        onClose();
+      }
+    });
+
+    // Wait for connection to open
+    await new Promise((resolve) => {
+      connection.on(LiveTranscriptionEvents.Open, resolve);
+    });
+
+    return {
+      send: (audioData: Buffer) => {
+        if (connection) {
+          connection.send(audioData);
+        }
+      },
+      close: () => {
+        if (connection) {
+          connection.finish();
+        }
+      },
+    };
     
-    if (transcript && transcript.length > 0) {
-      console.log(`[Deepgram] ${isFinal ? '📝 FINAL' : '⏳ interim'}: ${transcript}`);
-      onTranscript(transcript, isFinal);
-    }
-  });
-
-  connection.on(LiveTranscriptionEvents.Error, (error) => {
-    console.error("[Deepgram] ❌ Error:", error);
-    onError(error);
-  });
-
-  connection.on(LiveTranscriptionEvents.Close, () => {
-    console.log("[Deepgram] 🔌 Connection closed");
-    if (onClose) {
-      onClose();
-    }
-  });
-
-  // Wait for connection to open
-  await new Promise((resolve) => {
-    connection.on(LiveTranscriptionEvents.Open, resolve);
-  });
-
-  return {
-    send: (audioData: Buffer) => {
-      if (connection) {
-        connection.send(audioData);
-      }
-    },
-    close: () => {
-      if (connection) {
-        connection.finish();
-      }
-    },
-  };
+  } catch (error) {
+    console.error("[Deepgram] ❌ Error creating connection:", error);
+    throw error;
+  }
 }

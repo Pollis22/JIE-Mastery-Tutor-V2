@@ -6,6 +6,24 @@ import * as dotenv from "dotenv";
 // Load environment variables from .env file
 dotenv.config();
 
+// Validate critical API keys exist
+const requiredEnvVars = [
+  'DEEPGRAM_API_KEY',
+  'ANTHROPIC_API_KEY', 
+  'ELEVENLABS_API_KEY'
+];
+
+console.log('=== Validating Environment Variables ===');
+for (const envVar of requiredEnvVars) {
+  if (!process.env[envVar]) {
+    console.error(`❌ Missing required environment variable: ${envVar}`);
+    console.error(`   Please add ${envVar} to your .env file`);
+  } else {
+    console.log(`✅ ${envVar} loaded (${process.env[envVar]?.substring(0, 15)}...)`);
+  }
+}
+console.log('=========================================');
+
 // Enable test mode by default in development
 if (process.env.NODE_ENV === 'development' && !process.env.AUTH_TEST_MODE) {
   process.env.AUTH_TEST_MODE = 'true';
