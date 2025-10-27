@@ -313,7 +313,7 @@ export function RealtimeVoiceHost({
         messages={customVoice.transcript.map(t => ({
           role: t.speaker === 'student' ? 'user' as const : 'assistant' as const,
           content: t.text,
-          timestamp: new Date(t.timestamp)
+          timestamp: t.timestamp ? new Date(t.timestamp) : new Date()
         }))}
         isConnected={customVoice.isConnected}
         status={customVoice.isConnected ? 'active' : sessionId ? 'ended' : 'idle'}
