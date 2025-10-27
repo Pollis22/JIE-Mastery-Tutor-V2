@@ -92,10 +92,28 @@ app.use((req, res, next) => {
     // Initialize database schema before anything else
     if (process.env.DATABASE_URL) {
       console.log('Initializing database...');
-      const { initializeDatabase } = await import('./db-init');
-      const dbInitSuccess = await initializeDatabase();
-      if (!dbInitSuccess && process.env.NODE_ENV === 'production') {
-        console.error('❌ Failed to initialize database in production!');
+      try {
+        const { initializeDatabase } = await import('./db-init');
+        const dbInitSuccess = await initializeDatabase();
+        if (!dbInitSuccess && process.env.NODE_ENV === 'production') {
+          console.error('❌ Failed to initialize database in production!');
+          console.error('Ensure DATABASE_URL is correctly set in Railway');
+          process.exit(1);
+        }
+        console.log('✅ Database initialized successfully');
+      } catch (dbError) {
+        console.error('❌ Database initialization error:', dbError);
+        if (process.env.NODE_ENV === 'production') {
+          console.error('Cannot continue without database in production');
+          process.exit(1);
+        } else {
+          console.warn('⚠️  Continuing without database in development');
+        }
+      }
+    } else {
+      console.warn('⚠️  DATABASE_URL not set - running without database');
+      if (process.env.NODE_ENV === 'production') {
+        console.error('❌ DATABASE_URL is required in production!');
         process.exit(1);
       }
     }
@@ -146,11 +164,17 @@ app.use((req, res, next) => {
     setupCustomVoiceWebSocket(server);
     console.log('✓ Custom Voice WebSocket ready at /api/custom-voice-ws');
 
-    // Start embedding worker for background document processing
-    console.log('Starting embedding worker...');
-    const { startEmbeddingWorker } = await import('./services/embedding-worker');
-    startEmbeddingWorker();
-    log('Embedding worker started for background document processing');
+    // Start embedding worker ONLY in development (requires vector DB configuration)
+    // In production (Railway), disable to prevent startup failures
+    if (process.env.NODE_ENV !== 'production') {
+      console.log('Starting embedding worker...');
+      const { startEmbeddingWorker } = await import('./services/embedding-worker');
+      startEmbeddingWorker();
+      log('Embedding worker started for background document processing');
+    } else {
+      console.log('⏭️  Embedding worker disabled in production (Railway deployment)');
+      log('Embedding worker disabled in production');
+    }
 
     app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
       const status = err.status || err.statusCode || 500;
