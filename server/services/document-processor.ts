@@ -5,6 +5,7 @@ import { PdfJsTextExtractor } from './pdf-extractor';
 import xlsx from 'xlsx';
 import { parse } from 'csv-parse/sync';
 import { createWorker } from 'tesseract.js';
+import OpenAI from 'openai';
 
 export interface ProcessedDocument {
   chunks: Array<{
@@ -21,9 +22,11 @@ export class DocumentProcessor {
   private pdfExtractor: PdfJsTextExtractor;
   private readonly maxChunkSize = 800; // tokens per chunk (400-800 range)
   private readonly chunkOverlap = 100; // token overlap between chunks
+  private openai: OpenAI;
 
   constructor() {
     this.pdfExtractor = new PdfJsTextExtractor();
+    this.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   }
 
   /**
@@ -285,33 +288,29 @@ export class DocumentProcessor {
   }
 
   /**
-   * Generate embeddings for text content
+   * Generate embeddings for text content using OpenAI text-embedding-ada-002 (1536 dims)
    */
   async generateEmbedding(text: string): Promise<number[]> {
     try {
-      // Simple hash-based embedding for document similarity (replacing OpenAI)
-      // This creates a deterministic vector based on text content
-      const vector = new Array(384).fill(0); // Smaller dimension without OpenAI
-      const words = text.toLowerCase().split(/\s+/);
+      console.log('[Embeddings] Generating embedding with text-embedding-ada-002');
       
-      // Create simple frequency-based embedding
-      for (let i = 0; i < Math.min(words.length, 100); i++) {
-        const word = words[i];
-        let hash = 0;
-        for (let j = 0; j < word.length; j++) {
-          hash = ((hash << 5) - hash) + word.charCodeAt(j);
-          hash = hash & hash;
-        }
-        const index = Math.abs(hash) % 384;
-        vector[index] += 1 / (i + 1); // Weight by position
+      // Use OpenAI's text-embedding-ada-002 model (1536 dimensions)
+      const response = await this.openai.embeddings.create({
+        model: 'text-embedding-ada-002',
+        input: text.substring(0, 8000), // Limit to ~8000 chars to stay within token limits
+      });
+
+      const embedding = response.data[0].embedding;
+      console.log('[Embeddings] ✅ Generated embedding:', embedding.length, 'dimensions');
+      
+      if (embedding.length !== 1536) {
+        throw new Error(`Expected 1536 dimensions, got ${embedding.length}`);
       }
       
-      // Normalize
-      const magnitude = Math.sqrt(vector.reduce((sum, val) => sum + val * val, 0));
-      return magnitude > 0 ? vector.map(v => v / magnitude) : vector;
-    } catch (error) {
-      console.error('Failed to generate embedding:', error);
-      throw new Error('Failed to generate text embedding');
+      return embedding;
+    } catch (error: any) {
+      console.error('[Embeddings] ❌ Error:', error);
+      throw new Error(`Failed to generate text embedding: ${error.message}`);
     }
   }
 

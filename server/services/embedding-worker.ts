@@ -14,6 +14,7 @@ export class EmbeddingWorker {
   private processor: DocumentProcessor;
   private isRunning = false;
   private intervalId: NodeJS.Timeout | null = null;
+  private readonly embeddingModel = 'text-embedding-ada-002';
 
   constructor() {
     this.processor = new DocumentProcessor();
