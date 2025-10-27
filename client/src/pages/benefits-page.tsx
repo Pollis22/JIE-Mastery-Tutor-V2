@@ -4,7 +4,7 @@ import { useLocation } from "wouter";
 import jieLogo from "@/assets/jie-mastery-logo.png";
 import aiTutorImage from "@assets/Create_an_image_of_an_AI_robot_tutoring_a_real_tee-1759438453563_1759521545083.png";
 import aiTutorImage2 from "@assets/Create_an_image_of_an_AI_robot_tutoring_a_real_tee-1759521647218_1759521666544.png";
-import { Clock, DollarSign, Target, Calendar, BookOpen, TrendingUp, Users } from "lucide-react";
+import { Clock, DollarSign, Target, Calendar, BookOpen, TrendingUp, Users, Shield, Brain, LightbulbIcon } from "lucide-react";
 
 export default function BenefitsPage() {
   const [, setLocation] = useLocation();
@@ -185,6 +185,229 @@ export default function BenefitsPage() {
         </div>
       </section>
 
+      {/* Socratic Teaching Methodology Section */}
+      <section className="py-16 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20">
+        <div className="container mx-auto px-4">
+          <div className="max-w-6xl mx-auto">
+            <div className="text-center mb-12">
+              <div className="inline-block mb-4">
+                <div className="w-16 h-16 bg-blue-500 rounded-2xl flex items-center justify-center mx-auto">
+                  <Brain className="w-8 h-8 text-white" />
+                </div>
+              </div>
+              <h2 className="text-4xl font-bold text-foreground mb-4">
+                We Don't Give Answers. We Teach How to Think.
+              </h2>
+              <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
+                Our tutors use the proven Socratic method — guiding students to discover answers through critical thinking, not memorization.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
+              <Card className="shadow-lg border-2 border-blue-200 dark:border-blue-800">
+                <CardContent className="pt-6 space-y-4">
+                  <div className="flex items-start space-x-4">
+                    <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <span className="text-2xl">❌</span>
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-bold text-foreground mb-2">Other Tutoring Apps</h3>
+                      <p className="text-muted-foreground mb-3">
+                        Give direct answers and solutions
+                      </p>
+                      <div className="bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 p-3 rounded">
+                        <p className="text-sm font-mono text-foreground">
+                          <strong>Student:</strong> "What's 7 × 8?"<br/>
+                          <strong>App:</strong> "The answer is 56."
+                        </p>
+                      </div>
+                      <p className="text-sm text-muted-foreground mt-3 italic">
+                        ⚠️ Result: Student memorizes, doesn't understand
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-lg border-2 border-green-500 bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20">
+                <CardContent className="pt-6 space-y-4">
+                  <div className="flex items-start space-x-4">
+                    <div className="w-12 h-12 bg-green-500 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <span className="text-2xl">✅</span>
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-bold text-foreground mb-2">JIE Mastery Tutor</h3>
+                      <p className="text-muted-foreground mb-3">
+                        Guides students to discover answers themselves
+                      </p>
+                      <div className="bg-green-50 dark:bg-green-900/20 border-l-4 border-green-500 p-3 rounded">
+                        <p className="text-sm font-mono text-foreground">
+                          <strong>Student:</strong> "What's 7 × 8?"<br/>
+                          <strong>Tutor:</strong> "Great question! What's 7 × 4? Can you double that?"
+                        </p>
+                      </div>
+                      <p className="text-sm text-muted-foreground mt-3 italic">
+                        ✨ Result: Student learns multiplication strategies
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <Card className="shadow-sm">
+                <CardContent className="pt-6 space-y-3 text-center">
+                  <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mx-auto">
+                    <LightbulbIcon className="w-6 h-6 text-purple-600" />
+                  </div>
+                  <h4 className="font-bold text-foreground">Deeper Understanding</h4>
+                  <p className="text-sm text-muted-foreground">
+                    Students truly grasp concepts instead of just memorizing answers for tests
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-sm">
+                <CardContent className="pt-6 space-y-3 text-center">
+                  <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mx-auto">
+                    <Brain className="w-6 h-6 text-blue-600" />
+                  </div>
+                  <h4 className="font-bold text-foreground">Critical Thinking Skills</h4>
+                  <p className="text-sm text-muted-foreground">
+                    Develops problem-solving abilities that help across all subjects and life
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-sm">
+                <CardContent className="pt-6 space-y-3 text-center">
+                  <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mx-auto">
+                    <TrendingUp className="w-6 h-6 text-green-600" />
+                  </div>
+                  <h4 className="font-bold text-foreground">Long-Term Success</h4>
+                  <p className="text-sm text-muted-foreground">
+                    Students become independent learners prepared for college and careers
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Safety & Security Section */}
+      <section className="py-16 bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20">
+        <div className="container mx-auto px-4">
+          <div className="max-w-6xl mx-auto">
+            <div className="text-center mb-12">
+              <div className="inline-block mb-4">
+                <div className="w-16 h-16 bg-emerald-500 rounded-2xl flex items-center justify-center mx-auto">
+                  <Shield className="w-8 h-8 text-white" />
+                </div>
+              </div>
+              <h2 className="text-4xl font-bold text-foreground mb-4">
+                Enterprise-Grade Safety for Your Peace of Mind
+              </h2>
+              <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
+                Protecting children is our top priority. We've built industry-leading safeguards so parents can trust their kids are learning in a safe environment.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+              <Card className="shadow-lg">
+                <CardContent className="pt-6 space-y-4">
+                  <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
+                    <span className="text-2xl">🚫</span>
+                  </div>
+                  <h3 className="text-lg font-bold text-foreground">Real-Time Content Moderation</h3>
+                  <p className="text-muted-foreground text-sm">
+                    Every conversation is automatically monitored for inappropriate content using dual-layer AI detection — blocking profanity, sexual content, violence, and hate speech instantly.
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-lg">
+                <CardContent className="pt-6 space-y-4">
+                  <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
+                    <span className="text-2xl">⚠️</span>
+                  </div>
+                  <h3 className="text-lg font-bold text-foreground">3-Strike Warning System</h3>
+                  <p className="text-muted-foreground text-sm">
+                    If inappropriate behavior occurs: 1st strike = friendly warning, 2nd strike = serious warning with parent notification, 3rd strike = automatic 24-hour suspension.
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-lg">
+                <CardContent className="pt-6 space-y-4">
+                  <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                    <span className="text-2xl">📝</span>
+                  </div>
+                  <h3 className="text-lg font-bold text-foreground">Complete Transcript Access</h3>
+                  <p className="text-muted-foreground text-sm">
+                    Parents can review every conversation their child has with the AI tutor. Complete transparency — nothing hidden, everything documented.
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-lg">
+                <CardContent className="pt-6 space-y-4">
+                  <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
+                    <span className="text-2xl">👶</span>
+                  </div>
+                  <h3 className="text-lg font-bold text-foreground">Age-Appropriate Tutors</h3>
+                  <p className="text-muted-foreground text-sm">
+                    Five specialized tutors (K-2, 3-5, 6-8, 9-12, College) ensure content is always appropriate for your child's age and maturity level.
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-lg">
+                <CardContent className="pt-6 space-y-4">
+                  <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                    <span className="text-2xl">🛡️</span>
+                  </div>
+                  <h3 className="text-lg font-bold text-foreground">COPPA Compliant</h3>
+                  <p className="text-muted-foreground text-sm">
+                    Full compliance with Children's Online Privacy Protection Act. We never collect unnecessary personal information or share data with third parties.
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-lg">
+                <CardContent className="pt-6 space-y-4">
+                  <div className="w-12 h-12 bg-indigo-100 rounded-lg flex items-center justify-center">
+                    <span className="text-2xl">🔒</span>
+                  </div>
+                  <h3 className="text-lg font-bold text-foreground">Secure by Design</h3>
+                  <p className="text-muted-foreground text-sm">
+                    Bank-level encryption, secure authentication, and automatic session monitoring ensure your family's data is always protected.
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="bg-white dark:bg-card border-2 border-emerald-500 rounded-xl p-6 shadow-xl">
+              <div className="flex items-start space-x-4">
+                <Shield className="w-8 h-8 text-emerald-500 flex-shrink-0 mt-1" />
+                <div>
+                  <h3 className="text-xl font-bold text-foreground mb-2">
+                    Why Parents Trust JIE Mastery Tutor
+                  </h3>
+                  <p className="text-muted-foreground mb-4">
+                    Unlike other tutoring platforms that give children free rein, we've built enterprise-grade protection systems used by schools and organizations. Every interaction is safe, educational, and documented.
+                  </p>
+                  <p className="text-sm italic text-muted-foreground">
+                    "One inappropriate incident can destroy a platform's reputation. That's why we over-invest in safety — because your trust is everything." — JIE Engineering Team
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Interactive Voice Feature */}
       <section className="py-16 bg-muted/30">
         <div className="container mx-auto px-4">
@@ -216,8 +439,19 @@ export default function BenefitsPage() {
                       </svg>
                     </div>
                     <div>
-                      <h4 className="font-semibold text-foreground">Socratic Teaching Method</h4>
-                      <p className="text-muted-foreground">Our AI guides you to find answers through thoughtful questions, helping you truly understand concepts.</p>
+                      <h4 className="font-semibold text-foreground">Socratic Teaching Method — No Direct Answers!</h4>
+                      <p className="text-muted-foreground">Our AI NEVER gives answers. Instead, it guides you with strategic questions that help you discover solutions yourself and truly understand concepts.</p>
+                    </div>
+                  </li>
+                  <li className="flex items-start space-x-3">
+                    <div className="w-6 h-6 bg-emerald-500 rounded-full flex items-center justify-center flex-shrink-0 mt-1">
+                      <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
+                      </svg>
+                    </div>
+                    <div>
+                      <h4 className="font-semibold text-foreground">Built-In Safety Guardrails</h4>
+                      <p className="text-muted-foreground">Real-time content moderation, 3-strike warning system, and complete transcript access for parents. Your children learn in a protected environment.</p>
                     </div>
                   </li>
                   <li className="flex items-start space-x-3">

@@ -17,6 +17,8 @@ const plans = [
     features: [
       '60 minutes shared by entire family',
       'Unlimited student profiles for siblings',
+      '🧠 Socratic teaching - No direct answers!',
+      '🛡️ Enterprise-grade safety guardrails',
       'Math, English, Science, Spanish & More',
       'Each child gets personalized tutoring',
       'Real-time transcripts for parents'
@@ -34,6 +36,8 @@ const plans = [
     features: [
       '240 minutes shared by entire family',
       'Unlimited student profiles for siblings',
+      '🧠 Socratic teaching - No direct answers!',
+      '🛡️ Enterprise-grade safety guardrails',
       'Math, English, Science, Spanish & More',
       'Each child gets personalized tutoring',
       'Real-time transcripts for parents',
@@ -52,6 +56,8 @@ const plans = [
     features: [
       '600 minutes shared by entire family',
       'Unlimited student profiles for siblings',
+      '🧠 Socratic teaching - No direct answers!',
+      '🛡️ Enterprise-grade safety guardrails',
       'Math, English, Science, Spanish & More',
       'Each child gets personalized tutoring',
       'Real-time transcripts for parents',
@@ -72,6 +78,8 @@ const plans = [
       '1,800 minutes/month (30 hours!)',
       'Unlimited student profiles for siblings',
       '🎉 3 CONCURRENT DEVICES - Multiple kids learn at once!',
+      '🧠 Socratic teaching - No direct answers!',
+      '🛡️ Enterprise-grade safety guardrails',
       'Math, English, Science, Spanish & More',
       'Each child gets personalized tutoring',
       'Real-time transcripts for parents',
