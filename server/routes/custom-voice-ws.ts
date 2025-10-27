@@ -58,6 +58,9 @@ export function setupCustomVoiceWebSocket(server: Server) {
   wss.on("connection", (ws: WebSocket) => {
     console.log("[Custom Voice] 🔌 New connection");
     
+    // FIX #2C: Turn-taking timeout for natural conversation flow
+    let responseTimer: NodeJS.Timeout | null = null;
+    
     const state: SessionState = {
       sessionId: "",
       userId: "",
@@ -250,16 +253,37 @@ export function setupCustomVoiceWebSocket(server: Server) {
             // Start Deepgram connection with cleanup on close
             state.deepgramConnection = await startDeepgramStream(
               async (transcript: string, isFinal: boolean) => {
-                // FIX #1: Queue transcripts instead of dropping them
-                if (isFinal && transcript.length > 0) {
-                  console.log(`[Custom Voice] 📥 Queuing transcript: "${transcript}"`);
+                // FIX #2: Only respond to FINAL transcripts
+                if (!isFinal) {
+                  console.log(`[Custom Voice] ⏳ Skipping interim: "${transcript}"`);
+                  return;
+                }
+                
+                if (transcript.length === 0) {
+                  console.log("[Custom Voice] ⏭️ Skipping empty transcript");
+                  return;
+                }
+                
+                console.log(`[Custom Voice] 📝 Final transcript: "${transcript}"`);
+                
+                // FIX #2C: Add turn-taking timeout
+                // Clear any existing timer
+                if (responseTimer) {
+                  clearTimeout(responseTimer);
+                  responseTimer = null;
+                }
+                
+                // Wait 300ms to see if student continues speaking
+                responseTimer = setTimeout(() => {
+                  console.log("[Custom Voice] ⏰ Processing after pause");
                   state.transcriptQueue.push(transcript);
                   
                   // Start processing if not already processing
                   if (!state.isProcessing) {
                     processTranscriptQueue();
                   }
-                }
+                  responseTimer = null;
+                }, 300); // Wait 300ms before responding
               },
               async (error: Error) => {
                 console.error("[Custom Voice] ❌ Deepgram error:", error);
@@ -347,6 +371,12 @@ export function setupCustomVoiceWebSocket(server: Server) {
 
     ws.on("close", async () => {
       console.log("[Custom Voice] 🔌 Connection closed");
+      
+      // Clear response timer
+      if (responseTimer) {
+        clearTimeout(responseTimer);
+        responseTimer = null;
+      }
       
       // Close Deepgram first
       if (state.deepgramConnection) {
