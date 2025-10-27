@@ -31,6 +31,7 @@ router.get('/recent', async (req, res) => {
       summary: realtimeSessions.summary,
       totalMessages: realtimeSessions.totalMessages,
       status: realtimeSessions.status,
+      transcript: realtimeSessions.transcript,
     })
     .from(realtimeSessions)
     .where(and(
@@ -41,8 +42,21 @@ router.get('/recent', async (req, res) => {
     .orderBy(desc(realtimeSessions.startedAt))
     .limit(10);
     
+    // Transform transcripts to consistent format for frontend
+    const transformedSessions = sessions.map(session => ({
+      ...session,
+      transcript: session.transcript && Array.isArray(session.transcript)
+        ? session.transcript.map((entry: any) => ({
+            speaker: entry.role === 'assistant' ? 'tutor' : (entry.speaker || 'student'),
+            text: entry.content || entry.text || '',
+            timestamp: entry.timestamp,
+            messageId: entry.messageId || crypto.randomUUID()
+          }))
+        : []
+    }));
+    
     console.log(`[Sessions] Found ${sessions.length} recent sessions for user ${userId}`);
-    res.json({ sessions });
+    res.json({ sessions: transformedSessions });
     
   } catch (error) {
     console.error('[Sessions] Failed to fetch recent sessions:', error);
@@ -129,6 +143,7 @@ router.get('/', async (req, res) => {
       summary: realtimeSessions.summary,
       totalMessages: realtimeSessions.totalMessages,
       status: realtimeSessions.status,
+      transcript: realtimeSessions.transcript,
     })
     .from(realtimeSessions)
     .where(and(...conditions))
@@ -136,8 +151,21 @@ router.get('/', async (req, res) => {
     .limit(limitNum)
     .offset(offset);
     
+    // Transform transcripts to consistent format for frontend
+    const transformedSessions = sessions.map(session => ({
+      ...session,
+      transcript: session.transcript && Array.isArray(session.transcript)
+        ? session.transcript.map((entry: any) => ({
+            speaker: entry.role === 'assistant' ? 'tutor' : (entry.speaker || 'student'),
+            text: entry.content || entry.text || '',
+            timestamp: entry.timestamp,
+            messageId: entry.messageId || crypto.randomUUID()
+          }))
+        : []
+    }));
+    
     res.json({
-      sessions,
+      sessions: transformedSessions,
       pagination: {
         page: pageNum,
         limit: limitNum,
@@ -173,12 +201,12 @@ router.get('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Session not found' });
     }
     
-    // Transform transcript from database format (role/content) to frontend format (speaker/text)
+    // Transform transcript to consistent format for frontend (respects existing speaker field)
     const transformedSession = {
       ...session,
       transcript: session.transcript && Array.isArray(session.transcript)
         ? session.transcript.map((entry: any) => ({
-            speaker: entry.role === 'assistant' ? 'tutor' : 'student',
+            speaker: entry.role === 'assistant' ? 'tutor' : (entry.speaker || 'student'),
             text: entry.content || entry.text || '',
             timestamp: entry.timestamp,
             messageId: entry.messageId || crypto.randomUUID()

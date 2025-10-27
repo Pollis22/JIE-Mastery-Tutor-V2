@@ -159,21 +159,68 @@ export default function SessionHistory({ limit }: SessionHistoryProps) {
 
                     {selectedSession === session.id && (
                       <div className="mt-4 p-3 bg-muted/50 rounded-lg">
-                        <h4 className="font-medium text-sm mb-2">Session Details</h4>
-                        <p className="text-sm text-muted-foreground mb-2">
-                          This session contained {session.totalMessages || 0} messages between the student and tutor.
-                        </p>
+                        <h4 className="font-medium text-sm mb-3 flex items-center gap-2">
+                          <FileText className="h-4 w-4" />
+                          Conversation Transcript ({session.transcript?.length || 0} messages)
+                        </h4>
+                        
+                        {session.transcript && session.transcript.length > 0 ? (
+                          <ScrollArea className="h-[300px] w-full pr-4">
+                            <div className="space-y-3">
+                              {session.transcript.map((entry: any, index: number) => (
+                                <div key={entry.messageId || index} className={`flex items-start gap-3 ${
+                                  entry.speaker === 'tutor' || entry.speaker === 'assistant' 
+                                    ? 'flex-row' 
+                                    : 'flex-row-reverse'
+                                }`}>
+                                  <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                                    entry.speaker === 'tutor' || entry.speaker === 'assistant'
+                                      ? 'bg-primary text-primary-foreground'
+                                      : 'bg-secondary text-secondary-foreground'
+                                  }`}>
+                                    {entry.speaker === 'tutor' || entry.speaker === 'assistant' ? '🎓' : '👤'}
+                                  </div>
+                                  <div className={`flex-1 rounded-lg p-3 ${
+                                    entry.speaker === 'tutor' || entry.speaker === 'assistant'
+                                      ? 'bg-primary/10 border border-primary/20'
+                                      : 'bg-secondary/50 border border-secondary'
+                                  }`}>
+                                    <div className="flex items-center justify-between mb-1">
+                                      <span className="text-xs font-medium">
+                                        {entry.speaker === 'tutor' || entry.speaker === 'assistant' ? 'Tutor' : 'Student'}
+                                      </span>
+                                      {entry.timestamp && (
+                                        <span className="text-xs text-muted-foreground">
+                                          {format(new Date(entry.timestamp), 'h:mm:ss a')}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-sm whitespace-pre-wrap break-words">
+                                      {entry.text || entry.content || ''}
+                                    </p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </ScrollArea>
+                        ) : (
+                          <div className="text-sm text-muted-foreground py-4 text-center">
+                            No transcript available for this session
+                          </div>
+                        )}
+                        
                         <Button
-                          variant="link"
+                          variant="outline"
                           size="sm"
-                          className="p-0"
+                          className="mt-3"
                           onClick={(e) => {
                             e.stopPropagation();
-                            window.open(`/sessions/${session.id}`, '_blank');
+                            handleExportSession(session.id);
                           }}
+                          data-testid={`button-export-${session.id}`}
                         >
-                          <FileText className="mr-2 h-3 w-3" />
-                          View Full Transcript
+                          <Download className="mr-2 h-3 w-3" />
+                          Export Transcript
                         </Button>
                       </div>
                     )}
