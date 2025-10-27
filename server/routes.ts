@@ -513,6 +513,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Create realtime session endpoint (for custom voice stack)
+  app.post("/api/realtime-sessions/create", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const user = req.user as any;
+      const { 
+        studentId, 
+        studentName, 
+        subject, 
+        language = 'en', 
+        ageGroup = '3-5',
+        voice,
+        model = 'custom',
+        contextDocuments = []
+      } = req.body;
+
+      // Create session in database
+      const [session] = await db.insert(realtimeSessions).values({
+        userId: user.id,
+        studentId: studentId || null,
+        studentName: studentName || user.studentName || 'Student',
+        subject: subject || 'General',
+        language,
+        ageGroup,
+        voice,
+        model,
+        status: 'connecting',
+        contextDocuments,
+        transcript: [],
+        totalMessages: 0,
+        minutesUsed: 0,
+        aiCost: '0'
+      }).returning();
+
+      console.log(`[RealtimeSession] ✅ Created session ${session.id} for user ${user.id}`);
+
+      res.json({
+        sessionId: session.id,
+        userId: session.userId,
+        studentName: session.studentName,
+        status: session.status
+      });
+    } catch (error: any) {
+      console.error('[RealtimeSession] Error creating session:', error);
+      res.status(500).json({ message: "Error creating session: " + error.message });
+    }
+  });
+
   // User sessions endpoints
   app.get("/api/user/sessions", async (req, res) => {
     if (!req.isAuthenticated()) {

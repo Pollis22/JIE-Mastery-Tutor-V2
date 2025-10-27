@@ -65,7 +65,33 @@ export function RealtimeVoiceHost({
         throw new Error('User not authenticated');
       }
 
-      const newSessionId = generateSessionId();
+      // Step 1: Create session in database FIRST
+      console.log('[VoiceHost] 📝 Creating session in database...');
+      const response = await fetch('/api/realtime-sessions/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          studentId,
+          studentName: studentName || 'Student',
+          subject: subject || 'General',
+          language,
+          ageGroup,
+          voice: 'rachel', // Default voice
+          model: 'custom',
+          contextDocuments: contextDocumentIds || []
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to create session');
+      }
+
+      const sessionData = await response.json();
+      const { sessionId: newSessionId } = sessionData;
+      
+      console.log(`[VoiceHost] ✅ Session created in DB: ${newSessionId}`);
       setSessionId(newSessionId);
       
       // Trigger onSessionStart callback if provided
@@ -79,7 +105,8 @@ export function RealtimeVoiceHost({
         // For now, passing empty array as documents are handled server-side
       }
       
-      // Connect to custom voice WebSocket
+      // Step 2: Connect to custom voice WebSocket with valid session
+      console.log('[VoiceHost] 🔌 Connecting to WebSocket with session:', newSessionId);
       await customVoice.connect(
         newSessionId,
         user.id,
@@ -104,6 +131,9 @@ export function RealtimeVoiceHost({
         description: error.message || "Could not start voice session",
         variant: "destructive",
       });
+      // Reset state on error
+      setSessionId(null);
+      setIsRecording(false);
     }
   };
 

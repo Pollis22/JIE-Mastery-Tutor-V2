@@ -181,6 +181,10 @@ export function setupCustomVoiceWebSocket(server: Server) {
             
             // FIX #2: Verify session ownership
             if (!message.sessionId || !message.userId) {
+              console.error(`[Custom Voice] ❌ Missing data:`, {
+                sessionId: message.sessionId,
+                userId: message.userId
+              });
               ws.send(JSON.stringify({ 
                 type: "error", 
                 error: "Missing sessionId or userId" 
@@ -200,14 +204,23 @@ export function setupCustomVoiceWebSocket(server: Server) {
                 console.error(`[Custom Voice] ❌ Session not found: ${message.sessionId}`);
                 ws.send(JSON.stringify({ 
                   type: "error", 
-                  error: "Invalid session" 
+                  error: "Session not found. Please refresh and try again." 
                 }));
                 ws.close();
                 return;
               }
 
-              if (session[0].userId !== message.userId) {
-                console.error(`[Custom Voice] ❌ Session ${message.sessionId} does not belong to user ${message.userId}`);
+              // Convert userId to string for comparison (DB stores as varchar)
+              const userIdStr = String(message.userId);
+              if (session[0].userId !== userIdStr) {
+                console.error(`[Custom Voice] ❌ Session ${message.sessionId} does not belong to user`, {
+                  sessionUserId: session[0].userId,
+                  requestUserId: userIdStr,
+                  typeOf: {
+                    sessionUserId: typeof session[0].userId,
+                    requestUserId: typeof userIdStr
+                  }
+                });
                 ws.send(JSON.stringify({ 
                   type: "error", 
                   error: "Unauthorized session access" 
@@ -216,7 +229,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
                 return;
               }
 
-              console.log(`[Custom Voice] ✅ Session validated for user ${message.userId}`);
+              console.log(`[Custom Voice] ✅ Session validated for user ${userIdStr}`);
             } catch (error) {
               console.error("[Custom Voice] ❌ Session validation error:", error);
               ws.send(JSON.stringify({ 
