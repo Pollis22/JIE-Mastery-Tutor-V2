@@ -17,14 +17,21 @@ function getElevenLabsClient(): ElevenLabsClient {
   return elevenlabs;
 }
 
-// Voice mapping for different age groups
+// Voice mapping for different age groups and tutor personalities
 const VOICE_MAP: Record<string, string> = {
-  'k-2': '21m00Tcm4TlvDq8ikWAM',      // Rachel - friendly, warm
-  '3-5': 'EXAVITQu4vr4xnSDxMaL',      // Sarah - enthusiastic
-  '6-8': 'ErXwobaYiN019PkySvjV',      // Antoni - clear, professional
-  '9-12': 'VR6AewLTigWG4xSOukaG',     // Arnold - authoritative
-  'college': 'pNInz6obpgDQGcFmaJgB',  // Adam - professional
-  'default': '21m00Tcm4TlvDq8ikWAM'   // Rachel
+  // Lowercase formats
+  'k-2': '21m00Tcm4TlvDq8ikWAM',      // Rachel - friendly, warm (Buddy Bear)
+  '3-5': 'EXAVITQu4vr4xnSDxMaL',      // Sarah - enthusiastic (Max Explorer)
+  '6-8': 'ErXwobaYiN019PkySvjV',      // Antoni - clear, professional (Dr. Nova)
+  '9-12': 'VR6AewLTigWG4xSOukaG',     // Arnold - authoritative (Professor Ace)
+  'college': 'pNInz6obpgDQGcFmaJgB',  // Adam - professional (Dr. Morgan)
+  
+  // Capitalized formats
+  'K-2': '21m00Tcm4TlvDq8ikWAM',
+  'College/Adult': 'pNInz6obpgDQGcFmaJgB',
+  'college/adult': 'pNInz6obpgDQGcFmaJgB',
+  
+  'default': '21m00Tcm4TlvDq8ikWAM'   // Rachel (fallback)
 };
 
 export async function generateSpeech(

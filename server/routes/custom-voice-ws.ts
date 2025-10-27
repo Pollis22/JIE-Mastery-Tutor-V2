@@ -6,6 +6,7 @@ import { generateSpeech } from "../services/tts-service";
 import { db } from "../db";
 import { realtimeSessions } from "@shared/schema";
 import { eq } from "drizzle-orm";
+import { getTutorPersonality } from "../config/tutor-personalities";
 
 interface TranscriptEntry {
   speaker: 'tutor' | 'student';
@@ -248,9 +249,37 @@ export function setupCustomVoiceWebSocket(server: Server) {
             state.sessionId = message.sessionId;
             state.userId = message.userId;
             state.studentName = message.studentName || "Student";
-            state.ageGroup = message.ageGroup || "default";
-            state.systemInstruction = message.systemInstruction || "";
+            state.ageGroup = message.ageGroup || "College/Adult";
+            
+            // Get full tutor personality based on age group
+            const personality = getTutorPersonality(state.ageGroup);
+            console.log(`[Custom Voice] 🎭 Using personality: ${personality.name} for ${state.ageGroup}`);
+            
+            // Use full personality system prompt with document context
+            state.systemInstruction = personality.systemPrompt;
             state.uploadedDocuments = message.documents || [];
+            
+            // Send personalized greeting
+            const greetings = personality.interactions.greetings;
+            const greeting = greetings[Math.floor(Math.random() * greetings.length)]
+              .replace('{studentName}', state.studentName);
+            
+            console.log(`[Custom Voice] 👋 Greeting: "${greeting}"`);
+            
+            // Add greeting to conversation history
+            state.conversationHistory.push({
+              role: "assistant",
+              content: greeting
+            });
+            
+            // Add greeting to transcript
+            const greetingEntry: TranscriptEntry = {
+              speaker: "tutor",
+              text: greeting,
+              timestamp: new Date().toISOString(),
+              messageId: crypto.randomUUID(),
+            };
+            state.transcript.push(greetingEntry);
 
             // Start Deepgram connection with cleanup on close
             state.deepgramConnection = await startDeepgramStream(
@@ -323,6 +352,28 @@ export function setupCustomVoiceWebSocket(server: Server) {
                 }
               }
             );
+
+            // Generate and send greeting audio
+            try {
+              const greetingAudio = await generateSpeech(greeting, state.ageGroup);
+              
+              // Send greeting transcript
+              ws.send(JSON.stringify({
+                type: "transcript",
+                text: greeting,
+                speaker: "tutor"
+              }));
+              
+              // Send greeting audio
+              ws.send(JSON.stringify({
+                type: "audio",
+                data: greetingAudio.toString("base64")
+              }));
+              
+              console.log(`[Custom Voice] 🔊 Sent greeting audio (${greetingAudio.length} bytes)`);
+            } catch (error) {
+              console.error("[Custom Voice] ❌ Failed to generate greeting audio:", error);
+            }
 
             ws.send(JSON.stringify({ type: "ready" }));
             console.log("[Custom Voice] ✅ Session ready");
