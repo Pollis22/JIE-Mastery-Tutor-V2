@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams, Link } from 'wouter';
-import { Loader2, CheckCircle, XCircle, Mail } from 'lucide-react';
+import { useLocation, Link } from 'wouter';
+import { Loader2, CheckCircle, XCircle, Mail, AlertCircle } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,10 +8,17 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 
 export default function VerifyEmailPage() {
-  const [searchParams] = useSearchParams();
-  const [, navigate] = useNavigate();
-  const token = searchParams.get('token');
+  const [, setLocation] = useLocation();
   const { toast } = useToast();
+  
+  // Manually parse query parameters from URL
+  const getQueryParam = (param: string): string | null => {
+    if (typeof window === 'undefined') return null;
+    const params = new URLSearchParams(window.location.search);
+    return params.get(param);
+  };
+  
+  const token = getQueryParam('token');
   
   const [status, setStatus] = useState<'verifying' | 'success' | 'error' | 'expired'>('verifying');
   const [message, setMessage] = useState('');
@@ -43,7 +50,7 @@ export default function VerifyEmailPage() {
         
         // Redirect to login after 3 seconds
         setTimeout(() => {
-          navigate('/auth?verified=true');
+          setLocation('/auth?verified=true');
         }, 3000);
       } else {
         if (data.expired) {
@@ -151,9 +158,13 @@ export default function VerifyEmailPage() {
 
           {(status === 'error' || status === 'expired') && (
             <>
-              <XCircle className="w-16 h-16 text-red-600 mx-auto mb-4" data-testid="icon-error" />
+              {status === 'expired' ? (
+                <AlertCircle className="w-16 h-16 text-orange-600 mx-auto mb-4" data-testid="icon-expired" />
+              ) : (
+                <XCircle className="w-16 h-16 text-red-600 mx-auto mb-4" data-testid="icon-error" />
+              )}
               <h2 className="text-2xl font-semibold text-red-600 mb-2" data-testid="text-error-title">
-                Verification Failed
+                {status === 'expired' ? 'Token Expired' : 'Verification Failed'}
               </h2>
               <p className="text-gray-600 dark:text-gray-400 mb-6" data-testid="text-error-message">
                 {message}
