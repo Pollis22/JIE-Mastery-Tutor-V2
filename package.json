@@ -20,7 +20,8 @@
     "test": "npm run test:acceptance",
     "restore-users": "tsx server/scripts/restore-users.ts",
     "create-test-users": "tsx server/scripts/create-test-users.ts",
-    "setup-all-users": "tsx server/scripts/setup-all-users.ts"
+    "setup-all-users": "tsx server/scripts/setup-all-users.ts",
+    "fix-schema": "tsx server/scripts/fix-production-schema.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.37.0",
