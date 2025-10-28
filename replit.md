@@ -42,6 +42,15 @@ The application uses a modern full-stack architecture:
 -   Session-based authentication with PostgreSQL session storage.
 -   Role-based access control with admin privileges.
 -   Password hashing using Node.js scrypt.
+-   **Email Verification System**: Complete COPPA-compliant email verification workflow:
+    -   New users receive verification emails upon registration
+    -   Accounts created after Oct 13, 2025 must verify email before login
+    -   Legacy accounts (pre-Oct 13) automatically verified for backwards compatibility
+    -   24-hour token expiry with easy resend functionality
+    -   Prevents account enumeration (resend endpoint doesn't reveal if email exists)
+    -   Admin and test users automatically verified for seamless development
+    -   Welcome email sent upon successful verification
+    -   Frontend verification page with loading/success/error/expired states
 
 ### Access Control & Subscription Enforcement
 The platform implements a three-tier access control system ensuring only subscribed users with available minutes can access tutoring services:
