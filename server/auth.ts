@@ -370,6 +370,99 @@ export function setupAuth(app: Express) {
     });
   });
 
+  // Email Verification Endpoint
+  app.post("/api/auth/verify-email", async (req, res) => {
+    try {
+      const { token } = req.body;
+      
+      if (!token) {
+        return res.status(400).json({ error: 'Verification token required' });
+      }
+
+      console.log('[Auth] 🔍 Email verification attempt');
+      
+      const result = await storage.verifyEmailToken(token);
+      
+      if (!result.success) {
+        console.log('[Auth] ❌ Verification failed:', result.error);
+        return res.status(400).json({ 
+          error: result.error,
+          expired: result.error?.includes('expired')
+        });
+      }
+
+      console.log('[Auth] ✅ Email verified for:', result.user?.email);
+
+      // Send welcome email after successful verification
+      if (result.user) {
+        emailService.sendWelcomeEmail({
+          email: result.user.email,
+          parentName: result.user.parentName || result.user.firstName || 'there',
+          studentName: result.user.studentName || 'your student'
+        }).catch(err => console.error('[Auth] Failed to send welcome email:', err));
+      }
+
+      res.json({
+        success: true,
+        message: 'Email verified successfully! You can now log in.',
+      });
+    } catch (error) {
+      console.error('[Auth] ❌ Verification error:', error);
+      res.status(500).json({ error: 'Verification failed. Please try again.' });
+    }
+  });
+
+  // Resend Verification Email Endpoint
+  app.post("/api/auth/resend-verification", async (req, res) => {
+    try {
+      const { email } = req.body;
+      
+      if (!email) {
+        return res.status(400).json({ error: 'Email required' });
+      }
+
+      console.log('[Auth] 🔄 Resend verification request:', email);
+
+      const user = await storage.getUserByEmail(email.toLowerCase());
+      
+      if (!user) {
+        // Don't reveal if email exists - security best practice
+        return res.json({
+          success: true,
+          message: 'If that email is registered, a verification email has been sent.',
+        });
+      }
+
+      if (user.emailVerified) {
+        return res.json({
+          success: true,
+          message: 'Email is already verified.',
+          alreadyVerified: true,
+        });
+      }
+
+      // Generate new verification token
+      const verificationToken = await storage.generateEmailVerificationToken(user.id);
+      
+      // Send verification email
+      await emailService.sendEmailVerification({
+        email: user.email,
+        name: user.parentName || user.firstName || 'there',
+        token: verificationToken,
+      });
+
+      console.log('[Auth] ✅ Verification email resent');
+
+      res.json({
+        success: true,
+        message: 'Verification email sent! Please check your inbox.',
+      });
+    } catch (error) {
+      console.error('[Auth] ❌ Resend verification error:', error);
+      res.status(500).json({ error: 'Failed to resend verification email. Please try again.' });
+    }
+  });
+
   app.get("/api/user", (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);
     // Sanitize user response to exclude sensitive fields
@@ -465,58 +558,6 @@ export function setupAuth(app: Express) {
     }
   });
 
-  // Resend email verification
-  app.post("/api/auth/resend-verification", async (req, res) => {
-    try {
-      const { email } = req.body;
-      
-      if (!email) {
-        return res.status(400).json({ error: 'Email is required' });
-      }
-      
-      const user = await storage.getUserByEmail(email);
-      if (!user) {
-        return res.status(404).json({ error: 'User not found' });
-      }
-      
-      if (user.emailVerified) {
-        return res.status(400).json({ error: 'Email is already verified' });
-      }
-      
-      const token = await storage.generateEmailVerificationToken(user.id);
-      await emailService.sendEmailVerification({
-        email: user.email,
-        name: user.parentName || user.firstName || 'User',
-        token,
-      });
-      
-      res.json({ success: true, message: 'Verification email sent' });
-    } catch (error) {
-      console.error('[Auth] Resend verification error:', error);
-      res.status(500).json({ error: 'Failed to send verification email' });
-    }
-  });
-
-  // Verify email token
-  app.get("/api/auth/verify-email", async (req, res) => {
-    try {
-      const { token } = req.query;
-      
-      if (!token || typeof token !== 'string') {
-        return res.status(400).json({ error: 'Invalid verification token' });
-      }
-      
-      const user = await storage.verifyEmailToken(token);
-      if (!user) {
-        return res.status(400).json({ error: 'Invalid or expired verification token' });
-      }
-      
-      res.json({ success: true, message: 'Email verified successfully' });
-    } catch (error) {
-      console.error('[Auth] Email verification error:', error);
-      res.status(500).json({ error: 'Failed to verify email' });
-    }
-  });
 
   // One-time admin setup endpoint for production
   app.post("/api/setup/admin", async (req, res) => {

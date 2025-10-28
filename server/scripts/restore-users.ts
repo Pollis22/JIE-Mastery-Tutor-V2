@@ -76,6 +76,7 @@ async function restoreProductionUsers() {
             maxConcurrentSessions: userData.maxConcurrentSessions,
             maxConcurrentLogins: userData.maxConcurrentLogins,
             billingCycleStart: new Date(),
+            emailVerified: true, // Auto-verify production users
             updatedAt: new Date(),
           })
           .where(eq(users.id, existingUser.id));
@@ -100,6 +101,7 @@ async function restoreProductionUsers() {
           maxConcurrentSessions: userData.maxConcurrentSessions,
           maxConcurrentLogins: userData.maxConcurrentLogins,
           billingCycleStart: new Date(),
+          emailVerified: true, // Auto-verify production users
           createdAt: new Date(),
           updatedAt: new Date(),
         });

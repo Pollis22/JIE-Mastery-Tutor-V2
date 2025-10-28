@@ -71,6 +71,7 @@ async function createTestUsers() {
         subscriptionMinutesUsed: 0,
         maxConcurrentSessions: testUser.maxSessions,
         maxConcurrentLogins: testUser.maxLogins,
+        emailVerified: true, // Auto-verify test users
         updatedAt: new Date(),
       };
 

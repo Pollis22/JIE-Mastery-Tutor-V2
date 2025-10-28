@@ -82,6 +82,7 @@ async function setupAllUsers() {
             maxConcurrentSessions: userData.maxConcurrentSessions,
             maxConcurrentLogins: userData.maxConcurrentLogins,
             billingCycleStart: new Date(),
+            emailVerified: true, // Auto-verify all setup users
             updatedAt: new Date(),
           })
           .where(eq(users.id, existingUser.id));
@@ -103,6 +104,7 @@ async function setupAllUsers() {
           maxConcurrentSessions: userData.maxConcurrentSessions,
           maxConcurrentLogins: userData.maxConcurrentLogins,
           billingCycleStart: new Date(),
+          emailVerified: true, // Auto-verify all setup users
           createdAt: new Date(),
           updatedAt: new Date(),
         });
@@ -159,6 +161,7 @@ async function setupAllUsers() {
         subscriptionMinutesUsed: 0,
         maxConcurrentSessions: testUser.maxSessions,
         maxConcurrentLogins: testUser.maxLogins,
+        emailVerified: true, // Auto-verify all setup users
         updatedAt: new Date(),
       };
 

@@ -37,7 +37,7 @@ import AdminSetupPage from "@/pages/admin-setup-page";
 import SessionDetailsPage from "@/pages/session-details";
 import ForgotPasswordPage from "@/pages/forgot-password";
 import ResetPasswordPage from "@/pages/reset-password";
-import VerifyEmailPage from "@/pages/verify-email";
+import VerifyEmailPage from "@/pages/verify-email-page";
 import { PersonalityTestPage } from "@/pages/PersonalityTestPage";
 
 function Router() {
