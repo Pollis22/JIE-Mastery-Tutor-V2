@@ -548,7 +548,7 @@ export default function BenefitsPage() {
                 <CardContent className="pt-6 space-y-4">
                   <div className="text-center space-y-2">
                     <h3 className="text-2xl font-bold text-primary">JIE Mastery AI</h3>
-                    <div className="text-4xl font-bold text-green-600">$19-99</div>
+                    <div className="text-4xl font-bold text-green-600">$19.99 to $199.99</div>
                     <p className="text-muted-foreground">per month</p>
                   </div>
                   <ul className="space-y-2 text-foreground">
