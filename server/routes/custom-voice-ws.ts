@@ -52,6 +52,61 @@ async function persistTranscript(sessionId: string, transcript: TranscriptEntry[
   }
 }
 
+// Centralized session finalization helper (prevents double-processing and ensures consistency)
+async function finalizeSession(
+  state: SessionState,
+  reason: 'normal' | 'disconnect' | 'error' | 'violation',
+  errorMessage?: string
+) {
+  // Idempotent: skip if already finalized
+  if (state.isSessionEnded) {
+    console.log(`[Custom Voice] ℹ️ Session already finalized, skipping (reason: ${reason})`);
+    return;
+  }
+
+  // Mark as ended FIRST to prevent race conditions
+  state.isSessionEnded = true;
+
+  if (!state.sessionId) {
+    console.warn('[Custom Voice] ⚠️ No sessionId, skipping finalization');
+    return;
+  }
+
+  try {
+    // Calculate session duration
+    const durationSeconds = Math.floor((Date.now() - state.sessionStartTime) / 1000);
+    const durationMinutes = Math.max(1, Math.ceil(durationSeconds / 60));
+
+    // Update database with complete session data
+    const updateData: any = {
+      transcript: state.transcript,
+      endedAt: new Date(),
+      status: 'ended',
+      minutesUsed: durationMinutes,
+      totalMessages: state.transcript.length,
+    };
+
+    if (errorMessage) {
+      updateData.errorMessage = errorMessage;
+    }
+
+    await db.update(realtimeSessions)
+      .set(updateData)
+      .where(eq(realtimeSessions.id, state.sessionId));
+
+    console.log(`[Custom Voice] 💾 Session finalized (${reason}) - ${durationMinutes} minutes, ${state.transcript.length} messages`);
+
+    // Deduct minutes from user balance
+    if (state.userId && durationMinutes > 0) {
+      const { deductMinutes } = await import('../services/voice-minutes');
+      await deductMinutes(state.userId, durationMinutes);
+      console.log(`[Custom Voice] ✅ Deducted ${durationMinutes} minutes from user ${state.userId}`);
+    }
+  } catch (error) {
+    console.error(`[Custom Voice] ❌ Error finalizing session (${reason}):`, error);
+  }
+}
+
 export function setupCustomVoiceWebSocket(server: Server) {
   const wss = new WebSocketServer({
     server,
@@ -173,9 +228,6 @@ export function setupCustomVoiceWebSocket(server: Server) {
               isActive: true,
             });
             
-            // Mark session as ended
-            state.isSessionEnded = true;
-            
             // Send moderation response
             const aiResponse = moderationResponse;
             
@@ -209,8 +261,15 @@ export function setupCustomVoiceWebSocket(server: Server) {
               mimeType: "audio/pcm;rate=16000"
             }));
             
-            // Persist and close
-            await persistTranscript(state.sessionId, state.transcript);
+            // Clear intervals before finalizing
+            clearInterval(persistInterval);
+            if (responseTimer) {
+              clearTimeout(responseTimer);
+              responseTimer = null;
+            }
+            
+            // Finalize session with violation reason
+            await finalizeSession(state, 'violation', `Content violation: ${moderation.violationType}`);
             
             // Send session end notification
             ws.send(JSON.stringify({
@@ -574,10 +633,6 @@ export function setupCustomVoiceWebSocket(server: Server) {
 
           case "end":
             console.log("[Custom Voice] 🛑 Ending session:", state.sessionId);
-            
-            // Calculate session duration in minutes
-            const durationSeconds = Math.floor((Date.now() - state.sessionStartTime) / 1000);
-            const durationMinutes = Math.max(1, Math.ceil(durationSeconds / 60));
 
             // Close Deepgram connection first
             if (state.deepgramConnection) {
@@ -588,24 +643,11 @@ export function setupCustomVoiceWebSocket(server: Server) {
             // Clear persistence interval
             clearInterval(persistInterval);
 
-            // FIX #3: Final persist with endedAt timestamp
-            if (state.transcript.length > 0 && state.sessionId) {
-              try {
-                await db.update(realtimeSessions)
-                  .set({
-                    transcript: state.transcript,
-                    endedAt: new Date(),
-                  })
-                  .where(eq(realtimeSessions.id, state.sessionId));
-                console.log("[Custom Voice] 💾 Final transcript saved to database");
-              } catch (error) {
-                console.error("[Custom Voice] ❌ Error saving transcript:", error);
-              }
-            }
+            // Finalize session (saves to DB, deducts minutes)
+            await finalizeSession(state, 'normal');
 
             ws.send(JSON.stringify({ 
               type: "ended",
-              duration: durationMinutes,
               transcriptLength: state.transcript.length
             }));
             
@@ -627,6 +669,12 @@ export function setupCustomVoiceWebSocket(server: Server) {
     ws.on("close", async () => {
       console.log("[Custom Voice] 🔌 Connection closed");
       
+      // Skip if session was already ended (prevents double-deduction)
+      if (state.isSessionEnded) {
+        console.log("[Custom Voice] ℹ️ Session already finalized, skipping close handler");
+        return;
+      }
+      
       // Clear response timer
       if (responseTimer) {
         clearTimeout(responseTimer);
@@ -642,14 +690,18 @@ export function setupCustomVoiceWebSocket(server: Server) {
       // Clear interval
       clearInterval(persistInterval);
       
-      // FIX #3: Final persist on unexpected disconnect
-      if (state.sessionId && state.transcript.length > 0) {
-        await persistTranscript(state.sessionId, state.transcript);
-      }
+      // Finalize session (saves to DB, deducts minutes)
+      await finalizeSession(state, 'disconnect');
     });
 
     ws.on("error", async (error) => {
       console.error("[Custom Voice] ❌ WebSocket error:", error);
+      
+      // Skip if session was already ended (prevents double-deduction)
+      if (state.isSessionEnded) {
+        console.log("[Custom Voice] ℹ️ Session already finalized, skipping error handler");
+        return;
+      }
       
       // Close Deepgram first
       if (state.deepgramConnection) {
@@ -657,10 +709,15 @@ export function setupCustomVoiceWebSocket(server: Server) {
         state.deepgramConnection = null;
       }
       
-      // FIX #3: Final persist on error
-      if (state.sessionId && state.transcript.length > 0) {
-        await persistTranscript(state.sessionId, state.transcript);
+      // Clear intervals before finalizing
+      clearInterval(persistInterval);
+      if (responseTimer) {
+        clearTimeout(responseTimer);
+        responseTimer = null;
       }
+      
+      // Finalize session with error message (saves to DB, deducts minutes)
+      await finalizeSession(state, 'error', error instanceof Error ? error.message : 'Unknown error');
     });
   });
 
