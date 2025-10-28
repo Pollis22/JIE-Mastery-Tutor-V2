@@ -76,7 +76,7 @@ export const users = pgTable("users", {
   monthlyResetDate: timestamp("monthly_reset_date").defaultNow(),
   weeklyVoiceMinutesUsed: integer("weekly_voice_minutes_used").default(0),
   weeklyResetDate: timestamp("weekly_reset_date").defaultNow(),
-  preferredLanguage: text("preferred_language").default('english'),
+  preferredLanguage: text("preferred_language").$type<'en' | 'es' | 'hi' | 'zh' | 'fr' | 'de' | 'pt' | 'ja' | 'sw' | 'af' | 'ha' | 'am'>(), // No default - allows auto-detection
   voiceStyle: text("voice_style").default('cheerful'),
   speechSpeed: decimal("speech_speed").default('1.0'),
   volumeLevel: integer("volume_level").default(75),
@@ -612,7 +612,7 @@ export const realtimeSessions = pgTable("realtime_sessions", {
   studentId: varchar("student_id").references(() => students.id, { onDelete: 'set null' }),
   studentName: text("student_name"),
   subject: text("subject"),
-  language: text("language").default('en').$type<'en' | 'es' | 'hi' | 'zh'>(),
+  language: text("language").default('en').$type<'en' | 'es' | 'hi' | 'zh' | 'fr' | 'de' | 'pt' | 'ja' | 'sw' | 'af' | 'ha' | 'am'>(),
   ageGroup: text("age_group").default('3-5').$type<'K-2' | '3-5' | '6-8' | '9-12' | 'College/Adult'>(),
   voice: text("voice"),
   model: text("model").default('gpt-4o-realtime-preview-2024-10-01'),

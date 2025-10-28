@@ -24,21 +24,81 @@ const interfaceLanguages = [
 ];
 
 const voiceLanguages = [
-  { code: "english", name: "English", flag: "🇺🇸" },
-  { code: "spanish", name: "Spanish", flag: "🇪🇸" },
-  { code: "chinese", name: "Chinese", flag: "🇨🇳" },
-  { code: "hindi", name: "Hindi", flag: "🇮🇳" }
+  { code: "en", name: "English", flag: "🇺🇸" },
+  { code: "es", name: "Español", flag: "🇪🇸" },
+  { code: "zh", name: "中文", flag: "🇨🇳" },
+  { code: "hi", name: "हिंदी", flag: "🇮🇳" },
+  { code: "fr", name: "Français", flag: "🇫🇷" },
+  { code: "de", name: "Deutsch", flag: "🇩🇪" },
+  { code: "pt", name: "Português", flag: "🇧🇷" },
+  { code: "ja", name: "日本語", flag: "🇯🇵" },
+  { code: "sw", name: "Kiswahili", flag: "🇰🇪" },
+  { code: "af", name: "Afrikaans", flag: "🇿🇦" },
+  { code: "ha", name: "Hausa", flag: "🇳🇬" },
+  { code: "am", name: "አማርኛ", flag: "🇪🇹" }
 ];
 
 export default function LanguageSelector({ type = "interface", variant = "settings" }: LanguageSelectorProps) {
-  const { user, refetch } = useAuth();
+  const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   
   const languages = type === "voice" ? voiceLanguages : interfaceLanguages;
-  const [selectedLanguage, setSelectedLanguage] = useState(
-    type === "voice" ? user?.preferredLanguage || "english" : localStorage.getItem("interfaceLanguage") || "en"
-  );
+  
+  // Migrate legacy language codes to ISO codes (backward compatibility)
+  const migrateLegacyLanguageCode = (code: string | undefined | null): string | undefined => {
+    // Return undefined for empty values so auto-detection can run
+    if (!code) return undefined;
+    
+    const legacyMap: Record<string, string> = {
+      'english': 'en',
+      'spanish': 'es',
+      'hindi': 'hi',
+      'chinese': 'zh',
+      'french': 'fr',
+      'german': 'de',
+      'portuguese': 'pt',
+      'japanese': 'ja',
+      'swahili': 'sw',
+      'afrikaans': 'af',
+      'hausa': 'ha',
+      'amharic': 'am'
+    };
+    
+    // If already ISO code (2 chars), return as-is
+    if (code.length === 2) return code;
+    
+    // Otherwise migrate from legacy word to ISO code
+    return legacyMap[code.toLowerCase()] || undefined;
+  };
+  
+  // Auto-detect browser language on first visit
+  const detectLanguage = () => {
+    if (typeof navigator !== 'undefined') {
+      const browserLang = navigator.language.toLowerCase();
+      if (browserLang.startsWith('es')) return 'es';
+      if (browserLang.startsWith('hi')) return 'hi';
+      if (browserLang.startsWith('zh')) return 'zh';
+      if (browserLang.startsWith('fr')) return 'fr';
+      if (browserLang.startsWith('de')) return 'de';
+      if (browserLang.startsWith('pt')) return 'pt';
+      if (browserLang.startsWith('ja')) return 'ja';
+      if (browserLang.startsWith('sw')) return 'sw';
+      if (browserLang.startsWith('af')) return 'af';
+      if (browserLang.startsWith('ha')) return 'ha';
+      if (browserLang.startsWith('am')) return 'am';
+    }
+    return 'en';
+  };
+  
+  // Initialize with migrated code, fallback to auto-detection, then English
+  const [selectedLanguage, setSelectedLanguage] = useState(() => {
+    if (type === "voice") {
+      return migrateLegacyLanguageCode(user?.preferredLanguage) || detectLanguage() || 'en';
+    } else {
+      return migrateLegacyLanguageCode(localStorage.getItem("interfaceLanguage")) || detectLanguage() || 'en';
+    }
+  });
 
   const updateLanguageMutation = useMutation({
     mutationFn: async (language: string) => {
@@ -61,7 +121,6 @@ export default function LanguageSelector({ type = "interface", variant = "settin
         description: `${type === "voice" ? "Voice" : "Interface"} language updated`,
       });
       if (type === "voice") {
-        refetch();
         queryClient.invalidateQueries({ queryKey: ["/api/user"] });
       } else {
         // In a real implementation, you'd trigger a UI language change here
@@ -76,6 +135,19 @@ export default function LanguageSelector({ type = "interface", variant = "settin
       });
     }
   });
+
+  // Update selected language when user data loads (fixes async hydration issue)
+  useEffect(() => {
+    if (type === "voice" && user?.preferredLanguage) {
+      const migratedLang = migrateLegacyLanguageCode(user?.preferredLanguage) || detectLanguage() || 'en';
+      setSelectedLanguage(migratedLang);
+      
+      // Auto-update to ISO code if user has legacy value
+      if (user.preferredLanguage !== migratedLang && !updateLanguageMutation.isPending) {
+        updateLanguageMutation.mutate(migratedLang);
+      }
+    }
+  }, [user?.preferredLanguage, type, updateLanguageMutation]);
 
   const handleLanguageChange = (language: string) => {
     setSelectedLanguage(language);
