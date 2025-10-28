@@ -44,8 +44,16 @@ export async function startDeepgramStream(
     language: "en-US",
     smart_format: true,
     interim_results: true,
-    utterance_end_ms: 1000,
+    
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // CRITICAL: Increased for better turn-taking and natural pauses
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    endpointing: 800,           // Was default → Now 800ms of silence before considering speech ended
+    utterance_end_ms: 1500,     // Was 1000ms → Now 1500ms wait before finalizing
     vad_events: true,
+    vad_threshold: 0.5,         // More sensitive to detect when user is speaking
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    
     encoding: "linear16",
     sample_rate: 16000,
     });

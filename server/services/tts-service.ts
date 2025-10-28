@@ -53,6 +53,11 @@ export async function generateSpeech(
         similarity_boost: 0.75,
         style: 0.0,
         use_speaker_boost: true,
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        // CRITICAL: Slow down speech for better comprehension
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        speed: 0.85,              // Was 1.0 → Now 0.85 (15% slower)
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
       },
     });
 

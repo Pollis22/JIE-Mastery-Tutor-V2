@@ -33,6 +33,8 @@ interface SessionState {
   lastTranscript: string; // FIX #1A: Track last transcript to avoid duplicates
   violationCount: number; // Track content violations in this session
   isSessionEnded: boolean; // Flag to prevent further processing after termination
+  isTutorSpeaking: boolean; // PACING FIX: Track if tutor is currently speaking
+  lastAudioSentAt: number; // PACING FIX: Track when audio was last sent for interruption detection
 }
 
 // FIX #3: Incremental persistence helper
@@ -138,6 +140,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
       lastTranscript: "", // FIX #1A: Initialize duplicate tracker
       violationCount: 0, // Initialize violation counter
       isSessionEnded: false, // Initialize session termination flag
+      isTutorSpeaking: false, // PACING FIX: Initialize tutor speaking state
+      lastAudioSentAt: 0, // PACING FIX: Initialize audio timestamp
     };
 
     // FIX #3: Auto-persist every 10 seconds
@@ -360,6 +364,13 @@ export function setupCustomVoiceWebSocket(server: Server) {
         // Generate speech with age-appropriate voice
         const audioBuffer = await generateSpeech(aiResponse, state.ageGroup);
 
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        // PACING FIX: Mark tutor as speaking and track timestamp
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        state.isTutorSpeaking = true;
+        const turnTimestamp = Date.now();
+        state.lastAudioSentAt = turnTimestamp;
+
         // Send audio to frontend
         ws.send(JSON.stringify({
           type: "audio",
@@ -367,19 +378,52 @@ export function setupCustomVoiceWebSocket(server: Server) {
           mimeType: "audio/pcm;rate=16000"
         }));
 
-        // FIX #3: Persist after each turn
+        console.log("[Custom Voice] 🔊 Audio sent, waiting for user response...");
+
+        // FIX #3: Persist after each turn (before pause to avoid blocking)
         await persistTranscript(state.sessionId, state.transcript);
+
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        // PACING FIX: Release isProcessing BEFORE pause to allow interruptions
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        state.isProcessing = false;
+        
+        // Calculate audio duration correctly (16kHz, 16-bit = 2 bytes/sample)
+        const audioDuration = audioBuffer.length / (16000 * 2); // seconds
+        const pauseMs = Math.max(2000, audioDuration * 1000 + 1500); // Audio duration + 1.5s buffer
+
+        console.log(`[Custom Voice] ⏳ Pausing ${pauseMs}ms (audio: ${audioDuration.toFixed(1)}s + 1.5s buffer)...`);
+
+        // Wait for audio to finish playing + give user time to think
+        // Note: isTutorSpeaking remains true during this pause, but interrupts can still be detected
+        await new Promise(resolve => setTimeout(resolve, pauseMs));
+
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        // PACING FIX: Only clear flag if this turn is still active (prevents race condition)
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        if (state.lastAudioSentAt === turnTimestamp) {
+          console.log("[Custom Voice] ✅ Pause complete, ready for user input");
+          state.isTutorSpeaking = false;
+        } else {
+          console.log("[Custom Voice] ℹ️ Turn superseded by newer turn, keeping isTutorSpeaking");
+        }
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+        // Process next queued item if any
+        if (state.transcriptQueue.length > 0 && !state.isSessionEnded) {
+          setImmediate(() => processTranscriptQueue());
+        }
 
       } catch (error) {
         console.error("[Custom Voice] ❌ Error processing:", error);
+        state.isTutorSpeaking = false; // Reset on error
+        state.isProcessing = false; // Ensure processing is released on error
         ws.send(JSON.stringify({ 
           type: "error", 
           error: error instanceof Error ? error.message : "Unknown error"
         }));
-      } finally {
-        state.isProcessing = false;
         
-        // FIX #1: Process next item in queue if any (only if session not ended)
+        // FIX #1: Process next item in queue even after error
         if (state.transcriptQueue.length > 0 && !state.isSessionEnded) {
           setImmediate(() => processTranscriptQueue());
         }
@@ -541,6 +585,30 @@ export function setupCustomVoiceWebSocket(server: Server) {
                   console.log("[Custom Voice] ⏭️ Skipping short/empty transcript");
                   return;
                 }
+                
+                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                // PACING FIX: Detect if student is interrupting tutor
+                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                const timeSinceLastAudio = Date.now() - state.lastAudioSentAt;
+                
+                if (state.isTutorSpeaking && timeSinceLastAudio < 3000) {
+                  console.log("[Custom Voice] 🛑 Student interrupted - stopping tutor");
+                  
+                  // Send interrupt signal to frontend to stop audio playback
+                  ws.send(JSON.stringify({
+                    type: "interrupt",
+                    message: "Student is speaking",
+                  }));
+                  
+                  state.isTutorSpeaking = false;
+                }
+                
+                // Don't process if tutor is still speaking (unless interrupted)
+                if (state.isTutorSpeaking) {
+                  console.log("[Custom Voice] ⏸️ Waiting for tutor to finish...");
+                  return;
+                }
+                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                 
                 if (state.isProcessing) {
                   console.log("[Custom Voice] ⏭️ Already processing previous request");
