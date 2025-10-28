@@ -17,7 +17,10 @@
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:debug": "playwright test --debug",
     "test:acceptance": "jest tests/acceptance.test.ts --verbose",
-    "test": "npm run test:acceptance"
+    "test": "npm run test:acceptance",
+    "restore-users": "tsx server/scripts/restore-users.ts",
+    "create-test-users": "tsx server/scripts/create-test-users.ts",
+    "setup-all-users": "tsx server/scripts/setup-all-users.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.37.0",

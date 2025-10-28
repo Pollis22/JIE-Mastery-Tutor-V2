@@ -3,6 +3,28 @@
 ## Overview
 This project is a production-ready conversational AI tutoring web platform designed to help students learn Math, English, and Spanish. It features interactive voice conversations, personalized quizzes, and adaptive learning paths. The platform includes a fully functional multi-agent AI system with five age-specific AI tutors (K-2, Grades 3-5, 6-8, 9-12, College/Adult), each optimized for their target age group's complexity, vocabulary, and teaching approaches. The system is designed for high reliability and a streamlined user experience, focusing on immediate voice tutoring without dynamic agent creation for each session. The platform supports a hybrid minute tracking policy, allowing for both subscription-based and purchased rollover minutes, and prioritizes per-session configuration for flexible family sharing.
 
+## User Setup Scripts
+
+Three automated scripts are available for creating production and test users in both Railway (production) and dev environments:
+
+### Available Scripts
+-   **`npm run setup-all-users`**: Creates all 12 users (2 production + 10 test) in one command (RECOMMENDED)
+-   **`npm run restore-users`**: Creates only the 2 production users (admin + subscriber)
+-   **`npm run create-test-users`**: Creates only the 10 test users
+
+### Production Users
+-   **Admin**: pollis@mfhfoods.com / Crenshaw22$$ (Elite plan, 1800 min, admin privileges, 3 concurrent sessions/logins)
+-   **Subscriber**: pollis@aquavertclean.com / Crenshaw22$$ (Starter plan, 60 min)
+
+### Test Users (Password: TestPass123)
+-   **Starter**: Test1-3@example.com (60 min each)
+-   **Standard**: Test4-5@example.com (240 min each)
+-   **Pro**: Test6-7@example.com (600 min each)
+-   **Elite**: Test8-9@example.com (1800 min each, 3 concurrent sessions/logins)
+-   **Free**: Test10@example.com (no subscription)
+
+All scripts are idempotent (safe to run multiple times) and update existing users instead of creating duplicates. See `USER_SETUP_GUIDE.md` for complete documentation.
+
 ## User Preferences
 Preferred communication style: Simple, everyday language.
 
