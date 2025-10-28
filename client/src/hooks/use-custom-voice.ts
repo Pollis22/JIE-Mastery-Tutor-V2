@@ -10,6 +10,7 @@ export function useCustomVoice() {
   const [isConnected, setIsConnected] = useState(false);
   const [transcript, setTranscript] = useState<TranscriptMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [isTutorSpeaking, setIsTutorSpeaking] = useState(false);
   
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -17,6 +18,7 @@ export function useCustomVoice() {
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const audioQueueRef = useRef<AudioBuffer[]>([]);
   const isPlayingRef = useRef(false);
+  const currentAudioSourceRef = useRef<AudioBufferSourceNode | null>(null);
 
   const connect = useCallback(async (
     sessionId: string, 
@@ -71,7 +73,14 @@ export function useCustomVoice() {
 
           case "audio":
             console.log("[Custom Voice] 🔊 Received audio");
+            setIsTutorSpeaking(true);
             await playAudio(message.data);
+            break;
+
+          case "interrupt":
+            console.log("[Custom Voice] 🛑 Interruption detected - stopping tutor");
+            stopAudio();
+            setIsTutorSpeaking(false);
             break;
 
           case "error":
@@ -185,6 +194,7 @@ export function useCustomVoice() {
   const playNextChunk = () => {
     if (audioQueueRef.current.length === 0) {
       isPlayingRef.current = false;
+      setIsTutorSpeaking(false);
       return;
     }
 
@@ -196,12 +206,35 @@ export function useCustomVoice() {
     const source = audioContextRef.current.createBufferSource();
     source.buffer = audioBuffer;
     source.connect(audioContextRef.current.destination);
+    currentAudioSourceRef.current = source;
     
     source.onended = () => {
+      currentAudioSourceRef.current = null;
       playNextChunk();
     };
     
     source.start();
+  };
+
+  const stopAudio = () => {
+    console.log("[Custom Voice] ⏹️ Stopping audio playback");
+    
+    // Stop currently playing audio source
+    if (currentAudioSourceRef.current) {
+      try {
+        currentAudioSourceRef.current.stop();
+        currentAudioSourceRef.current.disconnect();
+      } catch (e) {
+        // Source might already be stopped
+      }
+      currentAudioSourceRef.current = null;
+    }
+    
+    // Clear the audio queue
+    audioQueueRef.current = [];
+    isPlayingRef.current = false;
+    
+    console.log("[Custom Voice] ✅ Audio stopped, microphone still active");
   };
 
   const cleanup = () => {
@@ -244,5 +277,6 @@ export function useCustomVoice() {
     isConnected,
     transcript,
     error,
+    isTutorSpeaking,
   };
 }

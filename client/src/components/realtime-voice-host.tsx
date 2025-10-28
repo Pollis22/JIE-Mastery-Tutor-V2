@@ -301,9 +301,23 @@ export function RealtimeVoiceHost({
         </div>
         
         {isRecording && (
-          <div className="flex items-center gap-2 text-sm">
-            <div className="h-2 w-2 bg-red-500 rounded-full animate-pulse" />
-            <span className="text-muted-foreground">Recording</span>
+          <div className="flex items-center gap-3">
+            {customVoice.isTutorSpeaking ? (
+              <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400">
+                <Volume2 className="h-4 w-4 animate-pulse" />
+                <span className="font-medium">Tutor is speaking... (you can interrupt)</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+                <Mic className="h-4 w-4 animate-pulse" />
+                <span className="font-semibold">I'm listening - speak anytime!</span>
+              </div>
+            )}
+            <div className="h-4 w-px bg-border" />
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <div className="h-2 w-2 bg-red-500 rounded-full animate-pulse" />
+              <span>Recording</span>
+            </div>
           </div>
         )}
       </div>
@@ -328,6 +342,7 @@ export function RealtimeVoiceHost({
           <div>Connected: {customVoice.isConnected ? 'Yes' : 'No'}</div>
           <div>Recording: {isRecording ? 'Yes' : 'No'}</div>
           <div>Muted: {isMuted ? 'Yes' : 'No'}</div>
+          <div>Tutor Speaking: {customVoice.isTutorSpeaking ? 'Yes' : 'No'}</div>
           <div>Student: {studentName || 'Unknown'}</div>
           <div>Subject: {subject || 'General'}</div>
           <div>Age Group: {ageGroup}</div>
