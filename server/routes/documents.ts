@@ -5,6 +5,12 @@ import fs from 'fs';
 import { z } from 'zod';
 import { storage } from '../storage';
 import { DocumentProcessor } from '../services/document-processor';
+import { createRequire } from 'module';
+
+// Create require for CommonJS modules
+const require = createRequire(import.meta.url);
+const pdfParse = require('pdf-parse');
+const mammoth = require('mammoth');
 
 const router = Router();
 
@@ -63,26 +69,87 @@ const contextRequestSchema = z.object({
 // Document processor instance
 const processor = new DocumentProcessor();
 
+// File system promises
+const fsPromises = fs.promises;
+
+// Text extraction helper functions
+async function extractTextFromPDF(filePath: string): Promise<string> {
+  try {
+    const dataBuffer = await fsPromises.readFile(filePath);
+    const data = await pdfParse(dataBuffer);
+    return data.text || '';
+  } catch (error) {
+    console.error('[PDF Extract] Error:', error);
+    throw new Error(`Failed to extract text from PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+async function extractTextFromWord(filePath: string): Promise<string> {
+  try {
+    const result = await mammoth.extractRawText({ path: filePath });
+    return result.value || '';
+  } catch (error) {
+    console.error('[Word Extract] Error:', error);
+    throw new Error(`Failed to extract text from Word: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+// Chunk text into manageable pieces
+function chunkText(text: string, maxChunkSize: number = 1000): string[] {
+  const chunks: string[] = [];
+  const paragraphs = text.split(/\n\n+/);
+  
+  let currentChunk = '';
+  
+  for (const paragraph of paragraphs) {
+    const trimmed = paragraph.trim();
+    if (!trimmed) continue;
+    
+    if (currentChunk.length + trimmed.length > maxChunkSize) {
+      if (currentChunk) {
+        chunks.push(currentChunk.trim());
+        currentChunk = '';
+      }
+      
+      // If single paragraph is too long, split by sentences
+      if (trimmed.length > maxChunkSize) {
+        const sentences = trimmed.match(/[^.!?]+[.!?]+/g) || [trimmed];
+        for (const sentence of sentences) {
+          if (currentChunk.length + sentence.length > maxChunkSize) {
+            if (currentChunk) chunks.push(currentChunk.trim());
+            currentChunk = sentence;
+          } else {
+            currentChunk += ' ' + sentence;
+          }
+        }
+      } else {
+        currentChunk = trimmed;
+      }
+    } else {
+      currentChunk += (currentChunk ? '\n\n' : '') + trimmed;
+    }
+  }
+  
+  if (currentChunk.trim()) {
+    chunks.push(currentChunk.trim());
+  }
+  
+  return chunks.filter(chunk => chunk.length > 0);
+}
+
+// Estimate token count
+function estimateTokens(text: string): number {
+  return Math.ceil(text.split(/\s+/).length * 1.3);
+}
+
 /**
- * Upload and process document
+ * Upload and process document SYNCHRONOUSLY
  */
 router.post('/upload', upload.single('file'), async (req, res) => {
+  let documentId: string | null = null;
+  
   try {
-    console.log('[Upload] === Request Details ===');
-    console.log('[Upload] Headers:', JSON.stringify(req.headers, null, 2));
-    console.log('[Upload] Session:', req.session);
-    console.log('[Upload] User:', req.user);
-    console.log('[Upload] Authenticated:', req.isAuthenticated?.());
-    console.log('[Upload] Cookies:', req.cookies);
-    console.log('[Upload] File:', req.file ? { 
-      originalname: req.file.originalname, 
-      size: req.file.size,
-      mimetype: req.file.mimetype  
-    } : 'No file');
-    console.log('[Upload] === End Request Details ===');
-    
     if (!req.file) {
-      console.log('[Upload] ❌ No file provided');
       return res.status(400).json({ error: 'No file provided' });
     }
 
@@ -90,13 +157,15 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     const userId = req.user?.id;
     if (!userId) {
       console.log('[Upload] ❌ User not authenticated');
-      console.log('[Upload] req.user:', req.user);
-      console.log('[Upload] req.session:', req.session);
-      console.log('[Upload] req.isAuthenticated():', req.isAuthenticated?.());
       return res.status(401).json({ error: 'User not authenticated' });
     }
     
-    console.log('[Upload] ✅ User authenticated:', userId);
+    console.log('[Upload] 📤 Processing file:', {
+      filename: req.file.originalname,
+      size: req.file.size,
+      mimetype: req.file.mimetype,
+      userId,
+    });
 
     // Validate metadata
     const metadata = uploadMetadataSchema.parse({
@@ -112,11 +181,11 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     const supportedTypes = ['pdf', 'docx', 'doc', 'txt', 'csv', 'xlsx', 'xls', 'png', 'jpg', 'jpeg', 'gif', 'bmp'];
     
     if (!supportedTypes.includes(fileExtension)) {
-      fs.unlinkSync(req.file.path); // Clean up uploaded file
-      return res.status(400).json({ error: 'Unsupported file type. Supported: PDF, DOCX, TXT, CSV, Excel, Images' });
+      fs.unlinkSync(req.file.path);
+      return res.status(400).json({ error: 'Unsupported file type' });
     }
 
-    // Save document record - queued for background processing by the embedding worker
+    // 1. Create document record with "processing" status
     const document = await storage.uploadDocument(userId, {
       originalName: req.file.originalname,
       fileName: req.file.filename,
@@ -128,32 +197,117 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       title: metadata.title || req.file.originalname,
       description: metadata.description,
       keepForFutureSessions: metadata.keepForFutureSessions,
-      processingStatus: 'queued',
+      processingStatus: 'processing', // ← Changed from 'queued'
       retryCount: 0
     });
-
-    // The embedding worker will automatically process this document in the background
-    console.log(`Document ${document.id} queued for processing`);
-
+    
+    documentId = document.id;
+    console.log(`[Upload] ✅ Document created: ${documentId}`);
+    
+    // 2. Extract text based on file type
+    let extractedText = '';
+    
+    try {
+      if (req.file.mimetype === 'application/pdf') {
+        console.log('[Upload] 📄 Extracting text from PDF...');
+        extractedText = await extractTextFromPDF(req.file.path);
+      } else if (
+        req.file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+        req.file.mimetype === 'application/msword' ||
+        req.file.originalname.endsWith('.docx')
+      ) {
+        console.log('[Upload] 📝 Extracting text from Word...');
+        extractedText = await extractTextFromWord(req.file.path);
+      } else if (req.file.mimetype === 'text/plain') {
+        console.log('[Upload] 📃 Reading text file...');
+        extractedText = await fsPromises.readFile(req.file.path, 'utf-8');
+      } else {
+        throw new Error(`Unsupported file type: ${req.file.mimetype}`);
+      }
+      
+      console.log(`[Upload] ✅ Extracted ${extractedText.length} characters`);
+      
+      if (!extractedText || extractedText.trim().length === 0) {
+        throw new Error('No text could be extracted from the document');
+      }
+      
+    } catch (extractError: any) {
+      console.error('[Upload] ❌ Text extraction failed:', extractError);
+      
+      await storage.updateDocument(documentId, userId, {
+        processingStatus: 'failed',
+        processingError: `Text extraction failed: ${extractError.message}`,
+      });
+      
+      return res.status(500).json({
+        error: 'Failed to extract text from document',
+        details: extractError.message,
+      });
+    }
+    
+    // 3. Chunk the text
+    console.log('[Upload] ✂️ Chunking text...');
+    const chunks = chunkText(extractedText, 1000);
+    console.log(`[Upload] ✅ Created ${chunks.length} chunks`);
+    
+    // 4. Save chunks to database
+    console.log('[Upload] 💾 Saving chunks to database...');
+    for (let i = 0; i < chunks.length; i++) {
+      await storage.createDocumentChunk({
+        documentId: documentId,
+        chunkIndex: i,
+        content: chunks[i],
+        tokenCount: estimateTokens(chunks[i]),
+        metadata: {}
+      });
+    }
+    
+    // 5. Update document with extracted text and mark as ready
+    await storage.updateDocument(documentId, userId, {
+      processingStatus: 'ready',
+      retryCount: 0
+    });
+    
+    console.log(`[Upload] 🎉 Document ${documentId} processed successfully!`);
+    console.log(`[Upload] - Chunks: ${chunks.length}`);
+    console.log(`[Upload] - Characters: ${extractedText.length}`);
+    
     res.json({
       id: document.id,
       title: document.title,
       originalName: document.originalName,
       fileType: document.fileType,
       fileSize: document.fileSize,
-      processingStatus: document.processingStatus,
-      createdAt: document.createdAt
+      processingStatus: 'ready', // ← Return ready status
+      createdAt: document.createdAt,
+      chunks: chunks.length,
+      characters: extractedText.length
     });
 
-  } catch (error) {
-    console.error('Upload error:', error);
+  } catch (error: any) {
+    console.error('[Upload] ❌ Error:', error);
     
-    // Clean up uploaded file on error
+    // Update document status if we created one
+    if (documentId) {
+      try {
+        await storage.updateDocument(documentId, req.user?.id || '', {
+          processingStatus: 'failed',
+          processingError: error.message,
+        });
+      } catch (updateError) {
+        console.error('[Upload] Failed to update error status:', updateError);
+      }
+    }
+    
+    // Clean up uploaded file
     if (req.file && fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path);
     }
     
-    res.status(500).json({ error: 'Failed to upload document' });
+    res.status(500).json({
+      error: 'Failed to process document',
+      details: error.message,
+    });
   }
 });
 
