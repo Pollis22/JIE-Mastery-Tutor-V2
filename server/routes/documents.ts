@@ -9,8 +9,6 @@ import { createRequire } from 'module';
 
 // Create require for CommonJS modules
 const require = createRequire(import.meta.url);
-const pdfParse = require('pdf-parse');
-const mammoth = require('mammoth');
 
 const router = Router();
 
@@ -68,6 +66,8 @@ const fsPromises = fs.promises;
 // Text extraction helper functions
 async function extractTextFromPDF(filePath: string): Promise<string> {
   try {
+    // Import pdf-parse as CommonJS module
+    const pdfParse = require('pdf-parse');
     const dataBuffer = await fsPromises.readFile(filePath);
     const data = await pdfParse(dataBuffer);
     return data.text || '';
@@ -79,6 +79,8 @@ async function extractTextFromPDF(filePath: string): Promise<string> {
 
 async function extractTextFromWord(filePath: string): Promise<string> {
   try {
+    // Import mammoth as CommonJS module
+    const mammoth = require('mammoth');
     const result = await mammoth.extractRawText({ path: filePath });
     return result.value || '';
   } catch (error) {
