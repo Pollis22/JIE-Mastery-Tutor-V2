@@ -24,18 +24,26 @@ const upload = multer({
     fileSize: 10 * 1024 * 1024, // 10MB
   },
   fileFilter: (req, file, cb) => {
-    // Only allow file types we can extract text from
+    // Allow PDF, Word, text, images, Excel, and CSV files
     const allowedTypes = [
       'application/pdf',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
       'application/msword', // .doc
       'text/plain', // .txt
+      'text/csv', // .csv
+      'application/vnd.ms-excel', // .xls
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+      'image/png',
+      'image/jpeg',
+      'image/jpg',
+      'image/gif',
+      'image/bmp',
     ];
     
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Only PDF, Word (DOCX/DOC), and plain text (TXT) files are supported'));
+      cb(new Error('Supported file types: PDF, Word (DOCX/DOC), text (TXT), images (PNG/JPG/GIF/BMP), Excel (XLSX/XLS), and CSV'));
     }
   }
 });
@@ -86,6 +94,76 @@ async function extractTextFromWord(filePath: string): Promise<string> {
   } catch (error) {
     console.error('[Word Extract] Error:', error);
     throw new Error(`Failed to extract text from Word: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+async function extractTextFromImage(filePath: string): Promise<string> {
+  try {
+    // Import tesseract.js for OCR
+    const Tesseract = require('tesseract.js');
+    console.log('[OCR] Starting text recognition from image...');
+    
+    const { data: { text } } = await Tesseract.recognize(filePath, 'eng', {
+      logger: (m: any) => {
+        if (m.status === 'recognizing text') {
+          console.log(`[OCR] Progress: ${Math.round(m.progress * 100)}%`);
+        }
+      }
+    });
+    
+    console.log(`[OCR] Extracted ${text.length} characters from image`);
+    return text || '';
+  } catch (error) {
+    console.error('[OCR Extract] Error:', error);
+    throw new Error(`Failed to extract text from image: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+async function extractTextFromExcel(filePath: string): Promise<string> {
+  try {
+    // Import xlsx for Excel parsing
+    const XLSX = require('xlsx');
+    console.log('[Excel] Reading spreadsheet...');
+    
+    const workbook = XLSX.readFile(filePath);
+    const textParts: string[] = [];
+    
+    // Process each sheet
+    for (const sheetName of workbook.SheetNames) {
+      textParts.push(`\n=== Sheet: ${sheetName} ===\n`);
+      const worksheet = workbook.Sheets[sheetName];
+      
+      // Convert to CSV format (preserves structure)
+      const csvText = XLSX.utils.sheet_to_csv(worksheet);
+      textParts.push(csvText);
+    }
+    
+    const fullText = textParts.join('\n');
+    console.log(`[Excel] Extracted ${fullText.length} characters from ${workbook.SheetNames.length} sheet(s)`);
+    return fullText;
+  } catch (error) {
+    console.error('[Excel Extract] Error:', error);
+    throw new Error(`Failed to extract text from Excel: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+async function extractTextFromCSV(filePath: string): Promise<string> {
+  try {
+    console.log('[CSV] Reading CSV file...');
+    const csvText = await fsPromises.readFile(filePath, 'utf-8');
+    
+    // Parse CSV to make it more readable
+    const XLSX = require('xlsx');
+    const workbook = XLSX.read(csvText, { type: 'string' });
+    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+    
+    // Convert to formatted text
+    const formattedText = XLSX.utils.sheet_to_csv(worksheet);
+    console.log(`[CSV] Extracted ${formattedText.length} characters`);
+    return formattedText;
+  } catch (error) {
+    console.error('[CSV Extract] Error:', error);
+    throw new Error(`Failed to extract text from CSV: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 
@@ -171,14 +249,14 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       keepForFutureSessions: req.body.keepForFutureSessions === 'true'
     });
 
-    // Determine file type - only support types we can extract text from
+    // Determine file type - support all document types
     const fileExtension = path.extname(req.file.originalname).toLowerCase().slice(1);
-    const supportedTypes = ['pdf', 'docx', 'doc', 'txt'];
+    const supportedTypes = ['pdf', 'docx', 'doc', 'txt', 'csv', 'xlsx', 'xls', 'png', 'jpg', 'jpeg', 'gif', 'bmp'];
     
     if (!supportedTypes.includes(fileExtension)) {
       fs.unlinkSync(req.file.path);
       return res.status(400).json({ 
-        error: 'Unsupported file type. Please upload PDF, Word (DOCX), or plain text (TXT) files only.' 
+        error: 'Unsupported file type. Supported: PDF, Word (DOCX/DOC), text (TXT), images (PNG/JPG/GIF/BMP), Excel (XLSX/XLS), and CSV' 
       });
     }
 
@@ -218,6 +296,24 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       } else if (req.file.mimetype === 'text/plain') {
         console.log('[Upload] 📃 Reading text file...');
         extractedText = await fsPromises.readFile(req.file.path, 'utf-8');
+      } else if (req.file.mimetype === 'text/csv') {
+        console.log('[Upload] 📊 Extracting text from CSV...');
+        extractedText = await extractTextFromCSV(req.file.path);
+      } else if (
+        req.file.mimetype === 'application/vnd.ms-excel' ||
+        req.file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      ) {
+        console.log('[Upload] 📊 Extracting text from Excel...');
+        extractedText = await extractTextFromExcel(req.file.path);
+      } else if (
+        req.file.mimetype === 'image/png' ||
+        req.file.mimetype === 'image/jpeg' ||
+        req.file.mimetype === 'image/jpg' ||
+        req.file.mimetype === 'image/gif' ||
+        req.file.mimetype === 'image/bmp'
+      ) {
+        console.log('[Upload] 🖼️ Extracting text from image using OCR...');
+        extractedText = await extractTextFromImage(req.file.path);
       } else {
         throw new Error(`Unsupported file type: ${req.file.mimetype}`);
       }
