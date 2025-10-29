@@ -68,15 +68,35 @@ const processor = new DocumentProcessor();
  */
 router.post('/upload', upload.single('file'), async (req, res) => {
   try {
+    console.log('[Upload] === Request Details ===');
+    console.log('[Upload] Headers:', JSON.stringify(req.headers, null, 2));
+    console.log('[Upload] Session:', req.session);
+    console.log('[Upload] User:', req.user);
+    console.log('[Upload] Authenticated:', req.isAuthenticated?.());
+    console.log('[Upload] Cookies:', req.cookies);
+    console.log('[Upload] File:', req.file ? { 
+      originalname: req.file.originalname, 
+      size: req.file.size,
+      mimetype: req.file.mimetype  
+    } : 'No file');
+    console.log('[Upload] === End Request Details ===');
+    
     if (!req.file) {
+      console.log('[Upload] ❌ No file provided');
       return res.status(400).json({ error: 'No file provided' });
     }
 
     // Get user ID from session
     const userId = req.user?.id;
     if (!userId) {
+      console.log('[Upload] ❌ User not authenticated');
+      console.log('[Upload] req.user:', req.user);
+      console.log('[Upload] req.session:', req.session);
+      console.log('[Upload] req.isAuthenticated():', req.isAuthenticated?.());
       return res.status(401).json({ error: 'User not authenticated' });
     }
+    
+    console.log('[Upload] ✅ User authenticated:', userId);
 
     // Validate metadata
     const metadata = uploadMetadataSchema.parse({
