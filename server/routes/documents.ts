@@ -26,25 +26,18 @@ const upload = multer({
     fileSize: 10 * 1024 * 1024, // 10MB
   },
   fileFilter: (req, file, cb) => {
+    // Only allow file types we can extract text from
     const allowedTypes = [
       'application/pdf',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
       'application/msword', // .doc
       'text/plain', // .txt
-      'text/csv', // .csv
-      'application/vnd.ms-excel', // .xls
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
-      'image/png',
-      'image/jpeg',
-      'image/jpg',
-      'image/gif',
-      'image/bmp'
     ];
     
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid file type. Supported: PDF, DOCX, TXT, CSV, Excel, Images'));
+      cb(new Error('Only PDF, Word (DOCX/DOC), and plain text (TXT) files are supported'));
     }
   }
 });
@@ -176,13 +169,15 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       keepForFutureSessions: req.body.keepForFutureSessions === 'true'
     });
 
-    // Determine file type
+    // Determine file type - only support types we can extract text from
     const fileExtension = path.extname(req.file.originalname).toLowerCase().slice(1);
-    const supportedTypes = ['pdf', 'docx', 'doc', 'txt', 'csv', 'xlsx', 'xls', 'png', 'jpg', 'jpeg', 'gif', 'bmp'];
+    const supportedTypes = ['pdf', 'docx', 'doc', 'txt'];
     
     if (!supportedTypes.includes(fileExtension)) {
       fs.unlinkSync(req.file.path);
-      return res.status(400).json({ error: 'Unsupported file type' });
+      return res.status(400).json({ 
+        error: 'Unsupported file type. Please upload PDF, Word (DOCX), or plain text (TXT) files only.' 
+      });
     }
 
     // 1. Create document record with "processing" status

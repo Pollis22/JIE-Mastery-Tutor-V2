@@ -8,6 +8,7 @@ import { realtimeSessions, contentViolations, userSuspensions } from "@shared/sc
 import { eq, and, or, gte } from "drizzle-orm";
 import { getTutorPersonality } from "../config/tutor-personalities";
 import { moderateContent, shouldWarnUser, getModerationResponse } from "../services/content-moderation";
+import { storage } from "../storage";
 
 interface TranscriptEntry {
   speaker: 'tutor' | 'student';
@@ -545,7 +546,36 @@ export function setupCustomVoiceWebSocket(server: Server) {
             
             // Use full personality system prompt with document context
             state.systemInstruction = personality.systemPrompt;
-            state.uploadedDocuments = message.documents || [];
+            
+            // Load document chunks and format as content strings
+            const documentIds = message.documents || [];
+            if (documentIds.length > 0) {
+              console.log(`[Custom Voice] 📄 Loading ${documentIds.length} documents...`);
+              try {
+                const { chunks, documents } = await storage.getDocumentContext(message.userId, documentIds);
+                console.log(`[Custom Voice] ✅ Loaded ${chunks.length} chunks from ${documents.length} documents`);
+                
+                // Format chunks as content strings grouped by document
+                const documentContents: string[] = [];
+                for (const doc of documents) {
+                  const docChunks = chunks
+                    .filter(c => c.documentId === doc.id)
+                    .sort((a, b) => a.chunkIndex - b.chunkIndex); // Ensure correct chunk order
+                  if (docChunks.length > 0) {
+                    const content = `📄 ${doc.title || doc.originalName}\n${docChunks.map(c => c.content).join('\n\n')}`;
+                    documentContents.push(content);
+                  }
+                }
+                
+                state.uploadedDocuments = documentContents;
+                console.log(`[Custom Voice] 📚 Document context prepared: ${documentContents.length} documents`);
+              } catch (error) {
+                console.error('[Custom Voice] ❌ Error loading documents:', error);
+                state.uploadedDocuments = [];
+              }
+            } else {
+              state.uploadedDocuments = [];
+            }
             
             // Send personalized greeting
             const greetings = personality.interactions.greetings;
