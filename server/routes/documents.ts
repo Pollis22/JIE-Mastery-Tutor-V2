@@ -24,11 +24,12 @@ const upload = multer({
     fileSize: 10 * 1024 * 1024, // 10MB
   },
   fileFilter: (req, file, cb) => {
-    // Allow PDF, Word, text, images, Excel, and CSV files
+    // Allow PDF, Word, PowerPoint (PPTX only), text, images, Excel, and CSV files
     const allowedTypes = [
       'application/pdf',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
       'application/msword', // .doc
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .pptx
       'text/plain', // .txt
       'text/csv', // .csv
       'application/vnd.ms-excel', // .xls
@@ -43,7 +44,7 @@ const upload = multer({
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Supported file types: PDF, Word (DOCX/DOC), text (TXT), images (PNG/JPG/GIF/BMP), Excel (XLSX/XLS), and CSV'));
+      cb(new Error('Supported file types: PDF, Word (DOCX/DOC), PowerPoint (PPTX), text (TXT), images (PNG/JPG/GIF/BMP), Excel (XLSX/XLS), and CSV'));
     }
   }
 });
@@ -167,6 +168,57 @@ async function extractTextFromCSV(filePath: string): Promise<string> {
   }
 }
 
+async function extractTextFromPowerPoint(filePath: string): Promise<string> {
+  try {
+    console.log('[PowerPoint] Reading presentation...');
+    const AdmZip = require('adm-zip');
+    const xml2js = require('xml2js');
+    
+    const zip = new AdmZip(filePath);
+    const zipEntries = zip.getEntries();
+    
+    const textParts: string[] = [];
+    let slideNumber = 0;
+    
+    // Extract text from each slide
+    for (const entry of zipEntries) {
+      if (entry.entryName.match(/ppt\/slides\/slide\d+\.xml/)) {
+        slideNumber++;
+        const content = entry.getData().toString('utf8');
+        
+        // Parse XML to extract text
+        const parser = new xml2js.Parser();
+        const result = await parser.parseStringPromise(content);
+        
+        // Extract all text nodes
+        const slideText: string[] = [];
+        const extractTextNodes = (obj: any) => {
+          if (typeof obj === 'string') {
+            slideText.push(obj);
+          } else if (Array.isArray(obj)) {
+            obj.forEach(extractTextNodes);
+          } else if (obj && typeof obj === 'object') {
+            Object.values(obj).forEach(extractTextNodes);
+          }
+        };
+        
+        extractTextNodes(result);
+        
+        if (slideText.length > 0) {
+          textParts.push(`\n=== Slide ${slideNumber} ===\n${slideText.join(' ')}`);
+        }
+      }
+    }
+    
+    const fullText = textParts.join('\n');
+    console.log(`[PowerPoint] Extracted ${fullText.length} characters from ${slideNumber} slide(s)`);
+    return fullText;
+  } catch (error) {
+    console.error('[PowerPoint Extract] Error:', error);
+    throw new Error(`Failed to extract text from PowerPoint: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
 // Chunk text into manageable pieces
 function chunkText(text: string, maxChunkSize: number = 1000): string[] {
   const chunks: string[] = [];
@@ -249,14 +301,14 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       keepForFutureSessions: req.body.keepForFutureSessions === 'true'
     });
 
-    // Determine file type - support all document types
+    // Determine file type - support all document types (PPTX only, not legacy PPT)
     const fileExtension = path.extname(req.file.originalname).toLowerCase().slice(1);
-    const supportedTypes = ['pdf', 'docx', 'doc', 'txt', 'csv', 'xlsx', 'xls', 'png', 'jpg', 'jpeg', 'gif', 'bmp'];
+    const supportedTypes = ['pdf', 'docx', 'doc', 'pptx', 'txt', 'csv', 'xlsx', 'xls', 'png', 'jpg', 'jpeg', 'gif', 'bmp'];
     
     if (!supportedTypes.includes(fileExtension)) {
       fs.unlinkSync(req.file.path);
       return res.status(400).json({ 
-        error: 'Unsupported file type. Supported: PDF, Word (DOCX/DOC), text (TXT), images (PNG/JPG/GIF/BMP), Excel (XLSX/XLS), and CSV' 
+        error: 'Unsupported file type. Supported: PDF, Word (DOCX/DOC), PowerPoint (PPTX), text (TXT), images (PNG/JPG/GIF/BMP), Excel (XLSX/XLS), and CSV' 
       });
     }
 
@@ -293,6 +345,12 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       ) {
         console.log('[Upload] 📝 Extracting text from Word...');
         extractedText = await extractTextFromWord(req.file.path);
+      } else if (
+        req.file.mimetype === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
+        req.file.originalname.endsWith('.pptx')
+      ) {
+        console.log('[Upload] 📊 Extracting text from PowerPoint (PPTX)...');
+        extractedText = await extractTextFromPowerPoint(req.file.path);
       } else if (req.file.mimetype === 'text/plain') {
         console.log('[Upload] 📃 Reading text file...');
         extractedText = await fsPromises.readFile(req.file.path, 'utf-8');
