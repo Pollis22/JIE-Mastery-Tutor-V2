@@ -124,10 +124,17 @@ Production-ready modular voice pipeline providing full control and transparency:
      - **Dr. Morgan (College/Adult)**: Collaborative peer, efficient, focuses on practical application
 
 ### RAG (Retrieval-Augmented Generation) System
--   **Document Processing**: Supports PDF, DOCX, and TXT files with intelligent text segmentation.
+-   **Document Processing**: Comprehensive support for multiple file types with intelligent text segmentation:
+    -   **PDF files** - Advanced text extraction using pdf-parse
+    -   **Word documents** - DOCX/DOC support using mammoth
+    -   **PowerPoint presentations** - PPTX slide extraction using adm-zip + xml2js
+    -   **Excel spreadsheets** - XLSX/XLS table data using xlsx library
+    -   **CSV files** - Comma-separated data parsing
+    -   **Images with OCR** - PNG/JPG/JPEG/GIF/BMP text recognition using Tesseract.js
+    -   **Plain text** - TXT file direct reading
 -   **Document Upload**: Students can upload documents during live voice sessions for immediate AI analysis.
--   **Context Integration**: Documents are processed and discussed in real-time with the AI tutor.
--   **Background Worker**: An EmbeddingWorker asynchronously processes documents for future reference.
+-   **Context Integration**: Documents are processed synchronously and discussed in real-time with the AI tutor.
+-   **Synchronous Processing**: Documents are extracted, chunked, and marked "ready" immediately upon upload (no background queue).
 
 ### Database Schema & Data Management
 Core entities include Users, Subjects, Lessons, User Progress, Learning Sessions, and Quiz Attempts. The RAG system incorporates User Documents, Document Chunks, and Document Embeddings. The Users table includes comprehensive student profile data and marketing preferences. Lazy database initialization is employed.

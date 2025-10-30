@@ -10,6 +10,14 @@ import { createRequire } from 'module';
 // Create require for CommonJS modules
 const require = createRequire(import.meta.url);
 
+// Import CommonJS modules at the top
+const pdfParse = require('pdf-parse');
+const mammoth = require('mammoth');
+const Tesseract = require('tesseract.js');
+const XLSX = require('xlsx');
+const AdmZip = require('adm-zip');
+const xml2js = require('xml2js');
+
 const router = Router();
 
 // Configure multer for file uploads
@@ -75,8 +83,6 @@ const fsPromises = fs.promises;
 // Text extraction helper functions
 async function extractTextFromPDF(filePath: string): Promise<string> {
   try {
-    // Import pdf-parse as CommonJS module
-    const pdfParse = require('pdf-parse');
     const dataBuffer = await fsPromises.readFile(filePath);
     const data = await pdfParse(dataBuffer);
     return data.text || '';
@@ -88,8 +94,6 @@ async function extractTextFromPDF(filePath: string): Promise<string> {
 
 async function extractTextFromWord(filePath: string): Promise<string> {
   try {
-    // Import mammoth as CommonJS module
-    const mammoth = require('mammoth');
     const result = await mammoth.extractRawText({ path: filePath });
     return result.value || '';
   } catch (error) {
@@ -100,8 +104,6 @@ async function extractTextFromWord(filePath: string): Promise<string> {
 
 async function extractTextFromImage(filePath: string): Promise<string> {
   try {
-    // Import tesseract.js for OCR
-    const Tesseract = require('tesseract.js');
     console.log('[OCR] Starting text recognition from image...');
     
     const { data: { text } } = await Tesseract.recognize(filePath, 'eng', {
@@ -122,8 +124,6 @@ async function extractTextFromImage(filePath: string): Promise<string> {
 
 async function extractTextFromExcel(filePath: string): Promise<string> {
   try {
-    // Import xlsx for Excel parsing
-    const XLSX = require('xlsx');
     console.log('[Excel] Reading spreadsheet...');
     
     const workbook = XLSX.readFile(filePath);
@@ -154,7 +154,6 @@ async function extractTextFromCSV(filePath: string): Promise<string> {
     const csvText = await fsPromises.readFile(filePath, 'utf-8');
     
     // Parse CSV to make it more readable
-    const XLSX = require('xlsx');
     const workbook = XLSX.read(csvText, { type: 'string' });
     const worksheet = workbook.Sheets[workbook.SheetNames[0]];
     
@@ -171,8 +170,6 @@ async function extractTextFromCSV(filePath: string): Promise<string> {
 async function extractTextFromPowerPoint(filePath: string): Promise<string> {
   try {
     console.log('[PowerPoint] Reading presentation...');
-    const AdmZip = require('adm-zip');
-    const xml2js = require('xml2js');
     
     const zip = new AdmZip(filePath);
     const zipEntries = zip.getEntries();
