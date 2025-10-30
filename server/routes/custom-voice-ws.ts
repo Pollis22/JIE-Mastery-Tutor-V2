@@ -548,10 +548,21 @@ export function setupCustomVoiceWebSocket(server: Server) {
             state.systemInstruction = personality.systemPrompt;
             
             // Load document chunks and format as content strings
-            const documentIds = message.documents || [];
-            if (documentIds.length > 0) {
-              console.log(`[Custom Voice] 📄 Loading ${documentIds.length} documents...`);
-              try {
+            // If no specific documents are provided, load ALL user documents
+            let documentIds = message.documents || [];
+            
+            try {
+              // If no specific documents requested, get all user documents
+              if (documentIds.length === 0) {
+                console.log(`[Custom Voice] 📄 No specific documents requested, loading all user documents...`);
+                const allUserDocs = await storage.getUserDocuments(message.userId);
+                const readyDocs = allUserDocs.filter(doc => doc.processingStatus === 'ready');
+                documentIds = readyDocs.map(doc => doc.id);
+                console.log(`[Custom Voice] 📚 Found ${readyDocs.length} ready documents for user`);
+              }
+              
+              if (documentIds.length > 0) {
+                console.log(`[Custom Voice] 📄 Loading ${documentIds.length} documents...`);
                 const { chunks, documents } = await storage.getDocumentContext(message.userId, documentIds);
                 console.log(`[Custom Voice] ✅ Loaded ${chunks.length} chunks from ${documents.length} documents`);
                 
@@ -568,12 +579,13 @@ export function setupCustomVoiceWebSocket(server: Server) {
                 }
                 
                 state.uploadedDocuments = documentContents;
-                console.log(`[Custom Voice] 📚 Document context prepared: ${documentContents.length} documents`);
-              } catch (error) {
-                console.error('[Custom Voice] ❌ Error loading documents:', error);
+                console.log(`[Custom Voice] 📚 Document context prepared: ${documentContents.length} documents, total length: ${documentContents.join('').length} chars`);
+              } else {
                 state.uploadedDocuments = [];
+                console.log(`[Custom Voice] ℹ️ No documents available for this user`);
               }
-            } else {
+            } catch (error) {
+              console.error('[Custom Voice] ❌ Error loading documents:', error);
               state.uploadedDocuments = [];
             }
             

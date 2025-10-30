@@ -125,15 +125,16 @@ Production-ready modular voice pipeline providing full control and transparency:
 
 ### RAG (Retrieval-Augmented Generation) System
 -   **Document Processing**: Comprehensive support for multiple file types with intelligent text segmentation:
-    -   **PDF files** - Advanced text extraction using pdf-parse
+    -   **PDF files** - Text extraction using pdf-parse 1.1.1 (stable version)
     -   **Word documents** - DOCX/DOC support using mammoth
-    -   **PowerPoint presentations** - PPTX slide extraction using adm-zip + xml2js
+    -   **PowerPoint presentations** - PPTX slide extraction using adm-zip + xml2js (PPT legacy format not supported)
     -   **Excel spreadsheets** - XLSX/XLS table data using xlsx library
     -   **CSV files** - Comma-separated data parsing
     -   **Images with OCR** - PNG/JPG/JPEG/GIF/BMP text recognition using Tesseract.js
     -   **Plain text** - TXT file direct reading
 -   **Document Upload**: Students can upload documents during live voice sessions for immediate AI analysis.
--   **Context Integration**: Documents are processed synchronously and discussed in real-time with the AI tutor.
+-   **Automatic Document Retrieval**: AI tutor automatically loads ALL user's ready documents at session start
+-   **Context Integration**: Documents are processed synchronously and passed to the AI in the system prompt
 -   **Synchronous Processing**: Documents are extracted, chunked, and marked "ready" immediately upon upload (no background queue).
 
 ### Database Schema & Data Management
