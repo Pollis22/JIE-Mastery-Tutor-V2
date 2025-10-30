@@ -11,7 +11,7 @@ import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 
 // Import CommonJS modules at the top
-const pdfParse = require('pdf-parse');
+const { PDFParse: pdfParse } = require('pdf-parse');
 const mammoth = require('mammoth');
 const Tesseract = require('tesseract.js');
 const XLSX = require('xlsx');
