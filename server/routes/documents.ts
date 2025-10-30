@@ -11,7 +11,7 @@ import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 
 // Import CommonJS modules at the top
-const { PDFParse: pdfParse } = require('pdf-parse');
+const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');
 const Tesseract = require('tesseract.js');
 const XLSX = require('xlsx');
@@ -84,7 +84,12 @@ const fsPromises = fs.promises;
 async function extractTextFromPDF(filePath: string): Promise<string> {
   try {
     const dataBuffer = await fsPromises.readFile(filePath);
+    
+    // pdf-parse 1.1.1 works as expected - just call it as a function
     const data = await pdfParse(dataBuffer);
+    
+    console.log(`[PDF Extract] Extracted ${data.text.length} characters from ${data.numpages} pages`);
+    
     return data.text || '';
   } catch (error) {
     console.error('[PDF Extract] Error:', error);

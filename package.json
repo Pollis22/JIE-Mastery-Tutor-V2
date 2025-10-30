@@ -103,7 +103,7 @@
     "openid-client": "^6.8.0",
     "passport": "^0.7.0",
     "passport-local": "^1.0.0",
-    "pdf-parse": "^2.2.6",
+    "pdf-parse": "^1.1.1",
     "pdfjs-dist": "^5.4.149",
     "pg": "^8.16.3",
     "react": "^18.3.1",
