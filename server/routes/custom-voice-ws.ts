@@ -628,10 +628,81 @@ CRITICAL INSTRUCTIONS:
               state.systemInstruction = personality.systemPrompt;
             }
             
-            // Send personalized greeting
-            const greetings = personality.interactions.greetings;
-            const greeting = greetings[Math.floor(Math.random() * greetings.length)]
-              .replace('{studentName}', state.studentName);
+            // Generate enhanced personalized greeting
+            let greeting: string;
+            
+            // Extract document titles from uploaded documents
+            const docTitles: string[] = [];
+            if (state.uploadedDocuments && state.uploadedDocuments.length > 0) {
+              state.uploadedDocuments.forEach((doc, i) => {
+                const titleMatch = doc.match(/^\[Document: ([^\]]+)\]/);
+                if (titleMatch) {
+                  docTitles.push(titleMatch[1]);
+                }
+              });
+            }
+            
+            // Build personalized greeting based on personality and documents
+            if (docTitles.length > 0) {
+              // Greeting with document acknowledgment
+              const intro = `Hi ${state.studentName}! I'm ${personality.name}, your AI tutor.`;
+              
+              let docAck: string;
+              if (docTitles.length === 1) {
+                docAck = ` I can see you've uploaded "${docTitles[0]}" - excellent!`;
+              } else {
+                docAck = ` I can see you've uploaded ${docTitles.length} documents: ${docTitles.join(', ')}. Great!`;
+              }
+              
+              let closing: string;
+              switch (state.ageGroup) {
+                case 'K-2':
+                  closing = " Let's look at it together! What do you want to learn about?";
+                  break;
+                case '3-5':
+                  closing = " I'm here to help you understand it! What part should we start with?";
+                  break;
+                case '6-8':
+                  closing = " I'm ready to help you master this material! What would you like to work on?";
+                  break;
+                case '9-12':
+                  closing = " Let's dive into this material together. What concepts would you like to explore?";
+                  break;
+                case 'College/Adult':
+                  closing = " I'm ready to help you analyze this material. What aspects would you like to focus on?";
+                  break;
+                default:
+                  closing = " I'm here to help you understand it! What would you like to work on?";
+              }
+              
+              greeting = intro + docAck + closing;
+            } else {
+              // Greeting without documents
+              const intro = `Hi ${state.studentName}! I'm ${personality.name}, your AI tutor.`;
+              
+              let closing: string;
+              switch (state.ageGroup) {
+                case 'K-2':
+                  closing = " I'm so excited to learn with you today! What would you like to explore?";
+                  break;
+                case '3-5':
+                  closing = " I'm here to help you learn something new! What subject interests you today?";
+                  break;
+                case '6-8':
+                  closing = " I'm here to help you succeed! What subject would you like to focus on today?";
+                  break;
+                case '9-12':
+                  closing = " I'm here to help you excel! What topic would you like to work on today?";
+                  break;
+                case 'College/Adult':
+                  closing = " I'm here to support your learning goals. What subject can I help you with today?";
+                  break;
+                default:
+                  closing = " I'm excited to help you learn! What subject interests you?";
+              }
+              
+              greeting = intro + closing;
+            }
             
             console.log(`[Custom Voice] 👋 Greeting: "${greeting}"`);
             
