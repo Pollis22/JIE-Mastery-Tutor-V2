@@ -24,12 +24,12 @@ const VOICE_MAP: Record<string, string> = {
   '3-5': 'EXAVITQu4vr4xnSDxMaL',      // Sarah - enthusiastic (Max Explorer)
   '6-8': 'ErXwobaYiN019PkySvjV',      // Antoni - clear, professional (Dr. Nova)
   '9-12': 'VR6AewLTigWG4xSOukaG',     // Arnold - authoritative (Professor Ace)
-  'college': 'pNInz6obpgDQGcFmaJgB',  // Adam - professional (Dr. Morgan)
+  'college': 'pqHfZKP75CvOlQylNhV4',  // Bill - mature, professional (Dr. Morgan)
   
   // Capitalized formats
   'K-2': '21m00Tcm4TlvDq8ikWAM',
-  'College/Adult': 'pNInz6obpgDQGcFmaJgB',
-  'college/adult': 'pNInz6obpgDQGcFmaJgB',
+  'College/Adult': 'pqHfZKP75CvOlQylNhV4',
+  'college/adult': 'pqHfZKP75CvOlQylNhV4',
   
   'default': '21m00Tcm4TlvDq8ikWAM'   // Rachel (fallback)
 };
