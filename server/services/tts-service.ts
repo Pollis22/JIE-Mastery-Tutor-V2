@@ -34,6 +34,15 @@ const VOICE_MAP: Record<string, string> = {
   'default': '21m00Tcm4TlvDq8ikWAM'   // Rachel (fallback)
 };
 
+// Voice-specific settings optimized for each tutor personality
+const VOICE_SETTINGS_MAP: Record<string, { stability: number; similarity_boost: number }> = {
+  '21m00Tcm4TlvDq8ikWAM': { stability: 0.5, similarity_boost: 0.75 },   // Rachel - warm and consistent
+  'EXAVITQu4vr4xnSDxMaL': { stability: 0.5, similarity_boost: 0.75 },   // Sarah - enthusiastic
+  'ErXwobaYiN019PkySvjV': { stability: 0.195, similarity_boost: 0.75 }, // Antoni - natural expressiveness
+  'VR6AewLTigWG4xSOukaG': { stability: 0.15, similarity_boost: 0.75 },  // Arnold - dynamic and engaging
+  'pqHfZKP75CvOlQylNhV4': { stability: 0.5, similarity_boost: 0.75 },   // Bill - professional and consistent
+};
+
 export async function generateSpeech(
   text: string,
   ageGroup: string = 'default'
@@ -42,15 +51,26 @@ export async function generateSpeech(
   try {
     const elevenlabsClient = getElevenLabsClient();
     const voiceId = VOICE_MAP[ageGroup] || VOICE_MAP['default'];
-    console.log(`[ElevenLabs] 🎤 Generating speech (${ageGroup}): "${text.substring(0, 50)}..."`);
+    
+    // Enhanced logging to track voice selection
+    const voiceName = ageGroup === 'k-2' || ageGroup === 'K-2' ? 'Rachel' :
+                      ageGroup === '3-5' ? 'Sarah' :
+                      ageGroup === '6-8' ? 'Antoni' :
+                      ageGroup === '9-12' ? 'Arnold' :
+                      (ageGroup === 'college' || ageGroup === 'College/Adult' || ageGroup === 'college/adult') ? 'Bill' : 'Rachel (default)';
+    
+    // Get voice-specific settings to preserve natural voice characteristics
+    const voiceSettings = VOICE_SETTINGS_MAP[voiceId] || { stability: 0.5, similarity_boost: 0.75 };
+    
+    console.log(`[ElevenLabs] 🎤 Generating speech | Age Group: "${ageGroup}" | Voice: ${voiceName} | Voice ID: ${voiceId} | Stability: ${voiceSettings.stability} | Text: "${text.substring(0, 50)}..."`);
     
     const audioStream = await elevenlabsClient.textToSpeech.convert(voiceId, {
       text: text,
       model_id: "eleven_turbo_v2_5",
       output_format: "pcm_16000",
       voice_settings: {
-        stability: 0.5,
-        similarity_boost: 0.75,
+        stability: voiceSettings.stability,
+        similarity_boost: voiceSettings.similarity_boost,
         style: 0.0,
         use_speaker_boost: true,
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
