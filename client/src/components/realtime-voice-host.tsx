@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useCustomVoice } from '@/hooks/use-custom-voice';
 import { RealtimeVoiceTranscript } from './realtime-voice-transcript';
+import { ChatInput } from './ChatInput';
 import { Button } from '@/components/ui/button';
 import { Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -216,6 +217,79 @@ export function RealtimeVoiceHost({
     console.log('[VoiceHost]', isMuted ? 'Unmuted' : 'Muted');
   };
 
+  const handleChatMessage = useCallback(async (message: string) => {
+    if (!customVoice.isConnected || !sessionId) {
+      console.error('[Chat] Cannot send message: no active session');
+      toast({
+        title: "Not Connected",
+        description: "Please start a voice session first",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    console.log('[Chat] 📝 Sending text message:', message);
+
+    // Send to WebSocket for AI processing
+    customVoice.sendTextMessage(message);
+  }, [customVoice, sessionId, toast]);
+
+  const handleChatFileUpload = useCallback(async (file: File) => {
+    if (!customVoice.isConnected) {
+      console.error('[Chat] Cannot upload file: no active session');
+      toast({
+        title: "Not Connected",
+        description: "Please start a voice session first",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    console.log('[Chat] 📤 Uploading file from chat:', file.name);
+
+    // Upload file
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('studentId', studentId || '');
+
+    try {
+      toast({
+        title: "Uploading...",
+        description: `Uploading ${file.name}...`,
+      });
+
+      const response = await fetch('/api/documents/upload', {
+        method: 'POST',
+        body: formData,
+        credentials: 'include'
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Upload failed');
+      }
+
+      const data = await response.json();
+      console.log('[Chat] ✅ File uploaded:', data.id);
+
+      toast({
+        title: "Upload Complete",
+        description: `${file.name} uploaded successfully`,
+      });
+
+      // Notify WebSocket about new document
+      customVoice.sendDocumentUploaded(data.id, file.name);
+
+    } catch (error: any) {
+      console.error('[Chat] Upload error:', error);
+      toast({
+        title: "Upload Failed",
+        description: error.message || `Failed to upload ${file.name}`,
+        variant: "destructive",
+      });
+    }
+  }, [customVoice, studentId, toast]);
+
   // Watch for connection status changes
   useEffect(() => {
     if (!customVoice.isConnected && isRecording) {
@@ -334,6 +408,15 @@ export function RealtimeVoiceHost({
         language={language}
         voice={`${ageGroup} Tutor`}
       />
+      
+      {/* Chat Input - Only shown during active session */}
+      {isRecording && customVoice.isConnected && (
+        <ChatInput
+          onSendMessage={handleChatMessage}
+          onFileUpload={handleChatFileUpload}
+          disabled={!customVoice.isConnected}
+        />
+      )}
       
       {/* Debug Info (remove in production) */}
       {process.env.NODE_ENV === 'development' && (

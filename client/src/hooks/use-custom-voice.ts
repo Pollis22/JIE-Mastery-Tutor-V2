@@ -271,9 +271,45 @@ export function useCustomVoice() {
     
   }, []);
 
+  const sendTextMessage = useCallback((message: string) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      console.error("[Custom Voice] Cannot send text message: WebSocket not connected");
+      return;
+    }
+
+    console.log("[Custom Voice] 📝 Sending text message to AI");
+    
+    // DON'T add to transcript here - let the server send it back to avoid duplicates
+    // The WebSocket handler will send back a transcript entry that we'll receive in onmessage
+
+    // Send to WebSocket
+    wsRef.current.send(JSON.stringify({
+      type: "text_message",
+      message: message,
+    }));
+  }, []);
+
+  const sendDocumentUploaded = useCallback((documentId: string, filename: string) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      console.error("[Custom Voice] Cannot send document notification: WebSocket not connected");
+      return;
+    }
+
+    console.log("[Custom Voice] 📄 Notifying AI about uploaded document:", filename);
+
+    // Send to WebSocket
+    wsRef.current.send(JSON.stringify({
+      type: "document_uploaded",
+      documentId: documentId,
+      filename: filename,
+    }));
+  }, []);
+
   return {
     connect,
     disconnect,
+    sendTextMessage,
+    sendDocumentUploaded,
     isConnected,
     transcript,
     error,

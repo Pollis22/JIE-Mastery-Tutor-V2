@@ -38,8 +38,9 @@ A custom, production-ready voice stack provides real-time, natural conversations
 -   **Architecture**: Deepgram (STT) → Claude Sonnet 4 (AI) → ElevenLabs (TTS).
 -   **Endpoint**: `/api/custom-voice-ws` (WebSocket).
 -   **Latency**: 1-2 seconds end-to-end.
--   **Features**: Session authentication, transcript queueing, incremental persistence, age-appropriate voice selection, full document context integration, and enhanced personalized greetings.
+-   **Features**: Session authentication, transcript queueing, incremental persistence, age-appropriate voice selection, full document context integration, enhanced personalized greetings, and **text chat during voice sessions** (Oct 31, 2025).
 -   **Personalized Greetings** (Oct 31, 2025): Tutor introduces by name, acknowledges uploaded documents immediately, and provides age-appropriate welcome messages.
+-   **Text Chat Integration** (Oct 31, 2025): Students can type messages, paste content, or drag & drop files during active voice sessions. Chat input only visible when session is active, all messages receive voice + transcript responses, supports file uploads with OCR and document processing.
 
 ### AI & Learning Engine
 -   **Primary AI Model**: Claude Sonnet 4 with an enhanced TutorMind system prompt for Socratic teaching.

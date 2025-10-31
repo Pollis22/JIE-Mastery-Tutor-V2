@@ -4,7 +4,7 @@ import { startDeepgramStream, DeepgramConnection } from "../services/deepgram-se
 import { generateTutorResponse } from "../services/ai-service";
 import { generateSpeech } from "../services/tts-service";
 import { db } from "../db";
-import { realtimeSessions, contentViolations, userSuspensions } from "@shared/schema";
+import { realtimeSessions, contentViolations, userSuspensions, documentChunks } from "@shared/schema";
 import { eq, and, or, gte } from "drizzle-orm";
 import { getTutorPersonality } from "../config/tutor-personalities";
 import { moderateContent, shouldWarnUser, getModerationResponse } from "../services/content-moderation";
@@ -848,6 +848,179 @@ CRITICAL INSTRUCTIONS:
             if (state.deepgramConnection && message.data) {
               const audioBuffer = Buffer.from(message.data, "base64");
               state.deepgramConnection.send(audioBuffer);
+            }
+            break;
+
+          case "text_message":
+            // Handle text message from chat input
+            console.log(`[Custom Voice] 📝 Text message from ${state.studentName}: ${message.message}`);
+            
+            // Add to transcript
+            const studentTextEntry: TranscriptEntry = {
+              speaker: "student",
+              text: message.message,
+              timestamp: new Date().toISOString(),
+              messageId: crypto.randomUUID(),
+            };
+            state.transcript.push(studentTextEntry);
+            
+            // Send transcript update to client
+            ws.send(JSON.stringify({
+              type: "transcript",
+              speaker: "student",
+              text: message.message
+            }));
+            
+            // Check content moderation
+            try {
+              const moderation = await moderateContent(message.message);
+              
+              if (!moderation.isAppropriate) {
+                console.warn('[Custom Voice] ⚠️ Inappropriate text content detected');
+                
+                // Send warning response
+                const warningText = getModerationResponse('first');
+                const warningEntry: TranscriptEntry = {
+                  speaker: "tutor",
+                  text: warningText,
+                  timestamp: new Date().toISOString(),
+                  messageId: crypto.randomUUID(),
+                };
+                state.transcript.push(warningEntry);
+                
+                ws.send(JSON.stringify({
+                  type: "transcript",
+                  speaker: "tutor",
+                  text: warningText
+                }));
+                
+                // Generate and send warning audio
+                const warningAudio = await generateSpeech(warningText, state.ageGroup);
+                ws.send(JSON.stringify({
+                  type: "audio",
+                  data: warningAudio.toString("base64")
+                }));
+                
+                // Record violation
+                if (moderation.violationType && state.sessionId) {
+                  await db.insert(contentViolations).values({
+                    userId: state.userId,
+                    sessionId: state.sessionId,
+                    violationType: moderation.violationType,
+                    severity: moderation.severity,
+                    userMessage: message.message
+                  });
+                }
+                
+                break; // Don't process further
+              }
+              
+              // Content approved - generate AI response
+              const aiResponse = await generateTutorResponse(
+                state.conversationHistory,
+                message.message,
+                state.uploadedDocuments,
+                state.systemInstruction
+              );
+              
+              console.log(`[Custom Voice] 🤖 Tutor response: "${aiResponse}"`);
+              
+              // Add to conversation history
+              state.conversationHistory.push(
+                { role: "user", content: message.message },
+                { role: "assistant", content: aiResponse }
+              );
+              
+              // Add to transcript
+              const tutorTextEntry: TranscriptEntry = {
+                speaker: "tutor",
+                text: aiResponse,
+                timestamp: new Date().toISOString(),
+                messageId: crypto.randomUUID(),
+              };
+              state.transcript.push(tutorTextEntry);
+              
+              // Send transcript update
+              ws.send(JSON.stringify({
+                type: "transcript",
+                speaker: "tutor",
+                text: aiResponse
+              }));
+              
+              // Generate and send voice audio
+              const responseAudio = await generateSpeech(aiResponse, state.ageGroup);
+              ws.send(JSON.stringify({
+                type: "audio",
+                data: responseAudio.toString("base64")
+              }));
+              
+              console.log(`[Custom Voice] 🔊 Sent tutor voice response`);
+              
+            } catch (error) {
+              console.error('[Custom Voice] Error processing text message:', error);
+            }
+            break;
+
+          case "document_uploaded":
+            // Handle document uploaded during session
+            console.log(`[Custom Voice] 📄 Document uploaded during session: ${message.filename}`);
+            
+            try {
+              // Fetch document with chunks from database
+              const document = await storage.getDocument(message.documentId, state.userId);
+              
+              if (document) {
+                // Fetch chunks separately
+                const chunks = await db
+                  .select()
+                  .from(documentChunks)
+                  .where(eq(documentChunks.documentId, message.documentId))
+                  .orderBy(documentChunks.chunkIndex);
+                
+                if (chunks && chunks.length > 0) {
+                  // Format document content
+                  const documentContent = `[Document: ${message.filename}]\n${chunks.map((chunk: { content: string }) => chunk.content).join('\n')}`;
+                  
+                  // Add to session's uploaded documents
+                  state.uploadedDocuments.push(documentContent);
+                  
+                  console.log(`[Custom Voice] ✅ Added document to session context (${chunks.length} chunks)`);
+                  
+                  // Send acknowledgment via voice
+                  const ackMessage = `Great! I can now see "${message.filename}". What would you like to know about it?`;
+                  
+                  // Add to transcript
+                  const ackEntry: TranscriptEntry = {
+                    speaker: "tutor",
+                    text: ackMessage,
+                    timestamp: new Date().toISOString(),
+                    messageId: crypto.randomUUID(),
+                  };
+                  state.transcript.push(ackEntry);
+                  
+                  // Send transcript update
+                  ws.send(JSON.stringify({
+                    type: "transcript",
+                    speaker: "tutor",
+                    text: ackMessage
+                  }));
+                  
+                  // Generate and send voice acknowledgment
+                  const ackAudio = await generateSpeech(ackMessage, state.ageGroup);
+                  ws.send(JSON.stringify({
+                    type: "audio",
+                    data: ackAudio.toString("base64")
+                  }));
+                  
+                  console.log(`[Custom Voice] 🔊 Sent document acknowledgment`);
+                } else {
+                  console.error(`[Custom Voice] Document has no chunks: ${message.documentId}`);
+                }
+              } else {
+                console.error(`[Custom Voice] Document not found: ${message.documentId}`);
+              }
+            } catch (error) {
+              console.error('[Custom Voice] Error adding document to session:', error);
             }
             break;
 
