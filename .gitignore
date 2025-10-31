@@ -30,3 +30,4 @@ Thumbs.db
 # Replit specific (keep these local to Replit)
 .replit
 replit.nix
+attached_assets/
