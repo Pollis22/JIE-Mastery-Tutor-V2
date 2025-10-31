@@ -2,9 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useLocation } from "wouter";
 import jieLogo from "@/assets/jie-mastery-logo.png";
-import aiTutorImage from "@assets/Create_an_image_of_an_AI_robot_tutoring_a_real_tee-1759438453563_1759521545083.png";
-import aiTutorImage2 from "@assets/Create_an_image_of_an_AI_robot_tutoring_a_real_tee-1759521647218_1759521666544.png";
-import { Clock, DollarSign, Target, Calendar, BookOpen, TrendingUp, Users, Shield, Brain, LightbulbIcon } from "lucide-react";
+import { Clock, DollarSign, Target, Calendar, BookOpen, TrendingUp, Users, Shield, Brain, LightbulbIcon, Bot, Sparkles, GraduationCap } from "lucide-react";
 
 export default function BenefitsPage() {
   const [, setLocation] = useLocation();
@@ -61,16 +59,30 @@ export default function BenefitsPage() {
                 </Button>
               </div>
 
-              {/* Hero Image */}
+              {/* Hero Visual */}
               <div className="relative">
                 <Card className="shadow-2xl overflow-hidden border-4 border-white/20 transform hover:scale-105 transition-transform duration-300">
                   <CardContent className="p-0">
-                    <img 
-                      src={aiTutorImage2} 
-                      alt="Student learning with AI tutor assistant" 
-                      className="w-full h-auto object-cover"
+                    <div 
+                      className="w-full aspect-[4/3] bg-gradient-to-br from-blue-600 via-purple-600 to-indigo-600 flex flex-col items-center justify-center gap-6 relative overflow-hidden"
                       data-testid="img-hero-ai-tutor"
-                    />
+                    >
+                      {/* Background decorative elements */}
+                      <Sparkles className="absolute top-6 right-8 w-12 h-12 text-white/30 animate-pulse" />
+                      <Sparkles className="absolute bottom-8 left-8 w-8 h-8 text-white/20 animate-pulse delay-150" />
+                      <GraduationCap className="absolute top-6 left-6 w-10 h-10 text-white/20 animate-bounce" />
+                      
+                      {/* Main icon */}
+                      <div className="relative z-10 bg-white/20 backdrop-blur-sm rounded-full p-10 shadow-2xl">
+                        <Bot className="w-32 h-32 text-white" />
+                      </div>
+                      
+                      {/* Text */}
+                      <div className="relative z-10 text-center px-4">
+                        <h3 className="text-3xl font-bold text-white mb-3">AI Family Tutoring</h3>
+                        <p className="text-white/95 text-lg max-w-md">One subscription for all siblings - personalized learning for every age</p>
+                      </div>
+                    </div>
                   </CardContent>
                 </Card>
               </div>
@@ -471,12 +483,25 @@ export default function BenefitsPage() {
               <div className="space-y-6">
                 <Card className="shadow-xl overflow-hidden border-2 border-primary/20">
                   <CardContent className="p-0">
-                    <img 
-                      src={aiTutorImage} 
-                      alt="AI robot tutor helping a student with homework" 
-                      className="w-full h-auto object-cover"
+                    <div 
+                      className="w-full aspect-video bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-500 flex flex-col items-center justify-center gap-4 relative overflow-hidden"
                       data-testid="img-ai-tutor-hero"
-                    />
+                    >
+                      {/* Background decorative elements */}
+                      <Brain className="absolute top-4 right-6 w-10 h-10 text-white/20 animate-pulse" />
+                      <BookOpen className="absolute bottom-4 left-6 w-10 h-10 text-white/20 animate-pulse delay-75" />
+                      
+                      {/* Main icon */}
+                      <div className="relative z-10 bg-white/20 backdrop-blur-sm rounded-full p-8 shadow-2xl">
+                        <GraduationCap className="w-24 h-24 text-white" />
+                      </div>
+                      
+                      {/* Text */}
+                      <div className="relative z-10 text-center px-4">
+                        <h3 className="text-2xl font-bold text-white mb-2">Smart Learning Assistant</h3>
+                        <p className="text-white/90 text-sm max-w-sm">Homework help, document analysis, and personalized guidance</p>
+                      </div>
+                    </div>
                   </CardContent>
                 </Card>
                 

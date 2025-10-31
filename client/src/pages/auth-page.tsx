@@ -12,12 +12,11 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { useEffect, useState } from "react";
-import { Eye, EyeOff, Mail, FileText, Upload, Scan, Users, TrendingUp, ChevronDown } from "lucide-react";
+import { Eye, EyeOff, Mail, FileText, Upload, Scan, Users, TrendingUp, ChevronDown, Bot, BookOpen, Sparkles } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import jieLogo from "@/assets/jie-mastery-logo.png";
-import authHeroImage from "@assets/Create_an_image_of_an_AI_robot_tutoring_a_real_tee-1759437278109_1759521800759.png";
 
 const loginSchema = z.object({
   email: z.string().min(1, "Email or username is required"),
@@ -535,15 +534,32 @@ export default function AuthPage() {
                 </p>
               </div>
 
-              {/* Featured Image */}
+              {/* Featured Visual */}
               <Card className="shadow-2xl overflow-hidden border-2 border-primary/20 transform hover:scale-105 transition-transform duration-300">
                 <CardContent className="p-0">
-                  <img 
-                    src={authHeroImage} 
-                    alt="AI tutor helping student with personalized learning" 
-                    className="w-full h-auto object-cover"
+                  <div 
+                    className="w-full aspect-[4/3] bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 flex flex-col items-center justify-center gap-6 relative overflow-hidden"
                     data-testid="img-auth-hero"
-                  />
+                  >
+                    {/* Background decorative elements */}
+                    <div className="absolute inset-0 bg-grid-white/10"></div>
+                    <Sparkles className="absolute top-4 right-4 w-8 h-8 text-white/50 animate-pulse" />
+                    <Sparkles className="absolute bottom-6 left-6 w-6 h-6 text-white/40 animate-pulse delay-100" />
+                    
+                    {/* Main icon */}
+                    <div className="relative z-10 bg-white/20 backdrop-blur-sm rounded-full p-8 shadow-2xl">
+                      <Bot className="w-24 h-24 text-white" />
+                    </div>
+                    
+                    {/* Text */}
+                    <div className="relative z-10 text-center px-4">
+                      <h3 className="text-2xl font-bold text-white mb-2">AI-Powered Learning</h3>
+                      <p className="text-white/90 text-sm max-w-xs">Personalized tutoring with voice conversations and real-time feedback</p>
+                    </div>
+                    
+                    {/* Bottom accent */}
+                    <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-yellow-300 via-pink-300 to-purple-300"></div>
+                  </div>
                 </CardContent>
               </Card>
 
