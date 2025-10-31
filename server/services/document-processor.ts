@@ -188,6 +188,7 @@ export class DocumentProcessor {
    */
   private cleanText(text: string): string {
     return text
+      .replace(/\x00/g, '') // remove null bytes (PostgreSQL doesn't allow them)
       .replace(/\r\n/g, '\n') // normalize line endings
       .replace(/\n{3,}/g, '\n\n') // collapse multiple newlines
       .replace(/\s+/g, ' ') // normalize whitespace
