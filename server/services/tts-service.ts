@@ -63,19 +63,24 @@ export async function generateSpeech(
     // Get voice-specific settings to preserve natural voice characteristics
     const voiceSettings = VOICE_SETTINGS_MAP[voiceId] || { stability: 0.5, similarity_boost: 0.75 };
     
-    // Parse user's speech speed preference (from settings slider: 0.5-2.0)
+    // Parse user's speech speed preference (from settings slider: 0.7-1.2)
     // Default to 0.95 if not provided or invalid
+    // NOTE: ElevenLabs API only accepts speed range 0.7-1.2
     let speed = 0.95;
     if (userSpeechSpeed !== undefined && userSpeechSpeed !== null) {
       speed = typeof userSpeechSpeed === 'string' ? parseFloat(userSpeechSpeed) : userSpeechSpeed;
       
       // Guard against NaN and invalid values - revert to default if parsing failed
       if (!Number.isFinite(speed)) {
-        console.warn(`[ElevenLabs] ⚠️ Invalid speechSpeed value: ${userSpeechSpeed}, using default 0.95`);
+        console.warn(`[ElevenLabs] ⚠️ Invalid speechSpeed value: "${userSpeechSpeed}" (parsed as ${speed}), using default 0.95`);
         speed = 0.95;
       } else {
-        // Clamp to valid range (0.5-2.0)
-        speed = Math.max(0.5, Math.min(2.0, speed));
+        const originalSpeed = speed;
+        // Clamp to ElevenLabs valid range (0.7-1.2)
+        speed = Math.max(0.7, Math.min(1.2, speed));
+        if (speed !== originalSpeed) {
+          console.log(`[ElevenLabs] ⚙️ Speed clamped from ${originalSpeed} to ${speed} (ElevenLabs valid range: 0.7-1.2)`);
+        }
       }
     }
     

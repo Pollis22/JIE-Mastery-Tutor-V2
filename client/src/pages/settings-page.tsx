@@ -332,17 +332,17 @@ export default function SettingsPage() {
                           <FormControl>
                             <div className="space-y-2">
                               <Slider
-                                min={0.5}
-                                max={2}
-                                step={0.1}
+                                min={0.7}
+                                max={1.2}
+                                step={0.05}
                                 value={[parseFloat(field.value)]}
                                 onValueChange={([value]) => field.onChange(value.toString())}
                                 data-testid="slider-speech-speed"
                               />
                               <div className="flex justify-between text-xs text-muted-foreground">
-                                <span>Slow</span>
-                                <span>Normal</span>
-                                <span>Fast</span>
+                                <span>Slow (0.7x)</span>
+                                <span>Normal (1.0x)</span>
+                                <span>Fast (1.2x)</span>
                               </div>
                             </div>
                           </FormControl>
