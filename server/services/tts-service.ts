@@ -73,11 +73,7 @@ export async function generateSpeech(
         similarity_boost: voiceSettings.similarity_boost,
         style: 0.0,
         use_speaker_boost: true,
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        // CRITICAL: Slow down speech for better comprehension
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        speed: 0.85,              // Was 1.0 → Now 0.85 (15% slower)
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        speed: 0.95,  // Natural pace - slightly slower than default for clarity
       },
     });
 
