@@ -45,7 +45,8 @@ const VOICE_SETTINGS_MAP: Record<string, { stability: number; similarity_boost: 
 
 export async function generateSpeech(
   text: string,
-  ageGroup: string = 'default'
+  ageGroup: string = 'default',
+  userSpeechSpeed?: number | string
 ): Promise<Buffer> {
   
   try {
@@ -62,7 +63,23 @@ export async function generateSpeech(
     // Get voice-specific settings to preserve natural voice characteristics
     const voiceSettings = VOICE_SETTINGS_MAP[voiceId] || { stability: 0.5, similarity_boost: 0.75 };
     
-    console.log(`[ElevenLabs] 🎤 Generating speech | Age Group: "${ageGroup}" | Voice: ${voiceName} | Voice ID: ${voiceId} | Stability: ${voiceSettings.stability} | Text: "${text.substring(0, 50)}..."`);
+    // Parse user's speech speed preference (from settings slider: 0.5-2.0)
+    // Default to 0.95 if not provided or invalid
+    let speed = 0.95;
+    if (userSpeechSpeed !== undefined && userSpeechSpeed !== null) {
+      speed = typeof userSpeechSpeed === 'string' ? parseFloat(userSpeechSpeed) : userSpeechSpeed;
+      
+      // Guard against NaN and invalid values - revert to default if parsing failed
+      if (!Number.isFinite(speed)) {
+        console.warn(`[ElevenLabs] ⚠️ Invalid speechSpeed value: ${userSpeechSpeed}, using default 0.95`);
+        speed = 0.95;
+      } else {
+        // Clamp to valid range (0.5-2.0)
+        speed = Math.max(0.5, Math.min(2.0, speed));
+      }
+    }
+    
+    console.log(`[ElevenLabs] 🎤 Generating speech | Age Group: "${ageGroup}" | Voice: ${voiceName} | Voice ID: ${voiceId} | Stability: ${voiceSettings.stability} | Speed: ${speed} | Text: "${text.substring(0, 50)}..."`);
     
     const audioStream = await elevenlabsClient.textToSpeech.convert(voiceId, {
       text: text,
@@ -73,7 +90,7 @@ export async function generateSpeech(
         similarity_boost: voiceSettings.similarity_boost,
         style: 0.0,
         use_speaker_boost: true,
-        speed: 0.95,  // Natural pace - slightly slower than default for clarity
+        speed: speed,  // Use user's preference from settings, or default to 0.95
       },
     });
 

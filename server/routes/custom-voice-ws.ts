@@ -22,6 +22,7 @@ interface SessionState {
   userId: string;
   studentName: string;
   ageGroup: string;
+  speechSpeed: number; // User's speech speed preference from settings
   systemInstruction: string;
   conversationHistory: Array<{ role: "user" | "assistant"; content: string }>;
   transcript: TranscriptEntry[];
@@ -129,6 +130,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
       userId: "",
       studentName: "",
       ageGroup: "default",
+      speechSpeed: 0.95, // Default speech speed, will be overridden by user preference
       systemInstruction: "",
       conversationHistory: [],
       transcript: [],
@@ -259,7 +261,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
             }));
             
             // Generate and send speech
-            const audioBuffer = await generateSpeech(aiResponse, state.ageGroup);
+            const audioBuffer = await generateSpeech(aiResponse, state.ageGroup, state.speechSpeed);
             ws.send(JSON.stringify({
               type: "audio",
               data: audioBuffer.toString("base64"),
@@ -313,7 +315,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
             }));
             
             // Generate and send speech
-            const audioBuffer = await generateSpeech(aiResponse, state.ageGroup);
+            const audioBuffer = await generateSpeech(aiResponse, state.ageGroup, state.speechSpeed);
             ws.send(JSON.stringify({
               type: "audio",
               data: audioBuffer.toString("base64"),
@@ -363,7 +365,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
         }));
 
         // Generate speech with age-appropriate voice
-        const audioBuffer = await generateSpeech(aiResponse, state.ageGroup);
+        const audioBuffer = await generateSpeech(aiResponse, state.ageGroup, state.speechSpeed);
 
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         // PACING FIX: Mark tutor as speaking and track timestamp
@@ -539,6 +541,21 @@ export function setupCustomVoiceWebSocket(server: Server) {
             state.userId = message.userId;
             state.studentName = message.studentName || "Student";
             state.ageGroup = message.ageGroup || "College/Adult";
+            
+            // Fetch user's speech speed preference from database
+            try {
+              const user = await storage.getUser(message.userId);
+              if (user && user.speechSpeed) {
+                state.speechSpeed = typeof user.speechSpeed === 'string' ? parseFloat(user.speechSpeed) : user.speechSpeed;
+                console.log(`[Custom Voice] ⚙️ User's speech speed preference: ${state.speechSpeed}`);
+              } else {
+                state.speechSpeed = 0.95; // Default
+                console.log(`[Custom Voice] ⚙️ Using default speech speed: 0.95`);
+              }
+            } catch (error) {
+              console.error("[Custom Voice] ⚠️ Error fetching user settings, using default speech speed:", error);
+              state.speechSpeed = 0.95;
+            }
             
             // Get full tutor personality based on age group
             const personality = getTutorPersonality(state.ageGroup);
@@ -825,7 +842,7 @@ CRITICAL INSTRUCTIONS:
 
             // Generate and send greeting audio
             try {
-              const greetingAudio = await generateSpeech(greeting, state.ageGroup);
+              const greetingAudio = await generateSpeech(greeting, state.ageGroup, state.speechSpeed);
               
               // Send greeting transcript
               ws.send(JSON.stringify({
@@ -901,7 +918,7 @@ CRITICAL INSTRUCTIONS:
                 }));
                 
                 // Generate and send warning audio
-                const warningAudio = await generateSpeech(warningText, state.ageGroup);
+                const warningAudio = await generateSpeech(warningText, state.ageGroup, state.speechSpeed);
                 ws.send(JSON.stringify({
                   type: "audio",
                   data: warningAudio.toString("base64")
@@ -954,7 +971,7 @@ CRITICAL INSTRUCTIONS:
               }));
               
               // Generate and send voice audio
-              const responseAudio = await generateSpeech(aiResponse, state.ageGroup);
+              const responseAudio = await generateSpeech(aiResponse, state.ageGroup, state.speechSpeed);
               ws.send(JSON.stringify({
                 type: "audio",
                 data: responseAudio.toString("base64")
@@ -1012,7 +1029,7 @@ CRITICAL INSTRUCTIONS:
                   }));
                   
                   // Generate and send voice acknowledgment
-                  const ackAudio = await generateSpeech(ackMessage, state.ageGroup);
+                  const ackAudio = await generateSpeech(ackMessage, state.ageGroup, state.speechSpeed);
                   ws.send(JSON.stringify({
                     type: "audio",
                     data: ackAudio.toString("base64")
