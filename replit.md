@@ -42,6 +42,7 @@ A custom, production-ready voice stack provides real-time, natural conversations
 -   **Personalized Greetings** (Oct 31, 2025): Tutor introduces by name, acknowledges uploaded documents immediately, and provides age-appropriate welcome messages.
 -   **Text Chat Integration** (Oct 31, 2025): Students can type messages, paste content, or drag & drop files during active voice sessions. Chat input only visible when session is active, all messages receive voice + transcript responses, supports file uploads with OCR and document processing.
 -   **Voice Consistency Fix** (Oct 31, 2025): Implemented voice-specific stability settings (Antoni 0.195, Arnold 0.15 vs generic 0.5) to preserve natural voice characteristics and ensure consistent tutor personality throughout sessions. Enhanced logging tracks voice ID, stability, and age group for each TTS request.
+-   **Voice Pacing & Interruption** (Oct 31, 2025): Adjusted speech speed to 0.95 for natural, conversational pace. Implemented robust interruption handling allowing students to speak during tutor responses without system crashes - tutor stops speaking, listens, and responds to student input seamlessly.
 
 ### AI & Learning Engine
 -   **Primary AI Model**: Claude Sonnet 4 with an enhanced TutorMind system prompt for Socratic teaching.
