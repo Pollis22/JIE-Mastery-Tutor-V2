@@ -739,12 +739,12 @@ CRITICAL INSTRUCTIONS:
                 }
                 
                 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                // PACING FIX: Detect if student is interrupting tutor
+                // INTERRUPTION HANDLING: Allow student to interrupt tutor
                 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                 const timeSinceLastAudio = Date.now() - state.lastAudioSentAt;
                 
-                if (state.isTutorSpeaking && timeSinceLastAudio < 3000) {
-                  console.log("[Custom Voice] 🛑 Student interrupted - stopping tutor");
+                if (state.isTutorSpeaking && timeSinceLastAudio < 10000) {
+                  console.log("[Custom Voice] 🛑 Student interrupted - stopping tutor and listening");
                   
                   // Send interrupt signal to frontend to stop audio playback
                   ws.send(JSON.stringify({
@@ -752,13 +752,19 @@ CRITICAL INSTRUCTIONS:
                     message: "Student is speaking",
                   }));
                   
+                  // Mark tutor as not speaking so we can process the student's input
                   state.isTutorSpeaking = false;
+                  
+                  // Clear any processing queue to allow new input
+                  // Don't return - allow the student's speech to be processed
+                  console.log("[Custom Voice] ✅ Ready to listen to student");
                 }
                 
-                // Don't process if tutor is still speaking (unless interrupted)
-                if (state.isTutorSpeaking) {
-                  console.log("[Custom Voice] ⏸️ Waiting for tutor to finish...");
-                  return;
+                // Don't block processing if tutor was interrupted
+                // Only wait if tutor is legitimately still speaking (>10s ago)
+                if (state.isTutorSpeaking && timeSinceLastAudio >= 10000) {
+                  console.log("[Custom Voice] ⏸️ Tutor still speaking (old session)...");
+                  state.isTutorSpeaking = false; // Reset stale state
                 }
                 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                 
