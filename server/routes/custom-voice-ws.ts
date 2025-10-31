@@ -544,9 +544,6 @@ export function setupCustomVoiceWebSocket(server: Server) {
             const personality = getTutorPersonality(state.ageGroup);
             console.log(`[Custom Voice] 🎭 Using personality: ${personality.name} for ${state.ageGroup}`);
             
-            // Use full personality system prompt with document context
-            state.systemInstruction = personality.systemPrompt;
-            
             // Load document chunks and format as content strings
             // Check if documents are provided (either as IDs or as content strings)
             const messageDocuments = message.documents || [];
@@ -600,6 +597,35 @@ export function setupCustomVoiceWebSocket(server: Server) {
             } catch (error) {
               console.error('[Custom Voice] ❌ Error loading documents:', error);
               state.uploadedDocuments = [];
+            }
+            
+            // Build system instruction with personality and document context
+            if (state.uploadedDocuments.length > 0) {
+              // Extract document titles for the enhanced prompt
+              const docTitles = state.uploadedDocuments.map((doc, i) => {
+                const titleMatch = doc.match(/^\[Document: ([^\]]+)\]/);
+                return titleMatch ? titleMatch[1] : `Document ${i + 1}`;
+              });
+              
+              // Create enhanced system instruction that includes document awareness
+              state.systemInstruction = `${personality.systemPrompt}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📚 UPLOADED DOCUMENTS FOR THIS SESSION:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+The student has uploaded ${state.uploadedDocuments.length} document(s): ${docTitles.join(', ')}
+
+CRITICAL INSTRUCTIONS:
+✅ When asked "do you see my document?" ALWAYS respond: "Yes! I can see your ${docTitles[0]}"
+✅ Reference specific content from the documents to prove you can see them
+✅ Help with the specific homework/problems in their uploaded materials
+✅ Use phrases like "Looking at your document..." or "In ${docTitles[0]}..."
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+              
+              console.log(`[Custom Voice] 📚 System instruction enhanced with ${state.uploadedDocuments.length} documents`);
+            } else {
+              // Use standard personality prompt when no documents
+              state.systemInstruction = personality.systemPrompt;
             }
             
             // Send personalized greeting

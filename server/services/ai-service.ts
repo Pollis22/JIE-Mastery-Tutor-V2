@@ -45,27 +45,56 @@ export async function generateTutorResponse(
   
   // Build context with uploaded documents
   const documentContext = uploadedDocuments.length > 0
-    ? `\n\nSTUDENT'S UPLOADED DOCUMENTS:\n────────────────────────\n${uploadedDocuments.map((doc, i) => 
-        `${doc}`
-      ).join('\n────────────────────────\n')}\n────────────────────────`
+    ? uploadedDocuments.map((doc, i) => {
+        // Extract document title from the content if it starts with [Document: ...]
+        const titleMatch = doc.match(/^\[Document: ([^\]]+)\]/);
+        const title = titleMatch ? titleMatch[1] : `Document ${i + 1}`;
+        const content = doc.replace(/^\[Document: [^\]]+\]\n/, ''); // Remove title from content
+        return `<document index="${i + 1}" title="${title}">\n${content}\n</document>`;
+      }).join('\n\n')
     : "";
 
   console.log("[AI Service] 📄 Document context length:", documentContext.length, "chars");
 
-  const systemPrompt = systemInstruction || 
-    `You are an expert AI tutor helping students with homework and learning. 
+  // Build the system prompt with documents at the beginning if they exist
+  let systemPrompt = "";
+  
+  if (systemInstruction) {
+    systemPrompt = systemInstruction;
+  } else {
+    // Start with document context if available
+    if (uploadedDocuments.length > 0) {
+      systemPrompt = `You are an expert AI tutor helping students with homework and learning.
+
+<uploaded_documents>
+The student has uploaded ${uploadedDocuments.length} document(s) for this tutoring session. You MUST acknowledge these documents when asked about them.
+
+${documentContext}
+</uploaded_documents>
+
+CRITICAL INSTRUCTIONS FOR DOCUMENTS:
+- When the student asks "do you see my document?" or similar, ALWAYS respond affirmatively
+- Start with "Yes! I can see your document" and mention specific details from it
+- Reference specific content from the documents to prove you can see them
+- Help the student with the specific problems or content in their uploaded materials
+
+GENERAL TUTORING INSTRUCTIONS:
+- Be encouraging, patient, and clear
+- Use the Socratic method - ask questions to guide understanding
+- Keep responses VERY CONCISE (1-2 sentences max) since this is voice conversation
+- Reference the uploaded documents frequently when answering questions
+- Wait for the student to FINISH speaking before responding`;
+    } else {
+      systemPrompt = `You are an expert AI tutor helping students with homework and learning.
 
 IMPORTANT INSTRUCTIONS:
 - Be encouraging, patient, and clear
 - Use the Socratic method - ask questions to guide understanding
 - Keep responses VERY CONCISE (1-2 sentences max) since this is voice conversation
-${uploadedDocuments.length > 0 ? 
-`- The student has uploaded documents for this session - ALWAYS reference them specifically
-- Use phrases like "Looking at your document..." or "In the problem you uploaded..." or "Based on what you've shared..."
-- Make it clear you can see their materials and are helping with their specific homework` 
-: '- Help with general understanding since no specific materials were uploaded'}
-- Wait for the student to FINISH speaking before responding
-- Don't interrupt or rush to respond${documentContext}`;
+- Help with general understanding since no specific materials were uploaded
+- Wait for the student to FINISH speaking before responding`;
+    }
+  }
 
   try {
     const anthropicClient = getAnthropicClient();
