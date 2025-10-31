@@ -548,41 +548,54 @@ export function setupCustomVoiceWebSocket(server: Server) {
             state.systemInstruction = personality.systemPrompt;
             
             // Load document chunks and format as content strings
-            // If no specific documents are provided, load ALL user documents
-            let documentIds = message.documents || [];
+            // Check if documents are provided (either as IDs or as content strings)
+            const messageDocuments = message.documents || [];
             
             try {
-              // If no specific documents requested, get all user documents
-              if (documentIds.length === 0) {
-                console.log(`[Custom Voice] 📄 No specific documents requested, loading all user documents...`);
-                const allUserDocs = await storage.getUserDocuments(message.userId);
-                const readyDocs = allUserDocs.filter(doc => doc.processingStatus === 'ready');
-                documentIds = readyDocs.map(doc => doc.id);
-                console.log(`[Custom Voice] 📚 Found ${readyDocs.length} ready documents for user`);
-              }
-              
-              if (documentIds.length > 0) {
-                console.log(`[Custom Voice] 📄 Loading ${documentIds.length} documents...`);
-                const { chunks, documents } = await storage.getDocumentContext(message.userId, documentIds);
-                console.log(`[Custom Voice] ✅ Loaded ${chunks.length} chunks from ${documents.length} documents`);
+              // Check if documents are already provided as content strings from frontend
+              if (messageDocuments.length > 0 && typeof messageDocuments[0] === 'string' && messageDocuments[0].startsWith('[Document:')) {
+                // Frontend has already loaded and sent document content
+                console.log(`[Custom Voice] 📚 Received ${messageDocuments.length} pre-loaded documents from frontend`);
+                state.uploadedDocuments = messageDocuments;
+                const totalChars = messageDocuments.join('').length;
+                console.log(`[Custom Voice] 📄 Document context ready: ${messageDocuments.length} documents, total length: ${totalChars} chars`);
+              } 
+              // Otherwise, treat them as document IDs to load from database
+              else {
+                let documentIds = messageDocuments;
                 
-                // Format chunks as content strings grouped by document
-                const documentContents: string[] = [];
-                for (const doc of documents) {
-                  const docChunks = chunks
-                    .filter(c => c.documentId === doc.id)
-                    .sort((a, b) => a.chunkIndex - b.chunkIndex); // Ensure correct chunk order
-                  if (docChunks.length > 0) {
-                    const content = `📄 ${doc.title || doc.originalName}\n${docChunks.map(c => c.content).join('\n\n')}`;
-                    documentContents.push(content);
-                  }
+                // If no specific documents requested, get all user documents
+                if (documentIds.length === 0) {
+                  console.log(`[Custom Voice] 📄 No specific documents provided, loading all user documents from database...`);
+                  const allUserDocs = await storage.getUserDocuments(message.userId);
+                  const readyDocs = allUserDocs.filter(doc => doc.processingStatus === 'ready');
+                  documentIds = readyDocs.map(doc => doc.id);
+                  console.log(`[Custom Voice] 📚 Found ${readyDocs.length} ready documents for user`);
                 }
                 
-                state.uploadedDocuments = documentContents;
-                console.log(`[Custom Voice] 📚 Document context prepared: ${documentContents.length} documents, total length: ${documentContents.join('').length} chars`);
-              } else {
-                state.uploadedDocuments = [];
-                console.log(`[Custom Voice] ℹ️ No documents available for this user`);
+                if (documentIds.length > 0) {
+                  console.log(`[Custom Voice] 📄 Loading ${documentIds.length} documents from database...`);
+                  const { chunks, documents } = await storage.getDocumentContext(message.userId, documentIds);
+                  console.log(`[Custom Voice] ✅ Loaded ${chunks.length} chunks from ${documents.length} documents`);
+                  
+                  // Format chunks as content strings grouped by document
+                  const documentContents: string[] = [];
+                  for (const doc of documents) {
+                    const docChunks = chunks
+                      .filter(c => c.documentId === doc.id)
+                      .sort((a, b) => a.chunkIndex - b.chunkIndex); // Ensure correct chunk order
+                    if (docChunks.length > 0) {
+                      const content = `📄 ${doc.title || doc.originalName}\n${docChunks.map(c => c.content).join('\n\n')}`;
+                      documentContents.push(content);
+                    }
+                  }
+                  
+                  state.uploadedDocuments = documentContents;
+                  console.log(`[Custom Voice] 📚 Document context prepared: ${documentContents.length} documents, total length: ${documentContents.join('').length} chars`);
+                } else {
+                  state.uploadedDocuments = [];
+                  console.log(`[Custom Voice] ℹ️ No documents available for this user`);
+                }
               }
             } catch (error) {
               console.error('[Custom Voice] ❌ Error loading documents:', error);
