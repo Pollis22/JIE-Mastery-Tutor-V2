@@ -1,3 +1,12 @@
+/**
+ * JIE Mastery AI Tutor Platform
+ * Copyright (c) 2025 JIE Mastery AI, Inc.
+ * All Rights Reserved.
+ * 
+ * This source code is confidential and proprietary.
+ * Unauthorized copying, modification, or distribution is strictly prohibited.
+ */
+
 import { Component, ErrorInfo, ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";

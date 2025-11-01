@@ -1,3 +1,12 @@
+/**
+ * JIE Mastery AI Tutor Platform
+ * Copyright (c) 2025 JIE Mastery AI, Inc.
+ * All Rights Reserved.
+ * 
+ * This source code is confidential and proprietary.
+ * Unauthorized copying, modification, or distribution is strictly prohibited.
+ */
+
 import * as React from "react"
 import { Slot } from "@radix-ui/react-slot"
 import { VariantProps, cva } from "class-variance-authority"

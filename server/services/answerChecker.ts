@@ -1,3 +1,13 @@
+/**
+ * JIE Mastery AI Tutor Platform
+ * Copyright (c) 2025 JIE Mastery AI, Inc.
+ * All Rights Reserved.
+ * 
+ * This source code is confidential and proprietary.
+ * Unauthorized copying, modification, or distribution is strictly prohibited.
+ */
+
+
 export class AnswerChecker {
   private words: Record<string,string> = {
     zero:'0', one:'1', two:'2', three:'3', four:'4', five:'5',
