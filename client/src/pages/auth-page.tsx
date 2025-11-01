@@ -16,6 +16,7 @@ import { Eye, EyeOff, Mail, FileText, Upload, Scan, Users, TrendingUp, ChevronDo
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { Footer } from "@/components/footer";
 import jieLogo from "@/assets/jie-mastery-logo-new.jpg";
 
 const loginSchema = z.object({
@@ -684,6 +685,8 @@ export default function AuthPage() {
           </div>
         </div>
       </div>
+      
+      <Footer />
     </div>
   );
 }

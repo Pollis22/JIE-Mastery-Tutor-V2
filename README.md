@@ -334,3 +334,29 @@ This application is ready for production deployment on:
 - **AWS/GCP/Azure** (container deployment)
 
 Ensure all environment variables are configured in your deployment platform before going live.
+
+---
+
+## Copyright and Legal
+
+**© 2025 JIE Mastery AI, Inc. All Rights Reserved.**
+
+This software and associated documentation are proprietary and confidential. Patent Pending.
+
+### Intellectual Property Notice
+
+- **Patent:** US Provisional Patent Application filed October 31, 2025
+- **Trademark:** JIE Mastery AI™ (Trademark Registration in Process)
+- **Copyright:** All source code, UI designs, and educational content are copyrighted
+
+Unauthorized copying, modification, distribution, or use of this software is strictly prohibited and may result in severe civil and criminal penalties.
+
+### License
+
+This is proprietary software. No license is granted for use, modification, or distribution without express written permission from JIE Mastery AI, Inc.
+
+For licensing inquiries: pollis@jiemastery.com
+
+### Third-Party Licenses
+
+This software uses third-party open-source libraries that are listed in `package.json`. All third-party software is used in accordance with their respective licenses.
