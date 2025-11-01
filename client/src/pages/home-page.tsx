@@ -64,9 +64,14 @@ export default function HomePage() {
                 className="h-12 w-auto"
               />
               <div>
-                <h1 className="text-3xl font-bold" data-testid="text-welcome">
-                  Welcome back, {(dashboard as any)?.user?.firstName || 'Student'}! 👋
-                </h1>
+                <div className="flex items-center gap-3 mb-1">
+                  <h1 className="text-3xl font-bold" data-testid="text-welcome">
+                    Welcome back, {(dashboard as any)?.user?.firstName || 'Student'}! 👋
+                  </h1>
+                  <span className="text-xs font-semibold text-white/80 bg-white/20 px-2 py-1 rounded backdrop-blur-sm">
+                    Patent Pending
+                  </span>
+                </div>
                 <p className="text-primary-foreground/90 text-lg">Ready to master your subjects with JIE Mastery Tutor?</p>
               </div>
             </div>

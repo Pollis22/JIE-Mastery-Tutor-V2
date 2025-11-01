@@ -36,10 +36,17 @@ export default function BenefitsPage() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
               {/* Text Content */}
               <div className="space-y-6 text-center lg:text-left">
-                <div className="inline-block mb-2">
-                  <span className="text-sm font-bold text-white/90 uppercase tracking-wide bg-white/20 px-4 py-2 rounded-full backdrop-blur-sm">
-                    🚀 The Future of Family Tutoring
-                  </span>
+                <div className="space-y-3">
+                  <div className="inline-block">
+                    <span className="text-sm font-bold text-white/90 uppercase tracking-wide bg-white/20 px-4 py-2 rounded-full backdrop-blur-sm">
+                      🚀 The Future of Family Tutoring
+                    </span>
+                  </div>
+                  <div className="inline-block ml-3">
+                    <span className="text-xs font-semibold text-white bg-white/30 px-3 py-1.5 rounded-full backdrop-blur-sm">
+                      Patent Pending System
+                    </span>
+                  </div>
                 </div>
                 <h1 className="text-5xl font-bold leading-tight" data-testid="heading-benefits">
                   One Family Plan.<br/>All Siblings Learn.

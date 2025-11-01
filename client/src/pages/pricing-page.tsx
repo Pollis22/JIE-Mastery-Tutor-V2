@@ -161,10 +161,17 @@ export default function PricingPage() {
           
           {/* Hero Section */}
           <div className="text-center mb-16">
-            <div className="inline-block mb-4">
-              <span className="text-sm font-semibold text-primary uppercase tracking-wide bg-primary/10 px-4 py-2 rounded-full">
-                The Future of Family Tutoring
-              </span>
+            <div className="space-y-3 mb-4">
+              <div className="inline-block">
+                <span className="text-sm font-semibold text-primary uppercase tracking-wide bg-primary/10 px-4 py-2 rounded-full">
+                  The Future of Family Tutoring
+                </span>
+              </div>
+              <div className="inline-block ml-3">
+                <span className="text-xs font-semibold text-primary bg-primary/10 px-3 py-1 rounded-full">
+                  Patent Pending System
+                </span>
+              </div>
             </div>
             <h1 className="text-5xl font-bold text-foreground mb-6" data-testid="text-hero-title">
               One Family Plan. All Your Kids Learn.

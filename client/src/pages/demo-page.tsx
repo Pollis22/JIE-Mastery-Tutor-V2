@@ -67,9 +67,14 @@ export default function DemoPage() {
       <div className="container mx-auto px-4 py-16">
         <div className="max-w-5xl mx-auto">
           <div className="text-center mb-12">
-            <h1 className="text-4xl font-bold mb-4" style={{ color: '#C32026' }}>
-              Tutor Demo
-            </h1>
+            <div className="flex items-center justify-center gap-3 mb-4">
+              <h1 className="text-4xl font-bold" style={{ color: '#C32026' }}>
+                Tutor Demo
+              </h1>
+              <span className="text-xs font-semibold text-primary bg-primary/10 px-3 py-1 rounded-full">
+                Patent Pending
+              </span>
+            </div>
             <p className="text-xl text-muted-foreground">
               See JIE Mastery AI Tutor in action
             </p>

@@ -209,7 +209,12 @@ export default function AuthPage() {
                   />
                 </div>
                 <CardTitle className="text-2xl font-bold text-foreground">JIE Mastery Tutor</CardTitle>
-                <p className="text-muted-foreground">Sign in to continue your learning journey</p>
+                <div className="inline-block">
+                  <span className="text-xs font-semibold text-primary bg-primary/10 px-3 py-1 rounded-full">
+                    Patent Pending System
+                  </span>
+                </div>
+                <p className="text-muted-foreground mt-2">Sign in to continue your learning journey</p>
               </CardHeader>
               
               <CardContent>
