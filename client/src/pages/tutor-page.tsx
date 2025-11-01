@@ -89,7 +89,6 @@ export default function TutorPage() {
   const [summaryModalOpen, setSummaryModalOpen] = useState(false);
   const [transcriptMessages, setTranscriptMessages] = useState<ConvaiMessage[]>([]);
   const [isTranscriptConnected, setIsTranscriptConnected] = useState(false);
-  const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
 
   // Debug state for Realtime debugging
   const [debugInfo, setDebugInfo] = useState<{
@@ -582,7 +581,7 @@ export default function TutorPage() {
             <ol className="text-sm text-blue-800 dark:text-blue-200 space-y-1.5 list-decimal list-inside">
               <li><strong>Enter your name</strong> above (required for a personalized experience)</li>
               <li><strong>Select your grade level and subject</strong> you want help with</li>
-              <li><strong>Upload your materials (optional)</strong> - Share homework, worksheets, or study guides (PDF, DOCX, or images). After uploading, <span className="text-red-600 dark:text-red-400 font-bold">check the "Use" box</span> to include each document in your tutoring session</li>
+              <li><strong>Upload your materials (optional)</strong> - Share homework, worksheets, or study guides (PDF, DOCX, or images). All uploaded documents are automatically available to your tutor and retained for 6 months</li>
               <li><strong>Wait a few seconds</strong> after uploading for documents to process completely</li>
               <li><strong>Click "Talk to Your Tutor"</strong> to start your voice conversation</li>
               <li><strong>Start speaking</strong> - Ask questions about your homework or discuss any topic. The tutor uses your uploaded documents to give personalized guidance!</li>
@@ -600,11 +599,6 @@ export default function TutorPage() {
                 </h3>
                 <AssignmentsPanel 
                   userId={user.id}
-                  onSelectionChange={(selectedIds) => {
-                    // Update selected documents for AI context
-                    setSelectedDocumentIds(selectedIds);
-                    console.log('Documents selected for AI context:', selectedIds);
-                  }}
                 />
               </CardContent>
             </Card>
@@ -640,7 +634,7 @@ export default function TutorPage() {
                     subject={subject}
                     language={mapLanguageToISO(user?.preferredLanguage)}
                     ageGroup={level === 'k2' ? 'K-2' : level === 'g3_5' ? '3-5' : level === 'g6_8' ? '6-8' : level === 'g9_12' ? '9-12' : 'College/Adult'}
-                    contextDocumentIds={[...contextDocumentIds, ...selectedDocumentIds]}
+                    contextDocumentIds={contextDocumentIds}
                     onSessionStart={() => setSessionStartTime(new Date())}
                     onSessionEnd={() => setSessionStartTime(null)}
                   />

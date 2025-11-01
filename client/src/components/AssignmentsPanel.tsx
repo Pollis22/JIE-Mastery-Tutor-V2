@@ -23,7 +23,6 @@ interface Document {
 
 interface AssignmentsPanelProps {
   userId: string;
-  onSelectionChange: (selectedIds: string[]) => void;
 }
 
 function StatusPill({ status, error, retryCount }: { status: Document['processingStatus']; error?: string; retryCount?: number }) {
@@ -49,7 +48,7 @@ function StatusPill({ status, error, retryCount }: { status: Document['processin
   );
 }
 
-export function AssignmentsPanel({ userId, onSelectionChange }: AssignmentsPanelProps) {
+export function AssignmentsPanel({ userId }: AssignmentsPanelProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
