@@ -125,21 +125,17 @@ async function setupAllUsers() {
     const testPassword = await hashPassword('TestPass123');
 
     const testUsers = [
-      // Starter
-      { num: 1, plan: 'starter' as const, minutes: 60, maxSessions: 1, maxLogins: 1 },
-      { num: 2, plan: 'starter' as const, minutes: 60, maxSessions: 1, maxLogins: 1 },
-      { num: 3, plan: 'starter' as const, minutes: 60, maxSessions: 1, maxLogins: 1 },
-      // Standard
-      { num: 4, plan: 'standard' as const, minutes: 240, maxSessions: 1, maxLogins: 1 },
-      { num: 5, plan: 'standard' as const, minutes: 240, maxSessions: 1, maxLogins: 1 },
-      // Pro
-      { num: 6, plan: 'pro' as const, minutes: 600, maxSessions: 1, maxLogins: 1 },
-      { num: 7, plan: 'pro' as const, minutes: 600, maxSessions: 1, maxLogins: 1 },
-      // Elite
-      { num: 8, plan: 'elite' as const, minutes: 1800, maxSessions: 3, maxLogins: 3 },
-      { num: 9, plan: 'elite' as const, minutes: 1800, maxSessions: 3, maxLogins: 3 },
-      // Free
-      { num: 10, plan: null, minutes: null, maxSessions: 1, maxLogins: 1 },
+      // All Elite with 5 concurrent sessions
+      { num: 1, plan: 'elite' as const, minutes: 1800, maxSessions: 5, maxLogins: 5 },
+      { num: 2, plan: 'elite' as const, minutes: 1800, maxSessions: 5, maxLogins: 5 },
+      { num: 3, plan: 'elite' as const, minutes: 1800, maxSessions: 5, maxLogins: 5 },
+      { num: 4, plan: 'elite' as const, minutes: 1800, maxSessions: 5, maxLogins: 5 },
+      { num: 5, plan: 'elite' as const, minutes: 1800, maxSessions: 5, maxLogins: 5 },
+      { num: 6, plan: 'elite' as const, minutes: 1800, maxSessions: 5, maxLogins: 5 },
+      { num: 7, plan: 'elite' as const, minutes: 1800, maxSessions: 5, maxLogins: 5 },
+      { num: 8, plan: 'elite' as const, minutes: 1800, maxSessions: 5, maxLogins: 5 },
+      { num: 9, plan: 'elite' as const, minutes: 1800, maxSessions: 5, maxLogins: 5 },
+      { num: 10, plan: 'elite' as const, minutes: 1800, maxSessions: 5, maxLogins: 5 },
     ];
 
     for (const testUser of testUsers) {
@@ -205,11 +201,9 @@ async function setupAllUsers() {
     console.log('  Test1-Test10@example.com / TestPass123\n');
 
     console.log('📊 PLAN DISTRIBUTION:');
-    console.log('  • Starter:  Test1-Test3 (60 min)');
-    console.log('  • Standard: Test4-Test5 (240 min)');
-    console.log('  • Pro:      Test6-Test7 (600 min)');
-    console.log('  • Elite:    Test8-Test9, Admin (1800 min)');
-    console.log('  • Free:     Test10 (no subscription)\n');
+    console.log('  • Elite:    Test1-Test10, Admin (1800 min)');
+    console.log('  • Concurrent Sessions: 5 per user');
+    console.log('  • Concurrent Logins: 5 per user\n');
 
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
