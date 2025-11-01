@@ -3,7 +3,7 @@ import { useCustomVoice } from '@/hooks/use-custom-voice';
 import { RealtimeVoiceTranscript } from './realtime-voice-transcript';
 import { ChatInput } from './ChatInput';
 import { Button } from '@/components/ui/button';
-import { Mic, MicOff, Volume2, VolumeX } from 'lucide-react';
+import { Mic, MicOff, Volume2, VolumeX, AlertTriangle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 
@@ -396,6 +396,44 @@ export function RealtimeVoiceHost({
         )}
       </div>
       
+      {/* Microphone Error Banner */}
+      {customVoice.microphoneError && isRecording && (
+        <div className="bg-yellow-50 dark:bg-yellow-950/20 border-l-4 border-yellow-400 dark:border-yellow-600 p-4 rounded-r-lg" data-testid="microphone-error-banner">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" />
+            <div className="flex-1 space-y-2">
+              <h3 className="text-sm font-semibold text-yellow-800 dark:text-yellow-300">
+                {customVoice.microphoneError.message}
+              </h3>
+              <div className="text-sm text-yellow-700 dark:text-yellow-400">
+                <p className="font-medium mb-1.5">How to fix:</p>
+                <ol className="list-decimal list-inside space-y-1 ml-1">
+                  {customVoice.microphoneError.troubleshooting.map((step, i) => (
+                    <li key={i} className="leading-relaxed">{step}</li>
+                  ))}
+                </ol>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={customVoice.retryMicrophone}
+                  className="text-sm font-medium text-yellow-800 dark:text-yellow-300 hover:text-yellow-900 dark:hover:text-yellow-200 underline underline-offset-2 transition-colors"
+                  data-testid="button-retry-microphone"
+                >
+                  🔄 Try again
+                </button>
+                <button
+                  onClick={customVoice.dismissMicrophoneError}
+                  className="text-sm font-medium text-yellow-800 dark:text-yellow-300 hover:text-yellow-900 dark:hover:text-yellow-200 transition-colors"
+                  data-testid="button-dismiss-error"
+                >
+                  ✕ Dismiss
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* Transcript Display */}
       <RealtimeVoiceTranscript
         messages={customVoice.transcript.map(t => ({
@@ -411,11 +449,20 @@ export function RealtimeVoiceHost({
       
       {/* Chat Input - Only shown during active session */}
       {isRecording && customVoice.isConnected && (
-        <ChatInput
-          onSendMessage={handleChatMessage}
-          onFileUpload={handleChatFileUpload}
-          disabled={!customVoice.isConnected}
-        />
+        <div className={customVoice.microphoneError ? 'microphone-error-chat-emphasis' : ''}>
+          {customVoice.microphoneError && (
+            <div className="text-center mb-3 px-4 py-2 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+              <p className="text-blue-700 dark:text-blue-300 font-medium text-sm">
+                👇 Your tutor is listening! Type your questions here 👇
+              </p>
+            </div>
+          )}
+          <ChatInput
+            onSendMessage={handleChatMessage}
+            onFileUpload={handleChatFileUpload}
+            disabled={!customVoice.isConnected}
+          />
+        </div>
       )}
       
       {/* Debug Info (remove in production) */}

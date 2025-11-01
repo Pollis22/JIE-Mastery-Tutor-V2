@@ -1,21 +1,28 @@
 import { useState, useRef, useCallback } from "react";
 
 interface TranscriptMessage {
-  speaker: "student" | "tutor";
+  speaker: "student" | "tutor" | "system";
   text: string;
   timestamp?: string;
+}
+
+interface MicrophoneError {
+  message: string;
+  troubleshooting: string[];
+  errorType: string;
 }
 
 export function useCustomVoice() {
   const [isConnected, setIsConnected] = useState(false);
   const [transcript, setTranscript] = useState<TranscriptMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [microphoneError, setMicrophoneError] = useState<MicrophoneError | null>(null);
   const [isTutorSpeaking, setIsTutorSpeaking] = useState(false);
   
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
-  const processorRef = useRef<ScriptProcessorNode | null>(null);
+  const processorRef = useRef<AudioWorkletNode | null>(null);
   const audioQueueRef = useRef<AudioBuffer[]>([]);
   const isPlayingRef = useRef(false);
   const currentAudioSourceRef = useRef<AudioBufferSourceNode | null>(null);
@@ -113,7 +120,12 @@ export function useCustomVoice() {
 
   const startMicrophone = async () => {
     try {
-      console.log("[Custom Voice] 🎤 Starting microphone...");
+      console.log("[Custom Voice] 🎤 Requesting microphone access...");
+      
+      // Check if browser supports getUserMedia
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('BROWSER_NOT_SUPPORTED');
+      }
       
       const stream = await navigator.mediaDevices.getUserMedia({ 
         audio: {
@@ -121,46 +133,187 @@ export function useCustomVoice() {
           channelCount: 1,
           echoCancellation: true,
           noiseSuppression: true,
+          autoGainControl: true,
         }
       });
+      
+      console.log("[Custom Voice] ✅ Microphone access granted");
+      
+      // Clear any previous errors
+      setMicrophoneError(null);
       
       mediaStreamRef.current = stream;
       audioContextRef.current = new AudioContext({ sampleRate: 16000 });
       
-      const source = audioContextRef.current.createMediaStreamSource(stream);
-      const processor = audioContextRef.current.createScriptProcessor(4096, 1, 1);
-      processorRef.current = processor;
-      
-      processor.onaudioprocess = (e) => {
-        if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-
-        const inputData = e.inputBuffer.getChannelData(0);
-        const pcm16 = new Int16Array(inputData.length);
+      try {
+        // Load AudioWorklet processor (modern API, replaces deprecated ScriptProcessorNode)
+        await audioContextRef.current.audioWorklet.addModule('/audio-processor.js');
         
-        for (let i = 0; i < inputData.length; i++) {
-          const s = Math.max(-1, Math.min(1, inputData[i]));
-          pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-        }
-
-        const uint8Array = new Uint8Array(pcm16.buffer);
-        const binaryString = Array.from(uint8Array).map(byte => String.fromCharCode(byte)).join('');
+        const source = audioContextRef.current.createMediaStreamSource(stream);
+        const processor = new AudioWorkletNode(audioContextRef.current, 'audio-processor');
+        processorRef.current = processor;
         
-        wsRef.current.send(JSON.stringify({
-          type: "audio",
-          data: btoa(binaryString),
-        }));
-      };
+        // Handle audio data from AudioWorklet
+        processor.port.onmessage = (event) => {
+          if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+          
+          const float32Data = event.data.data; // Float32Array from AudioWorklet
+          
+          // Convert Float32 to PCM16
+          const pcm16 = new Int16Array(float32Data.length);
+          for (let i = 0; i < float32Data.length; i++) {
+            const s = Math.max(-1, Math.min(1, float32Data[i]));
+            pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+          }
 
-      source.connect(processor);
-      processor.connect(audioContextRef.current.destination);
+          const uint8Array = new Uint8Array(pcm16.buffer);
+          const binaryString = Array.from(uint8Array).map(byte => String.fromCharCode(byte)).join('');
+          
+          wsRef.current.send(JSON.stringify({
+            type: "audio",
+            data: btoa(binaryString),
+          }));
+        };
+
+        source.connect(processor);
+        processor.connect(audioContextRef.current.destination);
+      } catch (workletError) {
+        console.warn('[Custom Voice] ⚠️ AudioWorklet not supported, falling back to ScriptProcessorNode:', workletError);
+        
+        // Fallback to ScriptProcessorNode for older browsers
+        const source = audioContextRef.current.createMediaStreamSource(stream);
+        const processor = audioContextRef.current.createScriptProcessor(4096, 1, 1);
+        processorRef.current = processor as any;
+        
+        processor.onaudioprocess = (e) => {
+          if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+
+          const inputData = e.inputBuffer.getChannelData(0);
+          const pcm16 = new Int16Array(inputData.length);
+          
+          for (let i = 0; i < inputData.length; i++) {
+            const s = Math.max(-1, Math.min(1, inputData[i]));
+            pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+          }
+
+          const uint8Array = new Uint8Array(pcm16.buffer);
+          const binaryString = Array.from(uint8Array).map(byte => String.fromCharCode(byte)).join('');
+          
+          wsRef.current.send(JSON.stringify({
+            type: "audio",
+            data: btoa(binaryString),
+          }));
+        };
+
+        source.connect(processor);
+        processor.connect(audioContextRef.current.destination);
+      }
       
-      console.log("[Custom Voice] ✅ Microphone started");
+      console.log("[Custom Voice] ✅ Microphone started successfully");
       
-    } catch (error) {
-      console.error("[Custom Voice] ❌ Microphone error:", error);
-      setError("Microphone access denied");
+    } catch (error: any) {
+      console.error("[Custom Voice] ❌ Microphone error:", error.name || error.message, error);
+      
+      let userMessage = '';
+      let troubleshooting: string[] = [];
+      let errorType = error.name || error.message || 'Unknown';
+      
+      // Provide specific guidance based on error type
+      if (errorType === 'BROWSER_NOT_SUPPORTED' || error.message === 'BROWSER_NOT_SUPPORTED') {
+        userMessage = '🎤 Your browser does not support voice features';
+        troubleshooting = [
+          'Try using Chrome, Edge, or Firefox',
+          'Make sure your browser is up to date',
+          'Check that you\'re using HTTPS (secure connection)',
+          'You can still chat via text below'
+        ];
+      } else if (errorType === 'NotAllowedError' || errorType === 'PermissionDeniedError') {
+        userMessage = '🎤 Microphone access was denied';
+        troubleshooting = [
+          'Click the 🔒 lock icon in your browser address bar',
+          'Change Microphone setting to "Allow"',
+          'Refresh the page and start a new session',
+          'Or continue using the text chat below'
+        ];
+      } else if (errorType === 'NotFoundError' || errorType === 'DevicesNotFoundError') {
+        userMessage = '🎤 No microphone detected';
+        troubleshooting = [
+          'Make sure a microphone is connected to your device',
+          'Check your system sound settings',
+          'Try a different microphone if available',
+          'You can use text chat in the meantime'
+        ];
+      } else if (errorType === 'NotReadableError' || errorType === 'TrackStartError') {
+        userMessage = '🎤 Microphone is busy or unavailable';
+        troubleshooting = [
+          'Close other apps using your microphone (Zoom, Teams, Skype, Discord)',
+          'Restart your browser',
+          'Check system sound settings > Recording devices',
+          'For now, you can chat using the text box below'
+        ];
+      } else if (errorType === 'OverconstrainedError' || errorType === 'ConstraintNotSatisfiedError') {
+        userMessage = '🎤 Microphone settings incompatible';
+        troubleshooting = [
+          'Your microphone may not support the required audio quality',
+          'Try updating your audio drivers',
+          'Use text chat while we investigate'
+        ];
+      } else if (errorType === 'TypeError') {
+        userMessage = '🎤 Browser configuration issue';
+        troubleshooting = [
+          'Make sure you\'re using HTTPS (secure connection)',
+          'Try using a different browser (Chrome, Edge, Firefox)',
+          'Update your browser to the latest version',
+          'Use text chat as an alternative'
+        ];
+      } else {
+        userMessage = `🎤 Microphone error: ${error.message || 'Unknown error'}`;
+        troubleshooting = [
+          'Check your browser microphone permissions',
+          'Try refreshing the page',
+          'Make sure no other apps are using your microphone',
+          'You can still chat via text below'
+        ];
+      }
+      
+      // Set error state to display to user
+      setMicrophoneError({
+        message: userMessage,
+        troubleshooting: troubleshooting,
+        errorType: errorType
+      });
+      
+      // Add friendly message to transcript
+      setTranscript(prev => [...prev, {
+        speaker: 'system',
+        text: `⚠️ ${userMessage}\n\n💡 Don't worry! You can still have a great tutoring session using the text chat box below. Type your questions and your tutor will respond with voice.`,
+        timestamp: new Date().toISOString(),
+      }]);
+      
+      // Don't throw - allow session to continue with text-only mode
+      console.log('[Custom Voice] 📝 Continuing in text-only mode');
     }
   };
+  
+  const retryMicrophone = useCallback(async () => {
+    console.log("[Custom Voice] 🔄 Retrying microphone access...");
+    setMicrophoneError(null);
+    await startMicrophone();
+  }, []);
+  
+  const dismissMicrophoneError = useCallback(() => {
+    console.log("[Custom Voice] ✕ Dismissing microphone error");
+    
+    // Remove system error messages from transcript
+    if (microphoneError) {
+      setTranscript(prev => prev.filter(
+        t => t.speaker !== 'system' || !t.text.includes(microphoneError.message)
+      ));
+    }
+    
+    // Clear error state
+    setMicrophoneError(null);
+  }, [microphoneError]);
 
   const playAudio = async (base64Audio: string) => {
     if (!audioContextRef.current) {
@@ -239,7 +392,15 @@ export function useCustomVoice() {
 
   const cleanup = () => {
     if (processorRef.current) {
-      processorRef.current.disconnect();
+      try {
+        processorRef.current.disconnect();
+        // Close AudioWorklet port if it exists
+        if ('port' in processorRef.current) {
+          processorRef.current.port.close();
+        }
+      } catch (e) {
+        console.warn('[Custom Voice] Cleanup warning:', e);
+      }
       processorRef.current = null;
     }
 
@@ -310,9 +471,12 @@ export function useCustomVoice() {
     disconnect,
     sendTextMessage,
     sendDocumentUploaded,
+    retryMicrophone,
+    dismissMicrophoneError,
     isConnected,
     transcript,
     error,
+    microphoneError,
     isTutorSpeaking,
   };
 }
