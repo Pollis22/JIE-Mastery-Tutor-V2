@@ -13,11 +13,11 @@ interface Document {
   subject?: string;
   grade?: string;
   description?: string;
-  keepForFutureSessions: boolean;
   processingStatus: 'queued' | 'processing' | 'ready' | 'failed';
   processingError?: string;
   retryCount?: number;
   nextRetryAt?: string | null;
+  expiresAt?: string | null;
   createdAt: string;
 }
 
@@ -50,7 +50,6 @@ function StatusPill({ status, error, retryCount }: { status: Document['processin
 }
 
 export function AssignmentsPanel({ userId, onSelectionChange }: AssignmentsPanelProps) {
-  const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -204,7 +203,6 @@ export function AssignmentsPanel({ userId, onSelectionChange }: AssignmentsPanel
     // Use filename without extension as default title
     const defaultTitle = selectedFile.name.replace(/\.[^/.]+$/, '');
     formData.append('title', defaultTitle);
-    formData.append('keepForFutureSessions', 'false');
     
     console.log('📤 Uploading file:', selectedFile.name);
 
@@ -213,22 +211,6 @@ export function AssignmentsPanel({ userId, onSelectionChange }: AssignmentsPanel
     } finally {
       setIsUploading(false);
     }
-  };
-
-  const handleSelectionChange = (documentId: string, selected: boolean) => {
-    const newSelection = selected
-      ? [...selectedDocuments, documentId]
-      : selectedDocuments.filter(id => id !== documentId);
-    
-    setSelectedDocuments(newSelection);
-    onSelectionChange(newSelection);
-  };
-
-  const toggleKeepForFutureSessions = (document: Document) => {
-    updateMutation.mutate({
-      id: document.id,
-      updates: { keepForFutureSessions: !document.keepForFutureSessions }
-    });
   };
 
   const formatFileSize = (bytes: number): string => {
@@ -329,28 +311,16 @@ export function AssignmentsPanel({ userId, onSelectionChange }: AssignmentsPanel
               <table className="w-full border-collapse">
                 <thead>
                   <tr className="bg-gray-50 dark:bg-gray-700">
-                    <th className="text-left p-3 font-medium text-gray-900 dark:text-white">Use</th>
                     <th className="text-left p-3 font-medium text-gray-900 dark:text-white">Document</th>
                     <th className="text-left p-3 font-medium text-gray-900 dark:text-white">Size</th>
                     <th className="text-left p-3 font-medium text-gray-900 dark:text-white">Status</th>
-                    <th className="text-left p-3 font-medium text-gray-900 dark:text-white">Keep</th>
+                    <th className="text-left p-3 font-medium text-gray-900 dark:text-white">Expires</th>
                     <th className="text-left p-3 font-medium text-gray-900 dark:text-white">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {documents.map((document) => (
                     <tr key={document.id} className="border-b border-gray-200 dark:border-gray-700" data-testid={`document-row-${document.id}`}>
-                      <td className="p-3">
-                        <input
-                          type="checkbox"
-                          checked={selectedDocuments.includes(document.id)}
-                          onChange={(e) => handleSelectionChange(document.id, e.target.checked)}
-                          disabled={document.processingStatus !== 'ready'}
-                          className="rounded border-gray-300 dark:border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                          title={document.processingStatus !== 'ready' ? `Document must be ready to use (current: ${document.processingStatus})` : 'Use this document in tutoring session'}
-                          data-testid={`checkbox-use-${document.id}`}
-                        />
-                      </td>
                       <td className="p-3">
                         <div className="flex items-center gap-2">
                           <FileText className="w-4 h-4 text-gray-500" />
@@ -378,14 +348,8 @@ export function AssignmentsPanel({ userId, onSelectionChange }: AssignmentsPanel
                           </div>
                         )}
                       </td>
-                      <td className="p-3">
-                        <input
-                          type="checkbox"
-                          checked={document.keepForFutureSessions}
-                          onChange={() => toggleKeepForFutureSessions(document)}
-                          className="rounded border-gray-300 dark:border-gray-600"
-                          data-testid={`checkbox-keep-${document.id}`}
-                        />
+                      <td className="p-3 text-sm text-gray-500 dark:text-gray-400">
+                        {document.expiresAt ? new Date(document.expiresAt).toLocaleDateString() : 'Never'}
                       </td>
                       <td className="p-3">
                         <div className="actions flex gap-2">
@@ -405,13 +369,13 @@ export function AssignmentsPanel({ userId, onSelectionChange }: AssignmentsPanel
               </table>
             </div>
 
-            {/* Selection Summary */}
-            {selectedDocuments.length > 0 && (
-              <div className="selection-summary mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-                <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300">
-                  <Check className="w-4 h-4" />
-                  <span className="font-medium">
-                    {selectedDocuments.length} document{selectedDocuments.length !== 1 ? 's' : ''} selected for this session
+            {/* Info message about automatic document availability */}
+            {documents.length > 0 && (
+              <div className="info-message mt-4 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+                <div className="flex items-center gap-2 text-green-700 dark:text-green-300">
+                  <CheckCircle className="w-4 h-4" />
+                  <span className="text-sm">
+                    All your uploaded documents are automatically available to your tutor and will be retained for 6 months.
                   </span>
                 </div>
               </div>

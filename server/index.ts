@@ -186,6 +186,12 @@ app.use((req, res, next) => {
       log('Embedding worker disabled in production');
     }
 
+    // Start document cleanup service (auto-delete after 6 months)
+    console.log('Starting document cleanup service...');
+    const { documentCleanupService } = await import('./services/document-cleanup');
+    documentCleanupService.start();
+    log('Document cleanup service started (auto-delete after 6 months)');
+
     app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
       const status = err.status || err.statusCode || 500;
       const message = err.message || "Internal Server Error";
