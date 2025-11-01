@@ -376,17 +376,18 @@ export const userDocuments = pgTable("user_documents", {
   grade: text("grade"), // k-2, 3-5, etc
   title: text("title"), // user-provided title
   description: text("description"), // user description
-  keepForFutureSessions: boolean("keep_for_future_sessions").default(false),
   processingStatus: text("processing_status").$type<'queued' | 'processing' | 'ready' | 'failed'>().default('queued'),
   processingError: text("processing_error"),
   retryCount: integer("retry_count").default(0),
   nextRetryAt: timestamp("next_retry_at"),
   parsedTextPath: text("parsed_text_path"), // path to extracted plain text file
+  expiresAt: timestamp("expires_at"), // auto-delete after 6 months
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
   index("idx_user_docs_status").on(table.processingStatus),
   index("idx_user_docs_retry").on(table.nextRetryAt),
+  index("idx_user_docs_expires").on(table.expiresAt), // for cleanup queries
 ]);
 
 export const documentChunks = pgTable("document_chunks", {

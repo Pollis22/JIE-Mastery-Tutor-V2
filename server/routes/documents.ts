@@ -73,7 +73,6 @@ const uploadMetadataSchema = z.object({
   grade: z.string().optional(),
   title: z.string().optional(),
   description: z.string().optional(),
-  keepForFutureSessions: z.boolean().optional().default(false)
 });
 
 const contextRequestSchema = z.object({
@@ -310,8 +309,11 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       grade: req.body.grade,
       title: req.body.title,
       description: req.body.description,
-      keepForFutureSessions: req.body.keepForFutureSessions === 'true'
     });
+
+    // Calculate expiration date (6 months from now)
+    const expiresAt = new Date();
+    expiresAt.setMonth(expiresAt.getMonth() + 6);
 
     // Determine file type - support all document types (PPTX only, not legacy PPT)
     const fileExtension = path.extname(req.file.originalname).toLowerCase().slice(1);
@@ -324,7 +326,7 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       });
     }
 
-    // 1. Create document record with "processing" status
+    // 1. Create document record with "processing" status and auto-expiration
     const document = await storage.uploadDocument(userId, {
       originalName: req.file.originalname,
       fileName: req.file.filename,
@@ -335,7 +337,7 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       grade: metadata.grade,
       title: metadata.title || req.file.originalname,
       description: metadata.description,
-      keepForFutureSessions: metadata.keepForFutureSessions,
+      expiresAt, // Auto-delete after 6 months
       processingStatus: 'processing', // ← Changed from 'queued'
       retryCount: 0
     });
@@ -497,11 +499,11 @@ router.get('/', async (req, res) => {
       subject: doc.subject,
       grade: doc.grade,
       description: doc.description,
-      keepForFutureSessions: doc.keepForFutureSessions,
       processingStatus: doc.processingStatus,
       processingError: doc.processingError,
       retryCount: doc.retryCount,
       nextRetryAt: doc.nextRetryAt,
+      expiresAt: doc.expiresAt,
       createdAt: doc.createdAt
     })));
 
@@ -533,11 +535,11 @@ router.get('/list', async (req, res) => {
         subject: doc.subject,
         grade: doc.grade,
         description: doc.description,
-        keepForFutureSessions: doc.keepForFutureSessions,
         processingStatus: doc.processingStatus,
         processingError: doc.processingError,
         retryCount: doc.retryCount,
         nextRetryAt: doc.nextRetryAt,
+        expiresAt: doc.expiresAt,
         createdAt: doc.createdAt
       }))
     });
@@ -645,7 +647,7 @@ router.put('/:id', async (req, res) => {
       subject: document.subject,
       grade: document.grade,
       description: document.description,
-      keepForFutureSessions: document.keepForFutureSessions,
+      expiresAt: document.expiresAt,
       updatedAt: document.updatedAt
     });
 
