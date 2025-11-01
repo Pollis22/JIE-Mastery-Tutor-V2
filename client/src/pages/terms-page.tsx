@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { useLocation } from "wouter";
-import jieLogo from "@/assets/jie-mastery-logo.png";
+import jieLogo from "@/assets/jie-mastery-logo-new.jpg";
 
 export default function TermsPage() {
   const [, setLocation] = useLocation();

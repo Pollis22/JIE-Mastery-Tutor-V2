@@ -1,7 +1,7 @@
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import jieLogo from "@/assets/jie-mastery-logo.png";
+import jieLogo from "@/assets/jie-mastery-logo-new.jpg";
 
 export default function FAQPage() {
   const [, setLocation] = useLocation();

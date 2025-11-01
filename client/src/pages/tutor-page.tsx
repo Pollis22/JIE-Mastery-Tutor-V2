@@ -26,7 +26,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import jieLogo from "@/assets/jie-mastery-logo.png";
+import jieLogo from "@/assets/jie-mastery-logo-new.jpg";
 
 interface ProgressData {
   lastLevel?: string;

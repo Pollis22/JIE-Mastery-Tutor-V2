@@ -16,7 +16,7 @@ import { Eye, EyeOff, Mail, FileText, Upload, Scan, Users, TrendingUp, ChevronDo
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import jieLogo from "@/assets/jie-mastery-logo.png";
+import jieLogo from "@/assets/jie-mastery-logo-new.jpg";
 
 const loginSchema = z.object({
   email: z.string().min(1, "Email or username is required"),

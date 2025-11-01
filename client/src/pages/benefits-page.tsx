@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useLocation } from "wouter";
-import jieLogo from "@/assets/jie-mastery-logo.png";
+import jieLogo from "@/assets/jie-mastery-logo-new.jpg";
 import { Clock, DollarSign, Target, Calendar, BookOpen, TrendingUp, Users, Shield, Brain, LightbulbIcon, Bot, Sparkles, GraduationCap } from "lucide-react";
 
 export default function BenefitsPage() {

@@ -15,7 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { useState } from "react";
-import jieLogo from "@/assets/jie-mastery-logo.png";
+import jieLogo from "@/assets/jie-mastery-logo-new.jpg";
 
 interface AdminLayoutProps {
   children: React.ReactNode;
