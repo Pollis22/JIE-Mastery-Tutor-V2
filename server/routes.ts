@@ -466,7 +466,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       weekAgo.setDate(weekAgo.getDate() - 7);
       
       const weeklyResult = await db.execute(sql`
-        SELECT COALESCE(SUM(duration), 0) as weekly_minutes
+        SELECT COALESCE(SUM(voice_minutes_used), 0) as weekly_minutes
         FROM learning_sessions
         WHERE user_id = ${user.id}
           AND created_at >= ${weekAgo.toISOString()}
