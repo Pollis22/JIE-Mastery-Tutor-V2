@@ -23,6 +23,8 @@ interface Document {
 
 interface AssignmentsPanelProps {
   userId: string;
+  selectedDocumentIds?: string[];
+  onDocumentSelectionChange?: (selectedIds: string[]) => void;
 }
 
 function StatusPill({ status, error, retryCount }: { status: Document['processingStatus']; error?: string; retryCount?: number }) {
@@ -48,12 +50,27 @@ function StatusPill({ status, error, retryCount }: { status: Document['processin
   );
 }
 
-export function AssignmentsPanel({ userId }: AssignmentsPanelProps) {
+export function AssignmentsPanel({ 
+  userId,
+  selectedDocumentIds = [],
+  onDocumentSelectionChange 
+}: AssignmentsPanelProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  
+  // Handle document selection toggle
+  const toggleDocumentSelection = (documentId: string) => {
+    if (!onDocumentSelectionChange) return;
+    
+    const newSelection = selectedDocumentIds.includes(documentId)
+      ? selectedDocumentIds.filter(id => id !== documentId)
+      : [...selectedDocumentIds, documentId];
+    
+    onDocumentSelectionChange(newSelection);
+  };
 
   // Fetch user documents - refetch periodically if there are processing/queued documents
   const { data: documents = [], isLoading } = useQuery({
@@ -310,6 +327,9 @@ export function AssignmentsPanel({ userId }: AssignmentsPanelProps) {
               <table className="w-full border-collapse">
                 <thead>
                   <tr className="bg-gray-50 dark:bg-gray-700">
+                    {onDocumentSelectionChange && (
+                      <th className="text-center p-3 font-medium text-gray-900 dark:text-white w-16">Use</th>
+                    )}
                     <th className="text-left p-3 font-medium text-gray-900 dark:text-white">Document</th>
                     <th className="text-left p-3 font-medium text-gray-900 dark:text-white">Size</th>
                     <th className="text-left p-3 font-medium text-gray-900 dark:text-white">Status</th>
@@ -320,6 +340,18 @@ export function AssignmentsPanel({ userId }: AssignmentsPanelProps) {
                 <tbody>
                   {documents.map((document) => (
                     <tr key={document.id} className="border-b border-gray-200 dark:border-gray-700" data-testid={`document-row-${document.id}`}>
+                      {onDocumentSelectionChange && (
+                        <td className="p-3 text-center">
+                          <input
+                            type="checkbox"
+                            checked={selectedDocumentIds.includes(document.id)}
+                            onChange={() => toggleDocumentSelection(document.id)}
+                            disabled={document.processingStatus !== 'ready'}
+                            className="w-4 h-4 text-red-600 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                            data-testid={`checkbox-document-${document.id}`}
+                          />
+                        </td>
+                      )}
                       <td className="p-3">
                         <div className="flex items-center gap-2">
                           <FileText className="w-4 h-4 text-gray-500" />
@@ -375,6 +407,18 @@ export function AssignmentsPanel({ userId }: AssignmentsPanelProps) {
                   <CheckCircle className="w-4 h-4" />
                   <span className="text-sm">
                     All your uploaded documents are automatically available to your tutor and will be retained for 6 months.
+                  </span>
+                </div>
+              </div>
+            )}
+            
+            {/* Selection summary */}
+            {onDocumentSelectionChange && selectedDocumentIds.length > 0 && (
+              <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg" data-testid="document-selection-summary">
+                <div className="flex items-center gap-2 text-blue-800 dark:text-blue-200">
+                  <CheckCircle className="w-4 h-4" />
+                  <span className="font-medium text-sm">
+                    ✅ {selectedDocumentIds.length} document{selectedDocumentIds.length !== 1 ? 's' : ''} selected for this tutoring session
                   </span>
                 </div>
               </div>
