@@ -3,7 +3,7 @@ import { useCustomVoice } from '@/hooks/use-custom-voice';
 import { RealtimeVoiceTranscript } from './realtime-voice-transcript';
 import { ChatInput } from './ChatInput';
 import { Button } from '@/components/ui/button';
-import { Mic, MicOff, Volume2, VolumeX, AlertTriangle } from 'lucide-react';
+import { Mic, MicOff, Volume2, VolumeX, AlertTriangle, FileText } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 
@@ -368,8 +368,14 @@ export function RealtimeVoiceHost({
           )}
           
           {customVoice.isConnected && (
-            <div className="text-sm text-muted-foreground">
-              Connected via 🎙️ AI Voice Tutor
+            <div className="text-sm text-muted-foreground flex items-center gap-4">
+              <span>Connected via 🎙️ AI Voice Tutor</span>
+              {contextDocumentIds && contextDocumentIds.length > 0 && (
+                <span className="flex items-center gap-1.5 text-blue-600 dark:text-blue-400 font-medium">
+                  <FileText className="h-3.5 w-3.5" />
+                  {contextDocumentIds.length} document{contextDocumentIds.length !== 1 ? 's' : ''} loaded
+                </span>
+              )}
             </div>
           )}
         </div>
