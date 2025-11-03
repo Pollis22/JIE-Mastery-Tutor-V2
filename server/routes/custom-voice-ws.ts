@@ -56,6 +56,40 @@ async function persistTranscript(sessionId: string, transcript: TranscriptEntry[
   }
 }
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// TIMING FIX (Nov 3, 2025): Incomplete thought detection
+// Detect when students are likely still formulating their response
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function isLikelyIncompleteThought(transcript: string): boolean {
+  const text = transcript.trim().toLowerCase();
+  const wordCount = text.split(/\s+/).length;
+  
+  // Very short responses are often incomplete ("yeah", "um", "I", "it")
+  if (wordCount <= 2) {
+    return true;
+  }
+  
+  // Common incomplete sentence starters
+  const incompleteStarters = [
+    /^(yeah|uh|um|so|well|and|but|it|the|i)\s*$/i,
+    /^(i think|i mean|it says|it basically|well i|so i)\s*$/i,
+    /^(the|a|this|that)\s+\w+\s*$/i, // "the problem", "a question"
+  ];
+  
+  for (const pattern of incompleteStarters) {
+    if (pattern.test(text)) {
+      return true;
+    }
+  }
+  
+  // Trailing conjunctions suggest more coming
+  if (/\b(and|but|or|so|because|since|unless)\s*$/i.test(text)) {
+    return true;
+  }
+  
+  return false;
+}
+
 // Centralized session finalization helper (prevents double-processing and ensures consistency)
 async function finalizeSession(
   state: SessionState,
@@ -835,9 +869,20 @@ CRITICAL INSTRUCTIONS:
                   responseTimer = null;
                 }
                 
-                // Wait 500ms to see if student continues speaking (increased from 300ms)
+                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                // TIMING FIX (Nov 3, 2025): Server-side response delay
+                // Wait longer before responding to give student time to continue
+                // Detects incomplete thoughts and waits extra time
+                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                const isIncomplete = isLikelyIncompleteThought(transcript);
+                const delay = isIncomplete ? 1500 : 800; // Wait longer for incomplete thoughts
+                
+                if (isIncomplete) {
+                  console.log(`[Custom Voice] ⏸️ Incomplete thought detected: "${transcript}" - waiting ${delay}ms`);
+                }
+                
                 responseTimer = setTimeout(() => {
-                  console.log("[Custom Voice] ⏰ Processing after pause");
+                  console.log(`[Custom Voice] ⏰ Processing after ${delay}ms pause`);
                   state.transcriptQueue.push(transcript);
                   
                   // Start processing if not already processing
@@ -845,7 +890,7 @@ CRITICAL INSTRUCTIONS:
                     processTranscriptQueue();
                   }
                   responseTimer = null;
-                }, 500); // Wait 500ms before responding (increased for better turn-taking)
+                }, delay); // Wait 800ms normally, 1500ms for incomplete thoughts
               },
               async (error: Error) => {
                 console.error("[Custom Voice] ❌ Deepgram error:", error);
