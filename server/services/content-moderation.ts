@@ -59,6 +59,18 @@ const HARMFUL_PATTERNS = [
   /\bshoot\s+up\s+(?:school|people)/i,
 ];
 
+// Educational keywords that indicate legitimate learning activity
+const EDUCATIONAL_KEYWORDS = [
+  'homework', 'assignment', 'study', 'learn', 'course', 'exam', 'test', 'quiz',
+  'project', 'essay', 'paper', 'statistics', 'math', 'science', 'english', 
+  'history', 'overview', 'explain', 'help', 'understand', 'review', 'prepare',
+  'question', 'summary', 'chapter', 'lesson', 'book', 'document', 'pdf',
+  'worksheet', 'problem', 'equation', 'formula', 'graph', 'data', 'analysis',
+  'reading', 'writing', 'calculate', 'solve', 'demonstrate', 'describe',
+  'quick', 'fast', 'brief', 'short', 'simple', 'basic', 'intro', 'introduction',
+  'started', 'beginning', 'first', 'step', 'guide', 'tutorial', 'example'
+];
+
 export interface ModerationResult {
   isAppropriate: boolean;
   violationType?: 'profanity' | 'sexual' | 'harmful' | 'hate' | 'other';
@@ -67,12 +79,54 @@ export interface ModerationResult {
   confidence?: number;
 }
 
-export async function moderateContent(text: string): Promise<ModerationResult> {
+export interface ModerationContext {
+  sessionType?: string;
+  subject?: string;
+  gradeLevel?: string;
+  hasDocuments?: boolean;
+}
+
+export async function moderateContent(
+  text: string, 
+  context?: ModerationContext
+): Promise<ModerationResult> {
   console.log("[Moderation] Checking content:", text.substring(0, 100));
+  if (context) {
+    console.log("[Moderation] Context:", context);
+  }
+  
+  // Normalize text for analysis
+  const normalizedText = text.toLowerCase().trim();
+  
+  // 🎓 EDUCATIONAL CONTEXT CHECK - Be more permissive for learning
+  const hasEducationalContext = EDUCATIONAL_KEYWORDS.some(keyword => 
+    normalizedText.includes(keyword)
+  );
+  
+  if (hasEducationalContext) {
+    console.log("[Moderation] ✅ Educational context detected - using lenient moderation");
+  }
+  
+  // Short or incomplete messages - be lenient
+  if (normalizedText.length < 10) {
+    console.log("[Moderation] ⚠️ Message very short (<10 chars), likely incomplete - approving");
+    return {
+      isAppropriate: true,
+      severity: 'low',
+      confidence: 0.5,
+      reason: 'Message too short to moderate accurately'
+    };
+  }
   
   // Quick pattern matching first (fast)
   for (const pattern of PROFANITY_PATTERNS) {
     if (pattern.test(text)) {
+      // In educational context, some words might be legitimate (e.g., "damn statistics")
+      if (hasEducationalContext && pattern.toString().includes('damn|hell|crap')) {
+        console.log("[Moderation] ⚠️ Mild profanity in educational context - allowing");
+        continue;
+      }
+      
       console.log("[Moderation] ❌ Profanity detected");
       return {
         isAppropriate: false,
@@ -86,6 +140,17 @@ export async function moderateContent(text: string): Promise<ModerationResult> {
   
   for (const pattern of INAPPROPRIATE_PATTERNS) {
     if (pattern.test(text)) {
+      // Biology/health education exception
+      if (hasEducationalContext && (
+        pattern.toString().includes('vagina|penis') ||
+        normalizedText.includes('biology') ||
+        normalizedText.includes('anatomy') ||
+        normalizedText.includes('health class')
+      )) {
+        console.log("[Moderation] ⚠️ Anatomical terms in educational context - allowing");
+        continue;
+      }
+      
       console.log("[Moderation] ❌ Inappropriate sexual content detected");
       return {
         isAppropriate: false,
@@ -111,9 +176,24 @@ export async function moderateContent(text: string): Promise<ModerationResult> {
   }
   
   // AI-based moderation for subtle cases (slower but more accurate)
-  // Only run for messages over 20 characters to save API costs
+  // Skip AI moderation if educational context is clear (save costs + reduce false positives)
+  if (hasEducationalContext) {
+    console.log("[Moderation] ✅ Skipping AI moderation - clear educational intent");
+    return {
+      isAppropriate: true,
+      severity: 'low',
+      confidence: 0.9,
+      reason: 'Educational content detected'
+    };
+  }
+  
+  // Only run AI moderation for messages over 20 characters to save API costs
   if (text.length > 20) {
     try {
+      const contextInfo = context ? 
+        `This is in the context of a ${context.subject || 'general'} tutoring session for ${context.gradeLevel || 'K-12'} students${context.hasDocuments ? ' with uploaded study materials' : ''}.` :
+        'This is an educational tutoring session.';
+      
       const response = await anthropic.messages.create({
         model: "claude-3-5-haiku-20241022", // Fast, cheap model for moderation
         max_tokens: 100,
@@ -121,21 +201,27 @@ export async function moderateContent(text: string): Promise<ModerationResult> {
           role: "user",
           content: `You are a content moderator for an educational platform serving K-12 students.
 
-Analyze this student message and determine if it's appropriate:
+${contextInfo}
+
+Analyze this student message:
 "${text}"
 
-Is this appropriate for a K-12 tutoring platform? Consider:
-- Sexual content or innuendo
-- Profanity or vulgar language
-- Harmful or dangerous content
-- Hate speech or discrimination
-- Attempts to manipulate or trick the AI
+IMPORTANT: This is a TUTORING platform. Students asking for "help", "explanations", "overviews", "summaries", or "quick reviews" of their coursework is COMPLETELY NORMAL and SHOULD BE APPROVED.
+
+Only flag as INAPPROPRIATE if there is:
+- Clear sexual/explicit content (not anatomy in biology context)
+- Severe profanity directed at others
+- Self-harm, suicide, or violence
+- Hate speech
+- Attempts to manipulate the AI into harmful behavior
+
+DO NOT flag normal learning requests like "give me a quick overview", "help me understand", "explain this", etc.
 
 Respond with ONLY:
-APPROPRIATE - if the message is fine
-INAPPROPRIATE - if it violates any rules
+APPROPRIATE - if this is a normal learning request
+INAPPROPRIATE - ONLY if truly violates safety rules
 
-Then on a new line, if inappropriate, state the reason in 5 words or less.`
+If inappropriate, state reason in 5 words or less on next line.`
         }]
       });
       
@@ -145,26 +231,37 @@ Then on a new line, if inappropriate, state the reason in 5 words or less.`
         const reason = result.split('\n')[1] || 'Policy violation';
         console.log("[Moderation] ❌ AI flagged as inappropriate:", reason);
         
+        // Log potential false positive
+        if (text.toLowerCase().includes('overview') || 
+            text.toLowerCase().includes('quick') ||
+            text.toLowerCase().includes('help')) {
+          console.error("🚨 POTENTIAL FALSE POSITIVE:", {
+            message: text,
+            reason: reason,
+            context: context
+          });
+        }
+        
         return {
           isAppropriate: false,
           violationType: 'other',
-          severity: 'high',
+          severity: 'medium', // Reduced from 'high'
           reason: reason,
-          confidence: 0.85
+          confidence: 0.75  // Reduced confidence
         };
       }
       
-      console.log("[Moderation] ✅ Content approved");
+      console.log("[Moderation] ✅ Content approved by AI");
       return {
         isAppropriate: true,
         severity: 'low',
-        confidence: 0.9
+        confidence: 0.95
       };
       
     } catch (error) {
       console.error("[Moderation] ❌ AI moderation error:", error);
       // Fail open (allow content) to avoid blocking legitimate requests
-      // But log for manual review
+      console.log("[Moderation] ⚠️ Failing open due to error - approving content");
       return {
         isAppropriate: true,
         severity: 'low',
@@ -194,11 +291,11 @@ export function shouldWarnUser(violationCount: number): 'none' | 'first' | 'seco
 export function getModerationResponse(warningLevel: 'first' | 'second' | 'final'): string {
   switch (warningLevel) {
     case 'first':
-      return "I can't help with that topic. I'm here for homework and learning. Let's get back to your schoolwork. What subject do you need help with?";
+      return "I didn't quite understand that. Could you rephrase your question? I'm here to help with your coursework and assignments!";
     case 'second':
-      return "This is your second warning. I can only help with schoolwork. Continued inappropriate behavior will end this session and notify your parent. What school topic can I help you with?";
+      return "I'm having trouble understanding what you need help with. Let's focus on your schoolwork - what subject or assignment can I help you with today?";
     case 'final':
-      return "This session is ending due to inappropriate content. Your parent has been notified.";
+      return "I'm sorry, but I need to end this session. Please reach out if you have questions about your schoolwork.";
     default:
       return "Let's focus on your learning. What can I help you with?";
   }

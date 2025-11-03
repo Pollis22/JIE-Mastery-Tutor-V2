@@ -188,22 +188,40 @@ export function setupCustomVoiceWebSocket(server: Server) {
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         
         console.log("[Custom Voice] 🔍 Moderating content...");
-        const moderation = await moderateContent(transcript);
+        
+        // Pass educational context to moderation
+        const moderation = await moderateContent(transcript, {
+          sessionType: 'tutoring',
+          subject: 'general', // Subject from session init message
+          gradeLevel: state.ageGroup,
+          hasDocuments: state.uploadedDocuments && state.uploadedDocuments.length > 0
+        });
+        
+        console.log("[Custom Voice] Moderation result:", {
+          isAppropriate: moderation.isAppropriate,
+          confidence: moderation.confidence,
+          reason: moderation.reason
+        });
         
         if (!moderation.isAppropriate) {
-          console.log(`[Custom Voice] ⚠️  Content violation detected: ${moderation.violationType}`);
+          console.log(`[Custom Voice] ⚠️  Content flagged: ${moderation.violationType} (confidence: ${moderation.confidence})`);
           
-          // Increment violation count
-          state.violationCount++;
-          const warningLevel = shouldWarnUser(state.violationCount - 1);
-          
-          // Get appropriate response based on warning level (should never be 'none' here)
-          if (warningLevel === 'none') {
-            console.error("[Custom Voice] ❌ Unexpected warning level 'none'");
-            return; // Skip if somehow 'none' is returned
-          }
-          
-          const moderationResponse = getModerationResponse(warningLevel);
+          // Only take action on HIGH confidence violations (>0.85)
+          // This prevents false positives from ending sessions
+          if (moderation.confidence && moderation.confidence > 0.85) {
+            console.log("[Custom Voice] ❌ High confidence violation - taking action");
+            
+            // Increment violation count
+            state.violationCount++;
+            const warningLevel = shouldWarnUser(state.violationCount - 1);
+            
+            // Get appropriate response based on warning level (should never be 'none' here)
+            if (warningLevel === 'none') {
+              console.error("[Custom Voice] ❌ Unexpected warning level 'none'");
+              return; // Skip if somehow 'none' is returned
+            }
+            
+            const moderationResponse = getModerationResponse(warningLevel);
           
           // Log violation to database with FULL context (user message + AI warning response)
           await db.insert(contentViolations).values({
@@ -325,6 +343,15 @@ export function setupCustomVoiceWebSocket(server: Server) {
             // Persist
             await persistTranscript(state.sessionId, state.transcript);
             return; // Don't continue to normal AI processing
+          }
+          } else {
+            // Low confidence flag - log but proceed with educational conversation
+            console.warn("[Custom Voice] ⚠️ Low confidence flag - proceeding with educational context:", {
+              message: transcript,
+              confidence: moderation.confidence,
+              reason: moderation.reason
+            });
+            // Continue to normal AI processing below
           }
         }
         
