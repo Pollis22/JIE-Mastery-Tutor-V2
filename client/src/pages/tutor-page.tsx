@@ -115,6 +115,9 @@ export default function TutorPage() {
   // Session tracking state
   const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
   const [showTopUpModal, setShowTopUpModal] = useState(false);
+  
+  // Document selection state
+  const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
 
   // Fetch available minutes
   const { data: minutesData } = useQuery<{
@@ -599,6 +602,8 @@ export default function TutorPage() {
                 </h3>
                 <AssignmentsPanel 
                   userId={user.id}
+                  selectedDocumentIds={selectedDocumentIds}
+                  onDocumentSelectionChange={setSelectedDocumentIds}
                 />
               </CardContent>
             </Card>
@@ -634,7 +639,7 @@ export default function TutorPage() {
                     subject={subject}
                     language={mapLanguageToISO(user?.preferredLanguage)}
                     ageGroup={level === 'k2' ? 'K-2' : level === 'g3_5' ? '3-5' : level === 'g6_8' ? '6-8' : level === 'g9_12' ? '9-12' : 'College/Adult'}
-                    contextDocumentIds={contextDocumentIds}
+                    contextDocumentIds={selectedDocumentIds.length > 0 ? selectedDocumentIds : contextDocumentIds}
                     onSessionStart={() => setSessionStartTime(new Date())}
                     onSessionEnd={() => setSessionStartTime(null)}
                   />
