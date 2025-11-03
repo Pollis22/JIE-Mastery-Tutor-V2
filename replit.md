@@ -55,8 +55,10 @@ A custom, production-ready voice stack provides real-time, natural conversations
 ### RAG (Retrieval-Augmented Generation) System
 -   **Document Processing**: Supports PDF, DOCX/DOC, PPTX, XLSX/XLS, CSV, images (OCR via Tesseract.js), and TXT files with intelligent text segmentation.
 -   **Document Upload**: Students can upload documents during live voice sessions for immediate AI analysis.
--   **Automatic Document Retrieval**: AI tutor loads all user's ready documents at session start.
+-   **Document Selection (Nov 3, 2025)**: Students can choose which documents to use in each tutoring session via checkboxes in AssignmentsPanel. Selected documents are prioritized; if no selection is made, all ready documents are loaded automatically as fallback behavior.
+-   **Automatic Document Retrieval**: AI tutor loads user's selected or all ready documents at session start.
 -   **Context Integration**: Documents are processed synchronously, chunked, and passed to the AI in the system prompt.
+-   **Session Visibility**: Document count is displayed in the voice session UI, showing how many documents are currently loaded.
 -   **Critical Fix (Oct 31, 2025)**: Ensured AI acknowledges uploaded documents through a three-layer prompt engineering solution involving XML tagging, explicit acknowledgment instructions, and prominent placement within the system prompt in `server/services/ai-service.ts` and `server/routes/custom-voice-ws.ts`.
 
 ### Database Schema & Data Management
