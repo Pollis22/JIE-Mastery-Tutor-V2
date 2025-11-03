@@ -92,17 +92,45 @@ const fsPromises = fs.promises;
 // Text extraction helper functions
 async function extractTextFromPDF(filePath: string): Promise<string> {
   try {
+    console.log('[PDF Extract] Reading file:', filePath);
     const dataBuffer = await fsPromises.readFile(filePath);
     
-    // pdf-parse 1.1.1 works as expected - just call it as a function
-    const data = await pdfParse(dataBuffer);
+    if (dataBuffer.length === 0) {
+      throw new Error('PDF file is empty');
+    }
     
-    console.log(`[PDF Extract] Extracted ${data.text.length} characters from ${data.numpages} pages`);
+    console.log(`[PDF Extract] File size: ${dataBuffer.length} bytes, starting extraction...`);
+    
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // FIX (Nov 3, 2025): Add timeout to prevent hanging on complex PDFs
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    const parsePromise = pdfParse(dataBuffer);
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('PDF parsing timed out after 30 seconds')), 30000);
+    });
+    
+    // Race between parsing and timeout
+    const data = await Promise.race([parsePromise, timeoutPromise]) as any;
+    
+    console.log(`[PDF Extract] ✅ Extracted ${data.text.length} characters from ${data.numpages} pages`);
+    
+    if (!data.text || data.text.trim().length === 0) {
+      // Some PDFs are scanned images - provide helpful message
+      console.log('[PDF Extract] ⚠️ No text found - may be scanned image');
+      return '[This PDF appears to be a scanned image. Text extraction is not available, but your tutor can still help if you describe the content or paste specific questions.]';
+    }
     
     return data.text || '';
   } catch (error) {
     console.error('[PDF Extract] Error:', error);
-    throw new Error(`Failed to extract text from PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    
+    // Provide specific error messages
+    const errMsg = error instanceof Error ? error.message : 'Unknown error';
+    if (errMsg.includes('timeout')) {
+      throw new Error('PDF is too large or complex to process. Please try a smaller file.');
+    }
+    
+    throw new Error(`Failed to extract text from PDF: ${errMsg}`);
   }
 }
 
@@ -399,10 +427,29 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     } catch (extractError: any) {
       console.error('[Upload] ❌ Text extraction failed:', extractError);
       
-      await storage.updateDocument(documentId, userId, {
-        processingStatus: 'failed',
-        processingError: `Text extraction failed: ${extractError.message}`,
-      });
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      // FIX (Nov 3, 2025): DELETE failed uploads instead of marking as failed
+      // This prevents duplicate/failed entries cluttering the UI
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      console.log('[Upload] 🧹 Cleaning up failed document:', documentId);
+      
+      // Delete document from database
+      try {
+        await storage.deleteDocument(documentId, userId);
+        console.log('[Upload] ✅ Failed document deleted from database');
+      } catch (deleteError) {
+        console.error('[Upload] ❌ Failed to delete document:', deleteError);
+      }
+      
+      // Delete physical file
+      if (req.file && fs.existsSync(req.file.path)) {
+        try {
+          fs.unlinkSync(req.file.path);
+          console.log('[Upload] ✅ Failed file deleted from disk');
+        } catch (fileDeleteError) {
+          console.error('[Upload] ❌ Failed to delete file:', fileDeleteError);
+        }
+      }
       
       return res.status(500).json({
         error: 'Failed to extract text from document',
@@ -452,21 +499,27 @@ router.post('/upload', upload.single('file'), async (req, res) => {
   } catch (error: any) {
     console.error('[Upload] ❌ Error:', error);
     
-    // Update document status if we created one
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // FIX (Nov 3, 2025): DELETE failed uploads completely
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     if (documentId) {
+      console.log('[Upload] 🧹 Cleaning up failed upload:', documentId);
       try {
-        await storage.updateDocument(documentId, req.user?.id || '', {
-          processingStatus: 'failed',
-          processingError: error.message,
-        });
-      } catch (updateError) {
-        console.error('[Upload] Failed to update error status:', updateError);
+        await storage.deleteDocument(documentId, req.user?.id || '');
+        console.log('[Upload] ✅ Failed document deleted from database');
+      } catch (deleteError) {
+        console.error('[Upload] ❌ Failed to delete document:', deleteError);
       }
     }
     
     // Clean up uploaded file
     if (req.file && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
+      try {
+        fs.unlinkSync(req.file.path);
+        console.log('[Upload] ✅ Failed file deleted from disk');
+      } catch (fileDeleteError) {
+        console.error('[Upload] ❌ Failed to delete file:', fileDeleteError);
+      }
     }
     
     res.status(500).json({

@@ -870,15 +870,17 @@ CRITICAL INSTRUCTIONS:
                 }
                 
                 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                // TIMING FIX (Nov 3, 2025): Server-side response delay
-                // Wait longer before responding to give student time to continue
-                // Detects incomplete thoughts and waits extra time
+                // TIMING FIX (Nov 3, 2025): Server-side response delay INCREASED
+                // Give students time to add "oh wait, one more thing..." 
+                // Previous delays still caused interruptions - increasing significantly
                 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                 const isIncomplete = isLikelyIncompleteThought(transcript);
-                const delay = isIncomplete ? 1500 : 800; // Wait longer for incomplete thoughts
+                const delay = isIncomplete ? 2500 : 1200; // INCREASED: 2.5s for incomplete, 1.2s for complete
                 
                 if (isIncomplete) {
                   console.log(`[Custom Voice] ⏸️ Incomplete thought detected: "${transcript}" - waiting ${delay}ms`);
+                } else {
+                  console.log(`[Custom Voice] ⏰ Complete thought - waiting ${delay}ms before responding`);
                 }
                 
                 responseTimer = setTimeout(() => {
@@ -890,7 +892,7 @@ CRITICAL INSTRUCTIONS:
                     processTranscriptQueue();
                   }
                   responseTimer = null;
-                }, delay); // Wait 800ms normally, 1500ms for incomplete thoughts
+                }, delay); // Wait 1200ms for complete, 2500ms for incomplete thoughts
               },
               async (error: Error) => {
                 console.error("[Custom Voice] ❌ Deepgram error:", error);
