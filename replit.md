@@ -52,6 +52,17 @@ A custom, production-ready voice stack provides real-time, natural conversations
 -   **Adaptive Learning**: AI adapts based on user progress.
 -   **Tutor Personalities**: Five distinct age-specific personalities: Buddy Bear (K-2), Max Explorer (3-5), Dr. Nova (6-8), Professor Ace (9-12), and Dr. Morgan (College/Adult).
 
+### Content Moderation System (Nov 3, 2025)
+Balanced, context-aware content moderation system designed for educational environments:
+-   **Educational Context Awareness**: 40+ educational keywords whitelist (homework, study, overview, quick, explain, etc.) automatically approve common learning requests without AI moderation.
+-   **Multi-Layered Approach**: Fast pattern matching → educational keyword check → AI moderation (only for ambiguous cases).
+-   **Confidence Thresholds**: Only acts on high-confidence violations (>0.85) to prevent false positives that previously blocked legitimate homework requests.
+-   **Context Passing**: Moderation receives session type, subject, grade level, and document context for better decision-making.
+-   **Supportive Messaging**: Replaced harsh rejections ("I can't help with that") with helpful redirection ("Could you rephrase your question?").
+-   **Low Confidence Handling**: Flagged content with confidence <0.85 logs warning but proceeds with tutoring to avoid interrupting legitimate learning.
+-   **AI Moderation Prompt**: Explicitly instructs Claude Haiku that "help", "overview", "quick review" are normal learning requests, not violations.
+-   **False Positive Detection**: System logs potential false positives (messages containing "overview", "quick", "help") for continuous improvement.
+
 ### RAG (Retrieval-Augmented Generation) System
 -   **Document Processing**: Supports PDF, DOCX/DOC, PPTX, XLSX/XLS, CSV, images (OCR via Tesseract.js), and TXT files with intelligent text segmentation.
 -   **Document Upload**: Students can upload documents during live voice sessions for immediate AI analysis.
