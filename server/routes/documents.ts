@@ -103,8 +103,13 @@ async function extractTextFromPDF(filePath: string): Promise<string> {
     
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // FIX (Nov 3, 2025): Add timeout to prevent hanging on complex PDFs
+    // Catch parsePromise rejections to prevent unhandled rejection errors
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    const parsePromise = pdfParse(dataBuffer);
+    const parsePromise = pdfParse(dataBuffer).catch((err) => {
+      console.log('[PDF Extract] Parse error caught:', err.message);
+      throw err; // Re-throw to be handled by outer try/catch
+    });
+    
     const timeoutPromise = new Promise((_, reject) => {
       setTimeout(() => reject(new Error('PDF parsing timed out after 30 seconds')), 30000);
     });
