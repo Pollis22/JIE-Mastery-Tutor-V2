@@ -3,7 +3,7 @@ import { useCustomVoice } from '@/hooks/use-custom-voice';
 import { RealtimeVoiceTranscript } from './realtime-voice-transcript';
 import { ChatInput } from './ChatInput';
 import { Button } from '@/components/ui/button';
-import { Mic, MicOff, Volume2, VolumeX, AlertTriangle, FileText } from 'lucide-react';
+import { Mic, MicOff, Volume2, VolumeX, AlertTriangle, FileText, Type, Headphones } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 
@@ -34,6 +34,40 @@ export function RealtimeVoiceHost({
   const [isRecording, setIsRecording] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   
+  // Communication mode state (voice, hybrid, text-only)
+  type CommunicationMode = 'voice' | 'hybrid' | 'text';
+  const [communicationMode, setCommunicationMode] = useState<CommunicationMode>('voice');
+  const [tutorAudioEnabled, setTutorAudioEnabled] = useState(true);
+  const [studentMicEnabled, setStudentMicEnabled] = useState(true);
+  
+  // Mode configurations
+  const MODES = {
+    voice: {
+      label: 'Voice Conversation',
+      description: 'Speak and hear your tutor',
+      tutorAudio: true,
+      studentMic: true,
+      icon: Mic,
+      emoji: '🎤'
+    },
+    hybrid: {
+      label: 'Listen Only',
+      description: 'Type to tutor, hear responses',
+      tutorAudio: true,
+      studentMic: false,
+      icon: Headphones,
+      emoji: '🎧'
+    },
+    text: {
+      label: 'Text Only',
+      description: 'Type & read (silent mode)',
+      tutorAudio: false,
+      studentMic: false,
+      icon: Type,
+      emoji: '📝'
+    }
+  };
+  
   // Use Custom Voice Stack (Deepgram + Claude + ElevenLabs)
   const customVoice = useCustomVoice();
   
@@ -42,6 +76,99 @@ export function RealtimeVoiceHost({
     return `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   };
 
+  // Load saved communication mode preference on mount
+  useEffect(() => {
+    const savedMode = localStorage.getItem('preferred-communication-mode') as CommunicationMode;
+    if (savedMode && MODES[savedMode]) {
+      console.log('[Mode] Loading saved preference:', savedMode);
+      switchMode(savedMode, false);
+    }
+  }, []);
+  
+  // Switch between preset modes
+  const switchMode = useCallback((mode: CommunicationMode, notify = true) => {
+    console.log('[Mode] Switching to:', mode);
+    
+    setCommunicationMode(mode);
+    const config = MODES[mode];
+    
+    // Update audio/mic states
+    setTutorAudioEnabled(config.tutorAudio);
+    setStudentMicEnabled(config.studentMic);
+    
+    // If session is active, update immediately
+    if (customVoice.isConnected) {
+      customVoice.updateMode(config.tutorAudio, config.studentMic);
+      
+      // Add system message to transcript
+      const modeMessages = {
+        voice: '🎤 Switched to Voice mode - Speak naturally with your tutor',
+        hybrid: '🎧 Switched to Listen mode - Type to communicate, hear responses',
+        text: '📝 Switched to Text-only mode - Type to communicate silently'
+      };
+      
+      customVoice.addSystemMessage(modeMessages[mode]);
+    }
+    
+    // Save preference
+    localStorage.setItem('preferred-communication-mode', mode);
+    
+    // Show confirmation
+    if (notify) {
+      toast({
+        title: `${config.emoji} ${config.label}`,
+        description: config.description,
+      });
+    }
+  }, [customVoice, toast, MODES]);
+  
+  // Toggle tutor audio on/off
+  const toggleTutorAudio = useCallback(() => {
+    const newState = !tutorAudioEnabled;
+    setTutorAudioEnabled(newState);
+    
+    console.log('[Mode] Tutor audio:', newState ? 'enabled' : 'muted');
+    
+    if (customVoice.isConnected) {
+      customVoice.updateMode(newState, studentMicEnabled);
+      customVoice.addSystemMessage(
+        newState ? '🔊 Tutor audio unmuted - You will hear responses' : '🔇 Tutor audio muted - Text-only responses'
+      );
+    }
+    
+    // Update mode based on new combination
+    updateCommunicationModeFromToggles(newState, studentMicEnabled);
+  }, [tutorAudioEnabled, studentMicEnabled, customVoice]);
+  
+  // Toggle student microphone on/off
+  const toggleStudentMic = useCallback(() => {
+    const newState = !studentMicEnabled;
+    setStudentMicEnabled(newState);
+    
+    console.log('[Mode] Student mic:', newState ? 'enabled' : 'muted');
+    
+    if (customVoice.isConnected) {
+      customVoice.updateMode(tutorAudioEnabled, newState);
+      customVoice.addSystemMessage(
+        newState ? '🎤 Microphone enabled - You can speak now' : '⌨️  Microphone disabled - Type to communicate'
+      );
+    }
+    
+    // Update mode based on new combination
+    updateCommunicationModeFromToggles(tutorAudioEnabled, newState);
+  }, [tutorAudioEnabled, studentMicEnabled, customVoice]);
+  
+  // Determine current mode based on toggle states
+  const updateCommunicationModeFromToggles = (audio: boolean, mic: boolean) => {
+    if (audio && mic) {
+      setCommunicationMode('voice');
+    } else if (audio && !mic) {
+      setCommunicationMode('hybrid');
+    } else {
+      setCommunicationMode('text');
+    }
+  };
+  
   // Create the system instruction for the AI tutor
   const createSystemInstruction = () => {
     const ageSpecificInstructions = {
@@ -402,6 +529,104 @@ export function RealtimeVoiceHost({
         )}
       </div>
       
+      {/* Communication Mode Controls - Only shown during active session */}
+      {isRecording && customVoice.isConnected && (
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-blue-900 dark:text-blue-100">Communication Mode:</span>
+              <div className="flex gap-2">
+                {Object.entries(MODES).map(([key, config]) => {
+                  const ModeIcon = config.icon;
+                  return (
+                    <Button
+                      key={key}
+                      onClick={() => switchMode(key as 'voice' | 'hybrid' | 'text')}
+                      variant={communicationMode === key ? 'default' : 'outline'}
+                      size="sm"
+                      className="gap-1.5"
+                      data-testid={`button-mode-${key}`}
+                    >
+                      <ModeIcon className="h-4 w-4" />
+                      <span>{config.label}</span>
+                      {communicationMode === key && <span className="ml-1">✓</span>}
+                    </Button>
+                  );
+                })}
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-3">
+              <Button
+                onClick={toggleTutorAudio}
+                variant="ghost"
+                size="sm"
+                className="gap-2"
+                data-testid="button-toggle-tutor-audio"
+                title={tutorAudioEnabled ? 'Mute tutor voice' : 'Unmute tutor voice'}
+              >
+                {tutorAudioEnabled ? (
+                  <>
+                    <Volume2 className="h-4 w-4" />
+                    <span>Tutor Audio</span>
+                  </>
+                ) : (
+                  <>
+                    <VolumeX className="h-4 w-4 text-red-600 dark:text-red-400" />
+                    <span className="text-red-600 dark:text-red-400">Muted</span>
+                  </>
+                )}
+              </Button>
+              
+              <div className="h-4 w-px bg-border" />
+              
+              <Button
+                onClick={toggleStudentMic}
+                variant="ghost"
+                size="sm"
+                className="gap-2"
+                data-testid="button-toggle-student-mic"
+                title={studentMicEnabled ? 'Turn off microphone' : 'Turn on microphone'}
+              >
+                {studentMicEnabled ? (
+                  <>
+                    <Mic className="h-4 w-4" />
+                    <span>Your Mic</span>
+                  </>
+                ) : (
+                  <>
+                    <MicOff className="h-4 w-4 text-red-600 dark:text-red-400" />
+                    <span className="text-red-600 dark:text-red-400">Off</span>
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+          
+          {/* Mode indicator message */}
+          <div className="mt-3 text-sm">
+            {!tutorAudioEnabled && !studentMicEnabled && (
+              <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300 font-medium">
+                <Type className="h-4 w-4" />
+                <span>📝 Text-only mode - Type to communicate silently</span>
+              </div>
+            )}
+            {tutorAudioEnabled && !studentMicEnabled && (
+              <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300 font-medium">
+                <Headphones className="h-4 w-4" />
+                <span>🎧 Listen mode - Type to communicate, hear responses</span>
+              </div>
+            )}
+            {tutorAudioEnabled && studentMicEnabled && (
+              <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300 font-medium">
+                <Mic className="h-4 w-4" />
+                <span>🎤 Voice mode - Speak naturally with your tutor</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      
       {/* Microphone Error Banner */}
       {customVoice.microphoneError && isRecording && (
         <div className="bg-yellow-50 dark:bg-yellow-950/20 border-l-4 border-yellow-400 dark:border-yellow-600 p-4 rounded-r-lg" data-testid="microphone-error-banner">
@@ -455,18 +680,28 @@ export function RealtimeVoiceHost({
       
       {/* Chat Input - Only shown during active session */}
       {isRecording && customVoice.isConnected && (
-        <div className={customVoice.microphoneError ? 'microphone-error-chat-emphasis' : ''}>
-          {customVoice.microphoneError && (
-            <div className="text-center mb-3 px-4 py-2 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-              <p className="text-blue-700 dark:text-blue-300 font-medium text-sm">
-                👇 Your tutor is listening! Type your questions here 👇
-              </p>
+        <div className={customVoice.microphoneError || !studentMicEnabled ? 'text-mode-emphasis' : ''}>
+          {(customVoice.microphoneError || !studentMicEnabled) && (
+            <div className="text-center mb-3 px-4 py-3 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 border-2 border-blue-300 dark:border-blue-700 rounded-lg shadow-sm">
+              <div className="flex items-center justify-center gap-2">
+                <Type className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                <p className="text-blue-700 dark:text-blue-300 font-semibold text-sm">
+                  {!studentMicEnabled && !customVoice.microphoneError
+                    ? '👇 Text Mode Active - Type your messages below 👇'
+                    : '👇 Your tutor is listening! Type your questions here 👇'}
+                </p>
+              </div>
             </div>
           )}
           <ChatInput
             onSendMessage={handleChatMessage}
             onFileUpload={handleChatFileUpload}
             disabled={!customVoice.isConnected}
+            placeholder={
+              !studentMicEnabled
+                ? "Type your message here... (microphone is off)"
+                : "Type or speak to your tutor..."
+            }
           />
         </div>
       )}

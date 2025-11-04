@@ -60,6 +60,8 @@ interface SessionState {
   lastAudioSentAt: number; // PACING FIX: Track when audio was last sent for interruption detection
   wasInterrupted: boolean; // TIMING FIX: Track if tutor was just interrupted (needs extra delay)
   lastInterruptionTime: number; // TIMING FIX: Track when last interruption occurred
+  tutorAudioEnabled: boolean; // MODE: Whether tutor audio should play
+  studentMicEnabled: boolean; // MODE: Whether student microphone is active
 }
 
 // FIX #3: Incremental persistence helper
@@ -198,6 +200,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
       sessionStartTime: Date.now(),
       lastPersisted: Date.now(),
       lastTranscript: "", // FIX #1A: Initialize duplicate tracker
+      tutorAudioEnabled: true, // MODE: Default to audio enabled
+      studentMicEnabled: true, // MODE: Default to mic enabled
       violationCount: 0, // Initialize violation counter
       isSessionEnded: false, // Initialize session termination flag
       isTutorSpeaking: false, // PACING FIX: Initialize tutor speaking state
@@ -493,14 +497,19 @@ export function setupCustomVoiceWebSocket(server: Server) {
         const turnTimestamp = Date.now();
         state.lastAudioSentAt = turnTimestamp;
 
-        // Send audio to frontend
-        ws.send(JSON.stringify({
-          type: "audio",
-          data: audioBuffer.toString("base64"),
-          mimeType: "audio/pcm;rate=16000"
-        }));
+        // Send audio to frontend (only if tutor audio is enabled)
+        if (state.tutorAudioEnabled) {
+          console.log("[Custom Voice] 🔊 Sending audio response");
+          ws.send(JSON.stringify({
+            type: "audio",
+            data: audioBuffer.toString("base64"),
+            mimeType: "audio/pcm;rate=16000"
+          }));
+        } else {
+          console.log("[Custom Voice] 🔇 Skipping audio (tutor audio muted)");
+        }
 
-        console.log("[Custom Voice] 🔊 Audio sent, waiting for user response...");
+        console.log("[Custom Voice] 🔊 Response sent, waiting for user...");
 
         // FIX #3: Persist after each turn (before pause to avoid blocking)
         await persistTranscript(state.sessionId, state.transcript);
@@ -1184,6 +1193,30 @@ CRITICAL INSTRUCTIONS:
             }
             break;
 
+          case "update_mode":
+            // Handle communication mode updates (voice, hybrid, text-only)
+            console.log("[Custom Voice] 🔄 Updating mode:", {
+              tutorAudio: message.tutorAudio,
+              studentMic: message.studentMic
+            });
+            
+            // Update state
+            state.tutorAudioEnabled = message.tutorAudio ?? true;
+            state.studentMicEnabled = message.studentMic ?? true;
+            
+            // Send acknowledgment
+            ws.send(JSON.stringify({
+              type: "mode_updated",
+              tutorAudio: state.tutorAudioEnabled,
+              studentMic: state.studentMicEnabled
+            }));
+            
+            console.log("[Custom Voice] ✅ Mode updated:", {
+              tutorAudio: state.tutorAudioEnabled ? 'enabled' : 'muted',
+              studentMic: state.studentMicEnabled ? 'enabled' : 'muted'
+            });
+            break;
+          
           case "end":
             console.log("[Custom Voice] 🛑 Ending session:", state.sessionId);
 

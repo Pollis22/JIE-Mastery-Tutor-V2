@@ -18,6 +18,8 @@ export function useCustomVoice() {
   const [error, setError] = useState<string | null>(null);
   const [microphoneError, setMicrophoneError] = useState<MicrophoneError | null>(null);
   const [isTutorSpeaking, setIsTutorSpeaking] = useState(false);
+  const [audioEnabled, setAudioEnabled] = useState(true);
+  const [micEnabled, setMicEnabled] = useState(true);
   
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -80,14 +82,28 @@ export function useCustomVoice() {
 
           case "audio":
             console.log("[Custom Voice] 🔊 Received audio");
-            setIsTutorSpeaking(true);
-            await playAudio(message.data);
+            if (audioEnabled) {
+              console.log("[Custom Voice] 🔊 Playing audio");
+              setIsTutorSpeaking(true);
+              await playAudio(message.data);
+            } else {
+              console.log("[Custom Voice] 🔇 Audio muted, showing text only");
+            }
             break;
 
           case "interrupt":
             console.log("[Custom Voice] 🛑 Interruption detected - stopping tutor");
             stopAudio();
             setIsTutorSpeaking(false);
+            break;
+          
+          case "mode_updated":
+            console.log("[Custom Voice] Mode synced:", {
+              tutorAudio: message.tutorAudio,
+              studentMic: message.studentMic
+            });
+            setAudioEnabled(message.tutorAudio);
+            setMicEnabled(message.studentMic);
             break;
 
           case "error":
@@ -466,11 +482,47 @@ export function useCustomVoice() {
     }));
   }, []);
 
+  const updateMode = useCallback((tutorAudio: boolean, studentMic: boolean) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      console.error("[Custom Voice] Cannot update mode: WebSocket not connected");
+      return;
+    }
+
+    console.log("[Custom Voice] 🔄 Updating mode:", { tutorAudio, studentMic });
+
+    // Update local state
+    setAudioEnabled(tutorAudio);
+    setMicEnabled(studentMic);
+
+    // Send to server
+    wsRef.current.send(JSON.stringify({
+      type: "update_mode",
+      tutorAudio,
+      studentMic,
+    }));
+
+    // Stop audio if muting
+    if (!tutorAudio && isPlayingRef.current) {
+      stopAudio();
+    }
+  }, []);
+
+  const addSystemMessage = useCallback((message: string) => {
+    console.log("[Custom Voice] 📢 System message:", message);
+    setTranscript(prev => [...prev, {
+      speaker: "system",
+      text: message,
+      timestamp: new Date().toISOString(),
+    }]);
+  }, []);
+
   return {
     connect,
     disconnect,
     sendTextMessage,
     sendDocumentUploaded,
+    updateMode,
+    addSystemMessage,
     retryMicrophone,
     dismissMicrophoneError,
     isConnected,
@@ -478,5 +530,7 @@ export function useCustomVoice() {
     error,
     microphoneError,
     isTutorSpeaking,
+    audioEnabled,
+    micEnabled,
   };
 }
