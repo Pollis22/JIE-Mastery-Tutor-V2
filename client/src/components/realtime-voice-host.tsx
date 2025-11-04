@@ -225,6 +225,15 @@ export function RealtimeVoiceHost({
       // Trigger onSessionStart callback if provided
       onSessionStart?.();
       
+      // Apply saved communication mode preferences to the hook BEFORE connecting
+      // This ensures the hook starts with the correct mic/audio settings
+      console.log('[VoiceHost] 🎛️ Applying communication mode before connection:', {
+        mode: communicationMode,
+        tutorAudio: tutorAudioEnabled,
+        studentMic: studentMicEnabled
+      });
+      customVoice.updateMode(tutorAudioEnabled, studentMicEnabled);
+      
       // Load document content if provided
       let documents: string[] = [];
       if (contextDocumentIds && contextDocumentIds.length > 0) {
@@ -697,11 +706,6 @@ export function RealtimeVoiceHost({
             onSendMessage={handleChatMessage}
             onFileUpload={handleChatFileUpload}
             disabled={!customVoice.isConnected}
-            placeholder={
-              !studentMicEnabled
-                ? "Type your message here... (microphone is off)"
-                : "Type or speak to your tutor..."
-            }
           />
         </div>
       )}

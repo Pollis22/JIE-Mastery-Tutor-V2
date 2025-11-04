@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 
 interface TranscriptMessage {
   speaker: "student" | "tutor" | "system";
@@ -28,6 +28,17 @@ export function useCustomVoice() {
   const audioQueueRef = useRef<AudioBuffer[]>([]);
   const isPlayingRef = useRef(false);
   const currentAudioSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const audioEnabledRef = useRef<boolean>(true); // Tutor audio enabled (default true)
+  const micEnabledRef = useRef<boolean>(true); // Student mic enabled (default true)
+
+  // Synchronize refs with state
+  useEffect(() => {
+    audioEnabledRef.current = audioEnabled;
+  }, [audioEnabled]);
+
+  useEffect(() => {
+    micEnabledRef.current = micEnabled;
+  }, [micEnabled]);
 
   const connect = useCallback(async (
     sessionId: string, 
@@ -66,9 +77,16 @@ export function useCustomVoice() {
 
         switch (message.type) {
           case "ready":
-            console.log("[Custom Voice] ✅ Session ready, starting microphone...");
+            console.log("[Custom Voice] ✅ Session ready");
             setIsConnected(true);
-            await startMicrophone();
+            
+            // Only start microphone if student mic is enabled
+            if (micEnabledRef.current) {
+              console.log("[Custom Voice] 🎤 Starting microphone (Voice mode)");
+              await startMicrophone();
+            } else {
+              console.log("[Custom Voice] 🔇 Skipping microphone (Hybrid/Text mode)");
+            }
             break;
 
           case "transcript":
@@ -311,6 +329,32 @@ export function useCustomVoice() {
     }
   };
   
+  const stopMicrophone = () => {
+    console.log("[Custom Voice] 🛑 Stopping microphone...");
+    
+    // Stop all tracks in the media stream
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach(track => {
+        track.stop();
+        console.log("[Custom Voice] ⏸️ Stopped track:", track.kind);
+      });
+      mediaStreamRef.current = null;
+    }
+    
+    // Disconnect and clean up audio processor
+    if (processorRef.current) {
+      try {
+        processorRef.current.disconnect();
+        console.log("[Custom Voice] 🔌 Disconnected audio processor");
+      } catch (error) {
+        console.warn("[Custom Voice] ⚠️ Error disconnecting processor:", error);
+      }
+      processorRef.current = null;
+    }
+    
+    console.log("[Custom Voice] ✅ Microphone stopped successfully");
+  };
+  
   const retryMicrophone = useCallback(async () => {
     console.log("[Custom Voice] 🔄 Retrying microphone access...");
     setMicrophoneError(null);
@@ -482,28 +526,42 @@ export function useCustomVoice() {
     }));
   }, []);
 
-  const updateMode = useCallback((tutorAudio: boolean, studentMic: boolean) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      console.error("[Custom Voice] Cannot update mode: WebSocket not connected");
-      return;
-    }
-
+  const updateMode = useCallback(async (tutorAudio: boolean, studentMic: boolean) => {
     console.log("[Custom Voice] 🔄 Updating mode:", { tutorAudio, studentMic });
 
-    // Update local state
+    const previousMicState = micEnabledRef.current;
+
+    // Update local state (works even before connection for initial setup)
     setAudioEnabled(tutorAudio);
     setMicEnabled(studentMic);
 
-    // Send to server
-    wsRef.current.send(JSON.stringify({
-      type: "update_mode",
-      tutorAudio,
-      studentMic,
-    }));
+    // Send to server only if connected
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: "update_mode",
+        tutorAudio,
+        studentMic,
+      }));
+    } else {
+      console.log("[Custom Voice] 📝 Mode updated locally (not connected yet)");
+    }
 
     // Stop audio if muting
     if (!tutorAudio && isPlayingRef.current) {
       stopAudio();
+    }
+
+    // Handle microphone toggling (only if connected)
+    const isConnected = wsRef.current && wsRef.current.readyState === WebSocket.OPEN;
+    
+    if (isConnected && studentMic && !previousMicState) {
+      // Switching to Voice mode - start microphone
+      console.log("[Custom Voice] 🎤 Enabling microphone for Voice mode");
+      await startMicrophone();
+    } else if (isConnected && !studentMic && previousMicState) {
+      // Switching to Hybrid/Text mode - stop microphone
+      console.log("[Custom Voice] 🔇 Disabling microphone for Hybrid/Text mode");
+      stopMicrophone();
     }
   }, []);
 
