@@ -56,12 +56,12 @@ export async function startDeepgramStream(
     interim_results: true,
     
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // TIMING FIX (Nov 3, 2025): SIGNIFICANTLY increased to stop interruptions
-    // Students need time to think, pause mid-sentence, and complete thoughts
-    // Previous values still caused too many interruptions - increasing further
+    // TIMING FIX (Nov 4, 2025): FINAL comprehensive fix to stop interruptions
+    // Students need 3.5+ seconds of silence to complete thoughts without being cut off
+    // Combined with server-side delays, provides 7-8 second total response time
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    endpointing: 2000,          // 2.0s of silence before considering speech ended (was 1200ms)
-    utterance_end_ms: 3500,     // 3.5s total wait before finalizing (was 2500ms)
+    endpointing: 3500,          // 3.5s of silence before considering speech ended (INCREASED from 2000ms)
+    utterance_end_ms: 3500,     // 3.5s total wait before finalizing (consistent threshold)
     vad_events: true,
     vad_threshold: 0.5,         // Sensitivity to detect when user is speaking
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

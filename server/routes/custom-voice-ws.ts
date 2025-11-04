@@ -10,6 +10,27 @@ import { getTutorPersonality } from "../config/tutor-personalities";
 import { moderateContent, shouldWarnUser, getModerationResponse } from "../services/content-moderation";
 import { storage } from "../storage";
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// TIMING CONSTANTS (Nov 4, 2025): Comprehensive timing fix
+// Prevents tutor from interrupting students mid-sentence
+// Total delay target: 7-8 seconds from student stops → tutor responds
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const TIMING_CONFIG = {
+  // Server-side delays before AI processing
+  SERVER_DELAY_COMPLETE_THOUGHT: 1200,    // 1.2s for complete sentences (was 0ms)
+  SERVER_DELAY_INCOMPLETE_THOUGHT: 2500,  // 2.5s for incomplete thoughts (e.g., "um", "I think")
+  
+  // Post-interruption buffer (when student interrupts tutor)
+  POST_INTERRUPT_BUFFER: 2500,            // 2.5s extra wait after interruption
+  
+  // Combined with Deepgram settings:
+  // - Deepgram endpointing: 3500ms (silence detection)
+  // - Deepgram utterance_end_ms: 3500ms (finalization)
+  // Total timing for complete thought: 3500ms (Deepgram) + 1200ms (server) = 4700ms
+  // Total timing for incomplete thought: 3500ms (Deepgram) + 2500ms (server) = 6000ms
+  // After interruption: Add +2500ms buffer = 6000-8500ms total
+};
+
 interface TranscriptEntry {
   speaker: 'tutor' | 'student';
   text: string;
@@ -37,6 +58,8 @@ interface SessionState {
   isSessionEnded: boolean; // Flag to prevent further processing after termination
   isTutorSpeaking: boolean; // PACING FIX: Track if tutor is currently speaking
   lastAudioSentAt: number; // PACING FIX: Track when audio was last sent for interruption detection
+  wasInterrupted: boolean; // TIMING FIX: Track if tutor was just interrupted (needs extra delay)
+  lastInterruptionTime: number; // TIMING FIX: Track when last interruption occurred
 }
 
 // FIX #3: Incremental persistence helper
@@ -179,6 +202,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
       isSessionEnded: false, // Initialize session termination flag
       isTutorSpeaking: false, // PACING FIX: Initialize tutor speaking state
       lastAudioSentAt: 0, // PACING FIX: Initialize audio timestamp
+      wasInterrupted: false, // TIMING FIX: Initialize interruption flag
+      lastInterruptionTime: 0, // TIMING FIX: Initialize interruption timestamp
     };
 
     // FIX #3: Auto-persist every 10 seconds
@@ -392,7 +417,40 @@ export function setupCustomVoiceWebSocket(server: Server) {
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         // ✅ Content passed moderation - Continue normal processing
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
+        
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        // TIMING FIX (Nov 4, 2025): Adaptive delays before AI processing
+        // Prevents tutor from cutting off students mid-sentence
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        
+        // Calculate appropriate delay based on context
+        let responseDelay = TIMING_CONFIG.SERVER_DELAY_COMPLETE_THOUGHT;
+        
+        // Check if this was likely an incomplete thought
+        if (isLikelyIncompleteThought(transcript)) {
+          responseDelay = TIMING_CONFIG.SERVER_DELAY_INCOMPLETE_THOUGHT;
+          console.log(`[Custom Voice] ⏱️ Detected incomplete thought - using longer delay (${responseDelay}ms)`);
+        } else {
+          console.log(`[Custom Voice] ⏱️ Complete thought detected - using standard delay (${responseDelay}ms)`);
+        }
+        
+        // Add extra buffer if student just interrupted tutor
+        if (state.wasInterrupted) {
+          const timeSinceInterrupt = Date.now() - state.lastInterruptionTime;
+          if (timeSinceInterrupt < 10000) { // Within 10 seconds
+            const extraBuffer = TIMING_CONFIG.POST_INTERRUPT_BUFFER;
+            console.log(`[Custom Voice] 🛑 Post-interruption buffer: +${extraBuffer}ms (interrupted ${timeSinceInterrupt}ms ago)`);
+            responseDelay += extraBuffer;
+          }
+          state.wasInterrupted = false; // Clear flag after applying
+        }
+        
+        console.log(`[Custom Voice] ⏳ Waiting ${responseDelay}ms before generating response...`);
+        await new Promise(resolve => setTimeout(resolve, responseDelay));
+        console.log(`[Custom Voice] ✅ Delay complete, generating AI response...`);
+        
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        
         // Generate AI response
         const aiResponse = await generateTutorResponse(
           state.conversationHistory,
@@ -823,6 +881,11 @@ CRITICAL INSTRUCTIONS:
                 
                 if (state.isTutorSpeaking && timeSinceLastAudio < 10000) {
                   console.log("[Custom Voice] 🛑 Student interrupted - stopping tutor and listening");
+                  
+                  // TIMING FIX (Nov 4, 2025): Mark interruption for post-interrupt buffer
+                  state.wasInterrupted = true;
+                  state.lastInterruptionTime = Date.now();
+                  console.log(`[Custom Voice] 🛑 Interruption flag set - will add ${TIMING_CONFIG.POST_INTERRUPT_BUFFER}ms buffer to next response`);
                   
                   // Send interrupt signal to frontend to stop audio playback
                   ws.send(JSON.stringify({
