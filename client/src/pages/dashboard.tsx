@@ -32,7 +32,8 @@ import {
   Calendar,
   Volume2,
   Mic,
-  UserCog
+  UserCog,
+  FileText
 } from "lucide-react";
 import AccountSettings from "@/components/dashboard/account-settings";
 import SubscriptionManager from "@/components/dashboard/subscription-manager";
@@ -43,6 +44,7 @@ import SessionHistory from "@/components/dashboard/session-history";
 import UsageAnalytics from "@/components/dashboard/usage-analytics";
 import SupportCenter from "@/components/dashboard/support-center";
 import NewsletterSubscribe from "@/components/dashboard/newsletter-subscribe";
+import { AssignmentsPanel } from "@/components/AssignmentsPanel";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 
@@ -89,6 +91,7 @@ export default function DashboardPage() {
     { id: "account", label: "Account Settings", icon: User },
     { id: "subscription", label: "Subscription", icon: CreditCard },
     { id: "payments", label: "Payment Methods", icon: Shield },
+    { id: "documents", label: "Study Materials", icon: FileText },
     { id: "sessions", label: "Learning Sessions", icon: BookOpen },
     { id: "analytics", label: "Usage Analytics", icon: BarChart3 },
     { id: "preferences", label: "Preferences", icon: Settings },
@@ -292,6 +295,22 @@ export default function DashboardPage() {
             {activeTab === "account" && <AccountSettings />}
             {activeTab === "subscription" && <SubscriptionManager />}
             {activeTab === "payments" && <PaymentMethods />}
+            {activeTab === "documents" && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Study Materials</CardTitle>
+                  <CardDescription>
+                    Upload and manage your study materials, homework, and assignments
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <AssignmentsPanel 
+                    userId={user?.id || ''}
+                    selectedDocumentIds={[]}
+                  />
+                </CardContent>
+              </Card>
+            )}
             {activeTab === "sessions" && <SessionHistory />}
             {activeTab === "analytics" && <UsageAnalytics />}
             {activeTab === "preferences" && (
