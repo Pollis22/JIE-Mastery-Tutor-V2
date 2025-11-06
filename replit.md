@@ -83,6 +83,7 @@ Comprehensive copyright protection is implemented across the platform, including
 
 ### State Management & Caching
 -   TanStack Query for API state management, caching, and background updates.
+-   **Cross-Device Session Tracking**: Active 30-second polling with `refetchInterval` plus immediate cache invalidation on session end ensures minute balance consistency across all devices within 30 seconds.
 -   PostgreSQL-based session storage for authentication.
 
 ### Production Deployment
