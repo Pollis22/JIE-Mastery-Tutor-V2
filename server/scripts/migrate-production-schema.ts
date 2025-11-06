@@ -41,7 +41,7 @@ async function migrateProductionSchema() {
       },
       {
         name: 'processing_status',
-        sql: sql`ALTER TABLE user_documents ADD COLUMN IF NOT EXISTS processing_status TEXT DEFAULT 'queued'`
+        sql: sql`ALTER TABLE user_documents ADD COLUMN IF NOT EXISTS processing_status TEXT`
       },
       {
         name: 'processing_error',
@@ -65,7 +65,7 @@ async function migrateProductionSchema() {
       },
       {
         name: 'updated_at',
-        sql: sql`ALTER TABLE user_documents ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()`
+        sql: sql`ALTER TABLE user_documents ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP`
       }
     ];
     
