@@ -133,7 +133,12 @@ export default function SubscriptionManager() {
   // Fetch hybrid minute balance
   const { data: voiceBalance } = useQuery<VoiceBalance>({
     queryKey: ['/api/user/voice-balance'],
-    enabled: !!user
+    enabled: !!user,
+    staleTime: 0, // Always fetch fresh data for consistency across devices
+    gcTime: 0, // Don't cache after component unmount
+    refetchInterval: 30000, // Poll every 30 seconds for cross-device consistency
+    refetchOnWindowFocus: true, // Refetch when user returns to tab
+    refetchOnMount: true, // Always refetch on component mount
   });
 
   // Fetch billing history

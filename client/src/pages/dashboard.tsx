@@ -67,6 +67,11 @@ export default function DashboardPage() {
   }>({
     queryKey: ['/api/voice-balance'],
     enabled: !!user,
+    staleTime: 0, // Always fetch fresh data
+    gcTime: 0, // Don't cache after component unmount
+    refetchInterval: 30000, // Poll every 30 seconds for cross-device consistency
+    refetchOnWindowFocus: true, // Refetch when user returns to tab
+    refetchOnMount: true, // Always refetch on component mount
   });
 
   // Fetch dashboard statistics

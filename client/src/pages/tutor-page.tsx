@@ -308,8 +308,11 @@ export default function TutorPage() {
             sessionEnd: endTime.toISOString(),
           });
           
-          // Refresh minutes data
+          // Refresh minutes data - invalidate ALL balance-related caches
           queryClient.invalidateQueries({ queryKey: ['/api/session/check-availability'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/voice-balance'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/user/voice-balance'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/user'] });
           
           toast({
             title: "Session Ended",
