@@ -637,7 +637,7 @@ router.get('/list', async (req, res) => {
       message: error.message,
       stack: error.stack,
       code: error.code,
-      userId
+      userId: req.user?.id
     });
     
     // Check for database schema errors
