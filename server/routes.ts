@@ -453,32 +453,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = req.user as any;
       
-      // Get total sessions count
+      console.log('[DashboardStats] Fetching stats for user:', user.id);
+      
+      // Get total sessions count from realtime_sessions (FIXED: was querying wrong table)
       const sessionsResult = await db.execute(sql`
         SELECT COUNT(*) as count
-        FROM learning_sessions
+        FROM realtime_sessions
         WHERE user_id = ${user.id}
+          AND status = 'ended'
       `);
       const totalSessions = Number((sessionsResult.rows[0] as any)?.count || 0);
       
-      // Get minutes used in the past 7 days
+      console.log('[DashboardStats] Total sessions found:', totalSessions);
+      
+      // Get minutes used in the past 7 days from realtime_sessions (FIXED: was querying wrong table)
       const weekAgo = new Date();
       weekAgo.setDate(weekAgo.getDate() - 7);
       
       const weeklyResult = await db.execute(sql`
-        SELECT COALESCE(SUM(voice_minutes_used), 0) as weekly_minutes
-        FROM learning_sessions
+        SELECT COALESCE(SUM(minutes_used), 0) as weekly_minutes
+        FROM realtime_sessions
         WHERE user_id = ${user.id}
-          AND created_at >= ${weekAgo.toISOString()}
+          AND status = 'ended'
+          AND started_at >= ${weekAgo.toISOString()}
       `);
       const weeklyMinutes = Number((weeklyResult.rows[0] as any)?.weekly_minutes || 0);
+      
+      console.log('[DashboardStats] Weekly minutes found:', weeklyMinutes);
       
       res.json({
         totalSessions,
         weeklyMinutes: Math.round(weeklyMinutes)
       });
     } catch (error: any) {
-      console.error('[DashboardStats] Error fetching stats:', error);
+      console.error('[DashboardStats] CRITICAL ERROR fetching stats:', error);
+      console.error('[DashboardStats] Error details:', {
+        message: error.message,
+        code: error.code,
+        stack: error.stack
+      });
       res.status(500).json({ message: "Error fetching dashboard statistics: " + error.message });
     }
   });
