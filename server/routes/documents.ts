@@ -503,6 +503,19 @@ router.post('/upload', upload.single('file'), async (req, res) => {
 
   } catch (error: any) {
     console.error('[Upload] ❌ Error:', error);
+    console.error('[Upload] Error details:', {
+      message: error.message,
+      stack: error.stack,
+      code: error.code,
+      userId: req.user?.id,
+      fileName: req.file?.originalname
+    });
+    
+    // Check for database schema errors
+    if (error.message?.includes('column') || error.code === '42703') {
+      console.error('[Upload] ⚠️ DATABASE SCHEMA ERROR - Missing columns in user_documents table');
+      console.error('[Upload] Run migration script: tsx server/scripts/migrate-production-schema.ts');
+    }
     
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // FIX (Nov 3, 2025): DELETE failed uploads completely
@@ -565,9 +578,25 @@ router.get('/', async (req, res) => {
       createdAt: doc.createdAt
     })));
 
-  } catch (error) {
-    console.error('List documents error:', error);
-    res.status(500).json({ error: 'Failed to fetch documents' });
+  } catch (error: any) {
+    console.error('[Documents] List documents error (root route):', error);
+    console.error('[Documents] Error details:', {
+      message: error.message,
+      stack: error.stack,
+      code: error.code,
+      userId: req.user?.id
+    });
+    
+    // Check for database schema errors
+    if (error.message?.includes('column') || error.code === '42703') {
+      console.error('[Documents] ⚠️ DATABASE SCHEMA ERROR - Missing columns in user_documents table');
+      console.error('[Documents] Run migration script: tsx server/scripts/migrate-production-schema.ts');
+    }
+    
+    res.status(500).json({ 
+      error: 'Failed to fetch documents',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
@@ -602,9 +631,25 @@ router.get('/list', async (req, res) => {
       }))
     });
 
-  } catch (error) {
-    console.error('List documents error:', error);
-    res.status(500).json({ error: 'Failed to fetch documents' });
+  } catch (error: any) {
+    console.error('[Documents] List documents error:', error);
+    console.error('[Documents] Error details:', {
+      message: error.message,
+      stack: error.stack,
+      code: error.code,
+      userId
+    });
+    
+    // Check for database schema errors
+    if (error.message?.includes('column') || error.code === '42703') {
+      console.error('[Documents] ⚠️ DATABASE SCHEMA ERROR - Missing columns in user_documents table');
+      console.error('[Documents] Run migration script: tsx server/scripts/migrate-production-schema.ts');
+    }
+    
+    res.status(500).json({ 
+      error: 'Failed to fetch documents',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
