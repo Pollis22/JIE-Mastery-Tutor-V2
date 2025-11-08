@@ -46,8 +46,8 @@ export function NavigationHeader() {
               <div className="flex items-baseline space-x-4">
                 <Button
                   variant="ghost"
-                  onClick={() => setLocation("/")}
-                  className={isActive("/") ? "text-primary font-medium" : "text-muted-foreground"}
+                  onClick={() => setLocation("/dashboard")}
+                  className={isActive("/dashboard") ? "text-primary font-medium" : "text-muted-foreground"}
                   data-testid="nav-dashboard"
                 >
                   Dashboard

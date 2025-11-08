@@ -19,9 +19,6 @@ import NotFound from "@/pages/not-found";
 import AuthPage from "@/pages/auth-page";
 import HomePage from "@/pages/home-page";
 import DashboardPage from "@/pages/dashboard";
-import LessonsPage from "@/pages/lessons-page";
-import LessonPage from "@/pages/lesson-page";
-import QuizPage from "@/pages/quiz-page";
 import SettingsPage from "@/pages/settings-page";
 import AdminPage from "@/pages/admin-page";
 import AdminPageEnhanced from "@/pages/admin-page-enhanced";
@@ -57,10 +54,6 @@ function Router() {
       <ProtectedRoute path="/dashboard" component={DashboardPage} />
       <ProtectedRoute path="/sessions/:id" component={SessionDetailsPage} />
       <ProtectedRoute path="/tutor" component={TutorPage} />
-      <ProtectedRoute path="/old-lessons" component={HomePage} />
-      <ProtectedRoute path="/lessons" component={LessonsPage} />
-      <ProtectedRoute path="/lesson/:lessonId" component={LessonPage} />
-      <ProtectedRoute path="/quiz/:lessonId" component={QuizPage} />
       <ProtectedRoute path="/settings" component={SettingsPage} />
       <ProtectedRoute path="/admin" component={AdminPageEnhanced} />
       <ProtectedRoute path="/admin/users" component={AdminUsers} />

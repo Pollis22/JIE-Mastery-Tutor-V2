@@ -235,7 +235,7 @@ export default function DashboardPage() {
                   <CardHeader>
                     <CardTitle>Welcome back, {user?.studentName || user?.firstName}!</CardTitle>
                     <CardDescription>
-                      Here's your learning progress and account overview
+                      Upload your homework, notes, or study materials and start a tutoring session
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -374,7 +374,7 @@ export default function DashboardPage() {
                           <div>
                             <h4 className="font-medium">Email Notifications</h4>
                             <p className="text-sm text-muted-foreground">
-                              Receive updates about your learning progress
+                              Receive updates about your tutoring sessions
                             </p>
                           </div>
                           <Button variant="outline" size="sm">Configure</Button>
