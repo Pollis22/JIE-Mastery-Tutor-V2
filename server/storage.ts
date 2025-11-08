@@ -1183,21 +1183,66 @@ export class DatabaseStorage implements IStorage {
       .from(users)
       .where(eq(users.subscriptionStatus, 'active'));
 
-    // Calculate monthly revenue (mock calculation)
-    const monthlyRevenue = activeSubscriptions.count * 150; // Average plan price
+    // Calculate monthly revenue from active subscriptions
+    const activeSubs = await db
+      .select({ subscriptionPlan: users.subscriptionPlan })
+      .from(users)
+      .where(eq(users.subscriptionStatus, 'active'));
+    
+    const planRevenue: Record<string, number> = { 
+      starter: 19, 
+      standard: 59, 
+      pro: 99, 
+      elite: 149,
+      single: 99, 
+      all: 199 
+    };
+    
+    const monthlyRevenue = activeSubs.reduce((sum, sub) => {
+      return sum + (planRevenue[sub.subscriptionPlan || ''] || 0);
+    }, 0);
 
-    const [avgSessionTime] = await db
+    // ✅ FIX #1 & #2: Get stats from realtime_sessions table
+    const [totalSessions] = await db
+      .select({ count: count() })
+      .from(realtimeSessions)
+      .where(eq(realtimeSessions.status, 'ended'));
+
+    const [avgSession] = await db
       .select({
-        avg: sql<number>`AVG(EXTRACT(EPOCH FROM (${learningSessions.endedAt} - ${learningSessions.startedAt})) / 60)`.as('avg')
+        avg: sql<number>`COALESCE(AVG(${realtimeSessions.minutesUsed}), 0)`.as('avg')
       })
-      .from(learningSessions)
-      .where(sql`${learningSessions.endedAt} IS NOT NULL`);
+      .from(realtimeSessions)
+      .where(eq(realtimeSessions.status, 'ended'));
+
+    const [totalVoiceMinutes] = await db
+      .select({
+        total: sql<number>`COALESCE(SUM(${realtimeSessions.minutesUsed}), 0)`.as('total')
+      })
+      .from(realtimeSessions)
+      .where(eq(realtimeSessions.status, 'ended'));
+
+    // ✅ FIX #4: Count documents
+    const [documentsCount] = await db
+      .select({ count: count() })
+      .from(userDocuments);
+
+    const avgMinutesPerUser = totalUsers.count > 0
+      ? Math.round((totalVoiceMinutes.total || 0) / totalUsers.count)
+      : 0;
 
     return {
       totalUsers: totalUsers.count,
       activeSubscriptions: activeSubscriptions.count,
-      monthlyRevenue: `$${monthlyRevenue.toLocaleString()}`,
-      avgSessionTime: `${Math.round(avgSessionTime.avg || 0)} min`,
+      // ✅ FIX #3: Single dollar sign (no template literal duplication)
+      monthlyRevenue: monthlyRevenue,
+      avgSessionTime: `${Math.round(avgSession.avg || 0)} min`,
+      totalSessions: totalSessions.count,
+      totalVoiceMinutes: totalVoiceMinutes.total,
+      avgMinutesPerUser: avgMinutesPerUser,
+      totalDocuments: documentsCount.count,
+      activeSessions: 0, // Real-time active sessions (not stored)
+      storageUsed: "0 MB", // Placeholder
     };
   }
 
