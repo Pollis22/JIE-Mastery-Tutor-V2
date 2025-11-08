@@ -3,6 +3,10 @@
 ## Overview
 This project is a production-ready conversational AI tutoring web platform for Math, English, and Spanish. It offers interactive voice conversations, personalized quizzes, and adaptive learning paths. The platform features a multi-agent AI system with five age-specific tutors (K-2, Grades 3-5, 6-8, 9-12, College/Adult), each optimized for their target age group. It supports a hybrid minute tracking policy (subscription and rollover minutes) and prioritizes per-session configuration for flexible family sharing, designed for high reliability and a streamlined user experience.
 
+## Recent Changes (November 8, 2025)
+-   **CRITICAL FIX: Admin Users Dashboard Showing Empty** - Fixed `getAdminUsers()` method in `server/storage.ts` to return all expected user fields (gradeLevel, monthlyVoiceMinutes, monthlyVoiceMinutesUsed, bonusMinutes, isAdmin, voiceMinutesRemaining, subscriptionEndDate). Previous implementation only returned basic fields, causing frontend to show "No users found" despite users existing in database.
+-   **Product Simplification: Document-Based Tutoring** - Removed Lessons and Progress features from navigation and routes. Platform now focuses on "upload your materials and get instant AI tutoring" without lesson library or progress tracking. Archived lesson page components for potential future use.
+
 ## Recent Changes (November 6, 2025)
 -   **CRITICAL FIX: Dashboard Statistics Table Mismatch** - Fixed `/api/dashboard/stats` endpoint querying wrong database table (`learning_sessions` instead of `realtime_sessions`), causing dashboard to show 0 sessions while actual sessions existed. Corrected column names and added comprehensive logging.
 -   **Cross-Device Session Tracking** - Implemented 30-second active polling with cache invalidation for consistent minute balance across devices.
