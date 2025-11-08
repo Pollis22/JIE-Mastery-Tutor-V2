@@ -209,6 +209,7 @@ export default function SettingsPage() {
                         if (plan === 'starter' || plan === 'single') return 'Starter Plan';
                         if (plan === 'standard') return 'Standard Plan';
                         if (plan === 'pro' || plan === 'all') return 'Pro Plan';
+                        if (plan === 'elite') return 'Elite Plan';
                         return 'Starter Plan';
                       })()}
                     </span>
@@ -224,6 +225,7 @@ export default function SettingsPage() {
                           if (plan === 'starter' || plan === 'single') return '60 minutes per month';
                           if (plan === 'standard') return '240 minutes per month';
                           if (plan === 'pro' || plan === 'all') return '600 minutes per month';
+                          if (plan === 'elite') return '1,800 minutes per month';
                           return '60 minutes per month';
                         })()}
                       </p>
@@ -235,6 +237,7 @@ export default function SettingsPage() {
                           if (plan === 'starter' || plan === 'single') return '19.99';
                           if (plan === 'standard') return '59.99';
                           if (plan === 'pro' || plan === 'all') return '99.99';
+                          if (plan === 'elite') return '149.99';
                           return '19.99';
                         })()}/month
                       </p>

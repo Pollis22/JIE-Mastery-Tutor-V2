@@ -657,7 +657,7 @@ export class DatabaseStorage implements IStorage {
       })
     );
 
-    // Get usage info based on plan tier
+    // Get usage info based on plan tier with hybrid minute tracking
     let monthlyLimit = 60; // Default to Starter
     let planName = 'Starter Plan';
     
@@ -674,6 +674,10 @@ export class DatabaseStorage implements IStorage {
         monthlyLimit = 600;
         planName = 'Pro Plan';
         break;
+      case 'elite':
+        monthlyLimit = 1800;
+        planName = 'Elite Plan';
+        break;
       case 'single': // Legacy - map to Starter
         monthlyLimit = 60;
         planName = 'Starter Plan';
@@ -687,7 +691,10 @@ export class DatabaseStorage implements IStorage {
         planName = 'Starter Plan';
     }
     
-    const usagePercentage = Math.round(((user.weeklyVoiceMinutesUsed || 0) / monthlyLimit) * 100);
+    // Use hybrid minute tracking system: subscription minutes first
+    const minutesUsed = user.subscriptionMinutesUsed || 0;
+    const minutesLimit = user.subscriptionMinutesLimit || monthlyLimit;
+    const usagePercentage = Math.round((minutesUsed / minutesLimit) * 100);
 
     return {
       user: {
@@ -698,7 +705,7 @@ export class DatabaseStorage implements IStorage {
       },
       subjectProgress,
       usage: {
-        voiceMinutes: `${user.weeklyVoiceMinutesUsed || 0} / ${monthlyLimit} min`,
+        voiceMinutes: `${minutesUsed} / ${minutesLimit} min`,
         percentage: usagePercentage,
       },
     };
