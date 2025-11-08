@@ -1151,9 +1151,16 @@ export class DatabaseStorage implements IStorage {
         email: users.email,
         firstName: users.firstName,
         lastName: users.lastName,
+        gradeLevel: users.gradeLevel,
         subscriptionPlan: users.subscriptionPlan,
         subscriptionStatus: users.subscriptionStatus,
+        subscriptionEndDate: users.monthlyResetDate,
+        monthlyVoiceMinutes: users.monthlyVoiceMinutes,
+        monthlyVoiceMinutesUsed: users.monthlyVoiceMinutesUsed,
+        bonusMinutes: users.bonusMinutes,
+        voiceMinutesRemaining: users.purchasedMinutesBalance,
         weeklyVoiceMinutesUsed: users.weeklyVoiceMinutesUsed,
+        isAdmin: users.isAdmin,
         createdAt: users.createdAt,
       })
       .from(users)
@@ -1169,6 +1176,7 @@ export class DatabaseStorage implements IStorage {
 
     return {
       users: usersList,
+      total: totalCount.count,
       totalCount: totalCount.count,
       page,
       limit,
