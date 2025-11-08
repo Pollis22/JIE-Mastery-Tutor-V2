@@ -526,6 +526,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ✅ FIX #3: Add user progress endpoint
+  app.get("/api/progress", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const user = req.user as any;
+      const { userProgress, lessons, subjects } = await import('@shared/schema');
+      const { eq, desc } = await import('drizzle-orm');
+      
+      // Get all user progress records with lesson and subject details
+      const progress = await db
+        .select({
+          id: userProgress.id,
+          lessonId: userProgress.lessonId,
+          status: userProgress.status,
+          progressPercentage: userProgress.progressPercentage,
+          quizScore: userProgress.quizScore,
+          timeSpent: userProgress.timeSpent,
+          lastAccessed: userProgress.lastAccessed,
+          completedAt: userProgress.completedAt,
+          lessonTitle: lessons.title,
+          lessonDescription: lessons.description,
+          subjectName: subjects.name,
+          subjectIcon: subjects.iconColor,
+        })
+        .from(userProgress)
+        .leftJoin(lessons, eq(userProgress.lessonId, lessons.id))
+        .leftJoin(subjects, eq(lessons.subjectId, subjects.id))
+        .where(eq(userProgress.userId, user.id))
+        .orderBy(desc(userProgress.lastAccessed));
+
+      // Calculate overall stats
+      const progressWithScores = progress.filter(p => p.quizScore !== null && p.quizScore !== undefined);
+      const stats = {
+        totalLessons: progress.length,
+        completed: progress.filter(p => p.status === 'completed' || p.status === 'mastered').length,
+        inProgress: progress.filter(p => p.status === 'in_progress').length,
+        totalTimeSpent: progress.reduce((sum, p) => sum + (p.timeSpent || 0), 0),
+        averageScore: progressWithScores.length > 0
+          ? Math.round(progressWithScores.reduce((sum, p) => sum + (p.quizScore || 0), 0) / progressWithScores.length)
+          : 0,
+      };
+
+      res.json({ progress, stats });
+    } catch (error: any) {
+      console.error('[Progress] Error fetching user progress:', error);
+      res.status(500).json({ message: "Error fetching progress: " + error.message });
+    }
+  });
+
   // Create realtime session endpoint (for custom voice stack)
   app.post("/api/realtime-sessions/create", async (req, res) => {
     if (!req.isAuthenticated()) {
@@ -1269,6 +1321,76 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(users);
     } catch (error: any) {
       res.status(500).json({ message: "Error fetching users: " + error.message });
+    }
+  });
+
+  // ✅ FIX #1: Add individual user details endpoint
+  app.get("/api/admin/users/:id", requireAdmin, auditActions.viewUsers, async (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      // Get user details
+      const user = await storage.getUserById(id);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      // Get user's session history from realtime_sessions
+      const { realtimeSessions } = await import('@shared/schema');
+      const { desc, eq } = await import('drizzle-orm');
+      
+      const sessions = await db.select({
+        id: realtimeSessions.id,
+        studentName: realtimeSessions.studentName,
+        subject: realtimeSessions.subject,
+        ageGroup: realtimeSessions.ageGroup,
+        language: realtimeSessions.language,
+        minutesUsed: realtimeSessions.minutesUsed,
+        startedAt: realtimeSessions.startedAt,
+        endedAt: realtimeSessions.endedAt,
+        status: realtimeSessions.status,
+      })
+      .from(realtimeSessions)
+      .where(eq(realtimeSessions.userId, id))
+      .orderBy(desc(realtimeSessions.startedAt))
+      .limit(50);
+
+      // Get user's documents
+      const documents = await storage.getUserDocuments(id);
+
+      // Calculate stats
+      const totalSessions = sessions.filter(s => s.status === 'ended').length;
+      const totalMinutes = sessions
+        .filter(s => s.status === 'ended')
+        .reduce((sum, s) => sum + (s.minutesUsed || 0), 0);
+
+      res.json({
+        user: {
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          studentName: user.studentName,
+          gradeLevel: user.gradeLevel,
+          subscriptionPlan: user.subscriptionPlan,
+          subscriptionStatus: user.subscriptionStatus,
+          subscriptionMinutesLimit: user.subscriptionMinutesLimit,
+          subscriptionMinutesUsed: user.subscriptionMinutesUsed,
+          purchasedMinutesBalance: user.purchasedMinutesBalance,
+          createdAt: user.createdAt,
+          emailVerified: user.emailVerified,
+          isAdmin: user.isAdmin,
+        },
+        stats: {
+          totalSessions,
+          totalMinutes,
+          documentsCount: documents.length,
+        },
+        recentSessions: sessions.slice(0, 10),
+        documents: documents.slice(0, 10),
+      });
+    } catch (error: any) {
+      console.error('[Admin] Error fetching user details:', error);
+      res.status(500).json({ message: "Error fetching user details: " + error.message });
     }
   });
 
