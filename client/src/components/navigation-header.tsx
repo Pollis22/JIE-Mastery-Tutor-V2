@@ -54,22 +54,6 @@ export function NavigationHeader() {
                 </Button>
                 <Button
                   variant="ghost"
-                  onClick={() => setLocation("/lessons")}
-                  className={location.startsWith("/lesson") ? "text-primary font-medium" : "text-muted-foreground"}
-                  data-testid="nav-lessons"
-                >
-                  Lessons
-                </Button>
-                <Button
-                  variant="ghost"
-                  onClick={() => setLocation("/progress")}
-                  className={isActive("/progress") ? "text-primary font-medium" : "text-muted-foreground"}
-                  data-testid="nav-progress"
-                >
-                  Progress
-                </Button>
-                <Button
-                  variant="ghost"
                   onClick={() => setLocation("/settings")}
                   className={isActive("/settings") ? "text-primary font-medium" : "text-muted-foreground"}
                   data-testid="nav-settings"
