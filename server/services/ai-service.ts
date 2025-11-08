@@ -47,10 +47,12 @@ export async function generateTutorResponse(
   conversationHistory: Message[],
   currentTranscript: string,
   uploadedDocuments: string[],
-  systemInstruction?: string
+  systemInstruction?: string,
+  inputModality?: "voice" | "text"
 ): Promise<string> {
   
   console.log("[AI Service] 📝 Generating response");
+  console.log("[AI Service] 🎤 Input modality:", inputModality || "unknown");
   console.log("[AI Service] 📚 Documents available:", uploadedDocuments.length);
   
   // Build context with uploaded documents
@@ -66,16 +68,28 @@ export async function generateTutorResponse(
 
   console.log("[AI Service] 📄 Document context length:", documentContext.length, "chars");
 
+  // Determine input modality context
+  const modalityContext = inputModality === "voice" 
+    ? "The student is SPEAKING to you via voice. They can HEAR your responses."
+    : inputModality === "text"
+    ? "The student TYPED this message to you via text chat."
+    : "";
+
   // Build the system prompt with documents at the beginning if they exist
   let systemPrompt = "";
   
   if (systemInstruction) {
     systemPrompt = systemInstruction;
+    // Add modality context to custom instructions too
+    if (modalityContext) {
+      systemPrompt = `${modalityContext}\n\n${systemInstruction}`;
+    }
   } else {
     // Start with document context if available
     if (uploadedDocuments.length > 0) {
       systemPrompt = `You are an expert AI tutor helping students with homework and learning.
 
+${modalityContext ? modalityContext + '\n' : ''}
 <uploaded_documents>
 The student has uploaded ${uploadedDocuments.length} document(s) for this tutoring session. You MUST acknowledge these documents when asked about them.
 
@@ -93,16 +107,17 @@ GENERAL TUTORING INSTRUCTIONS:
 - Use the Socratic method - ask questions to guide understanding
 - Keep responses VERY CONCISE (1-2 sentences max) since this is voice conversation
 - Reference the uploaded documents frequently when answering questions
-- Wait for the student to FINISH speaking before responding`;
+- ${inputModality === "voice" ? "You are having a VOICE conversation - the student can HEAR you" : "The student sent you a text message"}`;
     } else {
       systemPrompt = `You are an expert AI tutor helping students with homework and learning.
 
+${modalityContext ? modalityContext + '\n' : ''}
 IMPORTANT INSTRUCTIONS:
 - Be encouraging, patient, and clear
 - Use the Socratic method - ask questions to guide understanding
 - Keep responses VERY CONCISE (1-2 sentences max) since this is voice conversation
 - Help with general understanding since no specific materials were uploaded
-- Wait for the student to FINISH speaking before responding`;
+- ${inputModality === "voice" ? "You are having a VOICE conversation - the student can HEAR you" : "The student sent you a text message"}`;
     }
   }
 

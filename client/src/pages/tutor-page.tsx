@@ -284,13 +284,23 @@ export default function TutorPage() {
     }
   };
 
-  const switchAgent = () => {
+  const switchAgent = async () => {
+    // Properly end the current session first
+    console.log('[TutorPage] 🔄 Switching tutor - ending current session...');
+    
+    // End the session (this disconnects WebSocket and logs usage)
+    await stop();
+    
+    // Wait a bit longer to ensure cleanup is complete
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
     // Reset transcript for new agent
     setTranscriptMessages([]);
     setIsTranscriptConnected(false);
-    // Remount widget
-    setMounted(false);
-    setTimeout(() => setMounted(true), 100);
+    
+    // Start new session with updated agent
+    console.log('[TutorPage] ✅ Starting new tutor session...');
+    await startTutor();
   };
 
   const stop = async () => {

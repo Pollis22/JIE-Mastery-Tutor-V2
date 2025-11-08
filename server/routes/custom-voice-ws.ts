@@ -455,12 +455,13 @@ export function setupCustomVoiceWebSocket(server: Server) {
         
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         
-        // Generate AI response
+        // Generate AI response (voice input)
         const aiResponse = await generateTutorResponse(
           state.conversationHistory,
           transcript,
           state.uploadedDocuments,
-          state.systemInstruction
+          state.systemInstruction,
+          "voice" // Student spoke via microphone
         );
 
         console.log(`[Custom Voice] 🤖 Tutor: "${aiResponse}"`);
@@ -1084,12 +1085,13 @@ CRITICAL INSTRUCTIONS:
                 break; // Don't process further
               }
               
-              // Content approved - generate AI response
+              // Content approved - generate AI response (text input)
               const aiResponse = await generateTutorResponse(
                 state.conversationHistory,
                 message.message,
                 state.uploadedDocuments,
-                state.systemInstruction
+                state.systemInstruction,
+                "text" // Student typed via chat
               );
               
               console.log(`[Custom Voice] 🤖 Tutor response: "${aiResponse}"`);
