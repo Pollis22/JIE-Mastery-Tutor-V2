@@ -94,6 +94,20 @@ export default function AdminPageEnhanced() {
 
   const { data: usersData, isLoading: usersLoading } = useQuery<AdminUsersData>({
     queryKey: ["/api/admin/users", currentPage, searchTerm],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        page: currentPage.toString(),
+        limit: '10',
+        search: searchTerm,
+      });
+      const response = await fetch(`/api/admin/users?${params}`, {
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to fetch users: ${response.status}`);
+      }
+      return response.json();
+    },
     enabled: !!user?.isAdmin,
   });
 
