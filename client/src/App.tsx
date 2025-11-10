@@ -40,6 +40,7 @@ import AdminLogs from "@/pages/admin-logs";
 import AdminContacts from "@/pages/admin/admin-contacts-page";
 import AdminAgents from "@/pages/admin/admin-agents-page";
 import TermsPage from "@/pages/terms-page";
+import PrivacyPage from "@/pages/privacy-page";
 import AdminSetupPage from "@/pages/admin-setup-page";
 import SessionDetailsPage from "@/pages/session-details";
 import ForgotPasswordPage from "@/pages/forgot-password";
@@ -78,6 +79,7 @@ function Router() {
       <Route path="/support" component={SupportPage} />
       <Route path="/contact" component={ContactPage} />
       <Route path="/terms" component={TermsPage} />
+      <Route path="/privacy" component={PrivacyPage} />
       <Route path="/unsubscribe" component={UnsubscribePage} />
       <Route component={NotFound} />
     </Switch>

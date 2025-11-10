@@ -26,6 +26,13 @@ export function Footer() {
               Terms & Conditions
             </button>
             <button
+              onClick={() => setLocation("/privacy")}
+              className="text-muted-foreground hover:text-foreground transition-colors text-sm"
+              data-testid="link-privacy"
+            >
+              Privacy Policy
+            </button>
+            <button
               onClick={() => setLocation("/benefits")}
               className="text-muted-foreground hover:text-foreground transition-colors text-sm"
               data-testid="link-benefits"
