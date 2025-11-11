@@ -1,3 +1,5 @@
+import { ADAPTIVE_SOCRATIC_CORE } from '../llm/adaptiveSocraticCore';
+
 export const getTutorMindPrompt = (lessonContext?: any) => {
   const subject = lessonContext?.subject ?? 'general learning';
   const topic = lessonContext?.topic ?? 'educational concepts';
@@ -46,6 +48,10 @@ WAIT FOR STUDENT:
 - If they're struggling → Offer ONE small hint, then WAIT again
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+${ADAPTIVE_SOCRATIC_CORE}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 CORE BEHAVIOR
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 - Acknowledge the student, then move one small step forward with ONE question.
@@ -67,5 +73,5 @@ CURRENT LESSON
 - Step: ${step}
 
 Remember: This is a CONVERSATION, not a lecture. Give the student space to think,
-speak, and participate. Quality over quantity.`;
+speak, and participate. Balance guided discovery with direct teaching using the Adaptive Socratic Method above.`;
 };
