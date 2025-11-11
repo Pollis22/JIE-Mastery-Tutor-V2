@@ -4,6 +4,7 @@
 This project is a production-ready conversational AI tutoring web platform for Math, English, and Spanish. It offers interactive voice conversations, personalized quizzes, and adaptive learning paths. The platform features a multi-agent AI system with five age-specific tutors (K-2, Grades 3-5, 6-8, 9-12, College/Adult), each optimized for their target age group. It uses the **Adaptive Socratic Method** which balances guided discovery with direct instruction to prevent frustration while maximizing learning. It supports a hybrid minute tracking policy (subscription and rollover minutes) and prioritizes per-session configuration for flexible family sharing, designed for high reliability and a streamlined user experience.
 
 ## Recent Changes (November 11, 2025)
+-   **Language Expansion: 22 Languages Supported** - Expanded language support from 12 to 22 languages by adding Arabic, Russian, Italian, Korean, Vietnamese, Turkish, Polish, Dutch, Thai, and Indonesian. Each language has 5 age-appropriate Azure Neural TTS voices (K-2, 3-5, 6-8, 9-12, College/Adult). Platform now offers truly global reach with auto-detection of browser language for seamless user experience.
 -   **CRITICAL FEATURE: Adaptive Socratic Method Implementation** - Implemented 3-phase teaching approach (Guided Discovery → Direct Instruction → Understanding Check) to balance critical thinking development with frustration prevention. Created standalone `server/llm/adaptiveSocraticCore.ts` module to avoid circular dependencies. Updated all 5 tutor personalities (K-2, 3-5, 6-8, 9-12, College) and voice prompt (`tutorMind.ts`) to integrate adaptive method. Key innovation: AI pivots to direct instruction after 3 failed attempts or frustration signals ("I don't know", "I'm confused"), providing step-by-step explanations instead of endless questioning.
 -   **Marketing Copy Updates** - Updated Benefits page to highlight Adaptive Socratic Method as key differentiator from traditional AI tutors. Changed messaging from "We Don't Give Answers" to "Smart Teaching That Adapts to Your Child." Added 3-phase visual explanation and comparison showing how we prevent frustration unlike competitors who ask endless questions.
 -   **Privacy Policy Page Created** - Added COPPA-compliant privacy policy at `/privacy` with footer link, emphasizing children's protection and parental control.
@@ -49,6 +50,9 @@ The platform uses a **session-first** data priority model where session configur
 A custom, production-ready voice stack provides real-time, natural conversations with 1-2 seconds end-to-end latency. Key features include:
 -   Session authentication, transcript queueing, and incremental persistence.
 -   Age-appropriate voice selection and enhanced personalized greetings.
+-   **22 Languages Supported**: English, Spanish, Hindi, Chinese, French, German, Portuguese, Japanese, Swahili, Afrikaans, Hausa, Amharic, Arabic, Russian, Italian, Korean, Vietnamese, Turkish, Polish, Dutch, Thai, and Indonesian.
+-   **Age-Appropriate TTS Voices**: Each language has 5 distinct Azure Neural TTS voices optimized for different age groups (K-2, 3-5, 6-8, 9-12, College/Adult).
+-   **Auto-Language Detection**: Platform automatically detects browser language and sets appropriate default.
 -   **Text chat during voice sessions** allowing typed input, content pasting, and file uploads.
 -   Voice consistency fixes and optimized voice pacing with robust interruption handling.
 -   Comprehensive timing adjustments to prevent student answer cutoffs.
