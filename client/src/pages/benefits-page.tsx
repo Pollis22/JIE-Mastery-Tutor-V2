@@ -204,7 +204,7 @@ export default function BenefitsPage() {
         </div>
       </section>
 
-      {/* Socratic Teaching Methodology Section */}
+      {/* Adaptive Socratic Teaching Methodology Section */}
       <section className="py-16 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20">
         <div className="container mx-auto px-4">
           <div className="max-w-6xl mx-auto">
@@ -215,33 +215,33 @@ export default function BenefitsPage() {
                 </div>
               </div>
               <h2 className="text-4xl font-bold text-foreground mb-4">
-                We Don't Give Answers. We Teach How to Think.
+                Smart Teaching That Adapts to Your Child
               </h2>
               <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
-                Our tutors use the proven Socratic method — guiding students to discover answers through critical thinking, not memorization.
+                Our Adaptive Socratic Method balances guided discovery with direct instruction. We help students think critically — but we never let them stay frustrated.
               </p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
-              <Card className="shadow-lg border-2 border-blue-200 dark:border-blue-800">
+              <Card className="shadow-lg border-2 border-red-300 dark:border-red-700">
                 <CardContent className="pt-6 space-y-4">
                   <div className="flex items-start space-x-4">
                     <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0">
                       <span className="text-2xl">❌</span>
                     </div>
                     <div>
-                      <h3 className="text-xl font-bold text-foreground mb-2">Other Tutoring Apps</h3>
+                      <h3 className="text-xl font-bold text-foreground mb-2">Traditional AI Tutors</h3>
                       <p className="text-muted-foreground mb-3">
-                        Give direct answers and solutions
+                        Ask endless questions, even when students are confused
                       </p>
                       <div className="bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 p-3 rounded">
                         <p className="text-sm font-mono text-foreground">
-                          <strong>Student:</strong> "What's 7 × 8?"<br/>
-                          <strong>App:</strong> "The answer is 56."
+                          <strong>Student:</strong> "I don't understand this at all."<br/>
+                          <strong>App:</strong> "Let me ask you another question..."
                         </p>
                       </div>
                       <p className="text-sm text-muted-foreground mt-3 italic">
-                        ⚠️ Result: Student memorizes, doesn't understand
+                        ⚠️ Result: Student gets frustrated and gives up
                       </p>
                     </div>
                   </div>
@@ -257,21 +257,58 @@ export default function BenefitsPage() {
                     <div>
                       <h3 className="text-xl font-bold text-foreground mb-2">JIE Mastery Tutor</h3>
                       <p className="text-muted-foreground mb-3">
-                        Guides students to discover answers themselves
+                        Knows when to guide vs. when to teach directly
                       </p>
                       <div className="bg-green-50 dark:bg-green-900/20 border-l-4 border-green-500 p-3 rounded">
                         <p className="text-sm font-mono text-foreground">
-                          <strong>Student:</strong> "What's 7 × 8?"<br/>
-                          <strong>Tutor:</strong> "Great question! What's 7 × 4? Can you double that?"
+                          <strong>Student:</strong> "I don't understand this at all."<br/>
+                          <strong>Tutor:</strong> "No problem! Let me walk you through this step-by-step..."
                         </p>
                       </div>
                       <p className="text-sm text-muted-foreground mt-3 italic">
-                        ✨ Result: Student learns multiplication strategies
+                        ✨ Result: Student learns AND feels supported
                       </p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
+            </div>
+
+            <div className="bg-white dark:bg-card border-2 border-blue-500 rounded-xl p-8 mb-8">
+              <h3 className="text-2xl font-bold text-foreground mb-6 text-center">
+                How Our Adaptive Socratic Method Works
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="text-center space-y-3">
+                  <div className="w-16 h-16 bg-blue-500 text-white rounded-full flex items-center justify-center mx-auto text-2xl font-bold">
+                    1
+                  </div>
+                  <h4 className="font-bold text-foreground text-lg">Guided Discovery</h4>
+                  <p className="text-sm text-muted-foreground">
+                    First, we guide students with thoughtful questions and hints to help them discover answers themselves. This builds critical thinking skills.
+                  </p>
+                </div>
+
+                <div className="text-center space-y-3">
+                  <div className="w-16 h-16 bg-green-500 text-white rounded-full flex items-center justify-center mx-auto text-2xl font-bold">
+                    2
+                  </div>
+                  <h4 className="font-bold text-foreground text-lg">Direct Instruction</h4>
+                  <p className="text-sm text-muted-foreground">
+                    If students struggle after 3 attempts or show frustration ("I don't know", "I'm confused"), we pivot immediately to clear, step-by-step teaching.
+                  </p>
+                </div>
+
+                <div className="text-center space-y-3">
+                  <div className="w-16 h-16 bg-purple-500 text-white rounded-full flex items-center justify-center mx-auto text-2xl font-bold">
+                    3
+                  </div>
+                  <h4 className="font-bold text-foreground text-lg">Understanding Check</h4>
+                  <p className="text-sm text-muted-foreground">
+                    After explaining, we confirm understanding by having students explain back or try a similar problem. This ensures true comprehension.
+                  </p>
+                </div>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -280,9 +317,9 @@ export default function BenefitsPage() {
                   <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mx-auto">
                     <LightbulbIcon className="w-6 h-6 text-purple-600" />
                   </div>
-                  <h4 className="font-bold text-foreground">Deeper Understanding</h4>
+                  <h4 className="font-bold text-foreground">Never Frustrated</h4>
                   <p className="text-sm text-muted-foreground">
-                    Students truly grasp concepts instead of just memorizing answers for tests
+                    We recognize frustration signals instantly and switch to direct teaching — so students never feel stuck or overwhelmed
                   </p>
                 </CardContent>
               </Card>
@@ -294,7 +331,7 @@ export default function BenefitsPage() {
                   </div>
                   <h4 className="font-bold text-foreground">Critical Thinking Skills</h4>
                   <p className="text-sm text-muted-foreground">
-                    Develops problem-solving abilities that help across all subjects and life
+                    Develops problem-solving abilities through guided discovery when ready, builds confidence through clear instruction when needed
                   </p>
                 </CardContent>
               </Card>
@@ -306,7 +343,7 @@ export default function BenefitsPage() {
                   </div>
                   <h4 className="font-bold text-foreground">Long-Term Success</h4>
                   <p className="text-sm text-muted-foreground">
-                    Students become independent learners prepared for college and careers
+                    Students become independent learners who know when to think deeply and when to ask for help — prepared for college and careers
                   </p>
                 </CardContent>
               </Card>
@@ -458,8 +495,8 @@ export default function BenefitsPage() {
                       </svg>
                     </div>
                     <div>
-                      <h4 className="font-semibold text-foreground">Socratic Teaching Method — No Direct Answers!</h4>
-                      <p className="text-muted-foreground">Our AI NEVER gives answers. Instead, it guides you with strategic questions that help you discover solutions yourself and truly understand concepts.</p>
+                      <h4 className="font-semibold text-foreground">Adaptive Socratic Teaching Method</h4>
+                      <p className="text-muted-foreground">Our AI guides you with strategic questions to help you discover solutions. But if you're stuck after 3 attempts or say "I'm confused," we immediately switch to clear, step-by-step teaching so you never stay frustrated.</p>
                     </div>
                   </li>
                   <li className="flex items-start space-x-3">
