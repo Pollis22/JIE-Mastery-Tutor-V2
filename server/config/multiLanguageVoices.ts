@@ -1,7 +1,7 @@
 // Multi-language voice configuration for Azure Neural TTS
-// Supports 12 languages with age-appropriate voices for global reach
+// Supports 22 languages with age-appropriate voices for global reach
 
-export type SupportedLanguage = 'en' | 'es' | 'hi' | 'zh' | 'fr' | 'de' | 'pt' | 'ja' | 'sw' | 'af' | 'ha' | 'am';
+export type SupportedLanguage = 'en' | 'es' | 'hi' | 'zh' | 'fr' | 'de' | 'pt' | 'ja' | 'sw' | 'af' | 'ha' | 'am' | 'ar' | 'ru' | 'it' | 'ko' | 'vi' | 'tr' | 'pl' | 'nl' | 'th' | 'id';
 export type AgeGroup = 'K-2' | '3-5' | '6-8' | '9-12' | 'College/Adult';
 
 export interface VoiceConfig {
@@ -480,6 +480,396 @@ export const multiLanguageVoices: Record<SupportedLanguage, Record<AgeGroup, Voi
       displayName: 'Mekdes (ዩኒቨርሲቲ/ጎልማሳ)',
       description: 'ለከፍተኛ ትምህርት የተራቀቀ ድምጽ'
     }
+  },
+
+  // Arabic voices (Saudi Arabia/UAE)
+  ar: {
+    'K-2': {
+      voiceName: 'ar-SA-ZariyahNeural',
+      language: 'Arabic',
+      locale: 'ar-SA',
+      displayName: 'Zariyah (أطفال صغار)',
+      description: 'صوت دافئ للمتعلمين الصغار'
+    },
+    '3-5': {
+      voiceName: 'ar-SA-ZariyahNeural',
+      language: 'Arabic',
+      locale: 'ar-SA',
+      displayName: 'Zariyah (المرحلة الابتدائية)',
+      description: 'صوت واضح لطلاب المرحلة الابتدائية'
+    },
+    '6-8': {
+      voiceName: 'ar-AE-FatimaNeural',
+      language: 'Arabic',
+      locale: 'ar-AE',
+      displayName: 'Fatima (المرحلة المتوسطة)',
+      description: 'صوت تعليمي لطلاب المرحلة المتوسطة'
+    },
+    '9-12': {
+      voiceName: 'ar-AE-FatimaNeural',
+      language: 'Arabic',
+      locale: 'ar-AE',
+      displayName: 'Fatima (المرحلة الثانوية)',
+      description: 'صوت احترافي لطلاب المرحلة الثانوية'
+    },
+    'College/Adult': {
+      voiceName: 'ar-SA-HamedNeural',
+      language: 'Arabic',
+      locale: 'ar-SA',
+      displayName: 'Hamed (جامعة/بالغين)',
+      description: 'صوت متطور للتعليم العالي'
+    }
+  },
+
+  // Russian voices (Russia)
+  ru: {
+    'K-2': {
+      voiceName: 'ru-RU-SvetlanaNeural',
+      language: 'Russian',
+      locale: 'ru-RU',
+      displayName: 'Svetlana (Малыши)',
+      description: 'Теплый голос для маленьких учеников'
+    },
+    '3-5': {
+      voiceName: 'ru-RU-SvetlanaNeural',
+      language: 'Russian',
+      locale: 'ru-RU',
+      displayName: 'Svetlana (Начальная школа)',
+      description: 'Чёткий голос для младших школьников'
+    },
+    '6-8': {
+      voiceName: 'ru-RU-DariyaNeural',
+      language: 'Russian',
+      locale: 'ru-RU',
+      displayName: 'Dariya (Средняя школа)',
+      description: 'Образовательный голос для средней школы'
+    },
+    '9-12': {
+      voiceName: 'ru-RU-DariyaNeural',
+      language: 'Russian',
+      locale: 'ru-RU',
+      displayName: 'Dariya (Старшая школа)',
+      description: 'Профессиональный голос для старшеклассников'
+    },
+    'College/Adult': {
+      voiceName: 'ru-RU-DmitryNeural',
+      language: 'Russian',
+      locale: 'ru-RU',
+      displayName: 'Dmitry (Университет/Взрослые)',
+      description: 'Утончённый голос для высшего образования'
+    }
+  },
+
+  // Italian voices (Italy)
+  it: {
+    'K-2': {
+      voiceName: 'it-IT-ElsaNeural',
+      language: 'Italian',
+      locale: 'it-IT',
+      displayName: 'Elsa (Bambini Piccoli)',
+      description: 'Voce calda per giovani studenti'
+    },
+    '3-5': {
+      voiceName: 'it-IT-ElsaNeural',
+      language: 'Italian',
+      locale: 'it-IT',
+      displayName: 'Elsa (Elementare)',
+      description: 'Voce chiara per studenti elementari'
+    },
+    '6-8': {
+      voiceName: 'it-IT-IsabellaNeural',
+      language: 'Italian',
+      locale: 'it-IT',
+      displayName: 'Isabella (Media)',
+      description: 'Voce educativa per studenti delle medie'
+    },
+    '9-12': {
+      voiceName: 'it-IT-IsabellaNeural',
+      language: 'Italian',
+      locale: 'it-IT',
+      displayName: 'Isabella (Superiore)',
+      description: 'Voce professionale per studenti superiori'
+    },
+    'College/Adult': {
+      voiceName: 'it-IT-DiegoNeural',
+      language: 'Italian',
+      locale: 'it-IT',
+      displayName: 'Diego (Università/Adulti)',
+      description: 'Voce sofisticata per istruzione avanzata'
+    }
+  },
+
+  // Korean voices (South Korea)
+  ko: {
+    'K-2': {
+      voiceName: 'ko-KR-SunHiNeural',
+      language: 'Korean',
+      locale: 'ko-KR',
+      displayName: 'SunHi (유아)',
+      description: '어린 학습자를 위한 따뜻한 목소리'
+    },
+    '3-5': {
+      voiceName: 'ko-KR-SunHiNeural',
+      language: 'Korean',
+      locale: 'ko-KR',
+      displayName: 'SunHi (초등학교)',
+      description: '초등학생을 위한 명확한 목소리'
+    },
+    '6-8': {
+      voiceName: 'ko-KR-JiMinNeural',
+      language: 'Korean',
+      locale: 'ko-KR',
+      displayName: 'JiMin (중학교)',
+      description: '중학생을 위한 교육적인 목소리'
+    },
+    '9-12': {
+      voiceName: 'ko-KR-JiMinNeural',
+      language: 'Korean',
+      locale: 'ko-KR',
+      displayName: 'JiMin (고등학교)',
+      description: '고등학생을 위한 전문적인 목소리'
+    },
+    'College/Adult': {
+      voiceName: 'ko-KR-InJoonNeural',
+      language: 'Korean',
+      locale: 'ko-KR',
+      displayName: 'InJoon (대학/성인)',
+      description: '고등 교육을 위한 세련된 목소리'
+    }
+  },
+
+  // Vietnamese voices (Vietnam)
+  vi: {
+    'K-2': {
+      voiceName: 'vi-VN-HoaiMyNeural',
+      language: 'Vietnamese',
+      locale: 'vi-VN',
+      displayName: 'Hoai My (Trẻ nhỏ)',
+      description: 'Giọng ấm áp cho học sinh nhỏ tuổi'
+    },
+    '3-5': {
+      voiceName: 'vi-VN-HoaiMyNeural',
+      language: 'Vietnamese',
+      locale: 'vi-VN',
+      displayName: 'Hoai My (Tiểu học)',
+      description: 'Giọng rõ ràng cho học sinh tiểu học'
+    },
+    '6-8': {
+      voiceName: 'vi-VN-HoaiMyNeural',
+      language: 'Vietnamese',
+      locale: 'vi-VN',
+      displayName: 'Hoai My (Trung học cơ sở)',
+      description: 'Giọng giáo dục cho học sinh THCS'
+    },
+    '9-12': {
+      voiceName: 'vi-VN-NamMinhNeural',
+      language: 'Vietnamese',
+      locale: 'vi-VN',
+      displayName: 'Nam Minh (Trung học phổ thông)',
+      description: 'Giọng chuyên nghiệp cho học sinh THPT'
+    },
+    'College/Adult': {
+      voiceName: 'vi-VN-NamMinhNeural',
+      language: 'Vietnamese',
+      locale: 'vi-VN',
+      displayName: 'Nam Minh (Đại học/Người lớn)',
+      description: 'Giọng tinh tế cho giáo dục nâng cao'
+    }
+  },
+
+  // Turkish voices (Turkey)
+  tr: {
+    'K-2': {
+      voiceName: 'tr-TR-EmelNeural',
+      language: 'Turkish',
+      locale: 'tr-TR',
+      displayName: 'Emel (Küçük Çocuklar)',
+      description: 'Genç öğrenciler için sıcak ses'
+    },
+    '3-5': {
+      voiceName: 'tr-TR-EmelNeural',
+      language: 'Turkish',
+      locale: 'tr-TR',
+      displayName: 'Emel (İlkokul)',
+      description: 'İlkokul öğrencileri için net ses'
+    },
+    '6-8': {
+      voiceName: 'tr-TR-EmelNeural',
+      language: 'Turkish',
+      locale: 'tr-TR',
+      displayName: 'Emel (Ortaokul)',
+      description: 'Ortaokul öğrencileri için eğitici ses'
+    },
+    '9-12': {
+      voiceName: 'tr-TR-AhmetNeural',
+      language: 'Turkish',
+      locale: 'tr-TR',
+      displayName: 'Ahmet (Lise)',
+      description: 'Lise öğrencileri için profesyonel ses'
+    },
+    'College/Adult': {
+      voiceName: 'tr-TR-AhmetNeural',
+      language: 'Turkish',
+      locale: 'tr-TR',
+      displayName: 'Ahmet (Üniversite/Yetişkin)',
+      description: 'İleri eğitim için sofistike ses'
+    }
+  },
+
+  // Polish voices (Poland)
+  pl: {
+    'K-2': {
+      voiceName: 'pl-PL-ZofiaNeural',
+      language: 'Polish',
+      locale: 'pl-PL',
+      displayName: 'Zofia (Małe dzieci)',
+      description: 'Ciepły głos dla małych uczniów'
+    },
+    '3-5': {
+      voiceName: 'pl-PL-ZofiaNeural',
+      language: 'Polish',
+      locale: 'pl-PL',
+      displayName: 'Zofia (Szkoła podstawowa)',
+      description: 'Wyraźny głos dla uczniów podstawówki'
+    },
+    '6-8': {
+      voiceName: 'pl-PL-ZofiaNeural',
+      language: 'Polish',
+      locale: 'pl-PL',
+      displayName: 'Zofia (Gimnazjum)',
+      description: 'Edukacyjny głos dla uczniów gimnazjum'
+    },
+    '9-12': {
+      voiceName: 'pl-PL-MarekNeural',
+      language: 'Polish',
+      locale: 'pl-PL',
+      displayName: 'Marek (Liceum)',
+      description: 'Profesjonalny głos dla licealistów'
+    },
+    'College/Adult': {
+      voiceName: 'pl-PL-MarekNeural',
+      language: 'Polish',
+      locale: 'pl-PL',
+      displayName: 'Marek (Uniwersytet/Dorośli)',
+      description: 'Wyrafinowany głos dla zaawansowanych'
+    }
+  },
+
+  // Dutch voices (Netherlands)
+  nl: {
+    'K-2': {
+      voiceName: 'nl-NL-FennaNeural',
+      language: 'Dutch',
+      locale: 'nl-NL',
+      displayName: 'Fenna (Kleine kinderen)',
+      description: 'Warme stem voor jonge leerlingen'
+    },
+    '3-5': {
+      voiceName: 'nl-NL-FennaNeural',
+      language: 'Dutch',
+      locale: 'nl-NL',
+      displayName: 'Fenna (Basisschool)',
+      description: 'Duidelijke stem voor basisschoolleerlingen'
+    },
+    '6-8': {
+      voiceName: 'nl-NL-ColetteNeural',
+      language: 'Dutch',
+      locale: 'nl-NL',
+      displayName: 'Colette (Middelbare school)',
+      description: 'Educatieve stem voor middelbare scholieren'
+    },
+    '9-12': {
+      voiceName: 'nl-NL-ColetteNeural',
+      language: 'Dutch',
+      locale: 'nl-NL',
+      displayName: 'Colette (Voortgezet onderwijs)',
+      description: 'Professionele stem voor middelbare scholieren'
+    },
+    'College/Adult': {
+      voiceName: 'nl-NL-MaartenNeural',
+      language: 'Dutch',
+      locale: 'nl-NL',
+      displayName: 'Maarten (Universiteit/Volwassenen)',
+      description: 'Verfijnde stem voor gevorderd onderwijs'
+    }
+  },
+
+  // Thai voices (Thailand)
+  th: {
+    'K-2': {
+      voiceName: 'th-TH-PremwadeeNeural',
+      language: 'Thai',
+      locale: 'th-TH',
+      displayName: 'Premwadee (เด็กเล็ก)',
+      description: 'เสียงอบอุ่นสำหรับผู้เรียนเล็ก'
+    },
+    '3-5': {
+      voiceName: 'th-TH-PremwadeeNeural',
+      language: 'Thai',
+      locale: 'th-TH',
+      displayName: 'Premwadee (ประถมศึกษา)',
+      description: 'เสียงชัดเจนสำหรับนักเรียนประถม'
+    },
+    '6-8': {
+      voiceName: 'th-TH-AcharaNeural',
+      language: 'Thai',
+      locale: 'th-TH',
+      displayName: 'Achara (มัธยมต้น)',
+      description: 'เสียงการศึกษาสำหรับนักเรียนมัธยมต้น'
+    },
+    '9-12': {
+      voiceName: 'th-TH-AcharaNeural',
+      language: 'Thai',
+      locale: 'th-TH',
+      displayName: 'Achara (มัธยมปลาย)',
+      description: 'เสียงมืออาชีพสำหรับนักเรียนมัธยมปลาย'
+    },
+    'College/Adult': {
+      voiceName: 'th-TH-NiwatNeural',
+      language: 'Thai',
+      locale: 'th-TH',
+      displayName: 'Niwat (มหาวิทยาลัย/ผู้ใหญ่)',
+      description: 'เสียงที่ซับซ้อนสำหรับการศึกษาขั้นสูง'
+    }
+  },
+
+  // Indonesian voices (Indonesia)
+  id: {
+    'K-2': {
+      voiceName: 'id-ID-GadisNeural',
+      language: 'Indonesian',
+      locale: 'id-ID',
+      displayName: 'Gadis (Anak kecil)',
+      description: 'Suara hangat untuk pelajar muda'
+    },
+    '3-5': {
+      voiceName: 'id-ID-GadisNeural',
+      language: 'Indonesian',
+      locale: 'id-ID',
+      displayName: 'Gadis (Sekolah Dasar)',
+      description: 'Suara jelas untuk siswa SD'
+    },
+    '6-8': {
+      voiceName: 'id-ID-GadisNeural',
+      language: 'Indonesian',
+      locale: 'id-ID',
+      displayName: 'Gadis (SMP)',
+      description: 'Suara edukatif untuk siswa SMP'
+    },
+    '9-12': {
+      voiceName: 'id-ID-ArdiNeural',
+      language: 'Indonesian',
+      locale: 'id-ID',
+      displayName: 'Ardi (SMA)',
+      description: 'Suara profesional untuk siswa SMA'
+    },
+    'College/Adult': {
+      voiceName: 'id-ID-ArdiNeural',
+      language: 'Indonesian',
+      locale: 'id-ID',
+      displayName: 'Ardi (Universitas/Dewasa)',
+      description: 'Suara canggih untuk pendidikan lanjut'
+    }
   }
 };
 
@@ -502,7 +892,17 @@ export function getLocaleFromLanguage(language: SupportedLanguage): string {
     sw: 'sw-KE',
     af: 'af-ZA',
     ha: 'en-NG', // Nigerian English fallback for Hausa
-    am: 'am-ET'
+    am: 'am-ET',
+    ar: 'ar-SA',
+    ru: 'ru-RU',
+    it: 'it-IT',
+    ko: 'ko-KR',
+    vi: 'vi-VN',
+    tr: 'tr-TR',
+    pl: 'pl-PL',
+    nl: 'nl-NL',
+    th: 'th-TH',
+    id: 'id-ID'
   };
   return localeMap[language];
 }
@@ -521,7 +921,17 @@ export function getLanguageName(language: SupportedLanguage): string {
     sw: 'Swahili',
     af: 'Afrikaans',
     ha: 'Hausa',
-    am: 'Amharic'
+    am: 'Amharic',
+    ar: 'Arabic',
+    ru: 'Russian',
+    it: 'Italian',
+    ko: 'Korean',
+    vi: 'Vietnamese',
+    tr: 'Turkish',
+    pl: 'Polish',
+    nl: 'Dutch',
+    th: 'Thai',
+    id: 'Indonesian'
   };
   return nameMap[language];
 }
@@ -544,6 +954,16 @@ export function detectBrowserLanguage(): SupportedLanguage {
   if (browserLang.startsWith('af')) return 'af';
   if (browserLang.startsWith('ha')) return 'ha';
   if (browserLang.startsWith('am')) return 'am';
+  if (browserLang.startsWith('ar')) return 'ar';
+  if (browserLang.startsWith('ru')) return 'ru';
+  if (browserLang.startsWith('it')) return 'it';
+  if (browserLang.startsWith('ko')) return 'ko';
+  if (browserLang.startsWith('vi')) return 'vi';
+  if (browserLang.startsWith('tr')) return 'tr';
+  if (browserLang.startsWith('pl')) return 'pl';
+  if (browserLang.startsWith('nl')) return 'nl';
+  if (browserLang.startsWith('th')) return 'th';
+  if (browserLang.startsWith('id')) return 'id';
   
   // Default to English
   return 'en';
@@ -566,7 +986,17 @@ export function migrateLegacyLanguageCode(legacyCode: string | undefined | null)
     'swahili': 'sw',
     'afrikaans': 'af',
     'hausa': 'ha',
-    'amharic': 'am'
+    'amharic': 'am',
+    'arabic': 'ar',
+    'russian': 'ru',
+    'italian': 'it',
+    'korean': 'ko',
+    'vietnamese': 'vi',
+    'turkish': 'tr',
+    'polish': 'pl',
+    'dutch': 'nl',
+    'thai': 'th',
+    'indonesian': 'id'
   };
   
   // If it's already an ISO code, return it
@@ -581,7 +1011,7 @@ export function migrateLegacyLanguageCode(legacyCode: string | undefined | null)
 
 // Validate language and age group
 export function isValidLanguage(lang: string): lang is SupportedLanguage {
-  return ['en', 'es', 'hi', 'zh', 'fr', 'de', 'pt', 'ja', 'sw', 'af', 'ha', 'am'].includes(lang);
+  return ['en', 'es', 'hi', 'zh', 'fr', 'de', 'pt', 'ja', 'sw', 'af', 'ha', 'am', 'ar', 'ru', 'it', 'ko', 'vi', 'tr', 'pl', 'nl', 'th', 'id'].includes(lang);
 }
 
 export function isValidAgeGroup(age: string): age is AgeGroup {
