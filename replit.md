@@ -38,16 +38,19 @@ The platform uses a **session-first** data priority model where session configur
 A custom, production-ready voice stack provides real-time, natural conversations with 1-2 seconds end-to-end latency.
 -   **22 Languages Supported**: Including English, Spanish, Arabic, Russian, and more, with auto-detection of browser language.
 -   **Age-Appropriate TTS Voices**: Each language has 5 distinct Azure Neural TTS voices optimized for different age groups (K-2, 3-5, 6-8, 9-12, College/Adult).
+-   **Audio Processing Pipeline** (November 2025): Custom ScriptProcessorNode implementation with 100x gain amplification for quiet microphones, silence detection (threshold: 10), MediaStream health checks, and audio context suspension protection.
+-   **Format**: PCM16 (16-bit Linear PCM), 16kHz sample rate, mono audio with base64 WebSocket transport.
 -   Supports text chat during voice sessions, user-controlled speech speed, and robust microphone error handling.
 -   Flexible communication modes: Voice Mode, Hybrid Mode (listen-only, respond via text), and Text-Only Mode.
 
 ### AI & Learning Engine
 -   **Primary AI Model**: Claude Sonnet 4 with an enhanced TutorMind system prompt.
--   **Teaching Method**: **Adaptive Socratic Method** - A 3-phase approach that balances guided discovery with direct instruction, pivoting to direct teaching after 3 failed attempts or frustration signals.
-    1.  **Guided Discovery**: AI guides students with questions and hints.
-    2.  **Direct Instruction**: AI provides clear, step-by-step explanations.
-    3.  **Understanding Check**: AI confirms comprehension.
--   **Frustration Prevention**: AI recognizes 8+ frustration signals and switches from questioning to teaching mode immediately.
+-   **Teaching Method**: **Modified Adaptive Socratic Method** (Updated November 2025) - A balanced 3-phase approach that prevents both "too easy" and "too hard" learning experiences:
+    1.  **Guided Discovery (First Question)**: ALWAYS guide with questions first, NEVER give direct answers immediately. Ask "What do you think?" and suggest problem-solving strategies.
+    2.  **Direct Instruction (After 2-3 Tries)**: Give complete answer with clear explanation after 2-3 failed attempts or when frustration detected. Break down WHY each step works.
+    3.  **Understanding Check**: Confirm comprehension through explanation or similar practice problems.
+-   **Critical Rule**: Tutor must guide students to think first, but will provide answers after 2-3 genuine attempts to prevent frustration and gaming the system.
+-   **Frustration Prevention**: AI recognizes 8+ frustration signals ("I don't know", "I give up", etc.) and immediately switches to direct teaching mode.
 -   **Tutor Personalities**: Five distinct age-specific personalities share the Adaptive Socratic core while maintaining unique tone and content moderation.
 -   **Implementation Architecture**: Standalone `server/llm/adaptiveSocraticCore.ts` module imported by personality prompts, voice prompts, and base system prompt, ensuring a clean DAG structure.
 
