@@ -19,6 +19,14 @@ The application uses a modern full-stack architecture:
 -   Simple username/password authentication using Passport.js local strategy and session-based authentication with PostgreSQL session storage.
 -   Role-based access control with admin privileges.
 -   COPPA-compliant email verification system.
+-   **Production-Grade WebSocket Security** (November 2025):
+    -   Session-based authentication for WebSocket upgrades (no client-sent userId trusted).
+    -   Session rotation on login with 30-minute freshness enforcement.
+    -   Explicit session destruction on logout with cookie clearing.
+    -   IP-based rate limiting: 20 upgrade requests per minute, 5 concurrent connections per IP.
+    -   Standalone session validator (no Express middleware reuse, prevents double-initialization).
+    -   Malformed cookie handling with proper error responses.
+    -   All security measures tested and architect-approved for production deployment.
 
 ### Access Control & Subscription Enforcement
 A three-tier access control system ensures only subscribed users with available minutes can access tutoring. This includes authentication, active subscription checks, minute balance enforcement, protected voice endpoints with concurrent session limits, and session-based minute deduction.
