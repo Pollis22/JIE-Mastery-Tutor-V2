@@ -77,17 +77,41 @@ export async function startDeepgramStream(
     });
 
     connection.on(LiveTranscriptionEvents.Transcript, (data) => {
+      console.log('[Deepgram] 📥 RAW TRANSCRIPT EVENT:', JSON.stringify({
+        has_channel: !!data.channel,
+        has_alternatives: !!data.channel?.alternatives,
+        alternatives_length: data.channel?.alternatives?.length || 0,
+        is_final: data.is_final,
+        type: data.type,
+        full_data_keys: Object.keys(data)
+      }, null, 2));
+      
       const transcript = data.channel?.alternatives?.[0]?.transcript;
       const isFinal = data.is_final;
       
+      console.log('[Deepgram] 📝 Parsed transcript data:', {
+        text: transcript,
+        textLength: transcript?.length || 0,
+        isFinal: isFinal,
+        hasText: !!transcript,
+        isEmpty: !transcript || transcript.trim().length === 0
+      });
+      
       if (transcript && transcript.length > 0) {
-        console.log(`[Deepgram] ${isFinal ? '📝 FINAL' : '⏳ interim'}: ${transcript}`);
+        console.log(`[Deepgram] ✅ VALID TRANSCRIPT: ${isFinal ? '📝 FINAL' : '⏳ interim'}: "${transcript}"`);
         onTranscript(transcript, isFinal);
+      } else {
+        console.log('[Deepgram] ⚠️ Empty or null transcript, skipping');
       }
     });
 
     connection.on(LiveTranscriptionEvents.Error, (error) => {
-      console.error("[Deepgram] ❌ Error:", error);
+      console.error("[Deepgram] ❌ ERROR EVENT:", {
+        message: error?.message || String(error),
+        code: (error as any)?.code,
+        type: (error as any)?.type,
+        stack: error?.stack
+      });
       onError(error);
     });
 

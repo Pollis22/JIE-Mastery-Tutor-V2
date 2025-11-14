@@ -1115,10 +1115,44 @@ CRITICAL INSTRUCTIONS:
             break;
 
           case "audio":
-            // Forward audio to Deepgram
+            // Forward audio to Deepgram with comprehensive logging
+            console.log('[Custom Voice] 📥 Audio message received from frontend:', {
+              hasData: !!message.data,
+              dataLength: message.data?.length || 0,
+              hasDeepgramConnection: !!state.deepgramConnection,
+              deepgramReadyState: state.deepgramConnection?.getReadyState?.() || 'N/A'
+            });
+            
             if (state.deepgramConnection && message.data) {
-              const audioBuffer = Buffer.from(message.data, "base64");
-              state.deepgramConnection.send(audioBuffer);
+              try {
+                const audioBuffer = Buffer.from(message.data, "base64");
+                console.log('[Custom Voice] 🎤 Audio buffer created:', {
+                  bufferSize: audioBuffer.length,
+                  isBuffer: Buffer.isBuffer(audioBuffer)
+                });
+                
+                const deepgramReadyState = state.deepgramConnection.getReadyState();
+                if (deepgramReadyState === 1) {
+                  state.deepgramConnection.send(audioBuffer);
+                  console.log('[Custom Voice] ✅ Audio forwarded to Deepgram successfully');
+                } else {
+                  console.error('[Custom Voice] ❌ Deepgram not ready to receive audio:', {
+                    readyState: deepgramReadyState,
+                    states: '0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED'
+                  });
+                }
+              } catch (error) {
+                console.error('[Custom Voice] ❌ Error processing audio:', {
+                  error: error instanceof Error ? error.message : String(error),
+                  stack: error instanceof Error ? error.stack : undefined
+                });
+              }
+            } else {
+              console.error('[Custom Voice] ❌ Cannot forward audio:', {
+                hasConnection: !!state.deepgramConnection,
+                hasData: !!message.data,
+                reason: !state.deepgramConnection ? 'No Deepgram connection' : 'No audio data'
+              });
             }
             break;
 
