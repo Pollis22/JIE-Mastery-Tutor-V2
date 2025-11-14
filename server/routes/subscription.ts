@@ -11,13 +11,14 @@
 import { Router } from 'express';
 import Stripe from 'stripe';
 import { storage } from '../storage';
+import { 
+  getActiveSubscription, 
+  createOrUpdateSubscription,
+  cancelDuplicateSubscriptions,
+  stripe 
+} from '../services/stripe-service';
 
 const router = Router();
-
-const stripeKey = process.env.STRIPE_SECRET_KEY;
-const stripe = stripeKey ? new Stripe(stripeKey, {
-  apiVersion: "2025-08-27.basil",
-}) : null;
 
 // POST /api/subscription/change - Change subscription plan
 router.post('/change', async (req, res) => {
@@ -66,56 +67,14 @@ router.post('/change', async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const { stripeCustomerId, stripeSubscriptionId } = user;
+    const { stripeCustomerId } = user;
 
-    // If user has active subscription, update it
-    if (stripeSubscriptionId) {
-      console.log('🔄 [Subscription] Updating existing subscription:', stripeSubscriptionId);
-      
-      try {
-        const subscription = await stripe.subscriptions.retrieve(stripeSubscriptionId);
-        
-        const updatedSubscription = await stripe.subscriptions.update(
-          stripeSubscriptionId,
-          {
-            items: [{
-              id: subscription.items.data[0].id,
-              price: priceId,
-            }],
-            proration_behavior: 'create_prorations',
-          }
-        );
-
-        // Update database
-        await storage.updateUserSubscription(
-          userId,
-          plan as 'starter' | 'standard' | 'pro',
-          'active',
-          plan === 'starter' ? 60 : plan === 'standard' ? 240 : 600
-        );
-
-        console.log('✅ [Subscription] Subscription updated successfully');
-
-        return res.json({ 
-          success: true,
-          subscription: updatedSubscription.id,
-          plan: plan
-        });
-      } catch (error: any) {
-        console.error('❌ [Subscription] Error updating subscription:', error);
-        // Fall through to create new checkout session
-      }
-    }
-
-    // Create new subscription checkout
-    console.log('🆕 [Subscription] Creating new subscription checkout');
-    
-    // Ensure we have or create a Stripe customer
+    // 🚨 CRITICAL FIX: Ensure we have or create a Stripe customer first
     let customerId = stripeCustomerId;
     
     if (customerId) {
       try {
-        await stripe.customers.retrieve(customerId);
+        await stripe!.customers.retrieve(customerId);
         console.log('✅ Using existing Stripe customer:', customerId);
       } catch (error) {
         console.warn('⚠️ Invalid Stripe customer ID, creating new one');
@@ -124,7 +83,7 @@ router.post('/change', async (req, res) => {
     }
     
     if (!customerId) {
-      const customer = await stripe.customers.create({
+      const customer = await stripe!.customers.create({
         email: user.email,
         name: user.parentName || user.username,
         metadata: { userId }
@@ -134,9 +93,52 @@ router.post('/change', async (req, res) => {
       console.log('✅ Created new Stripe customer:', customerId);
     }
 
+    // 🚨 CRITICAL FIX: Check for existing subscription before creating checkout
+    const existingSubscription = await getActiveSubscription(customerId);
+    
+    if (existingSubscription) {
+      console.log('🔄 [Subscription] User already has active subscription, updating it...');
+      
+      try {
+        // Use helper function to update subscription (prevents duplicates)
+        const updatedSubscription = await createOrUpdateSubscription(customerId, priceId);
+
+        // Update database
+        await storage.updateUserSubscription(
+          userId,
+          plan as 'starter' | 'standard' | 'pro',
+          'active',
+          plan === 'starter' ? 60 : plan === 'standard' ? 240 : 600
+        );
+
+        // Store the updated subscription ID
+        if (updatedSubscription.id !== existingSubscription.id) {
+          await storage.updateUserStripeInfo(userId, customerId, updatedSubscription.id);
+        }
+
+        console.log('✅ [Subscription] Subscription updated successfully');
+
+        return res.json({ 
+          success: true,
+          subscription: updatedSubscription.id,
+          plan: plan,
+          message: 'Subscription plan updated successfully'
+        });
+      } catch (error: any) {
+        console.error('❌ [Subscription] Error updating subscription:', error);
+        return res.status(500).json({
+          error: 'Failed to update subscription',
+          message: error.message
+        });
+      }
+    }
+
+    // No existing subscription - create new checkout session
+    console.log('🆕 [Subscription] Creating new subscription checkout');
+    
     const baseUrl = `${req.protocol}://${req.get('host')}`;
     
-    const session = await stripe.checkout.sessions.create({
+    const session = await stripe!.checkout.sessions.create({
       customer: customerId,
       mode: 'subscription',
       payment_method_types: ['card'],
