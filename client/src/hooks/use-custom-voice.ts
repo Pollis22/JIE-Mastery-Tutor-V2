@@ -274,11 +274,20 @@ export function useCustomVoice() {
             silentChunks = 0;  // Reset counter when audio is detected
           }
           
-          // Convert to PCM16
+          // Convert to PCM16 with amplification
+          const GAIN = 10; // Amplify quiet microphones
           const pcm16 = new Int16Array(inputData.length);
           for (let i = 0; i < inputData.length; i++) {
-            const s = Math.max(-1, Math.min(1, inputData[i]));
+            // Apply gain before conversion
+            const amplified = inputData[i] * GAIN;
+            const s = Math.max(-1, Math.min(1, amplified));
             pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+          }
+          
+          // Log sample of audio for debugging
+          if (silentChunks === 0 && hasAudio) {
+            const samplePCM = Array.from(pcm16.slice(0, 10));
+            console.log(`[Custom Voice] 📊 PCM16 sample after gain: ${samplePCM}`);
           }
 
           const uint8Array = new Uint8Array(pcm16.buffer);

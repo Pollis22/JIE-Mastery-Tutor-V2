@@ -1138,7 +1138,7 @@ CRITICAL INSTRUCTIONS:
                   firstTenSamples: Array.from(int16View),
                   hasNonZeroSamples: hasNonZero,
                   maxAmplitude: maxAmplitude,
-                  isSilent: !hasNonZero || maxAmplitude < 100
+                  isSilent: !hasNonZero || maxAmplitude < 10  // Lower threshold for quiet mics
                 });
                 
                 if (!hasNonZero) {
