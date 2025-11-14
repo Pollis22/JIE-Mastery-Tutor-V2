@@ -18,6 +18,17 @@ declare global {
 
 const scryptAsync = promisify(scrypt);
 
+// Session middleware for WebSocket authentication
+let sessionMiddleware: session.RequestHandler;
+
+// Getter function to access sessionMiddleware after setupAuth runs
+export function getSessionMiddleware(): session.RequestHandler {
+  if (!sessionMiddleware) {
+    throw new Error('Session middleware not initialized. Call setupAuth first.');
+  }
+  return sessionMiddleware;
+}
+
 async function hashPassword(password: string) {
   const salt = randomBytes(16).toString("hex");
   const buf = (await scryptAsync(password, salt, 64)) as Buffer;
@@ -70,8 +81,11 @@ export function setupAuth(app: Express) {
     }
   };
 
+  // Create and export session middleware for WebSocket authentication
+  sessionMiddleware = session(sessionSettings);
+
   app.set("trust proxy", 1);
-  app.use(session(sessionSettings));
+  app.use(sessionMiddleware);
   app.use(passport.initialize());
   app.use(passport.session());
 

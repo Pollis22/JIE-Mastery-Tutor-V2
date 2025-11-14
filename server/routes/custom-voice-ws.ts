@@ -1,5 +1,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import { Server } from 'http';
+import { IncomingMessage } from 'http';
+import { Socket } from 'net';
 import { startDeepgramStream, DeepgramConnection } from "../services/deepgram-service";
 import { generateTutorResponse } from "../services/ai-service";
 import { generateSpeech } from "../services/tts-service";
@@ -9,6 +11,8 @@ import { eq, and, or, gte } from "drizzle-orm";
 import { getTutorPersonality } from "../config/tutor-personalities";
 import { moderateContent, shouldWarnUser, getModerationResponse } from "../services/content-moderation";
 import { storage } from "../storage";
+import { getSessionMiddleware } from "../auth";
+import passport from "passport";
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // TIMING CONSTANTS (Nov 4, 2025): Comprehensive timing fix
@@ -171,22 +175,101 @@ async function finalizeSession(
 }
 
 export function setupCustomVoiceWebSocket(server: Server) {
-  const wss = new WebSocketServer({
-    server,
-    path: '/api/custom-voice-ws'
+  // Use noServer mode for manual upgrade with session authentication
+  const wss = new WebSocketServer({ noServer: true });
+
+  console.log('[Custom Voice] WebSocket server initialized on /api/custom-voice-ws (noServer mode)');
+
+  // Handle WebSocket upgrade with authentication
+  server.on('upgrade', (request: IncomingMessage, socket: Socket, head: Buffer) => {
+    // Only handle /api/custom-voice-ws path (allow query strings)
+    const url = request.url || '';
+    if (!url.startsWith('/api/custom-voice-ws')) {
+      // Not our path - destroy socket to prevent leaks
+      socket.destroy();
+      return;
+    }
+
+    console.log('[WebSocket] 🔐 Authenticating upgrade request...');
+
+    // Get session middleware (will throw if setupAuth hasn't run)
+    const sessionMiddleware = getSessionMiddleware();
+
+    // Create a fresh response stub per upgrade to prevent state cross-contamination
+    const resStub = {
+      getHeader: () => undefined,
+      setHeader: () => undefined,
+      removeHeader: () => undefined,
+      writeHead: () => undefined,
+      end: () => undefined,
+    } as any;
+
+    // Apply session middleware to authenticate
+    sessionMiddleware(request as any, resStub, (err?: any) => {
+      if (err) {
+        console.error('[WebSocket] ❌ Session middleware error:', err);
+        socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+
+      // Apply passport initialization before session deserialization
+      passport.initialize()(request as any, resStub, (err?: any) => {
+        if (err) {
+          console.error('[WebSocket] ❌ Passport initialization error:', err);
+          socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n');
+          socket.destroy();
+          return;
+        }
+
+        // Apply passport session to deserialize user
+        passport.session()(request as any, resStub, (err?: any) => {
+          if (err) {
+            console.error('[WebSocket] ❌ Passport session error:', err);
+            socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n');
+            socket.destroy();
+            return;
+          }
+
+          const req = request as any;
+          
+          if (!req.user || !req.user.id) {
+            console.error('[WebSocket] ❌ No valid session found');
+            socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+            socket.destroy();
+            return;
+          }
+
+          const userId = req.user.id;
+          console.log('[WebSocket] ✅ Session authenticated for user:', userId);
+
+          // Upgrade to WebSocket
+          wss.handleUpgrade(request, socket, head, (ws) => {
+            // Attach authenticated userId to WebSocket
+            (ws as any).authenticatedUserId = userId;
+            (ws as any).user = req.user;
+            
+            console.log('[WebSocket] ✅ Connection upgraded for user:', userId);
+            wss.emit('connection', ws, request);
+          });
+        });
+      });
+    });
   });
 
-  console.log('[Custom Voice] WebSocket server initialized on /api/custom-voice-ws');
-
   wss.on("connection", (ws: WebSocket) => {
-    console.log("[Custom Voice] 🔌 New connection");
+    // Get authenticated userId that was attached during upgrade
+    const authenticatedUserId = (ws as any).authenticatedUserId as string;
+    const user = (ws as any).user;
+    
+    console.log("[Custom Voice] 🔌 New authenticated connection for user:", authenticatedUserId);
     
     // FIX #2C: Turn-taking timeout for natural conversation flow
     let responseTimer: NodeJS.Timeout | null = null;
     
     const state: SessionState = {
       sessionId: "",
-      userId: "",
+      userId: authenticatedUserId, // Use session-authenticated userId
       studentName: "",
       ageGroup: "default",
       speechSpeed: 0.95, // Default speech speed, will be overridden by user preference
@@ -570,21 +653,26 @@ export function setupCustomVoiceWebSocket(server: Server) {
           case "init":
             console.log("[Custom Voice] 🚀 Initializing session:", message.sessionId);
             
-            // FIX #2: Verify session ownership
-            if (!message.sessionId || !message.userId) {
-              console.error(`[Custom Voice] ❌ Missing data:`, {
-                sessionId: message.sessionId,
-                userId: message.userId
-              });
+            // SECURITY: Use authenticated userId from session, not client message
+            if (!message.sessionId) {
+              console.error(`[Custom Voice] ❌ Missing sessionId`);
               ws.send(JSON.stringify({ 
                 type: "error", 
-                error: "Missing sessionId or userId" 
+                error: "Missing sessionId" 
               }));
               ws.close();
               return;
             }
 
-            // FIX #2: Validate session exists and belongs to user
+            // SECURITY: Verify client's userId matches authenticated userId (consistency check only)
+            if (message.userId && message.userId !== authenticatedUserId) {
+              console.warn(`[Custom Voice] ⚠️ Client userId mismatch (ignoring client value)`, {
+                clientUserId: message.userId,
+                authenticatedUserId: authenticatedUserId
+              });
+            }
+
+            // SECURITY: Validate session exists and belongs to authenticated user
             try {
               const session = await db.select()
                 .from(realtimeSessions)
@@ -601,16 +689,11 @@ export function setupCustomVoiceWebSocket(server: Server) {
                 return;
               }
 
-              // Convert userId to string for comparison (DB stores as varchar)
-              const userIdStr = String(message.userId);
-              if (session[0].userId !== userIdStr) {
-                console.error(`[Custom Voice] ❌ Session ${message.sessionId} does not belong to user`, {
+              // SECURITY: Verify session belongs to authenticated user
+              if (session[0].userId !== authenticatedUserId) {
+                console.error(`[Custom Voice] ❌ Session ${message.sessionId} does not belong to authenticated user`, {
                   sessionUserId: session[0].userId,
-                  requestUserId: userIdStr,
-                  typeOf: {
-                    sessionUserId: typeof session[0].userId,
-                    requestUserId: typeof userIdStr
-                  }
+                  authenticatedUserId: authenticatedUserId
                 });
                 ws.send(JSON.stringify({ 
                   type: "error", 
@@ -620,16 +703,17 @@ export function setupCustomVoiceWebSocket(server: Server) {
                 return;
               }
 
-              console.log(`[Custom Voice] ✅ Session validated for user ${userIdStr}`);
+              console.log(`[Custom Voice] ✅ Session validated for authenticated user ${authenticatedUserId}`);
               
               // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
               // 🛡️ CHECK FOR ACTIVE SUSPENSIONS
               // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
               
+              // SECURITY: Check suspension using authenticated userId
               const suspension = await db.select()
                 .from(userSuspensions)
                 .where(and(
-                  eq(userSuspensions.userId, userIdStr),
+                  eq(userSuspensions.userId, authenticatedUserId),
                   eq(userSuspensions.isActive, true),
                   or(
                     eq(userSuspensions.isPermanent, true),
@@ -666,38 +750,26 @@ export function setupCustomVoiceWebSocket(server: Server) {
               return;
             }
             
+            // SECURITY: Session state already has authenticated userId from upgrade
             state.sessionId = message.sessionId;
-            state.userId = message.userId;
+            // state.userId is already set to authenticatedUserId during state initialization
             state.studentName = message.studentName || "Student";
             state.ageGroup = message.ageGroup || "College/Adult";
             
-            // CRITICAL FIX (Nov 14, 2025): Log userId after initialization to debug 401 auth issues
+            // CRITICAL FIX (Nov 14, 2025): Log userId after initialization to verify authentication
             console.log(`[Custom Voice] 🔐 Session state initialized:`, {
               sessionId: state.sessionId,
               userId: state.userId,
+              authenticatedUserId: authenticatedUserId,
               hasUserId: !!state.userId,
               userIdType: typeof state.userId,
               studentName: state.studentName,
               ageGroup: state.ageGroup
             });
             
-            // GUARD: Fail fast if userId is missing after all validation
-            if (!state.userId) {
-              console.error(`[Custom Voice] ❌ CRITICAL: userId is missing after validation!`, {
-                messageUserId: message.userId,
-                stateUserId: state.userId
-              });
-              ws.send(JSON.stringify({ 
-                type: "error", 
-                error: "Authentication failed - userId missing. Please log in again." 
-              }));
-              ws.close();
-              return;
-            }
-            
-            // Fetch user's speech speed preference from database
+            // Fetch user's speech speed preference from database using authenticated userId
             try {
-              const user = await storage.getUser(message.userId);
+              const user = await storage.getUser(authenticatedUserId);
               if (user && user.speechSpeed) {
                 state.speechSpeed = typeof user.speechSpeed === 'string' ? parseFloat(user.speechSpeed) : user.speechSpeed;
                 console.log(`[Custom Voice] ⚙️ User's speech speed preference: ${state.speechSpeed}`);
@@ -731,10 +803,10 @@ export function setupCustomVoiceWebSocket(server: Server) {
               else {
                 let documentIds = messageDocuments;
                 
-                // If no specific documents requested, get all user documents
+                // If no specific documents requested, get all user documents using authenticated userId
                 if (documentIds.length === 0) {
                   console.log(`[Custom Voice] 📄 No specific documents provided, loading all user documents from database...`);
-                  const allUserDocs = await storage.getUserDocuments(message.userId);
+                  const allUserDocs = await storage.getUserDocuments(authenticatedUserId);
                   const readyDocs = allUserDocs.filter(doc => doc.processingStatus === 'ready');
                   documentIds = readyDocs.map(doc => doc.id);
                   console.log(`[Custom Voice] 📚 Found ${readyDocs.length} ready documents for user`);
@@ -742,7 +814,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
                 
                 if (documentIds.length > 0) {
                   console.log(`[Custom Voice] 📄 Loading ${documentIds.length} documents from database...`);
-                  const { chunks, documents } = await storage.getDocumentContext(message.userId, documentIds);
+                  const { chunks, documents } = await storage.getDocumentContext(authenticatedUserId, documentIds);
                   console.log(`[Custom Voice] ✅ Loaded ${chunks.length} chunks from ${documents.length} documents`);
                   
                   // Format chunks as content strings grouped by document
