@@ -11,8 +11,8 @@ import { eq, and, or, gte } from "drizzle-orm";
 import { getTutorPersonality } from "../config/tutor-personalities";
 import { moderateContent, shouldWarnUser, getModerationResponse } from "../services/content-moderation";
 import { storage } from "../storage";
-import { getSessionMiddleware } from "../auth";
-import passport from "passport";
+import { validateWsSession, rejectWsUpgrade } from '../middleware/ws-session-validator';
+import { wsRateLimiter, getClientIp } from '../middleware/ws-rate-limiter';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // TIMING CONSTANTS (Nov 4, 2025): Comprehensive timing fix
@@ -180,8 +180,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
 
   console.log('[Custom Voice] WebSocket server initialized on /api/custom-voice-ws (noServer mode)');
 
-  // Handle WebSocket upgrade with authentication
-  server.on('upgrade', (request: IncomingMessage, socket: Socket, head: Buffer) => {
+  // Handle WebSocket upgrade with production-grade authentication
+  server.on('upgrade', async (request: IncomingMessage, socket: Socket, head: Buffer) => {
     // Only handle /api/custom-voice-ws path (allow query strings)
     const url = request.url || '';
     if (!url.startsWith('/api/custom-voice-ws')) {
@@ -190,71 +190,63 @@ export function setupCustomVoiceWebSocket(server: Server) {
       return;
     }
 
-    console.log('[WebSocket] 🔐 Authenticating upgrade request...');
+    console.log('[WebSocket] 🔐 Validating upgrade request...');
 
-    // Get session middleware (will throw if setupAuth hasn't run)
-    const sessionMiddleware = getSessionMiddleware();
+    // Step 1: IP-based rate limiting (prevent DoS attacks)
+    const clientIp = getClientIp(request);
+    const rateLimitCheck = wsRateLimiter.canUpgrade(clientIp);
+    
+    if (!rateLimitCheck.allowed) {
+      console.error(`[WebSocket] ❌ Rate limit exceeded for ${clientIp}:`, rateLimitCheck.reason);
+      rejectWsUpgrade(socket, 429, rateLimitCheck.reason || 'Too many requests');
+      return;
+    }
 
-    // Create a fresh response stub per upgrade to prevent state cross-contamination
-    const resStub = {
-      getHeader: () => undefined,
-      setHeader: () => undefined,
-      removeHeader: () => undefined,
-      writeHead: () => undefined,
-      end: () => undefined,
-    } as any;
+    // Step 2: Session validation (no Express middleware reuse)
+    const sessionSecret = process.env.SESSION_SECRET || 'development-session-secret-only';
+    const validationResult = await validateWsSession(request, sessionSecret);
+    
+    if (!validationResult.valid) {
+      console.error(`[WebSocket] ❌ Session validation failed:`, validationResult.error);
+      rejectWsUpgrade(socket, validationResult.statusCode || 401, validationResult.error || 'Unauthorized');
+      return;
+    }
 
-    // Apply session middleware to authenticate
-    sessionMiddleware(request as any, resStub, (err?: any) => {
-      if (err) {
-        console.error('[WebSocket] ❌ Session middleware error:', err);
-        socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n');
-        socket.destroy();
-        return;
-      }
+    const userId = validationResult.userId!;
+    const sessionId = validationResult.sessionId!;
+    console.log('[WebSocket] ✅ Session validated for user:', userId);
 
-      // Apply passport initialization before session deserialization
-      passport.initialize()(request as any, resStub, (err?: any) => {
-        if (err) {
-          console.error('[WebSocket] ❌ Passport initialization error:', err);
-          socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n');
-          socket.destroy();
+    // Step 3: Upgrade to WebSocket
+    try {
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        // Track connection for rate limiter (enforces concurrent connection limit)
+        const trackResult = wsRateLimiter.trackConnection(clientIp);
+        
+        if (!trackResult.allowed) {
+          console.error(`[WebSocket] ❌ Concurrent limit exceeded for ${clientIp}`);
+          ws.close(1008, trackResult.reason || 'Too many concurrent connections');
           return;
         }
-
-        // Apply passport session to deserialize user
-        passport.session()(request as any, resStub, (err?: any) => {
-          if (err) {
-            console.error('[WebSocket] ❌ Passport session error:', err);
-            socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n');
-            socket.destroy();
-            return;
-          }
-
-          const req = request as any;
-          
-          if (!req.user || !req.user.id) {
-            console.error('[WebSocket] ❌ No valid session found');
-            socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-            socket.destroy();
-            return;
-          }
-
-          const userId = req.user.id;
-          console.log('[WebSocket] ✅ Session authenticated for user:', userId);
-
-          // Upgrade to WebSocket
-          wss.handleUpgrade(request, socket, head, (ws) => {
-            // Attach authenticated userId to WebSocket
-            (ws as any).authenticatedUserId = userId;
-            (ws as any).user = req.user;
-            
-            console.log('[WebSocket] ✅ Connection upgraded for user:', userId);
-            wss.emit('connection', ws, request);
-          });
+        
+        // Attach authenticated userId to WebSocket
+        (ws as any).authenticatedUserId = userId;
+        (ws as any).sessionId = sessionId;
+        (ws as any).clientIp = clientIp;
+        
+        console.log('[WebSocket] ✅ Connection tracked for user:', userId);
+        
+        // Release connection when socket closes
+        ws.on('close', () => {
+          wsRateLimiter.releaseConnection(clientIp);
+          console.log(`[WebSocket] ✅ Connection released for ${clientIp}`);
         });
+        
+        wss.emit('connection', ws, request);
       });
-    });
+    } catch (upgradeError) {
+      console.error('[WebSocket] ❌ Upgrade error:', upgradeError);
+      rejectWsUpgrade(socket, 500, 'Internal server error');
+    }
   });
 
   wss.on("connection", (ws: WebSocket) => {

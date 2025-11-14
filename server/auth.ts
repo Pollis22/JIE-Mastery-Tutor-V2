@@ -380,23 +380,75 @@ export function setupAuth(app: Express) {
           return res.status(500).json({ error: 'Session error', details: errorMessage });
         }
         
-        // Enforce concurrent login limits AFTER successful authentication
-        // This ensures old sessions are only terminated when new login succeeds
-        await enforceConcurrentLoginsAfterAuth(user.id).catch(err => 
-          console.error('[Auth] Concurrent login enforcement failed:', err)
-        );
-        
-        // Sanitize user response to exclude sensitive fields
-        const { password, ...safeUser } = user as any;
-        res.status(200).json(safeUser);
+        // Session rotation for security (prevents session fixation attacks)
+        // Regenerate session ID and track rotation timestamp
+        req.session.regenerate((regenerateErr) => {
+          if (regenerateErr) {
+            console.error('[Auth] Session regeneration failed:', regenerateErr);
+            // Continue anyway - this is non-critical for login flow
+          } else {
+            console.log('[Auth] ✓ Session regenerated for security');
+          }
+          
+          // Re-login user after session regeneration (session.regenerate clears data)
+          req.login(user, async (loginErr) => {
+            if (loginErr) {
+              console.error('[Auth] Re-login after regeneration failed:', loginErr);
+              return res.status(500).json({ error: 'Session error', details: loginErr.message });
+            }
+            
+            // Track session rotation timestamp for freshness validation
+            req.session.lastRotatedAt = Date.now();
+            
+            // Save session explicitly to ensure lastRotatedAt is persisted
+            req.session.save((saveErr) => {
+              if (saveErr) {
+                console.error('[Auth] Session save failed:', saveErr);
+              }
+            });
+            
+            // Enforce concurrent login limits AFTER successful authentication
+            // This ensures old sessions are only terminated when new login succeeds
+            await enforceConcurrentLoginsAfterAuth(user.id).catch(err => 
+              console.error('[Auth] Concurrent login enforcement failed:', err)
+            );
+            
+            // Sanitize user response to exclude sensitive fields
+            const { password, ...safeUser } = user as any;
+            res.status(200).json(safeUser);
+          });
+        });
       });
     })(req, res, next);
   });
 
   app.post("/api/logout", (req, res, next) => {
+    // Get session ID before logout
+    const sessionId = req.sessionID;
+    
     req.logout((err) => {
-      if (err) return next(err);
-      res.sendStatus(200);
+      if (err) {
+        console.error('[Auth] Logout error:', err);
+        return next(err);
+      }
+      
+      // Explicitly destroy session from session store
+      if (sessionId && req.session) {
+        req.session.destroy((destroyErr) => {
+          if (destroyErr) {
+            console.error('[Auth] Session destroy error:', destroyErr);
+            // Continue anyway - user is logged out from Passport
+          } else {
+            console.log('[Auth] ✓ Session explicitly destroyed');
+          }
+          
+          // Clear the session cookie
+          res.clearCookie('connect.sid');
+          res.sendStatus(200);
+        });
+      } else {
+        res.sendStatus(200);
+      }
     });
   });
 
