@@ -275,7 +275,7 @@ export function useCustomVoice() {
           }
           
           // Convert to PCM16 with amplification
-          const GAIN = 10; // Amplify quiet microphones
+          const GAIN = 100; // Amplify quiet microphones (increased from 10)
           const pcm16 = new Int16Array(inputData.length);
           for (let i = 0; i < inputData.length; i++) {
             // Apply gain before conversion
