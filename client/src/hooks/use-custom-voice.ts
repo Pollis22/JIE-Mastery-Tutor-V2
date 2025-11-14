@@ -179,6 +179,12 @@ export function useCustomVoice() {
       mediaStreamRef.current = stream;
       audioContextRef.current = new AudioContext({ sampleRate: 16000 });
       
+      // Resume audio context if suspended
+      if (audioContextRef.current.state === 'suspended') {
+        await audioContextRef.current.resume();
+        console.log("[Custom Voice] ✅ Audio context resumed from suspended state");
+      }
+      
       try {
         // Load AudioWorklet processor (modern API, replaces deprecated ScriptProcessorNode)
         await audioContextRef.current.audioWorklet.addModule('/audio-processor.js');
@@ -219,12 +225,57 @@ export function useCustomVoice() {
         const processor = audioContextRef.current.createScriptProcessor(4096, 1, 1);
         processorRef.current = processor as any;
         
+        // Keep track of consecutive silent chunks
+        let silentChunks = 0;
+        const MAX_SILENT_CHUNKS = 10;
+        
         processor.onaudioprocess = (e) => {
           if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+          
+          // Check if media stream is still active
+          if (!mediaStreamRef.current || !mediaStreamRef.current.active) {
+            console.error('[Custom Voice] ❌ Media stream is no longer active!');
+            return;
+          }
+          
+          // Check audio context state and resume if needed
+          if (audioContextRef.current?.state === 'suspended') {
+            audioContextRef.current.resume();
+            console.log('[Custom Voice] ⚠️ Resuming suspended audio context');
+          }
 
           const inputData = e.inputBuffer.getChannelData(0);
-          const pcm16 = new Int16Array(inputData.length);
           
+          // Check if audio buffer contains actual audio (not just silence)
+          let hasAudio = false;
+          let maxAmplitude = 0;
+          for (let i = 0; i < inputData.length; i++) {
+            const amplitude = Math.abs(inputData[i]);
+            if (amplitude > maxAmplitude) maxAmplitude = amplitude;
+            if (amplitude > 0.001) {  // Threshold for detecting audio
+              hasAudio = true;
+            }
+          }
+          
+          // Track consecutive silent chunks
+          if (!hasAudio) {
+            silentChunks++;
+            if (silentChunks <= MAX_SILENT_CHUNKS) {
+              // Still send a few silent chunks (user might be pausing)
+              console.log(`[Custom Voice] 🔇 Silent chunk ${silentChunks}/${MAX_SILENT_CHUNKS}, max amplitude: ${maxAmplitude}`);
+            } else {
+              // Too many silent chunks, skip to save bandwidth
+              return;
+            }
+          } else {
+            if (silentChunks > 0) {
+              console.log(`[Custom Voice] 🎤 Audio detected after ${silentChunks} silent chunks, max amplitude: ${maxAmplitude}`);
+            }
+            silentChunks = 0;  // Reset counter when audio is detected
+          }
+          
+          // Convert to PCM16
+          const pcm16 = new Int16Array(inputData.length);
           for (let i = 0; i < inputData.length; i++) {
             const s = Math.max(-1, Math.min(1, inputData[i]));
             pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
@@ -241,6 +292,15 @@ export function useCustomVoice() {
 
         source.connect(processor);
         processor.connect(audioContextRef.current.destination);
+        
+        console.log('[Custom Voice] 📊 ScriptProcessor connected:', {
+          bufferSize: processor.bufferSize,
+          inputChannels: processor.numberOfInputs,
+          outputChannels: processor.numberOfOutputs,
+          contextState: audioContextRef.current.state,
+          streamActive: stream.active,
+          trackState: stream.getAudioTracks()[0]?.readyState
+        });
       }
       
       console.log("[Custom Voice] ✅ Microphone started successfully");
