@@ -1126,10 +1126,24 @@ CRITICAL INSTRUCTIONS:
             if (state.deepgramConnection && message.data) {
               try {
                 const audioBuffer = Buffer.from(message.data, "base64");
-                console.log('[Custom Voice] 🎤 Audio buffer created:', {
-                  bufferSize: audioBuffer.length,
-                  isBuffer: Buffer.isBuffer(audioBuffer)
+                
+                // Check audio content (first 10 samples as Int16)
+                const int16View = new Int16Array(audioBuffer.buffer, audioBuffer.byteOffset, Math.min(10, audioBuffer.length / 2));
+                const hasNonZero = int16View.some(sample => sample !== 0);
+                const maxAmplitude = Math.max(...Array.from(int16View).map(Math.abs));
+                
+                console.log('[Custom Voice] 🎤 Audio buffer analysis:', {
+                  totalBytes: audioBuffer.length,
+                  totalSamples: audioBuffer.length / 2,
+                  firstTenSamples: Array.from(int16View),
+                  hasNonZeroSamples: hasNonZero,
+                  maxAmplitude: maxAmplitude,
+                  isSilent: !hasNonZero || maxAmplitude < 100
                 });
+                
+                if (!hasNonZero) {
+                  console.warn('[Custom Voice] ⚠️ Audio buffer is COMPLETELY SILENT (all zeros)!');
+                }
                 
                 // Deepgram LiveClient handles connection state internally - just send
                 state.deepgramConnection.send(audioBuffer);
