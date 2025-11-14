@@ -671,6 +671,30 @@ export function setupCustomVoiceWebSocket(server: Server) {
             state.studentName = message.studentName || "Student";
             state.ageGroup = message.ageGroup || "College/Adult";
             
+            // CRITICAL FIX (Nov 14, 2025): Log userId after initialization to debug 401 auth issues
+            console.log(`[Custom Voice] 🔐 Session state initialized:`, {
+              sessionId: state.sessionId,
+              userId: state.userId,
+              hasUserId: !!state.userId,
+              userIdType: typeof state.userId,
+              studentName: state.studentName,
+              ageGroup: state.ageGroup
+            });
+            
+            // GUARD: Fail fast if userId is missing after all validation
+            if (!state.userId) {
+              console.error(`[Custom Voice] ❌ CRITICAL: userId is missing after validation!`, {
+                messageUserId: message.userId,
+                stateUserId: state.userId
+              });
+              ws.send(JSON.stringify({ 
+                type: "error", 
+                error: "Authentication failed - userId missing. Please log in again." 
+              }));
+              ws.close();
+              return;
+            }
+            
             // Fetch user's speech speed preference from database
             try {
               const user = await storage.getUser(message.userId);
@@ -872,6 +896,19 @@ CRITICAL INSTRUCTIONS:
               async (transcript: string, isFinal: boolean) => {
                 // Log EVERYTHING for debugging
                 console.log(`[Deepgram] ${isFinal ? '✅ FINAL' : '⏳ interim'}: "${transcript}" (isFinal=${isFinal})`);
+                
+                // CRITICAL FIX (Nov 14, 2025): Check userId FIRST to debug 401 auth issues
+                if (!state.userId) {
+                  console.error(`[Deepgram] ❌ CRITICAL: userId missing in transcript handler!`, {
+                    sessionId: state.sessionId,
+                    hasSessionId: !!state.sessionId,
+                    transcript: transcript.substring(0, 50),
+                    isFinal: isFinal
+                  });
+                  console.error(`[Deepgram] ❌ This means /api/user returned 401 and session initialization failed`);
+                  // Don't process transcripts if user is not authenticated
+                  return;
+                }
                 
                 // CRITICAL: Strict checks before processing
                 if (!isFinal) {

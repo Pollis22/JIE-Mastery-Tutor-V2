@@ -41,6 +41,22 @@ export function setupAuth(app: Express) {
     sessionSecret = 'development-session-secret-only';
   }
 
+  // Environment-aware session cookie configuration
+  // Production (Railway HTTPS): secure=true, sameSite='none' (required for cross-site requests)
+  // Development (local HTTP): secure=false, sameSite='lax'
+  const isProduction = process.env.NODE_ENV === 'production';
+  const cookieSecure = process.env.SESSION_COOKIE_SECURE 
+    ? process.env.SESSION_COOKIE_SECURE === 'true' 
+    : isProduction;
+  const cookieSameSite = (process.env.SESSION_COOKIE_SAMESITE || (isProduction ? 'none' : 'lax')) as 'lax' | 'none' | 'strict';
+
+  console.log('[Session] Cookie configuration:', {
+    environment: process.env.NODE_ENV,
+    secure: cookieSecure,
+    sameSite: cookieSameSite,
+    maxAge: '24 hours'
+  });
+
   const sessionSettings: session.SessionOptions = {
     secret: sessionSecret,
     resave: false,
@@ -48,8 +64,8 @@ export function setupAuth(app: Express) {
     store: storage.sessionStore,
     cookie: {
       httpOnly: true,
-      secure: false, // Set to false for development (HTTP)
-      sameSite: 'lax', // Changed from 'none' - lax works with secure: false
+      secure: cookieSecure,
+      sameSite: cookieSameSite,
       maxAge: 24 * 60 * 60 * 1000 // 24 hours
     }
   };
@@ -98,7 +114,7 @@ export function setupAuth(app: Express) {
             monthlyResetDate: new Date(),
             weeklyVoiceMinutesUsed: 0,
             weeklyResetDate: new Date(),
-            preferredLanguage: 'english',
+            preferredLanguage: 'en', // Fixed: Use ISO language code instead of 'english'
             voiceStyle: 'cheerful',
             speechSpeed: '1.0',
             volumeLevel: 75,
