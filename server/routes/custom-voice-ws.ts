@@ -1131,18 +1131,11 @@ CRITICAL INSTRUCTIONS:
                   isBuffer: Buffer.isBuffer(audioBuffer)
                 });
                 
-                const deepgramReadyState = state.deepgramConnection.getReadyState();
-                if (deepgramReadyState === 1) {
-                  state.deepgramConnection.send(audioBuffer);
-                  console.log('[Custom Voice] ✅ Audio forwarded to Deepgram successfully');
-                } else {
-                  console.error('[Custom Voice] ❌ Deepgram not ready to receive audio:', {
-                    readyState: deepgramReadyState,
-                    states: '0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED'
-                  });
-                }
+                // Deepgram LiveClient handles connection state internally - just send
+                state.deepgramConnection.send(audioBuffer);
+                console.log('[Custom Voice] ✅ Audio forwarded to Deepgram successfully');
               } catch (error) {
-                console.error('[Custom Voice] ❌ Error processing audio:', {
+                console.error('[Custom Voice] ❌ Error sending audio to Deepgram:', {
                   error: error instanceof Error ? error.message : String(error),
                   stack: error instanceof Error ? error.stack : undefined
                 });
