@@ -89,39 +89,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const registerMutation = useMutation({
     mutationFn: async (credentials: InsertUser) => {
-      console.log('[AUTH] Making registration request');
+      console.log('[AUTH] Making registration request with:', {
+        email: credentials.email,
+        username: credentials.username,
+        hasPassword: !!credentials.password,
+      });
+      
+      // apiRequest throws on error, so just await and return the JSON
+      // The error message from backend is already extracted by apiRequest's throwIfResNotOk
       const res = await apiRequest("POST", "/api/register", credentials);
-      
-      // Check if the response has content before parsing
-      const contentType = res.headers.get("content-type");
-      if (!contentType || !contentType.includes("application/json")) {
-        throw new Error("Server error. Please try again.");
-      }
-      
       const data = await res.json();
-      console.log('[AUTH] Registration response:', { ok: res.ok, status: res.status, data });
       
-      // Handle specific error cases from backend
-      if (!res.ok) {
-        // Extract specific error message from backend validation
-        const errorMessage = data.error || data.message || "Registration failed. Please try again.";
-        const errorField = data.field; // Field that failed validation
-        
-        console.error('[AUTH] Registration failed:', {
-          status: res.status,
-          error: errorMessage,
-          field: errorField,
-          details: data.details,
-        });
-        
-        // Create error with specific message from backend
-        const error: any = new Error(errorMessage);
-        error.field = errorField;
-        error.details = data.details;
-        throw error;
-      }
-      
-      console.log('[AUTH] Registration successful');
+      console.log('[AUTH] ✅ Registration successful:', data.email);
       return data;
     },
     onSuccess: (user: SelectUser) => {
@@ -132,7 +111,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
     },
     onError: (error: any) => {
-      console.error('[AUTH] Registration error:', error);
+      // The error.message already contains the specific error from backend
+      // thanks to queryClient.ts throwIfResNotOk extracting errorJson.error
+      console.error('[AUTH] ❌ Registration failed:', error.message);
       const errorMessage = error.message || "Unable to create account. Please try again.";
       toast({
         title: "Registration failed", 
