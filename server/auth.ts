@@ -256,84 +256,192 @@ export function setupAuth(app: Express) {
   });
 
   app.post("/api/register", async (req, res, next) => {
-    // Validate registration payload
-    const registerSchema = z.object({
-      email: z.string().email(),
-      username: z.string().min(1),
-      password: z.string().min(8),
-      firstName: z.string().min(1, "First name is required"),
-      lastName: z.string().min(1, "Last name is required"),
-      parentName: z.string().optional(),
-      studentName: z.string().min(1, "Student name is required"),
-      studentAge: z.number().optional(),
-      gradeLevel: z.string().min(1, "Grade level is required"),
-      primarySubject: z.string().optional(),
-      marketingOptIn: z.boolean().optional(),
-    });
-
-    const validation = registerSchema.safeParse(req.body);
-    if (!validation.success) {
-      return res.status(400).json({ 
-        error: "Validation failed", 
-        details: validation.error.errors 
+    try {
+      // 🔍 Log incoming registration request
+      console.log('[Register] 📝 Registration attempt:', {
+        email: req.body.email,
+        username: req.body.username,
+        firstName: req.body.firstName,
+        lastName: req.body.lastName,
+        studentName: req.body.studentName,
+        gradeLevel: req.body.gradeLevel,
+        hasPassword: !!req.body.password,
+        passwordLength: req.body.password?.length || 0,
       });
-    }
 
-    const existingUser = await storage.getUserByUsername(validation.data.username);
-    if (existingUser) {
-      return res.status(400).send("Username already exists");
-    }
+      // Validate registration payload with detailed error messages
+      const registerSchema = z.object({
+        email: z.string()
+          .min(1, "Email is required")
+          .email("Invalid email format"),
+        username: z.string()
+          .min(1, "Username is required")
+          .min(3, "Username must be at least 3 characters")
+          .max(30, "Username must be at most 30 characters")
+          .regex(/^[a-zA-Z0-9_-]+$/, "Username can only contain letters, numbers, underscores, and hyphens"),
+        password: z.string()
+          .min(1, "Password is required")
+          .min(8, "Password must be at least 8 characters"),
+        firstName: z.string()
+          .min(1, "First name is required"),
+        lastName: z.string()
+          .min(1, "Last name is required"),
+        parentName: z.string().optional(),
+        studentName: z.string()
+          .min(1, "Student name is required"),
+        studentAge: z.number()
+          .int("Student age must be a whole number")
+          .min(4, "Student must be at least 4 years old")
+          .max(99, "Invalid student age")
+          .optional(),
+        gradeLevel: z.string()
+          .min(1, "Grade level is required"),
+        primarySubject: z.string().optional(),
+        marketingOptIn: z.boolean().optional(),
+      });
 
-    // Set default plan and minutes for new users
-    const defaultPlan = 'starter';
-    const minutesMap: Record<string, number> = {
-      'starter': 60,
-      'standard': 240,
-      'pro': 600,
-    };
-    
-    const user = await storage.createUser({
-      ...validation.data,
-      password: await hashPassword(validation.data.password),
-      marketingOptInDate: validation.data.marketingOptIn ? new Date() : null,
-      subscriptionPlan: defaultPlan,
-      subscriptionStatus: 'active', // New users start with active status
-      subscriptionMinutesLimit: minutesMap[defaultPlan], // Set correct minutes for plan
-      subscriptionMinutesUsed: 0,
-      purchasedMinutesBalance: 0,
-      billingCycleStart: new Date(),
-    });
-
-    req.login(user, async (err) => {
-      if (err) return next(err);
+      console.log('[Register] ✓ Starting validation...');
+      const validation = registerSchema.safeParse(req.body);
       
-      // Generate and send email verification (non-blocking)
-      const verificationToken = await storage.generateEmailVerificationToken(user.id);
-      emailService.sendEmailVerification({
-        email: user.email,
-        name: user.parentName || user.firstName || 'User',
-        token: verificationToken,
-      }).catch(error => console.error('[Auth] Email verification failed:', error));
-
-      // Send welcome email (non-blocking)
-      if (user.parentName && user.studentName) {
-        emailService.sendWelcomeEmail({
-          email: user.email,
-          parentName: user.parentName,
-          studentName: user.studentName,
-        }).catch(error => console.error('[Auth] Welcome email failed:', error));
+      if (!validation.success) {
+        // Extract first validation error for clear messaging
+        const firstError = validation.error.errors[0];
+        const fieldName = firstError.path.join('.');
+        const errorMessage = firstError.message;
+        
+        console.log('[Register] ❌ Validation failed:', {
+          field: fieldName,
+          error: errorMessage,
+          allErrors: validation.error.errors,
+        });
+        
+        return res.status(400).json({ 
+          error: errorMessage,
+          field: fieldName,
+          details: validation.error.errors,
+        });
       }
 
-      // Send admin notification (non-blocking)
-      emailService.sendAdminNotification('Account Created', {
-        email: user.email,
-        studentName: user.studentName,
-        gradeLevel: user.gradeLevel,
-        marketingOptIn: user.marketingOptIn,
-      }).catch(error => console.error('[Auth] Admin notification failed:', error));
+      console.log('[Register] ✓ Validation passed');
 
-      res.status(201).json(user);
-    });
+      // Check for duplicate email (case-insensitive)
+      console.log('[Register] 🔍 Checking for duplicate email...');
+      const existingEmail = await storage.getUserByEmail(validation.data.email.toLowerCase());
+      if (existingEmail) {
+        console.log('[Register] ❌ Email already registered:', validation.data.email);
+        return res.status(400).json({ 
+          error: "Email already registered",
+          field: "email",
+        });
+      }
+      console.log('[Register] ✓ Email available');
+
+      // Check for duplicate username (case-insensitive)
+      console.log('[Register] 🔍 Checking for duplicate username...');
+      const existingUser = await storage.getUserByUsername(validation.data.username.toLowerCase());
+      if (existingUser) {
+        console.log('[Register] ❌ Username already taken:', validation.data.username);
+        return res.status(400).json({ 
+          error: "Username already taken",
+          field: "username",
+        });
+      }
+      console.log('[Register] ✓ Username available');
+
+      // Set default plan and minutes for new users
+      const defaultPlan = 'starter';
+      const minutesMap: Record<string, number> = {
+        'starter': 60,
+        'standard': 240,
+        'pro': 600,
+      };
+      
+      console.log('[Register] ✓ Creating user in database...');
+      const user = await storage.createUser({
+        ...validation.data,
+        email: validation.data.email.toLowerCase(), // Store email in lowercase
+        username: validation.data.username.toLowerCase(), // Store username in lowercase
+        password: await hashPassword(validation.data.password),
+        marketingOptInDate: validation.data.marketingOptIn ? new Date() : null,
+        subscriptionPlan: defaultPlan,
+        subscriptionStatus: 'active', // New users start with active status
+        subscriptionMinutesLimit: minutesMap[defaultPlan], // Set correct minutes for plan
+        subscriptionMinutesUsed: 0,
+        purchasedMinutesBalance: 0,
+        billingCycleStart: new Date(),
+      });
+
+      console.log('[Register] ✅ User created successfully:', user.email);
+
+      req.login(user, async (err) => {
+        if (err) {
+          console.error('[Register] ❌ Login after registration failed:', err);
+          return next(err);
+        }
+        
+        console.log('[Register] ✓ User logged in after registration');
+        
+        // Generate and send email verification (non-blocking)
+        const verificationToken = await storage.generateEmailVerificationToken(user.id);
+        emailService.sendEmailVerification({
+          email: user.email,
+          name: user.parentName || user.firstName || 'User',
+          token: verificationToken,
+        }).catch(error => console.error('[Register] Email verification failed:', error));
+
+        // Send welcome email (non-blocking)
+        if (user.parentName && user.studentName) {
+          emailService.sendWelcomeEmail({
+            email: user.email,
+            parentName: user.parentName,
+            studentName: user.studentName,
+          }).catch(error => console.error('[Register] Welcome email failed:', error));
+        }
+
+        // Send admin notification (non-blocking)
+        emailService.sendAdminNotification('Account Created', {
+          email: user.email,
+          studentName: user.studentName,
+          gradeLevel: user.gradeLevel,
+          marketingOptIn: user.marketingOptIn,
+        }).catch(error => console.error('[Register] Admin notification failed:', error));
+
+        console.log('[Register] ✅ Registration complete');
+        res.status(201).json(user);
+      });
+      
+    } catch (error: any) {
+      console.error('[Register] ❌ Registration error:', error);
+      
+      // Handle PostgreSQL unique constraint violation (23505)
+      if (error.code === '23505') {
+        const constraintName = error.constraint || '';
+        console.log('[Register] ❌ PostgreSQL constraint violation:', constraintName);
+        
+        if (constraintName.includes('email')) {
+          return res.status(400).json({ 
+            error: "Email already registered",
+            field: "email",
+          });
+        } else if (constraintName.includes('username')) {
+          return res.status(400).json({ 
+            error: "Username already taken",
+            field: "username",
+          });
+        }
+        
+        // Generic constraint violation
+        return res.status(400).json({ 
+          error: "An account with these details already exists",
+        });
+      }
+      
+      // Generic error handler
+      return res.status(500).json({ 
+        error: "Registration failed. Please try again.",
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined,
+      });
+    }
   });
 
   app.post("/api/login", (req, res, next) => {
