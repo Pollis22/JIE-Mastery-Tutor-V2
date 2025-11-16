@@ -12,6 +12,7 @@ import { Router, raw } from 'express';
 import Stripe from 'stripe';
 import { storage } from '../storage';
 import { emailService } from '../services/email-service';
+import { registrationTokenStore } from '../services/registration-tokens';
 
 const router = Router();
 
@@ -65,6 +66,129 @@ router.post(
           const session = event.data.object as Stripe.Checkout.Session;
           const userId = session.metadata?.userId;
           const type = session.metadata?.type;
+
+          // Handle payment-first registration
+          if (type === 'registration') {
+            console.log('[Stripe Webhook] 🎉 Processing registration checkout');
+            
+            const { hashPassword } = await import('../auth');
+            const plan = session.metadata?.plan;
+            const registrationToken = session.metadata?.registrationToken;
+
+            if (!plan || !registrationToken) {
+              console.error('[Stripe Webhook] Missing plan or registration token in metadata');
+              break;
+            }
+
+            // 🔒 SECURITY: Fetch registration data from secure server-side store
+            const registrationData = registrationTokenStore.getRegistrationData(registrationToken);
+            
+            if (!registrationData) {
+              console.error('[Stripe Webhook] Registration token not found or expired:', registrationToken.substring(0, 8));
+              break;
+            }
+
+            const { email, password, accountName, studentName, gradeLevel, studentAge, primarySubject, marketingOptIn } = registrationData;
+
+            if (!email || !password || !accountName) {
+              console.error('[Stripe Webhook] Missing required registration data from token store');
+              break;
+            }
+
+            // Check if user already exists (prevent duplicate accounts)
+            const existingUser = await storage.getUserByEmail(email.toLowerCase());
+            if (existingUser) {
+              console.log('[Stripe Webhook] ⚠️ User already exists for email:', email);
+              // Update their subscription instead
+              await storage.updateUserStripeInfo(
+                existingUser.id,
+                session.customer as string,
+                session.subscription as string
+              );
+              await storage.updateUserSubscription(
+                existingUser.id,
+                plan as 'starter' | 'standard' | 'pro',
+                'active',
+                plan === 'starter' ? 60 : plan === 'standard' ? 240 : 600
+              );
+              break;
+            }
+
+            // Auto-generate username from email
+            const emailPrefix = email.split('@')[0].toLowerCase();
+            const randomSuffix = Math.random().toString(36).substring(2, 8);
+            const username = `${emailPrefix}_${randomSuffix}`;
+
+            // Parse accountName into firstName/lastName
+            const nameParts = accountName.trim().split(/\s+/);
+            const firstName = nameParts[0] || accountName;
+            const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+
+            // Map plan to monthly minutes
+            const minutesMap: Record<string, number> = {
+              'starter': 60,
+              'standard': 240,
+              'pro': 600,
+            };
+            const monthlyMinutes = minutesMap[plan] || 60;
+
+            // Create user account AFTER successful payment
+            const newUser = await storage.createUser({
+              email: email.toLowerCase(),
+              username,
+              password: await hashPassword(password),
+              firstName,
+              lastName,
+              parentName: accountName,
+              studentName,
+              studentAge,
+              gradeLevel,
+              primarySubject,
+              marketingOptInDate: marketingOptIn ? new Date() : null,
+              subscriptionPlan: plan as 'starter' | 'standard' | 'pro',
+              subscriptionStatus: 'active',
+              subscriptionMinutesLimit: monthlyMinutes,
+              subscriptionMinutesUsed: 0,
+              purchasedMinutesBalance: 0,
+              billingCycleStart: new Date(),
+            });
+
+            // Update with Stripe customer and subscription IDs
+            await storage.updateUserStripeInfo(
+              newUser.id,
+              session.customer as string,
+              session.subscription as string
+            );
+
+            console.log('[Stripe Webhook] ✅ User account created:', newUser.email);
+
+            // 🔒 SECURITY: Delete registration token after successful account creation
+            registrationTokenStore.deleteToken(registrationToken);
+
+            // Send welcome email (non-blocking)
+            const planNames: Record<string, string> = {
+              'starter': 'Starter Family',
+              'standard': 'Standard Family',
+              'pro': 'Pro Family',
+            };
+
+            emailService.sendSubscriptionConfirmation({
+              email: newUser.email,
+              parentName: newUser.parentName || newUser.username,
+              studentName: newUser.studentName || '',
+              plan: planNames[plan] || plan,
+              minutes: monthlyMinutes,
+            }).catch(error => console.error('[Stripe Webhook] Welcome email failed:', error));
+
+            // Send admin notification
+            emailService.sendAdminNotification('New Registration (Paid)', {
+              email: newUser.email,
+              plan: planNames[plan] || plan,
+              amount: session.amount_total ? session.amount_total / 100 : 0,
+            }).catch(error => console.error('[Stripe Webhook] Admin notification failed:', error));
+
+            break;
+          }
 
           if (!userId) {
             console.error('[Stripe Webhook] Missing userId in checkout session');

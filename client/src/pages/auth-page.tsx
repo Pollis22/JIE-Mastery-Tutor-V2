@@ -25,6 +25,9 @@ const loginSchema = z.object({
 });
 
 const registerSchema = z.object({
+  plan: z.enum(['starter', 'standard', 'pro'], {
+    required_error: "Please select a subscription plan"
+  }),
   accountName: z.string().min(1, "Account name is required"),
   studentName: z.string().min(1, "Student name is required"),
   studentAge: z.coerce.number().min(5, "Student must be at least 5 years old").max(99, "Please enter a valid age"),
@@ -81,6 +84,7 @@ export default function AuthPage() {
   const registerForm = useForm<RegisterForm>({
     resolver: zodResolver(registerSchema),
     defaultValues: {
+      plan: undefined,
       accountName: "",
       studentName: "",
       studentAge: 10,
@@ -122,12 +126,45 @@ export default function AuthPage() {
     }
   };
 
+  const createCheckoutSessionMutation = useMutation({
+    mutationFn: async (data: RegisterForm) => {
+      const res = await apiRequest("POST", "/api/checkout/create-registration-session", {
+        plan: data.plan,
+        registrationData: {
+          accountName: data.accountName,
+          studentName: data.studentName,
+          studentAge: data.studentAge,
+          gradeLevel: data.gradeLevel,
+          primarySubject: data.primarySubject,
+          email: data.email,
+          password: data.password,
+          marketingOptIn: data.marketingOptIn,
+        }
+      });
+      return await res.json();
+    },
+    onSuccess: (data) => {
+      if (data.url) {
+        window.location.href = data.url;
+      }
+    },
+    onError: (error: any) => {
+      console.error('[Registration] Checkout error:', error);
+      toast({
+        title: "Registration failed",
+        description: error.message || "Failed to create checkout session. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleRegister = async (data: RegisterForm) => {
+    console.log('[FORM] handleRegister called with:', data);
+    console.log('[FORM] form.formState.errors:', registerForm.formState.errors);
     try {
-      await registerMutation.mutateAsync(data);
+      await createCheckoutSessionMutation.mutateAsync(data);
     } catch (error) {
-      // Error is handled by mutation's onError
-      console.error('Register error:', error);
+      console.error('[FORM] Registration error:', error);
     }
   };
 
@@ -325,6 +362,32 @@ export default function AuthPage() {
                       <form onSubmit={registerForm.handleSubmit(handleRegister)} className="space-y-4">
                         <FormField
                           control={registerForm.control}
+                          name="plan"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Subscription Plan</FormLabel>
+                              <Select onValueChange={field.onChange} defaultValue={field.value}>
+                                <FormControl>
+                                  <SelectTrigger data-testid="select-plan">
+                                    <SelectValue placeholder="Select a plan" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  <SelectItem value="starter">Starter - $9.99/mo (60 min)</SelectItem>
+                                  <SelectItem value="standard">Standard - $19.99/mo (240 min)</SelectItem>
+                                  <SelectItem value="pro">Pro - $39.99/mo (600 min)</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <FormDescription className="text-xs">
+                                Choose your tutoring plan. You'll be redirected to Stripe to complete payment.
+                              </FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+
+                        <FormField
+                          control={registerForm.control}
                           name="accountName"
                           render={({ field }) => (
                             <FormItem>
@@ -496,10 +559,10 @@ export default function AuthPage() {
                         <Button 
                           type="submit" 
                           className="w-full" 
-                          disabled={registerMutation.isPending}
+                          disabled={createCheckoutSessionMutation.isPending}
                           data-testid="button-register"
                         >
-                          {registerMutation.isPending ? "Creating account..." : "Create Account"}
+                          {createCheckoutSessionMutation.isPending ? "Redirecting to payment..." : "Continue to Payment"}
                         </Button>
                       </form>
                     </Form>

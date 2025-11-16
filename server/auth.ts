@@ -848,4 +848,101 @@ export function setupAuth(app: Express) {
       });
     }
   });
+
+  // Complete registration after successful Stripe checkout
+  app.post("/api/auth/complete-registration", async (req, res, next) => {
+    try {
+      const { sessionId } = req.body;
+
+      if (!sessionId) {
+        return res.status(400).json({ error: 'Session ID is required' });
+      }
+
+      console.log('[Complete Registration] Verifying session:', sessionId);
+
+      // Import Stripe
+      const { stripe } = await import('./services/stripe-service');
+      if (!stripe) {
+        return res.status(503).json({ error: 'Stripe is not configured' });
+      }
+
+      // Retrieve checkout session from Stripe
+      const session = await stripe.checkout.sessions.retrieve(sessionId);
+      
+      if (!session || session.payment_status !== 'paid') {
+        console.log('[Complete Registration] ❌ Invalid or unpaid session');
+        return res.status(400).json({ error: 'Invalid or unpaid session' });
+      }
+
+      if (session.metadata?.type !== 'registration') {
+        console.log('[Complete Registration] ❌ Not a registration session');
+        return res.status(400).json({ error: 'Not a registration session' });
+      }
+
+      const email = session.metadata?.email || session.client_reference_id;
+      if (!email) {
+        console.log('[Complete Registration] ❌ No email in session');
+        return res.status(400).json({ error: 'No email found in session' });
+      }
+
+      // Get user by email (should have been created by webhook)
+      const user = await storage.getUserByEmail(email.toLowerCase());
+      
+      if (!user) {
+        console.log('[Complete Registration] ❌ User not found - webhook may not have processed yet');
+        return res.status(404).json({ 
+          error: 'Account creation pending',
+          message: 'Please wait a moment and try again'
+        });
+      }
+
+      // Log the user in
+      req.login(user, async (err) => {
+        if (err) {
+          console.error('[Complete Registration] ❌ Login failed:', err);
+          return next(err);
+        }
+
+        console.log('[Complete Registration] ✅ User logged in:', user.email);
+        
+        // Rotate session ID for security
+        const oldSessionId = req.sessionID;
+        req.session.regenerate((regenerateErr) => {
+          if (regenerateErr) {
+            console.error('[Complete Registration] Session regeneration error:', regenerateErr);
+          } else {
+            console.log('[Complete Registration] Session rotated:', oldSessionId, '->', req.sessionID);
+          }
+
+          // Re-login after regeneration
+          req.login(user, async (loginErr) => {
+            if (loginErr) {
+              console.error('[Complete Registration] Re-login failed:', loginErr);
+              return res.status(500).json({ error: 'Session error', details: loginErr.message });
+            }
+
+            res.json({
+              success: true,
+              user: {
+                id: user.id,
+                email: user.email,
+                username: user.username,
+                parentName: user.parentName,
+                studentName: user.studentName,
+                subscriptionPlan: user.subscriptionPlan,
+                subscriptionStatus: user.subscriptionStatus,
+              }
+            });
+          });
+        });
+      });
+
+    } catch (error: any) {
+      console.error('[Complete Registration] ❌ Error:', error);
+      return res.status(500).json({ 
+        error: 'Failed to complete registration',
+        message: error.message
+      });
+    }
+  });
 }

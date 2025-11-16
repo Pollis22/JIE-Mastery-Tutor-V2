@@ -46,6 +46,7 @@ import SessionDetailsPage from "@/pages/session-details";
 import ForgotPasswordPage from "@/pages/forgot-password";
 import ResetPasswordPage from "@/pages/reset-password";
 import VerifyEmailPage from "@/pages/verify-email-page";
+import RegistrationSuccessPage from "@/pages/registration-success-page";
 import { PersonalityTestPage } from "@/pages/PersonalityTestPage";
 
 function Router() {
@@ -67,6 +68,7 @@ function Router() {
       <ProtectedRoute path="/subscribe" component={SubscribePage} />
       <ProtectedRoute path="/personality-test" component={PersonalityTestPage} />
       <Route path="/auth" component={AuthPage} />
+      <Route path="/auth/registration-success" component={RegistrationSuccessPage} />
       <Route path="/login" component={AuthPage} />
       <Route path="/forgot-password" component={ForgotPasswordPage} />
       <Route path="/reset-password" component={ResetPasswordPage} />
