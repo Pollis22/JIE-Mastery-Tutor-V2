@@ -357,11 +357,16 @@ export function setupAuth(app: Express) {
       };
       
       console.log('[Register] ✓ Creating user in database...');
+      
+      // Auto-generate parentName from firstName + lastName if not provided
+      const parentName = validation.data.parentName || `${validation.data.firstName} ${validation.data.lastName}`;
+      
       const user = await storage.createUser({
         ...validation.data,
         email: validation.data.email.toLowerCase(), // Store email in lowercase
         username: validation.data.username.toLowerCase(), // Store username in lowercase
         password: await hashPassword(validation.data.password),
+        parentName, // Use auto-generated parentName
         marketingOptInDate: validation.data.marketingOptIn ? new Date() : null,
         subscriptionPlan: defaultPlan,
         subscriptionStatus: 'active', // New users start with active status
