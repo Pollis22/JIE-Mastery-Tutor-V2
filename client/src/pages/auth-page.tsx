@@ -25,8 +25,7 @@ const loginSchema = z.object({
 });
 
 const registerSchema = z.object({
-  firstName: z.string().min(1, "First name is required"),
-  lastName: z.string().min(1, "Last name is required"),
+  accountName: z.string().min(1, "Account name is required"),
   studentName: z.string().min(1, "Student name is required"),
   studentAge: z.coerce.number().min(5, "Student must be at least 5 years old").max(99, "Please enter a valid age"),
   gradeLevel: z.enum(['kindergarten-2', 'grades-3-5', 'grades-6-8', 'grades-9-12', 'college-adult'], {
@@ -37,7 +36,6 @@ const registerSchema = z.object({
   }),
   email: z.string().email("Please enter a valid email"),
   password: z.string().min(8, "Password must be at least 8 characters"),
-  username: z.string().min(3, "Username must be at least 3 characters"),
   marketingOptIn: z.boolean().default(false),
 });
 
@@ -83,15 +81,13 @@ export default function AuthPage() {
   const registerForm = useForm<RegisterForm>({
     resolver: zodResolver(registerSchema),
     defaultValues: {
-      firstName: "",
-      lastName: "",
+      accountName: "",
       studentName: "",
       studentAge: 10,
       gradeLevel: undefined,
       primarySubject: undefined,
       email: "",
       password: "",
-      username: "",
       marketingOptIn: false,
     },
   });
@@ -327,35 +323,22 @@ export default function AuthPage() {
                   <TabsContent value="register" className="space-y-4">
                     <Form {...registerForm}>
                       <form onSubmit={registerForm.handleSubmit(handleRegister)} className="space-y-4">
-                        <div className="grid grid-cols-2 gap-4">
-                          <FormField
-                            control={registerForm.control}
-                            name="firstName"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>First Name</FormLabel>
-                                <FormControl>
-                                  <Input {...field} placeholder="Your first name" data-testid="input-first-name" />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          
-                          <FormField
-                            control={registerForm.control}
-                            name="lastName"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Last Name</FormLabel>
-                                <FormControl>
-                                  <Input {...field} placeholder="Your last name" data-testid="input-last-name" />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                        </div>
+                        <FormField
+                          control={registerForm.control}
+                          name="accountName"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Account Name</FormLabel>
+                              <FormControl>
+                                <Input {...field} placeholder="Your full name" data-testid="input-account-name" />
+                              </FormControl>
+                              <FormDescription className="text-xs">
+                                For parents: your name. For adult learners: your name.
+                              </FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
                         
                         <FormField
                           control={registerForm.control}
@@ -366,6 +349,9 @@ export default function AuthPage() {
                               <FormControl>
                                 <Input {...field} placeholder="Student's full name" data-testid="input-student-name" />
                               </FormControl>
+                              <FormDescription className="text-xs">
+                                For parents: your child's name. For adult learners: your name.
+                              </FormDescription>
                               <FormMessage />
                             </FormItem>
                           )}
@@ -432,20 +418,6 @@ export default function AuthPage() {
                                   <SelectItem value="general">General (Multiple Subjects)</SelectItem>
                                 </SelectContent>
                               </Select>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        
-                        <FormField
-                          control={registerForm.control}
-                          name="username"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Username</FormLabel>
-                              <FormControl>
-                                <Input {...field} data-testid="input-register-username" />
-                              </FormControl>
                               <FormMessage />
                             </FormItem>
                           )}
