@@ -64,6 +64,7 @@ router.post('/checkout/create-registration-session', async (req, res) => {
       starter: process.env.STRIPE_PRICE_STARTER || '',
       standard: process.env.STRIPE_PRICE_STANDARD || '',
       pro: process.env.STRIPE_PRICE_PRO || '',
+      elite: process.env.STRIPE_PRICE_ELITE || '',
     };
 
     const priceId = priceIds[plan.toLowerCase()];
@@ -164,6 +165,7 @@ router.post('/change', async (req, res) => {
       starter: process.env.STRIPE_PRICE_STARTER || '',
       standard: process.env.STRIPE_PRICE_STANDARD || '',
       pro: process.env.STRIPE_PRICE_PRO || '',
+      elite: process.env.STRIPE_PRICE_ELITE || '',
     };
 
     const priceId = priceIds[plan.toLowerCase()];

@@ -129,6 +129,7 @@ router.post(
               'starter': 60,
               'standard': 240,
               'pro': 600,
+              'elite': 1800,
             };
             const monthlyMinutes = minutesMap[plan] || 60;
 
@@ -170,6 +171,7 @@ router.post(
               'starter': 'Starter Family',
               'standard': 'Standard Family',
               'pro': 'Pro Family',
+              'elite': 'Elite Family',
             };
 
             emailService.sendSubscriptionConfirmation({

@@ -25,7 +25,7 @@ const loginSchema = z.object({
 });
 
 const registerSchema = z.object({
-  plan: z.enum(['starter', 'standard', 'pro'], {
+  plan: z.enum(['starter', 'standard', 'pro', 'elite'], {
     required_error: "Please select a subscription plan"
   }),
   accountName: z.string().min(1, "Account name is required"),
@@ -373,9 +373,10 @@ export default function AuthPage() {
                                   </SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
-                                  <SelectItem value="starter">Starter - $9.99/mo (60 min)</SelectItem>
-                                  <SelectItem value="standard">Standard - $19.99/mo (240 min)</SelectItem>
-                                  <SelectItem value="pro">Pro - $39.99/mo (600 min)</SelectItem>
+                                  <SelectItem value="starter">Starter Family - $19.99/mo (60 min)</SelectItem>
+                                  <SelectItem value="standard">Standard Family - $59.99/mo (240 min)</SelectItem>
+                                  <SelectItem value="pro">Pro Family - $99.99/mo (600 min) - Most Popular</SelectItem>
+                                  <SelectItem value="elite">Elite Family - $199.99/mo (1,800 min) - Best Value</SelectItem>
                                 </SelectContent>
                               </Select>
                               <FormDescription className="text-xs">
