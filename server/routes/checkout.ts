@@ -11,6 +11,7 @@ import { Router } from 'express';
 import { storage } from '../storage';
 import { stripe } from '../services/stripe-service';
 import { registrationTokenStore } from '../services/registration-tokens';
+import { hashPassword } from '../auth';
 
 const router = Router();
 
@@ -73,18 +74,19 @@ router.post('/create-registration-session', async (req, res) => {
       ? `https://${process.env.REPLIT_DOMAINS.split(',')[0]}`
       : `http://localhost:${process.env.PORT || 5000}`;
 
-    // 🔒 SECURITY: Generate secure token and store registration data server-side
-    // This prevents storing plaintext passwords in Stripe metadata
+    // 🔒 SECURITY: Hash password before storing in database
+    // This prevents storing plaintext passwords even temporarily
+    const hashedPassword = await hashPassword(registrationData.password);
     const registrationToken = registrationTokenStore.generateToken();
     
-    registrationTokenStore.storeRegistrationData(registrationToken, {
+    await registrationTokenStore.storeRegistrationData(registrationToken, {
       accountName: registrationData.accountName,
       studentName: registrationData.studentName,
       studentAge: registrationData.studentAge,
       gradeLevel: registrationData.gradeLevel,
       primarySubject: registrationData.primarySubject,
       email: registrationData.email,
-      password: registrationData.password, // Stored securely on our server only
+      password: hashedPassword, // Store HASHED password only
       marketingOptIn: registrationData.marketingOptIn,
     });
 

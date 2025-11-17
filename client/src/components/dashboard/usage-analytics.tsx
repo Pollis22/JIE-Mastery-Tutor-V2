@@ -27,10 +27,11 @@ import { Badge } from "@/components/ui/badge";
 export default function UsageAnalytics() {
   const { user } = useAuth();
 
-  // Fetch analytics data
+  // Fetch analytics data - refetch every 30 seconds for real-time updates
   const { data: analytics, isLoading } = useQuery({
     queryKey: ['/api/user/analytics'],
-    enabled: !!user
+    enabled: !!user,
+    refetchInterval: 30000 // Refresh every 30 seconds
   });
 
   if (isLoading) {
@@ -90,7 +91,9 @@ export default function UsageAnalytics() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm text-muted-foreground">Total Sessions</p>
-                      <p className="text-2xl font-bold">{analytics?.total_sessions || 0}</p>
+                      <p className="text-2xl font-bold" data-testid="text-total-sessions">
+                        {analytics?.summary?.totalSessions || 0}
+                      </p>
                     </div>
                     <BookOpen className="h-8 w-8 text-primary opacity-20" />
                   </div>
@@ -102,7 +105,9 @@ export default function UsageAnalytics() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm text-muted-foreground">Total Minutes</p>
-                      <p className="text-2xl font-bold">{analytics?.total_minutes_used || 0}</p>
+                      <p className="text-2xl font-bold" data-testid="text-total-minutes">
+                        {Math.round(analytics?.summary?.totalMinutesUsed || 0)}
+                      </p>
                     </div>
                     <Clock className="h-8 w-8 text-primary opacity-20" />
                   </div>
@@ -114,9 +119,9 @@ export default function UsageAnalytics() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm text-muted-foreground">Avg. Session</p>
-                      <p className="text-2xl font-bold">
-                        {analytics?.total_sessions 
-                          ? Math.round(analytics.total_minutes_used / analytics.total_sessions) 
+                      <p className="text-2xl font-bold" data-testid="text-avg-session">
+                        {analytics?.summary?.totalSessions 
+                          ? Math.round(analytics.summary.totalMinutesUsed / analytics.summary.totalSessions) 
                           : 0} min
                       </p>
                     </div>

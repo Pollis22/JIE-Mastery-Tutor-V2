@@ -40,6 +40,28 @@ export const sessions = pgTable(
   (table) => [index("IDX_session_expire").on(table.expire)],
 );
 
+// Registration tokens table for payment-first registration
+export const registrationTokens = pgTable(
+  "registration_tokens",
+  {
+    token: varchar("token", { length: 64 }).primaryKey(),
+    accountName: text("account_name").notNull(),
+    studentName: text("student_name").notNull(),
+    studentAge: integer("student_age"),
+    gradeLevel: text("grade_level").notNull(),
+    primarySubject: text("primary_subject"),
+    email: text("email").notNull(),
+    password: text("password").notNull(),
+    marketingOptIn: boolean("marketing_opt_in").default(false),
+    expiresAt: timestamp("expires_at").notNull(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    index("IDX_registration_token_expires").on(table.expiresAt),
+    index("IDX_registration_token_email").on(table.email),
+  ],
+);
+
 // Users table
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

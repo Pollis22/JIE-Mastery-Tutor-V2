@@ -71,7 +71,6 @@ router.post(
           if (type === 'registration') {
             console.log('[Stripe Webhook] 🎉 Processing registration checkout');
             
-            const { hashPassword } = await import('../auth');
             const plan = session.metadata?.plan;
             const registrationToken = session.metadata?.registrationToken;
 
@@ -80,8 +79,8 @@ router.post(
               break;
             }
 
-            // 🔒 SECURITY: Fetch registration data from secure server-side store
-            const registrationData = registrationTokenStore.getRegistrationData(registrationToken);
+            // 🔒 SECURITY: Fetch registration data from database
+            const registrationData = await registrationTokenStore.getRegistrationData(registrationToken);
             
             if (!registrationData) {
               console.error('[Stripe Webhook] Registration token not found or expired:', registrationToken.substring(0, 8));
@@ -134,10 +133,11 @@ router.post(
             const monthlyMinutes = minutesMap[plan] || 60;
 
             // Create user account AFTER successful payment
+            // Password is already hashed when stored in registration_tokens table
             const newUser = await storage.createUser({
               email: email.toLowerCase(),
               username,
-              password: await hashPassword(password),
+              password, // Already hashed by checkout route before storing in DB
               firstName,
               lastName,
               parentName: accountName,
@@ -146,7 +146,7 @@ router.post(
               gradeLevel,
               primarySubject,
               marketingOptInDate: marketingOptIn ? new Date() : null,
-              subscriptionPlan: plan as 'starter' | 'standard' | 'pro',
+              subscriptionPlan: plan as 'starter' | 'standard' | 'pro' | 'elite',
               subscriptionStatus: 'active',
               subscriptionMinutesLimit: monthlyMinutes,
               subscriptionMinutesUsed: 0,
@@ -163,8 +163,8 @@ router.post(
 
             console.log('[Stripe Webhook] ✅ User account created:', newUser.email);
 
-            // 🔒 SECURITY: Delete registration token after successful account creation
-            registrationTokenStore.deleteToken(registrationToken);
+            // 🔒 SECURITY: Delete registration token from database after successful account creation
+            await registrationTokenStore.deleteToken(registrationToken);
 
             // Send welcome email (non-blocking)
             const planNames: Record<string, string> = {

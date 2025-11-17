@@ -1,4 +1,16 @@
+/**
+ * JIE Mastery AI Tutor Platform
+ * Copyright (c) 2025 JIE Mastery AI, Inc.
+ * All Rights Reserved.
+ * 
+ * This source code is confidential and proprietary.
+ * Unauthorized copying, modification, or distribution is strictly prohibited.
+ */
+
 import crypto from 'crypto';
+import { db } from '../db';
+import { registrationTokens } from '@shared/schema';
+import { eq, lt } from 'drizzle-orm';
 
 interface RegistrationData {
   accountName: string;
@@ -7,67 +19,105 @@ interface RegistrationData {
   gradeLevel: string;
   primarySubject?: string;
   email: string;
-  password: string;
+  password: string; // MUST be hashed before storing! Never store plaintext passwords.
   marketingOptIn: boolean;
-  expiresAt: number;
 }
 
-const TOKEN_EXPIRY_MS = 60 * 60 * 1000;
+const TOKEN_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
 
 class RegistrationTokenStore {
-  private store: Map<string, RegistrationData> = new Map();
-
   generateToken(): string {
     return crypto.randomBytes(32).toString('hex');
   }
 
-  storeRegistrationData(token: string, data: Omit<RegistrationData, 'expiresAt'>): void {
-    const expiresAt = Date.now() + TOKEN_EXPIRY_MS;
-    this.store.set(token, { ...data, expiresAt });
-    console.log(`[Registration Token] Stored token ${token.substring(0, 8)}... (expires in 1 hour)`);
-  }
-
-  getRegistrationData(token: string): RegistrationData | null {
-    const data = this.store.get(token);
+  async storeRegistrationData(token: string, data: RegistrationData): Promise<void> {
+    const expiresAt = new Date(Date.now() + TOKEN_EXPIRY_MS);
     
-    if (!data) {
-      console.log(`[Registration Token] Token not found: ${token.substring(0, 8)}...`);
-      return null;
+    try {
+      await db.insert(registrationTokens).values({
+        token,
+        accountName: data.accountName,
+        studentName: data.studentName,
+        studentAge: data.studentAge,
+        gradeLevel: data.gradeLevel,
+        primarySubject: data.primarySubject,
+        email: data.email,
+        password: data.password,
+        marketingOptIn: data.marketingOptIn,
+        expiresAt,
+      });
+      
+      console.log(`[Registration Token] Stored token ${token.substring(0, 8)}... in database (expires in 1 hour)`);
+    } catch (error: any) {
+      console.error('[Registration Token] Failed to store token:', error);
+      throw new Error('Failed to store registration token');
     }
-
-    if (Date.now() > data.expiresAt) {
-      console.log(`[Registration Token] Token expired: ${token.substring(0, 8)}...`);
-      this.store.delete(token);
-      return null;
-    }
-
-    return data;
   }
 
-  deleteToken(token: string): void {
-    this.store.delete(token);
-    console.log(`[Registration Token] Deleted token ${token.substring(0, 8)}...`);
-  }
+  async getRegistrationData(token: string): Promise<RegistrationData | null> {
+    try {
+      const results = await db
+        .select()
+        .from(registrationTokens)
+        .where(eq(registrationTokens.token, token))
+        .limit(1);
 
-  cleanup(): void {
-    const now = Date.now();
-    let deletedCount = 0;
-
-    for (const [token, data] of this.store.entries()) {
-      if (now > data.expiresAt) {
-        this.store.delete(token);
-        deletedCount++;
+      if (results.length === 0) {
+        console.log(`[Registration Token] Token not found: ${token.substring(0, 8)}...`);
+        return null;
       }
-    }
 
-    if (deletedCount > 0) {
-      console.log(`[Registration Token] Cleaned up ${deletedCount} expired tokens`);
+      const tokenData = results[0];
+
+      // Check if expired
+      if (new Date() > new Date(tokenData.expiresAt)) {
+        console.log(`[Registration Token] Token expired: ${token.substring(0, 8)}...`);
+        await this.deleteToken(token);
+        return null;
+      }
+
+      return {
+        accountName: tokenData.accountName,
+        studentName: tokenData.studentName,
+        studentAge: tokenData.studentAge || undefined,
+        gradeLevel: tokenData.gradeLevel,
+        primarySubject: tokenData.primarySubject || undefined,
+        email: tokenData.email,
+        password: tokenData.password,
+        marketingOptIn: tokenData.marketingOptIn || false,
+      };
+    } catch (error: any) {
+      console.error('[Registration Token] Failed to retrieve token:', error);
+      return null;
+    }
+  }
+
+  async deleteToken(token: string): Promise<void> {
+    try {
+      await db.delete(registrationTokens).where(eq(registrationTokens.token, token));
+      console.log(`[Registration Token] Deleted token ${token.substring(0, 8)}... from database`);
+    } catch (error: any) {
+      console.error('[Registration Token] Failed to delete token:', error);
+    }
+  }
+
+  async cleanup(): Promise<void> {
+    try {
+      const now = new Date();
+      const result = await db
+        .delete(registrationTokens)
+        .where(lt(registrationTokens.expiresAt, now));
+
+      console.log(`[Registration Token] Cleaned up expired tokens from database`);
+    } catch (error: any) {
+      console.error('[Registration Token] Failed to cleanup expired tokens:', error);
     }
   }
 }
 
 export const registrationTokenStore = new RegistrationTokenStore();
 
+// Cleanup expired tokens every 15 minutes
 setInterval(() => {
   registrationTokenStore.cleanup();
 }, 15 * 60 * 1000);
