@@ -146,6 +146,7 @@ router.post(
               gradeLevel,
               primarySubject,
               marketingOptInDate: marketingOptIn ? new Date() : null,
+              emailVerified: true, // ✅ Auto-verify users who complete payment
               subscriptionPlan: plan as 'starter' | 'standard' | 'pro' | 'elite',
               subscriptionStatus: 'active',
               subscriptionMinutesLimit: monthlyMinutes,

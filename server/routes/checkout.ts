@@ -69,10 +69,14 @@ router.post('/create-registration-session', async (req, res) => {
       });
     }
 
-    // Get base URL for redirect
-    const baseUrl = process.env.REPLIT_DOMAINS 
-      ? `https://${process.env.REPLIT_DOMAINS.split(',')[0]}`
-      : `http://localhost:${process.env.PORT || 5000}`;
+    // Get base URL for redirect (production-safe)
+    const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN
+      ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+      : process.env.REPLIT_DOMAINS 
+        ? `https://${process.env.REPLIT_DOMAINS.split(',')[0]}`
+        : `http://localhost:${process.env.PORT || 5000}`;
+    
+    console.log(`[Registration Checkout] Using base URL: ${baseUrl}`);
 
     // 🔒 SECURITY: Hash password before storing in database
     // This prevents storing plaintext passwords even temporarily
