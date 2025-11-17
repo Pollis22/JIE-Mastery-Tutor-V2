@@ -125,9 +125,12 @@ router.post('/create-registration-session', async (req, res) => {
 
   } catch (error: any) {
     console.error('❌ [Registration Checkout] Failed:', error);
+    console.error('❌ [Registration Checkout] Error stack:', error.stack);
+    console.error('❌ [Registration Checkout] Request body:', req.body);
     res.status(500).json({ 
       error: 'Failed to create registration checkout',
-      message: error.message
+      message: error.message,
+      details: error.stack
     });
   }
 });
