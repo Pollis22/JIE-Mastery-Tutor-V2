@@ -87,6 +87,7 @@ router.post('/create-registration-session', async (req, res) => {
       primarySubject: registrationData.primarySubject,
       email: registrationData.email,
       password: hashedPassword, // Store HASHED password only
+      selectedPlan: plan.toLowerCase() as 'starter' | 'standard' | 'pro' | 'elite',
       marketingOptIn: registrationData.marketingOptIn,
     });
 

@@ -52,6 +52,7 @@ export const registrationTokens = pgTable(
     primarySubject: text("primary_subject"),
     email: text("email").notNull(),
     password: text("password").notNull(),
+    selectedPlan: text("selected_plan").notNull().$type<'starter' | 'standard' | 'pro' | 'elite'>(),
     marketingOptIn: boolean("marketing_opt_in").default(false),
     expiresAt: timestamp("expires_at").notNull(),
     createdAt: timestamp("created_at").defaultNow(),

@@ -20,6 +20,7 @@ interface RegistrationData {
   primarySubject?: string;
   email: string;
   password: string; // MUST be hashed before storing! Never store plaintext passwords.
+  selectedPlan: 'starter' | 'standard' | 'pro' | 'elite';
   marketingOptIn: boolean;
 }
 
@@ -43,11 +44,12 @@ class RegistrationTokenStore {
         primarySubject: data.primarySubject,
         email: data.email,
         password: data.password,
+        selectedPlan: data.selectedPlan,
         marketingOptIn: data.marketingOptIn,
         expiresAt,
       });
       
-      console.log(`[Registration Token] Stored token ${token.substring(0, 8)}... in database (expires in 1 hour)`);
+      console.log(`[Registration Token] Stored token ${token.substring(0, 8)}... with plan ${data.selectedPlan} in database (expires in 1 hour)`);
     } catch (error: any) {
       console.error('[Registration Token] Failed to store token:', error);
       throw new Error('Failed to store registration token');
@@ -84,6 +86,7 @@ class RegistrationTokenStore {
         primarySubject: tokenData.primarySubject || undefined,
         email: tokenData.email,
         password: tokenData.password,
+        selectedPlan: tokenData.selectedPlan as 'starter' | 'standard' | 'pro' | 'elite',
         marketingOptIn: tokenData.marketingOptIn || false,
       };
     } catch (error: any) {
