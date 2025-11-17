@@ -134,6 +134,7 @@ app.use((req, res, next) => {
       'STRIPE_PRICE_STARTER': process.env.STRIPE_PRICE_STARTER,
       'STRIPE_PRICE_STANDARD': process.env.STRIPE_PRICE_STANDARD,
       'STRIPE_PRICE_PRO': process.env.STRIPE_PRICE_PRO,
+      'STRIPE_PRICE_ELITE': process.env.STRIPE_PRICE_ELITE,
       'STRIPE_PRICE_TOPUP_60': process.env.STRIPE_PRICE_TOPUP_60,
     };
 
