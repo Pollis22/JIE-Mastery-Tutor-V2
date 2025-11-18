@@ -48,19 +48,12 @@ router.patch('/', async (req, res) => {
 
     const userId = req.user!.id;
     
-    // Debug logging to see what frontend is sending
-    console.log('[Preferences] Raw request body:', JSON.stringify(req.body, null, 2));
-    console.log('[Preferences] Request headers:', req.headers['content-type']);
-    
     // Handle multiple possible field name formats from frontend
     // Frontend sends "preferredLanguage" for voice language
     const interfaceLanguage = req.body.interfaceLanguage || req.body.interface_language || req.body.language;
     const voiceLanguage = req.body.voiceLanguage || req.body.voice_language || req.body.preferredLanguage;
     const emailNotifications = req.body.emailNotifications ?? req.body.email_notifications;
     const marketingEmails = req.body.marketingEmails ?? req.body.marketing_emails;
-
-    console.log('[Preferences] Updating for user:', userId);
-    console.log('[Preferences] Parsed values:', { interfaceLanguage, voiceLanguage, emailNotifications, marketingEmails });
 
     const updateData: any = {};
     
