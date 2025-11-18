@@ -1362,26 +1362,52 @@ CRITICAL INSTRUCTIONS:
             break;
           
           case "end":
-            console.log("[Custom Voice] 🛑 Ending session:", state.sessionId);
+            console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            console.log("[Session End] 🛑 RECEIVED SESSION END REQUEST");
+            console.log("[Session End] Session ID:", state.sessionId);
+            console.log("[Session End] User ID:", state.userId);
+            console.log("[Session End] Transcript length:", state.transcript.length);
+            console.log("[Session End] Session already ended?", state.isSessionEnded);
+            console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
             // Close Deepgram connection first
             if (state.deepgramConnection) {
+              console.log("[Session End] 🎤 Closing Deepgram connection...");
               state.deepgramConnection.close();
               state.deepgramConnection = null;
+              console.log("[Session End] ✅ Deepgram closed");
             }
 
             // Clear persistence interval
+            console.log("[Session End] 🧹 Clearing persistence interval...");
             clearInterval(persistInterval);
+            console.log("[Session End] ✅ Interval cleared");
 
             // Finalize session (saves to DB, deducts minutes)
-            await finalizeSession(state, 'normal');
+            console.log("[Session End] 💾 Calling finalizeSession...");
+            try {
+              await finalizeSession(state, 'normal');
+              console.log("[Session End] ✅ finalizeSession completed successfully");
+            } catch (error) {
+              console.error("[Session End] ❌ finalizeSession FAILED:", error);
+              // Don't throw - still try to close gracefully
+            }
 
+            // Send acknowledgment to client
+            console.log("[Session End] 📤 Sending session_ended ACK to client...");
             ws.send(JSON.stringify({ 
-              type: "ended",
-              transcriptLength: state.transcript.length
+              type: "session_ended",
+              sessionId: state.sessionId,
+              transcriptLength: state.transcript.length,
+              success: true
             }));
+            console.log("[Session End] ✅ ACK sent");
             
-            ws.close();
+            // Close WebSocket
+            console.log("[Session End] 🔌 Closing WebSocket...");
+            ws.close(1000, 'Session ended normally');
+            console.log("[Session End] ✅ Session end complete");
+            console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
             break;
 
           default:

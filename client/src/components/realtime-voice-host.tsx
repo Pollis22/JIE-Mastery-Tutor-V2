@@ -320,9 +320,15 @@ export function RealtimeVoiceHost({
   const endSession = async () => {
     try {
       console.log('[VoiceHost] 🛑 Ending session...');
+      console.log('[VoiceHost] Session ID:', sessionId);
       
-      // Disconnect custom voice
-      customVoice.disconnect();
+      // Disconnect custom voice with sessionId for HTTP fallback
+      if (sessionId) {
+        await customVoice.disconnect(sessionId);
+      } else {
+        console.warn('[VoiceHost] ⚠️ No sessionId available for HTTP fallback');
+        customVoice.disconnect();
+      }
       
       // Reset state
       setIsRecording(false);

@@ -130,7 +130,14 @@ export function useCustomVoice() {
             break;
 
           case "ended":
-            console.log("[Custom Voice] ✅ Session ended");
+            console.log("[Custom Voice] ✅ Session ended (deprecated message)");
+            break;
+          
+          case "session_ended":
+            console.log("[Custom Voice] ✅ Received session_ended ACK from server");
+            console.log("[Custom Voice] Session ID:", message.sessionId);
+            console.log("[Custom Voice] Transcript length:", message.transcriptLength);
+            // Cleanup is handled in ws.onclose
             break;
         }
       };
@@ -547,17 +554,83 @@ export function useCustomVoice() {
     isPlayingRef.current = false;
   };
 
-  const disconnect = useCallback(() => {
+  const disconnect = useCallback(async (sessionId?: string) => {
     console.log("[Custom Voice] 🛑 Disconnecting...");
+    console.log("[Custom Voice] Session ID:", sessionId);
     
-    if (wsRef.current) {
+    let sessionEndedAckReceived = false;
+    const HTTP_FALLBACK_TIMEOUT = 3000; // 3 seconds
+    
+    // Listen for session_ended ACK
+    const ackPromise = new Promise<boolean>((resolve) => {
+      const originalOnMessage = wsRef.current?.onmessage;
+      
+      if (wsRef.current && originalOnMessage) {
+        const ws = wsRef.current;
+        ws.onmessage = (event) => {
+          // Call original handler first
+          originalOnMessage.call(ws, event);
+          
+          // Check for session_ended ACK
+          try {
+            const message = JSON.parse(event.data);
+            if (message.type === "session_ended") {
+              console.log("[Custom Voice] ✅ Received session_ended ACK - WebSocket succeeded");
+              sessionEndedAckReceived = true;
+              resolve(true);
+            }
+          } catch (e) {
+            // Ignore parsing errors
+          }
+        };
+      }
+      
+      // Timeout after 3 seconds
+      setTimeout(() => {
+        if (!sessionEndedAckReceived) {
+          console.log("[Custom Voice] ⏱️ No ACK received within timeout - will use HTTP fallback");
+          resolve(false);
+        }
+      }, HTTP_FALLBACK_TIMEOUT);
+    });
+    
+    // Try WebSocket first
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      console.log("[Custom Voice] 📤 Sending end message via WebSocket...");
       wsRef.current.send(JSON.stringify({ type: "end" }));
-      wsRef.current.close();
+      
+      // Wait for ACK or timeout
+      const ackReceived = await ackPromise;
+      
+      // If no ACK and we have a session ID, try HTTP fallback
+      if (!ackReceived && sessionId) {
+        console.log("[Custom Voice] 🔄 WebSocket failed - trying HTTP fallback...");
+        try {
+          const response = await fetch(`/api/voice-sessions/${sessionId}/end`, {
+            method: 'POST',
+            credentials: 'include',
+          });
+          
+          if (response.ok) {
+            const result = await response.json();
+            console.log("[Custom Voice] ✅ HTTP fallback successful:", result);
+          } else {
+            console.error("[Custom Voice] ❌ HTTP fallback failed:", response.status);
+          }
+        } catch (error) {
+          console.error("[Custom Voice] ❌ HTTP fallback error:", error);
+        }
+      }
+      
+      // Close WebSocket
+      console.log("[Custom Voice] 🔌 Closing WebSocket connection...");
+      wsRef.current.close(1000, 'User ended session');
       wsRef.current = null;
     }
 
     cleanup();
     setIsConnected(false);
+    console.log("[Custom Voice] ✅ Disconnect complete");
     
   }, []);
 

@@ -10,7 +10,7 @@ import { setupSecurityHeaders, setupCORS } from "./middleware/security";
 import { requireAdmin } from "./middleware/admin-auth";
 import { auditActions } from "./middleware/audit-log";
 import { convertUsersToCSV, generateFilename } from "./utils/csv-export";
-import { sql, desc } from "drizzle-orm";
+import { sql, desc, eq } from "drizzle-orm";
 import { db } from "./db";
 import { realtimeSessions } from "@shared/schema";
 import Stripe from "stripe";
@@ -630,6 +630,96 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error('[RealtimeSession] Error creating session:', error);
       res.status(500).json({ message: "Error creating session: " + error.message });
+    }
+  });
+
+  // HTTP fallback endpoint to end voice session (for Railway proxy issues)
+  // This provides a reliable way to end sessions when WebSocket close frames are dropped
+  app.post("/api/voice-sessions/:sessionId/end", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const user = req.user as any;
+      const { sessionId } = req.params;
+
+      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      console.log("[HTTP Session End] 🛑 RECEIVED HTTP END REQUEST");
+      console.log("[HTTP Session End] Session ID:", sessionId);
+      console.log("[HTTP Session End] User ID:", user.id);
+      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+      // Get session from database
+      const sessions = await db.select()
+        .from(realtimeSessions)
+        .where(eq(realtimeSessions.id, sessionId))
+        .limit(1);
+      
+      const session = sessions[0];
+
+      if (!session) {
+        console.log("[HTTP Session End] ❌ Session not found:", sessionId);
+        return res.status(404).json({ error: "Session not found" });
+      }
+
+      // Verify session belongs to user
+      if (session.userId !== user.id) {
+        console.log("[HTTP Session End] ❌ Unauthorized - session belongs to different user");
+        return res.status(403).json({ error: "Unauthorized" });
+      }
+
+      // Check if already ended
+      if (session.status === 'ended' && session.endedAt) {
+        console.log("[HTTP Session End] ℹ️ Session already ended at:", session.endedAt);
+        return res.json({
+          success: true,
+          message: "Session already ended",
+          endedAt: session.endedAt,
+          minutesUsed: session.minutesUsed
+        });
+      }
+
+      // Calculate session duration
+      const startTime = session.createdAt ? new Date(session.createdAt) : new Date();
+      const endTime = new Date();
+      const durationSeconds = Math.floor((endTime.getTime() - startTime.getTime()) / 1000);
+      const durationMinutes = Math.max(1, Math.ceil(durationSeconds / 60));
+
+      console.log("[HTTP Session End] ⏱️ Duration:", durationSeconds, "seconds (", durationMinutes, "minutes)");
+
+      // Update session in database
+      console.log("[HTTP Session End] 💾 Updating database...");
+      await db.update(realtimeSessions)
+        .set({
+          endedAt: endTime,
+          status: 'ended',
+          minutesUsed: durationMinutes,
+        })
+        .where(eq(realtimeSessions.id, sessionId));
+
+      console.log("[HTTP Session End] ✅ Database updated");
+
+      // Deduct minutes from user balance
+      console.log("[HTTP Session End] 💰 Deducting minutes...");
+      const { deductMinutes } = await import('./services/voice-minutes');
+      await deductMinutes(user.id, durationMinutes);
+      console.log("[HTTP Session End] ✅ Deducted", durationMinutes, "minutes from user", user.id);
+
+      console.log("[HTTP Session End] ✅ Session ended successfully via HTTP");
+      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+      res.json({
+        success: true,
+        sessionId: sessionId,
+        minutesUsed: durationMinutes,
+        endedAt: endTime,
+        transcript: session.transcript
+      });
+
+    } catch (error: any) {
+      console.error("[HTTP Session End] ❌ Error ending session:", error);
+      res.status(500).json({ error: "Failed to end session: " + error.message });
     }
   });
 
