@@ -447,6 +447,20 @@ export function RealtimeVoiceHost({
     // 3. We were previously connected (to avoid triggering during initial connection)
     if (!customVoice.isConnected && sessionId && previouslyConnectedRef.current) {
       console.log('[VoiceHost] Lost connection after being connected, ending session');
+      
+      // Check if session ended due to inactivity
+      const endReason = (window as any).__sessionEndedReason;
+      if (endReason === 'inactivity_timeout') {
+        console.log('[VoiceHost] 💤 Session ended due to inactivity');
+        toast({
+          title: "Session Ended - Inactivity",
+          description: "Your session ended after 5 minutes of silence. Your progress has been saved.",
+          duration: 5000,
+        });
+        // Clear the flag
+        (window as any).__sessionEndedReason = null;
+      }
+      
       endSession();
       previouslyConnectedRef.current = false; // Reset for next session
     }

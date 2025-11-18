@@ -136,7 +136,16 @@ export function useCustomVoice() {
           case "session_ended":
             console.log("[Custom Voice] ✅ Received session_ended ACK from server");
             console.log("[Custom Voice] Session ID:", message.sessionId);
+            console.log("[Custom Voice] Reason:", message.reason);
             console.log("[Custom Voice] Transcript length:", message.transcriptLength);
+            
+            // Show notification if session ended due to inactivity
+            if (message.reason === 'inactivity_timeout') {
+              console.log("[Custom Voice] 🔔 Session ended due to inactivity - will show notification");
+              // Store inactivity flag so parent component can show notification
+              (window as any).__sessionEndedReason = 'inactivity_timeout';
+            }
+            
             // Cleanup is handled in ws.onclose
             break;
         }
