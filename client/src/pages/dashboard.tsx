@@ -326,9 +326,8 @@ export default function DashboardPage() {
                 </CardHeader>
                 <CardContent>
                   <Tabs defaultValue="appearance">
-                    <TabsList className="grid w-full grid-cols-3">
+                    <TabsList className="grid w-full grid-cols-2">
                       <TabsTrigger value="appearance">Appearance</TabsTrigger>
-                      <TabsTrigger value="language">Language</TabsTrigger>
                       <TabsTrigger value="notifications">Notifications</TabsTrigger>
                     </TabsList>
                     
@@ -341,30 +340,6 @@ export default function DashboardPage() {
                           </p>
                         </div>
                         <ThemeToggle showLabel />
-                      </div>
-                    </TabsContent>
-
-                    <TabsContent value="language" className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h4 className="font-medium">Interface Language</h4>
-                          <p className="text-sm text-muted-foreground">
-                            Select your preferred language for the interface
-                          </p>
-                        </div>
-                        <LanguageSelector />
-                      </div>
-                      
-                      <Separator />
-                      
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h4 className="font-medium">Voice Language</h4>
-                          <p className="text-sm text-muted-foreground">
-                            Select your preferred language for voice tutoring
-                          </p>
-                        </div>
-                        <LanguageSelector type="voice" />
                       </div>
                     </TabsContent>
 
