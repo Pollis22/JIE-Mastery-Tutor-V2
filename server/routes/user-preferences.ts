@@ -47,28 +47,35 @@ router.patch('/', async (req, res) => {
     }
 
     const userId = req.user!.id;
-    const {
-      interfaceLanguage,
-      voiceLanguage,
-      emailNotifications,
-      marketingEmails,
-    } = req.body;
+    
+    // Debug logging to see what frontend is sending
+    console.log('[Preferences] Raw request body:', JSON.stringify(req.body, null, 2));
+    console.log('[Preferences] Request headers:', req.headers['content-type']);
+    
+    // Handle multiple possible field name formats from frontend
+    // Frontend sends "preferredLanguage" for voice language
+    const interfaceLanguage = req.body.interfaceLanguage || req.body.interface_language || req.body.language;
+    const voiceLanguage = req.body.voiceLanguage || req.body.voice_language || req.body.preferredLanguage;
+    const emailNotifications = req.body.emailNotifications ?? req.body.email_notifications;
+    const marketingEmails = req.body.marketingEmails ?? req.body.marketing_emails;
 
     console.log('[Preferences] Updating for user:', userId);
+    console.log('[Preferences] Parsed values:', { interfaceLanguage, voiceLanguage, emailNotifications, marketingEmails });
 
     const updateData: any = {};
     
+    // Map frontend fields to database columns
     if (interfaceLanguage !== undefined) {
-      updateData.interfaceLanguage = interfaceLanguage;
+      updateData.interface_language = interfaceLanguage;  // Database column name
     }
     if (voiceLanguage !== undefined) {
-      updateData.voiceLanguage = voiceLanguage;
+      updateData.voice_language = voiceLanguage;  // Database column name
     }
     if (emailNotifications !== undefined) {
-      updateData.emailNotifications = emailNotifications;
+      updateData.email_notifications = emailNotifications;  // Database column name
     }
     if (marketingEmails !== undefined) {
-      updateData.marketingEmails = marketingEmails;
+      updateData.marketing_emails = marketingEmails;  // Database column name
     }
 
     if (Object.keys(updateData).length === 0) {
