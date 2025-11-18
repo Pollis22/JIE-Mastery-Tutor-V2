@@ -32,8 +32,8 @@ export function RealtimeVoiceHost({
   const { toast } = useToast();
   const [sessionId, setSessionId] = useState<string | null>(null);
   const sessionIdRef = useRef<string | null>(null); // Ref to track current sessionId
-  const [isRecording, setIsRecording] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const previouslyConnectedRef = useRef(false); // Track if we were previously connected
   
   // Communication mode state (voice, hybrid, text-only)
   type CommunicationMode = 'voice' | 'hybrid' | 'text';
@@ -298,8 +298,6 @@ export function RealtimeVoiceHost({
         documents
       );
       
-      setIsRecording(true);
-      
       toast({
         title: "Voice Session Started",
         description: `Connected to AI Tutor for ${studentName || 'Student'}`,
@@ -315,7 +313,6 @@ export function RealtimeVoiceHost({
       });
       // Reset state on error
       setSessionId(null);
-      setIsRecording(false);
     }
   };
 
@@ -335,10 +332,10 @@ export function RealtimeVoiceHost({
       }
       
       // Reset state
-      setIsRecording(false);
       setIsMuted(false);
       setSessionId(null);
       sessionIdRef.current = null;
+      previouslyConnectedRef.current = false; // Reset connection tracking for next session
       
       // Trigger onSessionEnd callback if provided
       onSessionEnd?.();
@@ -437,13 +434,23 @@ export function RealtimeVoiceHost({
     }
   }, [customVoice, studentId, toast]);
 
-  // Watch for connection status changes
+  // Watch for connection status changes - only trigger if we were previously connected
   useEffect(() => {
-    if (!customVoice.isConnected && isRecording) {
-      console.log('[VoiceHost] Lost connection, ending session');
-      endSession();
+    // Update the ref to track current connection state
+    if (customVoice.isConnected) {
+      previouslyConnectedRef.current = true;
     }
-  }, [customVoice.isConnected, isRecording, endSession]);
+    
+    // Only trigger endSession if:
+    // 1. We're not currently connected
+    // 2. We have a sessionId
+    // 3. We were previously connected (to avoid triggering during initial connection)
+    if (!customVoice.isConnected && sessionId && previouslyConnectedRef.current) {
+      console.log('[VoiceHost] Lost connection after being connected, ending session');
+      endSession();
+      previouslyConnectedRef.current = false; // Reset for next session
+    }
+  }, [customVoice.isConnected, sessionId, endSession]);
 
   // Watch for errors from the custom voice hook
   useEffect(() => {
@@ -470,13 +477,14 @@ export function RealtimeVoiceHost({
     <div className="w-full space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          {!isRecording ? (
+          {!customVoice.isConnected ? (
             <Button
               onClick={startSession}
               variant="default"
               size="sm"
               className="gap-2"
               disabled={!user}
+              data-testid="button-start-session"
             >
               <Mic className="h-4 w-4" />
               Start Voice Tutoring
@@ -488,6 +496,7 @@ export function RealtimeVoiceHost({
                 variant="destructive"
                 size="sm"
                 className="gap-2"
+                data-testid="button-end-session"
               >
                 <MicOff className="h-4 w-4" />
                 End Session
@@ -527,7 +536,7 @@ export function RealtimeVoiceHost({
           )}
         </div>
         
-        {isRecording && (
+        {customVoice.isConnected && (
           <div className="flex items-center gap-3">
             {customVoice.isTutorSpeaking ? (
               <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400">
@@ -550,7 +559,7 @@ export function RealtimeVoiceHost({
       </div>
       
       {/* Communication Mode Controls - Only shown during active session */}
-      {isRecording && customVoice.isConnected && (
+      {customVoice.isConnected && (
         <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-2">
@@ -648,7 +657,7 @@ export function RealtimeVoiceHost({
       )}
       
       {/* Microphone Error Banner */}
-      {customVoice.microphoneError && isRecording && (
+      {customVoice.microphoneError && customVoice.isConnected && (
         <div className="bg-yellow-50 dark:bg-yellow-950/20 border-l-4 border-yellow-400 dark:border-yellow-600 p-4 rounded-r-lg" data-testid="microphone-error-banner">
           <div className="flex items-start gap-3">
             <AlertTriangle className="h-5 w-5 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" />
@@ -699,7 +708,7 @@ export function RealtimeVoiceHost({
       />
       
       {/* Chat Input - Only shown during active session */}
-      {isRecording && customVoice.isConnected && (
+      {customVoice.isConnected && (
         <div className={customVoice.microphoneError || !studentMicEnabled ? 'text-mode-emphasis' : ''}>
           {(customVoice.microphoneError || !studentMicEnabled) && (
             <div className="text-center mb-3 px-4 py-3 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 border-2 border-blue-300 dark:border-blue-700 rounded-lg shadow-sm">
@@ -726,7 +735,6 @@ export function RealtimeVoiceHost({
         <div className="text-xs text-muted-foreground p-2 bg-muted/50 rounded">
           <div>Session ID: {sessionId || 'None'}</div>
           <div>Connected: {customVoice.isConnected ? 'Yes' : 'No'}</div>
-          <div>Recording: {isRecording ? 'Yes' : 'No'}</div>
           <div>Muted: {isMuted ? 'Yes' : 'No'}</div>
           <div>Tutor Speaking: {customVoice.isTutorSpeaking ? 'Yes' : 'No'}</div>
           <div>Student: {studentName || 'Unknown'}</div>
