@@ -71,7 +71,6 @@ export interface IStorage {
   addBonusMinutes(userId: string, minutes: number): Promise<User>;
   updateUserMarketingPreferences(userId: string, optIn: boolean): Promise<User>;
   updateUserPassword(userId: string, hashedPassword: string): Promise<User>;
-  updateUserPreferences(userId: string, preferences: { interfaceLanguage?: string; voiceLanguage?: string; emailNotifications?: boolean; marketingEmails?: boolean; }): Promise<User>;
   // Email verification methods
   generateEmailVerificationToken(userId: string): Promise<string>;
   verifyEmailToken(token: string): Promise<User | null>;
@@ -426,33 +425,6 @@ export class DatabaseStorage implements IStorage {
       .where(eq(users.id, userId))
       .returning();
     
-    return updatedUser;
-  }
-
-  async updateUserPreferences(userId: string, preferences: { interfaceLanguage?: string; voiceLanguage?: string; emailNotifications?: boolean; marketingEmails?: boolean; }): Promise<User> {
-    const updateData: any = {
-      updatedAt: new Date(),
-    };
-
-    if (preferences.interfaceLanguage !== undefined) {
-      updateData.interfaceLanguage = preferences.interfaceLanguage;
-    }
-    if (preferences.voiceLanguage !== undefined) {
-      updateData.voiceLanguage = preferences.voiceLanguage;
-    }
-    if (preferences.emailNotifications !== undefined) {
-      updateData.emailNotifications = preferences.emailNotifications;
-    }
-    if (preferences.marketingEmails !== undefined) {
-      updateData.marketingEmails = preferences.marketingEmails;
-    }
-
-    const [updatedUser] = await db
-      .update(users)
-      .set(updateData)
-      .where(eq(users.id, userId))
-      .returning();
-
     return updatedUser;
   }
 
