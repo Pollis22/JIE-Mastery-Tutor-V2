@@ -66,6 +66,9 @@ interface SessionState {
   lastInterruptionTime: number; // TIMING FIX: Track when last interruption occurred
   tutorAudioEnabled: boolean; // MODE: Whether tutor audio should play
   studentMicEnabled: boolean; // MODE: Whether student microphone is active
+  lastActivityTime: number; // INACTIVITY: Track last user speech activity
+  inactivityWarningSent: boolean; // INACTIVITY: Track if 4-minute warning has been sent
+  inactivityTimerId: NodeJS.Timeout | null; // INACTIVITY: Timer for checking inactivity
 }
 
 // FIX #3: Incremental persistence helper
@@ -283,6 +286,9 @@ export function setupCustomVoiceWebSocket(server: Server) {
       lastAudioSentAt: 0, // PACING FIX: Initialize audio timestamp
       wasInterrupted: false, // TIMING FIX: Initialize interruption flag
       lastInterruptionTime: 0, // TIMING FIX: Initialize interruption timestamp
+      lastActivityTime: Date.now(), // INACTIVITY: Initialize to now
+      inactivityWarningSent: false, // INACTIVITY: No warning sent yet
+      inactivityTimerId: null, // INACTIVITY: Timer not started yet
     };
 
     // FIX #3: Auto-persist every 10 seconds
@@ -292,6 +298,131 @@ export function setupCustomVoiceWebSocket(server: Server) {
         state.lastPersisted = Date.now();
       }
     }, 10000);
+
+    // INACTIVITY: Check for user inactivity every 30 seconds
+    state.inactivityTimerId = setInterval(async () => {
+      const inactiveTime = Date.now() - state.lastActivityTime;
+      const inactiveMinutes = Math.floor(inactiveTime / 60000);
+      const inactiveSeconds = Math.floor((inactiveTime % 60000) / 1000);
+      
+      console.log(`[Inactivity] ⏱️ Check: ${inactiveMinutes}m ${inactiveSeconds}s since last activity`);
+      
+      // WARNING AT 4 MINUTES
+      if (inactiveMinutes >= 4 && !state.inactivityWarningSent) {
+        console.log('[Inactivity] ⏰ 4 minutes inactive - sending warning');
+        
+        const warningMessage = "Hey, are you still there? I haven't heard from you in a while. If you're done learning for now, just say 'goodbye' or I'll automatically end our session in one minute.";
+        
+        // Add to transcript
+        const warningEntry: TranscriptEntry = {
+          speaker: "tutor",
+          text: warningMessage,
+          timestamp: new Date().toISOString(),
+          messageId: crypto.randomUUID(),
+        };
+        state.transcript.push(warningEntry);
+        
+        // Send warning to frontend
+        ws.send(JSON.stringify({
+          type: 'transcript',
+          speaker: 'tutor',
+          text: warningMessage,
+        }));
+        
+        // Generate speech for warning if audio is enabled
+        if (state.tutorAudioEnabled) {
+          try {
+            const audioBuffer = await generateSpeech(warningMessage, state.ageGroup, state.speechSpeed);
+            if (audioBuffer) {
+              ws.send(JSON.stringify({
+                type: 'audio',
+                audio: audioBuffer.toString('base64'),
+              }));
+              console.log('[Inactivity] 🔊 Warning audio sent');
+            }
+          } catch (audioError) {
+            console.error('[Inactivity] ❌ Error generating warning audio:', audioError);
+          }
+        }
+        
+        state.inactivityWarningSent = true;
+      }
+      
+      // AUTO-END AT 5 MINUTES
+      if (inactiveMinutes >= 5) {
+        console.log('[Inactivity] ⏰ 5 minutes inactive - auto-ending session');
+        
+        const endMessage = "I haven't heard from you in 5 minutes, so I'm going to end our session now. Feel free to come back anytime you want to learn more!";
+        
+        // Add to transcript
+        const endEntry: TranscriptEntry = {
+          speaker: "tutor",
+          text: endMessage,
+          timestamp: new Date().toISOString(),
+          messageId: crypto.randomUUID(),
+        };
+        state.transcript.push(endEntry);
+        
+        // Send final message to frontend
+        ws.send(JSON.stringify({
+          type: 'transcript',
+          speaker: 'tutor',
+          text: endMessage,
+        }));
+        
+        // Generate speech for end message if audio is enabled
+        if (state.tutorAudioEnabled) {
+          try {
+            const audioBuffer = await generateSpeech(endMessage, state.ageGroup, state.speechSpeed);
+            if (audioBuffer) {
+              ws.send(JSON.stringify({
+                type: 'audio',
+                audio: audioBuffer.toString('base64'),
+              }));
+              console.log('[Inactivity] 🔊 End message audio sent');
+            }
+          } catch (audioError) {
+            console.error('[Inactivity] ❌ Error generating end audio:', audioError);
+          }
+        }
+        
+        // Wait 5 seconds for message to play, then end session
+        setTimeout(async () => {
+          console.log('[Inactivity] 🛑 Auto-ending session due to inactivity');
+          
+          try {
+            // Send session end notification to frontend
+            ws.send(JSON.stringify({
+              type: 'session_ended',
+              reason: 'inactivity_timeout',
+              message: 'Session ended due to inactivity'
+            }));
+            
+            // Finalize session in database
+            await finalizeSession(state, 'normal');
+            
+            // Close WebSocket
+            ws.close(1000, 'Session ended due to inactivity');
+            
+            console.log('[Inactivity] ✅ Session ended successfully');
+            
+          } catch (error) {
+            console.error('[Inactivity] ❌ Error ending session:', error);
+            ws.close(1011, 'Error ending session');
+          }
+          
+        }, 5000); // 5 second delay
+        
+        // Clear the interval to prevent multiple triggers
+        if (state.inactivityTimerId) {
+          clearInterval(state.inactivityTimerId);
+          state.inactivityTimerId = null;
+        }
+      }
+      
+    }, 30000); // Check every 30 seconds
+
+    console.log('[Inactivity] ✅ Checker started (checks every 30 seconds)');
 
     // FIX #1: Process queued transcripts sequentially
     async function processTranscriptQueue() {
@@ -426,6 +557,11 @@ export function setupCustomVoiceWebSocket(server: Server) {
             
             // Clear intervals before finalizing
             clearInterval(persistInterval);
+            if (state.inactivityTimerId) {
+              clearInterval(state.inactivityTimerId);
+              state.inactivityTimerId = null;
+              console.log('[Violation] 🧹 Inactivity timer cleared');
+            }
             if (responseTimer) {
               clearTimeout(responseTimer);
               responseTimer = null;
@@ -986,6 +1122,13 @@ CRITICAL INSTRUCTIONS:
                 }
                 
                 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                // INACTIVITY: Reset activity timer - User is speaking!
+                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                state.lastActivityTime = Date.now();
+                state.inactivityWarningSent = false; // Reset warning flag
+                console.log('[Inactivity] 🎤 User activity detected, timer reset');
+                
+                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                 // INTERRUPTION HANDLING: Allow student to interrupt tutor
                 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                 const timeSinceLastAudio = Date.now() - state.lastAudioSentAt;
@@ -1166,6 +1309,11 @@ CRITICAL INSTRUCTIONS:
           case "text_message":
             // Handle text message from chat input
             console.log(`[Custom Voice] 📝 Text message from ${state.studentName}: ${message.message}`);
+            
+            // INACTIVITY: Reset activity timer - User is typing!
+            state.lastActivityTime = Date.now();
+            state.inactivityWarningSent = false; // Reset warning flag
+            console.log('[Inactivity] ⌨️ User text activity detected, timer reset');
             
             // Add to transcript
             const studentTextEntry: TranscriptEntry = {
@@ -1381,7 +1529,12 @@ CRITICAL INSTRUCTIONS:
             // Clear persistence interval
             console.log("[Session End] 🧹 Clearing persistence interval...");
             clearInterval(persistInterval);
-            console.log("[Session End] ✅ Interval cleared");
+            if (state.inactivityTimerId) {
+              clearInterval(state.inactivityTimerId);
+              state.inactivityTimerId = null;
+              console.log('[Session End] 🧹 Inactivity timer cleared');
+            }
+            console.log("[Session End] ✅ Intervals cleared");
 
             // Finalize session (saves to DB, deducts minutes)
             console.log("[Session End] 💾 Calling finalizeSession...");
@@ -1443,8 +1596,13 @@ CRITICAL INSTRUCTIONS:
         state.deepgramConnection = null;
       }
       
-      // Clear interval
+      // Clear intervals
       clearInterval(persistInterval);
+      if (state.inactivityTimerId) {
+        clearInterval(state.inactivityTimerId);
+        state.inactivityTimerId = null;
+        console.log('[Inactivity] 🧹 Timer cleared on close');
+      }
       
       // Finalize session (saves to DB, deducts minutes)
       await finalizeSession(state, 'disconnect');
@@ -1467,6 +1625,11 @@ CRITICAL INSTRUCTIONS:
       
       // Clear intervals before finalizing
       clearInterval(persistInterval);
+      if (state.inactivityTimerId) {
+        clearInterval(state.inactivityTimerId);
+        state.inactivityTimerId = null;
+        console.log('[Error] 🧹 Inactivity timer cleared');
+      }
       if (responseTimer) {
         clearTimeout(responseTimer);
         responseTimer = null;
