@@ -554,83 +554,140 @@ export function useCustomVoice() {
     isPlayingRef.current = false;
   };
 
+  const disconnectInProgress = useRef(false);
+  
   const disconnect = useCallback(async (sessionId?: string) => {
-    console.log("[Custom Voice] 🛑 Disconnecting...");
+    // Prevent concurrent disconnect calls
+    if (disconnectInProgress.current) {
+      console.log("[Custom Voice] ⚠️ Disconnect already in progress, ignoring duplicate call");
+      return;
+    }
+    
+    disconnectInProgress.current = true;
+    
+    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    console.log("[Custom Voice] 🛑 DISCONNECT CALLED");
     console.log("[Custom Voice] Session ID:", sessionId);
+    console.log("[Custom Voice] WebSocket state:", wsRef.current?.readyState);
+    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     
-    let sessionEndedAckReceived = false;
-    const HTTP_FALLBACK_TIMEOUT = 3000; // 3 seconds
+    // Capture current WebSocket instance to prevent issues if wsRef changes during async ops
+    const ws = wsRef.current;
+    let ackHandler: ((event: MessageEvent) => void) | null = null;
+    let ackReceived = false;
     
-    // Listen for session_ended ACK
-    const ackPromise = new Promise<boolean>((resolve) => {
-      const originalOnMessage = wsRef.current?.onmessage;
-      
-      if (wsRef.current && originalOnMessage) {
-        const ws = wsRef.current;
-        ws.onmessage = (event) => {
-          // Call original handler first
-          originalOnMessage.call(ws, event);
+    try {
+      // Try WebSocket termination if connection is open
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        console.log("[Custom Voice] ✅ WebSocket is OPEN - attempting WebSocket termination");
+        
+        let sessionEndedAckReceived = false;
+        const HTTP_FALLBACK_TIMEOUT = 3000; // 3 seconds
+        
+        // Listen for session_ended ACK using addEventListener (doesn't overwrite existing handlers)
+        const ackPromise = new Promise<boolean>((resolve) => {
+          console.log("[Custom Voice] 🕐 Setting up ACK listener with", HTTP_FALLBACK_TIMEOUT, "ms timeout");
           
-          // Check for session_ended ACK
-          try {
-            const message = JSON.parse(event.data);
-            if (message.type === "session_ended") {
-              console.log("[Custom Voice] ✅ Received session_ended ACK - WebSocket succeeded");
-              sessionEndedAckReceived = true;
-              resolve(true);
+          ackHandler = (event: MessageEvent) => {
+            try {
+              const message = JSON.parse(event.data);
+              console.log("[Custom Voice] 📨 Received message during ACK wait:", message.type);
+              if (message.type === "session_ended") {
+                console.log("[Custom Voice] ✅ Received session_ended ACK - WebSocket succeeded");
+                sessionEndedAckReceived = true;
+                resolve(true);
+              }
+            } catch (e) {
+              // Ignore parsing errors
             }
-          } catch (e) {
-            // Ignore parsing errors
-          }
-        };
+          };
+          
+          // Add our listener (doesn't replace existing onmessage handler)
+          console.log("[Custom Voice] 📡 Adding ACK event listener");
+          ws.addEventListener('message', ackHandler);
+          
+          // Also listen for close event to resolve early if WebSocket closes
+          const closeHandler = () => {
+            console.log("[Custom Voice] 🔌 WebSocket closed before ACK");
+            if (!sessionEndedAckReceived) {
+              resolve(false);
+            }
+          };
+          ws.addEventListener('close', closeHandler, { once: true });
+          
+          // Timeout after 3 seconds
+          setTimeout(() => {
+            console.log("[Custom Voice] ⏱️ ACK timeout fired. ACK received?", sessionEndedAckReceived);
+            if (!sessionEndedAckReceived) {
+              console.log("[Custom Voice] ⚠️ No ACK received within timeout - will use HTTP fallback");
+              resolve(false);
+            }
+          }, HTTP_FALLBACK_TIMEOUT);
+        });
+      
+        console.log("[Custom Voice] 📤 Sending end message via WebSocket...");
+        ws.send(JSON.stringify({ type: "end" }));
+        console.log("[Custom Voice] ⏳ Waiting for ACK or timeout...");
+        
+        // Wait for ACK or timeout
+        ackReceived = await ackPromise;
+        console.log("[Custom Voice] 🎯 ACK promise resolved. ACK received?", ackReceived);
+        
+        // Close WebSocket
+        console.log("[Custom Voice] 🔌 Closing WebSocket connection...");
+        ws.close(1000, 'User ended session');
+        wsRef.current = null;
+      } else {
+        console.log("[Custom Voice] ⚠️ WebSocket not open or already closed");
+        console.log("[Custom Voice] State:", ws?.readyState);
       }
       
-      // Timeout after 3 seconds
-      setTimeout(() => {
-        if (!sessionEndedAckReceived) {
-          console.log("[Custom Voice] ⏱️ No ACK received within timeout - will use HTTP fallback");
-          resolve(false);
-        }
-      }, HTTP_FALLBACK_TIMEOUT);
-    });
-    
-    // Try WebSocket first
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      console.log("[Custom Voice] 📤 Sending end message via WebSocket...");
-      wsRef.current.send(JSON.stringify({ type: "end" }));
-      
-      // Wait for ACK or timeout
-      const ackReceived = await ackPromise;
-      
-      // If no ACK and we have a session ID, try HTTP fallback
+      // Always try HTTP fallback if:
+      // 1. WebSocket ACK failed (no ACK received)
+      // 2. OR WebSocket was not open in the first place (Railway proxy scenario)
       if (!ackReceived && sessionId) {
-        console.log("[Custom Voice] 🔄 WebSocket failed - trying HTTP fallback...");
+        console.log("[Custom Voice] 🔄 Using HTTP fallback to end session...");
+        console.log("[Custom Voice] 🌐 HTTP POST to /api/voice-sessions/" + sessionId + "/end");
         try {
           const response = await fetch(`/api/voice-sessions/${sessionId}/end`, {
             method: 'POST',
             credentials: 'include',
           });
           
+          console.log("[Custom Voice] 📡 HTTP response status:", response.status);
+          
           if (response.ok) {
             const result = await response.json();
             console.log("[Custom Voice] ✅ HTTP fallback successful:", result);
           } else {
-            console.error("[Custom Voice] ❌ HTTP fallback failed:", response.status);
+            const errorText = await response.text();
+            console.error("[Custom Voice] ❌ HTTP fallback failed:", response.status, errorText);
           }
         } catch (error) {
           console.error("[Custom Voice] ❌ HTTP fallback error:", error);
         }
+      } else if (!ackReceived && !sessionId) {
+        console.warn("[Custom Voice] ⚠️ Cannot end session - no sessionId provided");
+      } else {
+        console.log("[Custom Voice] ✅ Session ended via WebSocket ACK - HTTP fallback not needed");
       }
       
-      // Close WebSocket
-      console.log("[Custom Voice] 🔌 Closing WebSocket connection...");
-      wsRef.current.close(1000, 'User ended session');
-      wsRef.current = null;
+    } finally {
+      // Always cleanup: remove event listener and reset flag
+      console.log("[Custom Voice] 🧹 Running finally block cleanup");
+      
+      if (ackHandler && ws) {
+        console.log("[Custom Voice] 🔄 Removing ACK listener in finally");
+        ws.removeEventListener('message', ackHandler);
+      }
+      
+      cleanup();
+      setIsConnected(false);
+      disconnectInProgress.current = false;
+      
+      console.log("[Custom Voice] ✅ Disconnect complete");
+      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     }
-
-    cleanup();
-    setIsConnected(false);
-    console.log("[Custom Voice] ✅ Disconnect complete");
     
   }, []);
 

@@ -31,6 +31,7 @@ export function RealtimeVoiceHost({
   const { user } = useAuth();
   const { toast } = useToast();
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const sessionIdRef = useRef<string | null>(null); // Ref to track current sessionId
   const [isRecording, setIsRecording] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   
@@ -221,6 +222,7 @@ export function RealtimeVoiceHost({
       
       console.log(`[VoiceHost] ✅ Session created in DB: ${newSessionId}`);
       setSessionId(newSessionId);
+      sessionIdRef.current = newSessionId; // Store in ref for reliable access
       
       // Trigger onSessionStart callback if provided
       onSessionStart?.();
@@ -317,23 +319,26 @@ export function RealtimeVoiceHost({
     }
   };
 
-  const endSession = async () => {
+  const endSession = useCallback(async () => {
     try {
+      const currentSessionId = sessionIdRef.current;
       console.log('[VoiceHost] 🛑 Ending session...');
-      console.log('[VoiceHost] Session ID:', sessionId);
+      console.log('[VoiceHost] Session ID from ref:', currentSessionId);
       
       // Disconnect custom voice with sessionId for HTTP fallback
-      if (sessionId) {
-        await customVoice.disconnect(sessionId);
+      if (currentSessionId) {
+        console.log('[VoiceHost] 📤 Calling disconnect with sessionId:', currentSessionId);
+        await customVoice.disconnect(currentSessionId);
       } else {
         console.warn('[VoiceHost] ⚠️ No sessionId available for HTTP fallback');
-        customVoice.disconnect();
+        await customVoice.disconnect();
       }
       
       // Reset state
       setIsRecording(false);
       setIsMuted(false);
       setSessionId(null);
+      sessionIdRef.current = null;
       
       // Trigger onSessionEnd callback if provided
       onSessionEnd?.();
@@ -352,7 +357,7 @@ export function RealtimeVoiceHost({
         variant: "destructive",
       });
     }
-  };
+  }, [customVoice, toast, onSessionEnd]);
 
   const toggleMute = () => {
     setIsMuted(prev => !prev);
@@ -438,7 +443,7 @@ export function RealtimeVoiceHost({
       console.log('[VoiceHost] Lost connection, ending session');
       endSession();
     }
-  }, [customVoice.isConnected]);
+  }, [customVoice.isConnected, isRecording, endSession]);
 
   // Watch for errors from the custom voice hook
   useEffect(() => {
