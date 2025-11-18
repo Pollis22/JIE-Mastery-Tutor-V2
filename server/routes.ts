@@ -331,11 +331,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   // User analytics and subscription management routes
   const { default: userAnalyticsRoutes } = await import('./routes/user-analytics');
-  const { default: userPreferencesRoutes } = await import('./routes/user-preferences');
   const { default: subscriptionRoutes } = await import('./routes/subscription');
   const { default: checkoutRoutes } = await import('./routes/checkout');
   app.use("/api/user", userAnalyticsRoutes);
-  app.use("/api/user/preferences", userPreferencesRoutes);
   app.use("/api/subscription", subscriptionRoutes);
   app.use("/api/checkout", checkoutRoutes);
   
