@@ -127,21 +127,10 @@ export async function validateWsSession(
 
   const userId = sessionData.passport.user;
 
-  // Step 5: Check session freshness (30-minute rotation requirement)
-  const sessionFreshnessMinutes = 30;
-  if (sessionData.lastRotatedAt) {
-    const sessionAge = Date.now() - sessionData.lastRotatedAt;
-    const maxAge = sessionFreshnessMinutes * 60 * 1000;
-    
-    if (sessionAge > maxAge) {
-      return {
-        valid: false,
-        error: 'Session expired - requires rotation',
-        statusCode: 401
-      };
-    }
-  }
-
+  // Step 5: Session freshness check DISABLED for WebSocket connections
+  // Voice tutoring sessions can last hours - no rotation requirement
+  // Session rotation is only enforced on login/page refresh, not during active WebSocket connections
+  
   // Step 6: Verify session cookie hasn't expired
   if (sessionData.cookie && sessionData.cookie.expires) {
     const expiryDate = new Date(sessionData.cookie.expires);
