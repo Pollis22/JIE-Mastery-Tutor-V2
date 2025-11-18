@@ -42,6 +42,7 @@ A custom, production-ready voice stack provides real-time, natural conversations
 -   **Format**: PCM16 (16-bit Linear PCM), 16kHz sample rate, mono audio with base64 WebSocket transport.
 -   Supports text chat during voice sessions, user-controlled speech speed, and robust microphone error handling.
 -   Flexible communication modes: Voice Mode, Hybrid Mode (listen-only, respond via text), and Text-Only Mode.
+-   **5-Minute Inactivity Auto-Timeout** (November 2025): Backend tracks user inactivity via speech and text. Issues warning at 4 minutes of silence with audio message. Auto-ends session at 5 minutes with farewell message and proper minute deduction. Activity timer resets on any user interaction (voice or text). Prevents wasted minutes from forgotten sessions. Timer cleanup centralized in finalizeSession for robust lifecycle management.
 
 ### AI & Learning Engine
 -   **Primary AI Model**: Claude Sonnet 4 with an enhanced TutorMind system prompt.

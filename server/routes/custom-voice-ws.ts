@@ -125,7 +125,7 @@ function isLikelyIncompleteThought(transcript: string): boolean {
 // Centralized session finalization helper (prevents double-processing and ensures consistency)
 async function finalizeSession(
   state: SessionState,
-  reason: 'normal' | 'disconnect' | 'error' | 'violation',
+  reason: 'normal' | 'disconnect' | 'error' | 'violation' | 'inactivity_timeout',
   errorMessage?: string
 ) {
   // Idempotent: skip if already finalized
@@ -136,6 +136,13 @@ async function finalizeSession(
 
   // Mark as ended FIRST to prevent race conditions
   state.isSessionEnded = true;
+  
+  // CRITICAL: Clear inactivity timer to prevent duplicate finalization
+  if (state.inactivityTimerId) {
+    clearInterval(state.inactivityTimerId);
+    state.inactivityTimerId = null;
+    console.log(`[Finalize] 🧹 Cleared inactivity timer (reason: ${reason})`);
+  }
 
   if (!state.sessionId) {
     console.warn('[Custom Voice] ⚠️ No sessionId, skipping finalization');
@@ -555,13 +562,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
               mimeType: "audio/pcm;rate=16000"
             }));
             
-            // Clear intervals before finalizing
+            // Clear intervals before finalizing (inactivity timer cleared in finalizeSession)
             clearInterval(persistInterval);
-            if (state.inactivityTimerId) {
-              clearInterval(state.inactivityTimerId);
-              state.inactivityTimerId = null;
-              console.log('[Violation] 🧹 Inactivity timer cleared');
-            }
             if (responseTimer) {
               clearTimeout(responseTimer);
               responseTimer = null;
@@ -1529,12 +1531,7 @@ CRITICAL INSTRUCTIONS:
             // Clear persistence interval
             console.log("[Session End] 🧹 Clearing persistence interval...");
             clearInterval(persistInterval);
-            if (state.inactivityTimerId) {
-              clearInterval(state.inactivityTimerId);
-              state.inactivityTimerId = null;
-              console.log('[Session End] 🧹 Inactivity timer cleared');
-            }
-            console.log("[Session End] ✅ Intervals cleared");
+            console.log("[Session End] ✅ Persistence interval cleared");
 
             // Finalize session (saves to DB, deducts minutes)
             console.log("[Session End] 💾 Calling finalizeSession...");
@@ -1596,13 +1593,8 @@ CRITICAL INSTRUCTIONS:
         state.deepgramConnection = null;
       }
       
-      // Clear intervals
+      // Clear persistence interval (inactivity timer cleared in finalizeSession)
       clearInterval(persistInterval);
-      if (state.inactivityTimerId) {
-        clearInterval(state.inactivityTimerId);
-        state.inactivityTimerId = null;
-        console.log('[Inactivity] 🧹 Timer cleared on close');
-      }
       
       // Finalize session (saves to DB, deducts minutes)
       await finalizeSession(state, 'disconnect');
@@ -1623,13 +1615,8 @@ CRITICAL INSTRUCTIONS:
         state.deepgramConnection = null;
       }
       
-      // Clear intervals before finalizing
+      // Clear intervals before finalizing (inactivity timer cleared in finalizeSession)
       clearInterval(persistInterval);
-      if (state.inactivityTimerId) {
-        clearInterval(state.inactivityTimerId);
-        state.inactivityTimerId = null;
-        console.log('[Error] 🧹 Inactivity timer cleared');
-      }
       if (responseTimer) {
         clearTimeout(responseTimer);
         responseTimer = null;
