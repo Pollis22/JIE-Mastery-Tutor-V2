@@ -21,18 +21,8 @@ interface LanguageSelectorProps {
   variant?: "nav" | "settings";
 }
 
-const interfaceLanguages = [
-  { code: "en", name: "English", flag: "🇺🇸" },
-  { code: "es", name: "Español", flag: "🇪🇸" },
-  { code: "zh", name: "中文", flag: "🇨🇳" },
-  { code: "hi", name: "हिंदी", flag: "🇮🇳" },
-  { code: "fr", name: "Français", flag: "🇫🇷" },
-  { code: "de", name: "Deutsch", flag: "🇩🇪" },
-  { code: "pt", name: "Português", flag: "🇵🇹" },
-  { code: "ja", name: "日本語", flag: "🇯🇵" }
-];
-
-const voiceLanguages = [
+// All 22 supported languages
+const allLanguages = [
   { code: "en", name: "English", flag: "🇺🇸" },
   { code: "es", name: "Español", flag: "🇪🇸" },
   { code: "zh", name: "中文", flag: "🇨🇳" },
@@ -41,11 +31,24 @@ const voiceLanguages = [
   { code: "de", name: "Deutsch", flag: "🇩🇪" },
   { code: "pt", name: "Português", flag: "🇧🇷" },
   { code: "ja", name: "日本語", flag: "🇯🇵" },
+  { code: "ar", name: "العربية", flag: "🇸🇦" },
+  { code: "ru", name: "Русский", flag: "🇷🇺" },
+  { code: "it", name: "Italiano", flag: "🇮🇹" },
+  { code: "ko", name: "한국어", flag: "🇰🇷" },
+  { code: "vi", name: "Tiếng Việt", flag: "🇻🇳" },
+  { code: "tr", name: "Türkçe", flag: "🇹🇷" },
+  { code: "pl", name: "Polski", flag: "🇵🇱" },
+  { code: "nl", name: "Nederlands", flag: "🇳🇱" },
+  { code: "th", name: "ไทย", flag: "🇹🇭" },
+  { code: "id", name: "Bahasa Indonesia", flag: "🇮🇩" },
   { code: "sw", name: "Kiswahili", flag: "🇰🇪" },
   { code: "af", name: "Afrikaans", flag: "🇿🇦" },
   { code: "ha", name: "Hausa", flag: "🇳🇬" },
   { code: "am", name: "አማርኛ", flag: "🇪🇹" }
 ];
+
+const interfaceLanguages = allLanguages;
+const voiceLanguages = allLanguages;
 
 export default function LanguageSelector({ type = "interface", variant = "settings" }: LanguageSelectorProps) {
   const { user } = useAuth();
@@ -68,6 +71,16 @@ export default function LanguageSelector({ type = "interface", variant = "settin
       'german': 'de',
       'portuguese': 'pt',
       'japanese': 'ja',
+      'arabic': 'ar',
+      'russian': 'ru',
+      'italian': 'it',
+      'korean': 'ko',
+      'vietnamese': 'vi',
+      'turkish': 'tr',
+      'polish': 'pl',
+      'dutch': 'nl',
+      'thai': 'th',
+      'indonesian': 'id',
       'swahili': 'sw',
       'afrikaans': 'af',
       'hausa': 'ha',
@@ -85,6 +98,16 @@ export default function LanguageSelector({ type = "interface", variant = "settin
   const detectLanguage = () => {
     if (typeof navigator !== 'undefined') {
       const browserLang = navigator.language.toLowerCase();
+      if (browserLang.startsWith('ar')) return 'ar';
+      if (browserLang.startsWith('ru')) return 'ru';
+      if (browserLang.startsWith('it')) return 'it';
+      if (browserLang.startsWith('ko')) return 'ko';
+      if (browserLang.startsWith('vi')) return 'vi';
+      if (browserLang.startsWith('tr')) return 'tr';
+      if (browserLang.startsWith('pl')) return 'pl';
+      if (browserLang.startsWith('nl')) return 'nl';
+      if (browserLang.startsWith('th')) return 'th';
+      if (browserLang.startsWith('id')) return 'id';
       if (browserLang.startsWith('es')) return 'es';
       if (browserLang.startsWith('hi')) return 'hi';
       if (browserLang.startsWith('zh')) return 'zh';
