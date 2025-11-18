@@ -104,6 +104,11 @@ export const users = pgTable("users", {
   speechSpeed: decimal("speech_speed").default('1.0'),
   volumeLevel: integer("volume_level").default(75),
   isAdmin: boolean("is_admin").default(false),
+  // User preferences
+  interfaceLanguage: varchar("interface_language", { length: 10 }).default('en'),
+  voiceLanguage: varchar("voice_language", { length: 10 }).default('en'),
+  emailNotifications: boolean("email_notifications").default(true),
+  marketingEmails: boolean("marketing_emails").default(false),
   // Email verification fields
   emailVerified: boolean("email_verified").default(false),
   emailVerificationToken: text("email_verification_token"),
