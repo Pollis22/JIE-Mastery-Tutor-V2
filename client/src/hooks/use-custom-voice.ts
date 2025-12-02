@@ -31,6 +31,11 @@ export function useCustomVoice() {
   const audioEnabledRef = useRef<boolean>(true); // Tutor audio enabled (default true)
   const micEnabledRef = useRef<boolean>(true); // Student mic enabled (default true)
 
+  // Track when tutor audio playback started to prevent self-interrupt
+  // VAD will ignore speech detection for a short period after playback starts
+  const lastAudioPlaybackStartRef = useRef<number>(0);
+  const isTutorSpeakingRef = useRef<boolean>(false); // Ref version for audio worklet access
+
   // Synchronize refs with state
   useEffect(() => {
     audioEnabledRef.current = audioEnabled;
@@ -39,6 +44,10 @@ export function useCustomVoice() {
   useEffect(() => {
     micEnabledRef.current = micEnabled;
   }, [micEnabled]);
+
+  useEffect(() => {
+    isTutorSpeakingRef.current = isTutorSpeaking;
+  }, [isTutorSpeaking]);
 
   const connect = useCallback(async (
     sessionId: string, 
@@ -102,6 +111,8 @@ export function useCustomVoice() {
             console.log("[Custom Voice] 🔊 Received audio");
             if (audioEnabled) {
               console.log("[Custom Voice] 🔊 Playing audio");
+              // Record when playback starts to prevent self-interrupt from echo
+              lastAudioPlaybackStartRef.current = Date.now();
               setIsTutorSpeaking(true);
               await playAudio(message.data);
             } else {
@@ -214,22 +225,40 @@ export function useCustomVoice() {
           if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
 
           // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          // AGGRESSIVE BARGE-IN: Handle VAD events from audio worklet
-          // When speech is detected, IMMEDIATELY stop tutor audio locally
-          // AND notify server - don't wait for server response
+          // BARGE-IN with ECHO PROTECTION: Handle VAD events from audio worklet
+          // The VAD in the audio worklet detects speech, but we need to distinguish
+          // between the USER speaking and the TUTOR's audio being picked up by the mic.
+          // We use the RMS level to detect louder-than-echo speech.
           // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
           if (event.data.type === 'speech_start') {
-            console.log("[Custom Voice] 🎤 VAD: Speech detected - IMMEDIATE local interrupt");
+            // If tutor is currently speaking, we need higher confidence that this is
+            // the USER speaking and not just echo from the speakers
+            if (isTutorSpeakingRef.current && isPlayingRef.current) {
+              // Get the RMS level from the VAD event (if available)
+              const rms = event.data.rms || 0;
+              const peak = event.data.peak || 0;
 
-            // IMMEDIATE LOCAL INTERRUPT - don't wait for server
-            if (isPlayingRef.current || audioQueueRef.current.length > 0) {
-              console.log("[Custom Voice] 🛑 Stopping tutor audio immediately (local)");
+              // Require MUCH higher audio levels to trigger barge-in during tutor speech
+              // Echo typically has lower amplitude than direct speech into the mic
+              const ECHO_REJECTION_RMS = 0.03;  // 10x higher than normal VAD threshold
+              const ECHO_REJECTION_PEAK = 0.1;  // Much higher peak required
+
+              if (rms < ECHO_REJECTION_RMS && peak < ECHO_REJECTION_PEAK) {
+                console.log(`[Custom Voice] 🔇 VAD: Ignoring speech_start during tutor playback (rms=${rms.toFixed(4)}, peak=${peak.toFixed(4)} - likely echo)`);
+                return;
+              }
+
+              console.log(`[Custom Voice] 🎤 VAD: LOUD speech detected during tutor playback (rms=${rms.toFixed(4)}, peak=${peak.toFixed(4)}) - triggering barge-in`);
+              console.log("[Custom Voice] 🛑 Stopping tutor audio immediately (user barge-in)");
               stopAudio();
               setIsTutorSpeaking(false);
-            }
 
-            // Also notify server for state sync
-            wsRef.current.send(JSON.stringify({ type: "speech_detected" }));
+              // Notify server for state sync
+              wsRef.current.send(JSON.stringify({ type: "speech_detected" }));
+            } else {
+              // Tutor not speaking, just log for debugging
+              console.log("[Custom Voice] 🎤 VAD: Speech detected (tutor not playing)");
+            }
             return;
           }
 
@@ -300,26 +329,35 @@ export function useCustomVoice() {
           }
           const rms = Math.sqrt(sumSquares / inputData.length);
 
-          // Aggressive VAD: detect speech based on RMS or peak amplitude
+          // VAD: detect speech based on RMS or peak amplitude
           const hasAudio = rms > VAD_THRESHOLD || maxAmplitude > 0.02;
 
           // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          // AGGRESSIVE BARGE-IN for ScriptProcessor fallback
+          // BARGE-IN with ECHO PROTECTION for ScriptProcessor fallback
           // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
           if (hasAudio && !speechActive) {
-            speechActive = true;
-            silentChunks = 0;
-            console.log("[Custom Voice] 🎤 VAD (fallback): Speech detected - IMMEDIATE local interrupt");
+            // If tutor is currently speaking, require higher levels to reject echo
+            if (isTutorSpeakingRef.current && isPlayingRef.current) {
+              const ECHO_REJECTION_RMS = 0.03;
+              const ECHO_REJECTION_PEAK = 0.1;
 
-            // IMMEDIATE LOCAL INTERRUPT - don't wait for server
-            if (isPlayingRef.current || audioQueueRef.current.length > 0) {
-              console.log("[Custom Voice] 🛑 Stopping tutor audio immediately (local fallback)");
-              stopAudio();
-              setIsTutorSpeaking(false);
+              if (rms < ECHO_REJECTION_RMS && maxAmplitude < ECHO_REJECTION_PEAK) {
+                // Likely echo, don't trigger barge-in
+                // Don't set speechActive so we can check again next chunk
+              } else {
+                speechActive = true;
+                silentChunks = 0;
+                console.log(`[Custom Voice] 🎤 VAD (fallback): LOUD speech during tutor playback (rms=${rms.toFixed(4)}, peak=${maxAmplitude.toFixed(4)}) - barge-in`);
+                stopAudio();
+                setIsTutorSpeaking(false);
+                wsRef.current.send(JSON.stringify({ type: "speech_detected" }));
+              }
+            } else {
+              // Tutor not speaking, just track speech state
+              speechActive = true;
+              silentChunks = 0;
+              console.log("[Custom Voice] 🎤 VAD (fallback): Speech detected (tutor not playing)");
             }
-
-            // Notify server
-            wsRef.current.send(JSON.stringify({ type: "speech_detected" }));
           } else if (!hasAudio && speechActive) {
             silentChunks++;
             if (silentChunks >= MAX_SILENT_CHUNKS) {

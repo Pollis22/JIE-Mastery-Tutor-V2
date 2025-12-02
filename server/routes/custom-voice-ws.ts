@@ -1113,15 +1113,14 @@ CRITICAL INSTRUCTIONS:
                 }
                 
                 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                // AGGRESSIVE BARGE-IN: Check for interruption on ANY transcript
-                // This runs BEFORE the isFinal check to enable instant barge-in
-                // ALWAYS send interrupt if audio was recently sent (within 30s)
+                // BARGE-IN: Check for interruption on ANY transcript (interim or final)
+                // Only trigger if tutor is currently speaking to avoid false positives
                 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                 const timeSinceLastAudio = Date.now() - state.lastAudioSentAt;
 
-                // AGGRESSIVE: Trigger on any transcript with 1+ chars if audio was sent recently
-                if (timeSinceLastAudio < 30000 && transcript.trim().length >= 1) {
-                  console.log(`[Custom Voice] 🛑 AGGRESSIVE BARGE-IN on ${isFinal ? 'final' : 'interim'} transcript: "${transcript}" (audio sent ${timeSinceLastAudio}ms ago)`);
+                // Only barge-in if tutor is actively speaking AND transcript has content
+                if (state.isTutorSpeaking && timeSinceLastAudio < 30000 && transcript.trim().length >= 2) {
+                  console.log(`[Custom Voice] 🛑 BARGE-IN on ${isFinal ? 'final' : 'interim'} transcript: "${transcript}" (audio sent ${timeSinceLastAudio}ms ago)`);
 
                   // Mark interruption for post-interrupt buffer
                   state.wasInterrupted = true;
@@ -1488,39 +1487,33 @@ CRITICAL INSTRUCTIONS:
 
           case "speech_detected":
             // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            // AGGRESSIVE BARGE-IN: Handle client-side VAD speech detection
-            // ALWAYS send interrupt when audio was sent recently, regardless
-            // of server-side isTutorSpeaking state (which may be stale)
-            // Client already handles local interrupt, this ensures sync
+            // BARGE-IN: Handle client-side VAD speech detection
+            // Client already validated this is real user speech (not echo)
+            // so we trust this signal and update server state
             // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             const timeSinceAudioForVAD = Date.now() - state.lastAudioSentAt;
 
-            // AGGRESSIVE: Send interrupt if audio was sent in last 30 seconds
-            // Don't rely on isTutorSpeaking which may be out of sync
-            if (timeSinceAudioForVAD < 30000) {
-              console.log(`[Custom Voice] 🛑 AGGRESSIVE BARGE-IN via client VAD (audio sent ${timeSinceAudioForVAD}ms ago, isTutorSpeaking=${state.isTutorSpeaking})`);
+            // Only process if tutor was speaking recently
+            if (state.isTutorSpeaking && timeSinceAudioForVAD < 30000) {
+              console.log(`[Custom Voice] 🛑 BARGE-IN via client VAD (audio sent ${timeSinceAudioForVAD}ms ago)`);
 
               // Mark interruption for post-interrupt buffer
               state.wasInterrupted = true;
               state.lastInterruptionTime = Date.now();
               state.isTutorSpeaking = false;
 
-              // ALWAYS send interrupt signal - client already stopped locally,
-              // this confirms server is in sync
+              // Send interrupt signal - confirms server is in sync with client
               ws.send(JSON.stringify({
                 type: "interrupt",
                 message: "Student speaking (VAD)",
               }));
 
-              // Clear any pending transcript processing to prioritize new input
-              if (state.transcriptQueue.length > 0) {
-                console.log(`[Custom Voice] 🧹 Clearing ${state.transcriptQueue.length} queued transcripts for new input`);
-                state.transcriptQueue = [];
-              }
-
               console.log("[Custom Voice] ✅ VAD barge-in processed");
-            } else {
-              console.log(`[Custom Voice] ℹ️ speech_detected ignored (audio sent ${timeSinceAudioForVAD}ms ago - too old)`);
+            } else if (timeSinceAudioForVAD < 30000) {
+              // Audio was sent recently but isTutorSpeaking is false
+              // This means client already stopped playback, just sync state
+              console.log(`[Custom Voice] ℹ️ speech_detected received (tutor not speaking, syncing state)`);
+              state.isTutorSpeaking = false;
             }
             break;
 
