@@ -431,7 +431,7 @@ export default function TutorPage() {
                   data-testid="img-jie-logo"
                 />
                 <h1 id="page-title" className="text-2xl font-bold text-foreground">
-                  JIE Mastery Tutor — Multi-Agent
+                  JIE Mastery Tutor — Multi-Agent V1.0
                 </h1>
               </div>
               <div className="flex-1 flex justify-end items-center gap-2">
