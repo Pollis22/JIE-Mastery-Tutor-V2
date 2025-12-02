@@ -18,10 +18,9 @@ export function useCustomVoice() {
   const [error, setError] = useState<string | null>(null);
   const [microphoneError, setMicrophoneError] = useState<MicrophoneError | null>(null);
   const [isTutorSpeaking, setIsTutorSpeaking] = useState(false);
-  const [isListening, setIsListening] = useState(false); // NEW: Visual feedback for when we're listening to student
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [micEnabled, setMicEnabled] = useState(true);
-
+  
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -80,13 +79,11 @@ export function useCustomVoice() {
           case "ready":
             console.log("[Custom Voice] ✅ Session ready");
             setIsConnected(true);
-
+            
             // Only start microphone if student mic is enabled
             if (micEnabledRef.current) {
               console.log("[Custom Voice] 🎤 Starting microphone (Voice mode)");
               await startMicrophone();
-              // Set listening state once mic is ready (will switch off when tutor speaks)
-              setIsListening(true);
             } else {
               console.log("[Custom Voice] 🔇 Skipping microphone (Hybrid/Text mode)");
             }
@@ -102,34 +99,20 @@ export function useCustomVoice() {
             break;
 
           case "audio":
-            // Handle both streaming and non-streaming audio chunks
-            if (message.streaming) {
-              console.log(`[Custom Voice] 🔊 Received streaming audio chunk ${message.chunkIndex}`);
-            } else {
-              console.log("[Custom Voice] 🔊 Received audio");
-            }
+            console.log("[Custom Voice] 🔊 Received audio");
             if (audioEnabled) {
+              console.log("[Custom Voice] 🔊 Playing audio");
               setIsTutorSpeaking(true);
-              setIsListening(false); // Tutor is speaking, not listening
               await playAudio(message.data);
             } else {
               console.log("[Custom Voice] 🔇 Audio muted, showing text only");
             }
             break;
 
-          case "audio_stream_end":
-            console.log(`[Custom Voice] 🔊 Audio stream complete: ${message.totalChunks} chunks, ${message.totalBytes} bytes`);
-            // Audio queue will naturally finish playing
-            break;
-
           case "interrupt":
-            console.log("[Custom Voice] 🛑 BARGE-IN: Server detected student speech - stopping tutor immediately");
-            // Stop all audio playback immediately
+            console.log("[Custom Voice] 🛑 Interruption detected - stopping tutor");
             stopAudio();
             setIsTutorSpeaking(false);
-            // Add visual feedback that we're listening to the student
-            setIsListening(true);
-            console.log("[Custom Voice] 🎤 Now listening to student...");
             break;
           
           case "mode_updated":
@@ -510,9 +493,6 @@ export function useCustomVoice() {
     if (audioQueueRef.current.length === 0) {
       isPlayingRef.current = false;
       setIsTutorSpeaking(false);
-      // Tutor finished speaking, now listening to student
-      setIsListening(true);
-      console.log("[Custom Voice] 🎤 Tutor finished speaking, now listening...");
       return;
     }
 
@@ -525,41 +505,34 @@ export function useCustomVoice() {
     source.buffer = audioBuffer;
     source.connect(audioContextRef.current.destination);
     currentAudioSourceRef.current = source;
-
+    
     source.onended = () => {
       currentAudioSourceRef.current = null;
       playNextChunk();
     };
-
+    
     source.start();
   };
 
   const stopAudio = () => {
-    console.log("[Custom Voice] ⏹️ BARGE-IN: Stopping all audio playback immediately");
-
+    console.log("[Custom Voice] ⏹️ Stopping audio playback");
+    
     // Stop currently playing audio source
     if (currentAudioSourceRef.current) {
       try {
         currentAudioSourceRef.current.stop();
         currentAudioSourceRef.current.disconnect();
-        console.log("[Custom Voice] ✅ Stopped current audio source");
       } catch (e) {
         // Source might already be stopped
-        console.log("[Custom Voice] ℹ️ Audio source already stopped");
       }
       currentAudioSourceRef.current = null;
     }
-
-    // Clear the entire audio queue to prevent any pending chunks from playing
-    const queueLength = audioQueueRef.current.length;
+    
+    // Clear the audio queue
     audioQueueRef.current = [];
     isPlayingRef.current = false;
-
-    if (queueLength > 0) {
-      console.log(`[Custom Voice] 🗑️ Cleared ${queueLength} pending audio chunks from queue`);
-    }
-
-    console.log("[Custom Voice] ✅ Audio stopped completely, microphone remains active for student speech");
+    
+    console.log("[Custom Voice] ✅ Audio stopped, microphone still active");
   };
 
   const cleanup = () => {
@@ -809,15 +782,6 @@ export function useCustomVoice() {
     }]);
   }, []);
 
-  // Manual interrupt function - allows user to stop tutor via button
-  const interruptTutor = useCallback(() => {
-    console.log("[Custom Voice] 🛑 Manual interrupt triggered by user");
-    stopAudio();
-    setIsTutorSpeaking(false);
-    setIsListening(true);
-    console.log("[Custom Voice] 🎤 Tutor interrupted, now listening...");
-  }, []);
-
   return {
     connect,
     disconnect,
@@ -827,13 +791,11 @@ export function useCustomVoice() {
     addSystemMessage,
     retryMicrophone,
     dismissMicrophoneError,
-    interruptTutor, // NEW: Manual interrupt function
     isConnected,
     transcript,
     error,
     microphoneError,
     isTutorSpeaking,
-    isListening, // NEW: Visual feedback state
     audioEnabled,
     micEnabled,
   };
