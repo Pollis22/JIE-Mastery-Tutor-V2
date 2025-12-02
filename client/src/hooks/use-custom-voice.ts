@@ -230,31 +230,37 @@ export function useCustomVoice() {
           if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
 
           // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          // BARGE-IN with ECHO PROTECTION: Handle VAD events from audio worklet
-          // The VAD in the audio worklet detects speech, but we need to distinguish
-          // between the USER speaking and the TUTOR's audio being picked up by the mic.
-          // We use the RMS level to detect louder-than-echo speech.
+          // IMPROVED BARGE-IN with ECHO PROTECTION (AudioWorklet)
+          // - Much higher barge-in threshold (0.12 instead of 0.03)
+          // - 500ms cooldown after tutor starts
+          // - Distinguishes user speech from echo/ambient
           // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
           if (event.data.type === 'speech_start') {
-            // If tutor is currently speaking, we need higher confidence that this is
+            // If tutor is currently speaking, we need high confidence that this is
             // the USER speaking and not just echo from the speakers
             if (isTutorSpeakingRef.current && isPlayingRef.current) {
-              // Get the RMS level from the VAD event (if available)
               const rms = event.data.rms || 0;
               const peak = event.data.peak || 0;
-
-              // Require MUCH higher audio levels to trigger barge-in during tutor speech
-              // Echo typically has lower amplitude than direct speech into the mic
-              const ECHO_REJECTION_RMS = 0.03;  // 10x higher than normal VAD threshold
-              const ECHO_REJECTION_PEAK = 0.1;  // Much higher peak required
-
-              if (rms < ECHO_REJECTION_RMS && peak < ECHO_REJECTION_PEAK) {
-                console.log(`[Custom Voice] 🔇 VAD: Ignoring speech_start during tutor playback (rms=${rms.toFixed(4)}, peak=${peak.toFixed(4)} - likely echo)`);
+              const now = Date.now();
+              const timeSincePlayback = now - lastAudioPlaybackStartRef.current;
+              
+              // Skip VAD for 500ms after tutor audio starts (cooldown)
+              if (timeSincePlayback < 500) {
+                console.log(`[Custom Voice] ⏱️ VAD cooldown active (${(500 - timeSincePlayback).toFixed(0)}ms) - ignoring speech`);
                 return;
               }
 
-              console.log(`[Custom Voice] 🎤 VAD: LOUD speech detected during tutor playback (rms=${rms.toFixed(4)}, peak=${peak.toFixed(4)}) - triggering barge-in`);
-              console.log("[Custom Voice] 🛑 Stopping tutor audio immediately (user barge-in)");
+              // Require MUCH higher audio levels to trigger barge-in during tutor speech
+              // Real user speech should be RMS 0.12+, ambient noise is typically 0.03-0.05
+              const BARGE_IN_RMS = 0.12;   // User must speak clearly to interrupt
+              const BARGE_IN_PEAK = 0.25;  // Requires significant amplitude
+
+              if (rms < BARGE_IN_RMS && peak < BARGE_IN_PEAK) {
+                console.log(`[Custom Voice] 🔇 VAD: Ignoring ambient sound during tutor (rms=${rms.toFixed(4)}, peak=${peak.toFixed(4)}) - below barge-in threshold`);
+                return;
+              }
+
+              console.log(`[Custom Voice] 🛑 VAD: CONFIRMED barge-in (rms=${rms.toFixed(4)}, peak=${peak.toFixed(4)}) - stopping tutor`);
               stopAudio();
               setIsTutorSpeaking(false);
 
@@ -316,8 +322,13 @@ export function useCustomVoice() {
         // VAD state for fallback processor
         let speechActive = false;
         let silentChunks = 0;
-        const MAX_SILENT_CHUNKS = 5; // Aggressive - only 5 silent chunks before considering speech ended
-        const VAD_THRESHOLD = 0.003; // Low threshold for aggressive detection
+        let speechStartTime = 0; // Track when speech detected
+        let speechEndTime = 0; // Track when silence started
+        
+        const MAX_SILENT_CHUNKS = 5; // Only ~100ms of silence before considering speech ended
+        const VAD_THRESHOLD = 0.06; // Base speech detection threshold (was 0.003, too low)
+        const SPEECH_DEBOUNCE_MS = 150; // Require 150ms of sustained speech to trigger
+        const SILENCE_DEBOUNCE_MS = 300; // Require 300ms of sustained silence to end
 
         processor.onaudioprocess = (e) => {
           if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
@@ -346,43 +357,101 @@ export function useCustomVoice() {
           }
           const rms = Math.sqrt(sumSquares / inputData.length);
 
+          // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          // IMPROVED VAD with ECHO PROTECTION for ScriptProcessor fallback
+          // - Higher base threshold (0.06 instead of 0.003)
+          // - Much higher barge-in threshold (0.12 instead of 0.03)
+          // - Debounce timing (150-300ms)
+          // - 500ms cooldown after tutor starts
+          // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          
           // VAD: detect speech based on RMS or peak amplitude
           const hasAudio = rms > VAD_THRESHOLD || maxAmplitude > 0.02;
-
-          // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          // BARGE-IN with ECHO PROTECTION for ScriptProcessor fallback
-          // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          const now = Date.now();
+          const timeSincePlayback = now - lastAudioPlaybackStartRef.current;
+          
           if (hasAudio && !speechActive) {
-            // If tutor is currently speaking, require higher levels to reject echo
+            // Skip VAD for 500ms after tutor audio starts (cooldown)
+            if (isTutorSpeakingRef.current && isPlayingRef.current && timeSincePlayback < 500) {
+              console.log(`[Custom Voice] ⏱️ VAD cooldown active (${(500 - timeSincePlayback).toFixed(0)}ms remaining) - ignoring speech`);
+              return;
+            }
+            
+            // If tutor is currently speaking, require MUCH higher levels to reject echo
+            // Real speech from user should be 0.12+, ambient noise is typically 0.03-0.05
             if (isTutorSpeakingRef.current && isPlayingRef.current) {
-              const ECHO_REJECTION_RMS = 0.03;
-              const ECHO_REJECTION_PEAK = 0.1;
+              const BARGE_IN_RMS_THRESHOLD = 0.12; // Much higher - user must speak clearly
+              const BARGE_IN_PEAK_THRESHOLD = 0.25;
 
-              if (rms < ECHO_REJECTION_RMS && maxAmplitude < ECHO_REJECTION_PEAK) {
-                // Likely echo, don't trigger barge-in
-                // Don't set speechActive so we can check again next chunk
-              } else {
-                speechActive = true;
-                silentChunks = 0;
-                console.log(`[Custom Voice] 🎤 VAD (fallback): LOUD speech during tutor playback (rms=${rms.toFixed(4)}, peak=${maxAmplitude.toFixed(4)}) - barge-in`);
-                stopAudio();
-                setIsTutorSpeaking(false);
-                wsRef.current.send(JSON.stringify({ type: "speech_detected" }));
+              if (rms < BARGE_IN_RMS_THRESHOLD || maxAmplitude < BARGE_IN_PEAK_THRESHOLD) {
+                console.log(`[Custom Voice] 🔇 VAD (fallback): Ignoring ambient sound during tutor (rms=${rms.toFixed(4)}, peak=${maxAmplitude.toFixed(4)}) - below barge-in threshold`);
+                return;
               }
-            } else {
-              // Tutor not speaking, just track speech state
+              
+              // Start debounce timer for sustained speech
+              if (speechStartTime === 0) {
+                speechStartTime = now;
+                console.log(`[Custom Voice] 🎤 VAD (fallback): Speech onset detected (rms=${rms.toFixed(4)}, starting 150ms debounce...)`);
+                return; // Wait for debounce
+              }
+              
+              // Check if speech sustained for 150ms
+              if (now - speechStartTime < SPEECH_DEBOUNCE_MS) {
+                console.log(`[Custom Voice] ⏱️ VAD debounce: ${(now - speechStartTime).toFixed(0)}ms - waiting for sustained speech`);
+                return;
+              }
+              
+              // Speech confirmed after debounce - trigger barge-in
               speechActive = true;
               silentChunks = 0;
-              console.log("[Custom Voice] 🎤 VAD (fallback): Speech detected (tutor not playing)");
+              speechStartTime = 0;
+              console.log(`[Custom Voice] 🛑 VAD (fallback): CONFIRMED barge-in after debounce (rms=${rms.toFixed(4)}, peak=${maxAmplitude.toFixed(4)})`);
+              stopAudio();
+              setIsTutorSpeaking(false);
+              wsRef.current.send(JSON.stringify({ type: "speech_detected" }));
+            } else {
+              // Tutor not speaking - lower threshold OK
+              if (speechStartTime === 0) {
+                speechStartTime = now;
+                console.log("[Custom Voice] 🎤 VAD (fallback): Speech onset (tutor not playing)");
+                return; // Wait for debounce
+              }
+              
+              if (now - speechStartTime < SPEECH_DEBOUNCE_MS) {
+                return;
+              }
+              
+              speechActive = true;
+              silentChunks = 0;
+              speechStartTime = 0;
+              console.log("[Custom Voice] 🎤 VAD (fallback): Speech confirmed (tutor not playing)");
             }
           } else if (!hasAudio && speechActive) {
-            silentChunks++;
-            if (silentChunks >= MAX_SILENT_CHUNKS) {
-              speechActive = false;
-              console.log("[Custom Voice] 🔇 VAD (fallback): Speech ended");
+            // Debounce speech end: require 300ms of silence
+            if (speechEndTime === 0) {
+              speechEndTime = now;
+              console.log("[Custom Voice] ⏱️ VAD (fallback): Silence detected, starting 300ms debounce...");
+              return;
             }
-          } else if (hasAudio) {
+            
+            if (now - speechEndTime < SILENCE_DEBOUNCE_MS) {
+              console.log(`[Custom Voice] ⏱️ VAD silence debounce: ${(now - speechEndTime).toFixed(0)}ms`);
+              return;
+            }
+            
+            // Confirmed silence
+            speechActive = false;
+            speechEndTime = 0;
             silentChunks = 0;
+            console.log("[Custom Voice] 🔇 VAD (fallback): Speech ended (confirmed)");
+          } else if (hasAudio && speechActive) {
+            // Reset silence debounce timer if sound detected
+            speechEndTime = 0;
+            silentChunks = 0;
+          } else if (!hasAudio && !speechActive) {
+            // Stay silent, reset timers
+            speechStartTime = 0;
+            speechEndTime = 0;
           }
           // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
