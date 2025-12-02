@@ -270,10 +270,13 @@ export function useCustomVoice() {
 
           const float32Data = event.data.data; // Float32Array from AudioWorklet
 
-          // Convert Float32 to PCM16
+          // Convert Float32 to PCM16 with gain amplification
+          // Microphone levels are often very low, so we amplify for better Deepgram recognition
+          const GAIN = 50; // Moderate amplification (less than ScriptProcessor's 100 to avoid clipping)
           const pcm16 = new Int16Array(float32Data.length);
           for (let i = 0; i < float32Data.length; i++) {
-            const s = Math.max(-1, Math.min(1, float32Data[i]));
+            const amplified = float32Data[i] * GAIN;
+            const s = Math.max(-1, Math.min(1, amplified));
             pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
           }
 

@@ -54,20 +54,20 @@ export async function startDeepgramStream(
     language: "en-US",
     smart_format: true,
     interim_results: true,
-    
+    punctuate: true,            // Add punctuation for better readability
+
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // TIMING FIX (Nov 4, 2025): FINAL comprehensive fix to stop interruptions
-    // Students need 3.5+ seconds of silence to complete thoughts without being cut off
-    // Combined with server-side delays, provides 7-8 second total response time
+    // TIMING & ACCURACY SETTINGS
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    endpointing: 3500,          // 3.5s of silence before considering speech ended (INCREASED from 2000ms)
-    utterance_end_ms: 3500,     // 3.5s total wait before finalizing (consistent threshold)
+    endpointing: 2500,          // 2.5s of silence before speech end (reduced from 3.5s for faster response)
+    utterance_end_ms: 2500,     // 2.5s total wait before finalizing
     vad_events: true,
-    vad_threshold: 0.5,         // Sensitivity to detect when user is speaking
+    vad_threshold: 0.3,         // LOWER threshold for better sensitivity (was 0.5)
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    
+
     encoding: "linear16",
     sample_rate: 16000,
+    channels: 1,                // Mono audio
     });
 
     console.log("[Deepgram] 📡 Connection object created");

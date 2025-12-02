@@ -88,16 +88,12 @@ class AudioProcessor extends AudioWorkletProcessor {
     if (this.buffer.length >= this.bufferSize) {
       const chunk = new Float32Array(this.buffer.splice(0, this.bufferSize));
 
-      // Very low threshold - send almost all audio to Deepgram
-      const hasAudio = chunk.some(sample => Math.abs(sample) > 0.001);
-
-      if (hasAudio) {
-        // Send to main thread for processing
-        this.port.postMessage({
-          type: 'audio',
-          data: chunk
-        });
-      }
+      // ALWAYS send audio to Deepgram - it needs continuous stream for accurate transcription
+      // Deepgram handles silence detection internally, so don't filter here
+      this.port.postMessage({
+        type: 'audio',
+        data: chunk
+      });
     }
 
     return true;

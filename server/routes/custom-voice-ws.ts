@@ -685,7 +685,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
           { role: "assistant", content: aiResponse }
         );
 
-        // Add AI response to transcript
+        // Add AI response to transcript (internal state)
         const aiTranscriptEntry: TranscriptEntry = {
           speaker: "tutor",
           text: aiResponse,
@@ -694,24 +694,28 @@ export function setupCustomVoiceWebSocket(server: Server) {
         };
         state.transcript.push(aiTranscriptEntry);
 
-        // Send AI transcript to frontend
+        // Generate speech with age-appropriate voice BEFORE sending transcript
+        // This ensures transcript and audio arrive together
+        console.log("[Custom Voice] 🎙️ Generating TTS for response...");
+        const audioBuffer = await generateSpeech(aiResponse, state.ageGroup, state.speechSpeed);
+        console.log("[Custom Voice] ✅ TTS generated, sending transcript + audio together");
+
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        // SYNC FIX: Send transcript and audio together so they're in sync
+        // Previously transcript was sent first, causing visible delay
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        state.isTutorSpeaking = true;
+        const turnTimestamp = Date.now();
+        state.lastAudioSentAt = turnTimestamp;
+
+        // Send transcript to frontend (now synced with audio)
         ws.send(JSON.stringify({
           type: "transcript",
           speaker: "tutor",
           text: aiResponse,
         }));
 
-        // Generate speech with age-appropriate voice
-        const audioBuffer = await generateSpeech(aiResponse, state.ageGroup, state.speechSpeed);
-
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        // PACING FIX: Mark tutor as speaking and track timestamp
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        state.isTutorSpeaking = true;
-        const turnTimestamp = Date.now();
-        state.lastAudioSentAt = turnTimestamp;
-
-        // Send audio to frontend (only if tutor audio is enabled)
+        // Send audio immediately after transcript (only if tutor audio is enabled)
         if (state.tutorAudioEnabled) {
           console.log("[Custom Voice] 🔊 Sending audio response");
           ws.send(JSON.stringify({
