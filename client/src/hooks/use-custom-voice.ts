@@ -209,12 +209,30 @@ export function useCustomVoice() {
         const processor = new AudioWorkletNode(audioContextRef.current, 'audio-processor');
         processorRef.current = processor;
         
-        // Handle audio data from AudioWorklet
+        // Handle audio data and VAD events from AudioWorklet
         processor.port.onmessage = (event) => {
           if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-          
+
+          // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          // INSTANT BARGE-IN: Handle VAD events from audio worklet
+          // speech_start is sent immediately when user starts speaking,
+          // enabling the server to stop tutor audio within ~50-100ms
+          // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          if (event.data.type === 'speech_start') {
+            console.log("[Custom Voice] 🎤 VAD: Speech started - sending instant barge-in signal");
+            wsRef.current.send(JSON.stringify({ type: "speech_detected" }));
+            return;
+          }
+
+          if (event.data.type === 'speech_end') {
+            // Optional: could use for turn-taking hints in future
+            console.log("[Custom Voice] 🔇 VAD: Speech ended");
+            return;
+          }
+          // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
           const float32Data = event.data.data; // Float32Array from AudioWorklet
-          
+
           // Convert Float32 to PCM16
           const pcm16 = new Int16Array(float32Data.length);
           for (let i = 0; i < float32Data.length; i++) {
@@ -224,7 +242,7 @@ export function useCustomVoice() {
 
           const uint8Array = new Uint8Array(pcm16.buffer);
           const binaryString = Array.from(uint8Array).map(byte => String.fromCharCode(byte)).join('');
-          
+
           wsRef.current.send(JSON.stringify({
             type: "audio",
             data: btoa(binaryString),

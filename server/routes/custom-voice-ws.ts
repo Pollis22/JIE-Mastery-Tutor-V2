@@ -1112,58 +1112,57 @@ CRITICAL INSTRUCTIONS:
                   return;
                 }
                 
-                // CRITICAL: Strict checks before processing
+                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                // BARGE-IN ENHANCEMENT: Check for interruption on ANY transcript
+                // This runs BEFORE the isFinal check to enable instant barge-in
+                // on interim transcripts when user speaks during tutor playback
+                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                const timeSinceLastAudio = Date.now() - state.lastAudioSentAt;
+
+                if (state.isTutorSpeaking && timeSinceLastAudio < 15000 && transcript.trim().length >= 2) {
+                  console.log(`[Custom Voice] 🛑 BARGE-IN detected on ${isFinal ? 'final' : 'interim'} transcript: "${transcript}"`);
+
+                  // Mark interruption for post-interrupt buffer
+                  state.wasInterrupted = true;
+                  state.lastInterruptionTime = Date.now();
+                  console.log(`[Custom Voice] 🛑 Interruption flag set - will add ${TIMING_CONFIG.POST_INTERRUPT_BUFFER}ms buffer to next response`);
+
+                  // Send interrupt signal to frontend to stop audio playback immediately
+                  ws.send(JSON.stringify({
+                    type: "interrupt",
+                    message: "Student is speaking",
+                  }));
+
+                  // Mark tutor as not speaking so we can process the student's input
+                  state.isTutorSpeaking = false;
+
+                  console.log("[Custom Voice] ✅ Barge-in processed, ready to listen to student");
+                }
+
+                // Reset stale tutor speaking state (>15s ago)
+                if (state.isTutorSpeaking && timeSinceLastAudio >= 15000) {
+                  console.log("[Custom Voice] ⏸️ Resetting stale tutor speaking state...");
+                  state.isTutorSpeaking = false;
+                }
+                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+                // Only process for AI response on FINAL transcripts
                 if (!isFinal) {
-                  console.log("[Custom Voice] ⏭️ Skipping interim (isFinal=false)");
+                  console.log("[Custom Voice] ⏭️ Skipping interim for AI processing (barge-in already checked)");
                   return;
                 }
-                
+
                 if (!transcript || transcript.trim().length < 3) {
                   console.log("[Custom Voice] ⏭️ Skipping short/empty transcript");
                   return;
                 }
-                
+
                 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                 // INACTIVITY: Reset activity timer - User is speaking!
                 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                 state.lastActivityTime = Date.now();
                 state.inactivityWarningSent = false; // Reset warning flag
                 console.log('[Inactivity] 🎤 User activity detected, timer reset');
-                
-                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                // INTERRUPTION HANDLING: Allow student to interrupt tutor
-                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                const timeSinceLastAudio = Date.now() - state.lastAudioSentAt;
-                
-                if (state.isTutorSpeaking && timeSinceLastAudio < 10000) {
-                  console.log("[Custom Voice] 🛑 Student interrupted - stopping tutor and listening");
-                  
-                  // TIMING FIX (Nov 4, 2025): Mark interruption for post-interrupt buffer
-                  state.wasInterrupted = true;
-                  state.lastInterruptionTime = Date.now();
-                  console.log(`[Custom Voice] 🛑 Interruption flag set - will add ${TIMING_CONFIG.POST_INTERRUPT_BUFFER}ms buffer to next response`);
-                  
-                  // Send interrupt signal to frontend to stop audio playback
-                  ws.send(JSON.stringify({
-                    type: "interrupt",
-                    message: "Student is speaking",
-                  }));
-                  
-                  // Mark tutor as not speaking so we can process the student's input
-                  state.isTutorSpeaking = false;
-                  
-                  // Clear any processing queue to allow new input
-                  // Don't return - allow the student's speech to be processed
-                  console.log("[Custom Voice] ✅ Ready to listen to student");
-                }
-                
-                // Don't block processing if tutor was interrupted
-                // Only wait if tutor is legitimately still speaking (>10s ago)
-                if (state.isTutorSpeaking && timeSinceLastAudio >= 10000) {
-                  console.log("[Custom Voice] ⏸️ Tutor still speaking (old session)...");
-                  state.isTutorSpeaking = false; // Reset stale state
-                }
-                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                 
                 if (state.isProcessing) {
                   console.log("[Custom Voice] ⏭️ Already processing previous request");
@@ -1484,6 +1483,32 @@ CRITICAL INSTRUCTIONS:
               }
             } catch (error) {
               console.error('[Custom Voice] Error adding document to session:', error);
+            }
+            break;
+
+          case "speech_detected":
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            // INSTANT BARGE-IN: Handle client-side VAD speech detection
+            // This provides sub-100ms barge-in response when user speaks
+            // during tutor audio playback, without waiting for Deepgram
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            const timeSinceAudioForVAD = Date.now() - state.lastAudioSentAt;
+
+            if (state.isTutorSpeaking && timeSinceAudioForVAD < 15000) {
+              console.log("[Custom Voice] 🛑 INSTANT BARGE-IN via client VAD");
+
+              // Mark interruption for post-interrupt buffer
+              state.wasInterrupted = true;
+              state.lastInterruptionTime = Date.now();
+              state.isTutorSpeaking = false;
+
+              // Send interrupt signal to frontend to stop audio playback immediately
+              ws.send(JSON.stringify({
+                type: "interrupt",
+                message: "Student speaking (VAD)",
+              }));
+
+              console.log("[Custom Voice] ✅ VAD barge-in processed");
             }
             break;
 

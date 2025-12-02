@@ -1,11 +1,21 @@
 // Audio Worklet Processor for universal microphone handling
 // Processes audio at 16kHz regardless of input format
+// Enhanced with Voice Activity Detection (VAD) for instant barge-in
 
 class AudioProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    this.bufferSize = 4096;
+    // Reduced buffer size for lower latency (~128ms at 16kHz instead of ~256ms)
+    this.bufferSize = 2048;
     this.buffer = [];
+
+    // VAD (Voice Activity Detection) state for instant barge-in
+    this.speechActive = false;
+    this.silenceFrames = 0;
+    // Balanced sensitivity: ~50ms of silence before considering speech ended
+    this.silenceThreshold = 20; // frames (~50ms at 128 samples/frame)
+    // RMS threshold for speech detection (balanced sensitivity)
+    this.vadThreshold = 0.01;
   }
 
   process(inputs, outputs, parameters) {
@@ -28,16 +38,44 @@ class AudioProcessor extends AudioWorkletProcessor {
       monoData = audioData;
     }
 
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // INSTANT VAD: Check for speech on every audio frame (~2.6ms)
+    // This enables instant barge-in detection without waiting for
+    // the full buffer to fill or Deepgram transcription
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    const rms = Math.sqrt(
+      monoData.reduce((sum, sample) => sum + sample * sample, 0) / monoData.length
+    );
+    const isSpeech = rms > this.vadThreshold;
+
+    if (isSpeech && !this.speechActive) {
+      // Speech just started - send immediate notification for barge-in
+      this.speechActive = true;
+      this.silenceFrames = 0;
+      this.port.postMessage({ type: 'speech_start' });
+    } else if (!isSpeech && this.speechActive) {
+      // Potential speech end - wait for silence threshold
+      this.silenceFrames++;
+      if (this.silenceFrames >= this.silenceThreshold) {
+        this.speechActive = false;
+        this.port.postMessage({ type: 'speech_end' });
+      }
+    } else if (isSpeech) {
+      // Continued speech - reset silence counter
+      this.silenceFrames = 0;
+    }
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
     // Buffer audio data
     this.buffer.push(...monoData);
 
     // Send chunks of audio when buffer is full
     if (this.buffer.length >= this.bufferSize) {
       const chunk = new Float32Array(this.buffer.splice(0, this.bufferSize));
-      
-      // Only send if there's actual audio (not silence)
-      const hasAudio = chunk.some(sample => Math.abs(sample) > 0.01);
-      
+
+      // Lower threshold for detecting audio (catches quieter speech)
+      const hasAudio = chunk.some(sample => Math.abs(sample) > 0.005);
+
       if (hasAudio) {
         // Send to main thread for processing
         this.port.postMessage({
