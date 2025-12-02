@@ -50,24 +50,38 @@ export async function startDeepgramStream(
   try {
     const deepgramClient = getDeepgramClient();
     const connection = deepgramClient.listen.live({
-    model: "nova-2",
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // MODEL & LANGUAGE SETTINGS
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    model: "nova-2",            // Best accuracy model
     language: "en-US",
-    smart_format: true,
-    interim_results: true,
+    smart_format: true,         // Auto-format numbers, dates, etc.
+    interim_results: true,      // Get real-time partial transcripts
     punctuate: true,            // Add punctuation for better readability
+    profanity_filter: false,    // Don't filter any words
+    diarize: false,             // Single speaker optimization
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // TIMING & ACCURACY SETTINGS
+    // AUDIO QUALITY & SENSITIVITY SETTINGS
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    endpointing: 2500,          // 2.5s of silence before speech end (reduced from 3.5s for faster response)
-    utterance_end_ms: 2500,     // 2.5s total wait before finalizing
-    vad_events: true,
-    vad_threshold: 0.3,         // LOWER threshold for better sensitivity (was 0.5)
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
     encoding: "linear16",
     sample_rate: 16000,
     channels: 1,                // Mono audio
+    multichannel: false,        // Single channel optimization
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // VAD & TIMING SETTINGS (OPTIMIZED FOR QUIET SPEECH)
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    endpointing: 2000,          // 2s of silence before speech end (faster response)
+    utterance_end_ms: 2000,     // 2s total wait before finalizing
+    vad_events: true,           // Enable voice activity detection events
+    vad_threshold: 0.15,        // VERY LOW threshold for quiet speech detection (was 0.3)
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // ACCURACY ENHANCEMENTS
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    filler_words: true,         // Include "um", "uh" for natural speech
+    numerals: true,             // Convert spoken numbers to digits
     });
 
     console.log("[Deepgram] 📡 Connection object created");

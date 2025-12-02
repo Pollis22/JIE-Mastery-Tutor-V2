@@ -188,13 +188,13 @@ export function useCustomVoice() {
         throw new Error('BROWSER_NOT_SUPPORTED');
       }
       
-      const stream = await navigator.mediaDevices.getUserMedia({ 
+      const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           sampleRate: 16000,
           channelCount: 1,
           echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
+          noiseSuppression: false,  // Disable - can cut off quiet speech
+          autoGainControl: true,    // Let browser boost quiet audio
         }
       });
       
@@ -215,8 +215,13 @@ export function useCustomVoice() {
       try {
         // Load AudioWorklet processor (modern API, replaces deprecated ScriptProcessorNode)
         await audioContextRef.current.audioWorklet.addModule('/audio-processor.js');
-        
+
         const source = audioContextRef.current.createMediaStreamSource(stream);
+
+        // Add a GainNode to amplify quiet microphones at the hardware level
+        const gainNode = audioContextRef.current.createGain();
+        gainNode.gain.value = 3.0; // 3x amplification before processing
+
         const processor = new AudioWorkletNode(audioContextRef.current, 'audio-processor');
         processorRef.current = processor;
         
@@ -271,8 +276,8 @@ export function useCustomVoice() {
           const float32Data = event.data.data; // Float32Array from AudioWorklet
 
           // Convert Float32 to PCM16 with gain amplification
-          // Microphone levels are often very low, so we amplify for better Deepgram recognition
-          const GAIN = 50; // Moderate amplification (less than ScriptProcessor's 100 to avoid clipping)
+          // Note: We already have 3x hardware gain from GainNode, so use moderate software gain
+          const GAIN = 30; // Combined with 3x hardware = ~90x total amplification
           const pcm16 = new Int16Array(float32Data.length);
           for (let i = 0; i < float32Data.length; i++) {
             const amplified = float32Data[i] * GAIN;
@@ -289,13 +294,22 @@ export function useCustomVoice() {
           }));
         };
 
-        source.connect(processor);
+        // Connect: source -> gainNode -> processor -> destination
+        source.connect(gainNode);
+        gainNode.connect(processor);
         processor.connect(audioContextRef.current.destination);
+
+        console.log("[Custom Voice] 🔊 Audio chain: mic -> gain(3x) -> worklet -> destination");
       } catch (workletError) {
         console.warn('[Custom Voice] ⚠️ AudioWorklet not supported, falling back to ScriptProcessorNode:', workletError);
 
         // Fallback to ScriptProcessorNode for older browsers
         const source = audioContextRef.current.createMediaStreamSource(stream);
+
+        // Add gain node for fallback path too
+        const gainNode = audioContextRef.current.createGain();
+        gainNode.gain.value = 3.0; // 3x amplification
+
         const processor = audioContextRef.current.createScriptProcessor(2048, 1, 1); // Smaller buffer for lower latency
         processorRef.current = processor as any;
 
@@ -373,7 +387,8 @@ export function useCustomVoice() {
           // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
           // Convert to PCM16 with amplification
-          const GAIN = 100; // Amplify quiet microphones
+          // Note: We already have 3x hardware gain from GainNode, so use moderate software gain
+          const GAIN = 30; // Combined with 3x hardware = ~90x total amplification
           const pcm16 = new Int16Array(inputData.length);
           for (let i = 0; i < inputData.length; i++) {
             const amplified = inputData[i] * GAIN;
@@ -390,9 +405,12 @@ export function useCustomVoice() {
           }));
         };
 
-        source.connect(processor);
+        // Connect: source -> gainNode -> processor -> destination
+        source.connect(gainNode);
+        gainNode.connect(processor);
         processor.connect(audioContextRef.current.destination);
-        
+
+        console.log("[Custom Voice] 🔊 Audio chain (fallback): mic -> gain(3x) -> processor -> destination");
         console.log('[Custom Voice] 📊 ScriptProcessor connected:', {
           bufferSize: processor.bufferSize,
           inputChannels: processor.numberOfInputs,
