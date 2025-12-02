@@ -4,7 +4,7 @@ import { IncomingMessage } from 'http';
 import { Socket } from 'net';
 import { startDeepgramStream, DeepgramConnection } from "../services/deepgram-service";
 import { generateTutorResponse } from "../services/ai-service";
-import { generateSpeech } from "../services/tts-service";
+import { generateSpeech, generateSpeechStreaming, cancelTTSStream } from "../services/tts-service";
 import { db } from "../db";
 import { realtimeSessions, contentViolations, userSuspensions, documentChunks } from "@shared/schema";
 import { eq, and, or, gte } from "drizzle-orm";
@@ -701,58 +701,85 @@ export function setupCustomVoiceWebSocket(server: Server) {
           text: aiResponse,
         }));
 
-        // Generate speech with age-appropriate voice
-        const audioBuffer = await generateSpeech(aiResponse, state.ageGroup, state.speechSpeed);
-
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        // PACING FIX: Mark tutor as speaking and track timestamp
+        // STREAMING TTS: Send audio chunks as they arrive for faster response
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         state.isTutorSpeaking = true;
         const turnTimestamp = Date.now();
         state.lastAudioSentAt = turnTimestamp;
 
-        // Send audio to frontend (only if tutor audio is enabled)
+        // Release isProcessing early to allow interrupt detection during streaming
+        state.isProcessing = false;
+
+        let totalAudioBytes = 0;
+
         if (state.tutorAudioEnabled) {
-          console.log("[Custom Voice] 🔊 Sending audio response");
-          ws.send(JSON.stringify({
-            type: "audio",
-            data: audioBuffer.toString("base64"),
-            mimeType: "audio/pcm;rate=16000"
-          }));
+          console.log("[Custom Voice] 🔊 Starting streaming audio response...");
+
+          // Use streaming TTS - sends chunks as they arrive
+          await generateSpeechStreaming(
+            aiResponse,
+            state.ageGroup,
+            state.speechSpeed,
+            state.sessionId,
+            // onChunk: Send each audio chunk immediately
+            (base64Audio, chunkIndex) => {
+              if (state.isSessionEnded || !state.isTutorSpeaking) {
+                return; // Stop sending if interrupted or session ended
+              }
+              ws.send(JSON.stringify({
+                type: "audio",
+                data: base64Audio,
+                mimeType: "audio/pcm;rate=16000",
+                chunkIndex: chunkIndex,
+                streaming: true
+              }));
+            },
+            // onComplete: Audio streaming finished
+            (totalBytes, totalChunks) => {
+              totalAudioBytes = totalBytes;
+              console.log(`[Custom Voice] 🔊 Streaming complete: ${totalChunks} chunks, ${totalBytes} bytes`);
+              // Send end-of-stream marker
+              ws.send(JSON.stringify({
+                type: "audio_stream_end",
+                totalChunks: totalChunks,
+                totalBytes: totalBytes
+              }));
+            },
+            // onError: Handle TTS errors
+            (error) => {
+              console.error("[Custom Voice] ❌ Streaming TTS error:", error);
+              ws.send(JSON.stringify({
+                type: "error",
+                error: `TTS error: ${error.message}`
+              }));
+            }
+          );
         } else {
           console.log("[Custom Voice] 🔇 Skipping audio (tutor audio muted)");
         }
 
         console.log("[Custom Voice] 🔊 Response sent, waiting for user...");
 
-        // FIX #3: Persist after each turn (before pause to avoid blocking)
+        // FIX #3: Persist after each turn
         await persistTranscript(state.sessionId, state.transcript);
 
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        // PACING FIX: Release isProcessing BEFORE pause to allow interruptions
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        state.isProcessing = false;
-        
-        // Calculate audio duration correctly (16kHz, 16-bit = 2 bytes/sample)
-        const audioDuration = audioBuffer.length / (16000 * 2); // seconds
-        const pauseMs = Math.max(2000, audioDuration * 1000 + 1500); // Audio duration + 1.5s buffer
+        // Calculate audio duration for pause (16kHz, 16-bit = 2 bytes/sample)
+        const audioDuration = totalAudioBytes / (16000 * 2); // seconds
+        const pauseMs = Math.max(1500, audioDuration * 1000 + 500); // Reduced buffer since streaming already started playback
 
-        console.log(`[Custom Voice] ⏳ Pausing ${pauseMs}ms (audio: ${audioDuration.toFixed(1)}s + 1.5s buffer)...`);
+        console.log(`[Custom Voice] ⏳ Pausing ${pauseMs}ms (audio: ${audioDuration.toFixed(1)}s + 0.5s buffer)...`);
 
         // Wait for audio to finish playing + give user time to think
-        // Note: isTutorSpeaking remains true during this pause, but interrupts can still be detected
         await new Promise(resolve => setTimeout(resolve, pauseMs));
 
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        // PACING FIX: Only clear flag if this turn is still active (prevents race condition)
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        // Only clear flag if this turn is still active (prevents race condition)
         if (state.lastAudioSentAt === turnTimestamp) {
           console.log("[Custom Voice] ✅ Pause complete, ready for user input");
           state.isTutorSpeaking = false;
         } else {
           console.log("[Custom Voice] ℹ️ Turn superseded by newer turn, keeping isTutorSpeaking");
         }
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
         // Process next queued item if any
         if (state.transcriptQueue.length > 0 && !state.isSessionEnded) {
@@ -1137,21 +1164,27 @@ CRITICAL INSTRUCTIONS:
                 
                 if (state.isTutorSpeaking && timeSinceLastAudio < 10000) {
                   console.log("[Custom Voice] 🛑 Student interrupted - stopping tutor and listening");
-                  
+
                   // TIMING FIX (Nov 4, 2025): Mark interruption for post-interrupt buffer
                   state.wasInterrupted = true;
                   state.lastInterruptionTime = Date.now();
                   console.log(`[Custom Voice] 🛑 Interruption flag set - will add ${TIMING_CONFIG.POST_INTERRUPT_BUFFER}ms buffer to next response`);
-                  
+
+                  // Cancel any in-flight TTS streaming to stop generating more audio
+                  const cancelled = cancelTTSStream(state.sessionId);
+                  if (cancelled) {
+                    console.log("[Custom Voice] 🛑 Cancelled in-flight TTS stream");
+                  }
+
                   // Send interrupt signal to frontend to stop audio playback
                   ws.send(JSON.stringify({
                     type: "interrupt",
                     message: "Student is speaking",
                   }));
-                  
+
                   // Mark tutor as not speaking so we can process the student's input
                   state.isTutorSpeaking = false;
-                  
+
                   // Clear any processing queue to allow new input
                   // Don't return - allow the student's speech to be processed
                   console.log("[Custom Voice] ✅ Ready to listen to student");

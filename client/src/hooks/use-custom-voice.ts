@@ -99,14 +99,23 @@ export function useCustomVoice() {
             break;
 
           case "audio":
-            console.log("[Custom Voice] 🔊 Received audio");
+            // Handle both streaming and non-streaming audio chunks
+            if (message.streaming) {
+              console.log(`[Custom Voice] 🔊 Received streaming audio chunk ${message.chunkIndex}`);
+            } else {
+              console.log("[Custom Voice] 🔊 Received audio");
+            }
             if (audioEnabled) {
-              console.log("[Custom Voice] 🔊 Playing audio");
               setIsTutorSpeaking(true);
               await playAudio(message.data);
             } else {
               console.log("[Custom Voice] 🔇 Audio muted, showing text only");
             }
+            break;
+
+          case "audio_stream_end":
+            console.log(`[Custom Voice] 🔊 Audio stream complete: ${message.totalChunks} chunks, ${message.totalBytes} bytes`);
+            // Audio queue will naturally finish playing
             break;
 
           case "interrupt":
