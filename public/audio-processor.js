@@ -1,21 +1,24 @@
 // Audio Worklet Processor for universal microphone handling
 // Processes audio at 16kHz regardless of input format
-// Enhanced with Voice Activity Detection (VAD) for instant barge-in
+// Enhanced with AGGRESSIVE Voice Activity Detection (VAD) for instant barge-in
 
 class AudioProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    // Reduced buffer size for lower latency (~128ms at 16kHz instead of ~256ms)
-    this.bufferSize = 2048;
+    // Smaller buffer for faster audio transmission (~64ms at 16kHz)
+    this.bufferSize = 1024;
     this.buffer = [];
 
-    // VAD (Voice Activity Detection) state for instant barge-in
+    // AGGRESSIVE VAD for instant barge-in
     this.speechActive = false;
     this.silenceFrames = 0;
-    // Balanced sensitivity: ~50ms of silence before considering speech ended
-    this.silenceThreshold = 20; // frames (~50ms at 128 samples/frame)
-    // RMS threshold for speech detection (balanced sensitivity)
-    this.vadThreshold = 0.01;
+    // Very short silence threshold - only 10 frames (~25ms) before speech_end
+    this.silenceThreshold = 10;
+    // AGGRESSIVE: Very low RMS threshold to catch any voice activity
+    this.vadThreshold = 0.003;
+    // Track consecutive speech frames to avoid single-frame false positives
+    this.speechFrames = 0;
+    this.minSpeechFrames = 2; // Require 2 consecutive frames (~5ms) to trigger
   }
 
   process(inputs, outputs, parameters) {
@@ -39,30 +42,42 @@ class AudioProcessor extends AudioWorkletProcessor {
     }
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // INSTANT VAD: Check for speech on every audio frame (~2.6ms)
-    // This enables instant barge-in detection without waiting for
-    // the full buffer to fill or Deepgram transcription
+    // AGGRESSIVE VAD: Check for speech on every audio frame (~2.6ms)
+    // Uses very low threshold for instant barge-in detection
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     const rms = Math.sqrt(
       monoData.reduce((sum, sample) => sum + sample * sample, 0) / monoData.length
     );
-    const isSpeech = rms > this.vadThreshold;
 
-    if (isSpeech && !this.speechActive) {
-      // Speech just started - send immediate notification for barge-in
-      this.speechActive = true;
+    // Also check peak amplitude for transients (catches plosives like "p", "t", "k")
+    let maxAmp = 0;
+    for (let i = 0; i < monoData.length; i++) {
+      const amp = Math.abs(monoData[i]);
+      if (amp > maxAmp) maxAmp = amp;
+    }
+
+    // Speech detected if RMS OR peak amplitude exceeds threshold
+    const isSpeech = rms > this.vadThreshold || maxAmp > 0.02;
+
+    if (isSpeech) {
+      this.speechFrames++;
       this.silenceFrames = 0;
-      this.port.postMessage({ type: 'speech_start' });
-    } else if (!isSpeech && this.speechActive) {
-      // Potential speech end - wait for silence threshold
-      this.silenceFrames++;
-      if (this.silenceFrames >= this.silenceThreshold) {
-        this.speechActive = false;
-        this.port.postMessage({ type: 'speech_end' });
+
+      // Trigger speech_start after minimum consecutive frames (avoids false positives)
+      if (!this.speechActive && this.speechFrames >= this.minSpeechFrames) {
+        this.speechActive = true;
+        this.port.postMessage({ type: 'speech_start', rms: rms, peak: maxAmp });
       }
-    } else if (isSpeech) {
-      // Continued speech - reset silence counter
-      this.silenceFrames = 0;
+    } else {
+      this.speechFrames = 0;
+
+      if (this.speechActive) {
+        this.silenceFrames++;
+        if (this.silenceFrames >= this.silenceThreshold) {
+          this.speechActive = false;
+          this.port.postMessage({ type: 'speech_end' });
+        }
+      }
     }
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -73,8 +88,8 @@ class AudioProcessor extends AudioWorkletProcessor {
     if (this.buffer.length >= this.bufferSize) {
       const chunk = new Float32Array(this.buffer.splice(0, this.bufferSize));
 
-      // Lower threshold for detecting audio (catches quieter speech)
-      const hasAudio = chunk.some(sample => Math.abs(sample) > 0.005);
+      // Very low threshold - send almost all audio to Deepgram
+      const hasAudio = chunk.some(sample => Math.abs(sample) > 0.001);
 
       if (hasAudio) {
         // Send to main thread for processing

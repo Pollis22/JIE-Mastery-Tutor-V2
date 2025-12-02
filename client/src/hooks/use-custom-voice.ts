@@ -214,18 +214,26 @@ export function useCustomVoice() {
           if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
 
           // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          // INSTANT BARGE-IN: Handle VAD events from audio worklet
-          // speech_start is sent immediately when user starts speaking,
-          // enabling the server to stop tutor audio within ~50-100ms
+          // AGGRESSIVE BARGE-IN: Handle VAD events from audio worklet
+          // When speech is detected, IMMEDIATELY stop tutor audio locally
+          // AND notify server - don't wait for server response
           // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
           if (event.data.type === 'speech_start') {
-            console.log("[Custom Voice] 🎤 VAD: Speech started - sending instant barge-in signal");
+            console.log("[Custom Voice] 🎤 VAD: Speech detected - IMMEDIATE local interrupt");
+
+            // IMMEDIATE LOCAL INTERRUPT - don't wait for server
+            if (isPlayingRef.current || audioQueueRef.current.length > 0) {
+              console.log("[Custom Voice] 🛑 Stopping tutor audio immediately (local)");
+              stopAudio();
+              setIsTutorSpeaking(false);
+            }
+
+            // Also notify server for state sync
             wsRef.current.send(JSON.stringify({ type: "speech_detected" }));
             return;
           }
 
           if (event.data.type === 'speech_end') {
-            // Optional: could use for turn-taking hints in future
             console.log("[Custom Voice] 🔇 VAD: Speech ended");
             return;
           }
@@ -253,25 +261,27 @@ export function useCustomVoice() {
         processor.connect(audioContextRef.current.destination);
       } catch (workletError) {
         console.warn('[Custom Voice] ⚠️ AudioWorklet not supported, falling back to ScriptProcessorNode:', workletError);
-        
+
         // Fallback to ScriptProcessorNode for older browsers
         const source = audioContextRef.current.createMediaStreamSource(stream);
-        const processor = audioContextRef.current.createScriptProcessor(4096, 1, 1);
+        const processor = audioContextRef.current.createScriptProcessor(2048, 1, 1); // Smaller buffer for lower latency
         processorRef.current = processor as any;
-        
-        // Keep track of consecutive silent chunks
+
+        // VAD state for fallback processor
+        let speechActive = false;
         let silentChunks = 0;
-        const MAX_SILENT_CHUNKS = 10;
-        
+        const MAX_SILENT_CHUNKS = 5; // Aggressive - only 5 silent chunks before considering speech ended
+        const VAD_THRESHOLD = 0.003; // Low threshold for aggressive detection
+
         processor.onaudioprocess = (e) => {
           if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-          
+
           // Check if media stream is still active
           if (!mediaStreamRef.current || !mediaStreamRef.current.active) {
             console.error('[Custom Voice] ❌ Media stream is no longer active!');
             return;
           }
-          
+
           // Check audio context state and resume if needed
           if (audioContextRef.current?.state === 'suspended') {
             audioContextRef.current.resume();
@@ -279,54 +289,60 @@ export function useCustomVoice() {
           }
 
           const inputData = e.inputBuffer.getChannelData(0);
-          
-          // Check if audio buffer contains actual audio (not just silence)
-          let hasAudio = false;
+
+          // Calculate RMS for VAD
+          let sumSquares = 0;
           let maxAmplitude = 0;
           for (let i = 0; i < inputData.length; i++) {
             const amplitude = Math.abs(inputData[i]);
+            sumSquares += inputData[i] * inputData[i];
             if (amplitude > maxAmplitude) maxAmplitude = amplitude;
-            if (amplitude > 0.001) {  // Threshold for detecting audio
-              hasAudio = true;
-            }
           }
-          
-          // Track consecutive silent chunks
-          if (!hasAudio) {
+          const rms = Math.sqrt(sumSquares / inputData.length);
+
+          // Aggressive VAD: detect speech based on RMS or peak amplitude
+          const hasAudio = rms > VAD_THRESHOLD || maxAmplitude > 0.02;
+
+          // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          // AGGRESSIVE BARGE-IN for ScriptProcessor fallback
+          // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          if (hasAudio && !speechActive) {
+            speechActive = true;
+            silentChunks = 0;
+            console.log("[Custom Voice] 🎤 VAD (fallback): Speech detected - IMMEDIATE local interrupt");
+
+            // IMMEDIATE LOCAL INTERRUPT - don't wait for server
+            if (isPlayingRef.current || audioQueueRef.current.length > 0) {
+              console.log("[Custom Voice] 🛑 Stopping tutor audio immediately (local fallback)");
+              stopAudio();
+              setIsTutorSpeaking(false);
+            }
+
+            // Notify server
+            wsRef.current.send(JSON.stringify({ type: "speech_detected" }));
+          } else if (!hasAudio && speechActive) {
             silentChunks++;
-            if (silentChunks <= MAX_SILENT_CHUNKS) {
-              // Still send a few silent chunks (user might be pausing)
-              console.log(`[Custom Voice] 🔇 Silent chunk ${silentChunks}/${MAX_SILENT_CHUNKS}, max amplitude: ${maxAmplitude}`);
-            } else {
-              // Too many silent chunks, skip to save bandwidth
-              return;
+            if (silentChunks >= MAX_SILENT_CHUNKS) {
+              speechActive = false;
+              console.log("[Custom Voice] 🔇 VAD (fallback): Speech ended");
             }
-          } else {
-            if (silentChunks > 0) {
-              console.log(`[Custom Voice] 🎤 Audio detected after ${silentChunks} silent chunks, max amplitude: ${maxAmplitude}`);
-            }
-            silentChunks = 0;  // Reset counter when audio is detected
+          } else if (hasAudio) {
+            silentChunks = 0;
           }
-          
+          // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
           // Convert to PCM16 with amplification
-          const GAIN = 100; // Amplify quiet microphones (increased from 10)
+          const GAIN = 100; // Amplify quiet microphones
           const pcm16 = new Int16Array(inputData.length);
           for (let i = 0; i < inputData.length; i++) {
-            // Apply gain before conversion
             const amplified = inputData[i] * GAIN;
             const s = Math.max(-1, Math.min(1, amplified));
             pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
           }
-          
-          // Log sample of audio for debugging
-          if (silentChunks === 0 && hasAudio) {
-            const samplePCM = Array.from(pcm16.slice(0, 10));
-            console.log(`[Custom Voice] 📊 PCM16 sample after gain: ${samplePCM}`);
-          }
 
           const uint8Array = new Uint8Array(pcm16.buffer);
           const binaryString = Array.from(uint8Array).map(byte => String.fromCharCode(byte)).join('');
-          
+
           wsRef.current.send(JSON.stringify({
             type: "audio",
             data: btoa(binaryString),
