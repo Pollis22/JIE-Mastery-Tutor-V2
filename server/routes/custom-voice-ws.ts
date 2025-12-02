@@ -1158,12 +1158,14 @@ CRITICAL INSTRUCTIONS:
                 console.log('[Inactivity] 🎤 User activity detected, timer reset');
                 
                 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                // INTERRUPTION HANDLING: Allow student to interrupt tutor
+                // BARGE-IN (INTERRUPTION) HANDLING: Allow student to interrupt tutor
+                // This runs BEFORE the isProcessing check to ensure interrupts always work
                 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                 const timeSinceLastAudio = Date.now() - state.lastAudioSentAt;
-                
-                if (state.isTutorSpeaking && timeSinceLastAudio < 10000) {
-                  console.log("[Custom Voice] 🛑 Student interrupted - stopping tutor and listening");
+
+                if (state.isTutorSpeaking && timeSinceLastAudio < 15000) {
+                  console.log("[Custom Voice] 🛑 BARGE-IN DETECTED - Student interrupted tutor!");
+                  console.log(`[Custom Voice] 🛑 Time since last audio: ${timeSinceLastAudio}ms`);
 
                   // TIMING FIX (Nov 4, 2025): Mark interruption for post-interrupt buffer
                   state.wasInterrupted = true;
@@ -1176,7 +1178,7 @@ CRITICAL INSTRUCTIONS:
                     console.log("[Custom Voice] 🛑 Cancelled in-flight TTS stream");
                   }
 
-                  // Send interrupt signal to frontend to stop audio playback
+                  // Send interrupt signal to frontend to stop audio playback IMMEDIATELY
                   ws.send(JSON.stringify({
                     type: "interrupt",
                     message: "Student is speaking",
@@ -1185,19 +1187,23 @@ CRITICAL INSTRUCTIONS:
                   // Mark tutor as not speaking so we can process the student's input
                   state.isTutorSpeaking = false;
 
-                  // Clear any processing queue to allow new input
-                  // Don't return - allow the student's speech to be processed
-                  console.log("[Custom Voice] ✅ Ready to listen to student");
+                  // CRITICAL: Clear the processing flag to allow the interruption to be processed
+                  // This ensures the student's speech gets through even if we were processing something
+                  state.isProcessing = false;
+
+                  // Clear transcript queue - the student's new input takes priority
+                  state.transcriptQueue = [];
+
+                  console.log("[Custom Voice] ✅ Barge-in complete - ready to process student speech");
                 }
-                
-                // Don't block processing if tutor was interrupted
-                // Only wait if tutor is legitimately still speaking (>10s ago)
-                if (state.isTutorSpeaking && timeSinceLastAudio >= 10000) {
-                  console.log("[Custom Voice] ⏸️ Tutor still speaking (old session)...");
-                  state.isTutorSpeaking = false; // Reset stale state
+
+                // Reset stale speaking state (older than 15 seconds)
+                if (state.isTutorSpeaking && timeSinceLastAudio >= 15000) {
+                  console.log("[Custom Voice] ⏸️ Resetting stale isTutorSpeaking flag (>15s old)");
+                  state.isTutorSpeaking = false;
                 }
                 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                
+
                 if (state.isProcessing) {
                   console.log("[Custom Voice] ⏭️ Already processing previous request");
                   return;
@@ -1268,23 +1274,42 @@ CRITICAL INSTRUCTIONS:
 
             // Generate and send greeting audio
             try {
+              // BARGE-IN FIX: Set tutor speaking BEFORE sending audio so interruptions can be detected
+              state.isTutorSpeaking = true;
+              state.lastAudioSentAt = Date.now();
+
               const greetingAudio = await generateSpeech(greeting, state.ageGroup, state.speechSpeed);
-              
+
               // Send greeting transcript
               ws.send(JSON.stringify({
                 type: "transcript",
                 text: greeting,
                 speaker: "tutor"
               }));
-              
+
               // Send greeting audio
               ws.send(JSON.stringify({
                 type: "audio",
                 data: greetingAudio.toString("base64")
               }));
-              
+
               console.log(`[Custom Voice] 🔊 Sent greeting audio (${greetingAudio.length} bytes)`);
+
+              // Calculate greeting audio duration and reset speaking flag after playback
+              const greetingDuration = greetingAudio.length / (16000 * 2); // seconds (16kHz, 16-bit)
+              const greetingPauseMs = Math.max(1000, greetingDuration * 1000 + 500);
+              console.log(`[Custom Voice] ⏳ Greeting will play for ~${greetingDuration.toFixed(1)}s`);
+
+              setTimeout(() => {
+                // Only clear if no newer audio has been sent
+                if (state.lastAudioSentAt <= Date.now() - greetingPauseMs + 100) {
+                  state.isTutorSpeaking = false;
+                  console.log("[Custom Voice] ✅ Greeting complete, ready for student input");
+                }
+              }, greetingPauseMs);
+
             } catch (error) {
+              state.isTutorSpeaking = false; // Reset on error
               console.error("[Custom Voice] ❌ Failed to generate greeting audio:", error);
             }
 
