@@ -26,6 +26,10 @@ export const SUPPORTED_LANGUAGES = [
   { code: 'da', name: 'Danish', nativeName: 'Dansk', deepgramCode: 'da-DK', greeting: 'Hej' },
   { code: 'no', name: 'Norwegian', nativeName: 'Norsk', deepgramCode: 'no-NO', greeting: 'Hei' },
   { code: 'fi', name: 'Finnish', nativeName: 'Suomi', deepgramCode: 'fi-FI', greeting: 'Hei' },
+  // African Languages - using multi-language detection for STT as Deepgram doesn't fully support these yet
+  { code: 'sw', name: 'Swahili', nativeName: 'Kiswahili', deepgramCode: 'multi', greeting: 'Habari' },
+  { code: 'yo', name: 'Yoruba', nativeName: 'Yorùbá', deepgramCode: 'multi', greeting: 'Bawo ni' },
+  { code: 'ha', name: 'Hausa', nativeName: 'Hausa', deepgramCode: 'multi', greeting: 'Sannu' },
 ] as const;
 
 export type LanguageCode = typeof SUPPORTED_LANGUAGES[number]['code'];
