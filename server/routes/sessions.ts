@@ -232,6 +232,100 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+// GET /api/sessions/:id/export - Export session transcript as downloadable file
+router.get('/:id/export', async (req, res) => {
+  try {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    const { id } = req.params;
+    const { format = 'txt' } = req.query; // 'txt' or 'json'
+    const userId = req.user!.id;
+    
+    // Get session and verify ownership
+    const [session] = await db.select()
+      .from(realtimeSessions)
+      .where(and(
+        eq(realtimeSessions.id, id),
+        eq(realtimeSessions.userId, userId)
+      ));
+    
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    
+    // Transform transcript to consistent format
+    const transcript = session.transcript && Array.isArray(session.transcript)
+      ? session.transcript.map((entry: any) => ({
+          speaker: entry.role === 'assistant' ? 'Tutor' : (entry.speaker === 'tutor' ? 'Tutor' : 'Student'),
+          text: entry.content || entry.text || '',
+          timestamp: entry.timestamp
+        }))
+      : [];
+    
+    // Format session date for filename
+    const sessionDate = session.startedAt 
+      ? new Date(session.startedAt).toISOString().split('T')[0] 
+      : 'unknown-date';
+    const studentName = session.studentName?.replace(/[^a-zA-Z0-9]/g, '-') || 'session';
+    const filename = `transcript-${studentName}-${sessionDate}`;
+    
+    if (format === 'json') {
+      // JSON format with full metadata
+      const exportData = {
+        sessionId: session.id,
+        studentName: session.studentName,
+        subject: session.subject,
+        ageGroup: session.ageGroup,
+        language: session.language,
+        date: session.startedAt,
+        endedAt: session.endedAt,
+        durationMinutes: session.minutesUsed,
+        totalMessages: session.totalMessages,
+        summary: session.summary,
+        transcript: transcript
+      };
+      
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}.json"`);
+      return res.json(exportData);
+    }
+    
+    // Plain text format (default) - more readable for parents
+    const header = [
+      `=== Tutoring Session Transcript ===`,
+      ``,
+      `Student: ${session.studentName || 'Unknown'}`,
+      `Subject: ${session.subject || 'General'}`,
+      `Age Group: ${session.ageGroup || 'Not specified'}`,
+      `Language: ${session.language || 'English'}`,
+      `Date: ${session.startedAt ? new Date(session.startedAt).toLocaleString() : 'Unknown'}`,
+      `Duration: ${session.minutesUsed || 0} minutes`,
+      ``,
+      `--- Summary ---`,
+      session.summary || 'No summary available',
+      ``,
+      `--- Conversation ---`,
+      ``
+    ].join('\n');
+    
+    const textTranscript = transcript
+      .map((t: any) => `[${t.speaker}]: ${t.text}`)
+      .join('\n\n');
+    
+    const fullText = header + textTranscript;
+    
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}.txt"`);
+    return res.send(fullText);
+    
+  } catch (error) {
+    console.error('[Sessions] Export error:', error);
+    res.status(500).json({ error: 'Failed to export transcript' });
+  }
+});
+
 // DELETE /api/sessions/:id - Delete a session
 router.delete('/:id', async (req, res) => {
   try {
