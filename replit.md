@@ -37,6 +37,10 @@ The platform uses a **session-first** data priority model where session configur
 ### Voice Technology Integration
 A custom, production-ready voice stack provides real-time, natural conversations with 1-2 seconds end-to-end latency.
 -   **22 Languages Supported**: Including English, Spanish, Arabic, Russian, and more, with auto-detection of browser language.
+-   **Language Selection UI** (December 2025): Dropdown menu near the "Start Voice Tutoring" button allows students to select their preferred tutoring language. The selected language persists in localStorage across sessions.
+    -   Deepgram STT configured per-language for accurate speech recognition
+    -   Claude AI system prompt includes language instruction for non-English sessions
+    -   Languages supported: English, Spanish, French, German, Italian, Portuguese, Chinese (Mandarin), Japanese, Korean, Arabic, Hindi, Russian, Dutch, Polish, Turkish, Vietnamese, Thai, Indonesian, Swedish, Danish, Norwegian, Finnish
 -   **Age-Appropriate TTS Voices**: Each language has 5 distinct Azure Neural TTS voices optimized for different age groups (K-2, 3-5, 6-8, 9-12, College/Adult).
 -   **Audio Processing Pipeline** (November 2025): Custom ScriptProcessorNode implementation with 100x gain amplification for quiet microphones, silence detection (threshold: 10), MediaStream health checks, and audio context suspension protection.
 -   **Format**: PCM16 (16-bit Linear PCM), 16kHz sample rate, mono audio with base64 WebSocket transport.

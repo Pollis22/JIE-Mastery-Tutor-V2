@@ -681,7 +681,7 @@ export default function TutorPage() {
                     studentId={selectedStudentId || undefined}
                     studentName={studentName}
                     subject={subject}
-                    language={mapLanguageToISO(user?.preferredLanguage)}
+                    language={selectedLanguage}
                     ageGroup={level === 'k2' ? 'K-2' : level === 'g3_5' ? '3-5' : level === 'g6_8' ? '6-8' : level === 'g9_12' ? '9-12' : 'College/Adult'}
                     contextDocumentIds={selectedDocumentIds.length > 0 ? selectedDocumentIds : contextDocumentIds}
                     onSessionStart={() => setSessionStartTime(new Date())}

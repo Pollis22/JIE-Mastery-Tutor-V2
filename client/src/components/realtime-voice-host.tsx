@@ -11,7 +11,7 @@ interface RealtimeVoiceHostProps {
   studentId?: string;
   studentName?: string;
   subject?: string;
-  language?: 'en' | 'es' | 'hi' | 'zh';
+  language?: string; // LANGUAGE: Now supports all 22 languages
   ageGroup?: 'K-2' | '3-5' | '6-8' | '9-12' | 'College/Adult';
   contextDocumentIds?: string[];
   onSessionStart?: () => void;
@@ -288,14 +288,15 @@ export function RealtimeVoiceHost({
       }
       
       // Step 2: Connect to custom voice WebSocket with valid session
-      console.log('[VoiceHost] 🔌 Connecting to WebSocket with session:', newSessionId);
+      console.log('[VoiceHost] 🔌 Connecting to WebSocket with session:', newSessionId, 'language:', language);
       await customVoice.connect(
         newSessionId,
         user.id,
         studentName || 'Student',
         ageGroup,
         createSystemInstruction(),
-        documents
+        documents,
+        language // LANGUAGE: Pass selected language to backend
       );
       
       toast({

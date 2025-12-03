@@ -55,10 +55,11 @@ export function useCustomVoice() {
     studentName: string,
     ageGroup: string,
     systemInstruction: string,
-    documents: string[] = []
+    documents: string[] = [],
+    language: string = 'en'
   ) => {
     try {
-      console.log("[Custom Voice] 🚀 Connecting...");
+      console.log("[Custom Voice] 🚀 Connecting...", { language });
       
       // Get WebSocket URL (use wss:// in production)
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -78,6 +79,7 @@ export function useCustomVoice() {
           ageGroup,
           systemInstruction,
           documents,
+          language, // LANGUAGE: Pass selected language to backend
         }));
       };
 

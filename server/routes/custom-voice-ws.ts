@@ -892,6 +892,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
             // state.userId is already set to authenticatedUserId during state initialization
             state.studentName = message.studentName || "Student";
             state.ageGroup = message.ageGroup || "College/Adult";
+            state.language = message.language || "en"; // LANGUAGE: Store selected language
             
             // CRITICAL FIX (Nov 14, 2025): Log userId after initialization to verify authentication
             console.log(`[Custom Voice] 🔐 Session state initialized:`, {
@@ -901,7 +902,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
               hasUserId: !!state.userId,
               userIdType: typeof state.userId,
               studentName: state.studentName,
-              ageGroup: state.ageGroup
+              ageGroup: state.ageGroup,
+              language: state.language
             });
             
             // Fetch user's speech speed preference from database using authenticated userId
@@ -1237,7 +1239,8 @@ CRITICAL INSTRUCTIONS:
                 if (state.sessionId && state.transcript.length > 0) {
                   await persistTranscript(state.sessionId, state.transcript);
                 }
-              }
+              },
+              deepgramLanguage // LANGUAGE: Pass selected language for speech recognition
             );
 
             // Generate and send greeting audio
