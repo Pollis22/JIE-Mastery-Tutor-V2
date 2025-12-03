@@ -22,9 +22,18 @@ import {
   FileText,
   ChevronRight,
   Download,
-  Search
+  Search,
+  FileJson,
+  File
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { useToast } from "@/hooks/use-toast";
 
 interface SessionHistoryProps {
   limit?: number;
@@ -32,8 +41,10 @@ interface SessionHistoryProps {
 
 export default function SessionHistory({ limit }: SessionHistoryProps) {
   const { user } = useAuth();
+  const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedSession, setSelectedSession] = useState<string | null>(null);
+  const [exportingId, setExportingId] = useState<string | null>(null);
 
   // Fetch session history using correct endpoint
   const { data, isLoading } = useQuery({
@@ -41,7 +52,7 @@ export default function SessionHistory({ limit }: SessionHistoryProps) {
     enabled: !!user
   });
 
-  const sessions = data?.sessions || [];
+  const sessions = (data as any)?.sessions || [];
 
   const filteredSessions = sessions.filter((session: any) => {
     if (!searchTerm) return true;
@@ -56,20 +67,41 @@ export default function SessionHistory({ limit }: SessionHistoryProps) {
 
   const displaySessions = limit ? filteredSessions.slice(0, limit) : filteredSessions;
 
-  const handleExportSession = async (sessionId: string) => {
+  const handleExportSession = async (sessionId: string, format: 'txt' | 'pdf' | 'json' = 'txt') => {
     try {
-      const response = await fetch(`/api/sessions/${sessionId}/export`);
+      setExportingId(sessionId);
+      const response = await fetch(`/api/sessions/${sessionId}/export?format=${format}`, {
+        credentials: 'include'
+      });
+      
+      if (!response.ok) {
+        throw new Error('Export failed');
+      }
+      
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `session-${sessionId}-${Date.now()}.txt`;
+      const ext = format === 'pdf' ? 'pdf' : format === 'json' ? 'json' : 'txt';
+      a.download = `transcript-${sessionId}.${ext}`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
+      
+      toast({
+        title: "Success",
+        description: `Transcript exported as ${format.toUpperCase()}`,
+      });
     } catch (error) {
       console.error("Failed to export session:", error);
+      toast({
+        title: "Export Failed",
+        description: "Unable to export transcript. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setExportingId(null);
     }
   };
 
@@ -218,19 +250,53 @@ export default function SessionHistory({ limit }: SessionHistoryProps) {
                           </div>
                         )}
                         
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="mt-3"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleExportSession(session.id);
-                          }}
-                          data-testid={`button-export-${session.id}`}
-                        >
-                          <Download className="mr-2 h-3 w-3" />
-                          Export Transcript
-                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="mt-3"
+                              onClick={(e) => e.stopPropagation()}
+                              disabled={exportingId === session.id}
+                              data-testid={`button-export-${session.id}`}
+                            >
+                              <Download className="mr-2 h-3 w-3" />
+                              {exportingId === session.id ? 'Exporting...' : 'Export Transcript'}
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleExportSession(session.id, 'txt');
+                              }}
+                              data-testid={`menu-export-txt-${session.id}`}
+                            >
+                              <FileText className="mr-2 h-4 w-4" />
+                              Export as Text (.txt)
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleExportSession(session.id, 'pdf');
+                              }}
+                              data-testid={`menu-export-pdf-${session.id}`}
+                            >
+                              <File className="mr-2 h-4 w-4" />
+                              Export as PDF (.pdf)
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleExportSession(session.id, 'json');
+                              }}
+                              data-testid={`menu-export-json-${session.id}`}
+                            >
+                              <FileJson className="mr-2 h-4 w-4" />
+                              Export as JSON (.json)
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     )}
                   </div>
