@@ -47,6 +47,7 @@ interface SessionState {
   userId: string;
   studentName: string;
   ageGroup: string;
+  language: string; // LANGUAGE: Tutoring language code (e.g., 'en', 'es', 'fr')
   speechSpeed: number; // User's speech speed preference from settings
   systemInstruction: string;
   conversationHistory: Array<{ role: "user" | "assistant"; content: string }>;
@@ -274,6 +275,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
       userId: authenticatedUserId, // Use session-authenticated userId
       studentName: "",
       ageGroup: "default",
+      language: "en", // LANGUAGE: Default to English, will be set from session
       speechSpeed: 0.95, // Default speech speed, will be overridden by user preference
       systemInstruction: "",
       conversationHistory: [],
@@ -674,7 +676,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
           transcript,
           state.uploadedDocuments,
           state.systemInstruction,
-          "voice" // Student spoke via microphone
+          "voice", // Student spoke via microphone
+          state.language // LANGUAGE: Pass selected language
         );
 
         console.log(`[Custom Voice] 🤖 Tutor: "${aiResponse}"`);
@@ -1098,6 +1101,8 @@ CRITICAL INSTRUCTIONS:
             state.transcript.push(greetingEntry);
 
             // Start Deepgram connection with cleanup on close
+            const { getDeepgramLanguageCode } = await import("../services/deepgram-service");
+            const deepgramLanguage = getDeepgramLanguageCode(state.language);
             state.deepgramConnection = await startDeepgramStream(
               async (transcript: string, isFinal: boolean) => {
                 // Log EVERYTHING for debugging
@@ -1385,7 +1390,8 @@ CRITICAL INSTRUCTIONS:
                 message.message,
                 state.uploadedDocuments,
                 state.systemInstruction,
-                "text" // Student typed via chat
+                "text", // Student typed via chat
+                state.language // LANGUAGE: Pass selected language
               );
               
               console.log(`[Custom Voice] 🤖 Tutor response: "${aiResponse}"`);

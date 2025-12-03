@@ -15,7 +15,8 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
-import { Clock, AlertCircle, Upload, File, X, Paperclip, LogOut, Settings, LayoutDashboard, User } from "lucide-react";
+import { Clock, AlertCircle, Upload, File, X, Paperclip, LogOut, Settings, LayoutDashboard, User, Globe } from "lucide-react";
+import { SUPPORTED_LANGUAGES } from "@shared/languages";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
@@ -89,6 +90,13 @@ export default function TutorPage() {
   const [summaryModalOpen, setSummaryModalOpen] = useState(false);
   const [transcriptMessages, setTranscriptMessages] = useState<ConvaiMessage[]>([]);
   const [isTranscriptConnected, setIsTranscriptConnected] = useState(false);
+  const [selectedLanguage, setSelectedLanguage] = useState<string>(() => {
+    try {
+      return localStorage.getItem('jie-tutor-language') || 'en';
+    } catch {
+      return 'en';
+    }
+  });
 
   // Debug state for Realtime debugging
   const [debugInfo, setDebugInfo] = useState<{
@@ -118,6 +126,15 @@ export default function TutorPage() {
   
   // Document selection state
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
+  
+  // Save language preference to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('jie-tutor-language', selectedLanguage);
+    } catch {
+      // Ignore storage errors
+    }
+  }, [selectedLanguage]);
 
   // Fetch available minutes
   const { data: minutesData } = useQuery<{
@@ -548,6 +565,20 @@ export default function TutorPage() {
               <option value="math">Math</option>
               <option value="english">English</option>
               <option value="spanish">Spanish</option>
+            </select>
+
+            <select 
+              id="language" 
+              value={selectedLanguage} 
+              onChange={e => setSelectedLanguage(e.target.value)}
+              className="px-3 py-2 border border-input bg-background text-foreground rounded-md focus:outline-none focus:ring-2 focus:ring-primary flex items-center gap-2"
+              data-testid="select-language"
+            >
+              {SUPPORTED_LANGUAGES.map(lang => (
+                <option key={lang.code} value={lang.code}>
+                  {lang.name}
+                </option>
+              ))}
             </select>
 
             <input 

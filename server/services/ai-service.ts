@@ -48,7 +48,8 @@ export async function generateTutorResponse(
   currentTranscript: string,
   uploadedDocuments: string[],
   systemInstruction?: string,
-  inputModality?: "voice" | "text"
+  inputModality?: "voice" | "text",
+  language?: string
 ): Promise<string> {
   
   console.log("[AI Service] 📝 Generating response");
@@ -75,14 +76,47 @@ export async function generateTutorResponse(
     ? "The student TYPED this message to you via text chat."
     : "";
 
+  // Language context for multilingual tutoring
+  const getLanguageName = (code?: string): string => {
+    const names: { [key: string]: string } = {
+      'en': 'English',
+      'es': 'Spanish',
+      'fr': 'French',
+      'de': 'German',
+      'it': 'Italian',
+      'pt': 'Portuguese',
+      'zh': 'Chinese (Mandarin)',
+      'ja': 'Japanese',
+      'ko': 'Korean',
+      'ar': 'Arabic',
+      'hi': 'Hindi',
+      'ru': 'Russian',
+      'nl': 'Dutch',
+      'pl': 'Polish',
+      'tr': 'Turkish',
+      'vi': 'Vietnamese',
+      'th': 'Thai',
+      'id': 'Indonesian',
+      'sv': 'Swedish',
+      'da': 'Danish',
+      'no': 'Norwegian',
+      'fi': 'Finnish',
+    };
+    return names[code || 'en'] || 'English';
+  };
+
+  const languageContext = language && language !== 'en'
+    ? `IMPORTANT: Conduct this entire tutoring session in ${getLanguageName(language)}. Greet the student in ${getLanguageName(language)}, ask questions in ${getLanguageName(language)}, and provide all explanations in ${getLanguageName(language)}. Only use English if the student explicitly requests it.\n\n`
+    : '';
+
   // Build the system prompt with documents at the beginning if they exist
   let systemPrompt = "";
   
   if (systemInstruction) {
     systemPrompt = systemInstruction;
-    // Add modality context to custom instructions too
-    if (modalityContext) {
-      systemPrompt = `${modalityContext}\n\n${systemInstruction}`;
+    // Add language and modality context to custom instructions
+    if (languageContext || modalityContext) {
+      systemPrompt = `${languageContext}${modalityContext ? modalityContext + '\n\n' : ''}${systemInstruction}`;
     }
   } else {
     // Start with document context if available

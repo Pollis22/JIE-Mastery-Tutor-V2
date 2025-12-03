@@ -39,13 +39,42 @@ export interface DeepgramConnection {
   close: () => void;
 }
 
+export function getDeepgramLanguageCode(languageCode: string): string {
+  const languageMap: { [key: string]: string } = {
+    'en': 'en-US',
+    'es': 'es-ES',
+    'fr': 'fr-FR',
+    'de': 'de-DE',
+    'it': 'it-IT',
+    'pt': 'pt-BR',
+    'zh': 'zh-CN',
+    'ja': 'ja-JP',
+    'ko': 'ko-KR',
+    'ar': 'ar-AE',
+    'hi': 'hi-IN',
+    'ru': 'ru-RU',
+    'nl': 'nl-NL',
+    'pl': 'pl-PL',
+    'tr': 'tr-TR',
+    'vi': 'vi-VN',
+    'th': 'th-TH',
+    'id': 'id-ID',
+    'sv': 'sv-SE',
+    'da': 'da-DK',
+    'no': 'no-NO',
+    'fi': 'fi-FI',
+  };
+  return languageMap[languageCode] || 'en-US';
+}
+
 export async function startDeepgramStream(
   onTranscript: (text: string, isFinal: boolean) => void,
   onError: (error: Error) => void,
-  onClose?: () => void
+  onClose?: () => void,
+  language: string = "en-US"
 ): Promise<DeepgramConnection> {
   
-  console.log("[Deepgram] 🎤 Starting stream...");
+  console.log("[Deepgram] 🎤 Starting stream with language:", language);
   
   try {
     const deepgramClient = getDeepgramClient();
@@ -54,7 +83,7 @@ export async function startDeepgramStream(
     // MODEL & LANGUAGE SETTINGS
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     model: "nova-2",            // Best accuracy model
-    language: "en-US",
+    language: language,
     smart_format: true,         // Auto-format numbers, dates, etc.
     interim_results: true,      // Get real-time partial transcripts
     punctuate: true,            // Add punctuation for better readability
