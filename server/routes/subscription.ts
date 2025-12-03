@@ -104,12 +104,57 @@ router.post('/change', async (req, res) => {
         // Use helper function to update subscription (prevents duplicates)
         const updatedSubscription = await createOrUpdateSubscription(customerId, priceId);
 
-        // Update database
+        // Plan minute allocation map
+        const minutesMap: Record<string, number> = {
+          'starter': 60,
+          'standard': 240,
+          'pro': 600,
+          'elite': 1800,
+        };
+
+        const newPlanMinutes = minutesMap[plan.toLowerCase()] || 60;
+        const oldPlanMinutes = user.subscriptionMinutesLimit || 60;
+        const usedMinutes = user.subscriptionMinutesUsed || 0;
+        const remainingMinutes = Math.max(0, oldPlanMinutes - usedMinutes);
+
+        let finalMinutesLimit: number;
+        let finalMinutesUsed: number;
+
+        // Determine if upgrade or downgrade
+        const isUpgrade = newPlanMinutes > oldPlanMinutes;
+        const isDowngrade = newPlanMinutes < oldPlanMinutes;
+
+        if (isUpgrade) {
+          // UPGRADE: Add remaining minutes to new tier's allocation
+          // Example: 40 remaining Starter + 600 Pro = 640 total for this cycle
+          finalMinutesLimit = newPlanMinutes + remainingMinutes;
+          finalMinutesUsed = 0; // Reset usage counter
+          console.log(`📈 [Subscription] UPGRADE: ${remainingMinutes} remaining + ${newPlanMinutes} new = ${finalMinutesLimit} total`);
+        } else if (isDowngrade) {
+          // DOWNGRADE: Cap remaining minutes at new tier's maximum
+          // Example: 500 remaining Pro → min(500, 60) = 60 for Starter
+          finalMinutesLimit = newPlanMinutes;
+          finalMinutesUsed = Math.max(0, usedMinutes - (oldPlanMinutes - newPlanMinutes));
+          // Alternative: Let them keep remaining until cycle resets
+          // For now, we reset to new plan's allocation
+          console.log(`📉 [Subscription] DOWNGRADE: ${remainingMinutes} remaining capped to ${newPlanMinutes} (new limit)`);
+        } else {
+          // Same tier - just refresh allocation
+          finalMinutesLimit = newPlanMinutes;
+          finalMinutesUsed = usedMinutes;
+          console.log(`🔄 [Subscription] SAME TIER: Keeping ${finalMinutesLimit} limit with ${finalMinutesUsed} used`);
+        }
+
+        // Update database with calculated minutes
+        // Note: updateUserSubscription automatically resets subscriptionMinutesUsed to 0 when active
+        // This is correct because: 
+        // - For upgrades: remaining minutes are already included in finalMinutesLimit
+        // - For downgrades: cap is applied to finalMinutesLimit
         await storage.updateUserSubscription(
           userId,
-          plan as 'starter' | 'standard' | 'pro',
+          plan as 'starter' | 'standard' | 'pro' | 'elite',
           'active',
-          plan === 'starter' ? 60 : plan === 'standard' ? 240 : 600
+          finalMinutesLimit
         );
 
         // Store the updated subscription ID
@@ -117,13 +162,18 @@ router.post('/change', async (req, res) => {
           await storage.updateUserStripeInfo(userId, customerId, updatedSubscription.id);
         }
 
-        console.log('✅ [Subscription] Subscription updated successfully');
+        console.log('✅ [Subscription] Subscription updated successfully', {
+          plan,
+          newLimit: finalMinutesLimit,
+          usedAfterChange: finalMinutesUsed
+        });
 
         return res.json({ 
           success: true,
           subscription: updatedSubscription.id,
           plan: plan,
-          message: 'Subscription plan updated successfully'
+          message: 'Subscription plan updated successfully',
+          minutesAllocated: finalMinutesLimit
         });
       } catch (error: any) {
         console.error('❌ [Subscription] Error updating subscription:', error);

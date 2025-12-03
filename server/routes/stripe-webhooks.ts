@@ -343,13 +343,60 @@ router.post(
           const status = subscription.status === 'active' ? 'active' : 
                         subscription.status === 'canceled' ? 'canceled' : 'paused';
           
-          await storage.updateUserSubscription(
-            user.id, 
-            (user.subscriptionPlan || 'starter') as 'starter' | 'standard' | 'pro' | 'single' | 'all', 
-            status
-          );
-          
-          console.log(`[Stripe Webhook] Subscription ${subscription.status} for user ${user.id}`);
+          // Detect plan change by checking the price ID
+          const currentPriceId = subscription.items.data[0]?.price.id;
+          const priceToPlans: Record<string, { plan: string; minutes: number }> = {
+            [process.env.STRIPE_PRICE_STARTER || '']: { plan: 'starter', minutes: 60 },
+            [process.env.STRIPE_PRICE_STANDARD || '']: { plan: 'standard', minutes: 240 },
+            [process.env.STRIPE_PRICE_PRO || '']: { plan: 'pro', minutes: 600 },
+            [process.env.STRIPE_PRICE_ELITE || '']: { plan: 'elite', minutes: 1800 },
+          };
+
+          const newPlanInfo = priceToPlans[currentPriceId];
+          const currentPlan = user.subscriptionPlan || 'starter';
+          const currentMinutes = user.subscriptionMinutesLimit || 60;
+          const usedMinutes = user.subscriptionMinutesUsed || 0;
+          const remainingMinutes = Math.max(0, currentMinutes - usedMinutes);
+
+          if (newPlanInfo && newPlanInfo.plan !== currentPlan) {
+            // Plan change detected via webhook
+            console.log(`[Stripe Webhook] Plan change detected: ${currentPlan} → ${newPlanInfo.plan}`);
+
+            const isUpgrade = newPlanInfo.minutes > currentMinutes;
+            const isDowngrade = newPlanInfo.minutes < currentMinutes;
+
+            let finalMinutesLimit: number;
+
+            if (isUpgrade) {
+              // UPGRADE: Add remaining minutes to new tier's allocation
+              finalMinutesLimit = newPlanInfo.minutes + remainingMinutes;
+              console.log(`[Stripe Webhook] 📈 UPGRADE: ${remainingMinutes} remaining + ${newPlanInfo.minutes} new = ${finalMinutesLimit} total`);
+            } else if (isDowngrade) {
+              // DOWNGRADE: Cap at new tier's maximum
+              finalMinutesLimit = newPlanInfo.minutes;
+              console.log(`[Stripe Webhook] 📉 DOWNGRADE: ${remainingMinutes} remaining capped to ${newPlanInfo.minutes}`);
+            } else {
+              finalMinutesLimit = newPlanInfo.minutes;
+            }
+
+            await storage.updateUserSubscription(
+              user.id,
+              newPlanInfo.plan as 'starter' | 'standard' | 'pro' | 'elite',
+              status,
+              finalMinutesLimit
+            );
+
+            console.log(`[Stripe Webhook] Plan updated: ${newPlanInfo.plan}, minutes: ${finalMinutesLimit}`);
+          } else {
+            // Status change only (no plan change)
+            await storage.updateUserSubscription(
+              user.id, 
+              (currentPlan) as 'starter' | 'standard' | 'pro' | 'single' | 'all', 
+              status
+            );
+            
+            console.log(`[Stripe Webhook] Subscription ${subscription.status} for user ${user.id}`);
+          }
           break;
         }
 
