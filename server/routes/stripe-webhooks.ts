@@ -343,8 +343,11 @@ router.post(
           const status = subscription.status === 'active' ? 'active' : 
                         subscription.status === 'canceled' ? 'canceled' : 'paused';
           
-          // Detect plan change by checking the price ID
+          // Detect plan change using both current price and previous_attributes
           const currentPriceId = subscription.items.data[0]?.price.id;
+          const previousAttributes = (event.data as any).previous_attributes;
+          const previousPriceId = previousAttributes?.items?.data?.[0]?.price?.id;
+          
           const priceToPlans: Record<string, { plan: string; minutes: number }> = {
             [process.env.STRIPE_PRICE_STARTER || '']: { plan: 'starter', minutes: 60 },
             [process.env.STRIPE_PRICE_STANDARD || '']: { plan: 'standard', minutes: 240 },
@@ -354,16 +357,22 @@ router.post(
 
           const newPlanInfo = priceToPlans[currentPriceId];
           const currentPlan = user.subscriptionPlan || 'starter';
-          const currentMinutes = user.subscriptionMinutesLimit || 60;
+          const currentMinutesLimit = user.subscriptionMinutesLimit || 60;
           const usedMinutes = user.subscriptionMinutesUsed || 0;
-          const remainingMinutes = Math.max(0, currentMinutes - usedMinutes);
+          const remainingMinutes = Math.max(0, currentMinutesLimit - usedMinutes);
 
-          if (newPlanInfo && newPlanInfo.plan !== currentPlan) {
+          // Detect plan change: either price ID changed or new price differs from user's stored plan
+          const priceChanged = previousPriceId && previousPriceId !== currentPriceId;
+          const planMismatch = newPlanInfo && newPlanInfo.plan !== currentPlan;
+          
+          if (newPlanInfo && (priceChanged || planMismatch)) {
             // Plan change detected via webhook
             console.log(`[Stripe Webhook] Plan change detected: ${currentPlan} → ${newPlanInfo.plan}`);
+            console.log(`[Stripe Webhook] Detection method: priceChanged=${priceChanged}, planMismatch=${planMismatch}`);
 
-            const isUpgrade = newPlanInfo.minutes > currentMinutes;
-            const isDowngrade = newPlanInfo.minutes < currentMinutes;
+            // Compare against user's ACTUAL current limit, not the plan's default
+            const isUpgrade = newPlanInfo.minutes > currentMinutesLimit;
+            const isDowngrade = newPlanInfo.minutes < currentMinutesLimit;
 
             let finalMinutesLimit: number;
 
@@ -372,18 +381,21 @@ router.post(
               finalMinutesLimit = newPlanInfo.minutes + remainingMinutes;
               console.log(`[Stripe Webhook] 📈 UPGRADE: ${remainingMinutes} remaining + ${newPlanInfo.minutes} new = ${finalMinutesLimit} total`);
             } else if (isDowngrade) {
-              // DOWNGRADE: Cap at new tier's maximum
+              // DOWNGRADE: Cap at new tier's maximum (usage will be capped by storage function)
               finalMinutesLimit = newPlanInfo.minutes;
-              console.log(`[Stripe Webhook] 📉 DOWNGRADE: ${remainingMinutes} remaining capped to ${newPlanInfo.minutes}`);
+              console.log(`[Stripe Webhook] 📉 DOWNGRADE: limit capped to ${newPlanInfo.minutes}, used=${usedMinutes}`);
             } else {
+              // Same tier minutes but different plan name
               finalMinutesLimit = newPlanInfo.minutes;
             }
 
-            await storage.updateUserSubscription(
+            // Use proper plan change handler that handles upgrade/downgrade correctly
+            await storage.handleSubscriptionPlanChange(
               user.id,
               newPlanInfo.plan as 'starter' | 'standard' | 'pro' | 'elite',
-              status,
-              finalMinutesLimit
+              finalMinutesLimit,
+              isUpgrade,
+              usedMinutes
             );
 
             console.log(`[Stripe Webhook] Plan updated: ${newPlanInfo.plan}, minutes: ${finalMinutesLimit}`);
@@ -395,7 +407,7 @@ router.post(
               status
             );
             
-            console.log(`[Stripe Webhook] Subscription ${subscription.status} for user ${user.id}`);
+            console.log(`[Stripe Webhook] Subscription status update: ${subscription.status} for user ${user.id}`);
           }
           break;
         }

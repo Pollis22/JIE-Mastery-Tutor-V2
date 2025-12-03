@@ -64,6 +64,7 @@ export interface IStorage {
   updateUserSettings(userId: string, settings: Partial<User>): Promise<User>;
   updateUserStripeInfo(userId: string, customerId: string, subscriptionId?: string | null): Promise<User>;
   updateUserSubscription(userId: string, plan: 'starter' | 'standard' | 'pro' | 'elite' | 'single' | 'all', status: 'active' | 'canceled' | 'paused', monthlyMinutes?: number, maxConcurrentSessions?: number, maxConcurrentLogins?: number): Promise<User>;
+  handleSubscriptionPlanChange(userId: string, plan: 'starter' | 'standard' | 'pro' | 'elite', newMinutesLimit: number, isUpgrade: boolean, currentUsedMinutes?: number): Promise<User>;
   updateUserVoiceUsage(userId: string, minutesUsed: number): Promise<void>;
   resetUserVoiceUsage(userId: string): Promise<void>;
   canUserUseVoice(userId: string): Promise<boolean>;
@@ -326,6 +327,52 @@ export class DatabaseStorage implements IStorage {
         updateData.lastResetAt = now;
         updateData.monthlyResetDate = now; // Sync all dates!
       }
+    }
+
+    const [user] = await db
+      .update(users)
+      .set(updateData)
+      .where(eq(users.id, userId))
+      .returning();
+    return user;
+  }
+
+  /**
+   * Handle subscription plan changes (upgrades/downgrades) with proper minute allocation
+   * - Upgrades: Reset usage to 0, add remaining to new limit
+   * - Downgrades: Cap used minutes at new limit (don't reset usage)
+   */
+  async handleSubscriptionPlanChange(
+    userId: string,
+    plan: 'starter' | 'standard' | 'pro' | 'elite',
+    newMinutesLimit: number,
+    isUpgrade: boolean,
+    currentUsedMinutes?: number
+  ): Promise<User> {
+    const now = new Date();
+    const updateData: any = {
+      subscriptionPlan: plan,
+      subscriptionStatus: 'active',
+      monthlyVoiceMinutes: newMinutesLimit,
+      subscriptionMinutesLimit: newMinutesLimit,
+      updatedAt: now,
+    };
+
+    if (isUpgrade) {
+      // UPGRADE: Reset usage counter (remaining minutes already added to limit)
+      updateData.subscriptionMinutesUsed = 0;
+      updateData.monthlyVoiceMinutesUsed = 0;
+      updateData.billingCycleStart = now;
+      updateData.lastResetAt = now;
+      updateData.monthlyResetDate = now;
+    } else {
+      // DOWNGRADE: Cap used minutes at new limit to prevent negative remaining
+      // If user used 50 of 600, now limit is 60: cap used at min(50, 60) = 50
+      // If user used 200 of 600, now limit is 60: cap used at min(200, 60) = 60 (fully used)
+      const cappedUsed = Math.min(currentUsedMinutes || 0, newMinutesLimit);
+      updateData.subscriptionMinutesUsed = cappedUsed;
+      updateData.monthlyVoiceMinutesUsed = cappedUsed;
+      // Don't reset billing cycle for downgrades - preserve existing cycle
     }
 
     const [user] = await db
