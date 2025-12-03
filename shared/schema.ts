@@ -404,6 +404,7 @@ export const userDocuments = pgTable("user_documents", {
   grade: text("grade"), // k-2, 3-5, etc
   title: text("title"), // user-provided title
   description: text("description"), // user description
+  language: text("language").default('en'), // document language for OCR (25 languages supported)
   processingStatus: text("processing_status").$type<'queued' | 'processing' | 'ready' | 'failed'>().default('queued'),
   processingError: text("processing_error"),
   retryCount: integer("retry_count").default(0),

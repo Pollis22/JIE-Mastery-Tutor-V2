@@ -33,16 +33,51 @@ export class DocumentProcessor {
   private readonly maxChunkSize = 800; // tokens per chunk (400-800 range)
   private readonly chunkOverlap = 100; // token overlap between chunks
   private openai: OpenAI;
+  
+  private static readonly TESSERACT_LANGUAGE_MAP: Record<string, string> = {
+    'en': 'eng',
+    'es': 'spa',
+    'fr': 'fra',
+    'de': 'deu',
+    'it': 'ita',
+    'pt': 'por',
+    'zh': 'chi_sim',
+    'ja': 'jpn',
+    'ko': 'kor',
+    'ar': 'ara',
+    'hi': 'hin',
+    'ru': 'rus',
+    'nl': 'nld',
+    'pl': 'pol',
+    'tr': 'tur',
+    'vi': 'vie',
+    'th': 'tha',
+    'id': 'ind',
+    'sv': 'swe',
+    'da': 'dan',
+    'no': 'nor',
+    'fi': 'fin',
+    'sw': 'swa',
+    'yo': 'eng',
+    'ha': 'eng',
+  };
 
   constructor() {
     this.pdfExtractor = new PdfJsTextExtractor();
     this.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   }
+  
+  private getTesseractLanguage(languageCode: string): string {
+    return DocumentProcessor.TESSERACT_LANGUAGE_MAP[languageCode] || 'eng';
+  }
 
   /**
    * Process uploaded file and extract text content
+   * @param filePath - Path to the file
+   * @param fileType - File extension (pdf, docx, png, etc.)
+   * @param language - Language code for OCR (default: 'en')
    */
-  async processFile(filePath: string, fileType: string): Promise<ProcessedDocument> {
+  async processFile(filePath: string, fileType: string, language: string = 'en'): Promise<ProcessedDocument> {
     const startTime = Date.now();
     let text: string;
 
@@ -70,7 +105,7 @@ export class DocumentProcessor {
         case 'jpeg':
         case 'gif':
         case 'bmp':
-          text = await this.extractImageText(filePath);
+          text = await this.extractImageText(filePath, language);
           break;
         default:
           throw new Error(`Unsupported file type: ${fileType}`);
@@ -168,23 +203,36 @@ export class DocumentProcessor {
   /**
    * Extract text from images using OCR (Tesseract.js)
    * Supports: png, jpg, jpeg, gif, bmp
+   * Supports 25 languages for multilingual document processing
    */
-  private async extractImageText(filePath: string): Promise<string> {
+  private async extractImageText(filePath: string, language: string = 'en'): Promise<string> {
     let worker;
+    const tesseractLang = this.getTesseractLanguage(language);
+    
+    console.log(`[OCR] Processing image with language: ${language} (Tesseract: ${tesseractLang})`);
+    
     try {
-      // Create OCR worker with English language support
-      worker = await createWorker('eng');
+      worker = await createWorker(tesseractLang);
       
-      // Perform OCR on the image
       const { data: { text } } = await worker.recognize(filePath);
       
       if (!text || text.trim().length === 0) {
+        if (tesseractLang !== 'eng') {
+          console.log(`[OCR] No text found with ${tesseractLang}, falling back to English OCR`);
+          await worker.terminate();
+          worker = await createWorker('eng');
+          const fallbackResult = await worker.recognize(filePath);
+          if (fallbackResult.data.text?.trim()) {
+            return fallbackResult.data.text;
+          }
+        }
         throw new Error('No readable text found in image');
       }
       
+      console.log(`[OCR] ✅ Extracted ${text.length} characters using ${tesseractLang}`);
       return text;
     } catch (error) {
-      console.error('OCR extraction failed:', error);
+      console.error(`[OCR] ❌ Extraction failed for language ${tesseractLang}:`, error);
       throw new Error(`Failed to extract text from image: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       if (worker) {

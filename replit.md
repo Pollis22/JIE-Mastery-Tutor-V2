@@ -65,6 +65,11 @@ A balanced, context-aware content moderation system for educational environments
 
 ### RAG (Retrieval-Augmented Generation) System
 Supports document uploads (PDF, DOCX, images, etc.) for each tutoring session, with automatic retrieval, chunking, and integration into the AI system prompt.
+-   **Multilingual Document Processing** (December 2025): Documents can be uploaded in any of the 25 supported languages. Image OCR uses Tesseract.js with language-specific models for accurate text extraction:
+    -   Supported OCR languages: English, Spanish, French, German, Italian, Portuguese, Chinese (Simplified), Japanese, Korean, Arabic, Hindi, Russian, Dutch, Polish, Turkish, Vietnamese, Thai, Indonesian, Swedish, Danish, Norwegian, Finnish, Swahili
+    -   African languages (Yoruba, Hausa) fall back to English OCR due to limited Tesseract support, but Claude AI can still tutor in these languages
+    -   PDF, DOCX, TXT, CSV, XLSX files work with any language (text extraction, not OCR)
+    -   Language is stored per-document and used for processing
 
 ### Database Schema & Data Management
 Core entities include Users, Learning Sessions, Quiz Attempts, User Documents, and Document Embeddings. Employs lazy database initialization and a production database migration system using `ADD COLUMN IF NOT EXISTS` for safe schema changes.

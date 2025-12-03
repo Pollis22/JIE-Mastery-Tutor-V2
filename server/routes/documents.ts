@@ -149,11 +149,20 @@ async function extractTextFromWord(filePath: string): Promise<string> {
   }
 }
 
-async function extractTextFromImage(filePath: string): Promise<string> {
+const TESSERACT_LANGUAGE_MAP: Record<string, string> = {
+  'en': 'eng', 'es': 'spa', 'fr': 'fra', 'de': 'deu', 'it': 'ita', 'pt': 'por',
+  'zh': 'chi_sim', 'ja': 'jpn', 'ko': 'kor', 'ar': 'ara', 'hi': 'hin', 'ru': 'rus',
+  'nl': 'nld', 'pl': 'pol', 'tr': 'tur', 'vi': 'vie', 'th': 'tha', 'id': 'ind',
+  'sv': 'swe', 'da': 'dan', 'no': 'nor', 'fi': 'fin', 'sw': 'swa', 'yo': 'eng', 'ha': 'eng',
+};
+
+async function extractTextFromImage(filePath: string, language: string = 'en'): Promise<string> {
+  const tesseractLang = TESSERACT_LANGUAGE_MAP[language] || 'eng';
+  
   try {
-    console.log('[OCR] Starting text recognition from image...');
+    console.log(`[OCR] Starting text recognition from image (language: ${language} -> ${tesseractLang})...`);
     
-    const { data: { text } } = await Tesseract.recognize(filePath, 'eng', {
+    const { data: { text } } = await Tesseract.recognize(filePath, tesseractLang, {
       logger: (m: any) => {
         if (m.status === 'recognizing text') {
           console.log(`[OCR] Progress: ${Math.round(m.progress * 100)}%`);
@@ -161,10 +170,20 @@ async function extractTextFromImage(filePath: string): Promise<string> {
       }
     });
     
-    console.log(`[OCR] Extracted ${text.length} characters from image`);
+    if (!text || text.trim().length === 0) {
+      if (tesseractLang !== 'eng') {
+        console.log(`[OCR] No text found with ${tesseractLang}, falling back to English...`);
+        const fallbackResult = await Tesseract.recognize(filePath, 'eng');
+        if (fallbackResult.data.text?.trim()) {
+          return fallbackResult.data.text;
+        }
+      }
+    }
+    
+    console.log(`[OCR] Extracted ${text.length} characters from image using ${tesseractLang}`);
     return text || '';
   } catch (error) {
-    console.error('[OCR Extract] Error:', error);
+    console.error(`[OCR Extract] Error with language ${tesseractLang}:`, error);
     throw new Error(`Failed to extract text from image: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
@@ -329,11 +348,15 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       return res.status(401).json({ error: 'User not authenticated' });
     }
     
+    // Get document language (default to English)
+    const documentLanguage = req.body.language || 'en';
+    
     console.log('[Upload] 📤 Processing file:', {
       filename: req.file.originalname,
       size: req.file.size,
       mimetype: req.file.mimetype,
       userId,
+      language: documentLanguage,
     });
 
     // Validate metadata
@@ -370,6 +393,7 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       grade: metadata.grade,
       title: metadata.title || req.file.originalname,
       description: metadata.description,
+      language: documentLanguage, // Store document language for OCR
       expiresAt, // Auto-delete after 6 months
       processingStatus: 'processing', // ← Changed from 'queued'
       retryCount: 0
@@ -417,8 +441,8 @@ router.post('/upload', upload.single('file'), async (req, res) => {
         req.file.mimetype === 'image/gif' ||
         req.file.mimetype === 'image/bmp'
       ) {
-        console.log('[Upload] 🖼️ Extracting text from image using OCR...');
-        extractedText = await extractTextFromImage(req.file.path);
+        console.log(`[Upload] 🖼️ Extracting text from image using OCR (language: ${documentLanguage})...`);
+        extractedText = await extractTextFromImage(req.file.path, documentLanguage);
       } else {
         throw new Error(`Unsupported file type: ${req.file.mimetype}`);
       }
@@ -851,13 +875,17 @@ router.post('/search', async (req, res) => {
 
 /**
  * Process document asynchronously
+ * @param documentId - Document ID in database
+ * @param filePath - Path to the uploaded file
+ * @param fileType - File extension
+ * @param language - Language code for OCR (default: 'en')
  */
-async function processDocumentAsync(documentId: string, filePath: string, fileType: string) {
+async function processDocumentAsync(documentId: string, filePath: string, fileType: string, language: string = 'en') {
   try {
-    console.log(`Processing document ${documentId}...`);
+    console.log(`Processing document ${documentId} with language ${language}...`);
     
-    // Process the file
-    const processed = await processor.processFile(filePath, fileType);
+    // Process the file with language support for OCR
+    const processed = await processor.processFile(filePath, fileType, language);
     
     // Store chunks and embeddings
     for (const chunkData of processed.chunks) {

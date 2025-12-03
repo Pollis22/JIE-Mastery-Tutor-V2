@@ -114,8 +114,9 @@ export class EmbeddingWorker {
       const parsedTextPath = await this.saveParsedText(doc.id, fullText);
       await storage.updateDocumentById(doc.id, { parsedTextPath });
 
-      // Create chunks
-      const processed = await this.processor.processFile(doc.filePath, doc.fileType);
+      // Create chunks (pass language for multilingual OCR support)
+      const docLanguage = doc.language || 'en';
+      const processed = await this.processor.processFile(doc.filePath, doc.fileType, docLanguage);
       
       // Save chunks to storage
       const savedChunks = await Promise.all(
@@ -168,8 +169,9 @@ export class EmbeddingWorker {
       return fs.readFileSync(doc.parsedTextPath, 'utf-8');
     }
 
-    // Otherwise, extract it from the original file
-    const processed = await this.processor.processFile(doc.filePath, doc.fileType);
+    // Otherwise, extract it from the original file (use document language for OCR)
+    const docLanguage = doc.language || 'en';
+    const processed = await this.processor.processFile(doc.filePath, doc.fileType, docLanguage);
     return processed.chunks.map(c => c.content).join('\n\n');
   }
 
