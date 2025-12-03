@@ -76,7 +76,7 @@ export async function generateTutorResponse(
     ? "The student TYPED this message to you via text chat."
     : "";
 
-  // Language context for multilingual tutoring
+  // Language context for multilingual tutoring (25 languages including African languages)
   const getLanguageName = (code?: string): string => {
     const names: { [key: string]: string } = {
       'en': 'English',
@@ -101,6 +101,10 @@ export async function generateTutorResponse(
       'da': 'Danish',
       'no': 'Norwegian',
       'fi': 'Finnish',
+      // African languages
+      'sw': 'Swahili',
+      'yo': 'Yoruba',
+      'ha': 'Hausa',
     };
     return names[code || 'en'] || 'English';
   };
