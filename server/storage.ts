@@ -1453,8 +1453,8 @@ export class DatabaseStorage implements IStorage {
   async getAllDocumentsForAdmin(): Promise<any[]> {
     const docs = await db.select({
       id: userDocuments.id,
-      filename: userDocuments.filename,
-      mimeType: userDocuments.mimeType,
+      filename: userDocuments.fileName,
+      fileType: userDocuments.fileType,
       fileSize: userDocuments.fileSize,
       userId: userDocuments.userId,
       createdAt: userDocuments.createdAt,
