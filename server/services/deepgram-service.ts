@@ -40,66 +40,46 @@ export interface DeepgramConnection {
 }
 
 /**
- * Get the Deepgram-compatible language code.
- * Deepgram Nova-2 supports 36 languages (as of May 2024).
- * For unsupported languages, we fall back to English STT
- * but Claude AI will still respond in the target language.
+ * Map our app language codes to Deepgram-supported language codes.
+ * Uses exact format that Deepgram expects for Nova-2 model.
+ * For unsupported languages, falls back to English STT.
  */
-export function getDeepgramLanguageCode(languageCode: string): string {
-  // Deepgram Nova-2 supported languages (use simple codes, not regional)
-  // Reference: https://deepgram.com/changelog/nova-2-now-supports-36-languages
-  const supportedLanguages: { [key: string]: string } = {
-    'en': 'en',      // English
-    'es': 'es',      // Spanish  
-    'fr': 'fr',      // French
-    'de': 'de',      // German
-    'it': 'it',      // Italian
-    'pt': 'pt',      // Portuguese
-    'zh': 'zh',      // Chinese (Mandarin)
-    'ja': 'ja',      // Japanese
-    'ko': 'ko',      // Korean
-    'hi': 'hi',      // Hindi
-    'ru': 'ru',      // Russian
-    'nl': 'nl',      // Dutch
-    'pl': 'pl',      // Polish
-    'tr': 'tr',      // Turkish
-    'vi': 'vi',      // Vietnamese
-    'th': 'th',      // Thai
-    'id': 'id',      // Indonesian
-    'sv': 'sv',      // Swedish
-    'da': 'da',      // Danish
-    'no': 'no',      // Norwegian
-    'fi': 'fi',      // Finnish
-    'uk': 'uk',      // Ukrainian
-    'cs': 'cs',      // Czech
-    'el': 'el',      // Greek
-    'hu': 'hu',      // Hungarian
-    'ro': 'ro',      // Romanian
-    'bg': 'bg',      // Bulgarian
-    'sk': 'sk',      // Slovak
-    'et': 'et',      // Estonian
-    'lv': 'lv',      // Latvian
-    'lt': 'lt',      // Lithuanian
-    'ca': 'ca',      // Catalan
-    'ms': 'ms',      // Malay
-  };
-  
-  // Languages NOT supported by Deepgram Nova-2 - fall back to English STT
-  // User speaks → English STT → Claude still responds in target language
-  const unsupportedLanguages = ['ar', 'sw', 'yo', 'ha', 'am', 'af', 'th', 'vi'];
-  
-  if (unsupportedLanguages.includes(languageCode)) {
-    console.log(`[Deepgram] ⚠️ Language '${languageCode}' not supported by Nova-2, falling back to English STT`);
-    return 'en';  // Fall back to English for STT (Claude still responds in target language)
+const DEEPGRAM_LANGUAGE_MAP: Record<string, string> = {
+  en: 'en-US',     // English (US)
+  es: 'es',        // Spanish
+  fr: 'fr',        // French
+  de: 'de',        // German
+  it: 'it',        // Italian
+  pt: 'pt-BR',     // Portuguese (Brazil)
+  nl: 'nl',        // Dutch
+  ja: 'ja',        // Japanese
+  ko: 'ko',        // Korean
+  zh: 'zh-CN',     // Chinese (Mandarin)
+  ru: 'ru',        // Russian
+  pl: 'pl',        // Polish
+  tr: 'tr',        // Turkish
+  hi: 'hi',        // Hindi
+  id: 'id',        // Indonesian
+  sv: 'sv',        // Swedish
+  da: 'da',        // Danish
+  no: 'no',        // Norwegian
+  fi: 'fi',        // Finnish
+  uk: 'uk',        // Ukrainian
+  cs: 'cs',        // Czech
+  el: 'el',        // Greek
+  hu: 'hu',        // Hungarian
+  ro: 'ro',        // Romanian
+  // Languages NOT in this map (sw, ar, th, vi, yo, ha) will fall back to English
+};
+
+export function getDeepgramLanguageCode(lang: string): string {
+  const mapped = DEEPGRAM_LANGUAGE_MAP[lang];
+  if (!mapped) {
+    console.log(`[Deepgram] ⚠️ Language '${lang}' not supported by Deepgram, using en-US for STT`);
+    return 'en-US';
   }
-  
-  const deepgramCode = supportedLanguages[languageCode];
-  if (!deepgramCode) {
-    console.log(`[Deepgram] ⚠️ Unknown language '${languageCode}', falling back to English`);
-    return 'en';
-  }
-  
-  return deepgramCode;
+  console.log(`[Deepgram] Using language: ${mapped} (from ${lang})`);
+  return mapped;
 }
 
 export async function startDeepgramStream(
