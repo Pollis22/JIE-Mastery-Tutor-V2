@@ -283,14 +283,29 @@ export function useCustomVoice() {
 
           const float32Data = event.data.data; // Float32Array from AudioWorklet
 
-          // Convert Float32 to PCM16 with gain amplification
+          // Convert Float32 to PCM16 with gain amplification and SOFT LIMITING
           // Note: We already have 3x hardware gain from GainNode, so use moderate software gain
           const GAIN = 30; // Combined with 3x hardware = ~90x total amplification
+          const SOFT_THRESHOLD = 0.6; // Start soft limiting at 60% of max amplitude
+          
+          // Soft limiting function - prevents harsh clipping that breaks Deepgram STT
+          // Uses tanh-based compression for values above threshold
+          const softLimit = (x: number): number => {
+            const absX = Math.abs(x);
+            if (absX < SOFT_THRESHOLD) return x;
+            const sign = x > 0 ? 1 : -1;
+            const excess = absX - SOFT_THRESHOLD;
+            const headroom = 1.0 - SOFT_THRESHOLD;
+            // Smooth compression: excess is compressed using tanh
+            const compressed = SOFT_THRESHOLD + headroom * Math.tanh(excess / headroom * 2);
+            return sign * Math.min(compressed, 0.98); // Never quite hit 1.0
+          };
+          
           const pcm16 = new Int16Array(float32Data.length);
           for (let i = 0; i < float32Data.length; i++) {
             const amplified = float32Data[i] * GAIN;
-            const s = Math.max(-1, Math.min(1, amplified));
-            pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+            const limited = softLimit(amplified);
+            pcm16[i] = limited < 0 ? limited * 0x8000 : limited * 0x7FFF;
           }
 
           const uint8Array = new Uint8Array(pcm16.buffer);
@@ -457,14 +472,29 @@ export function useCustomVoice() {
           }
           // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-          // Convert to PCM16 with amplification
+          // Convert to PCM16 with amplification and SOFT LIMITING
           // Note: We already have 3x hardware gain from GainNode, so use moderate software gain
           const GAIN = 30; // Combined with 3x hardware = ~90x total amplification
+          const SOFT_THRESHOLD = 0.6; // Start soft limiting at 60% of max amplitude
+          
+          // Soft limiting function - prevents harsh clipping that breaks Deepgram STT
+          // Uses tanh-based compression for values above threshold
+          const softLimit = (x: number): number => {
+            const absX = Math.abs(x);
+            if (absX < SOFT_THRESHOLD) return x;
+            const sign = x > 0 ? 1 : -1;
+            const excess = absX - SOFT_THRESHOLD;
+            const headroom = 1.0 - SOFT_THRESHOLD;
+            // Smooth compression: excess is compressed using tanh
+            const compressed = SOFT_THRESHOLD + headroom * Math.tanh(excess / headroom * 2);
+            return sign * Math.min(compressed, 0.98); // Never quite hit 1.0
+          };
+          
           const pcm16 = new Int16Array(inputData.length);
           for (let i = 0; i < inputData.length; i++) {
             const amplified = inputData[i] * GAIN;
-            const s = Math.max(-1, Math.min(1, amplified));
-            pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+            const limited = softLimit(amplified);
+            pcm16[i] = limited < 0 ? limited * 0x8000 : limited * 0x7FFF;
           }
 
           const uint8Array = new Uint8Array(pcm16.buffer);

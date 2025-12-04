@@ -39,32 +39,67 @@ export interface DeepgramConnection {
   close: () => void;
 }
 
+/**
+ * Get the Deepgram-compatible language code.
+ * Deepgram Nova-2 supports 36 languages (as of May 2024).
+ * For unsupported languages, we fall back to English STT
+ * but Claude AI will still respond in the target language.
+ */
 export function getDeepgramLanguageCode(languageCode: string): string {
-  const languageMap: { [key: string]: string } = {
-    'en': 'en-US',
-    'es': 'es-ES',
-    'fr': 'fr-FR',
-    'de': 'de-DE',
-    'it': 'it-IT',
-    'pt': 'pt-BR',
-    'zh': 'zh-CN',
-    'ja': 'ja-JP',
-    'ko': 'ko-KR',
-    'ar': 'ar-AE',
-    'hi': 'hi-IN',
-    'ru': 'ru-RU',
-    'nl': 'nl-NL',
-    'pl': 'pl-PL',
-    'tr': 'tr-TR',
-    'vi': 'vi-VN',
-    'th': 'th-TH',
-    'id': 'id-ID',
-    'sv': 'sv-SE',
-    'da': 'da-DK',
-    'no': 'no-NO',
-    'fi': 'fi-FI',
+  // Deepgram Nova-2 supported languages (use simple codes, not regional)
+  // Reference: https://deepgram.com/changelog/nova-2-now-supports-36-languages
+  const supportedLanguages: { [key: string]: string } = {
+    'en': 'en',      // English
+    'es': 'es',      // Spanish  
+    'fr': 'fr',      // French
+    'de': 'de',      // German
+    'it': 'it',      // Italian
+    'pt': 'pt',      // Portuguese
+    'zh': 'zh',      // Chinese (Mandarin)
+    'ja': 'ja',      // Japanese
+    'ko': 'ko',      // Korean
+    'hi': 'hi',      // Hindi
+    'ru': 'ru',      // Russian
+    'nl': 'nl',      // Dutch
+    'pl': 'pl',      // Polish
+    'tr': 'tr',      // Turkish
+    'vi': 'vi',      // Vietnamese
+    'th': 'th',      // Thai
+    'id': 'id',      // Indonesian
+    'sv': 'sv',      // Swedish
+    'da': 'da',      // Danish
+    'no': 'no',      // Norwegian
+    'fi': 'fi',      // Finnish
+    'uk': 'uk',      // Ukrainian
+    'cs': 'cs',      // Czech
+    'el': 'el',      // Greek
+    'hu': 'hu',      // Hungarian
+    'ro': 'ro',      // Romanian
+    'bg': 'bg',      // Bulgarian
+    'sk': 'sk',      // Slovak
+    'et': 'et',      // Estonian
+    'lv': 'lv',      // Latvian
+    'lt': 'lt',      // Lithuanian
+    'ca': 'ca',      // Catalan
+    'ms': 'ms',      // Malay
   };
-  return languageMap[languageCode] || 'en-US';
+  
+  // Languages NOT supported by Deepgram Nova-2 - use multi-language detection
+  // This allows students to speak in English while Claude responds in their language
+  const unsupportedLanguages = ['ar', 'sw', 'yo', 'ha', 'am', 'af'];
+  
+  if (unsupportedLanguages.includes(languageCode)) {
+    console.log(`[Deepgram] ⚠️ Language '${languageCode}' not supported by Nova-2, using multi-language detection`);
+    return 'multi';  // Use multi-language detection for unsupported languages
+  }
+  
+  const deepgramCode = supportedLanguages[languageCode];
+  if (!deepgramCode) {
+    console.log(`[Deepgram] ⚠️ Unknown language '${languageCode}', falling back to English`);
+    return 'en';
+  }
+  
+  return deepgramCode;
 }
 
 export async function startDeepgramStream(
