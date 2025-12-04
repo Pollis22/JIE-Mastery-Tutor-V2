@@ -48,6 +48,7 @@ interface SessionState {
   studentName: string;
   ageGroup: string;
   language: string; // LANGUAGE: Tutoring language code (e.g., 'en', 'es', 'fr')
+  detectedLanguage: string; // LANGUAGE: Auto-detected spoken language from Deepgram
   speechSpeed: number; // User's speech speed preference from settings
   systemInstruction: string;
   conversationHistory: Array<{ role: "user" | "assistant"; content: string }>;
@@ -276,6 +277,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
       studentName: "",
       ageGroup: "default",
       language: "en", // LANGUAGE: Default to English, will be set from session
+      detectedLanguage: "", // LANGUAGE: Auto-detected spoken language from Deepgram
       speechSpeed: 0.95, // Default speech speed, will be overridden by user preference
       systemInstruction: "",
       conversationHistory: [],
@@ -671,13 +673,17 @@ export function setupCustomVoiceWebSocket(server: Server) {
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         
         // Generate AI response (voice input)
+        // LANGUAGE AUTO-DETECT: Use detected language if available, fall back to selected
+        const responseLanguage = state.detectedLanguage || state.language;
+        console.log(`[Custom Voice] 🌍 Generating response in: ${responseLanguage}`);
+        
         const aiResponse = await generateTutorResponse(
           state.conversationHistory,
           transcript,
           state.uploadedDocuments,
           state.systemInstruction,
           "voice", // Student spoke via microphone
-          state.language // LANGUAGE: Pass selected language
+          responseLanguage // LANGUAGE: Use detected language for response
         );
 
         console.log(`[Custom Voice] 🤖 Tutor: "${aiResponse}"`);
@@ -1197,9 +1203,10 @@ CRITICAL INSTRUCTIONS:
             const { getDeepgramLanguageCode } = await import("../services/deepgram-service");
             const deepgramLanguage = getDeepgramLanguageCode(state.language);
             state.deepgramConnection = await startDeepgramStream(
-              async (transcript: string, isFinal: boolean) => {
-                // Log EVERYTHING for debugging
-                console.log(`[Deepgram] ${isFinal ? '✅ FINAL' : '⏳ interim'}: "${transcript}" (isFinal=${isFinal})`);
+              async (transcript: string, isFinal: boolean, detectedLanguage?: string) => {
+                // Log EVERYTHING for debugging - including detected language
+                const spokenLang = detectedLanguage || state.language;
+                console.log(`[Deepgram] ${isFinal ? '✅ FINAL' : '⏳ interim'}: "${transcript}" (isFinal=${isFinal}, detectedLang=${spokenLang})`);
                 
                 // CRITICAL FIX (Nov 14, 2025): Check userId FIRST to debug 401 auth issues
                 if (!state.userId) {
@@ -1279,7 +1286,15 @@ CRITICAL INSTRUCTIONS:
                 
                 state.lastTranscript = transcript;
                 
-                console.log(`[Custom Voice] ✅ Processing FINAL transcript: "${transcript}"`);
+                // LANGUAGE AUTO-DETECT: Update detected language for AI response
+                if (spokenLang && spokenLang !== state.language) {
+                  console.log(`[Custom Voice] 🌍 Language switch detected: ${state.language} → ${spokenLang}`);
+                  state.detectedLanguage = spokenLang;
+                } else if (spokenLang) {
+                  state.detectedLanguage = spokenLang;
+                }
+                
+                console.log(`[Custom Voice] ✅ Processing FINAL transcript: "${transcript}" (lang: ${state.detectedLanguage || state.language})`);
                 
                 // FIX #2C: Add turn-taking timeout
                 // Clear any existing timer
@@ -1479,13 +1494,16 @@ CRITICAL INSTRUCTIONS:
               }
               
               // Content approved - generate AI response (text input)
+              // LANGUAGE: For text input, use detected language if speaking detected it,
+              // otherwise use selected language
+              const textResponseLanguage = state.detectedLanguage || state.language;
               const aiResponse = await generateTutorResponse(
                 state.conversationHistory,
                 message.message,
                 state.uploadedDocuments,
                 state.systemInstruction,
                 "text", // Student typed via chat
-                state.language // LANGUAGE: Pass selected language
+                textResponseLanguage // LANGUAGE: Use detected or selected language
               );
               
               console.log(`[Custom Voice] 🤖 Tutor response: "${aiResponse}"`);

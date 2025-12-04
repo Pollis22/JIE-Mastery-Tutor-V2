@@ -83,22 +83,26 @@ export function getDeepgramLanguageCode(lang: string): string {
 }
 
 export async function startDeepgramStream(
-  onTranscript: (text: string, isFinal: boolean) => void,
+  onTranscript: (text: string, isFinal: boolean, detectedLanguage?: string) => void,
   onError: (error: Error) => void,
   onClose?: () => void,
   language: string = "en-US"
 ): Promise<DeepgramConnection> {
   
-  console.log("[Deepgram] 🎤 Starting stream with language:", language);
+  // Use 'multi' for seamless language switching, fall back to specific language if needed
+  const useMultiLanguage = true; // Enable auto-detection for all sessions
+  const effectiveLanguage = useMultiLanguage ? 'multi' : language;
+  
+  console.log("[Deepgram] 🎤 Starting stream with language:", effectiveLanguage, "(selected:", language, ")");
   
   try {
     const deepgramClient = getDeepgramClient();
     const connection = deepgramClient.listen.live({
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // MODEL & LANGUAGE SETTINGS
+    // MODEL & LANGUAGE SETTINGS - MULTI-LANGUAGE AUTO-DETECTION
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    model: "nova-2",            // Best accuracy model
-    language: language,
+    model: "nova-2",            // Best accuracy model with multi-language support
+    language: effectiveLanguage, // 'multi' enables seamless language switching
     smart_format: true,         // Auto-format numbers, dates, etc.
     interim_results: true,      // Get real-time partial transcripts
     punctuate: true,            // Add punctuation for better readability
@@ -135,12 +139,19 @@ export async function startDeepgramStream(
     });
 
     connection.on(LiveTranscriptionEvents.Transcript, (data) => {
+      // Extract detected language from various possible locations in response
+      const detectedLanguage = (data as any).detected_language || 
+                               (data as any).channel?.detected_language ||
+                               (data as any).channel?.alternatives?.[0]?.languages?.[0] ||
+                               language; // Fall back to selected language
+      
       console.log('[Deepgram] 📥 RAW TRANSCRIPT EVENT:', JSON.stringify({
         has_channel: !!data.channel,
         has_alternatives: !!data.channel?.alternatives,
         alternatives_length: data.channel?.alternatives?.length || 0,
         is_final: data.is_final,
         type: data.type,
+        detected_language: detectedLanguage,
         full_data_keys: Object.keys(data)
       }, null, 2));
       
@@ -152,12 +163,13 @@ export async function startDeepgramStream(
         textLength: transcript?.length || 0,
         isFinal: isFinal,
         hasText: !!transcript,
-        isEmpty: !transcript || transcript.trim().length === 0
+        isEmpty: !transcript || transcript.trim().length === 0,
+        detectedLanguage: detectedLanguage
       });
       
       if (transcript && transcript.length > 0) {
-        console.log(`[Deepgram] ✅ VALID TRANSCRIPT: ${isFinal ? '📝 FINAL' : '⏳ interim'}: "${transcript}"`);
-        onTranscript(transcript, isFinal);
+        console.log(`[Deepgram] ✅ VALID TRANSCRIPT: ${isFinal ? '📝 FINAL' : '⏳ interim'}: "${transcript}" [lang: ${detectedLanguage}]`);
+        onTranscript(transcript, isFinal, detectedLanguage);
       } else {
         console.log('[Deepgram] ⚠️ Empty or null transcript, skipping');
       }
