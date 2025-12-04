@@ -84,13 +84,13 @@ export function getDeepgramLanguageCode(languageCode: string): string {
     'ms': 'ms',      // Malay
   };
   
-  // Languages NOT supported by Deepgram Nova-2 - use multi-language detection
-  // This allows students to speak in English while Claude responds in their language
-  const unsupportedLanguages = ['ar', 'sw', 'yo', 'ha', 'am', 'af'];
+  // Languages NOT supported by Deepgram Nova-2 - fall back to English STT
+  // User speaks → English STT → Claude still responds in target language
+  const unsupportedLanguages = ['ar', 'sw', 'yo', 'ha', 'am', 'af', 'th', 'vi'];
   
   if (unsupportedLanguages.includes(languageCode)) {
-    console.log(`[Deepgram] ⚠️ Language '${languageCode}' not supported by Nova-2, using multi-language detection`);
-    return 'multi';  // Use multi-language detection for unsupported languages
+    console.log(`[Deepgram] ⚠️ Language '${languageCode}' not supported by Nova-2, falling back to English STT`);
+    return 'en';  // Fall back to English for STT (Claude still responds in target language)
   }
   
   const deepgramCode = supportedLanguages[languageCode];

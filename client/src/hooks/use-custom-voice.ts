@@ -285,8 +285,8 @@ export function useCustomVoice() {
 
           // Convert Float32 to PCM16 with gain amplification and SOFT LIMITING
           // Note: We already have 3x hardware gain from GainNode, so use moderate software gain
-          const GAIN = 30; // Combined with 3x hardware = ~90x total amplification
-          const SOFT_THRESHOLD = 0.6; // Start soft limiting at 60% of max amplitude
+          const GAIN = 10; // Reduced from 30 to prevent clipping (30x total with 3x hardware)
+          const SOFT_THRESHOLD = 0.8; // Start soft limiting at 80% of max amplitude
           
           // Soft limiting function - prevents harsh clipping that breaks Deepgram STT
           // Uses tanh-based compression for values above threshold
@@ -474,8 +474,8 @@ export function useCustomVoice() {
 
           // Convert to PCM16 with amplification and SOFT LIMITING
           // Note: We already have 3x hardware gain from GainNode, so use moderate software gain
-          const GAIN = 30; // Combined with 3x hardware = ~90x total amplification
-          const SOFT_THRESHOLD = 0.6; // Start soft limiting at 60% of max amplitude
+          const GAIN = 10; // Reduced from 30 to prevent clipping (30x total with 3x hardware)
+          const SOFT_THRESHOLD = 0.8; // Start soft limiting at 80% of max amplitude
           
           // Soft limiting function - prevents harsh clipping that breaks Deepgram STT
           // Uses tanh-based compression for values above threshold
