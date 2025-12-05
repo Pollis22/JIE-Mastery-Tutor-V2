@@ -161,6 +161,11 @@ IMPORTANT INSTRUCTIONS:
 
   try {
     const anthropicClient = getAnthropicClient();
+    
+    // ⏱️ LATENCY TIMING: Track Claude API call
+    const apiStart = Date.now();
+    console.log(`[AI Service] ⏱️ Calling Claude API... (prompt length: ${systemPrompt.length} chars)`);
+    
     const response = await anthropicClient.messages.create({
       model: DEFAULT_MODEL_STR, // "claude-sonnet-4-20250514"
       max_tokens: 300, // Keep voice responses concise
@@ -171,8 +176,14 @@ IMPORTANT INSTRUCTIONS:
       ],
     });
 
+    const apiMs = Date.now() - apiStart;
+    console.log(`[AI Service] ⏱️ Claude API completed in ${apiMs}ms`);
+
     const textContent = response.content.find(block => block.type === 'text');
-    return textContent && 'text' in textContent ? textContent.text : "I'm sorry, I didn't catch that. Could you repeat?";
+    const responseText = textContent && 'text' in textContent ? textContent.text : "I'm sorry, I didn't catch that. Could you repeat?";
+    console.log(`[AI Service] ⏱️ Response length: ${responseText.length} chars`);
+    
+    return responseText;
     
   } catch (error) {
     console.error("[AI Service] ❌ Error:", error);

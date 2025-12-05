@@ -639,36 +639,40 @@ export function setupCustomVoiceWebSocket(server: Server) {
         // ✅ Content passed moderation - Continue normal processing
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         
+        // ⏱️ LATENCY TIMING: Start pipeline timing
+        const pipelineStart = Date.now();
+        console.log(`[Custom Voice] ⏱️ PIPELINE START at ${new Date().toISOString()}`);
+        
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        // TIMING FIX (Nov 4, 2025): Adaptive delays before AI processing
-        // Prevents tutor from cutting off students mid-sentence
+        // TIMING OPTIMIZATION (Dec 5, 2025): Reduced delays for faster response
+        // Previous delays were too long (1200-2500ms), now reduced significantly
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         
-        // Calculate appropriate delay based on context
-        let responseDelay = TIMING_CONFIG.SERVER_DELAY_COMPLETE_THOUGHT;
+        // Calculate appropriate delay based on context (REDUCED for faster response)
+        let responseDelay = 300; // Reduced from 1200ms to 300ms for complete thoughts
         
         // Check if this was likely an incomplete thought
         if (isLikelyIncompleteThought(transcript)) {
-          responseDelay = TIMING_CONFIG.SERVER_DELAY_INCOMPLETE_THOUGHT;
-          console.log(`[Custom Voice] ⏱️ Detected incomplete thought - using longer delay (${responseDelay}ms)`);
+          responseDelay = 800; // Reduced from 2500ms to 800ms for incomplete thoughts
+          console.log(`[Custom Voice] ⏱️ Detected incomplete thought - using delay (${responseDelay}ms)`);
         } else {
-          console.log(`[Custom Voice] ⏱️ Complete thought detected - using standard delay (${responseDelay}ms)`);
+          console.log(`[Custom Voice] ⏱️ Complete thought detected - using minimal delay (${responseDelay}ms)`);
         }
         
-        // Add extra buffer if student just interrupted tutor
+        // Add extra buffer if student just interrupted tutor (reduced)
         if (state.wasInterrupted) {
           const timeSinceInterrupt = Date.now() - state.lastInterruptionTime;
           if (timeSinceInterrupt < 10000) { // Within 10 seconds
-            const extraBuffer = TIMING_CONFIG.POST_INTERRUPT_BUFFER;
+            const extraBuffer = 500; // Reduced from 2500ms to 500ms
             console.log(`[Custom Voice] 🛑 Post-interruption buffer: +${extraBuffer}ms (interrupted ${timeSinceInterrupt}ms ago)`);
             responseDelay += extraBuffer;
           }
           state.wasInterrupted = false; // Clear flag after applying
         }
         
-        console.log(`[Custom Voice] ⏳ Waiting ${responseDelay}ms before generating response...`);
+        console.log(`[Custom Voice] ⏳ Pre-response delay: ${responseDelay}ms...`);
         await new Promise(resolve => setTimeout(resolve, responseDelay));
-        console.log(`[Custom Voice] ✅ Delay complete, generating AI response...`);
+        console.log(`[Custom Voice] ⏱️ Delay done (+${Date.now() - pipelineStart}ms), calling Claude...`);
         
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         
@@ -677,6 +681,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
         const responseLanguage = state.detectedLanguage || state.language;
         console.log(`[Custom Voice] 🌍 Generating response in: ${responseLanguage}`);
         
+        // ⏱️ LATENCY TIMING: Claude API call
+        const claudeStart = Date.now();
         const aiResponse = await generateTutorResponse(
           state.conversationHistory,
           transcript,
@@ -685,6 +691,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
           "voice", // Student spoke via microphone
           responseLanguage // LANGUAGE: Use detected language for response
         );
+        const claudeMs = Date.now() - claudeStart;
+        console.log(`[Custom Voice] ⏱️ Claude responded in ${claudeMs}ms (+${Date.now() - pipelineStart}ms total)`);
 
         console.log(`[Custom Voice] 🤖 Tutor: "${aiResponse}"`);
 
@@ -703,11 +711,12 @@ export function setupCustomVoiceWebSocket(server: Server) {
         };
         state.transcript.push(aiTranscriptEntry);
 
-        // Generate speech with age-appropriate voice BEFORE sending transcript
-        // This ensures transcript and audio arrive together
-        console.log("[Custom Voice] 🎙️ Generating TTS for response...");
+        // ⏱️ LATENCY TIMING: ElevenLabs TTS
+        const ttsStart = Date.now();
+        console.log("[Custom Voice] 🎙️ Calling ElevenLabs TTS...");
         const audioBuffer = await generateSpeech(aiResponse, state.ageGroup, state.speechSpeed);
-        console.log("[Custom Voice] ✅ TTS generated, sending transcript + audio together");
+        const ttsMs = Date.now() - ttsStart;
+        console.log(`[Custom Voice] ⏱️ TTS completed in ${ttsMs}ms (+${Date.now() - pipelineStart}ms total)`);
 
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         // SYNC FIX: Send transcript and audio together so they're in sync
@@ -736,6 +745,9 @@ export function setupCustomVoiceWebSocket(server: Server) {
           console.log("[Custom Voice] 🔇 Skipping audio (tutor audio muted)");
         }
 
+        // ⏱️ LATENCY TIMING: Total pipeline time
+        const totalPipelineMs = Date.now() - pipelineStart;
+        console.log(`[Custom Voice] ⏱️ PIPELINE COMPLETE: ${totalPipelineMs}ms total (delay: ${responseDelay}ms, Claude: ${claudeMs}ms, TTS: ${ttsMs}ms)`);
         console.log("[Custom Voice] 🔊 Response sent, waiting for user...");
 
         // FIX #3: Persist after each turn (before pause to avoid blocking)

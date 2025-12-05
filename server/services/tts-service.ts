@@ -98,6 +98,10 @@ export async function generateSpeech(
     
     console.log(`[ElevenLabs] 🎤 Generating speech | Age Group: "${ageGroup}" | Voice: ${voiceName} | Voice ID: ${voiceId} | Stability: ${voiceSettings.stability} | Speed: ${speed} | Text: "${text.substring(0, 50)}..."`);
     
+    // ⏱️ LATENCY TIMING: Track ElevenLabs API call
+    const apiStart = Date.now();
+    console.log(`[ElevenLabs] ⏱️ Calling ElevenLabs API... (text length: ${text.length} chars)`);
+    
     const audioStream = await elevenlabsClient.textToSpeech.convert(voiceId, {
       text: text,
       model_id: "eleven_turbo_v2_5",
@@ -111,13 +115,20 @@ export async function generateSpeech(
       },
     });
 
+    const firstChunkTime = Date.now();
+    let firstChunkLogged = false;
     const chunks: Buffer[] = [];
     for await (const chunk of audioStream) {
+      if (!firstChunkLogged) {
+        console.log(`[ElevenLabs] ⏱️ First chunk received in ${Date.now() - apiStart}ms`);
+        firstChunkLogged = true;
+      }
       chunks.push(chunk);
     }
 
     const audioBuffer = Buffer.concat(chunks);
-    console.log(`[ElevenLabs] ✅ Generated ${audioBuffer.length} bytes of audio`);
+    const totalMs = Date.now() - apiStart;
+    console.log(`[ElevenLabs] ⏱️ Total TTS time: ${totalMs}ms | Generated ${audioBuffer.length} bytes of audio`);
     
     return audioBuffer;
     
