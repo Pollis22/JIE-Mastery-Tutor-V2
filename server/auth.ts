@@ -739,6 +739,66 @@ export function setupAuth(app: Express) {
     }
   });
 
+  // Change password for authenticated users
+  app.post("/api/user/change-password", async (req, res) => {
+    try {
+      if (!req.isAuthenticated() || !req.user) {
+        return res.status(401).json({ error: 'You must be logged in to change your password' });
+      }
+
+      // Server-side validation with Zod
+      const changePasswordSchema = z.object({
+        currentPassword: z.string().min(1, 'Current password is required'),
+        newPassword: z.string().min(8, 'New password must be at least 8 characters'),
+        confirmPassword: z.string().optional()
+      }).refine(data => {
+        // If confirmPassword is provided, ensure it matches
+        if (data.confirmPassword !== undefined) {
+          return data.newPassword === data.confirmPassword;
+        }
+        return true;
+      }, {
+        message: 'New passwords do not match',
+        path: ['confirmPassword']
+      });
+
+      const validation = changePasswordSchema.safeParse(req.body);
+      if (!validation.success) {
+        const firstError = validation.error.errors[0]?.message || 'Invalid input';
+        return res.status(400).json({ error: firstError });
+      }
+
+      const { currentPassword, newPassword } = validation.data;
+      
+      // Get the user's current password from storage
+      const user = await storage.getUser(req.user.id);
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      
+      // Verify current password
+      const isCurrentPasswordValid = await comparePasswords(currentPassword, user.password);
+      if (!isCurrentPasswordValid) {
+        return res.status(400).json({ error: 'Current password is incorrect' });
+      }
+      
+      // Prevent reusing the same password
+      const isSameAsOld = await comparePasswords(newPassword, user.password);
+      if (isSameAsOld) {
+        return res.status(400).json({ error: 'New password must be different from your current password' });
+      }
+      
+      // Hash new password and update
+      const hashedNewPassword = await hashPassword(newPassword);
+      await storage.updateUserPassword(user.id, hashedNewPassword);
+      
+      console.log('[Auth] Password changed successfully for user:', user.email);
+      res.json({ success: true, message: 'Password changed successfully' });
+    } catch (error) {
+      console.error('[Auth] Change password error:', error);
+      res.status(500).json({ error: 'Failed to change password' });
+    }
+  });
 
   // One-time admin setup endpoint for production
   app.post("/api/setup/admin", async (req, res) => {

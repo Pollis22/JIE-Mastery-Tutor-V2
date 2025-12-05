@@ -27,7 +27,9 @@ import {
   Download, 
   Trash2,
   Save,
-  Edit3
+  Edit3,
+  Eye,
+  EyeOff
 } from "lucide-react";
 
 export default function AccountSettings() {
@@ -49,6 +51,12 @@ export default function AccountSettings() {
     currentPassword: "",
     newPassword: "",
     confirmPassword: ""
+  });
+
+  const [showPasswords, setShowPasswords] = useState({
+    current: false,
+    new: false,
+    confirm: false
   });
 
   const updateProfileMutation = useMutation({
@@ -78,8 +86,11 @@ export default function AccountSettings() {
   const changePasswordMutation = useMutation({
     mutationFn: async (data: any) => {
       const response = await apiRequest("POST", "/api/user/change-password", data);
-      if (!response.ok) throw new Error("Failed to change password");
-      return response.json();
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to change password");
+      }
+      return result;
     },
     onSuccess: () => {
       toast({
@@ -90,6 +101,11 @@ export default function AccountSettings() {
         currentPassword: "",
         newPassword: "",
         confirmPassword: ""
+      });
+      setShowPasswords({
+        current: false,
+        new: false,
+        confirm: false
       });
     },
     onError: (error) => {
@@ -296,35 +312,68 @@ export default function AccountSettings() {
             <form onSubmit={handlePasswordSubmit} className="space-y-4 max-w-md">
               <div>
                 <Label htmlFor="currentPassword">Current Password</Label>
-                <Input
-                  id="currentPassword"
-                  type="password"
-                  value={passwordData.currentPassword}
-                  onChange={(e) => setPasswordData({...passwordData, currentPassword: e.target.value})}
-                  data-testid="input-current-password"
-                />
+                <div className="relative">
+                  <Input
+                    id="currentPassword"
+                    type={showPasswords.current ? "text" : "password"}
+                    value={passwordData.currentPassword}
+                    onChange={(e) => setPasswordData({...passwordData, currentPassword: e.target.value})}
+                    data-testid="input-current-password"
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswords({...showPasswords, current: !showPasswords.current})}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                    data-testid="toggle-current-password"
+                  >
+                    {showPasswords.current ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
               </div>
 
               <div>
                 <Label htmlFor="newPassword">New Password</Label>
-                <Input
-                  id="newPassword"
-                  type="password"
-                  value={passwordData.newPassword}
-                  onChange={(e) => setPasswordData({...passwordData, newPassword: e.target.value})}
-                  data-testid="input-new-password"
-                />
+                <div className="relative">
+                  <Input
+                    id="newPassword"
+                    type={showPasswords.new ? "text" : "password"}
+                    value={passwordData.newPassword}
+                    onChange={(e) => setPasswordData({...passwordData, newPassword: e.target.value})}
+                    data-testid="input-new-password"
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswords({...showPasswords, new: !showPasswords.new})}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                    data-testid="toggle-new-password"
+                  >
+                    {showPasswords.new ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
               </div>
 
               <div>
                 <Label htmlFor="confirmPassword">Confirm New Password</Label>
-                <Input
-                  id="confirmPassword"
-                  type="password"
-                  value={passwordData.confirmPassword}
-                  onChange={(e) => setPasswordData({...passwordData, confirmPassword: e.target.value})}
-                  data-testid="input-confirm-password"
-                />
+                <div className="relative">
+                  <Input
+                    id="confirmPassword"
+                    type={showPasswords.confirm ? "text" : "password"}
+                    value={passwordData.confirmPassword}
+                    onChange={(e) => setPasswordData({...passwordData, confirmPassword: e.target.value})}
+                    data-testid="input-confirm-password"
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswords({...showPasswords, confirm: !showPasswords.confirm})}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                    data-testid="toggle-confirm-password"
+                  >
+                    {showPasswords.confirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
               </div>
 
               <Button 
