@@ -104,11 +104,51 @@ export function useCustomVoice() {
 
           case "transcript":
             console.log(`[Custom Voice] 📝 ${message.speaker}: ${message.text}`);
-            setTranscript(prev => [...prev, {
-              speaker: message.speaker,
-              text: message.text,
-              timestamp: new Date().toISOString(),
-            }]);
+            // Handle streaming transcripts: isPartial = first chunk, isComplete = final
+            if (message.isComplete) {
+              // Replace partial transcript with final complete version
+              setTranscript(prev => {
+                const updated = [...prev];
+                const lastIdx = updated.length - 1;
+                if (lastIdx >= 0 && updated[lastIdx].speaker === 'tutor') {
+                  updated[lastIdx] = {
+                    speaker: message.speaker,
+                    text: message.text,
+                    timestamp: new Date().toISOString(),
+                  };
+                  return updated;
+                }
+                return [...prev, {
+                  speaker: message.speaker,
+                  text: message.text,
+                  timestamp: new Date().toISOString(),
+                }];
+              });
+            } else {
+              // New transcript entry (or partial first chunk)
+              setTranscript(prev => [...prev, {
+                speaker: message.speaker,
+                text: message.text,
+                timestamp: new Date().toISOString(),
+              }]);
+            }
+            break;
+          
+          case "transcript_update":
+            // Streaming: append text to last tutor transcript entry
+            console.log(`[Custom Voice] 📝 +${message.speaker}: ${message.text.substring(0, 30)}...`);
+            setTranscript(prev => {
+              const updated = [...prev];
+              const lastIdx = updated.length - 1;
+              if (lastIdx >= 0 && updated[lastIdx].speaker === 'tutor') {
+                updated[lastIdx] = {
+                  ...updated[lastIdx],
+                  text: updated[lastIdx].text + ' ' + message.text,
+                };
+                return updated;
+              }
+              return prev;
+            });
             break;
 
           case "audio":

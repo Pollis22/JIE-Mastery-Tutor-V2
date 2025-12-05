@@ -3,7 +3,7 @@ import { Server } from 'http';
 import { IncomingMessage } from 'http';
 import { Socket } from 'net';
 import { startDeepgramStream, DeepgramConnection } from "../services/deepgram-service";
-import { generateTutorResponse } from "../services/ai-service";
+import { generateTutorResponse, generateTutorResponseStreaming, StreamingCallbacks } from "../services/ai-service";
 import { generateSpeech } from "../services/tts-service";
 import { db } from "../db";
 import { realtimeSessions, contentViolations, userSuspensions, documentChunks } from "@shared/schema";
@@ -676,79 +676,129 @@ export function setupCustomVoiceWebSocket(server: Server) {
         
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         
-        // Generate AI response (voice input)
+        // Generate AI response (voice input) - STREAMING for lower latency
         // LANGUAGE AUTO-DETECT: Use detected language if available, fall back to selected
         const responseLanguage = state.detectedLanguage || state.language;
-        console.log(`[Custom Voice] 🌍 Generating response in: ${responseLanguage}`);
+        console.log(`[Custom Voice] 🌍 Generating STREAMING response in: ${responseLanguage}`);
         
-        // ⏱️ LATENCY TIMING: Claude API call
+        // ⏱️ LATENCY TIMING: Track streaming response
         const claudeStart = Date.now();
-        const aiResponse = await generateTutorResponse(
-          state.conversationHistory,
-          transcript,
-          state.uploadedDocuments,
-          state.systemInstruction,
-          "voice", // Student spoke via microphone
-          responseLanguage // LANGUAGE: Use detected language for response
-        );
-        const claudeMs = Date.now() - claudeStart;
-        console.log(`[Custom Voice] ⏱️ Claude responded in ${claudeMs}ms (+${Date.now() - pipelineStart}ms total)`);
-
-        console.log(`[Custom Voice] 🤖 Tutor: "${aiResponse}"`);
-
-        // Add to conversation history
-        state.conversationHistory.push(
-          { role: "user", content: transcript },
-          { role: "assistant", content: aiResponse }
-        );
-
-        // Add AI response to transcript (internal state)
-        const aiTranscriptEntry: TranscriptEntry = {
-          speaker: "tutor",
-          text: aiResponse,
-          timestamp: new Date().toISOString(),
-          messageId: crypto.randomUUID(),
-        };
-        state.transcript.push(aiTranscriptEntry);
-
-        // ⏱️ LATENCY TIMING: ElevenLabs TTS
-        const ttsStart = Date.now();
-        console.log("[Custom Voice] 🎙️ Calling ElevenLabs TTS...");
-        const audioBuffer = await generateSpeech(aiResponse, state.ageGroup, state.speechSpeed);
-        const ttsMs = Date.now() - ttsStart;
-        console.log(`[Custom Voice] ⏱️ TTS completed in ${ttsMs}ms (+${Date.now() - pipelineStart}ms total)`);
-
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        // SYNC FIX: Send transcript and audio together so they're in sync
-        // Previously transcript was sent first, causing visible delay
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        let firstSentenceMs = 0;
+        let totalTtsMs = 0;
+        let totalAudioBytes = 0;
+        let sentenceCount = 0;
+        
+        // Track turn for interruption detection
         state.isTutorSpeaking = true;
         const turnTimestamp = Date.now();
         state.lastAudioSentAt = turnTimestamp;
+        
+        // Use streaming with sentence-by-sentence TTS for minimal latency
+        await new Promise<void>((resolve, reject) => {
+          const callbacks: StreamingCallbacks = {
+            onSentence: async (sentence: string) => {
+              sentenceCount++;
+              const sentenceStart = Date.now();
+              
+              if (sentenceCount === 1) {
+                firstSentenceMs = sentenceStart - claudeStart;
+                console.log(`[Custom Voice] ⏱️ First sentence in ${firstSentenceMs}ms`);
+                
+                // Send full transcript placeholder for first sentence
+                ws.send(JSON.stringify({
+                  type: "transcript",
+                  speaker: "tutor",
+                  text: sentence,
+                  isPartial: true,
+                }));
+              } else {
+                // Update transcript with accumulated text
+                ws.send(JSON.stringify({
+                  type: "transcript_update",
+                  speaker: "tutor",
+                  text: sentence,
+                }));
+              }
+              
+              // Generate TTS for this sentence immediately
+              if (state.tutorAudioEnabled) {
+                const ttsStart = Date.now();
+                try {
+                  const audioBuffer = await generateSpeech(sentence, state.ageGroup, state.speechSpeed);
+                  const ttsMs = Date.now() - ttsStart;
+                  totalTtsMs += ttsMs;
+                  totalAudioBytes += audioBuffer.length;
+                  
+                  console.log(`[Custom Voice] 🔊 Sentence ${sentenceCount} TTS: ${ttsMs}ms, ${audioBuffer.length} bytes`);
+                  
+                  // Send audio chunk immediately
+                  ws.send(JSON.stringify({
+                    type: "audio",
+                    data: audioBuffer.toString("base64"),
+                    mimeType: "audio/pcm;rate=16000",
+                    isChunk: true,
+                    chunkIndex: sentenceCount,
+                  }));
+                } catch (ttsError) {
+                  console.error(`[Custom Voice] ❌ TTS error for sentence ${sentenceCount}:`, ttsError);
+                }
+              }
+            },
+            
+            onComplete: (fullText: string) => {
+              const claudeMs = Date.now() - claudeStart;
+              console.log(`[Custom Voice] ⏱️ Streaming complete: ${claudeMs}ms total, ${sentenceCount} sentences`);
+              console.log(`[Custom Voice] 🤖 Tutor: "${fullText}"`);
+              
+              // Add to conversation history
+              state.conversationHistory.push(
+                { role: "user", content: transcript },
+                { role: "assistant", content: fullText }
+              );
+              
+              // Add AI response to transcript (internal state)
+              const aiTranscriptEntry: TranscriptEntry = {
+                speaker: "tutor",
+                text: fullText,
+                timestamp: new Date().toISOString(),
+                messageId: crypto.randomUUID(),
+              };
+              state.transcript.push(aiTranscriptEntry);
+              
+              // Send final complete transcript
+              ws.send(JSON.stringify({
+                type: "transcript",
+                speaker: "tutor",
+                text: fullText,
+                isComplete: true,
+              }));
+              
+              // ⏱️ LATENCY TIMING: Total pipeline time
+              const totalPipelineMs = Date.now() - pipelineStart;
+              console.log(`[Custom Voice] ⏱️ PIPELINE COMPLETE (STREAMING): ${totalPipelineMs}ms total`);
+              console.log(`[Custom Voice] ⏱️ Breakdown: delay=${responseDelay}ms, firstSentence=${firstSentenceMs}ms, totalTTS=${totalTtsMs}ms, audio=${totalAudioBytes} bytes`);
+              
+              resolve();
+            },
+            
+            onError: (error: Error) => {
+              console.error("[Custom Voice] ❌ Streaming error:", error);
+              reject(error);
+            }
+          };
+          
+          generateTutorResponseStreaming(
+            state.conversationHistory,
+            transcript,
+            state.uploadedDocuments,
+            callbacks,
+            state.systemInstruction,
+            "voice",
+            responseLanguage
+          );
+        });
 
-        // Send transcript to frontend (now synced with audio)
-        ws.send(JSON.stringify({
-          type: "transcript",
-          speaker: "tutor",
-          text: aiResponse,
-        }));
-
-        // Send audio immediately after transcript (only if tutor audio is enabled)
-        if (state.tutorAudioEnabled) {
-          console.log("[Custom Voice] 🔊 Sending audio response");
-          ws.send(JSON.stringify({
-            type: "audio",
-            data: audioBuffer.toString("base64"),
-            mimeType: "audio/pcm;rate=16000"
-          }));
-        } else {
-          console.log("[Custom Voice] 🔇 Skipping audio (tutor audio muted)");
-        }
-
-        // ⏱️ LATENCY TIMING: Total pipeline time
-        const totalPipelineMs = Date.now() - pipelineStart;
-        console.log(`[Custom Voice] ⏱️ PIPELINE COMPLETE: ${totalPipelineMs}ms total (delay: ${responseDelay}ms, Claude: ${claudeMs}ms, TTS: ${ttsMs}ms)`);
-        console.log("[Custom Voice] 🔊 Response sent, waiting for user...");
+        console.log("[Custom Voice] 🔊 Streaming response sent, waiting for user...");
 
         // FIX #3: Persist after each turn (before pause to avoid blocking)
         await persistTranscript(state.sessionId, state.transcript);
@@ -758,14 +808,13 @@ export function setupCustomVoiceWebSocket(server: Server) {
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         state.isProcessing = false;
         
-        // Calculate audio duration correctly (16kHz, 16-bit = 2 bytes/sample)
-        const audioDuration = audioBuffer.length / (16000 * 2); // seconds
+        // Calculate approximate audio duration from total bytes (16kHz, 16-bit = 2 bytes/sample)
+        const audioDuration = totalAudioBytes / (16000 * 2); // seconds
         const pauseMs = Math.max(2000, audioDuration * 1000 + 1500); // Audio duration + 1.5s buffer
 
         console.log(`[Custom Voice] ⏳ Pausing ${pauseMs}ms (audio: ${audioDuration.toFixed(1)}s + 1.5s buffer)...`);
 
         // Wait for audio to finish playing + give user time to think
-        // Note: isTutorSpeaking remains true during this pause, but interrupts can still be detected
         await new Promise(resolve => setTimeout(resolve, pauseMs));
 
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
