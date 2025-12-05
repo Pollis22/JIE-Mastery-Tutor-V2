@@ -102,3 +102,10 @@ externalPort = 8008
 [[ports]]
 localPort = 46507
 externalPort = 3002
+
+[userenv]
+
+[userenv.shared]
+AUTH_TEST_MODE = "true"
+TEST_USER_EMAIL = "test@example.com"
+TEST_USER_PASSWORD = "TestPass123!"
