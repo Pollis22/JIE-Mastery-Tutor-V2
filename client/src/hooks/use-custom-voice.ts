@@ -659,9 +659,6 @@ export function useCustomVoice() {
   const playAudio = async (base64Audio: string) => {
     if (!audioContextRef.current) {
       audioContextRef.current = new AudioContext({ sampleRate: 16000 });
-      // Initialize gain node for this context
-      gainNodeRef.current = audioContextRef.current.createGain();
-      gainNodeRef.current.connect(audioContextRef.current.destination);
     }
 
     try {
@@ -695,76 +692,46 @@ export function useCustomVoice() {
       return;
     }
 
-    if (!audioContextRef.current || !gainNodeRef.current) return;
-
     isPlayingRef.current = true;
     const audioBuffer = audioQueueRef.current.shift()!;
-    const ctx = audioContextRef.current;
 
-    // Use current time or next scheduled time (for gapless playback)
-    const now = ctx.currentTime;
-    const playTime = Math.max(now, nextPlayTimeRef.current);
+    if (!audioContextRef.current) return;
 
-    const source = ctx.createBufferSource();
+    const source = audioContextRef.current.createBufferSource();
     source.buffer = audioBuffer;
-    source.connect(gainNodeRef.current);
+    source.connect(audioContextRef.current.destination);
     currentAudioSourceRef.current = source;
     
-    // Schedule end of this chunk
-    const chunkDuration = audioBuffer.duration;
-    nextPlayTimeRef.current = playTime + chunkDuration;
-
     source.onended = () => {
       currentAudioSourceRef.current = null;
       playNextChunk();
     };
     
-    // Start playback at scheduled time (eliminates gaps)
-    source.start(playTime);
+    source.start();
   };
 
   const stopAudio = () => {
-    console.log("[Custom Voice] ⏹️ Stopping audio playback with smooth fadeout");
+    console.log("[Custom Voice] ⏹️ Stopping audio playback");
     
-    if (!audioContextRef.current || !gainNodeRef.current) return;
-
-    // Smooth fadeout: reduce gain from 1.0 to 0.0 over 100ms
-    const ctx = audioContextRef.current;
-    const now = ctx.currentTime;
-    gainNodeRef.current.gain.cancelScheduledValues(now);
-    gainNodeRef.current.gain.setValueAtTime(gainNodeRef.current.gain.value, now);
-    gainNodeRef.current.gain.exponentialRampToValueAtTime(0.01, now + 0.1); // Fade out smoothly
-    
-    // Hard stop after fadeout completes
-    setTimeout(() => {
-      if (currentAudioSourceRef.current) {
-        try {
-          currentAudioSourceRef.current.stop();
-          currentAudioSourceRef.current.disconnect();
-        } catch (e) {
-          // Source might already be stopped
-        }
-        currentAudioSourceRef.current = null;
+    // Stop currently playing audio source
+    if (currentAudioSourceRef.current) {
+      try {
+        currentAudioSourceRef.current.stop();
+        currentAudioSourceRef.current.disconnect();
+      } catch (e) {
+        // Source might already be stopped
       }
-      
-      // Reset gain for next session
-      if (gainNodeRef.current) {
-        gainNodeRef.current.gain.cancelScheduledValues(ctx.currentTime);
-        gainNodeRef.current.gain.value = 1.0;
-      }
-      
-      nextPlayTimeRef.current = 0;
-    }, 150);
+      currentAudioSourceRef.current = null;
+    }
     
     // Clear the audio queue
     audioQueueRef.current = [];
     isPlayingRef.current = false;
     
-    console.log("[Custom Voice] ✅ Audio fadeout started, microphone still active");
+    console.log("[Custom Voice] ✅ Audio stopped, microphone still active");
   };
 
   const cleanup = () => {
-    // Stop audio with fadeout
     stopAudio();
     
     if (processorRef.current) {
@@ -785,16 +752,6 @@ export function useCustomVoice() {
       mediaStreamRef.current = null;
     }
 
-    // Cleanup gain node
-    if (gainNodeRef.current) {
-      try {
-        gainNodeRef.current.disconnect();
-      } catch (e) {
-        console.warn('[Custom Voice] Error disconnecting gain node:', e);
-      }
-      gainNodeRef.current = null;
-    }
-
     if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
       audioContextRef.current.close();
       audioContextRef.current = null;
@@ -802,7 +759,6 @@ export function useCustomVoice() {
 
     audioQueueRef.current = [];
     isPlayingRef.current = false;
-    nextPlayTimeRef.current = 0;
   };
 
   const disconnectInProgress = useRef(false);

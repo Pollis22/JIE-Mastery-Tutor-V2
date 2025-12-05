@@ -45,12 +45,14 @@ const VOICE_MAP: Record<string, string> = {
 };
 
 // Voice-specific settings optimized for each tutor personality
+// Lower stability = more natural human-like variation
+// Higher similarity_boost = stays more true to voice characteristics
 const VOICE_SETTINGS_MAP: Record<string, { stability: number; similarity_boost: number }> = {
-  '21m00Tcm4TlvDq8ikWAM': { stability: 0.5, similarity_boost: 0.75 },   // Rachel - warm and consistent
-  'EXAVITQu4vr4xnSDxMaL': { stability: 0.5, similarity_boost: 0.75 },   // Sarah - enthusiastic
-  'ErXwobaYiN019PkySvjV': { stability: 0.195, similarity_boost: 0.75 }, // Antoni - natural expressiveness
-  'VR6AewLTigWG4xSOukaG': { stability: 0.15, similarity_boost: 0.75 },  // Arnold - dynamic and engaging
-  'pqHfZKP75CvOlQylNhV4': { stability: 0.5, similarity_boost: 0.75 },   // Bill - professional and consistent
+  '21m00Tcm4TlvDq8ikWAM': { stability: 0.35, similarity_boost: 0.85 },   // Rachel - warm with more natural variation
+  'EXAVITQu4vr4xnSDxMaL': { stability: 0.35, similarity_boost: 0.85 },   // Sarah - enthusiastic with natural feel
+  'ErXwobaYiN019PkySvjV': { stability: 0.25, similarity_boost: 0.85 },   // Antoni - naturally expressive
+  'VR6AewLTigWG4xSOukaG': { stability: 0.25, similarity_boost: 0.85 },   // Arnold - dynamic with human-like emotion
+  'pqHfZKP75CvOlQylNhV4': { stability: 0.35, similarity_boost: 0.85 },   // Bill - professional yet natural
 };
 
 export async function generateSpeech(
