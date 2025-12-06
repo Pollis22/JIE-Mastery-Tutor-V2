@@ -509,6 +509,10 @@ export const students = pgTable("students", {
   pace: text("pace").$type<'slow' | 'normal' | 'fast'>().default('normal'),
   encouragement: text("encouragement").$type<'low' | 'medium' | 'high'>().default('medium'),
   goals: text("goals").array().default(sql`ARRAY[]::text[]`), // learning goals as array
+  avatarUrl: text("avatar_url"), // URL to uploaded image or preset avatar
+  avatarType: text("avatar_type").$type<'default' | 'upload' | 'preset'>().default('default'),
+  age: integer("age"), // Student's age (optional)
+  lastSessionAt: timestamp("last_session_at"), // Last tutoring session timestamp
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
