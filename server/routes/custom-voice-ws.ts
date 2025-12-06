@@ -1553,51 +1553,118 @@ CRITICAL INSTRUCTIONS:
                 break; // Don't process further
               }
               
-              // Content approved - generate AI response (text input)
+              // Content approved - generate AI response (text input) with STREAMING
               // LANGUAGE: For text input, use detected language if speaking detected it,
               // otherwise use selected language
               const textResponseLanguage = state.detectedLanguage || state.language;
-              const aiResponse = await generateTutorResponse(
-                state.conversationHistory,
-                message.message,
-                state.uploadedDocuments,
-                state.systemInstruction,
-                "text", // Student typed via chat
-                textResponseLanguage // LANGUAGE: Use detected or selected language
-              );
               
-              console.log(`[Custom Voice] 🤖 Tutor response: "${aiResponse}"`);
+              // Mark tutor as speaking for barge-in detection
+              state.isTutorSpeaking = true;
+              state.lastAudioSentAt = Date.now();
               
-              // Add to conversation history
-              state.conversationHistory.push(
-                { role: "user", content: message.message },
-                { role: "assistant", content: aiResponse }
-              );
+              // Track streaming metrics
+              let textSentenceCount = 0;
+              let textTotalAudioBytes = 0;
+              const textStreamStart = Date.now();
               
-              // Add to transcript
-              const tutorTextEntry: TranscriptEntry = {
-                speaker: "tutor",
-                text: aiResponse,
-                timestamp: new Date().toISOString(),
-                messageId: crypto.randomUUID(),
-              };
-              state.transcript.push(tutorTextEntry);
+              // Use streaming with sentence-by-sentence TTS for text input too
+              await new Promise<void>((textResolve, textReject) => {
+                const textCallbacks: StreamingCallbacks = {
+                  onSentence: async (sentence: string) => {
+                    textSentenceCount++;
+                    console.log(`[Custom Voice] 📤 Text sentence ${textSentenceCount}: "${sentence.substring(0, 50)}..."`);
+                    
+                    if (textSentenceCount === 1) {
+                      // Send first sentence with partial flag
+                      ws.send(JSON.stringify({
+                        type: "transcript",
+                        speaker: "tutor",
+                        text: sentence,
+                        isPartial: true,
+                      }));
+                    } else {
+                      // Update transcript with accumulated text
+                      ws.send(JSON.stringify({
+                        type: "transcript_update",
+                        speaker: "tutor",
+                        text: sentence,
+                      }));
+                    }
+                    
+                    // Generate TTS for this sentence immediately
+                    if (state.tutorAudioEnabled) {
+                      try {
+                        const audioBuffer = await generateSpeech(sentence, state.ageGroup, state.speechSpeed);
+                        textTotalAudioBytes += audioBuffer.length;
+                        
+                        console.log(`[Custom Voice] 🔊 Text sentence ${textSentenceCount} TTS: ${audioBuffer.length} bytes`);
+                        
+                        // Send audio chunk immediately
+                        ws.send(JSON.stringify({
+                          type: "audio",
+                          data: audioBuffer.toString("base64"),
+                          mimeType: "audio/pcm;rate=16000",
+                          isChunk: true,
+                          chunkIndex: textSentenceCount,
+                        }));
+                      } catch (ttsError) {
+                        console.error(`[Custom Voice] ❌ Text TTS error for sentence ${textSentenceCount}:`, ttsError);
+                      }
+                    }
+                  },
+                  
+                  onComplete: (fullText: string) => {
+                    const textStreamMs = Date.now() - textStreamStart;
+                    console.log(`[Custom Voice] ⏱️ Text streaming complete: ${textStreamMs}ms, ${textSentenceCount} sentences`);
+                    console.log(`[Custom Voice] 🤖 Tutor (text): "${fullText}"`);
+                    
+                    // Add to conversation history
+                    state.conversationHistory.push(
+                      { role: "user", content: message.message },
+                      { role: "assistant", content: fullText }
+                    );
+                    
+                    // Add AI response to transcript (internal state)
+                    const tutorTextEntry: TranscriptEntry = {
+                      speaker: "tutor",
+                      text: fullText,
+                      timestamp: new Date().toISOString(),
+                      messageId: crypto.randomUUID(),
+                    };
+                    state.transcript.push(tutorTextEntry);
+                    
+                    // Send final complete transcript
+                    ws.send(JSON.stringify({
+                      type: "transcript",
+                      speaker: "tutor",
+                      text: fullText,
+                      isComplete: true,
+                    }));
+                    
+                    textResolve();
+                  },
+                  
+                  onError: (error: Error) => {
+                    console.error("[Custom Voice] ❌ Text streaming error:", error);
+                    textReject(error);
+                  }
+                };
+                
+                generateTutorResponseStreaming(
+                  state.conversationHistory,
+                  message.message,
+                  state.uploadedDocuments,
+                  textCallbacks,
+                  state.systemInstruction,
+                  "text", // Student typed via chat
+                  textResponseLanguage
+                );
+              });
               
-              // Send transcript update
-              ws.send(JSON.stringify({
-                type: "transcript",
-                speaker: "tutor",
-                text: aiResponse
-              }));
+              console.log(`[Custom Voice] 🔊 Sent streamed tutor voice response (${textSentenceCount} chunks)`);
               
-              // Generate and send voice audio
-              const responseAudio = await generateSpeech(aiResponse, state.ageGroup, state.speechSpeed);
-              ws.send(JSON.stringify({
-                type: "audio",
-                data: responseAudio.toString("base64")
-              }));
-              
-              console.log(`[Custom Voice] 🔊 Sent tutor voice response`);
+              // Reset tutor speaking state after streaming completes
+              state.isTutorSpeaking = false;
               
             } catch (error) {
               console.error('[Custom Voice] Error processing text message:', error);
