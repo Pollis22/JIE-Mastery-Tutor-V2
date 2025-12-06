@@ -52,10 +52,10 @@ router.post('/change', async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const { plan } = req.body;
+    const { plan, promoCode } = req.body;
     const userId = req.user!.id;
 
-    console.log('📝 [Subscription] Change request', { userId, plan });
+    console.log('📝 [Subscription] Change request', { userId, plan, hasPromoCode: !!promoCode });
 
     if (!plan) {
       return res.status(400).json({ error: 'Plan is required' });
@@ -203,23 +203,43 @@ router.post('/change', async (req, res) => {
           throw new Error('No subscription item found');
         }
 
+        // Build update params
+        const updateParams: Stripe.SubscriptionUpdateParams = {
+          items: [{
+            id: subscriptionItemId,
+            price: priceId,
+          }],
+          proration_behavior: 'always_invoice',     // CRITICAL: Charge prorated amount NOW
+          payment_behavior: 'error_if_incomplete',  // CRITICAL: Fail if payment fails
+          metadata: {
+            userId,
+            plan: newPlan,
+            previousPlan: currentPlan,
+            changeType: 'upgrade'
+          }
+        };
+        
+        // Apply promo code to upgrade if provided
+        if (promoCode) {
+          const promoCodes = await stripe!.promotionCodes.list({
+            code: promoCode.toUpperCase().trim(),
+            active: true,
+            limit: 1,
+          });
+          
+          if (promoCodes.data.length > 0 && promoCodes.data[0].coupon.valid) {
+            // For subscription updates, use discounts with the promotion_code
+            updateParams.discounts = [{ promotion_code: promoCodes.data[0].id }];
+            console.log(`🎟️ [Subscription] Applying promo to upgrade: ${promoCode}`);
+          } else {
+            console.log(`⚠️ [Subscription] Invalid promo code ignored: ${promoCode}`);
+          }
+        }
+
         // Update subscription with IMMEDIATE proration billing
         const updatedSubscription = await stripe!.subscriptions.update(
           existingSubscription.id,
-          {
-            items: [{
-              id: subscriptionItemId,
-              price: priceId,
-            }],
-            proration_behavior: 'always_invoice',     // CRITICAL: Charge prorated amount NOW
-            payment_behavior: 'error_if_incomplete',  // CRITICAL: Fail if payment fails
-            metadata: {
-              userId,
-              plan: newPlan,
-              previousPlan: currentPlan,
-              changeType: 'upgrade'
-            }
-          }
+          updateParams
         );
 
         console.log('✅ [Subscription] Upgrade successful, invoice created:', updatedSubscription.latest_invoice);
