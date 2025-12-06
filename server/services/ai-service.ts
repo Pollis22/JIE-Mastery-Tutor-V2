@@ -180,31 +180,49 @@ export async function generateTutorResponseStreaming(
     // Handles: "Hello! How are you?" as multiple sentences
     // Handles: Sentences ending at EOF without trailing whitespace
     // Handles: Punctuation followed by space OR end of buffer
+    // IMPORTANT: Does NOT split on numbered list items (1., 2., 3.) or abbreviations
     const splitIntoSentences = (text: string): { sentences: string[], remainder: string } => {
-      const sentences: string[] = [];
+      // Pre-process: temporarily protect numbered list items from splitting
+      // Replace "1. " "2. " etc. with a placeholder that doesn't contain periods
+      const PLACEHOLDER = '\u0000NUM\u0000';
+      const protectedText = text.replace(/(\d+)\.\s/g, `$1${PLACEHOLDER}`);
+      
+      const rawSentences: string[] = [];
       // Split on sentence-ending punctuation followed by whitespace or end
-      // Uses positive lookahead to check for whitespace/end without consuming it
-      // Pattern: capture text ending with .!? when followed by space OR at end of string
       const sentencePattern = /([^.!?]*[.!?]+)(?=\s|$)/g;
       let lastIndex = 0;
       let match;
       
-      while ((match = sentencePattern.exec(text)) !== null) {
+      // Common abbreviations that shouldn't end sentences
+      const isAbbreviation = (s: string): boolean => {
+        const abbrevs = /\b(Dr|Mr|Mrs|Ms|Prof|Jr|Sr|vs|etc|i\.e|e\.g)\.\s*$/i;
+        return abbrevs.test(s.trim());
+      };
+      
+      while ((match = sentencePattern.exec(protectedText)) !== null) {
         const sentence = match[1].trim();
-        if (sentence) {
-          sentences.push(sentence);
+        
+        if (sentence && !isAbbreviation(sentence)) {
+          rawSentences.push(sentence);
         }
-        // Move past any whitespace after the sentence
+        
+        // Update tracking position
         lastIndex = sentencePattern.lastIndex;
-        while (lastIndex < text.length && /\s/.test(text[lastIndex])) {
+        while (lastIndex < protectedText.length && /\s/.test(protectedText[lastIndex])) {
           lastIndex++;
         }
-        // Reset regex lastIndex to continue from after whitespace
         sentencePattern.lastIndex = lastIndex;
       }
       
-      // Remainder is text after the last sentence (incomplete sentence in progress)
-      const remainder = text.slice(lastIndex);
+      // Restore numbered list markers in the sentences
+      const sentences = rawSentences.map(s => s.replace(new RegExp(`${PLACEHOLDER}`, 'g'), '. '));
+      
+      // Calculate remainder from original text
+      // Find how much of the protected text was consumed
+      const remainderProtected = protectedText.slice(lastIndex);
+      // Restore numbered markers in remainder
+      const remainder = remainderProtected.replace(new RegExp(`${PLACEHOLDER}`, 'g'), '. ');
+      
       return { sentences, remainder };
     };
     
