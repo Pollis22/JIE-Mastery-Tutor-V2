@@ -795,7 +795,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
             state.systemInstruction,
             "voice",
             responseLanguage
-          );
+          ).catch(reject); // Ensure errors are properly propagated
         });
 
         console.log("[Custom Voice] 🔊 Streaming response sent, waiting for user...");
@@ -1658,7 +1658,7 @@ CRITICAL INSTRUCTIONS:
                   state.systemInstruction,
                   "text", // Student typed via chat
                   textResponseLanguage
-                );
+                ).catch(textReject); // Ensure errors are properly propagated
               });
               
               console.log(`[Custom Voice] 🔊 Sent streamed tutor voice response (${textSentenceCount} chunks)`);

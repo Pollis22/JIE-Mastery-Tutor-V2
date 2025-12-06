@@ -176,12 +176,43 @@ export async function generateTutorResponseStreaming(
     let firstChunkTime = 0;
     let sentenceCount = 0;
     
-    // Sentence boundary regex - matches .!? followed by space or end
-    const sentenceEndPattern = /[.!?]+[\s]*$/;
+    // Improved sentence detection: Find sentence boundaries WITHIN the buffer
+    // Handles: "Hello! How are you?" as multiple sentences
+    // Handles: Sentences ending at EOF without trailing whitespace
+    // Handles: Punctuation followed by space OR end of buffer
+    const splitIntoSentences = (text: string): { sentences: string[], remainder: string } => {
+      const sentences: string[] = [];
+      // Split on sentence-ending punctuation followed by whitespace or end
+      // Uses positive lookahead to check for whitespace/end without consuming it
+      // Pattern: capture text ending with .!? when followed by space OR at end of string
+      const sentencePattern = /([^.!?]*[.!?]+)(?=\s|$)/g;
+      let lastIndex = 0;
+      let match;
+      
+      while ((match = sentencePattern.exec(text)) !== null) {
+        const sentence = match[1].trim();
+        if (sentence) {
+          sentences.push(sentence);
+        }
+        // Move past any whitespace after the sentence
+        lastIndex = sentencePattern.lastIndex;
+        while (lastIndex < text.length && /\s/.test(text[lastIndex])) {
+          lastIndex++;
+        }
+        // Reset regex lastIndex to continue from after whitespace
+        sentencePattern.lastIndex = lastIndex;
+      }
+      
+      // Remainder is text after the last sentence (incomplete sentence in progress)
+      const remainder = text.slice(lastIndex);
+      return { sentences, remainder };
+    };
     
+    let tokenCount = 0;
     for await (const event of stream) {
       if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
         const text = event.delta.text;
+        tokenCount++;
         
         // Log first chunk timing
         if (firstChunkTime === 0) {
@@ -189,22 +220,31 @@ export async function generateTutorResponseStreaming(
           console.log(`[AI Service] ⏱️ First token in ${firstChunkTime - streamStart}ms`);
         }
         
+        // Debug: Log every 5th token to track progress (or first 10)
+        if (tokenCount <= 10 || tokenCount % 5 === 0) {
+          console.log(`[AI Service] 🔤 Token ${tokenCount}: "${text.replace(/\n/g, '\\n')}" | Buffer: "${textBuffer.slice(-20)}..."`);
+        }
+        
         textBuffer += text;
         fullText += text;
         
-        // Check for complete sentences
-        if (sentenceEndPattern.test(textBuffer)) {
-          // We have a complete sentence - send it
-          const sentence = textBuffer.trim();
-          if (sentence) {
-            sentenceCount++;
-            console.log(`[AI Service] 📤 Sentence ${sentenceCount}: "${sentence.substring(0, 50)}..." (${Date.now() - streamStart}ms)`);
-            await callbacks.onSentence(sentence);
-          }
-          textBuffer = '';
+        // Check for complete sentences within the buffer
+        const { sentences, remainder } = splitIntoSentences(textBuffer);
+        
+        // Send each complete sentence immediately
+        for (const sentence of sentences) {
+          sentenceCount++;
+          console.log(`[AI Service] 📤 Sentence ${sentenceCount}: "${sentence.substring(0, 60)}..." (${Date.now() - streamStart}ms)`);
+          await callbacks.onSentence(sentence);
+        }
+        
+        // Keep only the incomplete remainder for next token
+        if (sentences.length > 0) {
+          textBuffer = remainder;
         }
       }
     }
+    console.log(`[AI Service] ⏱️ Stream ended after ${tokenCount} tokens`);
     
     // Send any remaining text as final sentence
     if (textBuffer.trim()) {

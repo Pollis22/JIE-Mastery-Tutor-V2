@@ -153,9 +153,14 @@ export function useCustomVoice() {
             break;
 
           case "audio":
-            console.log("[Custom Voice] 🔊 Received audio");
+            // Log streaming metadata for debugging
+            const audioBytes = message.data?.length || 0;
+            const isChunk = message.isChunk || false;
+            const chunkIdx = message.chunkIndex || 0;
+            console.log(`[Custom Voice] 🔊 Received audio: ${audioBytes} chars (isChunk=${isChunk}, chunkIndex=${chunkIdx})`);
+            
             if (audioEnabled) {
-              console.log("[Custom Voice] 🔊 Playing audio");
+              console.log("[Custom Voice] 🔊 Playing audio chunk");
               // Record when playback starts to prevent self-interrupt from echo
               lastAudioPlaybackStartRef.current = Date.now();
               setIsTutorSpeaking(true);
@@ -704,12 +709,20 @@ export function useCustomVoice() {
     setMicrophoneError(null);
   }, [microphoneError]);
 
+  const MAX_AUDIO_QUEUE_SIZE = 20; // Prevent unbounded queue growth
+  
   const playAudio = async (base64Audio: string) => {
     if (!audioContextRef.current) {
       audioContextRef.current = new AudioContext({ sampleRate: 16000 });
     }
 
     try {
+      // Safety: Prevent unbounded queue growth if playback stalls
+      if (audioQueueRef.current.length >= MAX_AUDIO_QUEUE_SIZE) {
+        console.warn(`[Custom Voice] ⚠️ Audio queue at max capacity (${MAX_AUDIO_QUEUE_SIZE}), dropping oldest chunks`);
+        audioQueueRef.current = audioQueueRef.current.slice(-10); // Keep last 10 chunks
+      }
+      
       // Resume audio context if suspended (browser autoplay policy)
       if (audioContextRef.current.state === 'suspended') {
         await audioContextRef.current.resume();
