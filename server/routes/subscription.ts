@@ -94,91 +94,28 @@ router.post('/change', async (req, res) => {
       console.log('✅ Created new Stripe customer:', customerId);
     }
 
-    // 🚨 CRITICAL FIX: Check for existing subscription before creating checkout
+    // 🚨 CRITICAL SECURITY FIX (December 2025):
+    // ALL plan changes MUST go through Stripe Checkout to ensure payment.
+    // The webhook (checkout.session.completed) is the ONLY place that updates the database.
+    // This prevents unauthorized free upgrades.
+    
     const existingSubscription = await getActiveSubscription(customerId);
     
-    if (existingSubscription) {
-      console.log('🔄 [Subscription] User already has active subscription, updating it...');
-      
-      try {
-        // Use helper function to update subscription (prevents duplicates)
-        const updatedSubscription = await createOrUpdateSubscription(customerId, priceId);
-
-        // Plan minute allocation map
-        const minutesMap: Record<string, number> = {
-          'starter': 60,
-          'standard': 240,
-          'pro': 600,
-          'elite': 1800,
-        };
-
-        const newPlanMinutes = minutesMap[plan.toLowerCase()] || 60;
-        const oldPlanMinutes = user.subscriptionMinutesLimit || 60;
-        const usedMinutes = user.subscriptionMinutesUsed || 0;
-        const remainingMinutes = Math.max(0, oldPlanMinutes - usedMinutes);
-
-        // Determine if upgrade or downgrade
-        const isUpgrade = newPlanMinutes > oldPlanMinutes;
-        const isDowngrade = newPlanMinutes < oldPlanMinutes;
-
-        let finalMinutesLimit: number;
-
-        if (isUpgrade) {
-          // UPGRADE: Add remaining minutes to new tier's allocation
-          // Example: 40 remaining Starter + 600 Pro = 640 total for this cycle
-          finalMinutesLimit = newPlanMinutes + remainingMinutes;
-          console.log(`📈 [Subscription] UPGRADE: ${remainingMinutes} remaining + ${newPlanMinutes} new = ${finalMinutesLimit} total`);
-        } else if (isDowngrade) {
-          // DOWNGRADE: Limit is set to new tier maximum
-          // Storage function will cap used minutes at min(usedMinutes, newLimit)
-          finalMinutesLimit = newPlanMinutes;
-          const cappedUsed = Math.min(usedMinutes, newPlanMinutes);
-          console.log(`📉 [Subscription] DOWNGRADE: limit=${newPlanMinutes}, used will be capped to ${cappedUsed}`);
-        } else {
-          // Same tier - just refresh allocation
-          finalMinutesLimit = newPlanMinutes;
-          console.log(`🔄 [Subscription] SAME TIER: Keeping ${finalMinutesLimit} limit`);
-        }
-
-        // Update database with calculated minutes using proper plan change handler
-        // - For upgrades: remaining minutes added to new limit, usage reset to 0
-        // - For downgrades: usage capped at new limit via min(usedMinutes, newLimit)
-        await storage.handleSubscriptionPlanChange(
-          userId,
-          plan as 'starter' | 'standard' | 'pro' | 'elite',
-          finalMinutesLimit,
-          isUpgrade,
-          usedMinutes  // Storage will cap this for downgrades
-        );
-
-        // Store the updated subscription ID
-        if (updatedSubscription.id !== existingSubscription.id) {
-          await storage.updateUserStripeInfo(userId, customerId, updatedSubscription.id);
-        }
-
-        console.log('✅ [Subscription] Subscription updated successfully', {
-          plan,
-          newLimit: finalMinutesLimit
-        });
-
-        return res.json({ 
-          success: true,
-          subscription: updatedSubscription.id,
-          plan: plan,
-          message: 'Subscription plan updated successfully',
-          minutesAllocated: finalMinutesLimit
-        });
-      } catch (error: any) {
-        console.error('❌ [Subscription] Error updating subscription:', error);
-        return res.status(500).json({
-          error: 'Failed to update subscription',
-          message: error.message
-        });
-      }
+    // Check if user is trying to change to their current plan
+    if (user.subscriptionPlan === plan.toLowerCase()) {
+      return res.status(400).json({ 
+        error: 'Already on this plan',
+        message: 'You are already subscribed to this plan.'
+      });
     }
-
-    // No existing subscription - create new checkout session
-    console.log('🆕 [Subscription] Creating new subscription checkout');
+    
+    console.log('💳 [Subscription] Creating checkout session for plan change', {
+      currentPlan: user.subscriptionPlan,
+      newPlan: plan,
+      hasExistingSubscription: !!existingSubscription
+    });
+    
+    // Create checkout session for plan change (both new subscriptions AND upgrades/downgrades)
     
     const baseUrl = `${req.protocol}://${req.get('host')}`;
     
@@ -194,7 +131,9 @@ router.post('/change', async (req, res) => {
       metadata: {
         userId,
         plan,
-        type: 'subscription_change'
+        type: 'subscription_change',
+        previousPlan: user.subscriptionPlan || 'none',
+        previousSubscriptionId: existingSubscription?.id || '',
       },
       subscription_data: {
         metadata: {

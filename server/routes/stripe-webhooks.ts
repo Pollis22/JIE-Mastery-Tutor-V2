@@ -223,7 +223,7 @@ router.post(
             break;
           }
 
-          // Handle subscription checkout
+          // Handle subscription checkout (new subscriptions AND upgrades/downgrades)
           const plan = session.metadata?.plan;
           if (!plan) {
             console.error('[Stripe Webhook] Missing plan in subscription checkout');
@@ -231,6 +231,25 @@ router.post(
           }
 
           console.log(`[Stripe Webhook] Checkout completed for user ${userId}, plan: ${plan}`);
+          
+          // 🚨 CRITICAL: Handle plan changes - cancel previous subscription
+          if (type === 'subscription_change') {
+            const previousSubscriptionId = session.metadata?.previousSubscriptionId;
+            const previousPlan = session.metadata?.previousPlan;
+            
+            console.log(`[Stripe Webhook] 🔄 Plan change detected: ${previousPlan} → ${plan}`);
+            
+            if (previousSubscriptionId && stripe) {
+              try {
+                // Cancel the old subscription immediately (no prorated refund - user is upgrading)
+                await stripe.subscriptions.cancel(previousSubscriptionId);
+                console.log(`[Stripe Webhook] ✅ Cancelled previous subscription: ${previousSubscriptionId}`);
+              } catch (cancelError: any) {
+                // Log but don't fail - subscription might already be cancelled
+                console.warn(`[Stripe Webhook] ⚠️ Could not cancel previous subscription: ${cancelError.message}`);
+              }
+            }
+          }
 
           // Map plan to monthly minutes and concurrent sessions
           const minutesMap: Record<string, number> = {
