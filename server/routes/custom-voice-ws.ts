@@ -1441,8 +1441,7 @@ CRITICAL INSTRUCTIONS:
             console.log('[Custom Voice] 📥 Audio message received from frontend:', {
               hasData: !!message.data,
               dataLength: message.data?.length || 0,
-              hasDeepgramConnection: !!state.deepgramConnection,
-              deepgramReadyState: state.deepgramConnection?.getReadyState?.() || 'N/A'
+              hasDeepgramConnection: !!state.deepgramConnection
             });
             
             if (state.deepgramConnection && message.data) {
