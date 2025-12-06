@@ -54,10 +54,13 @@ router.post('/', async (req, res) => {
     // Map frontend field names to backend schema field names
     const mappedData = {
       name: req.body.name,
-      gradeBand: req.body.grade || 'k-2', // Map 'grade' to 'gradeBand' with a default
-      pace: req.body.learningPace || 'normal', // Map 'learningPace' to 'pace'
-      encouragement: req.body.encouragementLevel || 'medium', // Map 'encouragementLevel' to 'encouragement'
+      gradeBand: req.body.grade || req.body.gradeBand || 'k-2', // Map 'grade' to 'gradeBand' with a default
+      pace: (req.body.learningPace || req.body.pace || 'normal') as 'slow' | 'normal' | 'fast',
+      encouragement: (req.body.encouragementLevel || req.body.encouragement || 'medium') as 'low' | 'medium' | 'high',
       goals: req.body.goals || [],
+      avatarUrl: req.body.avatarUrl || null,
+      avatarType: (req.body.avatarType || 'default') as 'default' | 'upload' | 'preset',
+      age: req.body.age ? parseInt(req.body.age) : null,
       ownerUserId: user.id,
     };
     
@@ -72,6 +75,8 @@ router.post('/', async (req, res) => {
       learningPace: student.pace,
       encouragementLevel: student.encouragement,
     };
+    
+    console.log(`[Students] ✅ Created student profile: ${student.name} for user ${user.id}`);
     
     res.status(201).json(responseStudent);
   } catch (error: any) {
@@ -113,18 +118,31 @@ router.put('/:studentId', async (req, res) => {
     const user = req.user as any;
     const { studentId } = req.params;
     
-    // Map frontend field names to backend schema field names
-    const mappedData: any = {};
+    // Map frontend field names to backend schema field names with proper typing
+    const mappedData: Partial<{
+      name: string;
+      gradeBand: string;
+      pace: 'slow' | 'normal' | 'fast';
+      encouragement: 'low' | 'medium' | 'high';
+      goals: string[];
+      avatarUrl: string | null;
+      avatarType: 'default' | 'upload' | 'preset';
+      age: number | null;
+    }> = {};
+    
     if (req.body.name !== undefined) mappedData.name = req.body.name;
     if (req.body.grade !== undefined) mappedData.gradeBand = req.body.grade;
-    if (req.body.learningPace !== undefined) mappedData.pace = req.body.learningPace;
-    if (req.body.encouragementLevel !== undefined) mappedData.encouragement = req.body.encouragementLevel;
+    if (req.body.gradeBand !== undefined) mappedData.gradeBand = req.body.gradeBand;
+    if (req.body.learningPace !== undefined) mappedData.pace = req.body.learningPace as 'slow' | 'normal' | 'fast';
+    if (req.body.pace !== undefined) mappedData.pace = req.body.pace as 'slow' | 'normal' | 'fast';
+    if (req.body.encouragementLevel !== undefined) mappedData.encouragement = req.body.encouragementLevel as 'low' | 'medium' | 'high';
+    if (req.body.encouragement !== undefined) mappedData.encouragement = req.body.encouragement as 'low' | 'medium' | 'high';
     if (req.body.goals !== undefined) mappedData.goals = req.body.goals;
+    if (req.body.avatarUrl !== undefined) mappedData.avatarUrl = req.body.avatarUrl;
+    if (req.body.avatarType !== undefined) mappedData.avatarType = req.body.avatarType as 'default' | 'upload' | 'preset';
+    if (req.body.age !== undefined) mappedData.age = req.body.age ? parseInt(req.body.age) : null;
     
-    const updateSchema = insertStudentSchema.partial().omit({ ownerUserId: true });
-    const updates = updateSchema.parse(mappedData);
-    
-    const student = await storage.updateStudent(studentId, user.id, updates);
+    const student = await storage.updateStudent(studentId, user.id, mappedData);
     
     // Map backend fields back to frontend field names
     const responseStudent = {
@@ -133,6 +151,8 @@ router.put('/:studentId', async (req, res) => {
       learningPace: student.pace,
       encouragementLevel: student.encouragement,
     };
+    
+    console.log(`[Students] ✅ Updated student profile: ${studentId}`);
     
     res.json(responseStudent);
   } catch (error: any) {
@@ -263,7 +283,7 @@ router.put('/sessions/:sessionId', async (req, res) => {
     const { sessionId } = req.params;
     
     const updateSchema = z.object({
-      endedAt: z.date().or(z.string()).optional(),
+      endedAt: z.date().or(z.string()).transform(val => typeof val === 'string' ? new Date(val) : val).optional(),
       minutesUsed: z.number().optional(),
       summary: z.string().optional(),
       misconceptions: z.string().optional(),
@@ -271,7 +291,24 @@ router.put('/sessions/:sessionId', async (req, res) => {
       subject: z.string().optional(),
     });
     
-    const updates = updateSchema.parse(req.body);
+    const parsed = updateSchema.parse(req.body);
+    
+    // Build updates object with proper types
+    const updates: Partial<{
+      endedAt: Date;
+      minutesUsed: number;
+      summary: string;
+      misconceptions: string;
+      nextSteps: string;
+      subject: string;
+    }> = {};
+    
+    if (parsed.endedAt) updates.endedAt = parsed.endedAt;
+    if (parsed.minutesUsed !== undefined) updates.minutesUsed = parsed.minutesUsed;
+    if (parsed.summary) updates.summary = parsed.summary;
+    if (parsed.misconceptions) updates.misconceptions = parsed.misconceptions;
+    if (parsed.nextSteps) updates.nextSteps = parsed.nextSteps;
+    if (parsed.subject) updates.subject = parsed.subject;
     
     const session = await storage.updateTutorSession(sessionId, user.id, updates);
     res.json(session);
@@ -283,6 +320,28 @@ router.put('/sessions/:sessionId', async (req, res) => {
       return res.status(404).json({ message: error.message });
     }
     res.status(500).json({ message: 'Error updating session: ' + error.message });
+  }
+});
+
+// POST /api/students/:studentId/session-started - Update last session timestamp
+router.post('/:studentId/session-started', async (req, res) => {
+  try {
+    const user = req.user as any;
+    const { studentId } = req.params;
+    
+    // Verify student belongs to user and update lastSessionAt
+    const student = await storage.updateStudent(studentId, user.id, {
+      lastSessionAt: new Date(),
+    });
+    
+    console.log(`[Students] ✅ Updated session timestamp for student: ${studentId}`);
+    
+    res.json({ success: true, lastSessionAt: student.lastSessionAt });
+  } catch (error: any) {
+    if (error.message.includes('not found') || error.message.includes('unauthorized')) {
+      return res.status(404).json({ message: error.message });
+    }
+    res.status(500).json({ message: 'Error updating session timestamp: ' + error.message });
   }
 });
 
