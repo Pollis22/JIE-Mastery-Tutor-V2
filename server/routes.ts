@@ -380,13 +380,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const { sessionRouter } = await import('./routes/session');
   app.use("/api/session", sessionRouter);
   
-  // Support, payment, and billing routes
+  // Support, payment, billing, and promo routes
   const { default: supportRoutes } = await import('./routes/support');
   const { default: paymentMethodRoutes } = await import('./routes/payment-methods');
   const { default: billingRoutes } = await import('./routes/billing');
+  const { default: promoRoutes } = await import('./routes/promo');
   app.use("/api/support", supportRoutes);
   app.use("/api/payment-methods", paymentMethodRoutes);
   app.use("/api/billing", billingRoutes);
+  app.use("/api/promo", promoRoutes);
 
   // Learning sessions routes
   const { default: sessionsRoutes } = await import('./routes/sessions');
