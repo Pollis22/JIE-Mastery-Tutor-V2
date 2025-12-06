@@ -502,7 +502,7 @@ export function RealtimeVoiceHost({
               data-testid="button-start-session"
             >
               <Mic className="h-4 w-4" />
-              Start Voice Tutoring
+              Talk to your tutor
             </Button>
           ) : (
             <>
