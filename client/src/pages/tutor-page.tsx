@@ -164,7 +164,7 @@ export default function TutorPage() {
   const useConvai = systemConfig?.useConvai ?? true; // Default to ConvAI for backward compatibility
 
   // Fetch selected student data
-  const { data: selectedStudent } = useQuery<{ id: string; name: string }>({
+  const { data: selectedStudent } = useQuery<{ id: string; name: string; avatarUrl?: string; grade?: string }>({
     queryKey: ['/api/students', selectedStudentId],
     enabled: !!selectedStudentId,
   });
@@ -215,13 +215,36 @@ export default function TutorPage() {
 
   const startTutor = async () => {
     if (!scriptReady) return;
-    if (!studentName.trim()) {
+    
+    // Require a student profile to be selected
+    if (!selectedStudentId || !selectedStudent) {
+      toast({
+        title: "Student profile required",
+        description: "Please select or create a student profile before starting a session.",
+        variant: "destructive",
+      });
+      // Open the profile panel to create a new student
+      setProfileDrawerOpen(true);
+      return;
+    }
+    
+    // Use the selected student's name
+    const effectiveStudentName = selectedStudent.name || studentName.trim();
+    
+    if (!effectiveStudentName) {
       toast({
         title: "Student name required",
-        description: "Please enter a student name before connecting to the tutor.",
+        description: "Please select a student profile with a valid name.",
         variant: "destructive",
       });
       return;
+    }
+    
+    // Update the lastSessionAt timestamp for the selected student
+    try {
+      await apiRequest('POST', `/api/students/${selectedStudentId}/session-started`, {});
+    } catch (error) {
+      console.log('[TutorPage] Could not update session timestamp:', error);
     }
 
     // Check session availability
@@ -581,22 +604,35 @@ export default function TutorPage() {
               ))}
             </select>
 
-            <input 
-              id="student-name" 
-              placeholder="Student name" 
-              value={studentName} 
-              onChange={e => setStudentName(e.target.value)}
-              className="px-3 py-2 border border-input bg-background text-foreground rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-              data-testid="input-student-name"
-            />
+            {/* Student Profile Selector */}
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => setProfileDrawerOpen(true)}
+                className={`flex items-center gap-2 px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary ${
+                  selectedStudent 
+                    ? 'border-primary bg-primary/5 text-foreground' 
+                    : 'border-destructive bg-destructive/5 text-destructive'
+                }`}
+                data-testid="button-select-student"
+              >
+                {selectedStudent?.avatarUrl ? (
+                  <span className="text-lg">{selectedStudent.avatarUrl}</span>
+                ) : (
+                  <User className="w-4 h-4" />
+                )}
+                <span className="max-w-[120px] truncate">
+                  {selectedStudent?.name || 'Select Student'}
+                </span>
+              </button>
+            </div>
 
             <button 
               id="start-btn" 
               onClick={startTutor} 
-              disabled={!scriptReady || !studentName.trim()}
+              disabled={!scriptReady || !selectedStudentId}
               className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary"
               data-testid="button-start-tutor"
-              title={!studentName.trim() ? "Please enter student name to connect" : ""}
+              title={!selectedStudentId ? "Please select a student profile to connect" : ""}
             >
               Start Tutoring Session
             </button>
@@ -626,11 +662,11 @@ export default function TutorPage() {
           <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-4 rounded-md">
             <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-2">📚 How to Use JIE Mastery Tutor</h3>
             <ol className="text-sm text-blue-800 dark:text-blue-200 space-y-1.5 list-decimal list-inside">
-              <li><strong>Enter your name</strong> above (required for a personalized experience)</li>
+              <li><strong>Select a student profile</strong> - Click "Select Student" to choose or create a profile. Each family member can have their own profile with custom avatar!</li>
               <li><strong>Select your grade level and subject</strong> you want help with</li>
               <li><strong>Upload your materials (optional)</strong> - Share homework, worksheets, or study guides (PDF, DOCX, or images). All uploaded documents are automatically available to your tutor and retained for 6 months</li>
               <li><strong>Wait a few seconds</strong> after uploading for documents to process completely</li>
-              <li><strong>Click "Talk to Your Tutor"</strong> to start your voice conversation</li>
+              <li><strong>Click "Start Tutoring Session"</strong> to begin your voice conversation</li>
               <li><strong>Start speaking</strong> - Ask questions about your homework or discuss any topic. The tutor uses your uploaded documents to give personalized guidance!</li>
               <li><strong>View the transcript</strong> below to see your conversation in real-time</li>
             </ol>

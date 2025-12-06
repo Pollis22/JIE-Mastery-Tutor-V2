@@ -32,7 +32,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Trash2, Download } from "lucide-react";
+import { Trash2, Download, User } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -44,12 +44,20 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
+const PRESET_AVATARS = [
+  "🧒", "👦", "👧", "🧒🏻", "👦🏻", "👧🏻", "🧒🏽", "👦🏽", "👧🏽", "🧒🏿", "👦🏿", "👧🏿",
+  "🎓", "📚", "✏️", "🌟", "🚀", "🦋", "🌈", "🎨",
+];
+
 const studentFormSchema = z.object({
   name: z.string().min(1, "Name is required"),
   grade: z.string().optional(),
   learningPace: z.enum(["slow", "moderate", "fast"]).optional(),
   encouragementLevel: z.enum(["minimal", "moderate", "high"]).optional(),
   goals: z.array(z.string()).optional(),
+  avatarUrl: z.string().optional(),
+  avatarType: z.enum(["default", "preset", "upload"]).optional(),
+  age: z.number().optional().nullable(),
 });
 
 type StudentFormData = z.infer<typeof studentFormSchema>;
@@ -61,6 +69,9 @@ interface Student {
   learningPace?: string;
   encouragementLevel?: string;
   goals?: string[];
+  avatarUrl?: string;
+  avatarType?: 'default' | 'preset' | 'upload';
+  age?: number;
 }
 
 interface UserDocument {
@@ -110,6 +121,8 @@ export function StudentProfilePanel({
     enabled: !!studentId,
   });
 
+  const [selectedAvatar, setSelectedAvatar] = useState<string>("");
+  
   const form = useForm<StudentFormData>({
     resolver: zodResolver(studentFormSchema),
     defaultValues: {
@@ -118,6 +131,9 @@ export function StudentProfilePanel({
       learningPace: undefined,
       encouragementLevel: undefined,
       goals: [],
+      avatarUrl: "",
+      avatarType: "default",
+      age: undefined,
     },
   });
 
@@ -130,8 +146,12 @@ export function StudentProfilePanel({
         learningPace: student.learningPace as any,
         encouragementLevel: student.encouragementLevel as any,
         goals: student.goals || [],
+        avatarUrl: student.avatarUrl || "",
+        avatarType: student.avatarType || "default",
+        age: student.age,
       });
       setGoalsText((student.goals || []).join("\n"));
+      setSelectedAvatar(student.avatarUrl || "");
     } else {
       form.reset({
         name: "",
@@ -139,8 +159,12 @@ export function StudentProfilePanel({
         learningPace: undefined,
         encouragementLevel: undefined,
         goals: [],
+        avatarUrl: "",
+        avatarType: "default",
+        age: undefined,
       });
       setGoalsText("");
+      setSelectedAvatar("");
     }
   }, [student, form]);
 
@@ -151,7 +175,14 @@ export function StudentProfilePanel({
         .map(g => g.trim())
         .filter(g => g.length > 0);
       
-      const res = await apiRequest('POST', '/api/students', { ...data, goals });
+      const payload = {
+        ...data,
+        goals,
+        avatarUrl: selectedAvatar || undefined,
+        avatarType: selectedAvatar ? 'preset' : 'default',
+      };
+      
+      const res = await apiRequest('POST', '/api/students', payload);
       return res.json();
     },
     onSuccess: (newStudent: Student) => {
@@ -176,7 +207,14 @@ export function StudentProfilePanel({
         .map(g => g.trim())
         .filter(g => g.length > 0);
       
-      const res = await apiRequest('PUT', `/api/students/${studentId}`, { ...data, goals });
+      const payload = {
+        ...data,
+        goals,
+        avatarUrl: selectedAvatar || undefined,
+        avatarType: selectedAvatar ? 'preset' : 'default',
+      };
+      
+      const res = await apiRequest('PUT', `/api/students/${studentId}`, payload);
       return res.json();
     },
     onSuccess: () => {
@@ -295,6 +333,45 @@ export function StudentProfilePanel({
 
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 mt-6">
+              {/* Avatar Selection */}
+              <div className="text-center">
+                <FormLabel className="block mb-3">Choose an Avatar</FormLabel>
+                <div className="flex justify-center mb-4">
+                  <div className="w-20 h-20 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-4xl border-4 border-primary/20" data-testid="avatar-preview">
+                    {selectedAvatar || <User className="w-10 h-10 text-gray-400" />}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2 justify-center max-w-[320px] mx-auto">
+                  {PRESET_AVATARS.map((avatar, index) => (
+                    <button
+                      key={index}
+                      type="button"
+                      onClick={() => setSelectedAvatar(avatar)}
+                      className={`w-10 h-10 rounded-full text-xl flex items-center justify-center transition-all hover:scale-110 ${
+                        selectedAvatar === avatar
+                          ? 'ring-2 ring-primary ring-offset-2 bg-primary/10'
+                          : 'bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700'
+                      }`}
+                      data-testid={`avatar-option-${index}`}
+                    >
+                      {avatar}
+                    </button>
+                  ))}
+                </div>
+                {selectedAvatar && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="mt-2"
+                    onClick={() => setSelectedAvatar("")}
+                    data-testid="button-clear-avatar"
+                  >
+                    Clear Avatar
+                  </Button>
+                )}
+              </div>
+
               <FormField
                 control={form.control}
                 name="name"

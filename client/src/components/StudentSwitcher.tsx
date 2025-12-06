@@ -16,6 +16,8 @@ interface Student {
   id: string;
   name: string;
   grade?: string;
+  avatarUrl?: string;
+  avatarType?: 'default' | 'preset' | 'upload';
 }
 
 interface StudentSwitcherProps {
@@ -38,6 +40,7 @@ export function StudentSwitcher({
   
   // Use current student name, or fall back to user's default student name from profile
   const displayName = currentStudent?.name || user?.studentName || user?.firstName || "Student";
+  const currentAvatar = currentStudent?.avatarUrl;
 
   return (
     <DropdownMenu>
@@ -47,7 +50,11 @@ export function StudentSwitcher({
           className="gap-2 ml-6"
           data-testid="button-student-switcher"
         >
-          <User className="h-4 w-4" />
+          {currentAvatar ? (
+            <span className="text-base">{currentAvatar}</span>
+          ) : (
+            <User className="h-4 w-4" />
+          )}
           <span className="max-w-[150px] truncate">
             {displayName}
           </span>
@@ -73,7 +80,11 @@ export function StudentSwitcher({
             className="gap-2"
             data-testid={`student-option-${student.id}`}
           >
-            <User className="h-4 w-4" />
+            {student.avatarUrl ? (
+              <span className="text-base w-5 h-5 flex items-center justify-center">{student.avatarUrl}</span>
+            ) : (
+              <User className="h-4 w-4" />
+            )}
             <div className="flex flex-col">
               <span>{student.name}</span>
               {student.grade && (
