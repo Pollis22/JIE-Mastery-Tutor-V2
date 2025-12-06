@@ -76,6 +76,12 @@ Core entities include Users, Learning Sessions, Quiz Attempts, User Documents, a
 
 ### Payment & Subscription System
 Stripe Integration for subscriptions and payments, featuring a **Hybrid Minute Tracking** system where subscription minutes reset monthly, and purchased minutes rollover indefinitely.
+-   **Subscription Change Security** (December 2025 - CRITICAL FIX):
+    -   ALL plan changes (upgrades/downgrades) now require Stripe Checkout session with payment
+    -   Database subscription updates ONLY happen via Stripe webhooks after payment confirmation
+    -   Previous vulnerability allowed free upgrades by clicking plan cards without checkout
+    -   Webhook automatically cancels previous subscription when new plan is purchased
+    -   Metadata tracks `previousPlan` and `previousSubscriptionId` for proper cleanup
 
 ### Admin Dashboard System
 A comprehensive administrative interface with audit logging for user, subscription, and document management, analytics, and agent monitoring.
