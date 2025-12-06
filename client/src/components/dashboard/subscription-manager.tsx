@@ -18,6 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { format } from "date-fns";
+import { PromoCodeInput } from "@/components/PromoCodeInput";
 import { 
   CreditCard, 
   TrendingUp, 
@@ -29,7 +30,8 @@ import {
   XCircle,
   ArrowUpCircle,
   ArrowDownCircle,
-  RefreshCw
+  RefreshCw,
+  Tag
 } from "lucide-react";
 
 interface VoiceBalance {
@@ -124,6 +126,22 @@ export default function SubscriptionManager() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
+  const [appliedPromoCode, setAppliedPromoCode] = useState<string | null>(null);
+  const [promoDiscount, setPromoDiscount] = useState<string | null>(null);
+
+  const handlePromoApplied = (code: string, discount: string, _promoCodeId: string) => {
+    setAppliedPromoCode(code);
+    setPromoDiscount(discount);
+    toast({
+      title: "Promo code applied",
+      description: `${code}: ${discount}`,
+    });
+  };
+
+  const handlePromoRemoved = () => {
+    setAppliedPromoCode(null);
+    setPromoDiscount(null);
+  };
 
   const refetch = () => {
     queryClient.invalidateQueries({ queryKey: ['/api/user'] });
@@ -150,7 +168,11 @@ export default function SubscriptionManager() {
   // Upgrade/Downgrade mutation
   const changePlanMutation = useMutation({
     mutationFn: async (planId: string) => {
-      const response = await apiRequest("POST", "/api/subscription/change", { plan: planId });
+      const payload: { plan: string; promoCode?: string } = { plan: planId };
+      if (appliedPromoCode) {
+        payload.promoCode = appliedPromoCode;
+      }
+      const response = await apiRequest("POST", "/api/subscription/change", payload);
       if (!response.ok) throw new Error("Failed to change plan");
       return response.json();
     },
@@ -158,10 +180,14 @@ export default function SubscriptionManager() {
       if (data.url) {
         window.location.href = data.url;
       } else {
+        const message = appliedPromoCode 
+          ? "Subscription updated with discount applied!" 
+          : "Subscription updated successfully";
         toast({
           title: "Success",
-          description: "Subscription updated successfully",
+          description: message,
         });
+        handlePromoRemoved();
         refetch();
       }
     },
@@ -373,6 +399,24 @@ export default function SubscriptionManager() {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {/* Promo Code Section */}
+          <div className="mb-6">
+            <div className="flex items-center gap-2 mb-2">
+              <Tag className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-medium">Have a promo code?</span>
+            </div>
+            <PromoCodeInput 
+              onPromoApplied={handlePromoApplied}
+              onPromoRemoved={handlePromoRemoved}
+              disabled={changePlanMutation.isPending}
+            />
+            {appliedPromoCode && promoDiscount && (
+              <p className="text-xs text-green-600 dark:text-green-400 mt-2">
+                Discount will be applied to your next plan change.
+              </p>
+            )}
+          </div>
+          
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {plans.map((plan) => (
               <div
