@@ -249,7 +249,15 @@ export function useCustomVoice() {
       setMicrophoneError(null);
       
       mediaStreamRef.current = stream;
-      audioContextRef.current = new AudioContext({ sampleRate: 16000 });
+      
+      // CRITICAL: Reuse existing AudioContext if it exists (created by playAudio)
+      // Creating a new one would orphan gain nodes and scheduled sources from playback
+      if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+        audioContextRef.current = new AudioContext({ sampleRate: 16000 });
+        console.log("[Custom Voice] 🔊 Created new AudioContext for microphone");
+      } else {
+        console.log("[Custom Voice] 🔊 Reusing existing AudioContext");
+      }
       
       // Resume audio context if suspended
       if (audioContextRef.current.state === 'suspended') {
@@ -741,13 +749,14 @@ export function useCustomVoice() {
     if (!audioContextRef.current) return;
     
     const ctx = audioContextRef.current;
-    const LOOKAHEAD_TIME = 0.1; // Schedule 100ms ahead for seamless transitions
     const CROSSFADE_DURATION = 0.015; // 15ms crossfade between chunks
     
-    // Create shared gain node for playback if not exists
+    // Create shared gain node for playback if not exists or if context changed
+    // The gain node must belong to the current context
     if (!playbackGainNodeRef.current) {
       playbackGainNodeRef.current = ctx.createGain();
       playbackGainNodeRef.current.connect(ctx.destination);
+      console.log("[Custom Voice] 🔊 Created playback gain node");
     }
     
     // Schedule all queued chunks
