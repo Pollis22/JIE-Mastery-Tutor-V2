@@ -231,10 +231,32 @@ router.post('/change', async (req, res) => {
           });
           
           if (promoCodes.data.length > 0 && promoCodes.data[0].coupon.valid) {
+            const promoCodeData = promoCodes.data[0];
+            
+            // Check if this promo has customer restrictions
+            // Stripe enforces first_time_transaction automatically, but we can add a friendly message
+            if (promoCodeData.restrictions?.first_time_transaction) {
+              // Check if customer has any previous subscriptions
+              const previousSubs = await stripe!.subscriptions.list({
+                customer: customerId,
+                limit: 1,
+                status: 'all'
+              });
+              
+              if (previousSubs.data.length > 0) {
+                console.log(`❌ [Subscription] Promo code ${promoCode} is for first-time customers only`);
+                return res.status(400).json({
+                  error: 'Promo code not eligible',
+                  message: 'This promo code is only valid for first-time subscribers.',
+                  type: 'promo_first_time_only'
+                });
+              }
+            }
+            
             // For subscription updates, use discounts with the promotion_code
-            updateParams.discounts = [{ promotion_code: promoCodes.data[0].id }];
+            updateParams.discounts = [{ promotion_code: promoCodeData.id }];
             discountApplied = true;
-            console.log(`🎟️ [Subscription] Applying promo to upgrade: ${promoCode}`);
+            console.log(`🎟️ [Subscription] Applying promo to upgrade: ${promoCode} (duration: ${promoCodeData.coupon.duration})`);
           } else {
             // Return error if user explicitly provided a promo code that's invalid
             console.log(`❌ [Subscription] Invalid promo code: ${promoCode}`);
