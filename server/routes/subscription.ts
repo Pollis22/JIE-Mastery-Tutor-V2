@@ -219,6 +219,9 @@ router.post('/change', async (req, res) => {
           }
         };
         
+        // Track whether promo was successfully applied
+        let discountApplied = false;
+        
         // Apply promo code to upgrade if provided
         if (promoCode) {
           const promoCodes = await stripe!.promotionCodes.list({
@@ -230,9 +233,16 @@ router.post('/change', async (req, res) => {
           if (promoCodes.data.length > 0 && promoCodes.data[0].coupon.valid) {
             // For subscription updates, use discounts with the promotion_code
             updateParams.discounts = [{ promotion_code: promoCodes.data[0].id }];
+            discountApplied = true;
             console.log(`🎟️ [Subscription] Applying promo to upgrade: ${promoCode}`);
           } else {
-            console.log(`⚠️ [Subscription] Invalid promo code ignored: ${promoCode}`);
+            // Return error if user explicitly provided a promo code that's invalid
+            console.log(`❌ [Subscription] Invalid promo code: ${promoCode}`);
+            return res.status(400).json({
+              error: 'Invalid promo code',
+              message: 'The promo code you entered is invalid or has expired. Please remove it and try again.',
+              type: 'invalid_promo_code'
+            });
           }
         }
 
@@ -263,14 +273,17 @@ router.post('/change', async (req, res) => {
         // Update stripe subscription ID if changed
         await storage.updateUserStripeInfo(userId, customerId, updatedSubscription.id);
 
-        console.log(`✅ [Subscription] User ${userId} upgraded to ${newPlan} with ${newMinutes} minutes`);
+        console.log(`✅ [Subscription] User ${userId} upgraded to ${newPlan} with ${newMinutes} minutes (discount: ${discountApplied})`);
 
         return res.json({
           success: true,
           type: 'upgrade',
           plan: newPlan,
-          message: 'Subscription upgraded successfully! You have been charged the prorated difference.',
-          minutesAllocated: newMinutes
+          message: discountApplied 
+            ? 'Subscription upgraded successfully with discount applied! You have been charged the prorated difference.'
+            : 'Subscription upgraded successfully! You have been charged the prorated difference.',
+          minutesAllocated: newMinutes,
+          discountApplied
         });
 
       } catch (error: any) {

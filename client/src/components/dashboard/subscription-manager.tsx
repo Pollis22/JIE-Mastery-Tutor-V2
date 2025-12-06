@@ -173,30 +173,36 @@ export default function SubscriptionManager() {
         payload.promoCode = appliedPromoCode;
       }
       const response = await apiRequest("POST", "/api/subscription/change", payload);
-      if (!response.ok) throw new Error("Failed to change plan");
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || errorData.error || "Failed to change plan");
+      }
       return response.json();
     },
     onSuccess: (data) => {
       if (data.url) {
         window.location.href = data.url;
       } else {
-        const message = appliedPromoCode 
-          ? "Subscription updated with discount applied!" 
-          : "Subscription updated successfully";
         toast({
           title: "Success",
-          description: message,
+          description: data.message || (data.discountApplied 
+            ? "Subscription updated with discount applied!" 
+            : "Subscription updated successfully"),
         });
         handlePromoRemoved();
         refetch();
       }
     },
-    onError: (error) => {
+    onError: (error: any) => {
       toast({
         title: "Error",
         description: error.message || "Failed to update subscription",
         variant: "destructive",
       });
+      // Clear promo code on error to avoid lingering UI hints about a discount
+      if (appliedPromoCode) {
+        handlePromoRemoved();
+      }
     }
   });
 
