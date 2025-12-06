@@ -30,8 +30,9 @@ export function useCustomVoice() {
   const currentAudioSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const audioEnabledRef = useRef<boolean>(true); // Tutor audio enabled (default true)
   const micEnabledRef = useRef<boolean>(true); // Student mic enabled (default true)
-  const gainNodeRef = useRef<GainNode | null>(null); // For smooth fadeout
+  const playbackGainNodeRef = useRef<GainNode | null>(null); // For smooth fadeout during playback
   const nextPlayTimeRef = useRef<number>(0); // Schedule next chunk seamlessly
+  const scheduledSourcesRef = useRef<AudioBufferSourceNode[]>([]); // Track scheduled sources for cleanup
 
   // Track when tutor audio playback started to prevent self-interrupt
   // VAD will ignore speech detection for a short period after playback starts
@@ -274,13 +275,13 @@ export function useCustomVoice() {
           if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
 
           // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          // IMPROVED BARGE-IN with ECHO PROTECTION (AudioWorklet)
-          // - Much higher barge-in threshold (0.12 instead of 0.03)
-          // - 500ms cooldown after tutor starts
-          // - Distinguishes user speech from echo/ambient
+          // RESPONSIVE BARGE-IN with ECHO PROTECTION (AudioWorklet)
+          // - Lowered thresholds for faster interruption (0.08 RMS, 0.15 peak)
+          // - Reduced 300ms cooldown (was 500ms) for snappier response
+          // - Still distinguishes user speech from echo/ambient
           // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
           if (event.data.type === 'speech_start') {
-            // If tutor is currently speaking, we need high confidence that this is
+            // If tutor is currently speaking, we need confidence that this is
             // the USER speaking and not just echo from the speakers
             if (isTutorSpeakingRef.current && isPlayingRef.current) {
               const rms = event.data.rms || 0;
@@ -288,16 +289,16 @@ export function useCustomVoice() {
               const now = Date.now();
               const timeSincePlayback = now - lastAudioPlaybackStartRef.current;
               
-              // Skip VAD for 500ms after tutor audio starts (cooldown)
-              if (timeSincePlayback < 500) {
-                console.log(`[Custom Voice] ⏱️ VAD cooldown active (${(500 - timeSincePlayback).toFixed(0)}ms) - ignoring speech`);
+              // Skip VAD for 300ms after tutor audio starts (reduced from 500ms for faster response)
+              if (timeSincePlayback < 300) {
+                console.log(`[Custom Voice] ⏱️ VAD cooldown active (${(300 - timeSincePlayback).toFixed(0)}ms) - ignoring speech`);
                 return;
               }
 
-              // Require MUCH higher audio levels to trigger barge-in during tutor speech
-              // Real user speech should be RMS 0.12+, ambient noise is typically 0.03-0.05
-              const BARGE_IN_RMS = 0.12;   // User must speak clearly to interrupt
-              const BARGE_IN_PEAK = 0.25;  // Requires significant amplitude
+              // Lowered thresholds for more responsive interruption
+              // Real user speech should be RMS 0.08+, ambient noise is typically 0.02-0.04
+              const BARGE_IN_RMS = 0.08;   // Lowered from 0.12 for faster interrupt
+              const BARGE_IN_PEAK = 0.15;  // Lowered from 0.25 for faster interrupt
 
               if (rms < BARGE_IN_RMS && peak < BARGE_IN_PEAK) {
                 console.log(`[Custom Voice] 🔇 VAD: Ignoring ambient sound during tutor (rms=${rms.toFixed(4)}, peak=${peak.toFixed(4)}) - below barge-in threshold`);
@@ -417,11 +418,10 @@ export function useCustomVoice() {
           const rms = Math.sqrt(sumSquares / inputData.length);
 
           // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          // IMPROVED VAD with ECHO PROTECTION for ScriptProcessor fallback
-          // - Higher base threshold (0.06 instead of 0.003)
-          // - Much higher barge-in threshold (0.12 instead of 0.03)
+          // RESPONSIVE VAD with ECHO PROTECTION for ScriptProcessor fallback
+          // - Lowered barge-in thresholds (0.08 RMS, 0.15 peak)
+          // - Reduced 300ms cooldown (was 500ms) for snappier response
           // - Debounce timing (150-300ms)
-          // - 500ms cooldown after tutor starts
           // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
           
           // VAD: detect speech based on RMS or peak amplitude
@@ -430,17 +430,17 @@ export function useCustomVoice() {
           const timeSincePlayback = now - lastAudioPlaybackStartRef.current;
           
           if (hasAudio && !speechActive) {
-            // Skip VAD for 500ms after tutor audio starts (cooldown)
-            if (isTutorSpeakingRef.current && isPlayingRef.current && timeSincePlayback < 500) {
-              console.log(`[Custom Voice] ⏱️ VAD cooldown active (${(500 - timeSincePlayback).toFixed(0)}ms remaining) - ignoring speech`);
+            // Skip VAD for 300ms after tutor audio starts (reduced from 500ms)
+            if (isTutorSpeakingRef.current && isPlayingRef.current && timeSincePlayback < 300) {
+              console.log(`[Custom Voice] ⏱️ VAD cooldown active (${(300 - timeSincePlayback).toFixed(0)}ms remaining) - ignoring speech`);
               return;
             }
             
-            // If tutor is currently speaking, require MUCH higher levels to reject echo
-            // Real speech from user should be 0.12+, ambient noise is typically 0.03-0.05
+            // If tutor is currently speaking, check for user speech above threshold
+            // Lowered from 0.12/0.25 for more responsive interruption
             if (isTutorSpeakingRef.current && isPlayingRef.current) {
-              const BARGE_IN_RMS_THRESHOLD = 0.12; // Much higher - user must speak clearly
-              const BARGE_IN_PEAK_THRESHOLD = 0.25;
+              const BARGE_IN_RMS_THRESHOLD = 0.08; // Lowered from 0.12
+              const BARGE_IN_PEAK_THRESHOLD = 0.15; // Lowered from 0.25
 
               if (rms < BARGE_IN_RMS_THRESHOLD || maxAmplitude < BARGE_IN_PEAK_THRESHOLD) {
                 console.log(`[Custom Voice] 🔇 VAD (fallback): Ignoring ambient sound during tutor (rms=${rms.toFixed(4)}, peak=${maxAmplitude.toFixed(4)}) - below barge-in threshold`);
@@ -702,6 +702,11 @@ export function useCustomVoice() {
     }
 
     try {
+      // Resume audio context if suspended (browser autoplay policy)
+      if (audioContextRef.current.state === 'suspended') {
+        await audioContextRef.current.resume();
+      }
+
       const audioData = Uint8Array.from(atob(base64Audio), c => c.charCodeAt(0));
       
       // Convert PCM16 to Float32 for Web Audio API
@@ -714,10 +719,17 @@ export function useCustomVoice() {
       const audioBuffer = audioContextRef.current.createBuffer(1, float32.length, 16000);
       audioBuffer.getChannelData(0).set(float32);
       
+      // Add to queue and schedule immediately for seamless playback
       audioQueueRef.current.push(audioBuffer);
       
       if (!isPlayingRef.current) {
-        playNextChunk();
+        // First chunk - start playback chain
+        isPlayingRef.current = true;
+        nextPlayTimeRef.current = audioContextRef.current.currentTime;
+        scheduleNextChunks();
+      } else {
+        // Already playing - schedule this new chunk seamlessly
+        scheduleNextChunks();
       }
       
     } catch (error) {
@@ -725,35 +737,98 @@ export function useCustomVoice() {
     }
   };
 
-  const playNextChunk = () => {
-    if (audioQueueRef.current.length === 0) {
-      isPlayingRef.current = false;
-      setIsTutorSpeaking(false);
-      return;
-    }
-
-    isPlayingRef.current = true;
-    const audioBuffer = audioQueueRef.current.shift()!;
-
+  const scheduleNextChunks = () => {
     if (!audioContextRef.current) return;
-
-    const source = audioContextRef.current.createBufferSource();
-    source.buffer = audioBuffer;
-    source.connect(audioContextRef.current.destination);
-    currentAudioSourceRef.current = source;
     
-    source.onended = () => {
-      currentAudioSourceRef.current = null;
-      playNextChunk();
-    };
+    const ctx = audioContextRef.current;
+    const LOOKAHEAD_TIME = 0.1; // Schedule 100ms ahead for seamless transitions
+    const CROSSFADE_DURATION = 0.015; // 15ms crossfade between chunks
     
-    source.start();
+    // Create shared gain node for playback if not exists
+    if (!playbackGainNodeRef.current) {
+      playbackGainNodeRef.current = ctx.createGain();
+      playbackGainNodeRef.current.connect(ctx.destination);
+    }
+    
+    // Schedule all queued chunks
+    while (audioQueueRef.current.length > 0) {
+      const audioBuffer = audioQueueRef.current.shift()!;
+      
+      // Ensure we're scheduling in the future
+      const scheduleTime = Math.max(ctx.currentTime + 0.001, nextPlayTimeRef.current);
+      
+      const source = ctx.createBufferSource();
+      source.buffer = audioBuffer;
+      
+      // Create individual gain node for crossfade
+      const chunkGain = ctx.createGain();
+      source.connect(chunkGain);
+      chunkGain.connect(playbackGainNodeRef.current);
+      
+      // Apply subtle crossfade: fade in at start, fade out at end
+      const duration = audioBuffer.duration;
+      chunkGain.gain.setValueAtTime(0.85, scheduleTime);
+      chunkGain.gain.linearRampToValueAtTime(1.0, scheduleTime + Math.min(CROSSFADE_DURATION, duration * 0.1));
+      chunkGain.gain.setValueAtTime(1.0, scheduleTime + duration - Math.min(CROSSFADE_DURATION, duration * 0.1));
+      chunkGain.gain.linearRampToValueAtTime(0.85, scheduleTime + duration);
+      
+      // Track this source for cleanup on interruption
+      scheduledSourcesRef.current.push(source);
+      currentAudioSourceRef.current = source;
+      
+      // Clean up when this chunk ends
+      source.onended = () => {
+        // Remove from tracked sources
+        const idx = scheduledSourcesRef.current.indexOf(source);
+        if (idx > -1) {
+          scheduledSourcesRef.current.splice(idx, 1);
+        }
+        
+        // Check if all playback complete
+        if (scheduledSourcesRef.current.length === 0 && audioQueueRef.current.length === 0) {
+          isPlayingRef.current = false;
+          setIsTutorSpeaking(false);
+          currentAudioSourceRef.current = null;
+        }
+      };
+      
+      // CRITICAL: Start playback at scheduled time (no gaps!)
+      try {
+        source.start(scheduleTime);
+        console.log(`[Custom Voice] 🔊 Scheduled audio chunk at ${scheduleTime.toFixed(3)}s, duration: ${duration.toFixed(3)}s`);
+      } catch (startError) {
+        console.error("[Custom Voice] ❌ Failed to start audio source:", startError);
+      }
+      
+      // Update next play time: slight overlap for seamless transition
+      nextPlayTimeRef.current = scheduleTime + duration - 0.005; // 5ms overlap
+    }
   };
 
   const stopAudio = () => {
     console.log("[Custom Voice] ⏹️ Stopping audio playback");
     
-    // Stop currently playing audio source
+    // Stop ALL scheduled audio sources with smooth fadeout
+    if (playbackGainNodeRef.current && audioContextRef.current) {
+      const now = audioContextRef.current.currentTime;
+      // Quick fadeout to avoid clicks
+      playbackGainNodeRef.current.gain.cancelScheduledValues(now);
+      playbackGainNodeRef.current.gain.setValueAtTime(playbackGainNodeRef.current.gain.value, now);
+      playbackGainNodeRef.current.gain.linearRampToValueAtTime(0, now + 0.05); // 50ms fadeout
+    }
+    
+    // Stop all scheduled sources
+    scheduledSourcesRef.current.forEach(source => {
+      try {
+        source.stop();
+        source.disconnect();
+      } catch (e) {
+        // Source might already be stopped
+      }
+    });
+    scheduledSourcesRef.current = [];
+    
+    // Stop current audio source
     if (currentAudioSourceRef.current) {
       try {
         currentAudioSourceRef.current.stop();
@@ -764,11 +839,18 @@ export function useCustomVoice() {
       currentAudioSourceRef.current = null;
     }
     
-    // Clear the audio queue
+    // Clear the audio queue and reset state
     audioQueueRef.current = [];
     isPlayingRef.current = false;
+    nextPlayTimeRef.current = 0;
     
-    console.log("[Custom Voice] ✅ Audio stopped, microphone still active");
+    // Reset gain node for next playback
+    if (playbackGainNodeRef.current && audioContextRef.current) {
+      const now = audioContextRef.current.currentTime;
+      playbackGainNodeRef.current.gain.setValueAtTime(1.0, now + 0.06);
+    }
+    
+    console.log("[Custom Voice] ✅ Audio stopped smoothly, microphone still active");
   };
 
   const cleanup = () => {
@@ -792,13 +874,25 @@ export function useCustomVoice() {
       mediaStreamRef.current = null;
     }
 
+    // Disconnect playback gain node before closing context
+    if (playbackGainNodeRef.current) {
+      try {
+        playbackGainNodeRef.current.disconnect();
+      } catch (e) {
+        // Already disconnected
+      }
+      playbackGainNodeRef.current = null;
+    }
+
     if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
       audioContextRef.current.close();
       audioContextRef.current = null;
     }
 
     audioQueueRef.current = [];
+    scheduledSourcesRef.current = [];
     isPlayingRef.current = false;
+    nextPlayTimeRef.current = 0;
   };
 
   const disconnectInProgress = useRef(false);
