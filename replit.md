@@ -82,6 +82,13 @@ Stripe Integration for subscriptions and payments, featuring a **Hybrid Minute T
     -   Database subscription updates gated by Stripe payment confirmation (upgrades) or invoice.payment_succeeded (downgrades)
     -   Previous vulnerability allowed free upgrades by clicking plan cards without checkout
     -   Metadata tracks `changeType`, `previousPlan`, and `scheduledAt` for proper handling
+-   **Promo Code Support** (December 2025):
+    -   `/api/promo/validate` endpoint validates promo codes against Stripe Promotion Codes API
+    -   Registration checkout has `allow_promotion_codes: true` for Stripe's built-in promo UI
+    -   Subscription upgrades accept optional promo codes via `discounts` parameter
+    -   Frontend PromoCodeInput component with validation, applied state, and error handling
+    -   Server returns `discountApplied` flag so UI accurately reflects whether discount was applied
+    -   Invalid promo codes return 400 error instead of being silently ignored
 
 ### Admin Dashboard System
 A comprehensive administrative interface with audit logging for user, subscription, and document management, analytics, and agent monitoring.
