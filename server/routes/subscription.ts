@@ -20,6 +20,31 @@ import {
 
 const router = Router();
 
+// Plan tier order for determining upgrade vs downgrade
+const PLAN_TIERS: Record<string, number> = {
+  'free': 0,
+  'starter': 1,
+  'standard': 2,
+  'pro': 3,
+  'elite': 4,
+};
+
+// Minutes allocation per plan
+const PLAN_MINUTES: Record<string, number> = {
+  'starter': 60,
+  'standard': 240,
+  'pro': 600,
+  'elite': 1800,
+};
+
+// Concurrent session limits per plan
+const PLAN_CONCURRENT_SESSIONS: Record<string, number> = {
+  'starter': 1,
+  'standard': 1,
+  'pro': 1,
+  'elite': 3,
+};
+
 // POST /api/subscription/change - Change subscription plan
 router.post('/change', async (req, res) => {
   try {
@@ -51,7 +76,8 @@ router.post('/change', async (req, res) => {
       elite: process.env.STRIPE_PRICE_ELITE || '',
     };
 
-    const priceId = priceIds[plan.toLowerCase()];
+    const newPlan = plan.toLowerCase();
+    const priceId = priceIds[newPlan];
     if (!priceId) {
       console.error(`❌ [Subscription] Price ID not configured for plan: ${plan}`);
       return res.status(503).json({ 
@@ -69,8 +95,17 @@ router.post('/change', async (req, res) => {
     }
 
     const { stripeCustomerId } = user;
+    const currentPlan = user.subscriptionPlan || 'free';
 
-    // 🚨 CRITICAL FIX: Ensure we have or create a Stripe customer first
+    // Check if user is trying to change to their current plan
+    if (currentPlan === newPlan) {
+      return res.status(400).json({ 
+        error: 'Already on this plan',
+        message: 'You are already subscribed to this plan.'
+      });
+    }
+
+    // Ensure we have or create a Stripe customer first
     let customerId = stripeCustomerId;
     
     if (customerId) {
@@ -94,63 +129,217 @@ router.post('/change', async (req, res) => {
       console.log('✅ Created new Stripe customer:', customerId);
     }
 
-    // 🚨 CRITICAL SECURITY FIX (December 2025):
-    // ALL plan changes MUST go through Stripe Checkout to ensure payment.
-    // The webhook (checkout.session.completed) is the ONLY place that updates the database.
-    // This prevents unauthorized free upgrades.
-    
     const existingSubscription = await getActiveSubscription(customerId);
     
-    // Check if user is trying to change to their current plan
-    if (user.subscriptionPlan === plan.toLowerCase()) {
-      return res.status(400).json({ 
-        error: 'Already on this plan',
-        message: 'You are already subscribed to this plan.'
-      });
-    }
+    // Determine if this is an upgrade or downgrade
+    const currentTier = PLAN_TIERS[currentPlan] || 0;
+    const newTier = PLAN_TIERS[newPlan] || 0;
+    const isUpgrade = newTier > currentTier;
+    const isDowngrade = newTier < currentTier;
     
-    console.log('💳 [Subscription] Creating checkout session for plan change', {
-      currentPlan: user.subscriptionPlan,
-      newPlan: plan,
+    console.log('📊 [Subscription] Plan change analysis', {
+      currentPlan,
+      newPlan,
+      currentTier,
+      newTier,
+      isUpgrade,
+      isDowngrade,
       hasExistingSubscription: !!existingSubscription
     });
-    
-    // Create checkout session for plan change (both new subscriptions AND upgrades/downgrades)
-    
-    const baseUrl = `${req.protocol}://${req.get('host')}`;
-    
-    const session = await stripe!.checkout.sessions.create({
-      customer: customerId,
-      mode: 'subscription',
-      payment_method_types: ['card'],
-      payment_method_collection: 'always',
-      line_items: [{ 
-        price: priceId, 
-        quantity: 1 
-      }],
-      metadata: {
-        userId,
-        plan,
-        type: 'subscription_change',
-        previousPlan: user.subscriptionPlan || 'none',
-        previousSubscriptionId: existingSubscription?.id || '',
-      },
-      subscription_data: {
+
+    // ============================================
+    // CASE 1: User has NO existing subscription
+    // → Use Stripe Checkout for new subscription
+    // ============================================
+    if (!existingSubscription) {
+      console.log('🆕 [Subscription] No existing subscription - creating checkout session');
+      
+      const baseUrl = `${req.protocol}://${req.get('host')}`;
+      
+      const session = await stripe!.checkout.sessions.create({
+        customer: customerId,
+        mode: 'subscription',
+        payment_method_types: ['card'],
+        payment_method_collection: 'always',
+        line_items: [{ 
+          price: priceId, 
+          quantity: 1 
+        }],
         metadata: {
           userId,
-          plan
+          plan: newPlan,
+          type: 'new_subscription',
+        },
+        subscription_data: {
+          metadata: {
+            userId,
+            plan: newPlan
+          }
+        },
+        success_url: `${baseUrl}/dashboard?subscription=success&plan=${newPlan}`,
+        cancel_url: `${baseUrl}/dashboard?subscription=cancelled`,
+        allow_promotion_codes: true,
+      });
+
+      console.log('✅ [Subscription] Checkout session created:', session.id);
+
+      return res.json({ 
+        sessionId: session.id,
+        url: session.url,
+        type: 'checkout'
+      });
+    }
+
+    // ============================================
+    // CASE 2: UPGRADE - Charge immediately with proration
+    // ============================================
+    if (isUpgrade) {
+      console.log('📈 [Subscription] Processing UPGRADE with immediate proration billing');
+      
+      try {
+        const subscriptionItemId = existingSubscription.items.data[0]?.id;
+        
+        if (!subscriptionItemId) {
+          throw new Error('No subscription item found');
         }
-      },
-      success_url: `${baseUrl}/dashboard?subscription=success&plan=${plan}`,
-      cancel_url: `${baseUrl}/dashboard?subscription=cancelled`,
-      allow_promotion_codes: true,
-    });
 
-    console.log('✅ [Subscription] Checkout session created:', session.id);
+        // Update subscription with IMMEDIATE proration billing
+        const updatedSubscription = await stripe!.subscriptions.update(
+          existingSubscription.id,
+          {
+            items: [{
+              id: subscriptionItemId,
+              price: priceId,
+            }],
+            proration_behavior: 'always_invoice',     // CRITICAL: Charge prorated amount NOW
+            payment_behavior: 'error_if_incomplete',  // CRITICAL: Fail if payment fails
+            metadata: {
+              userId,
+              plan: newPlan,
+              previousPlan: currentPlan,
+              changeType: 'upgrade'
+            }
+          }
+        );
 
-    res.json({ 
-      sessionId: session.id,
-      url: session.url 
+        console.log('✅ [Subscription] Upgrade successful, invoice created:', updatedSubscription.latest_invoice);
+
+        // Update database with new plan (payment already confirmed by Stripe)
+        const newMinutes = PLAN_MINUTES[newPlan] || 60;
+        const maxSessions = PLAN_CONCURRENT_SESSIONS[newPlan] || 1;
+        
+        await storage.updateUserSubscription(
+          userId,
+          newPlan as 'starter' | 'standard' | 'pro' | 'elite',
+          'active',
+          newMinutes,
+          maxSessions,
+          maxSessions
+        );
+
+        // Reset usage for new billing period on upgrade
+        await storage.resetUserVoiceUsage(userId);
+        
+        // Update stripe subscription ID if changed
+        await storage.updateUserStripeInfo(userId, customerId, updatedSubscription.id);
+
+        console.log(`✅ [Subscription] User ${userId} upgraded to ${newPlan} with ${newMinutes} minutes`);
+
+        return res.json({
+          success: true,
+          type: 'upgrade',
+          plan: newPlan,
+          message: 'Subscription upgraded successfully! You have been charged the prorated difference.',
+          minutesAllocated: newMinutes
+        });
+
+      } catch (error: any) {
+        console.error('❌ [Subscription] Upgrade failed:', error);
+        
+        // Handle specific Stripe errors
+        if (error.type === 'StripeCardError') {
+          return res.status(402).json({
+            error: 'Payment failed',
+            message: 'Your card was declined. Please update your payment method and try again.',
+            type: 'payment_failed'
+          });
+        }
+        
+        if (error.code === 'resource_missing') {
+          return res.status(400).json({
+            error: 'Subscription not found',
+            message: 'Unable to find your subscription. Please contact support.',
+            type: 'subscription_not_found'
+          });
+        }
+        
+        throw error;
+      }
+    }
+
+    // ============================================
+    // CASE 3: DOWNGRADE - Schedule for end of billing period
+    // No refund, keeps current plan until period ends
+    // ============================================
+    if (isDowngrade) {
+      console.log('📉 [Subscription] Processing DOWNGRADE - scheduling for end of billing period');
+      
+      try {
+        const subscriptionItemId = existingSubscription.items.data[0]?.id;
+        
+        if (!subscriptionItemId) {
+          throw new Error('No subscription item found');
+        }
+
+        // Schedule the downgrade for the end of the current billing period
+        const updatedSubscription = await stripe!.subscriptions.update(
+          existingSubscription.id,
+          {
+            items: [{
+              id: subscriptionItemId,
+              price: priceId,
+            }],
+            proration_behavior: 'none',  // No proration/refund for downgrade
+            billing_cycle_anchor: 'unchanged',  // Keep same billing date
+            metadata: {
+              userId,
+              plan: newPlan,
+              previousPlan: currentPlan,
+              changeType: 'downgrade',
+              scheduledAt: new Date().toISOString()
+            }
+          }
+        );
+
+        // Calculate when the downgrade takes effect
+        const periodEnd = new Date((existingSubscription as any).current_period_end * 1000);
+        
+        // Store the pending downgrade info but DON'T change minutes yet
+        // User keeps current plan benefits until period ends
+        // The invoice.payment_succeeded webhook will apply the new limits
+        
+        console.log(`📆 [Subscription] Downgrade scheduled for ${periodEnd.toLocaleDateString()}`);
+        console.log(`📝 [Subscription] User keeps ${currentPlan} benefits until then`);
+
+        return res.json({
+          success: true,
+          type: 'downgrade_scheduled',
+          plan: newPlan,
+          currentPlan: currentPlan,
+          effectiveDate: periodEnd.toISOString(),
+          message: `Your plan will change to ${newPlan.charAt(0).toUpperCase() + newPlan.slice(1)} on ${periodEnd.toLocaleDateString()}. You'll keep your current ${currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1)} plan benefits until then.`
+        });
+
+      } catch (error: any) {
+        console.error('❌ [Subscription] Downgrade scheduling failed:', error);
+        throw error;
+      }
+    }
+
+    // Should not reach here
+    return res.status(400).json({ 
+      error: 'Invalid plan change',
+      message: 'Unable to determine plan change type'
     });
 
   } catch (error: any) {
@@ -178,6 +367,26 @@ router.get('/status', async (req, res) => {
     }
 
     const minutesData = await storage.getAvailableMinutes(userId);
+    
+    // Check if there's a scheduled downgrade
+    let scheduledPlanChange = null;
+    if (user.stripeSubscriptionId && stripe) {
+      try {
+        const subscription = await stripe.subscriptions.retrieve(user.stripeSubscriptionId);
+        const scheduledPlan = subscription.metadata?.plan;
+        const currentDbPlan = user.subscriptionPlan;
+        
+        // If Stripe plan differs from DB plan, there's a pending change
+        if (scheduledPlan && scheduledPlan !== currentDbPlan) {
+          scheduledPlanChange = {
+            newPlan: scheduledPlan,
+            effectiveDate: new Date((subscription as any).current_period_end * 1000).toISOString()
+          };
+        }
+      } catch (e) {
+        // Ignore errors fetching subscription
+      }
+    }
 
     res.json({
       plan: user.subscriptionPlan || 'starter',
@@ -186,7 +395,8 @@ router.get('/status', async (req, res) => {
       minutesLimit: minutesData.total,
       minutesRemaining: minutesData.remaining,
       bonusMinutes: user.bonusMinutes || 0,
-      hasActiveSubscription: !!user.stripeSubscriptionId
+      hasActiveSubscription: !!user.stripeSubscriptionId,
+      scheduledPlanChange
     });
 
   } catch (error: any) {
