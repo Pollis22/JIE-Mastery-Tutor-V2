@@ -40,7 +40,27 @@ export function StudentSwitcher({
   
   // Use current student name, or fall back to user's default student name from profile
   const displayName = currentStudent?.name || user?.studentName || user?.firstName || "Student";
-  const currentAvatar = currentStudent?.avatarUrl;
+
+  // Helper to render avatar based on type
+  const renderAvatar = (student: Student | undefined, size: 'sm' | 'md' = 'sm') => {
+    if (!student?.avatarUrl) {
+      return <User className={size === 'sm' ? "h-4 w-4" : "h-5 w-5"} />;
+    }
+    
+    if (student.avatarType === 'upload') {
+      // Render as image for uploaded avatars
+      return (
+        <img 
+          src={student.avatarUrl} 
+          alt={student.name}
+          className={`rounded-full object-cover ${size === 'sm' ? 'w-4 h-4' : 'w-5 h-5'}`}
+        />
+      );
+    }
+    
+    // Render as emoji for preset avatars
+    return <span className={size === 'sm' ? "text-sm" : "text-base"}>{student.avatarUrl}</span>;
+  };
 
   return (
     <DropdownMenu>
@@ -50,11 +70,7 @@ export function StudentSwitcher({
           className="gap-2 ml-6"
           data-testid="button-student-switcher"
         >
-          {currentAvatar ? (
-            <span className="text-base">{currentAvatar}</span>
-          ) : (
-            <User className="h-4 w-4" />
-          )}
+          {renderAvatar(currentStudent, 'sm')}
           <span className="max-w-[150px] truncate">
             {displayName}
           </span>
@@ -80,11 +96,9 @@ export function StudentSwitcher({
             className="gap-2"
             data-testid={`student-option-${student.id}`}
           >
-            {student.avatarUrl ? (
-              <span className="text-base w-5 h-5 flex items-center justify-center">{student.avatarUrl}</span>
-            ) : (
-              <User className="h-4 w-4" />
-            )}
+            <div className="w-5 h-5 flex items-center justify-center">
+              {renderAvatar(student, 'md')}
+            </div>
             <div className="flex flex-col">
               <span>{student.name}</span>
               {student.grade && (

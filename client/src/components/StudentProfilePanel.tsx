@@ -137,14 +137,27 @@ export function StudentProfilePanel({
     },
   });
 
+  // Mapping functions need to be defined before useEffect uses them
+  const mapPaceToFrontendInEffect = (pace?: string) => {
+    if (!pace) return undefined;
+    const map: Record<string, string> = { slow: 'slow', normal: 'moderate', fast: 'fast' };
+    return map[pace] || pace;
+  };
+
+  const mapEncouragementToFrontendInEffect = (level?: string) => {
+    if (!level) return undefined;
+    const map: Record<string, string> = { low: 'minimal', medium: 'moderate', high: 'high' };
+    return map[level] || level;
+  };
+
   // Update form when student data loads
   useEffect(() => {
     if (student) {
       form.reset({
         name: student.name,
         grade: student.grade || "",
-        learningPace: student.learningPace as any,
-        encouragementLevel: student.encouragementLevel as any,
+        learningPace: mapPaceToFrontendInEffect(student.learningPace) as any,
+        encouragementLevel: mapEncouragementToFrontendInEffect(student.encouragementLevel) as any,
         goals: student.goals || [],
         avatarUrl: student.avatarUrl || "",
         avatarType: student.avatarType || "default",
@@ -168,6 +181,18 @@ export function StudentProfilePanel({
     }
   }, [student, form]);
 
+  const mapPaceToBackend = (pace?: string) => {
+    if (!pace) return undefined;
+    const map: Record<string, string> = { slow: 'slow', moderate: 'normal', fast: 'fast' };
+    return map[pace] || pace;
+  };
+
+  const mapEncouragementToBackend = (level?: string) => {
+    if (!level) return undefined;
+    const map: Record<string, string> = { minimal: 'low', moderate: 'medium', high: 'high' };
+    return map[level] || level;
+  };
+
   const createMutation = useMutation({
     mutationFn: async (data: StudentFormData) => {
       const goals = goalsText
@@ -175,11 +200,27 @@ export function StudentProfilePanel({
         .map(g => g.trim())
         .filter(g => g.length > 0);
       
+      // Determine avatar type based on selected avatar
+      let avatarType: string = 'default';
+      if (!selectedAvatar) {
+        avatarType = 'default';
+      } else if (data.avatarType === 'upload') {
+        avatarType = 'upload';
+      } else if (PRESET_AVATARS.includes(selectedAvatar)) {
+        avatarType = 'preset';
+      } else {
+        avatarType = 'preset';
+      }
+      
       const payload = {
-        ...data,
+        name: data.name,
+        grade: data.grade,
+        age: data.age,
         goals,
+        pace: mapPaceToBackend(data.learningPace),
+        encouragement: mapEncouragementToBackend(data.encouragementLevel),
         avatarUrl: selectedAvatar || undefined,
-        avatarType: selectedAvatar ? 'preset' : 'default',
+        avatarType,
       };
       
       const res = await apiRequest('POST', '/api/students', payload);
@@ -207,11 +248,34 @@ export function StudentProfilePanel({
         .map(g => g.trim())
         .filter(g => g.length > 0);
       
+      // Determine avatar type based on the original type and any changes
+      let avatarType: string = 'default';
+      
+      if (!selectedAvatar) {
+        // No avatar selected - default
+        avatarType = 'default';
+      } else if (data.avatarType === 'upload') {
+        // User has an upload avatar - preserve it
+        avatarType = 'upload';
+      } else if (PRESET_AVATARS.includes(selectedAvatar)) {
+        // Selected avatar is from preset list
+        avatarType = 'preset';
+      } else if (student?.avatarType) {
+        // Preserve existing avatar type from loaded student
+        avatarType = student.avatarType;
+      } else {
+        avatarType = 'preset';
+      }
+      
       const payload = {
-        ...data,
+        name: data.name,
+        grade: data.grade,
+        age: data.age,
         goals,
+        pace: mapPaceToBackend(data.learningPace),
+        encouragement: mapEncouragementToBackend(data.encouragementLevel),
         avatarUrl: selectedAvatar || undefined,
-        avatarType: selectedAvatar ? 'preset' : 'default',
+        avatarType,
       };
       
       const res = await apiRequest('PUT', `/api/students/${studentId}`, payload);

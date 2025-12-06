@@ -164,7 +164,7 @@ export default function TutorPage() {
   const useConvai = systemConfig?.useConvai ?? true; // Default to ConvAI for backward compatibility
 
   // Fetch selected student data
-  const { data: selectedStudent } = useQuery<{ id: string; name: string; avatarUrl?: string; grade?: string }>({
+  const { data: selectedStudent } = useQuery<{ id: string; name: string; avatarUrl?: string; avatarType?: 'default' | 'preset' | 'upload'; grade?: string }>({
     queryKey: ['/api/students', selectedStudentId],
     enabled: !!selectedStudentId,
   });
@@ -616,7 +616,15 @@ export default function TutorPage() {
                 data-testid="button-select-student"
               >
                 {selectedStudent?.avatarUrl ? (
-                  <span className="text-lg">{selectedStudent.avatarUrl}</span>
+                  selectedStudent.avatarType === 'upload' ? (
+                    <img 
+                      src={selectedStudent.avatarUrl} 
+                      alt={selectedStudent.name}
+                      className="w-5 h-5 rounded-full object-cover"
+                    />
+                  ) : (
+                    <span className="text-lg">{selectedStudent.avatarUrl}</span>
+                  )
                 ) : (
                   <User className="w-4 h-4" />
                 )}
