@@ -723,7 +723,7 @@ export default function TutorPage() {
                   {/* Custom Voice System (Deepgram + Claude + ElevenLabs) */}
                   <RealtimeVoiceHost
                     studentId={selectedStudentId || undefined}
-                    studentName={studentName}
+                    studentName={selectedStudent?.name || studentName}
                     subject={subject}
                     language={selectedLanguage}
                     ageGroup={level === 'k2' ? 'K-2' : level === 'g3_5' ? '3-5' : level === 'g6_8' ? '6-8' : level === 'g9_12' ? '9-12' : 'College/Adult'}
