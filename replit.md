@@ -34,6 +34,17 @@ A three-tier access control system ensures only subscribed users with available 
 ### Session Priority System
 The platform uses a **session-first** data priority model where session configuration dictates grade level, subject, and language, with user profiles serving as defaults, enabling flexible family sharing.
 
+### Mandatory Student Profiles with Avatar Support (December 2025)
+-   **Student Profile Requirement**: Users must create and select a student profile before starting any tutoring session.
+-   **Avatar System**: Three types of avatars supported:
+    -   **Default**: Generic user icon when no avatar selected
+    -   **Preset**: 20 emoji avatars including diverse skin tones, graduation caps, and fun icons
+    -   **Upload**: Custom image upload for personalized avatars (rendered as rounded thumbnails)
+-   **Session Tracking**: `lastSessionAt` timestamp automatically updated when sessions start
+-   **Family Sharing**: Multiple student profiles per account, each with unique avatar, name, grade, learning pace, and encouragement preferences
+-   **Avatar Rendering**: StudentSwitcher and TutorPage components render uploaded avatars as `<img>` elements and preset avatars as emoji spans
+-   **Enum Value Mapping**: Frontend-backend translation for pace (slow/moderate/fast ↔ slow/normal/fast) and encouragement (minimal/moderate/high ↔ low/medium/high)
+
 ### Voice Technology Integration
 A custom, production-ready voice stack provides real-time, natural conversations with 1-2 seconds end-to-end latency.
 -   **22 Languages Supported**: Including English, Spanish, Arabic, Russian, and more, with auto-detection of browser language.
