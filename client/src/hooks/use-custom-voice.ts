@@ -38,6 +38,9 @@ export function useCustomVoice() {
   // VAD will ignore speech detection for a short period after playback starts
   const lastAudioPlaybackStartRef = useRef<number>(0);
   const isTutorSpeakingRef = useRef<boolean>(false); // Ref version for audio worklet access
+  
+  // Track if stream cleanup has been triggered to prevent spam logging
+  const streamCleanupTriggeredRef = useRef<boolean>(false);
 
   // Synchronize refs with state
   useEffect(() => {
@@ -233,6 +236,9 @@ export function useCustomVoice() {
     try {
       console.log("[Custom Voice] 🎤 Requesting microphone access...");
       
+      // Reset cleanup flag for new microphone session
+      streamCleanupTriggeredRef.current = false;
+      
       // Check if browser supports getUserMedia
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error('BROWSER_NOT_SUPPORTED');
@@ -254,6 +260,19 @@ export function useCustomVoice() {
       setMicrophoneError(null);
       
       mediaStreamRef.current = stream;
+      
+      // Add track.onended listener to detect unexpected track death
+      const audioTrack = stream.getAudioTracks()[0];
+      if (audioTrack) {
+        audioTrack.onended = () => {
+          console.warn('[Custom Voice] ⚠️ Audio track ended unexpectedly');
+          if (!streamCleanupTriggeredRef.current) {
+            streamCleanupTriggeredRef.current = true;
+            stopMicrophone();
+          }
+        };
+        console.log('[Custom Voice] 📡 Added track.onended listener for track:', audioTrack.label);
+      }
       
       // CRITICAL: Reuse existing AudioContext if it exists (created by playAudio)
       // Creating a new one would orphan gain nodes and scheduled sources from playback
@@ -406,9 +425,13 @@ export function useCustomVoice() {
         processor.onaudioprocess = (e) => {
           if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
 
-          // Check if media stream is still active
+          // Check if media stream is still active - only log and cleanup ONCE
           if (!mediaStreamRef.current || !mediaStreamRef.current.active) {
-            console.error('[Custom Voice] ❌ Media stream is no longer active!');
+            if (!streamCleanupTriggeredRef.current) {
+              streamCleanupTriggeredRef.current = true;
+              console.warn('[Custom Voice] ⚠️ Media stream died unexpectedly - cleaning up microphone');
+              stopMicrophone();
+            }
             return;
           }
 
@@ -915,6 +938,9 @@ export function useCustomVoice() {
     scheduledSourcesRef.current = [];
     isPlayingRef.current = false;
     nextPlayTimeRef.current = 0;
+    
+    // Reset stream cleanup flag for next session
+    streamCleanupTriggeredRef.current = false;
   };
 
   const disconnectInProgress = useRef(false);
