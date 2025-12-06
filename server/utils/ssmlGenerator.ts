@@ -61,9 +61,31 @@ export function generateSSML(
   `.trim();
 }
 
+// Helper to strip markdown formatting for TTS
+function stripMarkdown(text: string): string {
+  return text
+    // Remove bold markers **text** or __text__
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    // Remove italic markers *text* or _text_
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/_([^_]+)_/g, '$1')
+    // Remove code backticks `code`
+    .replace(/`([^`]+)`/g, '$1')
+    // Remove headers # ## ### etc.
+    .replace(/^#+\s*/gm, '')
+    // Remove bullet points - or *
+    .replace(/^[-*]\s+/gm, '')
+    // Clean up extra whitespace
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 // Helper to escape special XML characters in text
 function escapeSSML(text: string): string {
-  return text
+  // First strip markdown formatting, then escape XML
+  const cleanText = stripMarkdown(text);
+  return cleanText
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
