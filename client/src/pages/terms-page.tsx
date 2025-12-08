@@ -66,9 +66,10 @@ export default function TermsPage() {
             <h2 className="text-2xl font-bold mb-4">4. Subscription Plans and Pricing</h2>
             <h3 className="text-xl font-semibold mb-2">4.1 Available Plans</h3>
             <ul className="list-disc pl-6 space-y-2">
-              <li>Starter Plan: $19/month - 60 voice minutes</li>
-              <li>Standard Plan: $59/month - 240 voice minutes</li>
-              <li>Pro Plan: $99/month - 600 voice minutes</li>
+              <li>Starter Family: $19.99/month - 60 voice minutes</li>
+              <li>Standard Family: $59.99/month - 240 voice minutes</li>
+              <li>Pro Family: $99.99/month - 600 voice minutes</li>
+              <li>Elite Family: $199.99/month - 1,800 voice minutes</li>
             </ul>
             
             <h3 className="text-xl font-semibold mb-2 mt-4">4.2 Minute Top-ups</h3>
