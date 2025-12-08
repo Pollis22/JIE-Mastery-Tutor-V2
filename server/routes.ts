@@ -1,5 +1,7 @@
 import type { Express } from "express";
+import express from "express";
 import { createServer, type Server } from "http";
+import path from "path";
 import { setupAuth } from "./auth";
 import { storage } from "./storage";
 import { voiceService } from "./services/voice";
@@ -68,6 +70,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Apply security middleware
   app.use(setupCORS);
   app.use(setupSecurityHeaders);
+  
+  // Serve uploaded files (avatars, etc.) as static assets
+  app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
   
   // Stripe webhooks must be registered BEFORE body parsing middleware
   // because they need raw body for signature verification
