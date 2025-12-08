@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -32,7 +32,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Trash2, Download, User } from "lucide-react";
+import { Trash2, Download, User, Camera, Loader2 } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -122,6 +122,8 @@ export function StudentProfilePanel({
   });
 
   const [selectedAvatar, setSelectedAvatar] = useState<string>("");
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   const form = useForm<StudentFormData>({
     resolver: zodResolver(studentFormSchema),
@@ -376,6 +378,40 @@ export function StudentProfilePanel({
     }
   };
 
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    setIsUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('avatar', file);
+      
+      const response = await fetch('/api/students/avatar/upload', {
+        method: 'POST',
+        body: formData,
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Upload failed');
+      }
+      
+      const data = await response.json();
+      setSelectedAvatar(data.avatarUrl);
+      form.setValue('avatarType', 'upload');
+      toast({ title: "Photo uploaded successfully" });
+    } catch (error: any) {
+      toast({ title: "Failed to upload photo", description: error.message, variant: "destructive" });
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
   const readyDocuments = documents.filter(
     doc => doc.processingStatus === 'ready' || doc.processingStatus === 'completed'
   );
@@ -401,8 +437,14 @@ export function StudentProfilePanel({
               <div className="text-center">
                 <FormLabel className="block mb-3">Choose an Avatar</FormLabel>
                 <div className="flex justify-center mb-4">
-                  <div className="w-20 h-20 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-4xl border-4 border-primary/20" data-testid="avatar-preview">
-                    {selectedAvatar || <User className="w-10 h-10 text-gray-400" />}
+                  <div className="w-20 h-20 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-4xl border-4 border-primary/20 overflow-hidden" data-testid="avatar-preview">
+                    {!selectedAvatar ? (
+                      <User className="w-10 h-10 text-gray-400" />
+                    ) : selectedAvatar.startsWith('/') ? (
+                      <img src={selectedAvatar} alt="Avatar" className="w-full h-full object-cover" />
+                    ) : (
+                      selectedAvatar
+                    )}
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2 justify-center max-w-[320px] mx-auto">
@@ -410,7 +452,10 @@ export function StudentProfilePanel({
                     <button
                       key={index}
                       type="button"
-                      onClick={() => setSelectedAvatar(avatar)}
+                      onClick={() => {
+                        setSelectedAvatar(avatar);
+                        form.setValue('avatarType', 'preset');
+                      }}
                       className={`w-10 h-10 rounded-full text-xl flex items-center justify-center transition-all hover:scale-110 ${
                         selectedAvatar === avatar
                           ? 'ring-2 ring-primary ring-offset-2 bg-primary/10'
@@ -421,6 +466,24 @@ export function StudentProfilePanel({
                       {avatar}
                     </button>
                   ))}
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleAvatarUpload}
+                    accept="image/jpeg,image/png,image/gif,image/webp"
+                    className="hidden"
+                    data-testid="input-avatar-file"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploading}
+                    className="w-10 h-10 rounded-full text-xl flex items-center justify-center bg-primary/10 hover:bg-primary/20 transition-all border-2 border-dashed border-primary/30 hover:border-primary/50"
+                    data-testid="button-upload-avatar"
+                    title="Upload custom photo"
+                  >
+                    {isUploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Camera className="w-5 h-5" />}
+                  </button>
                 </div>
                 {selectedAvatar && (
                   <Button
@@ -428,7 +491,10 @@ export function StudentProfilePanel({
                     variant="ghost"
                     size="sm"
                     className="mt-2"
-                    onClick={() => setSelectedAvatar("")}
+                    onClick={() => {
+                      setSelectedAvatar("");
+                      form.setValue('avatarType', 'default');
+                    }}
                     data-testid="button-clear-avatar"
                   >
                     Clear Avatar
