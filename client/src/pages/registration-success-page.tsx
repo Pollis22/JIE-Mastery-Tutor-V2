@@ -3,12 +3,12 @@ import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, Loader2, XCircle } from "lucide-react";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 
 export default function RegistrationSuccessPage() {
   const [, setLocation] = useLocation();
-  const { user, refetchUser } = useAuth();
+  const { user } = useAuth();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [error, setError] = useState<string>('');
 
@@ -53,8 +53,8 @@ export default function RegistrationSuccessPage() {
         const data = await res.json();
         console.log('[Registration Success] User logged in:', data.user);
 
-        // Refetch user data to update auth context
-        await refetchUser();
+        // Invalidate user query to trigger refetch and update auth context
+        await queryClient.invalidateQueries({ queryKey: ["/api/user"] });
 
         setStatus('success');
 
@@ -71,7 +71,7 @@ export default function RegistrationSuccessPage() {
     };
 
     completeRegistration();
-  }, [setLocation, refetchUser]);
+  }, [setLocation]);
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
