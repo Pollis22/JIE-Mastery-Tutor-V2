@@ -225,6 +225,59 @@ export class EmailService {
       throw error;
     }
   }
+
+  async sendContactForm(contact: {
+    name: string;
+    email: string;
+    subject: string;
+    message: string;
+  }) {
+    try {
+      const {client, fromEmail} = await getUncachableResendClient();
+      const adminEmail = process.env.ADMIN_EMAIL || 'support@JIEmastery.ai';
+      
+      // Send to admin
+      await client.emails.send({
+        from: fromEmail,
+        to: adminEmail,
+        subject: `New Contact Form Submission: ${contact.subject}`,
+        html: `
+          <h2>New Contact Form Submission</h2>
+          <p><strong>From:</strong> ${contact.name} (${contact.email})</p>
+          <p><strong>Subject:</strong> ${contact.subject}</p>
+          <hr>
+          <p><strong>Message:</strong></p>
+          <p style="white-space: pre-wrap;">${contact.message}</p>
+          <hr>
+          <p style="color:#666;font-size:14px;">Reply directly to ${contact.email}</p>
+        `
+      });
+
+      // Send confirmation to user
+      await client.emails.send({
+        from: fromEmail,
+        to: contact.email,
+        subject: 'We Received Your Message - JIE Mastery Tutor',
+        html: `
+          <h1>Thank You for Contacting Us</h1>
+          <p>Hi ${contact.name},</p>
+          <p>We've received your message and appreciate you reaching out. Our team will get back to you as soon as possible, typically within 24 hours.</p>
+          <p><strong>Your Message Summary:</strong></p>
+          <p><strong>Subject:</strong> ${contact.subject}</p>
+          <hr>
+          <p style="white-space: pre-wrap;">${contact.message}</p>
+          <hr>
+          <p>Best regards,<br>JIE Mastery Tutor Team</p>
+          <p style="margin-top:24px;color:#666;font-size:14px;">
+            <a href="${process.env.REPLIT_DEV_DOMAIN || 'http://localhost:5000'}/unsubscribe?email=${contact.email}">Unsubscribe from marketing emails</a>
+          </p>
+        `
+      });
+    } catch (error) {
+      console.error('[EmailService] Failed to send contact form email:', error);
+      throw error;
+    }
+  }
 }
 
 export const emailService = new EmailService();

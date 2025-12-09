@@ -316,9 +316,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const { name, email, subject, message } = validation.data;
       
-      // Log contact submission (future: could send email to support)
-      console.log('[Contact] New message:', { name, email, subject, message });
+      // Send contact form emails via Resend
+      const { emailService } = await import('./services/email-service');
+      await emailService.sendContactForm({ name, email, subject, message });
       
+      console.log('[Contact] Message sent successfully:', { name, email, subject });
       res.json({ success: true });
     } catch (error: any) {
       console.error('[Contact] Error:', error);
