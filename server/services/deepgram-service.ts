@@ -138,13 +138,17 @@ export async function startDeepgramStream(
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // KEEP-ALIVE MECHANISM (Dec 9, 2025 FIX)
     // Deepgram disconnects after ~10-12 seconds of inactivity
-    // Send keepAlive every 5 seconds to prevent timeout
+    // Send keepAlive every 8 seconds to prevent timeout (Deepgram recommends < 12s)
     // NOTE: keepAlive only works AFTER first audio frame is sent
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // CONNECTION HEALTH CHECK (Dec 10, 2025 FIX)
+    // CONNECTION HEALTH CHECK (Dec 10, 2025 FIX - UPDATED)
     // Detect stale connections that stop returning transcripts
-    // If no transcripts for 30s after audio sent, connection is dead
+    // If no transcripts for 5 MINUTES after audio sent, connection is dead
+    // Previous 30s threshold was too aggressive for tutoring (students think!)
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    const STALE_CONNECTION_THRESHOLD_MS = 300000; // 5 minutes (was 30s - too aggressive)
+    const HEALTH_CHECK_INTERVAL_MS = 30000; // Check every 30s (was 10s)
+    const KEEPALIVE_INTERVAL_MS = 8000; // Send keepAlive every 8s (was 5s, Deepgram recommends < 12s)
     let keepAliveInterval: NodeJS.Timeout | null = null;
     let healthCheckInterval: NodeJS.Timeout | null = null;
     let firstAudioSent = false;
@@ -246,9 +250,9 @@ export async function startDeepgramStream(
         } catch (err) {
           console.warn("[Deepgram] ⚠️ KeepAlive failed:", err);
         }
-      }, 5000); // Every 5 seconds
+      }, KEEPALIVE_INTERVAL_MS);
       
-      console.log("[Deepgram] 💓 KeepAlive interval started (every 5s)");
+      console.log(`[Deepgram] 💓 KeepAlive interval started (every ${KEEPALIVE_INTERVAL_MS / 1000}s)`);
     };
 
     // Helper function to start health check interval
@@ -257,21 +261,25 @@ export async function startDeepgramStream(
       
       healthCheckInterval = setInterval(() => {
         const timeSinceTranscript = Date.now() - lastTranscriptTime;
+        const timeSinceTranscriptSec = Math.round(timeSinceTranscript / 1000);
         
-        // Log health status every check
-        console.log(`[Deepgram] 💚 Health check: ${Math.round(timeSinceTranscript / 1000)}s since last transcript`);
+        // Log health status every check (less verbose when things are fine)
+        if (timeSinceTranscript < 60000) {
+          console.log(`[Deepgram] 💚 Health check: ${timeSinceTranscriptSec}s since last transcript - OK`);
+        } else {
+          console.log(`[Deepgram] 💛 Health check: ${timeSinceTranscriptSec}s since last transcript (student may be thinking)`);
+        }
         
-        // If no transcripts for 30+ seconds after audio sent, connection is likely dead
-        // Close it to trigger reconnection from the session handler
-        if (timeSinceTranscript > 30000 && firstAudioSent && !connectionDead) {
-          console.error(`[Deepgram] ⚠️ STALE CONNECTION: No transcripts for ${Math.round(timeSinceTranscript / 1000)}s, closing connection to trigger reconnect`);
+        // UPDATED: Only close after 5 MINUTES of complete silence (not 30 seconds!)
+        // Students need time to think, do exercises, read documents, etc.
+        if (timeSinceTranscript > STALE_CONNECTION_THRESHOLD_MS && firstAudioSent && !connectionDead) {
+          console.warn(`[Deepgram] ⚠️ STALE CONNECTION: No transcripts for ${timeSinceTranscriptSec}s (>${STALE_CONNECTION_THRESHOLD_MS / 1000}s threshold), closing connection`);
           connectionDead = true;
           connection.finish();
-          // onError will be called if needed by session handler
         }
-      }, 10000); // Check every 10 seconds
+      }, HEALTH_CHECK_INTERVAL_MS);
       
-      console.log("[Deepgram] 💚 Health check interval started (every 10s)");
+      console.log(`[Deepgram] 💚 Health check interval started (every ${HEALTH_CHECK_INTERVAL_MS / 1000}s, stale threshold: ${STALE_CONNECTION_THRESHOLD_MS / 1000}s)`);
     };
 
     const deepgramConnection: DeepgramConnection = {
