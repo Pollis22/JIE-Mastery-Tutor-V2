@@ -41,6 +41,130 @@ export function useCustomVoice() {
   
   // Track if stream cleanup has been triggered to prevent spam logging
   const streamCleanupTriggeredRef = useRef<boolean>(false);
+  
+  // Track auto-recovery for unexpected audio track deaths
+  // Uses a Promise-based mutex to serialize recovery attempts
+  const recoveryPromiseRef = useRef<Promise<void> | null>(null);
+  const MAX_MIC_RECOVERY_ATTEMPTS = 3;
+  const MIC_RECOVERY_DELAY_MS = 500;
+  
+  // Cleanup helper - safely cleans up mic resources
+  // Sets streamCleanupTriggeredRef BEFORE stopping to prevent onended from triggering recovery
+  const cleanupMicResources = () => {
+    // CRITICAL: Set flag BEFORE stopping tracks to prevent onended from triggering false recovery
+    streamCleanupTriggeredRef.current = true;
+    
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach(track => track.stop());
+      mediaStreamRef.current = null;
+    }
+    if (processorRef.current) {
+      try { processorRef.current.disconnect(); } catch (e) { /* ignore */ }
+      processorRef.current = null;
+    }
+    
+    // Reset flag after cleanup is complete - new startMicrophone will set it to false
+  };
+  
+  // Dedicated recovery function with retry loop - serialized via Promise
+  const attemptMicRecovery = async () => {
+    // Don't recover if mic is intentionally disabled
+    if (!micEnabledRef.current) {
+      console.log('[Custom Voice] ℹ️ Mic disabled, skipping recovery');
+      return;
+    }
+    
+    // If recovery is already in progress, wait for it to complete
+    if (recoveryPromiseRef.current) {
+      console.log('[Custom Voice] ℹ️ Recovery already in progress, waiting...');
+      try {
+        await recoveryPromiseRef.current;
+      } catch (e) { /* ignore */ }
+      // After waiting, check if stream is now healthy
+      const currentStream = mediaStreamRef.current as MediaStream | null;
+      if (currentStream && currentStream.active) {
+        console.log('[Custom Voice] ℹ️ Stream already recovered by previous attempt');
+        return;
+      }
+      // Otherwise fall through to start a new recovery
+    }
+    
+    // Start new recovery - create and store the promise
+    const recoveryPromise = (async () => {
+      let lastError: unknown = null;
+      
+      for (let attempt = 1; attempt <= MAX_MIC_RECOVERY_ATTEMPTS; attempt++) {
+        console.log(`[Custom Voice] 🔄 Auto-recovering microphone (attempt ${attempt}/${MAX_MIC_RECOVERY_ATTEMPTS})...`);
+        
+        // Clean up old resources first (sets streamCleanupTriggeredRef to prevent false triggers)
+        cleanupMicResources();
+        
+        // Wait before retry
+        await new Promise(resolve => setTimeout(resolve, MIC_RECOVERY_DELAY_MS));
+        
+        try {
+          await startMicrophone();
+          
+          // Verify the stream is actually working (give it 300ms to stabilize)
+          await new Promise(resolve => setTimeout(resolve, 300));
+          
+          // Check stream health
+          const currentStream = mediaStreamRef.current as MediaStream | null;
+          if (currentStream && currentStream.active) {
+            console.log('[Custom Voice] ✅ Microphone auto-recovered successfully');
+            return; // Success - exit the loop
+          } else {
+            console.warn('[Custom Voice] ⚠️ Stream acquired but not stable, retrying...');
+            lastError = new Error('Stream not stable after acquisition');
+          }
+        } catch (error) {
+          lastError = error;
+          console.error(`[Custom Voice] ❌ Recovery attempt ${attempt} failed:`, error);
+        }
+      }
+      
+      // All attempts exhausted - ALWAYS show error to user
+      console.error('[Custom Voice] ❌ All recovery attempts failed, last error:', lastError);
+      setMicrophoneError({
+        message: 'Microphone connection lost',
+        troubleshooting: [
+          'Click the microphone icon to retry',
+          'Check if another app is using your microphone',
+          'Try refreshing the page'
+        ],
+        errorType: 'TRACK_ENDED'
+      });
+    })();
+    
+    recoveryPromiseRef.current = recoveryPromise;
+    
+    try {
+      await recoveryPromise;
+    } finally {
+      // Clear the promise only if it's still the current one
+      if (recoveryPromiseRef.current === recoveryPromise) {
+        recoveryPromiseRef.current = null;
+      }
+    }
+  };
+  
+  // Manual retry helper - waits for any active recovery, then starts fresh
+  const forceStartMicrophone = async () => {
+    console.log('[Custom Voice] 🔄 Manual microphone retry requested');
+    
+    // Wait for any active recovery to complete first
+    if (recoveryPromiseRef.current) {
+      console.log('[Custom Voice] ℹ️ Waiting for active recovery to complete...');
+      try {
+        await recoveryPromiseRef.current;
+      } catch (e) { /* ignore */ }
+    }
+    
+    // Now start fresh
+    cleanupMicResources();
+    setMicrophoneError(null);
+    await startMicrophone();
+  };
 
   // Synchronize refs with state
   useEffect(() => {
@@ -261,15 +385,18 @@ export function useCustomVoice() {
       
       mediaStreamRef.current = stream;
       
-      // Add track.onended listener to detect unexpected track death
+      // Add track.onended listener - simple call to recovery function
       const audioTrack = stream.getAudioTracks()[0];
       if (audioTrack) {
         audioTrack.onended = () => {
-          console.warn('[Custom Voice] ⚠️ Audio track ended unexpectedly');
-          if (!streamCleanupTriggeredRef.current) {
-            streamCleanupTriggeredRef.current = true;
-            stopMicrophone();
+          // Skip if this was an intentional cleanup
+          if (streamCleanupTriggeredRef.current) {
+            console.log('[Custom Voice] ℹ️ Audio track ended (intentional cleanup)');
+            return;
           }
+          
+          console.warn('[Custom Voice] ⚠️ Audio track ended unexpectedly');
+          attemptMicRecovery(); // Async recovery with retry loop
         };
         console.log('[Custom Voice] 📡 Added track.onended listener for track:', audioTrack.label);
       }
@@ -497,12 +624,11 @@ export function useCustomVoice() {
         processor.onaudioprocess = (e) => {
           if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
 
-          // Check if media stream is still active - only log and cleanup ONCE
+          // Check if media stream is still active - trigger recovery if died
           if (!mediaStreamRef.current || !mediaStreamRef.current.active) {
             if (!streamCleanupTriggeredRef.current) {
-              streamCleanupTriggeredRef.current = true;
-              console.warn('[Custom Voice] ⚠️ Media stream died unexpectedly - cleaning up microphone');
-              stopMicrophone();
+              console.warn('[Custom Voice] ⚠️ Media stream died unexpectedly');
+              attemptMicRecovery(); // Async recovery with retry loop
             }
             return;
           }
@@ -836,8 +962,7 @@ export function useCustomVoice() {
   
   const retryMicrophone = useCallback(async () => {
     console.log("[Custom Voice] 🔄 Retrying microphone access...");
-    setMicrophoneError(null);
-    await startMicrophone();
+    await forceStartMicrophone(); // Uses force helper to clear recovery flags
   }, []);
   
   const dismissMicrophoneError = useCallback(() => {
