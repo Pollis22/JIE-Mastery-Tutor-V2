@@ -141,9 +141,16 @@ export async function startDeepgramStream(
     // Send keepAlive every 5 seconds to prevent timeout
     // NOTE: keepAlive only works AFTER first audio frame is sent
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // CONNECTION HEALTH CHECK (Dec 10, 2025 FIX)
+    // Detect stale connections that stop returning transcripts
+    // If no transcripts for 30s after audio sent, connection is dead
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     let keepAliveInterval: NodeJS.Timeout | null = null;
+    let healthCheckInterval: NodeJS.Timeout | null = null;
     let firstAudioSent = false;
     let connectionReady = false;
+    let lastTranscriptTime: number = Date.now();
+    let connectionDead = false;
 
     connection.on(LiveTranscriptionEvents.Open, () => {
       console.log("[Deepgram] ✅ Connection opened");
@@ -151,6 +158,9 @@ export async function startDeepgramStream(
     });
 
     connection.on(LiveTranscriptionEvents.Transcript, (data) => {
+      // HEALTH CHECK: Update last transcript time (tracks connection liveness)
+      lastTranscriptTime = Date.now();
+      
       // Extract detected language from various possible locations in response
       const detectedLanguage = (data as any).detected_language || 
                                (data as any).channel?.detected_language ||
@@ -200,11 +210,17 @@ export async function startDeepgramStream(
     connection.on(LiveTranscriptionEvents.Close, () => {
       console.log("[Deepgram] 🔌 Connection closed");
       
-      // Clear keepAlive interval on close
+      // Clear all intervals on close
       if (keepAliveInterval) {
         clearInterval(keepAliveInterval);
         keepAliveInterval = null;
         console.log("[Deepgram] 💓 KeepAlive interval cleared");
+      }
+      
+      if (healthCheckInterval) {
+        clearInterval(healthCheckInterval);
+        healthCheckInterval = null;
+        console.log("[Deepgram] 💚 Health check interval cleared");
       }
       
       if (onClose) {
@@ -235,25 +251,54 @@ export async function startDeepgramStream(
       console.log("[Deepgram] 💓 KeepAlive interval started (every 5s)");
     };
 
+    // Helper function to start health check interval
+    const startHealthCheckInterval = () => {
+      if (healthCheckInterval) return; // Already running
+      
+      healthCheckInterval = setInterval(() => {
+        const timeSinceTranscript = Date.now() - lastTranscriptTime;
+        
+        // Log health status every check
+        console.log(`[Deepgram] 💚 Health check: ${Math.round(timeSinceTranscript / 1000)}s since last transcript`);
+        
+        // If no transcripts for 30+ seconds after audio sent, connection is likely dead
+        // Close it to trigger reconnection from the session handler
+        if (timeSinceTranscript > 30000 && firstAudioSent && !connectionDead) {
+          console.error(`[Deepgram] ⚠️ STALE CONNECTION: No transcripts for ${Math.round(timeSinceTranscript / 1000)}s, closing connection to trigger reconnect`);
+          connectionDead = true;
+          connection.finish();
+          // onError will be called if needed by session handler
+        }
+      }, 10000); // Check every 10 seconds
+      
+      console.log("[Deepgram] 💚 Health check interval started (every 10s)");
+    };
+
     const deepgramConnection: DeepgramConnection = {
       send: (audioData: Buffer) => {
         if (connection) {
           connection.send(audioData);
           
-          // Start keepAlive after first audio is sent (per Deepgram docs)
+          // Start keepAlive and health check after first audio is sent (per Deepgram docs)
           if (!firstAudioSent && connectionReady) {
             firstAudioSent = true;
-            console.log("[Deepgram] 🎤 First audio sent - starting keepAlive");
+            console.log("[Deepgram] 🎤 First audio sent - starting keepAlive and health check");
             startKeepAliveInterval();
+            startHealthCheckInterval(); // HEALTH CHECK: Start monitoring for stale connections
           }
         }
       },
       close: () => {
-        // Clear keepAlive interval first
+        // Clear all intervals
         if (keepAliveInterval) {
           clearInterval(keepAliveInterval);
           keepAliveInterval = null;
           console.log("[Deepgram] 💓 KeepAlive interval cleared on close()");
+        }
+        if (healthCheckInterval) {
+          clearInterval(healthCheckInterval);
+          healthCheckInterval = null;
+          console.log("[Deepgram] 💚 Health check interval cleared on close()");
         }
         connectionReady = false;
         if (connection) {

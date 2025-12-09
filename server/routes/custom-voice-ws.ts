@@ -71,6 +71,7 @@ interface SessionState {
   lastActivityTime: number; // INACTIVITY: Track last user speech activity
   inactivityWarningSent: boolean; // INACTIVITY: Track if 4-minute warning has been sent
   inactivityTimerId: NodeJS.Timeout | null; // INACTIVITY: Timer for checking inactivity
+  isReconnecting: boolean; // RECONNECT: Track if Deepgram reconnection is in progress (blocks audio)
 }
 
 // FIX #3: Incremental persistence helper
@@ -271,6 +272,9 @@ export function setupCustomVoiceWebSocket(server: Server) {
     // FIX #2C: Turn-taking timeout for natural conversation flow
     let responseTimer: NodeJS.Timeout | null = null;
     
+    // FIX (Dec 10, 2025): Track reconnection attempts to prevent infinite loops
+    let reconnectAttempts = 0;
+    
     const state: SessionState = {
       sessionId: "",
       userId: authenticatedUserId, // Use session-authenticated userId
@@ -300,6 +304,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
       lastActivityTime: Date.now(), // INACTIVITY: Initialize to now
       inactivityWarningSent: false, // INACTIVITY: No warning sent yet
       inactivityTimerId: null, // INACTIVITY: Timer not started yet
+      isReconnecting: false, // RECONNECT: Not reconnecting initially
     };
 
     // FIX #3: Auto-persist every 10 seconds
@@ -498,6 +503,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
             // Get appropriate response based on warning level (should never be 'none' here)
             if (warningLevel === 'none') {
               console.error("[Custom Voice] ❌ Unexpected warning level 'none'");
+              state.isProcessing = false; // CRITICAL FIX: Release processing lock
               return; // Skip if somehow 'none' is returned
             }
             
@@ -583,6 +589,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
             }));
             
             // Close WebSocket
+            state.isProcessing = false; // CRITICAL FIX: Release processing lock
             setTimeout(() => ws.close(), 2000); // Give time for audio to play
             return;
           } else {
@@ -622,6 +629,12 @@ export function setupCustomVoiceWebSocket(server: Server) {
             
             // Persist
             await persistTranscript(state.sessionId, state.transcript);
+            state.isProcessing = false; // CRITICAL FIX: Release processing lock after warning
+            
+            // Process next queued item if any
+            if (state.transcriptQueue.length > 0 && !state.isSessionEnded) {
+              setImmediate(() => processTranscriptQueue());
+            }
             return; // Don't continue to normal AI processing
           }
           } else {
@@ -836,7 +849,6 @@ export function setupCustomVoiceWebSocket(server: Server) {
       } catch (error) {
         console.error("[Custom Voice] ❌ Error processing:", error);
         state.isTutorSpeaking = false; // Reset on error
-        state.isProcessing = false; // Ensure processing is released on error
         ws.send(JSON.stringify({ 
           type: "error", 
           error: error instanceof Error ? error.message : "Unknown error"
@@ -846,7 +858,101 @@ export function setupCustomVoiceWebSocket(server: Server) {
         if (state.transcriptQueue.length > 0 && !state.isSessionEnded) {
           setImmediate(() => processTranscriptQueue());
         }
+      } finally {
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        // CRITICAL FIX (Dec 10, 2025): ALWAYS release processing lock
+        // Ensures tutor never gets stuck silent due to unreleased locks
+        // This is idempotent - safe to call even if already false
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        state.isProcessing = false;
       }
+    }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // FIX (Dec 10, 2025): Reconnect Deepgram function for auto-recovery
+    // Properly tears down previous connection before creating new one
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    async function reconnectDeepgram(): Promise<DeepgramConnection> {
+      // CRITICAL: Tear down existing connection to prevent listener/interval leaks
+      if (state.deepgramConnection) {
+        console.log("[Custom Voice] 🧹 Tearing down old Deepgram connection before reconnect");
+        try {
+          state.deepgramConnection.close();
+        } catch (e) {
+          // Ignore close errors on old connection
+        }
+        state.deepgramConnection = null;
+      }
+      
+      const { getDeepgramLanguageCode } = await import("../services/deepgram-service");
+      const deepgramLanguage = getDeepgramLanguageCode(state.language);
+      
+      // Shared transcript handler - same logic as original connection
+      const handleTranscript = async (transcript: string, isFinal: boolean, detectedLanguage?: string) => {
+        const spokenLang = detectedLanguage || state.language;
+        console.log(`[Deepgram] ${isFinal ? '✅ FINAL' : '⏳ interim'}: "${transcript}" (reconnected, lang=${spokenLang})`);
+        
+        if (!state.userId) return;
+        
+        // BARGE-IN
+        const timeSinceLastAudio = Date.now() - state.lastAudioSentAt;
+        if (state.isTutorSpeaking && timeSinceLastAudio < 30000 && transcript.trim().length >= 2) {
+          state.wasInterrupted = true;
+          state.lastInterruptionTime = Date.now();
+          ws.send(JSON.stringify({ type: "interrupt", message: "Student is speaking" }));
+          state.isTutorSpeaking = false;
+        }
+        
+        if (state.isTutorSpeaking && timeSinceLastAudio >= 30000) {
+          state.isTutorSpeaking = false;
+        }
+        
+        if (!isFinal) return;
+        if (!transcript || transcript.trim().length < 3) return;
+        
+        state.lastActivityTime = Date.now();
+        state.inactivityWarningSent = false;
+        
+        if (state.isProcessing) return;
+        if (state.lastTranscript === transcript) return;
+        
+        state.lastTranscript = transcript;
+        if (spokenLang) state.detectedLanguage = spokenLang;
+        
+        console.log(`[Custom Voice] ✅ Processing FINAL transcript (reconnected): "${transcript}"`);
+        
+        if (responseTimer) {
+          clearTimeout(responseTimer);
+          responseTimer = null;
+        }
+        
+        const isIncomplete = isLikelyIncompleteThought(transcript);
+        const delay = isIncomplete ? 2500 : 1200;
+        
+        responseTimer = setTimeout(() => {
+          state.transcriptQueue.push(transcript);
+          if (!state.isProcessing) {
+            processTranscriptQueue();
+          }
+          responseTimer = null;
+        }, delay);
+      };
+      
+      return await startDeepgramStream(
+        handleTranscript,
+        async (error: Error) => {
+          console.error("[Custom Voice] ❌ Deepgram error (reconnected):", error);
+          if (state.sessionId && state.transcript.length > 0) {
+            await persistTranscript(state.sessionId, state.transcript);
+          }
+          try { ws.send(JSON.stringify({ type: "error", error: error.message })); } catch (e) {}
+        },
+        async () => {
+          console.log("[Custom Voice] 🔌 Reconnected Deepgram connection closed");
+          // onClose triggers reconnect logic via the main handler
+        },
+        deepgramLanguage
+      );
     }
 
     ws.on("message", async (data: Buffer) => {
@@ -1408,21 +1514,96 @@ CRITICAL INSTRUCTIONS:
                 }
                 
                 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                // FIX (Dec 9, 2025): Log unexpected close for debugging
-                // With keepAlive enabled, this should not happen during active sessions
+                // FIX (Dec 10, 2025): Auto-reconnect when connection closes unexpectedly
+                // This handles both health check timeout AND keepAlive failures
                 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                 if (!state.isSessionEnded && state.sessionId) {
-                  console.warn("[Custom Voice] ⚠️ Unexpected Deepgram close while session active - keepAlive may have failed");
+                  console.warn("[Custom Voice] ⚠️ Unexpected Deepgram close while session active - attempting reconnect");
                   
-                  // Notify client of the connection issue
+                  // RECONNECT FIX: Block audio ingestion during reconnection
+                  state.isReconnecting = true;
+                  
+                  // Increment reconnect counter to prevent infinite loops
+                  reconnectAttempts++;
+                  
+                  if (reconnectAttempts > 3) {
+                    console.error("[Custom Voice] ❌ Max reconnect attempts (3) reached, giving up");
+                    state.isReconnecting = false; // Stop blocking audio (though connection is dead)
+                    try {
+                      ws.send(JSON.stringify({ 
+                        type: "error", 
+                        error: "Voice connection lost. Please restart the tutoring session." 
+                      }));
+                    } catch (sendError) {
+                      console.error("[Custom Voice] ❌ Failed to notify client:", sendError);
+                    }
+                    return;
+                  }
+                  
+                  console.log(`[Custom Voice] 🔄 Reconnect attempt ${reconnectAttempts}/3...`);
+                  
+                  // Notify client we're reconnecting (not an error, just informational)
                   try {
                     ws.send(JSON.stringify({ 
-                      type: "error", 
-                      error: "Voice connection lost. Please try speaking again or restart the session." 
+                      type: "status", 
+                      message: "Reconnecting voice connection..." 
                     }));
                   } catch (sendError) {
-                    console.error("[Custom Voice] ❌ Failed to notify client of connection loss:", sendError);
+                    // Ignore
                   }
+                  
+                  // Attempt to reconnect with exponential backoff
+                  const backoffDelay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), 8000);
+                  console.log(`[Custom Voice] 🔄 Reconnecting in ${backoffDelay}ms (attempt ${reconnectAttempts}/3)...`);
+                  
+                  setTimeout(async () => {
+                    try {
+                      console.log("[Custom Voice] 🔄 Creating new Deepgram connection...");
+                      const newConnection = await reconnectDeepgram();
+                      
+                      // Atomic assignment - only update if reconnect succeeded
+                      state.deepgramConnection = newConnection;
+                      state.isReconnecting = false; // Resume audio ingestion
+                      console.log("[Custom Voice] ✅ Deepgram reconnected successfully");
+                      reconnectAttempts = 0; // Reset counter on success
+                      
+                      // Notify client we're back online
+                      try {
+                        ws.send(JSON.stringify({ 
+                          type: "status", 
+                          message: "Voice connection restored" 
+                        }));
+                      } catch (sendError) {
+                        // Ignore
+                      }
+                    } catch (reconnectError) {
+                      console.error("[Custom Voice] ❌ Reconnect attempt failed:", reconnectError);
+                      
+                      // If we haven't exhausted attempts, the next onClose will trigger another retry
+                      // Otherwise notify user to restart
+                      if (reconnectAttempts >= 3) {
+                        state.isReconnecting = false; // Stop blocking audio after all attempts fail
+                        try {
+                          ws.send(JSON.stringify({ 
+                            type: "error", 
+                            error: "Voice connection failed after multiple attempts. Please restart the session." 
+                          }));
+                        } catch (sendError) {
+                          // Ignore
+                        }
+                      } else {
+                        // Will retry on next attempt - increment handled above
+                        try {
+                          ws.send(JSON.stringify({ 
+                            type: "status", 
+                            message: `Reconnection failed, retrying... (${reconnectAttempts}/3)` 
+                          }));
+                        } catch (sendError) {
+                          // Ignore
+                        }
+                      }
+                    }
+                  }, backoffDelay); // Exponential backoff
                 }
               },
               deepgramLanguage // LANGUAGE: Pass selected language for speech recognition
@@ -1459,8 +1640,15 @@ CRITICAL INSTRUCTIONS:
             console.log('[Custom Voice] 📥 Audio message received from frontend:', {
               hasData: !!message.data,
               dataLength: message.data?.length || 0,
-              hasDeepgramConnection: !!state.deepgramConnection
+              hasDeepgramConnection: !!state.deepgramConnection,
+              isReconnecting: state.isReconnecting
             });
+            
+            // RECONNECT FIX: Drop audio during reconnection to prevent sending to dead socket
+            if (state.isReconnecting) {
+              console.warn('[Custom Voice] ⏸️ Audio dropped - reconnection in progress');
+              break;
+            }
             
             if (state.deepgramConnection && message.data) {
               try {
