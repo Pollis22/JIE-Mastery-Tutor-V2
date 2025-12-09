@@ -439,4 +439,16 @@ router.delete('/:studentId/memory', async (req, res) => {
   }
 });
 
+// GET /api/students/:id/pinned-docs - Get pinned documents for a student
+router.get('/:id/pinned-docs', async (req, res) => {
+  try {
+    // This endpoint returns an empty array as a placeholder
+    // Students can pin documents through their profile
+    res.json([]);
+  } catch (error: any) {
+    console.error('Error fetching pinned documents:', error);
+    res.status(500).json({ error: 'Failed to fetch pinned documents' });
+  }
+});
+
 export default router;
