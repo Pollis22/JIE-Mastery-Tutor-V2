@@ -37,6 +37,7 @@ function getDeepgramClient(): DeepgramClient {
 export interface DeepgramConnection {
   send: (audioData: Buffer) => void;
   close: () => void;
+  keepAliveInterval?: NodeJS.Timeout; // Track the keepAlive interval for cleanup
 }
 
 /**
@@ -134,8 +135,19 @@ export async function startDeepgramStream(
 
     console.log("[Deepgram] 📡 Connection object created");
 
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // KEEP-ALIVE MECHANISM (Dec 9, 2025 FIX)
+    // Deepgram disconnects after ~10-12 seconds of inactivity
+    // Send keepAlive every 5 seconds to prevent timeout
+    // NOTE: keepAlive only works AFTER first audio frame is sent
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    let keepAliveInterval: NodeJS.Timeout | null = null;
+    let firstAudioSent = false;
+    let connectionReady = false;
+
     connection.on(LiveTranscriptionEvents.Open, () => {
       console.log("[Deepgram] ✅ Connection opened");
+      connectionReady = true;
     });
 
     connection.on(LiveTranscriptionEvents.Transcript, (data) => {
@@ -187,6 +199,14 @@ export async function startDeepgramStream(
 
     connection.on(LiveTranscriptionEvents.Close, () => {
       console.log("[Deepgram] 🔌 Connection closed");
+      
+      // Clear keepAlive interval on close
+      if (keepAliveInterval) {
+        clearInterval(keepAliveInterval);
+        keepAliveInterval = null;
+        console.log("[Deepgram] 💓 KeepAlive interval cleared");
+      }
+      
       if (onClose) {
         onClose();
       }
@@ -197,18 +217,53 @@ export async function startDeepgramStream(
       connection.on(LiveTranscriptionEvents.Open, resolve);
     });
 
-    return {
+    // Helper function to start keepAlive interval
+    const startKeepAliveInterval = () => {
+      if (keepAliveInterval) return; // Already running
+      
+      keepAliveInterval = setInterval(() => {
+        try {
+          if (connectionReady && (connection as any).keepAlive) {
+            (connection as any).keepAlive();
+            console.log("[Deepgram] 💓 KeepAlive sent");
+          }
+        } catch (err) {
+          console.warn("[Deepgram] ⚠️ KeepAlive failed:", err);
+        }
+      }, 5000); // Every 5 seconds
+      
+      console.log("[Deepgram] 💓 KeepAlive interval started (every 5s)");
+    };
+
+    const deepgramConnection: DeepgramConnection = {
       send: (audioData: Buffer) => {
         if (connection) {
           connection.send(audioData);
+          
+          // Start keepAlive after first audio is sent (per Deepgram docs)
+          if (!firstAudioSent && connectionReady) {
+            firstAudioSent = true;
+            console.log("[Deepgram] 🎤 First audio sent - starting keepAlive");
+            startKeepAliveInterval();
+          }
         }
       },
       close: () => {
+        // Clear keepAlive interval first
+        if (keepAliveInterval) {
+          clearInterval(keepAliveInterval);
+          keepAliveInterval = null;
+          console.log("[Deepgram] 💓 KeepAlive interval cleared on close()");
+        }
+        connectionReady = false;
         if (connection) {
           connection.finish();
         }
       },
+      keepAliveInterval: keepAliveInterval || undefined,
     };
+    
+    return deepgramConnection;
     
   } catch (error) {
     console.error("[Deepgram] ❌ Error creating connection:", error);

@@ -1406,6 +1406,24 @@ CRITICAL INSTRUCTIONS:
                 if (state.sessionId && state.transcript.length > 0) {
                   await persistTranscript(state.sessionId, state.transcript);
                 }
+                
+                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                // FIX (Dec 9, 2025): Log unexpected close for debugging
+                // With keepAlive enabled, this should not happen during active sessions
+                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                if (!state.isSessionEnded && state.sessionId) {
+                  console.warn("[Custom Voice] ⚠️ Unexpected Deepgram close while session active - keepAlive may have failed");
+                  
+                  // Notify client of the connection issue
+                  try {
+                    ws.send(JSON.stringify({ 
+                      type: "error", 
+                      error: "Voice connection lost. Please try speaking again or restart the session." 
+                    }));
+                  } catch (sendError) {
+                    console.error("[Custom Voice] ❌ Failed to notify client of connection loss:", sendError);
+                  }
+                }
               },
               deepgramLanguage // LANGUAGE: Pass selected language for speech recognition
             );
