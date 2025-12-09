@@ -302,6 +302,17 @@ export function useCustomVoice() {
         const processor = new AudioWorkletNode(audioContextRef.current, 'audio-processor');
         processorRef.current = processor;
         
+        // VAD state for AudioWorklet path (mirrors ScriptProcessor fallback logic)
+        let workletSpeechStartTime = 0;
+        let workletLastSpeechEndTime = 0;
+        let workletPostInterruptionBufferActive = false;
+        let workletPostInterruptionTimeout: ReturnType<typeof setTimeout> | null = null;
+        
+        const MIN_SPEECH_DURATION_MS = 600;
+        const SPEECH_COALESCE_WINDOW_MS = 1000;
+        const POST_INTERRUPTION_BUFFER_MS = 2000;
+        const SPEECH_DEBOUNCE_MS = 150;
+        
         // Handle audio data and VAD events from AudioWorklet
         processor.port.onmessage = (event) => {
           if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
@@ -310,15 +321,17 @@ export function useCustomVoice() {
           // RESPONSIVE BARGE-IN with ECHO PROTECTION (AudioWorklet)
           // - Lowered thresholds for faster interruption (0.08 RMS, 0.15 peak)
           // - Reduced 300ms cooldown (was 500ms) for snappier response
-          // - Still distinguishes user speech from echo/ambient
+          // - Post-interruption buffer prevents fragmented speech (Dec 10, 2025)
+          // - Minimum speech duration and coalescing for complete utterances
           // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
           if (event.data.type === 'speech_start') {
+            const now = Date.now();
+            
             // If tutor is currently speaking, we need confidence that this is
             // the USER speaking and not just echo from the speakers
             if (isTutorSpeakingRef.current && isPlayingRef.current) {
               const rms = event.data.rms || 0;
               const peak = event.data.peak || 0;
-              const now = Date.now();
               const timeSincePlayback = now - lastAudioPlaybackStartRef.current;
               
               // Skip VAD for 300ms after tutor audio starts (reduced from 500ms for faster response)
@@ -329,29 +342,82 @@ export function useCustomVoice() {
 
               // Lowered thresholds for more responsive interruption
               // Real user speech should be RMS 0.08+, ambient noise is typically 0.02-0.04
-              const BARGE_IN_RMS = 0.08;   // Lowered from 0.12 for faster interrupt
-              const BARGE_IN_PEAK = 0.15;  // Lowered from 0.25 for faster interrupt
+              const BARGE_IN_RMS = 0.08;
+              const BARGE_IN_PEAK = 0.15;
 
               if (rms < BARGE_IN_RMS && peak < BARGE_IN_PEAK) {
                 console.log(`[Custom Voice] 🔇 VAD: Ignoring ambient sound during tutor (rms=${rms.toFixed(4)}, peak=${peak.toFixed(4)}) - below barge-in threshold`);
                 return;
               }
+              
+              // Start debounce timer for sustained speech
+              if (workletSpeechStartTime === 0) {
+                workletSpeechStartTime = now;
+                console.log(`[Custom Voice] 🎤 VAD: Speech onset detected (rms=${rms.toFixed(4)}, starting ${SPEECH_DEBOUNCE_MS}ms debounce...)`);
+                return;
+              }
+              
+              // Check if speech sustained for debounce period
+              if (now - workletSpeechStartTime < SPEECH_DEBOUNCE_MS) {
+                console.log(`[Custom Voice] ⏱️ VAD debounce: ${(now - workletSpeechStartTime).toFixed(0)}ms - waiting for sustained speech`);
+                return;
+              }
 
-              console.log(`[Custom Voice] 🛑 VAD: CONFIRMED barge-in (rms=${rms.toFixed(4)}, peak=${peak.toFixed(4)}) - stopping tutor`);
+              console.log(`[Custom Voice] 🛑 VAD: CONFIRMED barge-in after debounce (rms=${rms.toFixed(4)}, peak=${peak.toFixed(4)})`);
               stopAudio();
               setIsTutorSpeaking(false);
+              
+              // POST-INTERRUPTION BUFFER (Dec 10, 2025 FIX)
+              // After barge-in, ignore rapid speech-end events for 2 seconds
+              workletPostInterruptionBufferActive = true;
+              if (workletPostInterruptionTimeout) {
+                clearTimeout(workletPostInterruptionTimeout);
+              }
+              workletPostInterruptionTimeout = setTimeout(() => {
+                workletPostInterruptionBufferActive = false;
+                console.log('[Custom Voice] ✅ Post-interruption buffer ended (AudioWorklet)');
+              }, POST_INTERRUPTION_BUFFER_MS);
+              console.log(`[Custom Voice] 🛡️ Post-interruption buffer active for ${POST_INTERRUPTION_BUFFER_MS}ms (AudioWorklet)`);
 
               // Notify server for state sync
               wsRef.current.send(JSON.stringify({ type: "speech_detected" }));
             } else {
-              // Tutor not speaking, just log for debugging
+              // Tutor not speaking - track speech start for min duration check
+              if (workletSpeechStartTime === 0) {
+                workletSpeechStartTime = now;
+              }
               console.log("[Custom Voice] 🎤 VAD: Speech detected (tutor not playing)");
             }
             return;
           }
 
           if (event.data.type === 'speech_end') {
-            console.log("[Custom Voice] 🔇 VAD: Speech ended");
+            const now = Date.now();
+            const speechDuration = workletSpeechStartTime > 0 ? now - workletSpeechStartTime : 0;
+            const timeSinceLastEnd = workletLastSpeechEndTime > 0 ? now - workletLastSpeechEndTime : Infinity;
+            
+            // POST-INTERRUPTION BUFFER: Ignore speech-end during buffer period
+            if (workletPostInterruptionBufferActive) {
+              console.log(`[Custom Voice] 🛡️ VAD: Ignoring speech_end during post-interruption buffer (AudioWorklet)`);
+              return;
+            }
+            
+            // MIN SPEECH DURATION: Ignore very short utterances (likely noise/hesitation)
+            if (speechDuration > 0 && speechDuration < MIN_SPEECH_DURATION_MS) {
+              console.log(`[Custom Voice] ⏱️ VAD: Speech too short (${speechDuration}ms < ${MIN_SPEECH_DURATION_MS}ms), ignoring (AudioWorklet)`);
+              workletSpeechStartTime = 0;
+              return;
+            }
+            
+            // SPEECH COALESCING: If speech ended recently, this might be a continuation
+            if (timeSinceLastEnd < SPEECH_COALESCE_WINDOW_MS) {
+              console.log(`[Custom Voice] 🔗 VAD: Coalescing speech (${timeSinceLastEnd}ms since last end < ${SPEECH_COALESCE_WINDOW_MS}ms window) (AudioWorklet)`);
+              return;
+            }
+            
+            console.log(`[Custom Voice] 🔇 VAD: Speech ended (duration=${speechDuration}ms) (AudioWorklet)`);
+            workletLastSpeechEndTime = now;
+            workletSpeechStartTime = 0;
             return;
           }
           // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -416,11 +482,17 @@ export function useCustomVoice() {
         let silentChunks = 0;
         let speechStartTime = 0; // Track when speech detected
         let speechEndTime = 0; // Track when silence started
+        let lastSpeechEndTime = 0; // Track last confirmed speech end for coalescing
+        let postInterruptionBufferActive = false; // Post-barge-in buffer period
+        let postInterruptionTimeout: NodeJS.Timeout | null = null; // Timer for buffer period
         
         const MAX_SILENT_CHUNKS = 5; // Only ~100ms of silence before considering speech ended
         const VAD_THRESHOLD = 0.06; // Base speech detection threshold (was 0.003, too low)
         const SPEECH_DEBOUNCE_MS = 150; // Require 150ms of sustained speech to trigger
         const SILENCE_DEBOUNCE_MS = 500; // Require 500ms of sustained silence to end (was 300ms - too fast for kids)
+        const MIN_SPEECH_DURATION_MS = 600; // Minimum speech duration before considering complete (Dec 10, 2025)
+        const SPEECH_COALESCE_WINDOW_MS = 1000; // Coalesce rapid speech events within 1 second
+        const POST_INTERRUPTION_BUFFER_MS = 2000; // After barge-in, ignore speech-end events for 2s
 
         processor.onaudioprocess = (e) => {
           if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
@@ -499,11 +571,22 @@ export function useCustomVoice() {
               // Speech confirmed after debounce - trigger barge-in
               speechActive = true;
               silentChunks = 0;
-              speechStartTime = 0;
+              speechStartTime = now; // Track speech start for MIN_SPEECH_DURATION check
               console.log(`[Custom Voice] 🛑 VAD (fallback): CONFIRMED barge-in after debounce (rms=${rms.toFixed(4)}, peak=${maxAmplitude.toFixed(4)})`);
               stopAudio();
               setIsTutorSpeaking(false);
               wsRef.current.send(JSON.stringify({ type: "speech_detected" }));
+              
+              // POST-INTERRUPTION BUFFER (Dec 10, 2025 FIX)
+              // After barge-in, ignore rapid speech-end events for 2 seconds
+              // This prevents fragmented transcripts from being sent to AI
+              postInterruptionBufferActive = true;
+              if (postInterruptionTimeout) clearTimeout(postInterruptionTimeout);
+              postInterruptionTimeout = setTimeout(() => {
+                postInterruptionBufferActive = false;
+                console.log('[Custom Voice] 📦 Post-interruption buffer ended');
+              }, POST_INTERRUPTION_BUFFER_MS);
+              console.log('[Custom Voice] 📦 Post-interruption buffer started (2s)');
             } else {
               // Tutor not speaking - lower threshold OK
               if (speechStartTime === 0) {
@@ -518,10 +601,17 @@ export function useCustomVoice() {
               
               speechActive = true;
               silentChunks = 0;
-              speechStartTime = 0;
+              speechStartTime = now; // Track speech start for MIN_SPEECH_DURATION check
               console.log("[Custom Voice] 🎤 VAD (fallback): Speech confirmed (tutor not playing)");
             }
           } else if (!hasAudio && speechActive) {
+            // POST-INTERRUPTION BUFFER CHECK (Dec 10, 2025 FIX)
+            // During buffer period, ignore speech-end events to prevent fragmentation
+            if (postInterruptionBufferActive) {
+              console.log('[Custom Voice] 📦 Ignoring silence during post-interruption buffer');
+              return;
+            }
+            
             // Debounce speech end: require 500ms of silence (gives kids more time)
             if (speechEndTime === 0) {
               speechEndTime = now;
@@ -534,15 +624,47 @@ export function useCustomVoice() {
               return;
             }
             
-            // Confirmed silence
+            // MINIMUM SPEECH DURATION CHECK (Dec 10, 2025 FIX)
+            // Require at least 600ms of speech before considering it complete
+            const speechDuration = speechStartTime > 0 ? now - speechStartTime : 0;
+            if (speechDuration > 0 && speechDuration < MIN_SPEECH_DURATION_MS) {
+              console.log(`[Custom Voice] ⏱️ Speech too short (${speechDuration}ms < ${MIN_SPEECH_DURATION_MS}ms), waiting for more...`);
+              return;
+            }
+            
+            // SPEECH COALESCING CHECK (Dec 10, 2025 FIX)
+            // If we just ended speech less than 1 second ago, this might be continuation
+            if (lastSpeechEndTime > 0 && now - lastSpeechEndTime < SPEECH_COALESCE_WINDOW_MS) {
+              console.log('[Custom Voice] 📦 Coalescing rapid speech events - waiting for more');
+              return;
+            }
+            
+            // Confirmed silence - CLEANUP ALL STATE (Dec 10, 2025 FIX)
             speechActive = false;
             speechEndTime = 0;
+            speechStartTime = 0;
+            lastSpeechEndTime = now; // Track for coalescing
             silentChunks = 0;
+            // Clear post-interruption buffer on valid speech end
+            if (postInterruptionTimeout) {
+              clearTimeout(postInterruptionTimeout);
+              postInterruptionTimeout = null;
+            }
+            postInterruptionBufferActive = false;
             console.log("[Custom Voice] 🔇 VAD (fallback): Speech ended (confirmed)");
           } else if (hasAudio && speechActive) {
             // Reset silence debounce timer if sound detected
             speechEndTime = 0;
             silentChunks = 0;
+            // Clear post-interruption buffer if user resumes speaking (Dec 10, 2025 FIX)
+            if (postInterruptionBufferActive) {
+              postInterruptionBufferActive = false;
+              if (postInterruptionTimeout) {
+                clearTimeout(postInterruptionTimeout);
+                postInterruptionTimeout = null;
+              }
+              console.log('[Custom Voice] 📦 Post-interruption buffer cleared (speech resumed)');
+            }
           } else if (!hasAudio && !speechActive) {
             // Stay silent, reset timers
             speechStartTime = 0;

@@ -1153,6 +1153,45 @@ export function setupCustomVoiceWebSocket(server: Server) {
               state.uploadedDocuments = [];
             }
             
+            // VOICE CONVERSATION CONSTRAINTS (Dec 10, 2025 FIX)
+            // Prevents verbose responses and multiple questions per turn
+            const VOICE_CONVERSATION_CONSTRAINTS = `
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎤 VOICE CONVERSATION RULES (CRITICAL - ENFORCE STRICTLY):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+This is a VOICE conversation. Keep responses SHORT and NATURAL.
+
+RESPONSE LENGTH:
+✅ Maximum 2-3 short sentences per response
+✅ Keep sentences under 15 words each
+❌ NEVER give long paragraphs or explanations
+
+QUESTIONS:
+✅ Ask only ONE question per response
+✅ Wait for the student to answer before asking another
+❌ NEVER ask multiple questions like "What do you think? And also, can you..."
+❌ NEVER list multiple options like "You could try A, or B, or C..."
+
+FORMAT:
+✅ Speak naturally like a real tutor in person
+❌ NO bullet points, numbered lists, or formatting
+❌ NO emojis (they can't be spoken)
+❌ NO "Here's a hint..." followed by another question
+
+FLOW:
+✅ One thought → One question → Wait for answer
+✅ If student answers, acknowledge briefly then ask ONE follow-up
+❌ NEVER say "And here's another question..." or "Also try..."
+
+❌ BAD EXAMPLE (too long, multiple questions):
+"Yes! Great job! A is first! Now, what sound does the letter A make? Try saying it out loud for me! And here's a fun question - can you think of any words that start with the A sound? Like... what do you call a red fruit that grows on trees?"
+
+✅ GOOD EXAMPLE (short, single question):
+"Yes! A is first! Great job! Can you think of a word that starts with A?"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+`;
+            
             // Build system instruction with personality and document context
             if (state.uploadedDocuments.length > 0) {
               // Extract document titles for the enhanced prompt
@@ -1162,7 +1201,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
               });
               
               // Create enhanced system instruction that includes document awareness
-              state.systemInstruction = `${personality.systemPrompt}
+              state.systemInstruction = `${personality.systemPrompt}${VOICE_CONVERSATION_CONSTRAINTS}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📚 UPLOADED DOCUMENTS FOR THIS SESSION:
@@ -1179,7 +1218,7 @@ CRITICAL INSTRUCTIONS:
               console.log(`[Custom Voice] 📚 System instruction enhanced with ${state.uploadedDocuments.length} documents`);
             } else {
               // Use standard personality prompt when no documents
-              state.systemInstruction = personality.systemPrompt;
+              state.systemInstruction = personality.systemPrompt + VOICE_CONVERSATION_CONSTRAINTS;
             }
             
             // Generate enhanced personalized greeting with LANGUAGE SUPPORT
