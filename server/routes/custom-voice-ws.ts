@@ -272,6 +272,15 @@ export function setupCustomVoiceWebSocket(server: Server) {
     // FIX #2C: Turn-taking timeout for natural conversation flow
     let responseTimer: NodeJS.Timeout | null = null;
     
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // FIX (Dec 10, 2025): Server-side transcript accumulation
+    // Don't process each transcript separately - accumulate and wait for gap
+    // This prevents cutting off students mid-sentence when they pause to think
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    let pendingTranscript = '';
+    let transcriptAccumulationTimer: NodeJS.Timeout | null = null;
+    const UTTERANCE_COMPLETE_DELAY_MS = 1500; // Wait 1.5s after last transcript before AI call
+    
     // FIX (Dec 10, 2025): Track reconnection attempts to prevent infinite loops
     let reconnectAttempts = 0;
     
@@ -919,23 +928,37 @@ export function setupCustomVoiceWebSocket(server: Server) {
         state.lastTranscript = transcript;
         if (spokenLang) state.detectedLanguage = spokenLang;
         
-        console.log(`[Custom Voice] ✅ Processing FINAL transcript (reconnected): "${transcript}"`);
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        // FIX (Dec 10, 2025): Server-side transcript ACCUMULATION (reconnected handler)
+        // Same logic as main handler - accumulate transcripts and wait for gap
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        
+        pendingTranscript = (pendingTranscript + ' ' + transcript).trim();
+        console.log(`[Custom Voice] 📝 Accumulated transcript (reconnected): "${pendingTranscript}"`);
+        
+        if (transcriptAccumulationTimer) {
+          clearTimeout(transcriptAccumulationTimer);
+          transcriptAccumulationTimer = null;
+        }
         
         if (responseTimer) {
           clearTimeout(responseTimer);
           responseTimer = null;
         }
         
-        const isIncomplete = isLikelyIncompleteThought(transcript);
-        const delay = isIncomplete ? 2500 : 1200;
-        
-        responseTimer = setTimeout(() => {
-          state.transcriptQueue.push(transcript);
-          if (!state.isProcessing) {
-            processTranscriptQueue();
+        transcriptAccumulationTimer = setTimeout(() => {
+          if (pendingTranscript && !state.isSessionEnded) {
+            const completeUtterance = pendingTranscript;
+            console.log(`[Custom Voice] ✅ Utterance complete (reconnected): "${completeUtterance}"`);
+            pendingTranscript = '';
+            // Always push to queue - queue handles serialization
+            state.transcriptQueue.push(completeUtterance);
+            if (!state.isProcessing) {
+              processTranscriptQueue();
+            }
           }
-          responseTimer = null;
-        }, delay);
+          transcriptAccumulationTimer = null;
+        }, UTTERANCE_COMPLETE_DELAY_MS);
       };
       
       return await startDeepgramStream(
@@ -1500,39 +1523,51 @@ CRITICAL INSTRUCTIONS:
                   state.detectedLanguage = spokenLang;
                 }
                 
-                console.log(`[Custom Voice] ✅ Processing FINAL transcript: "${transcript}" (lang: ${state.detectedLanguage || state.language})`);
+                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                // FIX (Dec 10, 2025): Server-side transcript ACCUMULATION
+                // Don't process each transcript separately - accumulate them!
+                // This fixes students being cut off when they pause mid-sentence
+                // Example: "To get my answer," [pause] "apple" → "To get my answer, apple"
+                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                 
-                // FIX #2C: Add turn-taking timeout
-                // Clear any existing timer
+                // Accumulate this transcript with previous pending text
+                pendingTranscript = (pendingTranscript + ' ' + transcript).trim();
+                console.log(`[Custom Voice] 📝 Accumulated transcript: "${pendingTranscript}"`);
+                
+                // Clear any existing accumulation timer (we got new speech!)
+                if (transcriptAccumulationTimer) {
+                  clearTimeout(transcriptAccumulationTimer);
+                  transcriptAccumulationTimer = null;
+                  console.log(`[Custom Voice] ⏰ Reset accumulation timer (more speech incoming)`);
+                }
+                
+                // Also clear the old response timer if it exists
                 if (responseTimer) {
                   clearTimeout(responseTimer);
                   responseTimer = null;
                 }
                 
-                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                // TIMING FIX (Nov 3, 2025): Server-side response delay INCREASED
-                // Give students time to add "oh wait, one more thing..." 
-                // Previous delays still caused interruptions - increasing significantly
-                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                const isIncomplete = isLikelyIncompleteThought(transcript);
-                const delay = isIncomplete ? 2500 : 1200; // INCREASED: 2.5s for incomplete, 1.2s for complete
-                
-                if (isIncomplete) {
-                  console.log(`[Custom Voice] ⏸️ Incomplete thought detected: "${transcript}" - waiting ${delay}ms`);
-                } else {
-                  console.log(`[Custom Voice] ⏰ Complete thought - waiting ${delay}ms before responding`);
-                }
-                
-                responseTimer = setTimeout(() => {
-                  console.log(`[Custom Voice] ⏰ Processing after ${delay}ms pause`);
-                  state.transcriptQueue.push(transcript);
-                  
-                  // Start processing if not already processing
-                  if (!state.isProcessing) {
-                    processTranscriptQueue();
+                // Wait 1.5 seconds after the LAST transcript before sending to AI
+                // This gives students time to complete their thought
+                transcriptAccumulationTimer = setTimeout(() => {
+                  if (pendingTranscript && !state.isSessionEnded) {
+                    const completeUtterance = pendingTranscript;
+                    console.log(`[Custom Voice] ✅ Utterance complete after ${UTTERANCE_COMPLETE_DELAY_MS}ms silence: "${completeUtterance}"`);
+                    
+                    // Clear pending transcript
+                    pendingTranscript = '';
+                    
+                    // Always push to queue - queue handles serialization
+                    // Don't gate on isProcessing or we lose transcripts during tutor speech
+                    state.transcriptQueue.push(completeUtterance);
+                    
+                    // Start processing if not already processing (otherwise queue will be processed after current response)
+                    if (!state.isProcessing) {
+                      processTranscriptQueue();
+                    }
                   }
-                  responseTimer = null;
-                }, delay); // Wait 1200ms for complete, 2500ms for incomplete thoughts
+                  transcriptAccumulationTimer = null;
+                }, UTTERANCE_COMPLETE_DELAY_MS);
               },
               async (error: Error) => {
                 console.error("[Custom Voice] ❌ Deepgram error:", error);

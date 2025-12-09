@@ -489,7 +489,7 @@ export function useCustomVoice() {
         const MAX_SILENT_CHUNKS = 5; // Only ~100ms of silence before considering speech ended
         const VAD_THRESHOLD = 0.06; // Base speech detection threshold (was 0.003, too low)
         const SPEECH_DEBOUNCE_MS = 150; // Require 150ms of sustained speech to trigger
-        const SILENCE_DEBOUNCE_MS = 800; // Require 800ms of sustained silence to end (Dec 10, 2025: increased from 500ms)
+        const SILENCE_DEBOUNCE_MS = 1200; // Require 1.2s of sustained silence to end (Dec 10, 2025: increased from 800ms for mid-sentence pauses)
         const MIN_SPEECH_DURATION_MS = 600; // Minimum speech duration before considering complete (Dec 10, 2025)
         const SPEECH_COALESCE_WINDOW_MS = 1000; // Coalesce rapid speech events within 1 second
         const POST_INTERRUPTION_BUFFER_MS = 2000; // After barge-in, ignore speech-end events for 2s
