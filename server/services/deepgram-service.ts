@@ -257,6 +257,8 @@ export async function startDeepgramStream(
     };
 
     // Helper function to start health check interval
+    // NOTE: This is logging-only - NEVER closes connection due to silence
+    // Connection should only close when user clicks "End Session" or WebSocket disconnects
     const startHealthCheckInterval = () => {
       if (healthCheckInterval) return; // Already running
       
@@ -267,20 +269,20 @@ export async function startDeepgramStream(
         // Log health status every check (less verbose when things are fine)
         if (timeSinceTranscript < 60000) {
           console.log(`[Deepgram] 💚 Health check: ${timeSinceTranscriptSec}s since last transcript - OK`);
-        } else {
+        } else if (timeSinceTranscript < 180000) {
           console.log(`[Deepgram] 💛 Health check: ${timeSinceTranscriptSec}s since last transcript (student may be thinking)`);
+        } else {
+          // Just log extended silence, DO NOT close connection
+          // Session will be closed by 5-minute inactivity auto-timeout in custom-voice-ws.ts
+          // or by user clicking "End Session"
+          console.log(`[Deepgram] 🟠 Health check: ${timeSinceTranscriptSec}s since last transcript (extended silence - waiting for user)`);
         }
-        
-        // UPDATED: Only close after 5 MINUTES of complete silence (not 30 seconds!)
-        // Students need time to think, do exercises, read documents, etc.
-        if (timeSinceTranscript > STALE_CONNECTION_THRESHOLD_MS && firstAudioSent && !connectionDead) {
-          console.warn(`[Deepgram] ⚠️ STALE CONNECTION: No transcripts for ${timeSinceTranscriptSec}s (>${STALE_CONNECTION_THRESHOLD_MS / 1000}s threshold), closing connection`);
-          connectionDead = true;
-          connection.finish();
-        }
+        // REMOVED (Dec 10, 2025): Never close connection due to silence/stale transcripts
+        // The 5-minute inactivity timeout in custom-voice-ws.ts handles session cleanup
+        // Deepgram keepAlive maintains the connection even during silence
       }, HEALTH_CHECK_INTERVAL_MS);
       
-      console.log(`[Deepgram] 💚 Health check interval started (every ${HEALTH_CHECK_INTERVAL_MS / 1000}s, stale threshold: ${STALE_CONNECTION_THRESHOLD_MS / 1000}s)`);
+      console.log(`[Deepgram] 💚 Health check interval started (every ${HEALTH_CHECK_INTERVAL_MS / 1000}s, logging only - no auto-close)`);
     };
 
     const deepgramConnection: DeepgramConnection = {
