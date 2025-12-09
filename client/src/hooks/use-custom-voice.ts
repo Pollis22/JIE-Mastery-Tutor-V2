@@ -489,7 +489,7 @@ export function useCustomVoice() {
         const MAX_SILENT_CHUNKS = 5; // Only ~100ms of silence before considering speech ended
         const VAD_THRESHOLD = 0.06; // Base speech detection threshold (was 0.003, too low)
         const SPEECH_DEBOUNCE_MS = 150; // Require 150ms of sustained speech to trigger
-        const SILENCE_DEBOUNCE_MS = 500; // Require 500ms of sustained silence to end (was 300ms - too fast for kids)
+        const SILENCE_DEBOUNCE_MS = 800; // Require 800ms of sustained silence to end (Dec 10, 2025: increased from 500ms)
         const MIN_SPEECH_DURATION_MS = 600; // Minimum speech duration before considering complete (Dec 10, 2025)
         const SPEECH_COALESCE_WINDOW_MS = 1000; // Coalesce rapid speech events within 1 second
         const POST_INTERRUPTION_BUFFER_MS = 2000; // After barge-in, ignore speech-end events for 2s
@@ -612,10 +612,10 @@ export function useCustomVoice() {
               return;
             }
             
-            // Debounce speech end: require 500ms of silence (gives kids more time)
+            // Debounce speech end: require 800ms of silence (gives kids more time)
             if (speechEndTime === 0) {
               speechEndTime = now;
-              console.log("[Custom Voice] ⏱️ VAD (fallback): Silence detected, starting 500ms debounce...");
+              console.log("[Custom Voice] ⏱️ VAD (fallback): Silence detected, starting 800ms debounce...");
               return;
             }
             
