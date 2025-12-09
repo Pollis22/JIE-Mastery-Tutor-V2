@@ -449,13 +449,38 @@ export function setupCustomVoiceWebSocket(server: Server) {
 
     console.log('[Inactivity] ✅ Checker started (checks every 30 seconds)');
 
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // SAFETY TIMEOUT (Dec 10, 2025): Reset stuck isProcessing flag
+    // Prevents tutor from going silent forever if something fails
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    let processingStartTime: number | null = null;
+    const MAX_PROCESSING_TIME_MS = 30000; // 30 seconds max before force-reset
+
     // FIX #1: Process queued transcripts sequentially
     async function processTranscriptQueue() {
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      // SAFETY CHECK: Force reset if isProcessing has been stuck too long
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      if (state.isProcessing && processingStartTime) {
+        const elapsed = Date.now() - processingStartTime;
+        if (elapsed > MAX_PROCESSING_TIME_MS) {
+          console.error(`[Pipeline] ⚠️ SAFETY RESET: isProcessing stuck for ${Math.round(elapsed/1000)}s, forcing reset`);
+          state.isProcessing = false;
+          processingStartTime = null;
+          state.isTutorSpeaking = false; // Also reset speaking state
+        }
+      }
+      
       if (state.isProcessing || state.transcriptQueue.length === 0 || state.isSessionEnded) {
+        if (state.isProcessing && state.transcriptQueue.length > 0) {
+          console.log(`[Pipeline] 📋 Queue has ${state.transcriptQueue.length} items waiting (isProcessing=true)`);
+        }
         return;
       }
 
       state.isProcessing = true;
+      processingStartTime = Date.now();
+      console.log(`[Pipeline] 2. Starting to process transcript, queue size: ${state.transcriptQueue.length + 1}`);
       const transcript = state.transcriptQueue.shift()!;
 
       try {
@@ -694,7 +719,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
         
         console.log(`[Custom Voice] ⏳ Pre-response delay: ${responseDelay}ms...`);
         await new Promise(resolve => setTimeout(resolve, responseDelay));
-        console.log(`[Custom Voice] ⏱️ Delay done (+${Date.now() - pipelineStart}ms), calling Claude...`);
+        console.log(`[Pipeline] 3. Calling Claude API with: "${transcript.substring(0, 100)}${transcript.length > 100 ? '...' : ''}"`);
         
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         
@@ -769,7 +794,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
             
             onComplete: (fullText: string) => {
               const claudeMs = Date.now() - claudeStart;
-              console.log(`[Custom Voice] ⏱️ Streaming complete: ${claudeMs}ms total, ${sentenceCount} sentences`);
+              console.log(`[Pipeline] 4. Claude response received (${claudeMs}ms), generating audio...`);
               console.log(`[Custom Voice] 🤖 Tutor: "${fullText}"`);
               
               // Add to conversation history
@@ -829,6 +854,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
         // PACING FIX: Release isProcessing BEFORE pause to allow interruptions
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         state.isProcessing = false;
+        processingStartTime = null; // Clear safety timer
+        console.log(`[Pipeline] 5. Audio sent to client, isProcessing=false`);
         
         // Calculate approximate audio duration from total bytes (16kHz, 16-bit = 2 bytes/sample)
         const audioDuration = totalAudioBytes / (16000 * 2); // seconds
@@ -922,15 +949,25 @@ export function setupCustomVoiceWebSocket(server: Server) {
         state.lastActivityTime = Date.now();
         state.inactivityWarningSent = false;
         
-        if (state.isProcessing) return;
-        if (state.lastTranscript === transcript) return;
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        // FIX (Dec 10, 2025): DON'T drop transcripts when isProcessing!
+        // Previous bug: transcripts were silently dropped causing "tutor not responding"
+        // Now: ALWAYS accumulate transcripts, let the queue handle serialization
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        console.log(`[Pipeline] 1. Transcript received (reconnected): "${transcript}", isProcessing=${state.isProcessing}`);
+        
+        // Skip duplicates only (not based on isProcessing!)
+        if (state.lastTranscript === transcript) {
+          console.log("[Pipeline] ⏭️ Duplicate transcript, skipping");
+          return;
+        }
         
         state.lastTranscript = transcript;
         if (spokenLang) state.detectedLanguage = spokenLang;
         
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         // FIX (Dec 10, 2025): Server-side transcript ACCUMULATION (reconnected handler)
-        // Same logic as main handler - accumulate transcripts and wait for gap
+        // ALWAYS accumulate - don't gate on isProcessing!
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         
         pendingTranscript = (pendingTranscript + ' ' + transcript).trim();
@@ -1501,15 +1538,16 @@ CRITICAL INSTRUCTIONS:
                 state.inactivityWarningSent = false; // Reset warning flag
                 console.log('[Inactivity] 🎤 User activity detected, timer reset');
                 
-                if (state.isProcessing) {
-                  console.log("[Custom Voice] ⏭️ Already processing previous request");
-                  return;
-                }
+                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                // FIX (Dec 10, 2025): DON'T drop transcripts when isProcessing!
+                // Previous bug: transcripts were silently dropped causing "tutor not responding"
+                // Now: ALWAYS accumulate transcripts, let the queue handle serialization
+                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                console.log(`[Pipeline] 1. Transcript received: "${transcript}", isProcessing=${state.isProcessing}`);
                 
-                // Additional check: Avoid duplicate transcripts
-                // Deepgram may send is_final=true multiple times, we want unique ones
+                // Skip duplicates only (not based on isProcessing!)
                 if (state.lastTranscript === transcript) {
-                  console.log("[Custom Voice] ⏭️ Duplicate transcript, skipping");
+                  console.log("[Pipeline] ⏭️ Duplicate transcript, skipping");
                   return;
                 }
                 
