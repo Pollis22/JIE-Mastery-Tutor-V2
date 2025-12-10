@@ -60,6 +60,13 @@ export function Footer() {
             >
               Contact
             </button>
+            <button
+              onClick={() => setLocation("/trust-safety")}
+              className="text-muted-foreground hover:text-foreground transition-colors text-sm"
+              data-testid="link-trust-safety"
+            >
+              Trust & Compliance
+            </button>
           </div>
         </div>
         

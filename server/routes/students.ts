@@ -9,11 +9,46 @@
 
 
 import { Router } from 'express';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
 import { storage } from '../storage';
 import { insertStudentSchema, insertStudentDocPinSchema, insertTutorSessionSchema } from '@shared/schema';
 import { z } from 'zod';
 
 const router = Router();
+
+// Configure multer for avatar uploads
+const avatarUploadDir = path.join(process.cwd(), 'uploads', 'avatars');
+if (!fs.existsSync(avatarUploadDir)) {
+  fs.mkdirSync(avatarUploadDir, { recursive: true });
+}
+
+const avatarStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, avatarUploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname);
+    cb(null, `avatar-${uniqueSuffix}${ext}`);
+  }
+});
+
+const avatarUpload = multer({
+  storage: avatarStorage,
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB limit for avatars
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only JPEG, PNG, GIF, and WebP images are allowed'));
+    }
+  }
+});
 
 // Middleware to ensure authentication
 const requireAuth = (req: any, res: any, next: any) => {
@@ -345,6 +380,29 @@ router.post('/:studentId/session-started', async (req, res) => {
   }
 });
 
+// POST /api/students/avatar/upload - Upload a custom avatar image
+router.post('/avatar/upload', avatarUpload.single('avatar'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file provided' });
+    }
+
+    // Generate the URL path for the uploaded avatar
+    const avatarUrl = `/uploads/avatars/${req.file.filename}`;
+    
+    console.log(`[Students] ✅ Avatar uploaded: ${req.file.filename}`);
+    
+    res.json({
+      success: true,
+      avatarUrl,
+      filename: req.file.filename,
+    });
+  } catch (error: any) {
+    console.error('[Students] ❌ Avatar upload error:', error);
+    res.status(500).json({ error: 'Failed to upload avatar: ' + error.message });
+  }
+});
+
 // POST /api/students/:studentId/export - Export student memory
 router.post('/:studentId/export', async (req, res) => {
   try {
@@ -378,6 +436,18 @@ router.delete('/:studentId/memory', async (req, res) => {
       return res.status(404).json({ message: error.message });
     }
     res.status(500).json({ message: 'Error deleting memory: ' + error.message });
+  }
+});
+
+// GET /api/students/:id/pinned-docs - Get pinned documents for a student
+router.get('/:id/pinned-docs', async (req, res) => {
+  try {
+    // This endpoint returns an empty array as a placeholder
+    // Students can pin documents through their profile
+    res.json([]);
+  } catch (error: any) {
+    console.error('Error fetching pinned documents:', error);
+    res.status(500).json({ error: 'Failed to fetch pinned documents' });
   }
 });
 

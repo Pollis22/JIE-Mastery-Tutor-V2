@@ -381,4 +381,70 @@ router.get('/voice-balance', async (req, res) => {
   }
 });
 
+// GET /api/user/usage-analytics - Alias for /analytics
+router.get('/usage-analytics', async (req, res) => {
+  try {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const userId = req.user!.id;
+    const user = await storage.getUserById(userId);
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    console.log('📊 [UsageAnalytics] Fetching analytics for user:', userId);
+
+    let usageStats = {
+      total_sessions: 0,
+      total_minutes_used: 0,
+      active_days: 0,
+      unique_students: 0
+    };
+
+    try {
+      const { db } = await import('../db');
+      const { sql } = await import('drizzle-orm');
+      
+      const statsResult = await db.execute(sql`
+        SELECT 
+          COUNT(DISTINCT id) as total_sessions,
+          COALESCE(SUM(minutes_used), 0) as total_minutes_used,
+          COUNT(DISTINCT DATE(started_at)) as active_days,
+          COUNT(DISTINCT student_id) as unique_students
+        FROM realtime_sessions
+        WHERE user_id = ${userId}
+          AND status = 'ended'
+      `);
+
+      if (statsResult.rows && statsResult.rows[0]) {
+        usageStats = statsResult.rows[0] as any;
+      }
+    } catch (error: any) {
+      console.error('[UsageAnalytics] Error fetching session stats:', error);
+    }
+
+    const response = {
+      summary: {
+        totalSessions: parseInt(usageStats.total_sessions?.toString() || '0'),
+        totalMinutesUsed: parseFloat(usageStats.total_minutes_used?.toString() || '0'),
+        activeDays: parseInt(usageStats.active_days?.toString() || '0'),
+        uniqueStudents: parseInt(usageStats.unique_students?.toString() || '0')
+      }
+    };
+
+    console.log('✅ [UsageAnalytics] Analytics fetched successfully');
+    res.json(response);
+
+  } catch (error: any) {
+    console.error('❌ [UsageAnalytics] Failed to fetch analytics:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch usage analytics',
+      message: error.message 
+    });
+  }
+});
+
 export default router;

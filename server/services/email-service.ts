@@ -10,42 +10,18 @@
 
 import { Resend } from 'resend';
 
-let connectionSettings: any;
-
-async function getCredentials() {
-  const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
-  const xReplitToken = process.env.REPL_IDENTITY 
-    ? 'repl ' + process.env.REPL_IDENTITY 
-    : process.env.WEB_REPL_RENEWAL 
-    ? 'depl ' + process.env.WEB_REPL_RENEWAL 
-    : null;
-
-  if (!xReplitToken) {
-    throw new Error('X_REPLIT_TOKEN not found for repl/depl');
+// Get Resend API key from environment - works with Railway and other platforms
+function getResendClient() {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    throw new Error('RESEND_API_KEY environment variable is not set');
   }
-
-  connectionSettings = await fetch(
-    'https://' + hostname + '/api/v2/connection?include_secrets=true&connector_names=resend',
-    {
-      headers: {
-        'Accept': 'application/json',
-        'X_REPLIT_TOKEN': xReplitToken
-      }
-    }
-  ).then(res => res.json()).then(data => data.items?.[0]);
-
-  if (!connectionSettings || (!connectionSettings.settings.api_key)) {
-    throw new Error('Resend not connected');
-  }
-  return {apiKey: connectionSettings.settings.api_key, fromEmail: connectionSettings.settings.from_email};
+  return new Resend(apiKey);
 }
 
-async function getUncachableResendClient() {
-  const {apiKey, fromEmail} = await getCredentials();
-  return {
-    client: new Resend(apiKey),
-    fromEmail: fromEmail
-  };
+// Get the "from" email address - can be overridden via env var
+function getFromEmail(): string {
+  return process.env.RESEND_FROM_EMAIL || 'noreply@jiemastery.ai';
 }
 
 export class EmailService {
@@ -56,9 +32,10 @@ export class EmailService {
     studentName: string;
   }) {
     try {
-      const {client, fromEmail} = await getUncachableResendClient();
+      const resend = getResendClient();
+      const fromEmail = getFromEmail();
       
-      await client.emails.send({
+      await resend.emails.send({
         from: fromEmail,
         to: user.email,
         subject: 'Welcome to JIE Mastery Tutor!',
@@ -91,9 +68,10 @@ export class EmailService {
     minutes: number;
   }) {
     try {
-      const {client, fromEmail} = await getUncachableResendClient();
+      const resend = getResendClient();
+      const fromEmail = getFromEmail();
       
-      await client.emails.send({
+      await resend.emails.send({
         from: fromEmail,
         to: user.email,
         subject: 'Thank You for Subscribing!',
@@ -125,9 +103,10 @@ export class EmailService {
     minutesPurchased: number;
   }) {
     try {
-      const {client, fromEmail} = await getUncachableResendClient();
+      const resend = getResendClient();
+      const fromEmail = getFromEmail();
       
-      await client.emails.send({
+      await resend.emails.send({
         from: fromEmail,
         to: user.email,
         subject: 'Minutes Added Successfully',
@@ -148,10 +127,11 @@ export class EmailService {
 
   async sendAdminNotification(type: string, data: any) {
     try {
-      const {client, fromEmail} = await getUncachableResendClient();
-      const adminEmail = process.env.ADMIN_EMAIL || fromEmail;
+      const resend = getResendClient();
+      const fromEmail = getFromEmail();
+      const adminEmail = process.env.ADMIN_EMAIL || 'support@jiemastery.ai';
       
-      await client.emails.send({
+      await resend.emails.send({
         from: fromEmail,
         to: adminEmail,
         subject: `New ${type}`,
@@ -168,11 +148,12 @@ export class EmailService {
     token: string;
   }) {
     try {
-      const {client, fromEmail} = await getUncachableResendClient();
+      const resend = getResendClient();
+      const fromEmail = getFromEmail();
       const baseUrl = process.env.REPLIT_DEV_DOMAIN || 'http://localhost:5000';
       const verificationLink = `${baseUrl}/verify-email?token=${user.token}`;
       
-      await client.emails.send({
+      await resend.emails.send({
         from: fromEmail,
         to: user.email,
         subject: 'Verify Your Email - JIE Mastery Tutor',
@@ -200,11 +181,12 @@ export class EmailService {
     token: string;
   }) {
     try {
-      const {client, fromEmail} = await getUncachableResendClient();
+      const resend = getResendClient();
+      const fromEmail = getFromEmail();
       const baseUrl = process.env.REPLIT_DEV_DOMAIN || 'http://localhost:5000';
       const resetLink = `${baseUrl}/reset-password?token=${user.token}`;
       
-      await client.emails.send({
+      await resend.emails.send({
         from: fromEmail,
         to: user.email,
         subject: 'Reset Your Password - JIE Mastery Tutor',
@@ -222,6 +204,62 @@ export class EmailService {
       });
     } catch (error) {
       console.error('[EmailService] Failed to send password reset:', error);
+      throw error;
+    }
+  }
+
+  async sendContactForm(contact: {
+    name: string;
+    email: string;
+    subject: string;
+    message: string;
+  }) {
+    try {
+      const resend = getResendClient();
+      const fromEmail = getFromEmail();
+      const adminEmail = process.env.ADMIN_EMAIL || 'support@jiemastery.ai';
+      
+      // Send to admin
+      await resend.emails.send({
+        from: fromEmail,
+        to: adminEmail,
+        subject: `New Contact Form Submission: ${contact.subject}`,
+        html: `
+          <h2>New Contact Form Submission</h2>
+          <p><strong>From:</strong> ${contact.name} (${contact.email})</p>
+          <p><strong>Subject:</strong> ${contact.subject}</p>
+          <hr>
+          <p><strong>Message:</strong></p>
+          <p style="white-space: pre-wrap;">${contact.message}</p>
+          <hr>
+          <p style="color:#666;font-size:14px;">Reply directly to ${contact.email}</p>
+        `
+      });
+
+      // Send confirmation to user
+      await resend.emails.send({
+        from: fromEmail,
+        to: contact.email,
+        subject: 'We Received Your Message - JIE Mastery Tutor',
+        html: `
+          <h1>Thank You for Contacting Us</h1>
+          <p>Hi ${contact.name},</p>
+          <p>We've received your message and appreciate you reaching out. Our team will get back to you as soon as possible, typically within 24 hours.</p>
+          <p><strong>Your Message Summary:</strong></p>
+          <p><strong>Subject:</strong> ${contact.subject}</p>
+          <hr>
+          <p style="white-space: pre-wrap;">${contact.message}</p>
+          <hr>
+          <p>Best regards,<br>JIE Mastery Tutor Team</p>
+          <p style="margin-top:24px;color:#666;font-size:14px;">
+            <a href="${process.env.REPLIT_DEV_DOMAIN || 'http://localhost:5000'}/unsubscribe?email=${contact.email}">Unsubscribe from marketing emails</a>
+          </p>
+        `
+      });
+      
+      console.log('[EmailService] ✅ Contact form emails sent successfully');
+    } catch (error) {
+      console.error('[EmailService] Failed to send contact form email:', error);
       throw error;
     }
   }

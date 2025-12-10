@@ -8,7 +8,6 @@ import { RealtimeVoiceHost } from "@/components/realtime-voice-host";
 import { AssignmentsPanel } from "@/components/AssignmentsPanel";
 import { StudentSwitcher } from "@/components/StudentSwitcher";
 import { StudentProfilePanel } from "@/components/StudentProfilePanel";
-import { SessionSummaryModal } from "@/components/SessionSummaryModal";
 import { TopUpModal } from "@/components/TopUpModal";
 import { AGENTS, GREETINGS, type AgentLevel } from "@/agents";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -87,7 +86,6 @@ export default function TutorPage() {
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [profileDrawerOpen, setProfileDrawerOpen] = useState(false);
   const [editingStudentId, setEditingStudentId] = useState<string | undefined>();
-  const [summaryModalOpen, setSummaryModalOpen] = useState(false);
   const [transcriptMessages, setTranscriptMessages] = useState<ConvaiMessage[]>([]);
   const [isTranscriptConnected, setIsTranscriptConnected] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState<string>(() => {
@@ -380,10 +378,8 @@ export default function TutorPage() {
     setTranscriptMessages([]);
     setIsTranscriptConnected(false);
     
-    // Show summary modal if we have a student profile
-    if (selectedStudentId) {
-      setSummaryModalOpen(true);
-    }
+    // Sessions are automatically saved by the backend when WebSocket connection ends
+    // No manual save modal needed - transcript and duration are persisted automatically
     
     // Analytics
     if (typeof window !== 'undefined' && (window as any).gtag) {
@@ -750,19 +746,6 @@ export default function TutorPage() {
             if (selectedStudentId === deletedId) {
               setSelectedStudentId(null);
             }
-          }}
-        />
-
-        {/* Session Summary Modal */}
-        <SessionSummaryModal
-          open={summaryModalOpen}
-          onOpenChange={(open) => {
-            setSummaryModalOpen(open);
-          }}
-          sessionId={undefined}
-          studentName={selectedStudent?.name}
-          onSaved={() => {
-            // No session cleanup needed with static agents
           }}
         />
 
