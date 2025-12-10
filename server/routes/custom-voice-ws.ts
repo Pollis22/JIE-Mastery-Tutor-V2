@@ -66,6 +66,8 @@ interface SessionState {
   wasInterrupted: boolean; // TIMING FIX: Track if tutor was just interrupted (needs extra delay)
   lastInterruptionTime: number; // TIMING FIX: Track when last interruption occurred
   currentTurnTranscript: string; // FIX: Accumulate multiple sentences in one turn
+  interimAccumulator: string; // NEW: Accumulate interim text when no final arrives
+  interimFinalizeTimer: NodeJS.Timeout | null; // NEW: Fallback timer to promote interims
   tutorAudioEnabled: boolean; // MODE: Whether tutor audio should play
   studentMicEnabled: boolean; // MODE: Whether student microphone is active
   lastActivityTime: number; // INACTIVITY: Track last user speech activity
@@ -303,6 +305,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
       sessionStartTime: Date.now(),
       lastPersisted: Date.now(),
       lastTranscript: "", // FIX #1A: Initialize duplicate tracker
+    interimAccumulator: "", // NEW: Interim accumulator
+    interimFinalizeTimer: null, // NEW: No fallback timer yet
       tutorAudioEnabled: true, // MODE: Default to audio enabled
       studentMicEnabled: true, // MODE: Default to mic enabled
       violationCount: 0, // Initialize violation counter
@@ -1531,6 +1535,9 @@ CRITICAL INSTRUCTIONS:
                         ? `${state.currentTurnTranscript} ${transcript}`
                         : transcript;
 
+                     // Track latest interim so we can fallback if Deepgram never sends a final
+                     state.interimAccumulator = fullDisplayText;
+
                      ws.send(JSON.stringify({
                       type: "transcript_partial",
                       speaker: "student",
@@ -1547,9 +1554,54 @@ CRITICAL INSTRUCTIONS:
                     console.log("[Custom Voice] ⏱️ Timer cleared due to continued speech (interim)");
                   }
 
+                  // NEW: Fallback promotion for interims when Deepgram never emits a final.
+                  // If we have any accumulated text (even only interims), arm a timer to
+                  // treat it as final after a silence window so the tutor still responds.
+                  if (state.interimFinalizeTimer) {
+                    clearTimeout(state.interimFinalizeTimer);
+                    state.interimFinalizeTimer = null;
+                  }
+
+                  const candidateText = state.interimAccumulator || transcript;
+                  const interimDelay = isLikelyIncompleteThought(candidateText)
+                    ? TIMING_CONFIG.SERVER_DELAY_INCOMPLETE_THOUGHT
+                    : TIMING_CONFIG.SERVER_DELAY_COMPLETE_THOUGHT;
+
+                  state.interimFinalizeTimer = setTimeout(() => {
+                    if (state.isSessionEnded) return;
+                    const fallbackText = (state.interimAccumulator || candidateText || "").trim();
+                    if (!fallbackText || fallbackText.length < 3) {
+                      state.interimFinalizeTimer = null;
+                      return;
+                    }
+
+                    console.log(`[Custom Voice] ⏰ Interim fallback fired after ${interimDelay}ms; promoting to final: "${fallbackText}"`);
+
+                    // Avoid double-processing if a final arrived and cleared accumulator
+                    state.interimAccumulator = "";
+                    state.interimFinalizeTimer = null;
+                    state.lastTranscript = fallbackText;
+
+                    // Treat as a complete utterance
+                    state.currentTurnTranscript = fallbackText;
+                    state.transcriptQueue.push(fallbackText);
+                    state.currentTurnTranscript = "";
+
+                    if (!state.isProcessing) {
+                      processTranscriptQueue();
+                    }
+                  }, interimDelay);
+
                   console.log("[Custom Voice] ⏭️ Skipping interim for AI processing (barge-in already checked)");
                   return;
                 }
+
+                // A real final arrived — cancel any interim fallback
+                if (state.interimFinalizeTimer) {
+                  clearTimeout(state.interimFinalizeTimer);
+                  state.interimFinalizeTimer = null;
+                }
+                state.interimAccumulator = "";
 
                 if (!transcript || transcript.trim().length < 3) {
                   console.log("[Custom Voice] ⏭️ Skipping short/empty transcript");
