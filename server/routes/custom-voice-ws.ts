@@ -15,24 +15,23 @@ import { validateWsSession, rejectWsUpgrade } from '../middleware/ws-session-val
 import { wsRateLimiter, getClientIp } from '../middleware/ws-rate-limiter';
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// TIMING CONSTANTS (Nov 4, 2025): Comprehensive timing fix
-// Prevents tutor from interrupting students mid-sentence
-// Total delay target: 7-8 seconds from student stops → tutor responds
+// TIMING CONSTANTS (Dec 10, 2025): Tutor waits for complete thoughts
+// Prevents tutor from interrupting students during thinking pauses
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 const TIMING_CONFIG = {
   // Server-side delays before AI processing
-  SERVER_DELAY_COMPLETE_THOUGHT: 1200,    // 1.2s for complete sentences (was 0ms)
-  SERVER_DELAY_INCOMPLETE_THOUGHT: 2500,  // 2.5s for incomplete thoughts (e.g., "um", "I think")
+  SERVER_DELAY_COMPLETE_THOUGHT: 1200,    // 1.2s for complete sentences
+  SERVER_DELAY_INCOMPLETE_THOUGHT: 2500,  // 2.5s for incomplete thoughts
   
   // Post-interruption buffer (when student interrupts tutor)
   POST_INTERRUPT_BUFFER: 2500,            // 2.5s extra wait after interruption
   
   // Combined with Deepgram settings:
-  // - Deepgram endpointing: 3500ms (silence detection)
-  // - Deepgram utterance_end_ms: 3500ms (finalization)
-  // Total timing for complete thought: 3500ms (Deepgram) + 1200ms (server) = 4700ms
-  // Total timing for incomplete thought: 3500ms (Deepgram) + 2500ms (server) = 6000ms
-  // After interruption: Add +2500ms buffer = 6000-8500ms total
+  // - Deepgram endpointing: 1200ms (speech silence detection)
+  // - Deepgram utterance_end_ms: 2000ms (utterance finalization)
+  // - Server UTTERANCE_COMPLETE_DELAY_MS: 2500ms (accumulation wait)
+  // Total: ~4.5-5.5 seconds from student pause → tutor responds
+  // This catches natural 1-3 second thinking pauses without feeling sluggish
 };
 
 interface TranscriptEntry {
@@ -276,10 +275,11 @@ export function setupCustomVoiceWebSocket(server: Server) {
     // FIX (Dec 10, 2025): Server-side transcript accumulation
     // Don't process each transcript separately - accumulate and wait for gap
     // This prevents cutting off students mid-sentence when they pause to think
+    // 2.5 seconds catches natural thinking pauses without feeling sluggish
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     let pendingTranscript = '';
     let transcriptAccumulationTimer: NodeJS.Timeout | null = null;
-    const UTTERANCE_COMPLETE_DELAY_MS = 1500; // Wait 1.5s after last transcript before AI call
+    const UTTERANCE_COMPLETE_DELAY_MS = 2500; // Wait 2.5s after last transcript before AI call
     
     // FIX (Dec 10, 2025): Track reconnection attempts to prevent infinite loops
     let reconnectAttempts = 0;
