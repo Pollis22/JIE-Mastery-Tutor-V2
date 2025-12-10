@@ -14,26 +14,25 @@ import { storage } from "../storage";
 import { validateWsSession, rejectWsUpgrade } from '../middleware/ws-session-validator';
 import { wsRateLimiter, getClientIp } from '../middleware/ws-rate-limiter';
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// TIMING CONSTANTS (Nov 4, 2025): Comprehensive timing fix
-// Prevents tutor from interrupting students mid-sentence
-// Total delay target: 7-8 seconds from student stops → tutor responds
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-const TIMING_CONFIG = {
-  // Server-side delays before AI processing
-  SERVER_DELAY_COMPLETE_THOUGHT: 1200,    // 1.2s for complete sentences (was 0ms)
-  SERVER_DELAY_INCOMPLETE_THOUGHT: 2500,  // 2.5s for incomplete thoughts (e.g., "um", "I think")
-  
-  // Post-interruption buffer (when student interrupts tutor)
-  POST_INTERRUPT_BUFFER: 2500,            // 2.5s extra wait after interruption
-  
-  // Combined with Deepgram settings:
-  // - Deepgram endpointing: 3500ms (silence detection)
-  // - Deepgram utterance_end_ms: 3500ms (finalization)
-  // Total timing for complete thought: 3500ms (Deepgram) + 1200ms (server) = 4700ms
-  // Total timing for incomplete thought: 3500ms (Deepgram) + 2500ms (server) = 6000ms
-  // After interruption: Add +2500ms buffer = 6000-8500ms total
-};
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // TIMING CONSTANTS (Nov 4, 2025): Comprehensive timing fix
+    // Prevents tutor from interrupting students mid-sentence
+    // Total delay target: 7-8 seconds from student stops → tutor responds
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    const TIMING_CONFIG = {
+      // Server-side delays before AI processing
+      SERVER_DELAY_COMPLETE_THOUGHT: 3500,    // INCREASED to 3.5s (was 2.0s) - Very generous pause time for complete sentences
+      SERVER_DELAY_INCOMPLETE_THOUGHT: 4000,  // INCREASED to 5.0s (was 3.0s) - Extremely generous time for "um..." and thinking
+      
+      // Post-interruption buffer (when student interrupts tutor)
+      POST_INTERRUPT_BUFFER: 2500,            // 2.5s extra wait after interruption
+      
+      // Combined with Deepgram settings:
+      // - Deepgram endpointing: 1200ms
+      // - Deepgram utterance_end_ms: 2000ms
+      // Total timing for complete thought: 2000ms (Deepgram) + 3500ms (server) = 5.5s
+      // Total timing for incomplete thought: 2000ms (Deepgram) + 5000ms (server) = 7.0s
+    };
 
 interface TranscriptEntry {
   speaker: 'tutor' | 'student';
@@ -66,6 +65,7 @@ interface SessionState {
   lastAudioSentAt: number; // PACING FIX: Track when audio was last sent for interruption detection
   wasInterrupted: boolean; // TIMING FIX: Track if tutor was just interrupted (needs extra delay)
   lastInterruptionTime: number; // TIMING FIX: Track when last interruption occurred
+  currentTurnTranscript: string; // FIX: Accumulate multiple sentences in one turn
   tutorAudioEnabled: boolean; // MODE: Whether tutor audio should play
   studentMicEnabled: boolean; // MODE: Whether student microphone is active
   lastActivityTime: number; // INACTIVITY: Track last user speech activity
@@ -297,6 +297,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
       lastAudioSentAt: 0, // PACING FIX: Initialize audio timestamp
       wasInterrupted: false, // TIMING FIX: Initialize interruption flag
       lastInterruptionTime: 0, // TIMING FIX: Initialize interruption timestamp
+      currentTurnTranscript: "", // FIX: Initialize accumulator
       lastActivityTime: Date.now(), // INACTIVITY: Initialize to now
       inactivityWarningSent: false, // INACTIVITY: No warning sent yet
       inactivityTimerId: null, // INACTIVITY: Timer not started yet
@@ -1317,6 +1318,29 @@ CRITICAL INSTRUCTIONS:
 
                 // Only process for AI response on FINAL transcripts
                 if (!isFinal) {
+                  // Send interim transcript to frontend for real-time display
+                  // FIX: Combine accumulated text with current interim text
+                  if (transcript && transcript.trim().length > 0) {
+                     const fullDisplayText = state.currentTurnTranscript 
+                        ? `${state.currentTurnTranscript} ${transcript}`
+                        : transcript;
+
+                     ws.send(JSON.stringify({
+                      type: "transcript_partial",
+                      speaker: "student",
+                      text: fullDisplayText,
+                      timestamp: new Date().toISOString()
+                    }));
+                  }
+
+                  // FIX: Reset turn-taking timer on interim results
+                  // If user is speaking (generating interim results), they are not done.
+                  if (responseTimer) {
+                    clearTimeout(responseTimer);
+                    responseTimer = null;
+                    console.log("[Custom Voice] ⏱️ Timer cleared due to continued speech (interim)");
+                  }
+
                   console.log("[Custom Voice] ⏭️ Skipping interim for AI processing (barge-in already checked)");
                   return;
                 }
@@ -1357,6 +1381,16 @@ CRITICAL INSTRUCTIONS:
                 
                 console.log(`[Custom Voice] ✅ Processing FINAL transcript: "${transcript}" (lang: ${state.detectedLanguage || state.language})`);
                 
+                // FIX: Accumulate transcript
+                if (state.currentTurnTranscript) {
+                  state.currentTurnTranscript += " " + transcript;
+                } else {
+                  state.currentTurnTranscript = transcript;
+                }
+                
+                const fullTranscript = state.currentTurnTranscript;
+                console.log(`[Custom Voice] 📚 Accumulated transcript: "${fullTranscript}"`);
+
                 // FIX #2C: Add turn-taking timeout
                 // Clear any existing timer
                 if (responseTimer) {
@@ -1369,18 +1403,30 @@ CRITICAL INSTRUCTIONS:
                 // Give students time to add "oh wait, one more thing..." 
                 // Previous delays still caused interruptions - increasing significantly
                 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                const isIncomplete = isLikelyIncompleteThought(transcript);
-                const delay = isIncomplete ? 2500 : 1200; // INCREASED: 2.5s for incomplete, 1.2s for complete
+                const isIncomplete = isLikelyIncompleteThought(fullTranscript);
+                const delay = isIncomplete ? TIMING_CONFIG.SERVER_DELAY_INCOMPLETE_THOUGHT : TIMING_CONFIG.SERVER_DELAY_COMPLETE_THOUGHT;
                 
                 if (isIncomplete) {
-                  console.log(`[Custom Voice] ⏸️ Incomplete thought detected: "${transcript}" - waiting ${delay}ms`);
+                  console.log(`[Custom Voice] ⏸️ Incomplete thought detected: "${fullTranscript}" - waiting ${delay}ms`);
                 } else {
                   console.log(`[Custom Voice] ⏰ Complete thought - waiting ${delay}ms before responding`);
                 }
                 
+                // Send "accumulating" status to frontend with FULL text
+                ws.send(JSON.stringify({
+                  type: "transcript_accumulating",
+                  speaker: "student",
+                  text: fullTranscript,
+                  delay: delay
+                }));
+
                 responseTimer = setTimeout(() => {
                   console.log(`[Custom Voice] ⏰ Processing after ${delay}ms pause`);
-                  state.transcriptQueue.push(transcript);
+                  // Push the accumulated transcript
+                  state.transcriptQueue.push(fullTranscript);
+                  
+                  // Clear the accumulator
+                  state.currentTurnTranscript = "";
                   
                   // Start processing if not already processing
                   if (!state.isProcessing) {

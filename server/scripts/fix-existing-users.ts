@@ -1,3 +1,5 @@
+import * as dotenv from 'dotenv';
+dotenv.config();
 // One-time migration to fix existing users who registered before email verification was added
 import { db } from '../db';
 import { users } from '@shared/schema';

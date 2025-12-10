@@ -17,6 +17,8 @@ import Stripe from "stripe";
 import { z } from "zod";
 import { createHmac, timingSafeEqual } from "crypto";
 
+import { generateTutorResponse } from "./services/ai-service";
+
 // Stripe is optional - if not configured, subscription features will be disabled
 const stripeKey = process.env.STRIPE_SECRET_KEY;
 const isStripeEnabled = !!stripeKey;
@@ -397,6 +399,59 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Legacy voice API routes (for compatibility)
   // Note: live-token endpoint is now handled in voiceRoutes
 
+  app.get("/api/voice/live-token", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const user = req.user as any;
+      const token = await voiceService.generateLiveToken(user.id);
+      const config = voiceService.getRealtimeConfig();
+      res.json({ token, config });
+    } catch (error: any) {
+      res.status(500).json({ message: "Error generating token: " + error.message });
+    }
+  });
+
+  app.post("/api/voice/generate-response", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const user = req.user as any;
+      const { message, conversationHistory = [] } = req.body;
+      
+      if (!message) {
+        return res.status(400).json({ message: "Message is required" });
+      }
+
+      // Format history for Anthropic
+      const formattedHistory = conversationHistory.map((msg: any) => ({
+        role: msg.role === 'tutor' ? 'assistant' : 'user',
+        content: msg.content
+      }));
+
+      const response = await generateTutorResponse(
+        formattedHistory,
+        message,
+        [], // uploadedDocuments
+        undefined, // systemInstruction
+        'voice' // inputModality
+      );
+
+      res.json({ content: response });
+    } catch (error: any) {
+      console.error('[Legacy Voice] Error generating response:', error);
+      res.status(500).json({ 
+        message: "Error generating response: " + error.message,
+        usedFallback: true,
+        content: "I'm having trouble connecting to my brain right now. Can you try again?"
+      });
+    }
+  });
+
   app.post("/api/voice/narrate", async (req, res) => {
     if (!req.isAuthenticated()) {
       return res.status(401).json({ message: "Unauthorized" });
@@ -757,43 +812,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Billing history endpoint
-  app.get("/api/billing/history", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
+  // // Billing history endpoint
+  // app.get("/api/billing/history", async (req, res) => {
+  //   if (!req.isAuthenticated()) {
+  //     return res.status(401).json({ message: "Unauthorized" });
+  //   }
 
-    if (!stripe) {
-      return res.json({ history: [] });
-    }
+  //   if (!stripe) {
+  //     return res.json({ history: [] });
+  //   }
 
-    try {
-      const user = req.user as any;
+  //   try {
+  //     const user = req.user as any;
       
-      if (!user.stripeCustomerId) {
-        return res.json({ history: [] });
-      }
+  //     if (!user.stripeCustomerId) {
+  //       return res.json({ history: [] });
+  //     }
 
-      const invoices = await stripe.invoices.list({
-        customer: user.stripeCustomerId,
-        limit: 50
-      });
+  //     const invoices = await stripe.invoices.list({
+  //       customer: user.stripeCustomerId,
+  //       limit: 50
+  //     });
 
-      const history = invoices.data.map(invoice => ({
-        id: invoice.id,
-        date: new Date(invoice.created * 1000),
-        amount: invoice.amount_paid / 100,
-        status: invoice.status,
-        description: invoice.description || 'Subscription payment',
-        invoiceUrl: invoice.hosted_invoice_url
-      }));
+  //     const history = invoices.data.map(invoice => ({
+  //       id: invoice.id,
+  //       date: new Date(invoice.created * 1000),
+  //       amount: invoice.amount_paid / 100,
+  //       status: invoice.status,
+  //       description: invoice.description || 'Subscription payment',
+  //       invoiceUrl: invoice.hosted_invoice_url
+  //     }));
 
-      res.json({ history });
-    } catch (error: any) {
-      console.error('[Billing] Error fetching history:', error);
-      res.status(500).json({ message: "Error fetching billing history: " + error.message });
-    }
-  });
+  //     res.json({ history });
+  //   } catch (error: any) {
+  //     console.error('[Billing] Error fetching history:', error);
+  //     res.status(500).json({ message: "Error fetching billing history: " + error.message });
+  //   }
+  // });
 
   // Email preferences endpoints
   app.get("/api/user/email-preferences", async (req, res) => {
@@ -1863,37 +1918,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   */
 
-  // Settings API
-  app.put("/api/settings", async (req, res) => {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
+//   // Settings API
+//   app.put("/api/settings", async (req, res) => {
+//     if (!req.isAuthenticated()) {
+//       return res.status(401).json({ message: "Unauthorized" });
+//     }
 
-    try {
-      const user = req.user as any;
-      const updates = req.body;
+//     try {
+//       const user = req.user as any;
+//       const updates = req.body;
 
-      // Handle marketing preferences separately to ensure proper date tracking
-      if ('marketingOptIn' in updates) {
-        const marketingOptIn = updates.marketingOptIn;
-        delete updates.marketingOptIn;
+//       // Handle marketing preferences separately to ensure proper date tracking
+//       if ('marketingOptIn' in updates) {
+//         const marketingOptIn = updates.marketingOptIn;
+//         delete updates.marketingOptIn;
         
-        // Update marketing preferences with proper date tracking
-        await storage.updateUserMarketingPreferences(user.id, marketingOptIn);
-      }
+//         // Update marketing preferences with proper date tracking
+//         await storage.updateUserMarketingPreferences(user.id, marketingOptIn);
+//       }
 
-      // Update other settings
-      if (Object.keys(updates).length > 0) {
-        await storage.updateUserSettings(user.id, updates);
-      }
+//       // Update other settings
+//       if (Object.keys(updates).length > 0) {
+//         await storage.updateUserSettings(user.id, updates);
+//       }
 
-      // Fetch and return updated user
-      const updatedUser = await storage.getUser(user.id);
-      res.json(updatedUser);
-    } catch (error: any) {
-      res.status(500).json({ message: "Error updating settings: " + error.message });
-    }
-  });
+//       // Fetch and return updated user
+//       const updatedUser = await storage.getUser(user.id);
+//       res.json(updatedUser);
+//     } catch (error: any) {
+//       res.status(500).json({ message: "Error updating settings: " + error.message });
+//     }
+//   });
 
   const httpServer = createServer(app);
   

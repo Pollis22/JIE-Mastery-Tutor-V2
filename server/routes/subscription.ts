@@ -407,6 +407,66 @@ router.post('/change', async (req, res) => {
   }
 });
 
+// POST /api/subscription/cancel - Cancel subscription
+router.post('/cancel', async (req, res) => {
+  try {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const userId = req.user!.id;
+    const user = await storage.getUserById(userId);
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (!user.stripeSubscriptionId) {
+      return res.status(400).json({ 
+        error: 'No active subscription',
+        message: 'You do not have an active subscription to cancel.'
+      });
+    }
+
+    if (!stripe) {
+      return res.status(503).json({ 
+        error: 'Service unavailable',
+        message: 'Stripe is not configured' 
+      });
+    }
+
+    console.log(`📉 [Subscription] Cancellation request for user ${userId} (${user.email})`);
+
+    // Cancel at period end (standard behavior)
+    // This allows the user to access the service until the paid period is over
+    const subscription = await stripe.subscriptions.update(user.stripeSubscriptionId, {
+      cancel_at_period_end: true
+    });
+
+    // Update local status immediately to reflect "active (canceling)"
+    // We don't change to 'canceled' yet because they still have access
+    // The webhook will handle the final status change when the period ends
+    
+    const periodEnd = new Date(subscription.current_period_end * 1000);
+    
+    console.log(`✅ [Subscription] Scheduled cancellation for ${periodEnd.toLocaleDateString()}`);
+
+    res.json({
+      success: true,
+      status: 'canceled', // Frontend expects this status to show cancellation UI
+      periodEnd: periodEnd.toISOString(),
+      message: `Your subscription has been canceled. You will retain access until ${periodEnd.toLocaleDateString()}.`
+    });
+
+  } catch (error: any) {
+    console.error('❌ [Subscription] Cancellation failed:', error);
+    res.status(500).json({ 
+      error: 'Failed to cancel subscription',
+      message: error.message 
+    });
+  }
+});
+
 // GET /api/subscription/status - Get current subscription status
 router.get('/status', async (req, res) => {
   try {

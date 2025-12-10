@@ -1,3 +1,6 @@
+import * as dotenv from 'dotenv';
+dotenv.config();
+
 // Script to reset password for specific user
 import { db } from '../db';
 import { users } from '@shared/schema';

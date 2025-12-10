@@ -8,7 +8,7 @@ import { useAuth } from "@/hooks/use-auth";
 
 export default function RegistrationSuccessPage() {
   const [, setLocation] = useLocation();
-  const { user, refetchUser } = useAuth();
+  const { user, refetch } = useAuth();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [error, setError] = useState<string>('');
 
@@ -54,7 +54,7 @@ export default function RegistrationSuccessPage() {
         console.log('[Registration Success] User logged in:', data.user);
 
         // Refetch user data to update auth context
-        await refetchUser();
+        await refetch();
 
         setStatus('success');
 
@@ -71,7 +71,7 @@ export default function RegistrationSuccessPage() {
     };
 
     completeRegistration();
-  }, [setLocation, refetchUser]);
+  }, [setLocation, refetch]);
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">

@@ -120,8 +120,8 @@ export async function startDeepgramStream(
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // VAD & TIMING SETTINGS (OPTIMIZED FOR QUIET SPEECH)
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    endpointing: 2000,          // 2s of silence before speech end (faster response)
-    utterance_end_ms: 2000,     // 2s total wait before finalizing
+    endpointing: 1200,          // 1.2s of silence detection (matches user request)
+    utterance_end_ms: 2000,     // 2s total wait before finalizing (matches user request)
     vad_events: true,           // Enable voice activity detection events
     vad_threshold: 0.15,        // VERY LOW threshold for quiet speech detection (was 0.3)
 

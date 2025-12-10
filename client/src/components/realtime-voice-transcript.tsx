@@ -2,11 +2,14 @@ import { useEffect, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
+import { Clock, CheckCheck, MoreHorizontal } from "lucide-react";
 
 interface RealtimeMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: Date;
+  status?: 'accumulating' | 'sending' | 'sent';
+  isPartial?: boolean;
 }
 
 interface Props {
@@ -97,16 +100,31 @@ export function RealtimeVoiceTranscript({ messages, isConnected, status, languag
                           : 'bg-muted text-foreground mr-4'
                       }`}
                     >
-                      <div className="flex items-center space-x-2 mb-1">
+                      <div className="flex items-center justify-between space-x-2 mb-1">
                         <span className="font-medium text-xs">
                           {message.role === 'user' ? '👤 You' : '🤖 AI Tutor'}
                         </span>
-                        <span className="text-[10px] opacity-70">
-                          {formatTime(message.timestamp)}
-                        </span>
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] opacity-70">
+                            {formatTime(message.timestamp)}
+                          </span>
+                          {message.role === 'user' && (
+                            <>
+                              {(message.status === 'accumulating' || message.isPartial) && (
+                                <Clock className="h-3 w-3 opacity-70 animate-pulse" />
+                              )}
+                              {message.status === 'sent' && !message.isPartial && (
+                                <CheckCheck className="h-3 w-3 opacity-70" />
+                              )}
+                            </>
+                          )}
+                        </div>
                       </div>
                       <div className="whitespace-pre-wrap break-words">
                         {message.content}
+                        {message.isPartial && (
+                           <span className="inline-block w-1.5 h-3 ml-1 bg-current opacity-70 animate-pulse align-middle" />
+                        )}
                       </div>
                     </div>
                   </div>
