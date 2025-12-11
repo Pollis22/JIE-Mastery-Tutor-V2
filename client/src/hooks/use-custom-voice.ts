@@ -1,9 +1,12 @@
 import { useState, useRef, useCallback, useEffect } from "react";
+import { VOICE_TIMING, VOICE_THRESHOLDS, VOICE_MESSAGES, EXCLUDED_DEVICE_PATTERNS } from "@/config/voice-constants";
+import { voiceLogger } from "@/utils/voice-logger";
 
 interface TranscriptMessage {
   speaker: "student" | "tutor" | "system";
   text: string;
   timestamp?: string;
+  isPartial?: boolean;
 }
 
 interface MicrophoneError {
@@ -47,18 +50,18 @@ export function useCustomVoice() {
   const recoveryPromiseRef = useRef<Promise<void> | null>(null);
   const selectedMicrophoneIdRef = useRef<string | null>(null);  // Store original device ID
   const selectedMicrophoneLabelRef = useRef<string | null>(null);  // Store device label as backup
-  const MAX_MIC_RECOVERY_ATTEMPTS = 3;
-  const MIC_RECOVERY_DELAY_MS = 500;
   
-  // Device exclusion patterns - never select these as fallback
-  const EXCLUDED_DEVICE_PATTERNS = [
-    'stereo mix',
-    'what u hear',
-    'wave out',
-    'loopback',
-    'virtual',
-    'cable'
-  ];
+  // Timer tracking for proper cleanup
+  const timersRef = useRef<Set<NodeJS.Timeout>>(new Set());
+  const intervalsRef = useRef<Set<NodeJS.Timeout>>(new Set());
+  
+  // Audio buffer queue for reconnection resilience
+  const audioBufferQueueRef = useRef<ArrayBuffer[]>([]);
+  const isReconnectingRef = useRef<boolean>(false);
+  
+  // Refs for state used in async callbacks (prevents stale closures)
+  const isConnectedRef = useRef<boolean>(false);
+  const isProcessingRef = useRef<boolean>(false);
   
   // Check if user allows virtual audio devices
   const getAllowVirtualAudio = (): boolean => {
@@ -84,13 +87,13 @@ export function useCustomVoice() {
       });
       
       if (realMics.length > 0) {
-        console.log(`[Custom Voice] 🎤 Found ${realMics.length} real microphone(s) after filtering (allowVirtual=${allowVirtual})`);
+        voiceLogger.debug(`Found ${realMics.length} real microphone(s) after filtering (allowVirtual=${allowVirtual})`);
         return realMics[0].deviceId;
       }
       
       return null;
     } catch (error) {
-      console.error('[Custom Voice] ❌ Error finding best microphone:', error);
+      voiceLogger.error('Error finding best microphone:', error);
       return null;
     }
   };
@@ -104,7 +107,7 @@ export function useCustomVoice() {
       // Exact match
       const exactMatch = microphones.find(m => m.label === label);
       if (exactMatch) {
-        console.log(`[Custom Voice] 🎤 Found microphone by exact label match: ${label}`);
+        voiceLogger.debug(`Found microphone by exact label match: ${label}`);
         return exactMatch.deviceId;
       }
       
@@ -113,17 +116,120 @@ export function useCustomVoice() {
         m.label.toLowerCase().includes(label.substring(0, 10).toLowerCase())
       );
       if (partialMatch) {
-        console.log(`[Custom Voice] 🎤 Found microphone by partial label match: ${partialMatch.label}`);
+        voiceLogger.debug(`Found microphone by partial label match: ${partialMatch.label}`);
         return partialMatch.deviceId;
       }
       
       return null;
     } catch (error) {
-      console.error('[Custom Voice] ❌ Error finding microphone by label:', error);
+      voiceLogger.error('Error finding microphone by label:', error);
       return null;
     }
   };
   
+  // Safe timer functions with tracking for proper cleanup
+  const safeSetTimeout = useCallback((callback: () => void, ms: number): NodeJS.Timeout => {
+    const id = setTimeout(() => {
+      timersRef.current.delete(id);
+      callback();
+    }, ms);
+    timersRef.current.add(id);
+    return id;
+  }, []);
+
+  const safeSetInterval = useCallback((callback: () => void, ms: number): NodeJS.Timeout => {
+    const id = setInterval(callback, ms);
+    intervalsRef.current.add(id);
+    return id;
+  }, []);
+
+  const safeClearTimeout = useCallback((id: NodeJS.Timeout) => {
+    clearTimeout(id);
+    timersRef.current.delete(id);
+  }, []);
+
+  const safeClearInterval = useCallback((id: NodeJS.Timeout) => {
+    clearInterval(id);
+    intervalsRef.current.delete(id);
+  }, []);
+
+  const cleanupAllTimers = useCallback(() => {
+    timersRef.current.forEach(id => clearTimeout(id));
+    timersRef.current.clear();
+    intervalsRef.current.forEach(id => clearInterval(id));
+    intervalsRef.current.clear();
+  }, []);
+
+  // Sync state refs whenever state changes (prevents stale closures in callbacks)
+  useEffect(() => {
+    isConnectedRef.current = isConnected;
+  }, [isConnected]);
+
+  // Add transcript message with size limiting
+  const addTranscriptMessage = useCallback((message: TranscriptMessage) => {
+    setTranscript(prev => {
+      const updated = [...prev, message];
+      
+      if (updated.length > VOICE_THRESHOLDS.TRANSCRIPT_TRIM_THRESHOLD) {
+        const systemMessages = updated.filter(m => 
+          m.speaker === 'system' && 
+          (m.text.includes('Session started') || m.text.includes('Document loaded') || m.text.includes('uploaded'))
+        );
+        
+        const recentMessages = updated.slice(-VOICE_THRESHOLDS.MAX_TRANSCRIPT_MESSAGES);
+        
+        const merged = [...systemMessages];
+        for (const msg of recentMessages) {
+          if (!merged.some(m => m.timestamp === msg.timestamp && m.text === msg.text)) {
+            merged.push(msg);
+          }
+        }
+        
+        return merged.sort((a, b) => 
+          new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime()
+        );
+      }
+      
+      return updated;
+    });
+  }, []);
+
+  // Update partial transcript (replaces previous partial, doesn't accumulate)
+  const updatePartialTranscript = useCallback((text: string) => {
+    setTranscript(prev => {
+      const withoutPartial = prev.filter(m => !m.isPartial);
+      return [...withoutPartial, {
+        speaker: 'student' as const,
+        text,
+        isPartial: true,
+        timestamp: new Date().toISOString()
+      }];
+    });
+  }, []);
+
+  // Audio queue functions for reconnection resilience
+  const queueAudioChunk = useCallback((chunk: ArrayBuffer) => {
+    if (audioBufferQueueRef.current.length < VOICE_TIMING.AUDIO_QUEUE_MAX_CHUNKS) {
+      audioBufferQueueRef.current.push(chunk);
+      voiceLogger.debug(`Queued audio chunk (${audioBufferQueueRef.current.length} in queue)`);
+    }
+  }, []);
+
+  const flushAudioQueue = useCallback(() => {
+    const queuedChunks = audioBufferQueueRef.current;
+    audioBufferQueueRef.current = [];
+    
+    if (queuedChunks.length > 0 && wsRef.current?.readyState === WebSocket.OPEN) {
+      voiceLogger.info(`Flushing ${queuedChunks.length} queued audio chunks`);
+      queuedChunks.forEach(chunk => {
+        wsRef.current?.send(JSON.stringify({
+          type: "audio",
+          data: Array.from(new Uint8Array(chunk))
+        }));
+      });
+    }
+  }, []);
+
   // Cleanup helper - safely cleans up mic resources
   // Sets streamCleanupTriggeredRef BEFORE stopping to prevent onended from triggering recovery
   const cleanupMicResources = () => {
@@ -149,20 +255,20 @@ export function useCustomVoice() {
   const attemptMicRecovery = async () => {
     // Don't recover if mic is intentionally disabled
     if (!micEnabledRef.current) {
-      console.log('[Custom Voice] ℹ️ Mic disabled, skipping recovery');
+      voiceLogger.info('Mic disabled, skipping recovery');
       return;
     }
     
     // If recovery is already in progress, wait for it to complete
     if (recoveryPromiseRef.current) {
-      console.log('[Custom Voice] ℹ️ Recovery already in progress, waiting...');
+      voiceLogger.info('Recovery already in progress, waiting...');
       try {
         await recoveryPromiseRef.current;
       } catch (e) { /* ignore */ }
       // After waiting, check if stream is now healthy
       const currentStream = mediaStreamRef.current as MediaStream | null;
       if (currentStream && currentStream.active) {
-        console.log('[Custom Voice] ℹ️ Stream already recovered by previous attempt');
+        voiceLogger.info('Stream already recovered by previous attempt');
         return;
       }
       // Otherwise fall through to start a new recovery
@@ -172,8 +278,8 @@ export function useCustomVoice() {
     const recoveryPromise = (async () => {
       let lastError: unknown = null;
       
-      for (let attempt = 1; attempt <= MAX_MIC_RECOVERY_ATTEMPTS; attempt++) {
-        console.log(`[Custom Voice] 🔄 Auto-recovering microphone (attempt ${attempt}/${MAX_MIC_RECOVERY_ATTEMPTS})...`);
+      for (let attempt = 1; attempt <= VOICE_TIMING.MIC_RECOVERY_MAX_ATTEMPTS; attempt++) {
+        voiceLogger.info(`Auto-recovering microphone (attempt ${attempt}/${VOICE_TIMING.MIC_RECOVERY_MAX_ATTEMPTS})...`);
         
         // Clean up old resources first (sets streamCleanupTriggeredRef to prevent false triggers)
         cleanupMicResources();
@@ -212,10 +318,10 @@ export function useCustomVoice() {
               if (track?.label) localStorage.setItem('jie-preferred-microphone-label', track.label);
             } catch (e) { /* ignore */ }
             
-            console.log('[Custom Voice] ✅ Recovered with exact deviceId');
+            voiceLogger.info('Recovered with exact deviceId');
             return;
           } catch (e) {
-            console.warn(`[Custom Voice] ⚠️ Exact deviceId failed: ${(e as Error).message}`);
+            voiceLogger.warn(`Exact deviceId failed: ${(e as Error).message}`);
           }
         }
         
@@ -254,11 +360,11 @@ export function useCustomVoice() {
                 if (track?.label) localStorage.setItem('jie-preferred-microphone-label', track.label);
               } catch (e) { /* ignore */ }
               
-              console.log('[Custom Voice] ✅ Recovered with label match');
+              voiceLogger.info('Recovered with label match');
               return;
             }
           } catch (e) {
-            console.warn(`[Custom Voice] ⚠️ Label match failed: ${(e as Error).message}`);
+            voiceLogger.warn(`Label match failed: ${(e as Error).message}`);
           }
         }
         
@@ -297,16 +403,16 @@ export function useCustomVoice() {
                 if (track?.label) localStorage.setItem('jie-preferred-microphone-label', track.label);
               } catch (e) { /* ignore */ }
               
-              console.log('[Custom Voice] ✅ Recovered with filtered fallback');
+              voiceLogger.info('Recovered with filtered fallback');
               return;
             }
           } catch (e) {
-            console.warn(`[Custom Voice] ⚠️ Filtered fallback failed: ${(e as Error).message}`);
+            voiceLogger.warn(`Filtered fallback failed: ${(e as Error).message}`);
           }
         }
         
         // Give it time before next attempt
-        if (attempt < MAX_MIC_RECOVERY_ATTEMPTS) {
+        if (attempt < VOICE_TIMING.MIC_RECOVERY_MAX_ATTEMPTS) {
           const nextDelayMs = 500 * (attempt + 1);
           console.log(`[Custom Voice] ⏳ Waiting ${nextDelayMs}ms before next recovery attempt...`);
           await new Promise(resolve => setTimeout(resolve, nextDelayMs));
@@ -697,9 +803,9 @@ export function useCustomVoice() {
           try {
             localStorage.setItem('jie-preferred-microphone-id', actualDeviceId);
             localStorage.setItem('jie-preferred-microphone-label', audioTrack.label);
-            console.log('[Custom Voice] 🔄 Synced mic preference:', audioTrack.label);
+            voiceLogger.info('Synced mic preference:', audioTrack.label);
           } catch (e) {
-            console.warn('[Custom Voice] Could not save mic preference:', e);
+            voiceLogger.warn('Could not save mic preference:', e);
           }
         }
       }
@@ -1686,7 +1792,7 @@ export function useCustomVoice() {
         studentMic,
       }));
     } else {
-      console.log("[Custom Voice] 📝 Mode updated locally (not connected yet)");
+      voiceLogger.debug("Mode updated locally (not connected yet)");
     }
 
     // Stop audio if muting
@@ -1699,23 +1805,30 @@ export function useCustomVoice() {
     
     if (isConnected && studentMic && !previousMicState) {
       // Switching to Voice mode - start microphone
-      console.log("[Custom Voice] 🎤 Enabling microphone for Voice mode");
+      voiceLogger.info("Enabling microphone for Voice mode");
       await startMicrophone();
     } else if (isConnected && !studentMic && previousMicState) {
       // Switching to Hybrid/Text mode - stop microphone
-      console.log("[Custom Voice] 🔇 Disabling microphone for Hybrid/Text mode");
+      voiceLogger.info("Disabling microphone for Hybrid/Text mode");
       stopMicrophone();
     }
   }, []);
 
   const addSystemMessage = useCallback((message: string) => {
-    console.log("[Custom Voice] 📢 System message:", message);
-    setTranscript(prev => [...prev, {
+    voiceLogger.info("System message:", message);
+    addTranscriptMessage({
       speaker: "system",
       text: message,
       timestamp: new Date().toISOString(),
-    }]);
-  }, []);
+    });
+  }, [addTranscriptMessage]);
+
+  // Cleanup all timers on unmount
+  useEffect(() => {
+    return () => {
+      cleanupAllTimers();
+    };
+  }, [cleanupAllTimers]);
 
   return {
     connect,
