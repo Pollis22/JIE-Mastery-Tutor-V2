@@ -1,5 +1,7 @@
 export const VOICE_TIMING = {
-  SILENCE_DEBOUNCE_MS: 1200,
+  // Silence detection - OPTIMIZED FOR EDUCATIONAL TUTORING (Dec 11, 2025)
+  // Students need 2-3 seconds to formulate complex thoughts without interruption
+  SILENCE_DEBOUNCE_MS: 2500,           // Was 1200, allows natural mid-sentence pauses
   POST_INTERRUPTION_BUFFER_MS: 2000,
   
   ACCUMULATION_DELAY_MS: 2500,
@@ -21,8 +23,9 @@ export const VOICE_TIMING = {
   INACTIVITY_WARNING_MS: 240000,
   INACTIVITY_TIMEOUT_MS: 300000,
   
-  DEEPGRAM_UTTERANCE_END_MS: 2000,
-  DEEPGRAM_ENDPOINTING_MS: 1200,
+  // Deepgram settings - INCREASED FOR EDUCATIONAL CONTEXT (Dec 11, 2025)
+  DEEPGRAM_UTTERANCE_END_MS: 2500,     // Was 2000, more time for natural pauses
+  DEEPGRAM_ENDPOINTING_MS: 2000,       // Was 1200, less aggressive end-of-speech detection
 } as const;
 
 export const VOICE_THRESHOLDS = {

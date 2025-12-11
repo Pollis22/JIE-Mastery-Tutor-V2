@@ -26,12 +26,13 @@ const TIMING_CONFIG = {
   // Post-interruption buffer (when student interrupts tutor)
   POST_INTERRUPT_BUFFER: 2500,            // 2.5s extra wait after interruption
   
-  // Combined with Deepgram settings:
-  // - Deepgram endpointing: 1200ms (speech silence detection)
-  // - Deepgram utterance_end_ms: 2000ms (utterance finalization)
+  // Combined with Deepgram settings (Dec 11, 2025: OPTIMIZED FOR EDUCATIONAL TUTORING):
+  // - Deepgram endpointing: 2000ms (speech silence detection, was 1200ms)
+  // - Deepgram utterance_end_ms: 2500ms (utterance finalization, was 2000ms)
   // - Server UTTERANCE_COMPLETE_DELAY_MS: 2500ms (accumulation wait)
-  // Total: ~4.5-5.5 seconds from student pause → tutor responds
-  // This catches natural 1-3 second thinking pauses without feeling sluggish
+  // - Client SILENCE_DEBOUNCE_MS: 2500ms (was 1200ms)
+  // Total: ~5-6 seconds from student pause → tutor responds
+  // This allows students 2-3 second thinking pauses without interruption
 };
 
 interface TranscriptEntry {

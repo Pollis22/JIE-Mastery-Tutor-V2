@@ -119,11 +119,12 @@ export async function startDeepgramStream(
     multichannel: false,        // Single channel optimization
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // VAD & TIMING SETTINGS (Dec 10, 2025: Optimized for mid-sentence pauses)
-    // Server-side accumulation handles the gap, Deepgram just needs to detect words
+    // VAD & TIMING SETTINGS (Dec 11, 2025: OPTIMIZED FOR EDUCATIONAL TUTORING)
+    // Students need 2-3 seconds to formulate complex thoughts without interruption
+    // Previous 1200ms was cutting off mid-sentence pauses during natural thinking
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    endpointing: 1200,          // 1.2s for end-of-speech detection (Dec 10, 2025: reduced from 2s)
-    utterance_end_ms: 2000,     // 2s total wait before finalizing utterance
+    endpointing: 2000,          // 2s for end-of-speech detection (Dec 11, 2025: was 1200ms)
+    utterance_end_ms: 2500,     // 2.5s total wait before finalizing utterance (was 2000ms)
     vad_events: true,           // Enable voice activity detection events
     vad_threshold: 0.15,        // VERY LOW threshold for quiet speech detection (was 0.3)
 
