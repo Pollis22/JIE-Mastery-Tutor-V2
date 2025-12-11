@@ -21,10 +21,8 @@ interface Props {
 }
 
 export function RealtimeVoiceTranscript({ messages, isConnected, status, language, voice }: Props) {
-  const lastMessageRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const isNearBottomRef = useRef(true);
-  const prevMessagesLengthRef = useRef(messages.length);
+  const userHasScrolledRef = useRef(false);
 
   useEffect(() => {
     const scrollArea = scrollAreaRef.current;
@@ -34,21 +32,12 @@ export function RealtimeVoiceTranscript({ messages, isConnected, status, languag
     if (!viewport) return;
 
     const handleScroll = () => {
-      const { scrollTop, scrollHeight, clientHeight } = viewport as HTMLElement;
-      const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
-      isNearBottomRef.current = distanceFromBottom < 100;
+      userHasScrolledRef.current = true;
     };
 
     viewport.addEventListener('scroll', handleScroll);
     return () => viewport.removeEventListener('scroll', handleScroll);
   }, []);
-
-  useEffect(() => {
-    if (messages.length > prevMessagesLengthRef.current && isNearBottomRef.current && lastMessageRef.current) {
-      lastMessageRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
-    }
-    prevMessagesLengthRef.current = messages.length;
-  }, [messages]);
 
   const getStatusBadge = () => {
     if (!isConnected) return <Badge variant="secondary">Disconnected</Badge>;
@@ -110,7 +99,6 @@ export function RealtimeVoiceTranscript({ messages, isConnected, status, languag
                 messages.map((message, index) => (
                   <div
                     key={index}
-                    ref={index === messages.length - 1 ? lastMessageRef : null}
                     className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
                     data-testid={`message-${message.role}-${index}`}
                   >
