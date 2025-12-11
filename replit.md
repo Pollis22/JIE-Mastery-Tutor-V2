@@ -59,6 +59,8 @@ A custom, production-ready voice stack provides real-time, natural conversations
 -   Supports text chat during voice sessions, user-controlled speech speed, and robust microphone error handling.
 -   Flexible communication modes: Voice Mode, Hybrid Mode (listen-only, respond via text), and Text-Only Mode.
 -   **5-Minute Inactivity Auto-Timeout** (November 2025): Backend tracks user inactivity via speech and text. Issues warning at 4 minutes of silence with audio message. Auto-ends session at 5 minutes with farewell message and proper minute deduction. Activity timer resets on any user interaction (voice or text). Prevents wasted minutes from forgotten sessions. Timer cleanup centralized in finalizeSession for robust lifecycle management.
+-   **Echo Prevention System** (December 2025): Audio is not sent to Deepgram while the tutor is actively speaking, preventing tutor's voice from being picked up and transcribed as student speech. VAD logic still runs locally for barge-in detection. Implemented in both AudioWorklet and ScriptProcessor fallback paths.
+-   **Improved Turn-Taking Timing** (December 2025): Server-side response delays increased to 4.5s/5.5s (complete/incomplete thoughts) to prevent premature interim fallback and give students more time to complete their sentences.
 
 ### AI & Learning Engine
 -   **Primary AI Model**: Claude Sonnet 4 with an enhanced TutorMind system prompt.
