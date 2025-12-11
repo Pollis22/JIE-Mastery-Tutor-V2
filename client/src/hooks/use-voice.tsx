@@ -496,7 +496,7 @@ export function useVoice() {
       // Cleanup on error
       cleanup();
     }
-  }, [startSessionMutation, initializeAudioContext, getUserMedia, setupRealtimeConnection, toast]);
+  }, [getTokenMutation, startSessionMutation, initializeAudioContext, getUserMedia, setupRealtimeConnection, toast]);
 
   const endVoiceSession = useCallback(async () => {
     // Always cleanup first to ensure UI state is clean

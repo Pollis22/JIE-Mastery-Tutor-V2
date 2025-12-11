@@ -11,7 +11,7 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "dev": "cross-env NODE_ENV=development tsx server/index.ts",
+    "dev": "NODE_ENV=development tsx server/index.ts",
     "build": "vite build",
     "init-db": "node scripts/init-railway-db.js",
     "start": "npm run init-db && NODE_ENV=production tsx server/index.ts",
@@ -156,7 +156,6 @@
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^4.7.0",
     "autoprefixer": "^10.4.20",
-    "cross-env": "^10.1.0",
     "drizzle-kit": "^0.31.5",
     "esbuild": "^0.25.0",
     "postcss": "^8.4.47",

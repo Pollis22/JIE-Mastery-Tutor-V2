@@ -1,11 +1,9 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 
-export interface TranscriptMessage {
+interface TranscriptMessage {
   speaker: "student" | "tutor" | "system";
   text: string;
   timestamp?: string;
-  isPartial?: boolean;
-  status?: 'accumulating' | 'sending' | 'sent';
 }
 
 interface MicrophoneError {
@@ -232,49 +230,6 @@ export function useCustomVoice() {
             }
             break;
 
-          case "transcript_partial":
-            // Update partial transcript from user
-            setTranscript(prev => {
-              const updated = [...prev];
-              const lastIdx = updated.length - 1;
-              // If last message is student and partial, update it
-              if (lastIdx >= 0 && updated[lastIdx].speaker === 'student' && updated[lastIdx].isPartial) {
-                updated[lastIdx] = {
-                  ...updated[lastIdx],
-                  text: message.text,
-                  timestamp: new Date().toISOString()
-                };
-                return updated;
-              }
-              // Otherwise add new partial
-              return [...prev, {
-                speaker: "student",
-                text: message.text,
-                timestamp: new Date().toISOString(),
-                isPartial: true,
-                status: 'accumulating'
-              }];
-            });
-            break;
-
-          case "transcript_accumulating":
-            // Mark as accumulating (clock icon)
-            setTranscript(prev => {
-              const updated = [...prev];
-              const lastIdx = updated.length - 1;
-              if (lastIdx >= 0 && updated[lastIdx].speaker === 'student') {
-                updated[lastIdx] = {
-                  ...updated[lastIdx],
-                  text: message.text,
-                  isPartial: true,
-                  status: 'accumulating'
-                };
-                return updated;
-              }
-              return prev;
-            });
-            break;
-
           case "transcript":
             console.log(`[Custom Voice] 📝 ${message.speaker}: ${message.text}`);
             // Handle streaming transcripts: isPartial = first chunk, isComplete = final
@@ -288,8 +243,6 @@ export function useCustomVoice() {
                     speaker: message.speaker,
                     text: message.text,
                     timestamp: new Date().toISOString(),
-                    isPartial: false,
-                    status: 'sent'
                   };
                   return updated;
                 }
@@ -297,45 +250,15 @@ export function useCustomVoice() {
                   speaker: message.speaker,
                   text: message.text,
                   timestamp: new Date().toISOString(),
-                  isPartial: false,
-                  status: 'sent'
                 }];
               });
-            } else if (message.isPartial) {
-               // Tutor partial (streaming start)
-               setTranscript(prev => [...prev, {
-                  speaker: message.speaker,
-                  text: message.text,
-                  timestamp: new Date().toISOString(),
-                  isPartial: true,
-                  status: 'sending'
-               }]);
             } else {
-              // Standard transcript (final)
-              setTranscript(prev => {
-                const updated = [...prev];
-                const lastIdx = updated.length - 1;
-                
-                // If we have a partial message for this speaker, finalize it
-                if (lastIdx >= 0 && updated[lastIdx].speaker === message.speaker && updated[lastIdx].isPartial) {
-                  updated[lastIdx] = {
-                    speaker: message.speaker,
-                    text: message.text,
-                    timestamp: new Date().toISOString(),
-                    isPartial: false,
-                    status: 'sent'
-                  };
-                  return updated;
-                }
-                
-                return [...prev, {
-                  speaker: message.speaker,
-                  text: message.text,
-                  timestamp: new Date().toISOString(),
-                  isPartial: false,
-                  status: 'sent'
-                }];
-              });
+              // New transcript entry (or partial first chunk)
+              setTranscript(prev => [...prev, {
+                speaker: message.speaker,
+                text: message.text,
+                timestamp: new Date().toISOString(),
+              }]);
             }
             break;
           
@@ -449,9 +372,9 @@ export function useCustomVoice() {
         audio: {
           sampleRate: 16000,
           channelCount: 1,
-          echoCancellation: false,   // Disable to avoid over-aggressive gating
-          noiseSuppression: true,   // Disable - can cut off quiet speech
-          autoGainControl: false,    // Disable hardware AGC; we apply our own gain
+          echoCancellation: true,
+          noiseSuppression: false,  // Disable - can cut off quiet speech
+          autoGainControl: true,    // Let browser boost quiet audio
         }
       });
       
@@ -493,30 +416,6 @@ export function useCustomVoice() {
         console.log("[Custom Voice] ✅ Audio context resumed from suspended state");
       }
       
-      // Helper: resample any incoming audio to 16kHz to match Deepgram expectations
-      const resampleTo16k = (input: Float32Array, inputSampleRate: number): Float32Array => {
-        if (inputSampleRate === 16000 || input.length === 0) return input;
-        const sampleRateRatio = inputSampleRate / 16000;
-        const newLength = Math.max(1, Math.round(input.length / sampleRateRatio));
-        const output = new Float32Array(newLength);
-        for (let i = 0; i < newLength; i++) {
-          const index = i * sampleRateRatio;
-          const index0 = Math.floor(index);
-          const index1 = Math.min(index0 + 1, input.length - 1);
-          const frac = index - index0;
-          output[i] = input[index0] + (input[index1] - input[index0]) * frac;
-        }
-        return output;
-      };
-
-      const ensure16k = (data: Float32Array): Float32Array => {
-        const currentRate = audioContextRef.current?.sampleRate || 16000;
-        if (currentRate !== 16000) {
-          console.warn(`[Custom Voice] ⚠️ Resampling from ${currentRate}Hz to 16000Hz`);
-        }
-        return resampleTo16k(data, currentRate);
-      };
-
       try {
         // Load AudioWorklet processor (modern API, replaces deprecated ScriptProcessorNode)
         await audioContextRef.current.audioWorklet.addModule('/audio-processor.js');
@@ -535,14 +434,11 @@ export function useCustomVoice() {
         let workletLastSpeechEndTime = 0;
         let workletPostInterruptionBufferActive = false;
         let workletPostInterruptionTimeout: ReturnType<typeof setTimeout> | null = null;
-        let workletStudentSpeakingOverride = false; // BARGE-IN FIX: Override echo gate when student speaks
-        let workletStudentSpeakingTimeout: ReturnType<typeof setTimeout> | null = null;
         
         const MIN_SPEECH_DURATION_MS = 600;
         const SPEECH_COALESCE_WINDOW_MS = 1000;
         const POST_INTERRUPTION_BUFFER_MS = 2000;
         const SPEECH_DEBOUNCE_MS = 150;
-        const STUDENT_SPEAKING_TIMEOUT_MS = 3000; // Keep sending audio for 3s after last speech detected
         
         // Handle audio data and VAD events from AudioWorklet
         processor.port.onmessage = (event) => {
@@ -566,8 +462,8 @@ export function useCustomVoice() {
               const timeSincePlayback = now - lastAudioPlaybackStartRef.current;
               
               // Skip VAD for 300ms after tutor audio starts (reduced from 500ms for faster response)
-              if (timeSincePlayback < 150) {
-                console.log(`[Custom Voice] ⏱️ VAD cooldown active (${(150 - timeSincePlayback).toFixed(0)}ms) - ignoring speech`);
+              if (timeSincePlayback < 300) {
+                console.log(`[Custom Voice] ⏱️ VAD cooldown active (${(300 - timeSincePlayback).toFixed(0)}ms) - ignoring speech`);
                 return;
               }
 
@@ -597,15 +493,6 @@ export function useCustomVoice() {
               console.log(`[Custom Voice] 🛑 VAD: CONFIRMED barge-in after debounce (rms=${rms.toFixed(4)}, peak=${peak.toFixed(4)})`);
               stopAudio();
               setIsTutorSpeaking(false);
-              
-              // BARGE-IN FIX: Enable student speaking override to resume audio capture
-              workletStudentSpeakingOverride = true;
-              if (workletStudentSpeakingTimeout) clearTimeout(workletStudentSpeakingTimeout);
-              workletStudentSpeakingTimeout = setTimeout(() => {
-                workletStudentSpeakingOverride = false;
-                console.log('[Custom Voice] 🔊 Student speaking override ended (AudioWorklet)');
-              }, STUDENT_SPEAKING_TIMEOUT_MS);
-              console.log('[Custom Voice] 🔊 Student speaking override enabled - audio capture resumed');
               
               // POST-INTERRUPTION BUFFER (Dec 10, 2025 FIX)
               // After barge-in, ignore rapid speech-end events for 2 seconds
@@ -658,46 +545,15 @@ export function useCustomVoice() {
             console.log(`[Custom Voice] 🔇 VAD: Speech ended (duration=${speechDuration}ms) (AudioWorklet)`);
             workletLastSpeechEndTime = now;
             workletSpeechStartTime = 0;
-            
-            // BARGE-IN FIX: Clear student speaking override when speech ends
-            // This prevents tutor audio from leaking to Deepgram after user stops speaking
-            if (workletStudentSpeakingOverride) {
-              workletStudentSpeakingOverride = false;
-              if (workletStudentSpeakingTimeout) {
-                clearTimeout(workletStudentSpeakingTimeout);
-                workletStudentSpeakingTimeout = null;
-              }
-              console.log('[Custom Voice] 🔊 Student speaking override cleared on speech_end (AudioWorklet)');
-            }
             return;
           }
           // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-          const float32Data = ensure16k(event.data.data); // Float32Array from AudioWorklet, resampled to 16kHz if needed
-
-          // Measure RMS so we can dynamically boost very quiet microphones
-          let rms = 0;
-          let peak = 0;
-          if (float32Data.length > 0) {
-            let sumSquares = 0;
-            for (let i = 0; i < float32Data.length; i++) {
-              const sample = float32Data[i];
-              sumSquares += sample * sample;
-              const abs = Math.abs(sample);
-              if (abs > peak) peak = abs;
-            }
-            rms = Math.sqrt(sumSquares / float32Data.length);
-          }
-
-          // Adapt gain for quiet inputs (kept modest to avoid clipping with soft limit)
-          // - Very quiet (<0.01 RMS): heavy boost
-          // - Quiet (<0.03 RMS): medium boost
-          // - Normal: light boost
-          const dynamicGain = rms < 0.01 ? 18 : rms < 0.03 ? 12 : 8;
+          const float32Data = event.data.data; // Float32Array from AudioWorklet
 
           // Convert Float32 to PCM16 with gain amplification and SOFT LIMITING
-          // Note: We already have 3x hardware gain from GainNode, so keep software gain moderate
-          const GAIN = dynamicGain;
+          // Note: We already have 3x hardware gain from GainNode, so use moderate software gain
+          const GAIN = 10; // Reduced from 30 to prevent clipping (30x total with 3x hardware)
           const SOFT_THRESHOLD = 0.8; // Start soft limiting at 80% of max amplitude
           
           // Soft limiting function - prevents harsh clipping that breaks Deepgram STT
@@ -721,27 +577,7 @@ export function useCustomVoice() {
           }
 
           const uint8Array = new Uint8Array(pcm16.buffer);
-
-          // Optimization: Use spread to avoid massive array allocation
-          // const binaryString = Array.from(uint8Array).map(byte => String.fromCharCode(byte)).join('');
-          
-          // Better approach for large arrays: batch processing to avoid stack overflow
-          let binaryString = '';
-          const len = uint8Array.length;
-          const chunkSize = 8192; // Process in 8KB chunks
-          
-          for (let i = 0; i < len; i += chunkSize) {
-            const chunk = uint8Array.subarray(i, Math.min(i + chunkSize, len));
-            binaryString += String.fromCharCode.apply(null, Array.from(chunk));
-          }
-
-          // ECHO PREVENTION: Don't send audio to Deepgram while tutor is actively speaking
-          // UNLESS the student has started speaking (barge-in override)
-          // This prevents the tutor's voice from being picked up and transcribed as student speech
-          if (isTutorSpeakingRef.current && isPlayingRef.current && !workletStudentSpeakingOverride) {
-            // Still process audio locally for barge-in detection, but don't send to STT
-            return;
-          }
+          const binaryString = Array.from(uint8Array).map(byte => String.fromCharCode(byte)).join('');
 
           wsRef.current.send(JSON.stringify({
             type: "audio",
@@ -776,17 +612,14 @@ export function useCustomVoice() {
         let lastSpeechEndTime = 0; // Track last confirmed speech end for coalescing
         let postInterruptionBufferActive = false; // Post-barge-in buffer period
         let postInterruptionTimeout: NodeJS.Timeout | null = null; // Timer for buffer period
-        let fallbackStudentSpeakingOverride = false; // BARGE-IN FIX: Override echo gate when student speaks
-        let fallbackStudentSpeakingTimeout: NodeJS.Timeout | null = null;
         
         const MAX_SILENT_CHUNKS = 5; // Only ~100ms of silence before considering speech ended
         const VAD_THRESHOLD = 0.06; // Base speech detection threshold (was 0.003, too low)
         const SPEECH_DEBOUNCE_MS = 150; // Require 150ms of sustained speech to trigger
-        const SILENCE_DEBOUNCE_MS = 800; // Require 800ms of sustained silence to end
-        const MIN_SPEECH_DURATION_MS = 600; // Minimum speech duration to be considered valid
-        const SPEECH_COALESCE_WINDOW_MS = 1000; // Window to coalesce rapid speech events
-        const POST_INTERRUPTION_BUFFER_MS = 2000; // Buffer after barge-in to prevent fragmentation
-        const STUDENT_SPEAKING_TIMEOUT_MS = 3000; // Keep sending audio for 3s after last speech detected
+        const SILENCE_DEBOUNCE_MS = 1200; // Require 1.2s of sustained silence to end (Dec 10, 2025: increased from 800ms for mid-sentence pauses)
+        const MIN_SPEECH_DURATION_MS = 600; // Minimum speech duration before considering complete (Dec 10, 2025)
+        const SPEECH_COALESCE_WINDOW_MS = 1000; // Coalesce rapid speech events within 1 second
+        const POST_INTERRUPTION_BUFFER_MS = 2000; // After barge-in, ignore speech-end events for 2s
 
         processor.onaudioprocess = (e) => {
           if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
@@ -806,8 +639,7 @@ export function useCustomVoice() {
             console.log('[Custom Voice] ⚠️ Resuming suspended audio context');
           }
 
-          const inputDataRaw = e.inputBuffer.getChannelData(0);
-          const inputData = ensure16k(inputDataRaw);
+          const inputData = e.inputBuffer.getChannelData(0);
 
           // Calculate RMS for VAD
           let sumSquares = 0;
@@ -833,8 +665,8 @@ export function useCustomVoice() {
           
           if (hasAudio && !speechActive) {
             // Skip VAD for 300ms after tutor audio starts (reduced from 500ms)
-            if (isTutorSpeakingRef.current && isPlayingRef.current && timeSincePlayback < 150) {
-              console.log(`[Custom Voice] ⏱️ VAD cooldown active (${(150 - timeSincePlayback).toFixed(0)}ms remaining) - ignoring speech`);
+            if (isTutorSpeakingRef.current && isPlayingRef.current && timeSincePlayback < 300) {
+              console.log(`[Custom Voice] ⏱️ VAD cooldown active (${(300 - timeSincePlayback).toFixed(0)}ms remaining) - ignoring speech`);
               return;
             }
             
@@ -844,7 +676,7 @@ export function useCustomVoice() {
               const BARGE_IN_RMS_THRESHOLD = 0.08; // Lowered from 0.12
               const BARGE_IN_PEAK_THRESHOLD = 0.15; // Lowered from 0.25
 
-              if (rms < BARGE_IN_RMS_THRESHOLD && maxAmplitude < BARGE_IN_PEAK_THRESHOLD) {
+              if (rms < BARGE_IN_RMS_THRESHOLD || maxAmplitude < BARGE_IN_PEAK_THRESHOLD) {
                 console.log(`[Custom Voice] 🔇 VAD (fallback): Ignoring ambient sound during tutor (rms=${rms.toFixed(4)}, peak=${maxAmplitude.toFixed(4)}) - below barge-in threshold`);
                 return;
               }
@@ -870,15 +702,6 @@ export function useCustomVoice() {
               stopAudio();
               setIsTutorSpeaking(false);
               wsRef.current.send(JSON.stringify({ type: "speech_detected" }));
-              
-              // BARGE-IN FIX: Enable student speaking override to resume audio capture
-              fallbackStudentSpeakingOverride = true;
-              if (fallbackStudentSpeakingTimeout) clearTimeout(fallbackStudentSpeakingTimeout);
-              fallbackStudentSpeakingTimeout = setTimeout(() => {
-                fallbackStudentSpeakingOverride = false;
-                console.log('[Custom Voice] 🔊 Student speaking override ended (fallback)');
-              }, STUDENT_SPEAKING_TIMEOUT_MS);
-              console.log('[Custom Voice] 🔊 Student speaking override enabled - audio capture resumed');
               
               // POST-INTERRUPTION BUFFER (Dec 10, 2025 FIX)
               // After barge-in, ignore rapid speech-end events for 2 seconds
@@ -955,17 +778,6 @@ export function useCustomVoice() {
             }
             postInterruptionBufferActive = false;
             console.log("[Custom Voice] 🔇 VAD (fallback): Speech ended (confirmed)");
-            
-            // BARGE-IN FIX: Clear student speaking override when speech ends
-            // This prevents tutor audio from leaking to Deepgram after user stops speaking
-            if (fallbackStudentSpeakingOverride) {
-              fallbackStudentSpeakingOverride = false;
-              if (fallbackStudentSpeakingTimeout) {
-                clearTimeout(fallbackStudentSpeakingTimeout);
-                fallbackStudentSpeakingTimeout = null;
-              }
-              console.log('[Custom Voice] 🔊 Student speaking override cleared on speech_end (fallback)');
-            }
           } else if (hasAudio && speechActive) {
             // Reset silence debounce timer if sound detected
             speechEndTime = 0;
@@ -988,25 +800,7 @@ export function useCustomVoice() {
 
           // Convert to PCM16 with amplification and SOFT LIMITING
           // Note: We already have 3x hardware gain from GainNode, so use moderate software gain
-          // const GAIN = 10; // Reduced from 30 to prevent clipping (30x total with 3x hardware) old logic
-          // Measure RMS for adaptive gain so quiet mics get boosted without clipping
-          let rmsForGain = 0;
-          let peakForGain = 0;
-          if (inputData.length > 0) {
-            let sumSquares2 = 0;
-            for (let i = 0; i < inputData.length; i++) {
-              const sample = inputData[i];
-              sumSquares2 += sample * sample;
-              const abs = Math.abs(sample);
-              if (abs > peakForGain) peakForGain = abs;
-            }
-            rmsForGain = Math.sqrt(sumSquares2 / inputData.length);
-          }
-
-          const dynamicGain = rmsForGain < 0.01 ? 18 : rmsForGain < 0.03 ? 12 : 8;
-
-          // Note: We already have 3x hardware gain from GainNode, so keep software gain adaptive
-          const GAIN = dynamicGain;
+          const GAIN = 10; // Reduced from 30 to prevent clipping (30x total with 3x hardware)
           const SOFT_THRESHOLD = 0.8; // Start soft limiting at 80% of max amplitude
           
           // Soft limiting function - prevents harsh clipping that breaks Deepgram STT
@@ -1030,27 +824,7 @@ export function useCustomVoice() {
           }
 
           const uint8Array = new Uint8Array(pcm16.buffer);
-
-          // Optimization: Use spread to avoid massive array allocation
-          // const binaryString = Array.from(uint8Array).map(byte => String.fromCharCode(byte)).join('');
-          
-          // Better approach for large arrays: batch processing to avoid stack overflow
-          let binaryString = '';
-          const len = uint8Array.length;
-          const chunkSize = 8192; // Process in 8KB chunks
-          
-          for (let i = 0; i < len; i += chunkSize) {
-            const chunk = uint8Array.subarray(i, Math.min(i + chunkSize, len));
-            binaryString += String.fromCharCode.apply(null, Array.from(chunk));
-          }
-
-          // ECHO PREVENTION: Don't send audio to Deepgram while tutor is actively speaking
-          // UNLESS the student has started speaking (barge-in override)
-          // This prevents the tutor's voice from being picked up and transcribed as student speech
-          if (isTutorSpeakingRef.current && isPlayingRef.current && !fallbackStudentSpeakingOverride) {
-            // Still process audio locally for barge-in detection, but don't send to STT
-            return;
-          }
+          const binaryString = Array.from(uint8Array).map(byte => String.fromCharCode(byte)).join('');
 
           wsRef.current.send(JSON.stringify({
             type: "audio",
@@ -1205,7 +979,7 @@ export function useCustomVoice() {
     setMicrophoneError(null);
   }, [microphoneError]);
 
-  const MAX_AUDIO_QUEUE_SIZE = 200; // Increased buffer size to support long tutor responses
+  const MAX_AUDIO_QUEUE_SIZE = 20; // Prevent unbounded queue growth
   
   const playAudio = async (base64Audio: string) => {
     if (!audioContextRef.current) {
@@ -1216,7 +990,7 @@ export function useCustomVoice() {
       // Safety: Prevent unbounded queue growth if playback stalls
       if (audioQueueRef.current.length >= MAX_AUDIO_QUEUE_SIZE) {
         console.warn(`[Custom Voice] ⚠️ Audio queue at max capacity (${MAX_AUDIO_QUEUE_SIZE}), dropping oldest chunks`);
-        audioQueueRef.current = audioQueueRef.current.slice(-100); // Keep last 100 chunks (preserve more context)
+        audioQueueRef.current = audioQueueRef.current.slice(-10); // Keep last 10 chunks
       }
       
       // Resume audio context if suspended (browser autoplay policy)

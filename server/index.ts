@@ -13,8 +13,8 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import * as dotenv from "dotenv";
 
-// Load environment variables from .env file (override existing to allow local overrides)
-dotenv.config({ override: true });
+// Load environment variables from .env file
+dotenv.config();
 
 // Validate critical API keys exist
 const requiredEnvVars = [
@@ -218,26 +218,17 @@ app.use((req, res, next) => {
     // this serves both the API and the client.
     // It is the only port that is not firewalled.
     const port = parseInt(process.env.PORT || '5000', 10);
-    // Allow override via HOST env var, default to 0.0.0.0 (or 127.0.0.1 on Windows)
-    // Windows doesn't support binding to 0.0.0.0, and localhost resolves to IPv6 (::1)
-    // which also causes issues, so use 127.0.0.1 explicitly for IPv4
-    const defaultHost = process.platform === 'win32' ? '127.0.0.1' : '0.0.0.0';
-    const host = process.env.HOST || defaultHost;
     
-    console.log(`Attempting to listen on ${host}:${port}...`);
-    const listenOptions: any = {
+    console.log(`Attempting to listen on 0.0.0.0:${port}...`);
+    server.listen({
       port,
-      host: host,
-    };
-    // reusePort is not supported on Windows
-    if (process.platform !== 'win32') {
-      listenOptions.reusePort = true;
-    }
-    server.listen(listenOptions, () => {
+      host: "0.0.0.0",
+      reusePort: true,
+    }, () => {
       console.log('=== SERVER STARTED SUCCESSFULLY ===');
-      console.log(`✓ Listening on ${host}:${port}`);
+      console.log(`✓ Listening on 0.0.0.0:${port}`);
       console.log(`✓ Environment: ${process.env.NODE_ENV}`);
-      console.log(`✓ Health check: http://${host}:${port}/api/health`);
+      console.log(`✓ Health check: http://0.0.0.0:${port}/api/health`);
       console.log('===================================');
       log(`serving on port ${port}`);
     });

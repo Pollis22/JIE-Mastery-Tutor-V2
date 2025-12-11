@@ -11,9 +11,6 @@
  * Usage: tsx server/scripts/migrate-production-schema.ts
  */
 
-import * as dotenv from 'dotenv';
-dotenv.config();
-
 import { db } from '../db';
 import { sql } from 'drizzle-orm';
 

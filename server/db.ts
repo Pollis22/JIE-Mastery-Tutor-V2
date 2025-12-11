@@ -1,8 +1,3 @@
-import * as dotenv from 'dotenv';
-
-// Load environment variables FIRST, before any other code
-dotenv.config();
-
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import * as schema from '@shared/schema';
@@ -18,9 +13,10 @@ if (!connectionString) {
 }
 
 // Configure PostgreSQL pool
-// SSL is handled automatically via sslmode parameter in connection string
+// Railway internal connections don't use SSL
 const pool = new Pool({
   connectionString: connectionString || 'postgresql://localhost:5432/dummy',
+  // No SSL config - Railway internal connections don't use SSL
   max: 10,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 5000,

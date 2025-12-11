@@ -276,24 +276,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateUserSettings(userId: string, settings: Partial<User>): Promise<User> {
-    console.log(`[Storage] Updating user ${userId} with settings:`, settings);
     const [user] = await db
       .update(users)
       .set({ ...settings, updatedAt: new Date() })
       .where(eq(users.id, userId))
       .returning();
-    
-    if (!user) {
-      throw new Error(`User ${userId} not found for update`);
-    }
-    
-    console.log(`[Storage] ✅ User ${userId} updated successfully. New values:`, {
-      firstName: user.firstName,
-      lastName: user.lastName,
-      email: user.email,
-      updatedAt: user.updatedAt
-    });
-    
     return user;
   }
 

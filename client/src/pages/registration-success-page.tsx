@@ -8,7 +8,7 @@ import { useAuth } from "@/hooks/use-auth";
 
 export default function RegistrationSuccessPage() {
   const [, setLocation] = useLocation();
-  const { user, refetch } = useAuth();
+  const { user } = useAuth();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [error, setError] = useState<string>('');
 
@@ -53,8 +53,8 @@ export default function RegistrationSuccessPage() {
         const data = await res.json();
         console.log('[Registration Success] User logged in:', data.user);
 
-        // Refetch user data to update auth context
-        await refetch();
+        // Invalidate user query to trigger refetch and update auth context
+        await queryClient.invalidateQueries({ queryKey: ["/api/user"] });
 
         setStatus('success');
 
@@ -71,7 +71,7 @@ export default function RegistrationSuccessPage() {
     };
 
     completeRegistration();
-  }, [setLocation, refetch]);
+  }, [setLocation]);
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">

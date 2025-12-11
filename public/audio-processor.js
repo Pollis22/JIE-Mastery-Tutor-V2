@@ -5,8 +5,8 @@
 class AudioProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    // Smaller buffer for faster audio transmission (~32ms at 16kHz)
-    this.bufferSize = 512;
+    // Smaller buffer for faster audio transmission (~64ms at 16kHz)
+    this.bufferSize = 1024;
     this.buffer = [];
 
     // AGGRESSIVE VAD for instant barge-in

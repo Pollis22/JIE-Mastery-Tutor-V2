@@ -37,6 +37,7 @@ function getDeepgramClient(): DeepgramClient {
 export interface DeepgramConnection {
   send: (audioData: Buffer) => void;
   close: () => void;
+  keepAliveInterval?: NodeJS.Timeout; // Track the keepAlive interval for cleanup
 }
 
 /**
@@ -121,8 +122,8 @@ export async function startDeepgramStream(
     // VAD & TIMING SETTINGS (Dec 10, 2025: Optimized for mid-sentence pauses)
     // Server-side accumulation handles the gap, Deepgram just needs to detect words
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    endpointing: 1200,          // 1.2s of silence detection (matches user request)
-    utterance_end_ms: 2000,     // 2s total wait before finalizing (matches user request)
+    endpointing: 1200,          // 1.2s for end-of-speech detection (Dec 10, 2025: reduced from 2s)
+    utterance_end_ms: 2000,     // 2s total wait before finalizing utterance
     vad_events: true,           // Enable voice activity detection events
     vad_threshold: 0.15,        // VERY LOW threshold for quiet speech detection (was 0.3)
 
@@ -136,26 +137,27 @@ export async function startDeepgramStream(
     console.log("[Deepgram] 📡 Connection object created");
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // KEEP-ALIVE MECHANISM (Dec 11, 2025 FIX)
-    // Deepgram disconnects after ~10-12 seconds of inactivity (NET0001)
-    // Send keepAlive every 8 seconds AFTER first audio frame to prevent idle timeout
+    // KEEP-ALIVE MECHANISM (Dec 9, 2025 FIX)
+    // Deepgram disconnects after ~10-12 seconds of inactivity
+    // Send keepAlive every 8 seconds to prevent timeout (Deepgram recommends < 12s)
+    // NOTE: keepAlive only works AFTER first audio frame is sent
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    const KEEPALIVE_INTERVAL_MS = 8000;
+    // CONNECTION HEALTH CHECK (Dec 10, 2025 FIX - UPDATED)
+    // Detect stale connections that stop returning transcripts
+    // If no transcripts for 5 MINUTES after audio sent, connection is dead
+    // Previous 30s threshold was too aggressive for tutoring (students think!)
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    const STALE_CONNECTION_THRESHOLD_MS = 300000; // 5 minutes (was 30s - too aggressive)
+    const HEALTH_CHECK_INTERVAL_MS = 30000; // Check every 30s (was 10s)
+    const KEEPALIVE_INTERVAL_MS = 8000; // Send keepAlive every 8s (was 5s, Deepgram recommends < 12s)
+    let keepAliveInterval: NodeJS.Timeout | null = null;
+    let healthCheckInterval: NodeJS.Timeout | null = null;
     let firstAudioSent = false;
     let connectionReady = false;
     let lastTranscriptTime: number = Date.now();
     let lastAudioSentTime: number = Date.now(); // DIAGNOSTIC: Track when audio was last sent
     let audioChunkCount: number = 0; // DIAGNOSTIC: Count audio chunks sent
     let connectionDead = false;
-    let keepAliveTimer: NodeJS.Timeout | null = null;
-    let keepAliveCount = 0;
-
-    const clearKeepAlive = () => {
-      if (keepAliveTimer) {
-        clearInterval(keepAliveTimer);
-        keepAliveTimer = null;
-      }
-    };
 
     connection.on(LiveTranscriptionEvents.Open, () => {
       console.log("[Deepgram] ✅ Connection opened");
@@ -214,8 +216,6 @@ export async function startDeepgramStream(
 
     // DIAGNOSTIC FIX (Dec 10, 2025): Capture close event with full metadata
     connection.on(LiveTranscriptionEvents.Close, (event: any) => {
-      clearKeepAlive();
-      connectionDead = true;
       const sessionDurationSec = Math.round((Date.now() - lastTranscriptTime) / 1000);
       const closeCode = event?.code || event?.closeCode || 'unknown';
       const closeReason = event?.reason || event?.closeReason || 'unknown';
@@ -235,6 +235,19 @@ export async function startDeepgramStream(
       console.error("[Deepgram] Full close event:", JSON.stringify(event, null, 2));
       console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
       
+      // Clear all intervals on close
+      if (keepAliveInterval) {
+        clearInterval(keepAliveInterval);
+        keepAliveInterval = null;
+        console.log("[Deepgram] 💓 KeepAlive interval cleared");
+      }
+      
+      if (healthCheckInterval) {
+        clearInterval(healthCheckInterval);
+        healthCheckInterval = null;
+        console.log("[Deepgram] 💚 Health check interval cleared");
+      }
+      
       if (onClose) {
         onClose();
       }
@@ -245,54 +258,113 @@ export async function startDeepgramStream(
       connection.on(LiveTranscriptionEvents.Open, resolve);
     });
 
-      const deepgramConnection: DeepgramConnection = {
-        send: (audioData: Buffer) => {
-          if (connection) {
-            connection.send(audioData as any);
-            
-            // DIAGNOSTIC: Track audio send timing
-            lastAudioSentTime = Date.now();
-            audioChunkCount++;
-            
-            // Log every 100 chunks to avoid spam but still track activity
-            if (audioChunkCount % 100 === 0) {
-              console.log(`[Deepgram] 🎤 Audio chunk #${audioChunkCount} sent (${audioData.length} bytes)`);
-            }
-            
-          // Mark first audio
+    // Helper function to start keepAlive interval
+    // CRITICAL FIX (Dec 10, 2025): Send proper KeepAlive JSON message
+    // Deepgram closes connections after 10-12 seconds without messages
+    // Must send {"type": "KeepAlive"} as TEXT message, not binary
+    const startKeepAliveInterval = () => {
+      if (keepAliveInterval) return; // Already running
+      
+      keepAliveInterval = setInterval(() => {
+        try {
+          if (!connectionReady || connectionDead) {
+            console.log("[Deepgram] ⏸️ KeepAlive skipped (connection not ready or dead)");
+            return;
+          }
+          
+          // Try SDK's keepAlive method first (preferred)
+          if ((connection as any).keepAlive) {
+            (connection as any).keepAlive();
+            console.log("[Deepgram] 💓 KeepAlive sent via SDK method");
+          } else {
+            // Fallback: Send KeepAlive as raw JSON text message
+            // This is what Deepgram expects: {"type": "KeepAlive"}
+            console.warn("[Deepgram] ⚠️ SDK keepAlive not available, sending raw JSON");
+            (connection as any).send(JSON.stringify({ type: "KeepAlive" }));
+            console.log("[Deepgram] 💓 KeepAlive sent via raw JSON");
+          }
+        } catch (err) {
+          console.error("[Deepgram] ❌ KeepAlive failed:", err);
+          // Connection might be dead - mark it
+          if (!connectionDead) {
+            console.warn("[Deepgram] ⚠️ KeepAlive failure suggests connection is dead");
+          }
+        }
+      }, KEEPALIVE_INTERVAL_MS);
+      
+      console.log(`[Deepgram] 💓 KeepAlive interval started (every ${KEEPALIVE_INTERVAL_MS / 1000}s)`);
+    };
+
+    // Helper function to start health check interval
+    const startHealthCheckInterval = () => {
+      if (healthCheckInterval) return; // Already running
+      
+      healthCheckInterval = setInterval(() => {
+        const timeSinceTranscript = Date.now() - lastTranscriptTime;
+        const timeSinceTranscriptSec = Math.round(timeSinceTranscript / 1000);
+        
+        // Log health status every check (less verbose when things are fine)
+        if (timeSinceTranscript < 60000) {
+          console.log(`[Deepgram] 💚 Health check: ${timeSinceTranscriptSec}s since last transcript - OK`);
+        } else {
+          console.log(`[Deepgram] 💛 Health check: ${timeSinceTranscriptSec}s since last transcript (student may be thinking)`);
+        }
+        
+        // Close after 5 MINUTES of complete silence (prevents overbilling)
+        if (timeSinceTranscript > STALE_CONNECTION_THRESHOLD_MS && firstAudioSent && !connectionDead) {
+          console.warn(`[Deepgram] ⚠️ STALE CONNECTION: No transcripts for ${timeSinceTranscriptSec}s (>${STALE_CONNECTION_THRESHOLD_MS / 1000}s threshold), closing connection`);
+          connectionDead = true;
+          connection.finish();
+        }
+      }, HEALTH_CHECK_INTERVAL_MS);
+      
+      console.log(`[Deepgram] 💚 Health check interval started (every ${HEALTH_CHECK_INTERVAL_MS / 1000}s, stale threshold: ${STALE_CONNECTION_THRESHOLD_MS / 1000}s)`);
+    };
+
+    const deepgramConnection: DeepgramConnection = {
+      send: (audioData: Buffer) => {
+        if (connection) {
+          connection.send(audioData);
+          
+          // DIAGNOSTIC: Track audio send timing
+          lastAudioSentTime = Date.now();
+          audioChunkCount++;
+          
+          // Log every 100 chunks to avoid spam but still track activity
+          if (audioChunkCount % 100 === 0) {
+            console.log(`[Deepgram] 🎤 Audio chunk #${audioChunkCount} sent (${audioData.length} bytes)`);
+          }
+          
+          // Start keepAlive and health check after first audio is sent (per Deepgram docs)
           if (!firstAudioSent && connectionReady) {
             firstAudioSent = true;
-            console.log("[Deepgram] 🎤 First audio sent");
+            console.log("[Deepgram] 🎤 First audio sent - starting keepAlive and health check");
+            startKeepAliveInterval();
+            startHealthCheckInterval(); // HEALTH CHECK: Start monitoring for stale connections
           }
-
-          // Start keepAlive loop after first audio to avoid NET0001 idle timeout
-          if (firstAudioSent && !keepAliveTimer && typeof (connection as any).keepAlive === "function") {
-            keepAliveTimer = setInterval(() => {
-              try {
-                (connection as any).keepAlive();
-                keepAliveCount++;
-                // Log every 5th keepAlive to reduce noise
-                if (keepAliveCount % 5 === 0) {
-                  const idleSeconds = Math.round((Date.now() - lastAudioSentTime) / 1000);
-                  console.log(`[Deepgram] 💓 keepAlive #${keepAliveCount} (idle ${idleSeconds}s)`);
-                }
-              } catch (err) {
-                console.error("[Deepgram] ❌ keepAlive error:", err);
-              }
-            }, KEEPALIVE_INTERVAL_MS);
-          }
-          }
-        },
-        close: () => {
-          connectionReady = false;
-          clearKeepAlive();
-          if (connection) {
-            connection.finish();
-          }
-        },
-      };
-      
-      return deepgramConnection;
+        }
+      },
+      close: () => {
+        // Clear all intervals
+        if (keepAliveInterval) {
+          clearInterval(keepAliveInterval);
+          keepAliveInterval = null;
+          console.log("[Deepgram] 💓 KeepAlive interval cleared on close()");
+        }
+        if (healthCheckInterval) {
+          clearInterval(healthCheckInterval);
+          healthCheckInterval = null;
+          console.log("[Deepgram] 💚 Health check interval cleared on close()");
+        }
+        connectionReady = false;
+        if (connection) {
+          connection.finish();
+        }
+      },
+      keepAliveInterval: keepAliveInterval || undefined,
+    };
+    
+    return deepgramConnection;
     
   } catch (error) {
     console.error("[Deepgram] ❌ Error creating connection:", error);

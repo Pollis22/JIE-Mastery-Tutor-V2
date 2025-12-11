@@ -7,7 +7,7 @@
  * Unauthorized copying, modification, or distribution is strictly prohibited.
  */
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -47,20 +47,6 @@ export default function AccountSettings() {
     lastName: user?.lastName || ""
   });
 
-  // Sync profileData with user when user data changes (after refetch)
-  useEffect(() => {
-    if (user) {
-      setProfileData({
-        parentName: user.parentName || "",
-        studentName: user.studentName || "",
-        studentAge: user.studentAge || "",
-        email: user.email || "",
-        firstName: user.firstName || "",
-        lastName: user.lastName || ""
-      });
-    }
-  }, [user]);
-
   const [passwordData, setPasswordData] = useState({
     currentPassword: "",
     newPassword: "",
@@ -75,31 +61,17 @@ export default function AccountSettings() {
 
   const updateProfileMutation = useMutation({
     mutationFn: async (data: any) => {
-      console.log('[AccountSettings] Making API request with data:', data);
       const response = await apiRequest("PATCH", "/api/user/profile", data);
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error('[AccountSettings] API error:', errorData);
-        throw new Error(errorData.error || "Failed to update profile");
-      }
-      const result = await response.json();
-      console.log('[AccountSettings] API response:', result);
-      return result;
+      if (!response.ok) throw new Error("Failed to update profile");
+      return response.json();
     },
-    onSuccess: async (data) => {
+    onSuccess: () => {
       toast({
         title: "Success",
         description: "Profile updated successfully",
       });
       setIsEditing(false);
-      
-      // Update the query cache with the returned user data if available
-      if (data.user) {
-        queryClient.setQueryData(["/api/user"], data.user);
-      }
-      
-      // Also refetch to ensure we have the latest data
-      await refetch();
+      refetch();
       queryClient.invalidateQueries({ queryKey: ["/api/user"] });
     },
     onError: (error) => {
@@ -147,14 +119,7 @@ export default function AccountSettings() {
 
   const handleProfileSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // Only send fields that the API accepts
-    const updateData: any = {};
-    if (profileData.firstName) updateData.firstName = profileData.firstName;
-    if (profileData.lastName) updateData.lastName = profileData.lastName;
-    if (profileData.email) updateData.email = profileData.email;
-    
-    console.log('[AccountSettings] Sending profile update:', updateData);
-    updateProfileMutation.mutate(updateData);
+    updateProfileMutation.mutate(profileData);
   };
 
   const handlePasswordSubmit = (e: React.FormEvent) => {
