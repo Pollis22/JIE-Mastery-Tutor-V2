@@ -45,6 +45,7 @@ export function useCustomVoice() {
   // Track auto-recovery for unexpected audio track deaths
   // Uses a Promise-based mutex to serialize recovery attempts
   const recoveryPromiseRef = useRef<Promise<void> | null>(null);
+  const selectedMicrophoneIdRef = useRef<string | null>(null);  // Store original device ID
   const MAX_MIC_RECOVERY_ATTEMPTS = 3;
   const MIC_RECOVERY_DELAY_MS = 500;
   
@@ -368,15 +369,45 @@ export function useCustomVoice() {
         throw new Error('BROWSER_NOT_SUPPORTED');
       }
       
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          sampleRate: 16000,
-          channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: false,  // Disable - can cut off quiet speech
-          autoGainControl: true,    // Let browser boost quiet audio
+      // Build constraints: use the same device if we have a stored ID (for recovery)
+      const audioConstraints: MediaStreamConstraints['audio'] = selectedMicrophoneIdRef.current
+        ? {
+            deviceId: { exact: selectedMicrophoneIdRef.current },
+            sampleRate: 16000,
+            channelCount: 1,
+            echoCancellation: true,
+            noiseSuppression: false,  // Disable - can cut off quiet speech
+            autoGainControl: true,    // Let browser boost quiet audio
+          }
+        : {
+            sampleRate: 16000,
+            channelCount: 1,
+            echoCancellation: true,
+            noiseSuppression: false,  // Disable - can cut off quiet speech
+            autoGainControl: true,    // Let browser boost quiet audio
+          };
+      
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+      } catch (error) {
+        // If exact device ID constraint failed (device disconnected?), try any device
+        if (selectedMicrophoneIdRef.current) {
+          console.warn('[Custom Voice] ⚠️ Failed to recover with same device (ID:', selectedMicrophoneIdRef.current, '), trying any device...');
+          selectedMicrophoneIdRef.current = null; // Reset device ID
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              sampleRate: 16000,
+              channelCount: 1,
+              echoCancellation: true,
+              noiseSuppression: false,
+              autoGainControl: true,
+            }
+          });
+        } else {
+          throw error;
         }
-      });
+      }
       
       console.log("[Custom Voice] ✅ Microphone access granted");
       
@@ -388,6 +419,11 @@ export function useCustomVoice() {
       // Add track.onended listener - simple call to recovery function
       const audioTrack = stream.getAudioTracks()[0];
       if (audioTrack) {
+        // Store device ID from successful connection for recovery
+        const settings = audioTrack.getSettings();
+        selectedMicrophoneIdRef.current = settings.deviceId || null;
+        console.log(`[Custom Voice] 🎤 Using microphone: ${audioTrack.label}, deviceId: ${selectedMicrophoneIdRef.current || 'unknown'}`);
+        
         audioTrack.onended = () => {
           // Skip if this was an intentional cleanup
           if (streamCleanupTriggeredRef.current) {
@@ -395,7 +431,10 @@ export function useCustomVoice() {
             return;
           }
           
-          console.warn('[Custom Voice] ⚠️ Audio track ended unexpectedly');
+          console.error('[Custom Voice] ⚠️ Audio track ended unexpectedly');
+          console.error('[Custom Voice] Track state:', audioTrack.readyState);
+          console.error('[Custom Voice] Track enabled:', audioTrack.enabled);
+          console.error('[Custom Voice] Track muted:', audioTrack.muted);
           attemptMicRecovery(); // Async recovery with retry loop
         };
         console.log('[Custom Voice] 📡 Added track.onended listener for track:', audioTrack.label);
