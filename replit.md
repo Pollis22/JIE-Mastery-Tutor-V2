@@ -1,7 +1,7 @@
 # AI Tutor - Web Application
 
 ## Overview
-This project is a production-ready conversational AI tutoring web platform for Math, English, and Spanish, supporting 22 languages. It offers interactive voice conversations, personalized quizzes, and adaptive learning paths. The platform features a multi-agent AI system with five age-specific tutors (K-2, Grades 3-5, 6-8, 9-12, College/Adult), each optimized for their target age group. It uses the **Adaptive Socratic Method** which balances guided discovery with direct instruction to prevent frustration while maximizing learning. The platform supports a hybrid minute tracking policy (subscription and rollover minutes) and prioritizes per-session configuration for flexible family sharing, designed for high reliability and a streamlined user experience. The business vision is to provide a globally accessible, effective, and frustration-free AI tutoring experience that adapts to individual learning needs.
+This project is a production-ready conversational AI tutoring web platform for Math, English, and Spanish, supporting 22 languages and designed for global accessibility. It offers interactive voice conversations, personalized quizzes, and adaptive learning paths. The platform features a multi-agent AI system with five age-specific tutors (K-2, Grades 3-5, 6-8, 9-12, College/Adult) optimized for their target age groups. It utilizes an Adaptive Socratic Method to balance guided discovery with direct instruction, aiming to prevent frustration and maximize learning. The platform supports a hybrid minute tracking policy (subscription and rollover minutes) and prioritizes per-session configuration for flexible family sharing, ensuring high reliability and a streamlined user experience.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
@@ -9,113 +9,37 @@ Preferred communication style: Simple, everyday language.
 ## System Architecture
 
 ### Full-Stack Architecture
-The application uses a modern full-stack architecture:
--   **Frontend**: React 18+ with Next.js 14+ App Router, TypeScript, and Vite.
--   **Backend**: Node.js with Express API routes.
--   **Database**: PostgreSQL with Drizzle ORM.
--   **Styling**: Tailwind CSS with Shadcn/ui.
+The application uses a modern full-stack architecture with React 18+ (Next.js 14+ App Router, TypeScript, Vite) for the frontend, Node.js with Express API routes for the backend, PostgreSQL with Drizzle ORM for the database, and Tailwind CSS with Shadcn/ui for styling.
 
 ### Authentication & Authorization
--   Simple username/password authentication using Passport.js local strategy and session-based authentication with PostgreSQL session storage.
--   Role-based access control with admin privileges.
--   COPPA-compliant email verification system.
--   **Production-Grade WebSocket Security** (November 2025):
-    -   Session-based authentication for WebSocket upgrades (no client-sent userId trusted).
-    -   Session rotation on login with 30-minute freshness enforcement.
-    -   Explicit session destruction on logout with cookie clearing.
-    -   IP-based rate limiting: 20 upgrade requests per minute, 5 concurrent connections per IP.
-    -   Standalone session validator (no Express middleware reuse, prevents double-initialization).
-    -   Malformed cookie handling with proper error responses.
-    -   All security measures tested and architect-approved for production deployment.
+Simple username/password authentication using Passport.js with session-based authentication and PostgreSQL session storage. It includes role-based access control with admin privileges, COPPA-compliant email verification, and production-grade WebSocket security featuring session-based authentication, session rotation, explicit session destruction on logout, and IP-based rate limiting.
 
 ### Access Control & Subscription Enforcement
-A three-tier access control system ensures only subscribed users with available minutes can access tutoring. This includes authentication, active subscription checks, minute balance enforcement, protected voice endpoints with concurrent session limits, and session-based minute deduction.
+A three-tier access control system ensures only subscribed users with available minutes can access tutoring, including authentication, active subscription checks, minute balance enforcement, and protected voice endpoints with concurrent session limits and session-based minute deduction.
 
 ### Session Priority System
-The platform uses a **session-first** data priority model where session configuration dictates grade level, subject, and language, with user profiles serving as defaults, enabling flexible family sharing.
+The platform uses a session-first data priority model, where session configuration dictates grade level, subject, and language, with user profiles serving as defaults, enabling flexible family sharing.
 
-### Student Profile Management (December 2025)
--   **Auto-Select with Persistence**: StudentSwitcher automatically selects the last used profile via localStorage (`jie-last-selected-student`). If no history exists, auto-selects first available profile. If no profiles exist, shows "Create Profile" prompt.
--   **Integrated Profile Dropdown**: Profile selection integrated into StudentSwitcher header dropdown (no separate "Select Student" button). Users access all profile options (switch, create, edit) from one dropdown menu.
--   **Avatar System**: Three types of avatars supported:
-    -   **Default**: Generic user icon when no avatar selected
-    -   **Preset**: 20 emoji avatars including diverse skin tones, graduation caps, and fun icons
-    -   **Upload**: Custom image upload for personalized avatars (rendered as rounded thumbnails)
--   **Session Tracking**: `lastSessionAt` timestamp automatically updated when sessions start
--   **Family Sharing**: Multiple student profiles per account, each with unique avatar, name, grade, learning pace, and encouragement preferences
--   **Avatar Rendering**: StudentSwitcher and TutorPage components render uploaded avatars as `<img>` elements and preset avatars as emoji spans
--   **Enum Value Mapping**: Frontend-backend translation for pace (slow/moderate/fast ↔ slow/normal/fast) and encouragement (minimal/moderate/high ↔ low/medium/high)
+### Student Profile Management
+Features auto-selection of the last used profile, an integrated profile dropdown for selection and management, and a versatile avatar system supporting default, preset (20 emoji avatars), and custom uploaded images. Each profile tracks `lastSessionAt` and supports unique preferences for family sharing.
 
 ### Voice Technology Integration
-A custom, production-ready voice stack provides real-time, natural conversations with 1-2 seconds end-to-end latency.
--   **22 Languages Supported**: Including English, Spanish, Arabic, Russian, and more, with auto-detection of browser language.
--   **Language Selection UI** (December 2025): Dropdown menu near the "Start Voice Tutoring" button allows students to select their preferred tutoring language. The selected language persists in localStorage across sessions.
-    -   Deepgram STT configured per-language for accurate speech recognition
-    -   Claude AI system prompt includes language instruction for non-English sessions
-    -   **25 Languages supported**: English, Spanish, French, German, Italian, Portuguese, Chinese (Mandarin), Japanese, Korean, Arabic, Hindi, Russian, Dutch, Polish, Turkish, Vietnamese, Thai, Indonesian, Swedish, Danish, Norwegian, Finnish, Swahili, Yoruba, Hausa
-    -   **African Languages**: Swahili, Yoruba, and Hausa use multi-language detection for speech recognition while Claude AI responds fully in the target language
--   **Age-Appropriate TTS Voices**: Each language has 5 distinct Azure Neural TTS voices optimized for different age groups (K-2, 3-5, 6-8, 9-12, College/Adult).
--   **Audio Processing Pipeline** (November 2025): Custom ScriptProcessorNode implementation with 100x gain amplification for quiet microphones, silence detection (threshold: 10), MediaStream health checks, and audio context suspension protection.
--   **Format**: PCM16 (16-bit Linear PCM), 16kHz sample rate, mono audio with base64 WebSocket transport.
--   Supports text chat during voice sessions, user-controlled speech speed, and robust microphone error handling.
--   Flexible communication modes: Voice Mode, Hybrid Mode (listen-only, respond via text), and Text-Only Mode.
--   **5-Minute Inactivity Auto-Timeout** (November 2025): Backend tracks user inactivity via speech and text. Issues warning at 4 minutes of silence with audio message. Auto-ends session at 5 minutes with farewell message and proper minute deduction. Activity timer resets on any user interaction (voice or text). Prevents wasted minutes from forgotten sessions. Timer cleanup centralized in finalizeSession for robust lifecycle management.
--   **Production-Grade Microphone Recovery** (December 2025): Comprehensive auto-recovery system with multi-stage fallback strategy:
-    -   **Stage 1 (500ms delay)**: Tries exact device ID to reconnect to original microphone after USB stabilization
-    -   **Stage 2 (1000ms delay)**: Matches device by label (handles cases where device ID changes between sessions)
-    -   **Stage 3 (1500ms delay)**: Filtered fallback - picks best available microphone while excluding system audio (Stereo Mix, What U Hear, Loopback, Virtual, Cable)
-    -   **Device Storage**: Stores both device ID and label as backup for resilient recovery across sessions
-    -   **Serialized Recovery**: Promise-based mutex prevents overlapping recovery attempts
-    -   **Health Checks**: Verifies stream stability before declaring recovery successful
-    -   **User Feedback**: Shows error UI with troubleshooting steps if all recovery attempts fail
--   **Audio Device Settings** (December 2025): User-configurable audio device selection in Settings:
-    -   **Microphone Selection**: Dropdown with all available input devices, "System Default" option, and mic test with real-time volume meter
-    -   **Speaker Selection**: Dropdown with output devices (Chrome/Firefox/Edge only - not supported in Safari)
-    -   **Virtual Audio Toggle**: Option to show virtual audio devices (Voicemeeter, OBS, VB-Cable) for streamers/podcasters
-    -   **Preference Persistence**: Saves to localStorage (`jie-preferred-microphone-id`, `jie-preferred-microphone-label`, `jie-preferred-speaker-id`)
-    -   **Smart Device Matching**: Falls back to label matching when device IDs change between sessions
-    -   **Integration**: Voice sessions automatically use user's preferred microphone when starting
+A custom, production-ready voice stack provides real-time, natural conversations with 1-2 seconds end-to-end latency, supporting 25 languages with auto-detection and a language selection UI. It incorporates age-appropriate Azure Neural TTS voices for each age group, a custom audio processing pipeline with amplification and silence detection, and PCM16, 16kHz mono audio over WebSockets. Features include text chat during voice sessions, user-controlled speech speed, robust microphone error handling, flexible communication modes (Voice, Hybrid, Text-Only), a 5-minute inactivity auto-timeout, production-grade microphone recovery with multi-stage fallback, and user-configurable audio device settings (microphone and speaker selection, virtual audio toggle) that persist preferences.
 
 ### AI & Learning Engine
--   **Primary AI Model**: Claude Sonnet 4 with an enhanced TutorMind system prompt.
--   **Teaching Method**: **Modified Adaptive Socratic Method** (Updated November 2025) - A balanced 3-phase approach that prevents both "too easy" and "too hard" learning experiences:
-    1.  **Guided Discovery (First Question)**: ALWAYS guide with questions first, NEVER give direct answers immediately. Ask "What do you think?" and suggest problem-solving strategies.
-    2.  **Direct Instruction (After 2-3 Tries)**: Give complete answer with clear explanation after 2-3 failed attempts or when frustration detected. Break down WHY each step works.
-    3.  **Understanding Check**: Confirm comprehension through explanation or similar practice problems.
--   **Critical Rule**: Tutor must guide students to think first, but will provide answers after 2-3 genuine attempts to prevent frustration and gaming the system.
--   **Frustration Prevention**: AI recognizes 8+ frustration signals ("I don't know", "I give up", etc.) and immediately switches to direct teaching mode.
--   **Tutor Personalities**: Five distinct age-specific personalities share the Adaptive Socratic core while maintaining unique tone and content moderation.
--   **Implementation Architecture**: Standalone `server/llm/adaptiveSocraticCore.ts` module imported by personality prompts, voice prompts, and base system prompt, ensuring a clean DAG structure.
+The primary AI model is Claude Sonnet 4 with an enhanced TutorMind system prompt, employing a Modified Adaptive Socratic Method. This 3-phase approach balances guided discovery, direct instruction after 2-3 attempts or frustration detection, and understanding checks. It prioritizes guiding students to think first but provides answers to prevent frustration. The system incorporates frustration prevention by recognizing 8+ signals and switching to direct teaching. Five distinct age-specific tutor personalities maintain unique tones while adhering to the Adaptive Socratic core.
 
 ### Content Moderation System
 A balanced, context-aware content moderation system for educational environments, utilizing a keyword whitelist and multi-layered AI moderation, acting only on high-confidence violations.
 
 ### RAG (Retrieval-Augmented Generation) System
-Supports document uploads (PDF, DOCX, images, etc.) for each tutoring session, with automatic retrieval, chunking, and integration into the AI system prompt.
--   **Multilingual Document Processing** (December 2025): Documents can be uploaded in any of the 25 supported languages. Image OCR uses Tesseract.js with language-specific models for accurate text extraction:
-    -   Supported OCR languages: English, Spanish, French, German, Italian, Portuguese, Chinese (Simplified), Japanese, Korean, Arabic, Hindi, Russian, Dutch, Polish, Turkish, Vietnamese, Thai, Indonesian, Swedish, Danish, Norwegian, Finnish, Swahili
-    -   African languages (Yoruba, Hausa) fall back to English OCR due to limited Tesseract support, but Claude AI can still tutor in these languages
-    -   PDF, DOCX, TXT, CSV, XLSX files work with any language (text extraction, not OCR)
-    -   Language is stored per-document and used for processing
+Supports multilingual document uploads (PDF, DOCX, images, etc.) for each tutoring session, with automatic retrieval, chunking, and integration into the AI system prompt. Image OCR uses Tesseract.js with language-specific models for accurate text extraction across 25 supported languages.
 
 ### Database Schema & Data Management
-Core entities include Users, Learning Sessions, Quiz Attempts, User Documents, and Document Embeddings. Employs lazy database initialization and a production database migration system using `ADD COLUMN IF NOT EXISTS` for safe schema changes.
+Core entities include Users, Learning Sessions, Quiz Attempts, User Documents, and Document Embeddings. It employs lazy database initialization and a production database migration system using `ADD COLUMN IF NOT EXISTS` for safe schema changes.
 
 ### Payment & Subscription System
-Stripe Integration for subscriptions and payments, featuring a **Hybrid Minute Tracking** system where subscription minutes reset monthly, and purchased minutes rollover indefinitely.
--   **Subscription Change Security & Billing** (December 2025 - CRITICAL FIX):
-    -   **Upgrades**: Immediate proration billing using `always_invoice` - user pays prorated difference NOW
-    -   **Downgrades**: Scheduled for end of billing period - user keeps current plan benefits until renewal (no refunds)
-    -   Database subscription updates gated by Stripe payment confirmation (upgrades) or invoice.payment_succeeded (downgrades)
-    -   Previous vulnerability allowed free upgrades by clicking plan cards without checkout
-    -   Metadata tracks `changeType`, `previousPlan`, and `scheduledAt` for proper handling
--   **Promo Code Support** (December 2025):
-    -   `/api/promo/validate` endpoint validates promo codes against Stripe Promotion Codes API
-    -   Registration checkout has `allow_promotion_codes: true` for Stripe's built-in promo UI
-    -   Subscription upgrades accept optional promo codes via `discounts` parameter
-    -   Frontend PromoCodeInput component with validation, applied state, and error handling
-    -   Server returns `discountApplied` flag so UI accurately reflects whether discount was applied
-    -   Invalid promo codes return 400 error instead of being silently ignored
+Stripe Integration handles subscriptions and payments, featuring a Hybrid Minute Tracking system where subscription minutes reset monthly, and purchased minutes rollover indefinitely. It includes secure subscription change handling (proration for upgrades, scheduled for downgrades) and promo code support integrated into the checkout and upgrade processes.
 
 ### Admin Dashboard System
 A comprehensive administrative interface with audit logging for user, subscription, and document management, analytics, and agent monitoring.
