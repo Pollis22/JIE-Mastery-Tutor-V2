@@ -750,6 +750,9 @@ export function useCustomVoice() {
         const VAD_THRESHOLD = 0.06; // Base speech detection threshold (was 0.003, too low)
         const SPEECH_DEBOUNCE_MS = 150; // Require 150ms of sustained speech to trigger
         const SILENCE_DEBOUNCE_MS = 800; // Require 800ms of sustained silence to end
+        const MIN_SPEECH_DURATION_MS = 600; // Minimum speech duration to be considered valid
+        const SPEECH_COALESCE_WINDOW_MS = 1000; // Window to coalesce rapid speech events
+        const POST_INTERRUPTION_BUFFER_MS = 2000; // Buffer after barge-in to prevent fragmentation
 
         processor.onaudioprocess = (e) => {
           if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
