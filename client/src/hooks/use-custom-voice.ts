@@ -197,10 +197,21 @@ export function useCustomVoice() {
               }
             });
             
-            // Setup stream and exit recovery
+            // Setup stream and exit recovery, persist to localStorage
+            const track = stream.getAudioTracks()[0];
+            selectedMicrophoneLabelRef.current = track?.label || '';
             mediaStreamRef.current = stream;
             setupAudioTrackListener(stream);
             setMicrophoneError(null);
+            
+            // Persist recovered device to localStorage
+            try {
+              if (selectedMicrophoneIdRef.current) {
+                localStorage.setItem('jie-preferred-microphone-id', selectedMicrophoneIdRef.current);
+              }
+              if (track?.label) localStorage.setItem('jie-preferred-microphone-label', track.label);
+            } catch (e) { /* ignore */ }
+            
             console.log('[Custom Voice] ✅ Recovered with exact deviceId');
             return;
           } catch (e) {
@@ -229,11 +240,20 @@ export function useCustomVoice() {
                 }
               });
               
-              // Update stored ID and setup
+              // Update stored ID and setup, persist to localStorage
+              const track = stream.getAudioTracks()[0];
               selectedMicrophoneIdRef.current = matchedDeviceId;
+              selectedMicrophoneLabelRef.current = track?.label || '';
               mediaStreamRef.current = stream;
               setupAudioTrackListener(stream);
               setMicrophoneError(null);
+              
+              // Persist recovered device to localStorage
+              try {
+                localStorage.setItem('jie-preferred-microphone-id', matchedDeviceId);
+                if (track?.label) localStorage.setItem('jie-preferred-microphone-label', track.label);
+              } catch (e) { /* ignore */ }
+              
               console.log('[Custom Voice] ✅ Recovered with label match');
               return;
             }
@@ -263,11 +283,20 @@ export function useCustomVoice() {
                 }
               });
               
-              // Update stored info and setup
+              // Update stored info and setup, persist to localStorage
+              const track = stream.getAudioTracks()[0];
               selectedMicrophoneIdRef.current = bestMicId;
+              selectedMicrophoneLabelRef.current = track?.label || '';
               mediaStreamRef.current = stream;
               setupAudioTrackListener(stream);
               setMicrophoneError(null);
+              
+              // Persist recovered device to localStorage
+              try {
+                localStorage.setItem('jie-preferred-microphone-id', bestMicId);
+                if (track?.label) localStorage.setItem('jie-preferred-microphone-label', track.label);
+              } catch (e) { /* ignore */ }
+              
               console.log('[Custom Voice] ✅ Recovered with filtered fallback');
               return;
             }
@@ -591,11 +620,15 @@ export function useCustomVoice() {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         console.error('[Custom Voice] ❌ Browser does not support getUserMedia');
         setMicrophoneError({
-          type: 'not-supported',
           message: 'Your browser does not support voice recording. Please use a modern browser like Chrome, Firefox, or Edge.',
-          canRetry: false,
+          troubleshooting: [
+            'Use a modern browser like Chrome, Firefox, or Edge',
+            'Update your browser to the latest version',
+            'Voice features are not available in Safari on iOS versions before 14.3'
+          ],
+          errorType: 'BROWSER_NOT_SUPPORTED',
         });
-        throw new Error('BROWSER_NOT_SUPPORTED');
+        return; // Exit gracefully instead of throwing
       }
       
       // First check for user's preferred microphone from settings
@@ -650,6 +683,7 @@ export function useCustomVoice() {
       setMicrophoneError(null);
       
       // Sync the actual device ID/label to localStorage for preference persistence
+      // This ensures recovery and fallback choices become the stored preference
       const audioTrack = stream.getAudioTracks()[0];
       if (audioTrack) {
         const settings = audioTrack.getSettings();
@@ -658,12 +692,14 @@ export function useCustomVoice() {
           selectedMicrophoneIdRef.current = actualDeviceId;
           selectedMicrophoneLabelRef.current = audioTrack.label;
           
-          // Only update localStorage if user had a preference set (not system default)
-          const hadPreference = localStorage.getItem('jie-preferred-microphone-id');
-          if (hadPreference) {
+          // Always persist the acquired device so next session uses it directly
+          // Only skip if user explicitly cleared preferences (system default)
+          try {
             localStorage.setItem('jie-preferred-microphone-id', actualDeviceId);
             localStorage.setItem('jie-preferred-microphone-label', audioTrack.label);
             console.log('[Custom Voice] 🔄 Synced mic preference:', audioTrack.label);
+          } catch (e) {
+            console.warn('[Custom Voice] Could not save mic preference:', e);
           }
         }
       }
