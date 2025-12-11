@@ -535,11 +535,14 @@ export function useCustomVoice() {
         let workletLastSpeechEndTime = 0;
         let workletPostInterruptionBufferActive = false;
         let workletPostInterruptionTimeout: ReturnType<typeof setTimeout> | null = null;
+        let workletStudentSpeakingOverride = false; // BARGE-IN FIX: Override echo gate when student speaks
+        let workletStudentSpeakingTimeout: ReturnType<typeof setTimeout> | null = null;
         
         const MIN_SPEECH_DURATION_MS = 600;
         const SPEECH_COALESCE_WINDOW_MS = 1000;
         const POST_INTERRUPTION_BUFFER_MS = 2000;
         const SPEECH_DEBOUNCE_MS = 150;
+        const STUDENT_SPEAKING_TIMEOUT_MS = 3000; // Keep sending audio for 3s after last speech detected
         
         // Handle audio data and VAD events from AudioWorklet
         processor.port.onmessage = (event) => {
@@ -595,6 +598,15 @@ export function useCustomVoice() {
               stopAudio();
               setIsTutorSpeaking(false);
               
+              // BARGE-IN FIX: Enable student speaking override to resume audio capture
+              workletStudentSpeakingOverride = true;
+              if (workletStudentSpeakingTimeout) clearTimeout(workletStudentSpeakingTimeout);
+              workletStudentSpeakingTimeout = setTimeout(() => {
+                workletStudentSpeakingOverride = false;
+                console.log('[Custom Voice] 🔊 Student speaking override ended (AudioWorklet)');
+              }, STUDENT_SPEAKING_TIMEOUT_MS);
+              console.log('[Custom Voice] 🔊 Student speaking override enabled - audio capture resumed');
+              
               // POST-INTERRUPTION BUFFER (Dec 10, 2025 FIX)
               // After barge-in, ignore rapid speech-end events for 2 seconds
               workletPostInterruptionBufferActive = true;
@@ -646,6 +658,17 @@ export function useCustomVoice() {
             console.log(`[Custom Voice] 🔇 VAD: Speech ended (duration=${speechDuration}ms) (AudioWorklet)`);
             workletLastSpeechEndTime = now;
             workletSpeechStartTime = 0;
+            
+            // BARGE-IN FIX: Clear student speaking override when speech ends
+            // This prevents tutor audio from leaking to Deepgram after user stops speaking
+            if (workletStudentSpeakingOverride) {
+              workletStudentSpeakingOverride = false;
+              if (workletStudentSpeakingTimeout) {
+                clearTimeout(workletStudentSpeakingTimeout);
+                workletStudentSpeakingTimeout = null;
+              }
+              console.log('[Custom Voice] 🔊 Student speaking override cleared on speech_end (AudioWorklet)');
+            }
             return;
           }
           // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -713,8 +736,9 @@ export function useCustomVoice() {
           }
 
           // ECHO PREVENTION: Don't send audio to Deepgram while tutor is actively speaking
+          // UNLESS the student has started speaking (barge-in override)
           // This prevents the tutor's voice from being picked up and transcribed as student speech
-          if (isTutorSpeakingRef.current && isPlayingRef.current) {
+          if (isTutorSpeakingRef.current && isPlayingRef.current && !workletStudentSpeakingOverride) {
             // Still process audio locally for barge-in detection, but don't send to STT
             return;
           }
@@ -752,6 +776,8 @@ export function useCustomVoice() {
         let lastSpeechEndTime = 0; // Track last confirmed speech end for coalescing
         let postInterruptionBufferActive = false; // Post-barge-in buffer period
         let postInterruptionTimeout: NodeJS.Timeout | null = null; // Timer for buffer period
+        let fallbackStudentSpeakingOverride = false; // BARGE-IN FIX: Override echo gate when student speaks
+        let fallbackStudentSpeakingTimeout: NodeJS.Timeout | null = null;
         
         const MAX_SILENT_CHUNKS = 5; // Only ~100ms of silence before considering speech ended
         const VAD_THRESHOLD = 0.06; // Base speech detection threshold (was 0.003, too low)
@@ -760,6 +786,7 @@ export function useCustomVoice() {
         const MIN_SPEECH_DURATION_MS = 600; // Minimum speech duration to be considered valid
         const SPEECH_COALESCE_WINDOW_MS = 1000; // Window to coalesce rapid speech events
         const POST_INTERRUPTION_BUFFER_MS = 2000; // Buffer after barge-in to prevent fragmentation
+        const STUDENT_SPEAKING_TIMEOUT_MS = 3000; // Keep sending audio for 3s after last speech detected
 
         processor.onaudioprocess = (e) => {
           if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
@@ -844,6 +871,15 @@ export function useCustomVoice() {
               setIsTutorSpeaking(false);
               wsRef.current.send(JSON.stringify({ type: "speech_detected" }));
               
+              // BARGE-IN FIX: Enable student speaking override to resume audio capture
+              fallbackStudentSpeakingOverride = true;
+              if (fallbackStudentSpeakingTimeout) clearTimeout(fallbackStudentSpeakingTimeout);
+              fallbackStudentSpeakingTimeout = setTimeout(() => {
+                fallbackStudentSpeakingOverride = false;
+                console.log('[Custom Voice] 🔊 Student speaking override ended (fallback)');
+              }, STUDENT_SPEAKING_TIMEOUT_MS);
+              console.log('[Custom Voice] 🔊 Student speaking override enabled - audio capture resumed');
+              
               // POST-INTERRUPTION BUFFER (Dec 10, 2025 FIX)
               // After barge-in, ignore rapid speech-end events for 2 seconds
               // This prevents fragmented transcripts from being sent to AI
@@ -919,6 +955,17 @@ export function useCustomVoice() {
             }
             postInterruptionBufferActive = false;
             console.log("[Custom Voice] 🔇 VAD (fallback): Speech ended (confirmed)");
+            
+            // BARGE-IN FIX: Clear student speaking override when speech ends
+            // This prevents tutor audio from leaking to Deepgram after user stops speaking
+            if (fallbackStudentSpeakingOverride) {
+              fallbackStudentSpeakingOverride = false;
+              if (fallbackStudentSpeakingTimeout) {
+                clearTimeout(fallbackStudentSpeakingTimeout);
+                fallbackStudentSpeakingTimeout = null;
+              }
+              console.log('[Custom Voice] 🔊 Student speaking override cleared on speech_end (fallback)');
+            }
           } else if (hasAudio && speechActive) {
             // Reset silence debounce timer if sound detected
             speechEndTime = 0;
@@ -998,8 +1045,9 @@ export function useCustomVoice() {
           }
 
           // ECHO PREVENTION: Don't send audio to Deepgram while tutor is actively speaking
+          // UNLESS the student has started speaking (barge-in override)
           // This prevents the tutor's voice from being picked up and transcribed as student speech
-          if (isTutorSpeakingRef.current && isPlayingRef.current) {
+          if (isTutorSpeakingRef.current && isPlayingRef.current && !fallbackStudentSpeakingOverride) {
             // Still process audio locally for barge-in detection, but don't send to STT
             return;
           }
