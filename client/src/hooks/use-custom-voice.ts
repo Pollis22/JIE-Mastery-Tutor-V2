@@ -46,8 +46,72 @@ export function useCustomVoice() {
   // Uses a Promise-based mutex to serialize recovery attempts
   const recoveryPromiseRef = useRef<Promise<void> | null>(null);
   const selectedMicrophoneIdRef = useRef<string | null>(null);  // Store original device ID
+  const selectedMicrophoneLabelRef = useRef<string | null>(null);  // Store device label as backup
   const MAX_MIC_RECOVERY_ATTEMPTS = 3;
   const MIC_RECOVERY_DELAY_MS = 500;
+  
+  // Device exclusion patterns - never select these as fallback
+  const EXCLUDED_DEVICE_PATTERNS = [
+    'stereo mix',
+    'what u hear',
+    'wave out',
+    'loopback',
+    'virtual',
+    'cable'
+  ];
+  
+  // Find best microphone by filtering out system audio devices
+  const findBestMicrophone = async (): Promise<string | null> => {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const microphones = devices.filter(d => d.kind === 'audioinput');
+      
+      // Filter out system audio devices
+      const realMics = microphones.filter(mic => {
+        const label = mic.label.toLowerCase();
+        return !EXCLUDED_DEVICE_PATTERNS.some(pattern => label.includes(pattern));
+      });
+      
+      if (realMics.length > 0) {
+        console.log(`[Custom Voice] 🎤 Found ${realMics.length} real microphone(s) after filtering`);
+        return realMics[0].deviceId;
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('[Custom Voice] ❌ Error finding best microphone:', error);
+      return null;
+    }
+  };
+  
+  // Find microphone by label - helps when device IDs change between sessions
+  const findMicrophoneByLabel = async (label: string): Promise<string | null> => {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const microphones = devices.filter(d => d.kind === 'audioinput');
+      
+      // Exact match
+      const exactMatch = microphones.find(m => m.label === label);
+      if (exactMatch) {
+        console.log(`[Custom Voice] 🎤 Found microphone by exact label match: ${label}`);
+        return exactMatch.deviceId;
+      }
+      
+      // Partial match (first few characters)
+      const partialMatch = microphones.find(m => 
+        m.label.toLowerCase().includes(label.substring(0, 10).toLowerCase())
+      );
+      if (partialMatch) {
+        console.log(`[Custom Voice] 🎤 Found microphone by partial label match: ${partialMatch.label}`);
+        return partialMatch.deviceId;
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('[Custom Voice] ❌ Error finding microphone by label:', error);
+      return null;
+    }
+  };
   
   // Cleanup helper - safely cleans up mic resources
   // Sets streamCleanupTriggeredRef BEFORE stopping to prevent onended from triggering recovery
@@ -67,7 +131,10 @@ export function useCustomVoice() {
     // Reset flag after cleanup is complete - new startMicrophone will set it to false
   };
   
-  // Dedicated recovery function with retry loop - serialized via Promise
+  // Dedicated recovery function with multi-stage retry strategy
+  // Stage 1: Exact deviceId (same device)
+  // Stage 2: Match by label (device label changed)
+  // Stage 3: Filter & pick best microphone (avoid Stereo Mix)
   const attemptMicRecovery = async () => {
     // Don't recover if mic is intentionally disabled
     if (!micEnabledRef.current) {
@@ -100,27 +167,109 @@ export function useCustomVoice() {
         // Clean up old resources first (sets streamCleanupTriggeredRef to prevent false triggers)
         cleanupMicResources();
         
-        // Wait before retry
-        await new Promise(resolve => setTimeout(resolve, MIC_RECOVERY_DELAY_MS));
-        
-        try {
-          await startMicrophone();
+        // Stage 1: Try exact device ID first
+        if (selectedMicrophoneIdRef.current && attempt === 1) {
+          const delayMs = 500;
+          console.log(`[Custom Voice] ⏳ Waiting ${delayMs}ms for device to stabilize...`);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
           
-          // Verify the stream is actually working (give it 300ms to stabilize)
-          await new Promise(resolve => setTimeout(resolve, 300));
-          
-          // Check stream health
-          const currentStream = mediaStreamRef.current as MediaStream | null;
-          if (currentStream && currentStream.active) {
-            console.log('[Custom Voice] ✅ Microphone auto-recovered successfully');
-            return; // Success - exit the loop
-          } else {
-            console.warn('[Custom Voice] ⚠️ Stream acquired but not stable, retrying...');
-            lastError = new Error('Stream not stable after acquisition');
+          try {
+            console.log(`[Custom Voice] 🎯 Attempt ${attempt}: Trying exact deviceId`);
+            const stream = await navigator.mediaDevices.getUserMedia({
+              audio: {
+                deviceId: { exact: selectedMicrophoneIdRef.current },
+                sampleRate: 16000,
+                channelCount: 1,
+                echoCancellation: true,
+                noiseSuppression: false,
+                autoGainControl: true,
+              }
+            });
+            
+            // Setup stream and exit recovery
+            mediaStreamRef.current = stream;
+            setupAudioTrackListener(stream);
+            setMicrophoneError(null);
+            console.log('[Custom Voice] ✅ Recovered with exact deviceId');
+            return;
+          } catch (e) {
+            console.warn(`[Custom Voice] ⚠️ Exact deviceId failed: ${(e as Error).message}`);
           }
-        } catch (error) {
-          lastError = error;
-          console.error(`[Custom Voice] ❌ Recovery attempt ${attempt} failed:`, error);
+        }
+        
+        // Stage 2: Try matching by label (if we stored it)
+        if (selectedMicrophoneLabelRef.current && attempt === 2) {
+          const delayMs = 1000;
+          console.log(`[Custom Voice] ⏳ Waiting ${delayMs}ms before label-match attempt...`);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+          
+          try {
+            const matchedDeviceId = await findMicrophoneByLabel(selectedMicrophoneLabelRef.current);
+            if (matchedDeviceId) {
+              console.log(`[Custom Voice] 🎯 Attempt ${attempt}: Trying label match`);
+              const stream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                  deviceId: { exact: matchedDeviceId },
+                  sampleRate: 16000,
+                  channelCount: 1,
+                  echoCancellation: true,
+                  noiseSuppression: false,
+                  autoGainControl: true,
+                }
+              });
+              
+              // Update stored ID and setup
+              selectedMicrophoneIdRef.current = matchedDeviceId;
+              mediaStreamRef.current = stream;
+              setupAudioTrackListener(stream);
+              setMicrophoneError(null);
+              console.log('[Custom Voice] ✅ Recovered with label match');
+              return;
+            }
+          } catch (e) {
+            console.warn(`[Custom Voice] ⚠️ Label match failed: ${(e as Error).message}`);
+          }
+        }
+        
+        // Stage 3: Fall back to best microphone (filtered list)
+        if (attempt >= 2) {
+          const delayMs = 1500;
+          console.log(`[Custom Voice] ⏳ Waiting ${delayMs}ms before filtered fallback...`);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+          
+          try {
+            const bestMicId = await findBestMicrophone();
+            if (bestMicId) {
+              console.log(`[Custom Voice] 🎯 Attempt ${attempt}: Trying filtered fallback (${bestMicId})`);
+              const stream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                  deviceId: { exact: bestMicId },
+                  sampleRate: 16000,
+                  channelCount: 1,
+                  echoCancellation: true,
+                  noiseSuppression: false,
+                  autoGainControl: true,
+                }
+              });
+              
+              // Update stored info and setup
+              selectedMicrophoneIdRef.current = bestMicId;
+              mediaStreamRef.current = stream;
+              setupAudioTrackListener(stream);
+              setMicrophoneError(null);
+              console.log('[Custom Voice] ✅ Recovered with filtered fallback');
+              return;
+            }
+          } catch (e) {
+            console.warn(`[Custom Voice] ⚠️ Filtered fallback failed: ${(e as Error).message}`);
+          }
+        }
+        
+        // Give it time before next attempt
+        if (attempt < MAX_MIC_RECOVERY_ATTEMPTS) {
+          const nextDelayMs = 500 * (attempt + 1);
+          console.log(`[Custom Voice] ⏳ Waiting ${nextDelayMs}ms before next recovery attempt...`);
+          await new Promise(resolve => setTimeout(resolve, nextDelayMs));
         }
       }
       
@@ -357,6 +506,33 @@ export function useCustomVoice() {
     }
   }, []);
 
+  // Helper to setup track listener - extracted so recovery can also use it
+  const setupAudioTrackListener = (stream: MediaStream) => {
+    const audioTrack = stream.getAudioTracks()[0];
+    if (audioTrack) {
+      // Store device ID AND label from successful connection for recovery
+      const settings = audioTrack.getSettings();
+      selectedMicrophoneIdRef.current = settings.deviceId || null;
+      selectedMicrophoneLabelRef.current = audioTrack.label || null;
+      console.log(`[Custom Voice] 🎤 Using microphone: ${audioTrack.label}, deviceId: ${selectedMicrophoneIdRef.current || 'unknown'}`);
+      
+      audioTrack.onended = () => {
+        // Skip if this was an intentional cleanup
+        if (streamCleanupTriggeredRef.current) {
+          console.log('[Custom Voice] ℹ️ Audio track ended (intentional cleanup)');
+          return;
+        }
+        
+        console.error('[Custom Voice] ⚠️ Audio track ended unexpectedly');
+        console.error('[Custom Voice] Track state:', audioTrack.readyState);
+        console.error('[Custom Voice] Track enabled:', audioTrack.enabled);
+        console.error('[Custom Voice] Track muted:', audioTrack.muted);
+        attemptMicRecovery(); // Async recovery with multi-stage retry
+      };
+      console.log('[Custom Voice] 📡 Added track.onended listener for track:', audioTrack.label);
+    }
+  };
+
   const startMicrophone = async () => {
     try {
       console.log("[Custom Voice] 🎤 Requesting microphone access...");
@@ -416,29 +592,8 @@ export function useCustomVoice() {
       
       mediaStreamRef.current = stream;
       
-      // Add track.onended listener - simple call to recovery function
-      const audioTrack = stream.getAudioTracks()[0];
-      if (audioTrack) {
-        // Store device ID from successful connection for recovery
-        const settings = audioTrack.getSettings();
-        selectedMicrophoneIdRef.current = settings.deviceId || null;
-        console.log(`[Custom Voice] 🎤 Using microphone: ${audioTrack.label}, deviceId: ${selectedMicrophoneIdRef.current || 'unknown'}`);
-        
-        audioTrack.onended = () => {
-          // Skip if this was an intentional cleanup
-          if (streamCleanupTriggeredRef.current) {
-            console.log('[Custom Voice] ℹ️ Audio track ended (intentional cleanup)');
-            return;
-          }
-          
-          console.error('[Custom Voice] ⚠️ Audio track ended unexpectedly');
-          console.error('[Custom Voice] Track state:', audioTrack.readyState);
-          console.error('[Custom Voice] Track enabled:', audioTrack.enabled);
-          console.error('[Custom Voice] Track muted:', audioTrack.muted);
-          attemptMicRecovery(); // Async recovery with retry loop
-        };
-        console.log('[Custom Voice] 📡 Added track.onended listener for track:', audioTrack.label);
-      }
+      // Setup track listener with new helper
+      setupAudioTrackListener(stream);
       
       // CRITICAL: Reuse existing AudioContext if it exists (created by playAudio)
       // Creating a new one would orphan gain nodes and scheduled sources from playback

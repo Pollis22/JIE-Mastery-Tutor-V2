@@ -34,8 +34,9 @@ A three-tier access control system ensures only subscribed users with available 
 ### Session Priority System
 The platform uses a **session-first** data priority model where session configuration dictates grade level, subject, and language, with user profiles serving as defaults, enabling flexible family sharing.
 
-### Mandatory Student Profiles with Avatar Support (December 2025)
--   **Student Profile Requirement**: Users must create and select a student profile before starting any tutoring session.
+### Student Profile Management (December 2025)
+-   **Auto-Select with Persistence**: StudentSwitcher automatically selects the last used profile via localStorage (`jie-last-selected-student`). If no history exists, auto-selects first available profile. If no profiles exist, shows "Create Profile" prompt.
+-   **Integrated Profile Dropdown**: Profile selection integrated into StudentSwitcher header dropdown (no separate "Select Student" button). Users access all profile options (switch, create, edit) from one dropdown menu.
 -   **Avatar System**: Three types of avatars supported:
     -   **Default**: Generic user icon when no avatar selected
     -   **Preset**: 20 emoji avatars including diverse skin tones, graduation caps, and fun icons
@@ -59,6 +60,14 @@ A custom, production-ready voice stack provides real-time, natural conversations
 -   Supports text chat during voice sessions, user-controlled speech speed, and robust microphone error handling.
 -   Flexible communication modes: Voice Mode, Hybrid Mode (listen-only, respond via text), and Text-Only Mode.
 -   **5-Minute Inactivity Auto-Timeout** (November 2025): Backend tracks user inactivity via speech and text. Issues warning at 4 minutes of silence with audio message. Auto-ends session at 5 minutes with farewell message and proper minute deduction. Activity timer resets on any user interaction (voice or text). Prevents wasted minutes from forgotten sessions. Timer cleanup centralized in finalizeSession for robust lifecycle management.
+-   **Production-Grade Microphone Recovery** (December 2025): Comprehensive auto-recovery system with multi-stage fallback strategy:
+    -   **Stage 1 (500ms delay)**: Tries exact device ID to reconnect to original microphone after USB stabilization
+    -   **Stage 2 (1000ms delay)**: Matches device by label (handles cases where device ID changes between sessions)
+    -   **Stage 3 (1500ms delay)**: Filtered fallback - picks best available microphone while excluding system audio (Stereo Mix, What U Hear, Loopback, Virtual, Cable)
+    -   **Device Storage**: Stores both device ID and label as backup for resilient recovery across sessions
+    -   **Serialized Recovery**: Promise-based mutex prevents overlapping recovery attempts
+    -   **Health Checks**: Verifies stream stability before declaring recovery successful
+    -   **User Feedback**: Shows error UI with troubleshooting steps if all recovery attempts fail
 
 ### AI & Learning Engine
 -   **Primary AI Model**: Claude Sonnet 4 with an enhanced TutorMind system prompt.
