@@ -22,11 +22,32 @@ interface Props {
 
 export function RealtimeVoiceTranscript({ messages, isConnected, status, language, voice }: Props) {
   const lastMessageRef = useRef<HTMLDivElement>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const isNearBottomRef = useRef(true);
+  const prevMessagesLengthRef = useRef(messages.length);
 
   useEffect(() => {
-    if (lastMessageRef.current) {
+    const scrollArea = scrollAreaRef.current;
+    if (!scrollArea) return;
+
+    const viewport = scrollArea.querySelector('[data-radix-scroll-area-viewport]');
+    if (!viewport) return;
+
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = viewport as HTMLElement;
+      const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+      isNearBottomRef.current = distanceFromBottom < 100;
+    };
+
+    viewport.addEventListener('scroll', handleScroll);
+    return () => viewport.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  useEffect(() => {
+    if (messages.length > prevMessagesLengthRef.current && isNearBottomRef.current && lastMessageRef.current) {
       lastMessageRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
+    prevMessagesLengthRef.current = messages.length;
   }, [messages]);
 
   const getStatusBadge = () => {
@@ -77,7 +98,7 @@ export function RealtimeVoiceTranscript({ messages, isConnected, status, languag
       
       <Card className="border-2">
         <CardContent className="p-0">
-          <ScrollArea className="h-80 w-full p-4">
+          <ScrollArea className="h-80 w-full p-4" ref={scrollAreaRef}>
             <div className="space-y-3">
               {messages.length === 0 ? (
                 <div className="text-center text-muted-foreground text-sm py-8">
