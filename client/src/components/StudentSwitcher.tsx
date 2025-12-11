@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,8 @@ interface StudentSwitcherProps {
   onOpenProfile: (studentId?: string) => void;
 }
 
+const LAST_STUDENT_KEY = 'jie-last-selected-student';
+
 export function StudentSwitcher({ 
   selectedStudentId, 
   onSelectStudent, 
@@ -35,6 +37,39 @@ export function StudentSwitcher({
   const { data: students = [], isLoading } = useQuery<Student[]>({
     queryKey: ['/api/students'],
   });
+
+  // Auto-select last student or first available student on mount
+  useEffect(() => {
+    if (isLoading || students.length === 0 || selectedStudentId) {
+      return; // Wait for data or skip if already selected
+    }
+
+    // Try to restore last selected student
+    try {
+      const lastSelected = localStorage.getItem(LAST_STUDENT_KEY);
+      if (lastSelected && students.some(s => s.id === lastSelected)) {
+        onSelectStudent(lastSelected);
+        return;
+      }
+    } catch {
+      // Ignore storage errors
+    }
+
+    // Otherwise, auto-select the first student
+    if (students.length > 0) {
+      onSelectStudent(students[0].id);
+    }
+  }, [students, isLoading, selectedStudentId, onSelectStudent]);
+
+  // Save selected student to localStorage
+  const handleSelectStudent = (studentId: string) => {
+    try {
+      localStorage.setItem(LAST_STUDENT_KEY, studentId);
+    } catch {
+      // Ignore storage errors
+    }
+    onSelectStudent(studentId);
+  };
 
   const currentStudent = students.find(s => s.id === selectedStudentId);
   
@@ -92,7 +127,7 @@ export function StudentSwitcher({
         {students.map(student => (
           <DropdownMenuItem
             key={student.id}
-            onClick={() => onSelectStudent(student.id)}
+            onClick={() => handleSelectStudent(student.id)}
             className="gap-2"
             data-testid={`student-option-${student.id}`}
           >

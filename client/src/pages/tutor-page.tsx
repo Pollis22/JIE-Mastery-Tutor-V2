@@ -601,35 +601,6 @@ export default function TutorPage() {
               ))}
             </select>
 
-            {/* Student Profile Selector */}
-            <div className="flex items-center gap-2">
-              <button 
-                onClick={() => setProfileDrawerOpen(true)}
-                className={`flex items-center gap-2 px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary ${
-                  selectedStudent 
-                    ? 'border-primary bg-primary/5 text-foreground' 
-                    : 'border-destructive bg-destructive/5 text-destructive'
-                }`}
-                data-testid="button-select-student"
-              >
-                {selectedStudent?.avatarUrl ? (
-                  selectedStudent.avatarType === 'upload' ? (
-                    <img 
-                      src={selectedStudent.avatarUrl} 
-                      alt={selectedStudent.name}
-                      className="w-5 h-5 rounded-full object-cover"
-                    />
-                  ) : (
-                    <span className="text-lg">{selectedStudent.avatarUrl}</span>
-                  )
-                ) : (
-                  <User className="w-4 h-4" />
-                )}
-                <span className="max-w-[120px] truncate">
-                  {selectedStudent?.name || 'Select Student'}
-                </span>
-              </button>
-            </div>
 
             <button 
               id="start-btn" 
@@ -667,7 +638,7 @@ export default function TutorPage() {
           <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-4 rounded-md">
             <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-2">📚 How to Use JIE Mastery Tutor</h3>
             <ol className="text-sm text-blue-800 dark:text-blue-200 space-y-1.5 list-decimal list-inside">
-              <li><strong>Select a student profile</strong> - Click "Select Student" to choose or create a profile. Each family member can have their own profile with custom avatar!</li>
+              <li><strong>Select a student profile</strong> - Use the profile dropdown at the top to choose your profile, or create a new one. Each family member can have their own profile with custom avatar!</li>
               <li><strong>Select your grade level and subject</strong> you want help with</li>
               <li><strong>Upload your materials (optional)</strong> - Share homework, worksheets, or study guides (PDF, DOCX, or images). All uploaded documents are automatically available to your tutor and retained for 6 months</li>
               <li><strong>Wait a few seconds</strong> after uploading for documents to process completely</li>
