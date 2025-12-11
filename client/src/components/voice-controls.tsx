@@ -24,14 +24,6 @@ export function VoiceControls({ lessonId }: VoiceControlsProps) {
     activeBanner
   } = useVoice();
 
-  const lastMessageRef = useRef<HTMLDivElement>(null);
-
-  // Auto-scroll to bottom when new messages are added
-  useEffect(() => {
-    if (lastMessageRef.current) {
-      lastMessageRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
-    }
-  }, [conversationHistory]);
 
   const handleStartVoice = async () => {
     try {
@@ -133,7 +125,6 @@ export function VoiceControls({ lessonId }: VoiceControlsProps) {
                           conversationHistory.map((message, index) => (
                             <div
                               key={index}
-                              ref={index === conversationHistory.length - 1 ? lastMessageRef : null}
                               className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
                               data-testid={`message-${message.type}-${index}`}
                             >

@@ -22,22 +22,13 @@ interface Props {
 
 export function RealtimeVoiceTranscript({ messages, isConnected, status, language, voice }: Props) {
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const userHasScrolledRef = useRef(false);
+  const lastMessageRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const scrollArea = scrollAreaRef.current;
-    if (!scrollArea) return;
-
-    const viewport = scrollArea.querySelector('[data-radix-scroll-area-viewport]');
-    if (!viewport) return;
-
-    const handleScroll = () => {
-      userHasScrolledRef.current = true;
-    };
-
-    viewport.addEventListener('scroll', handleScroll);
-    return () => viewport.removeEventListener('scroll', handleScroll);
-  }, []);
+    if (lastMessageRef.current) {
+      lastMessageRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }
+  }, [messages]);
 
   const getStatusBadge = () => {
     if (!isConnected) return <Badge variant="secondary">Disconnected</Badge>;
@@ -99,6 +90,7 @@ export function RealtimeVoiceTranscript({ messages, isConnected, status, languag
                 messages.map((message, index) => (
                   <div
                     key={index}
+                    ref={index === messages.length - 1 ? lastMessageRef : null}
                     className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
                     data-testid={`message-${message.role}-${index}`}
                   >

@@ -121,34 +121,6 @@ function MessageContent({ content, isStreaming }: MessageContentProps) {
 }
 
 export function ConvaiTranscript({ messages, isConnected }: Props) {
-  const lastMessageRef = useRef<HTMLDivElement>(null);
-  const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const isNearBottomRef = useRef(true);
-  const prevMessagesLengthRef = useRef(messages.length);
-
-  useEffect(() => {
-    const scrollArea = scrollAreaRef.current;
-    if (!scrollArea) return;
-
-    const viewport = scrollArea.querySelector('[data-radix-scroll-area-viewport]');
-    if (!viewport) return;
-
-    const handleScroll = () => {
-      const { scrollTop, scrollHeight, clientHeight } = viewport as HTMLElement;
-      const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
-      isNearBottomRef.current = distanceFromBottom < 100;
-    };
-
-    viewport.addEventListener('scroll', handleScroll);
-    return () => viewport.removeEventListener('scroll', handleScroll);
-  }, []);
-
-  useEffect(() => {
-    if (messages.length > prevMessagesLengthRef.current && isNearBottomRef.current && lastMessageRef.current) {
-      lastMessageRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
-    }
-    prevMessagesLengthRef.current = messages.length;
-  }, [messages]);
 
   return (
     <div className="w-full" data-testid="convai-transcript">
@@ -156,7 +128,7 @@ export function ConvaiTranscript({ messages, isConnected }: Props) {
       
       <Card className="border-2">
         <CardContent className="p-0">
-          <ScrollArea className="h-80 w-full p-4" ref={scrollAreaRef}>
+          <ScrollArea className="h-80 w-full p-4">
             <div className="space-y-3">
               {messages.length === 0 ? (
                 <div className="text-center text-muted-foreground text-sm py-8">
@@ -168,7 +140,6 @@ export function ConvaiTranscript({ messages, isConnected }: Props) {
                 messages.map((message, index) => (
                   <div
                     key={index}
-                    ref={index === messages.length - 1 ? lastMessageRef : null}
                     className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
                     data-testid={`message-${message.type}-${index}`}
                   >
