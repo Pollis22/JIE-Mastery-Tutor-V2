@@ -14,7 +14,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
-import { Clock, AlertCircle, Upload, File, X, Paperclip, LogOut, Settings, LayoutDashboard, User, Globe } from "lucide-react";
+import { Clock, AlertCircle, Upload, File, X, Paperclip, LogOut, Settings, LayoutDashboard, User, Globe, Menu } from "lucide-react";
 import { SUPPORTED_LANGUAGES } from "@shared/languages";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -478,8 +478,9 @@ export default function TutorPage() {
                 />
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="icon" data-testid="button-user-menu">
-                      <User className="h-4 w-4" />
+                    <Button variant="outline" data-testid="button-user-menu">
+                      <Menu className="h-4 w-4 mr-1" />
+                      Menu
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
