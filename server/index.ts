@@ -13,8 +13,8 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import * as dotenv from "dotenv";
 
-// Load environment variables from .env file
-dotenv.config();
+// Load environment variables from .env file (override existing to allow local overrides)
+dotenv.config({ override: true });
 
 // Validate critical API keys exist
 const requiredEnvVars = [
