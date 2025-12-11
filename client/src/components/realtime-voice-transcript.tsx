@@ -22,11 +22,14 @@ interface Props {
 
 export function RealtimeVoiceTranscript({ messages, isConnected, status, language, voice }: Props) {
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const lastMessageRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (lastMessageRef.current) {
-      lastMessageRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    const scrollArea = scrollAreaRef.current;
+    if (!scrollArea) return;
+
+    const viewport = scrollArea.querySelector('[data-radix-scroll-area-viewport]');
+    if (viewport) {
+      viewport.scrollTop = viewport.scrollHeight;
     }
   }, [messages]);
 
@@ -90,7 +93,6 @@ export function RealtimeVoiceTranscript({ messages, isConnected, status, languag
                 messages.map((message, index) => (
                   <div
                     key={index}
-                    ref={index === messages.length - 1 ? lastMessageRef : null}
                     className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
                     data-testid={`message-${message.role}-${index}`}
                   >
