@@ -1,0 +1,105 @@
+// SSML generator for Azure TTS with energy levels
+export type EnergyStyle = 'calm' | 'neutral' | 'upbeat';
+
+interface SSMLConfig {
+  voice: string;
+  style?: string;
+  styleDegree?: number;
+  prosodyRate?: string;
+  prosodyPitch?: string;
+  prosodyVolume?: string;
+}
+
+export function generateSSML(
+  text: string, 
+  energyLevel: EnergyStyle = 'neutral',
+  voiceName?: string,
+  locale?: string
+): string {
+  const voice = voiceName || process.env.AZURE_VOICE_NAME || 'en-US-EmmaMultilingualNeural';
+  const xmlLang = locale || 'en-US';
+  
+  // Energy level configurations
+  const energyConfigs: Record<EnergyStyle, Omit<SSMLConfig, 'voice'>> = {
+    calm: {
+      style: 'gentle',
+      styleDegree: 1.5,
+      prosodyRate: '-6%',
+      prosodyPitch: '-2st',
+      prosodyVolume: 'soft'
+    },
+    neutral: {
+      style: 'friendly',
+      styleDegree: 1.0,
+      prosodyRate: '0%',
+      prosodyPitch: '0st',
+      prosodyVolume: 'medium'
+    },
+    upbeat: {
+      style: 'cheerful',
+      styleDegree: 1.2,
+      prosodyRate: '+6%',
+      prosodyPitch: '+1st',
+      prosodyVolume: 'medium'
+    }
+  };
+  
+  const config = energyConfigs[energyLevel];
+  
+  // Build SSML with express-as and prosody
+  return `
+    <speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" 
+           xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="${xmlLang}">
+      <voice name="${voice}">
+        <mstts:express-as style="${config.style}" styledegree="${config.styleDegree}">
+          <prosody rate="${config.prosodyRate}" pitch="${config.prosodyPitch}" volume="${config.prosodyVolume}">
+            ${escapeSSML(text)}
+          </prosody>
+        </mstts:express-as>
+      </voice>
+    </speak>
+  `.trim();
+}
+
+// Helper to strip markdown formatting for TTS
+function stripMarkdown(text: string): string {
+  return text
+    // Remove bold markers **text** or __text__
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    // Remove italic markers *text* or _text_
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/_([^_]+)_/g, '$1')
+    // Remove code backticks `code`
+    .replace(/`([^`]+)`/g, '$1')
+    // Remove headers # ## ### etc.
+    .replace(/^#+\s*/gm, '')
+    // Remove bullet points - or *
+    .replace(/^[-*]\s+/gm, '')
+    // Clean up extra whitespace
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Helper to escape special XML characters in text
+function escapeSSML(text: string): string {
+  // First strip markdown formatting, then escape XML
+  const cleanText = stripMarkdown(text);
+  return cleanText
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+// Split text into sentences for streaming
+export function splitForStreaming(text: string): string[] {
+  // Split by sentence-ending punctuation
+  const sentences = text.split(/(?<=[.!?])\s+/);
+  
+  // Filter empty strings and ensure each chunk is meaningful
+  return sentences
+    .filter(s => s.trim().length > 0)
+    .map(s => s.trim());
+}
