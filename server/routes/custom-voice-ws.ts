@@ -21,8 +21,9 @@ import { wsRateLimiter, getClientIp } from '../middleware/ws-rate-limiter';
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     const TIMING_CONFIG = {
       // Server-side delays before AI processing
-      SERVER_DELAY_COMPLETE_THOUGHT: 3500,    // INCREASED to 3.5s (was 2.0s) - Very generous pause time for complete sentences
-      SERVER_DELAY_INCOMPLETE_THOUGHT: 4000,  // INCREASED to 5.0s (was 3.0s) - Extremely generous time for "um..." and thinking
+      // Dec 11, 2025: Increased to prevent premature interim fallback
+      SERVER_DELAY_COMPLETE_THOUGHT: 4500,    // INCREASED to 4.5s (was 3.5s) - More time for complete sentences
+      SERVER_DELAY_INCOMPLETE_THOUGHT: 5500,  // INCREASED to 5.5s (was 4.0s) - More time for "um..." and thinking
       
       // Post-interruption buffer (when student interrupts tutor)
       POST_INTERRUPT_BUFFER: 2500,            // 2.5s extra wait after interruption
@@ -30,8 +31,8 @@ import { wsRateLimiter, getClientIp } from '../middleware/ws-rate-limiter';
       // Combined with Deepgram settings:
       // - Deepgram endpointing: 1200ms
       // - Deepgram utterance_end_ms: 2000ms
-      // Total timing for complete thought: 2000ms (Deepgram) + 3500ms (server) = 5.5s
-      // Total timing for incomplete thought: 2000ms (Deepgram) + 5000ms (server) = 7.0s
+      // Total timing for complete thought: 2000ms (Deepgram) + 4500ms (server) = 6.5s
+      // Total timing for incomplete thought: 2000ms (Deepgram) + 5500ms (server) = 7.5s
     };
 
 interface TranscriptEntry {

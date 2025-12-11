@@ -712,6 +712,13 @@ export function useCustomVoice() {
             binaryString += String.fromCharCode.apply(null, Array.from(chunk));
           }
 
+          // ECHO PREVENTION: Don't send audio to Deepgram while tutor is actively speaking
+          // This prevents the tutor's voice from being picked up and transcribed as student speech
+          if (isTutorSpeakingRef.current && isPlayingRef.current) {
+            // Still process audio locally for barge-in detection, but don't send to STT
+            return;
+          }
+
           wsRef.current.send(JSON.stringify({
             type: "audio",
             data: btoa(binaryString),
@@ -988,6 +995,13 @@ export function useCustomVoice() {
           for (let i = 0; i < len; i += chunkSize) {
             const chunk = uint8Array.subarray(i, Math.min(i + chunkSize, len));
             binaryString += String.fromCharCode.apply(null, Array.from(chunk));
+          }
+
+          // ECHO PREVENTION: Don't send audio to Deepgram while tutor is actively speaking
+          // This prevents the tutor's voice from being picked up and transcribed as student speech
+          if (isTutorSpeakingRef.current && isPlayingRef.current) {
+            // Still process audio locally for barge-in detection, but don't send to STT
+            return;
           }
 
           wsRef.current.send(JSON.stringify({
