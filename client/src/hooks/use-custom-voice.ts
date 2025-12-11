@@ -844,7 +844,7 @@ export function useCustomVoice() {
               const BARGE_IN_RMS_THRESHOLD = 0.08; // Lowered from 0.12
               const BARGE_IN_PEAK_THRESHOLD = 0.15; // Lowered from 0.25
 
-              if (rms < BARGE_IN_RMS_THRESHOLD || maxAmplitude < BARGE_IN_PEAK_THRESHOLD) {
+              if (rms < BARGE_IN_RMS_THRESHOLD && maxAmplitude < BARGE_IN_PEAK_THRESHOLD) {
                 console.log(`[Custom Voice] 🔇 VAD (fallback): Ignoring ambient sound during tutor (rms=${rms.toFixed(4)}, peak=${maxAmplitude.toFixed(4)}) - below barge-in threshold`);
                 return;
               }
