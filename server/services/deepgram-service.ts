@@ -120,11 +120,11 @@ export async function startDeepgramStream(
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // VAD & TIMING SETTINGS (Dec 11, 2025: OPTIMIZED FOR EDUCATIONAL TUTORING)
-    // Students need 2-3 seconds to formulate complex thoughts without interruption
-    // Previous 1200ms was cutting off mid-sentence pauses during natural thinking
+    // Students need 2-3+ seconds to formulate complex thoughts without interruption
+    // Previous settings (2000/2500ms) still triggered AI mid-sentence during thinking pauses
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    endpointing: 2000,          // 2s for end-of-speech detection (Dec 11, 2025: was 1200ms)
-    utterance_end_ms: 2500,     // 2.5s total wait before finalizing utterance (was 2000ms)
+    endpointing: 2500,          // 2.5s for end-of-speech detection (Dec 11, 2025: was 2000ms, before that 1200ms)
+    utterance_end_ms: 3000,     // 3s total wait before finalizing utterance (was 2500ms)
     vad_events: true,           // Enable voice activity detection events
     vad_threshold: 0.15,        // VERY LOW threshold for quiet speech detection (was 0.3)
 
