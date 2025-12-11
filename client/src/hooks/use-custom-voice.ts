@@ -60,20 +60,31 @@ export function useCustomVoice() {
     'cable'
   ];
   
-  // Find best microphone by filtering out system audio devices
+  // Check if user allows virtual audio devices
+  const getAllowVirtualAudio = (): boolean => {
+    try {
+      return localStorage.getItem('jie-allow-virtual-audio') === 'true';
+    } catch {
+      return false;
+    }
+  };
+
+  // Find best microphone by filtering out system audio devices (respects user's virtual audio preference)
   const findBestMicrophone = async (): Promise<string | null> => {
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
       const microphones = devices.filter(d => d.kind === 'audioinput');
+      const allowVirtual = getAllowVirtualAudio();
       
-      // Filter out system audio devices
+      // Filter out system audio devices unless user explicitly enabled virtual devices
       const realMics = microphones.filter(mic => {
+        if (allowVirtual) return true;
         const label = mic.label.toLowerCase();
         return !EXCLUDED_DEVICE_PATTERNS.some(pattern => label.includes(pattern));
       });
       
       if (realMics.length > 0) {
-        console.log(`[Custom Voice] 🎤 Found ${realMics.length} real microphone(s) after filtering`);
+        console.log(`[Custom Voice] 🎤 Found ${realMics.length} real microphone(s) after filtering (allowVirtual=${allowVirtual})`);
         return realMics[0].deviceId;
       }
       
@@ -533,6 +544,42 @@ export function useCustomVoice() {
     }
   };
 
+  // Helper to get preferred microphone from settings
+  const getPreferredMicrophoneId = async (): Promise<string | null> => {
+    try {
+      const preferredId = localStorage.getItem('jie-preferred-microphone-id');
+      const preferredLabel = localStorage.getItem('jie-preferred-microphone-label');
+      
+      // If no preference set or explicitly system-default, return null
+      if (!preferredId) {
+        return null;
+      }
+      
+      // Try to find device by ID first
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const byId = devices.find(d => d.kind === 'audioinput' && d.deviceId === preferredId);
+      if (byId) {
+        console.log('[Custom Voice] 🎯 Found preferred mic by ID:', byId.label);
+        return byId.deviceId;
+      }
+      
+      // Try to find device by label (IDs can change between sessions)
+      if (preferredLabel) {
+        const byLabel = devices.find(d => d.kind === 'audioinput' && d.label === preferredLabel);
+        if (byLabel) {
+          console.log('[Custom Voice] 🎯 Found preferred mic by label:', byLabel.label);
+          return byLabel.deviceId;
+        }
+      }
+      
+      console.log('[Custom Voice] ℹ️ Preferred mic not found, using system default');
+      return null;
+    } catch (e) {
+      console.warn('[Custom Voice] ⚠️ Error getting preferred mic:', e);
+      return null;
+    }
+  };
+
   const startMicrophone = async () => {
     try {
       console.log("[Custom Voice] 🎤 Requesting microphone access...");
@@ -542,13 +589,25 @@ export function useCustomVoice() {
       
       // Check if browser supports getUserMedia
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        console.error('[Custom Voice] ❌ Browser does not support getUserMedia');
+        setMicrophoneError({
+          type: 'not-supported',
+          message: 'Your browser does not support voice recording. Please use a modern browser like Chrome, Firefox, or Edge.',
+          canRetry: false,
+        });
         throw new Error('BROWSER_NOT_SUPPORTED');
       }
       
-      // Build constraints: use the same device if we have a stored ID (for recovery)
-      const audioConstraints: MediaStreamConstraints['audio'] = selectedMicrophoneIdRef.current
+      // First check for user's preferred microphone from settings
+      const preferredMicId = await getPreferredMicrophoneId();
+      
+      // Priority: 1) User preference from settings, 2) Recovery deviceId, 3) System default
+      const targetDeviceId = preferredMicId || selectedMicrophoneIdRef.current;
+      
+      // Build constraints: use the target device if we have one
+      const audioConstraints: MediaStreamConstraints['audio'] = targetDeviceId
         ? {
-            deviceId: { exact: selectedMicrophoneIdRef.current },
+            deviceId: { exact: targetDeviceId },
             sampleRate: 16000,
             channelCount: 1,
             echoCancellation: true,
@@ -568,8 +627,8 @@ export function useCustomVoice() {
         stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
       } catch (error) {
         // If exact device ID constraint failed (device disconnected?), try any device
-        if (selectedMicrophoneIdRef.current) {
-          console.warn('[Custom Voice] ⚠️ Failed to recover with same device (ID:', selectedMicrophoneIdRef.current, '), trying any device...');
+        if (targetDeviceId) {
+          console.warn('[Custom Voice] ⚠️ Failed to use preferred/recovery device (ID:', targetDeviceId, '), trying any device...');
           selectedMicrophoneIdRef.current = null; // Reset device ID
           stream = await navigator.mediaDevices.getUserMedia({
             audio: {
@@ -589,6 +648,25 @@ export function useCustomVoice() {
       
       // Clear any previous errors
       setMicrophoneError(null);
+      
+      // Sync the actual device ID/label to localStorage for preference persistence
+      const audioTrack = stream.getAudioTracks()[0];
+      if (audioTrack) {
+        const settings = audioTrack.getSettings();
+        const actualDeviceId = settings.deviceId;
+        if (actualDeviceId) {
+          selectedMicrophoneIdRef.current = actualDeviceId;
+          selectedMicrophoneLabelRef.current = audioTrack.label;
+          
+          // Only update localStorage if user had a preference set (not system default)
+          const hadPreference = localStorage.getItem('jie-preferred-microphone-id');
+          if (hadPreference) {
+            localStorage.setItem('jie-preferred-microphone-id', actualDeviceId);
+            localStorage.setItem('jie-preferred-microphone-label', audioTrack.label);
+            console.log('[Custom Voice] 🔄 Synced mic preference:', audioTrack.label);
+          }
+        }
+      }
       
       mediaStreamRef.current = stream;
       

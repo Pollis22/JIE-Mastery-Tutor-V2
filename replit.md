@@ -68,6 +68,13 @@ A custom, production-ready voice stack provides real-time, natural conversations
     -   **Serialized Recovery**: Promise-based mutex prevents overlapping recovery attempts
     -   **Health Checks**: Verifies stream stability before declaring recovery successful
     -   **User Feedback**: Shows error UI with troubleshooting steps if all recovery attempts fail
+-   **Audio Device Settings** (December 2025): User-configurable audio device selection in Settings:
+    -   **Microphone Selection**: Dropdown with all available input devices, "System Default" option, and mic test with real-time volume meter
+    -   **Speaker Selection**: Dropdown with output devices (Chrome/Firefox/Edge only - not supported in Safari)
+    -   **Virtual Audio Toggle**: Option to show virtual audio devices (Voicemeeter, OBS, VB-Cable) for streamers/podcasters
+    -   **Preference Persistence**: Saves to localStorage (`jie-preferred-microphone-id`, `jie-preferred-microphone-label`, `jie-preferred-speaker-id`)
+    -   **Smart Device Matching**: Falls back to label matching when device IDs change between sessions
+    -   **Integration**: Voice sessions automatically use user's preferred microphone when starting
 
 ### AI & Learning Engine
 -   **Primary AI Model**: Claude Sonnet 4 with an enhanced TutorMind system prompt.
