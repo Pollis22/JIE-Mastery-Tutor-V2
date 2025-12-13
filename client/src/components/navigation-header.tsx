@@ -16,13 +16,18 @@ export function NavigationHeader() {
   const { user, logoutMutation } = useAuth();
   const [location, setLocation] = useLocation();
 
-  const { data: dashboard } = useQuery<{
-    user?: { name?: string; initials?: string; plan?: string };
-    usage?: { voiceMinutes?: string };
+  const { data: dashboard, isLoading: isDashboardLoading } = useQuery<{
+    user?: { name?: string; firstName?: string; initials?: string; plan?: string };
+    usage?: { voiceMinutes?: string; percentage?: number };
   }>({
     queryKey: ["/api/dashboard"],
     enabled: !!user,
   });
+  
+  const displayName = dashboard?.user?.name || 
+    `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 
+    user?.username || 
+    'User';
 
   const handleLogout = () => {
     logoutMutation.mutate();
@@ -100,7 +105,7 @@ export function NavigationHeader() {
                     className="w-8 h-8 rounded-full object-cover border border-primary/20"
                   />
                   <span className="text-foreground font-medium">
-                    {dashboard?.user?.name || user?.username || 'User'}
+                    {displayName}
                   </span>
                   <svg className="w-4 h-4 text-muted-foreground" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd"/>

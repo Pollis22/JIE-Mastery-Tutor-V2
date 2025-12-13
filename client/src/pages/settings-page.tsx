@@ -1,4 +1,4 @@
-import { useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { NavigationHeader } from "@/components/navigation-header";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,9 @@ import { z } from "zod";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { AudioSettings } from "@/components/AudioSettings";
+import { useEffect } from "react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
 
 const settingsSchema = z.object({
   firstName: z.string().optional(),
@@ -29,23 +32,68 @@ const settingsSchema = z.object({
 
 type SettingsForm = z.infer<typeof settingsSchema>;
 
+interface DashboardData {
+  user?: {
+    name?: string;
+    firstName?: string;
+    initials?: string;
+    plan?: string;
+  };
+  usage?: {
+    voiceMinutes?: string;
+    percentage?: number;
+  };
+}
+
+function getPlanDetails(plan: string | null | undefined) {
+  const planMap: Record<string, { name: string; minutes: number; price: string }> = {
+    'starter': { name: 'Starter Plan', minutes: 60, price: '19.99' },
+    'single': { name: 'Starter Plan', minutes: 60, price: '19.99' },
+    'standard': { name: 'Standard Plan', minutes: 240, price: '59.99' },
+    'pro': { name: 'Pro Plan', minutes: 600, price: '99.99' },
+    'all': { name: 'Pro Plan', minutes: 600, price: '99.99' },
+    'elite': { name: 'Elite Plan', minutes: 1800, price: '149.99' },
+  };
+  return planMap[plan || ''] || { name: 'Starter Plan', minutes: 60, price: '19.99' };
+}
+
 export default function SettingsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
 
+  const { data: dashboard, isLoading: isDashboardLoading } = useQuery<DashboardData>({
+    queryKey: ["/api/dashboard"],
+    enabled: !!user,
+  });
+
   const form = useForm<SettingsForm>({
     resolver: zodResolver(settingsSchema),
     defaultValues: {
-      firstName: user?.firstName || "",
-      lastName: user?.lastName || "",
-      email: user?.email || "",
-      preferredLanguage: user?.preferredLanguage || "english",
-      voiceStyle: user?.voiceStyle || "cheerful",
-      speechSpeed: user?.speechSpeed || "1.0",
-      volumeLevel: user?.volumeLevel || 75,
-      marketingOptIn: user?.marketingOptIn || false,
+      firstName: "",
+      lastName: "",
+      email: "",
+      preferredLanguage: "english",
+      voiceStyle: "cheerful",
+      speechSpeed: "1.0",
+      volumeLevel: 75,
+      marketingOptIn: false,
     },
   });
+
+  useEffect(() => {
+    if (user) {
+      form.reset({
+        firstName: user.firstName || "",
+        lastName: user.lastName || "",
+        email: user.email || "",
+        preferredLanguage: user.preferredLanguage || "english",
+        voiceStyle: user.voiceStyle || "cheerful",
+        speechSpeed: user.speechSpeed || "1.0",
+        volumeLevel: user.volumeLevel ?? 75,
+        marketingOptIn: user.marketingOptIn ?? false,
+      });
+    }
+  }, [user, form]);
 
   const updateSettingsMutation = useMutation({
     mutationFn: async (data: SettingsForm) => {
@@ -54,6 +102,7 @@ export default function SettingsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
       toast({
         title: "Settings updated",
         description: "Your preferences have been saved successfully.",
@@ -105,6 +154,12 @@ export default function SettingsPage() {
       marketingOptIn: user?.marketingOptIn || false,
     });
   };
+
+  const planDetails = getPlanDetails(user?.subscriptionPlan);
+  const displayName = dashboard?.user?.name || 
+    `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 
+    user?.username || 
+    'User';
 
   return (
     <div className="min-h-screen bg-background">
@@ -179,7 +234,7 @@ export default function SettingsPage() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Preferred Language</FormLabel>
-                        <Select onValueChange={field.onChange} defaultValue={field.value}>
+                        <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl>
                             <SelectTrigger data-testid="select-language">
                               <SelectValue />
@@ -203,47 +258,71 @@ export default function SettingsPage() {
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <CardTitle>Subscription</CardTitle>
-                    <span className="bg-secondary/10 text-secondary px-3 py-1 rounded-full text-sm font-medium">
-                      {(() => {
-                        const plan = user?.subscriptionPlan;
-                        if (plan === 'starter' || plan === 'single') return 'Starter Plan';
-                        if (plan === 'standard') return 'Standard Plan';
-                        if (plan === 'pro' || plan === 'all') return 'Pro Plan';
-                        if (plan === 'elite') return 'Elite Plan';
-                        return 'Starter Plan';
-                      })()}
-                    </span>
+                    {isDashboardLoading ? (
+                      <Skeleton className="h-6 w-24" />
+                    ) : (
+                      <Badge variant="secondary" className="bg-secondary/10 text-secondary" data-testid="badge-subscription-plan">
+                        {dashboard?.user?.plan || planDetails.name}
+                      </Badge>
+                    )}
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="flex justify-between items-center py-3 border-b border-border">
                     <div>
                       <p className="font-medium text-foreground">Current Plan</p>
-                      <p className="text-sm text-muted-foreground">
-                        {(() => {
-                          const plan = user?.subscriptionPlan;
-                          if (plan === 'starter' || plan === 'single') return '60 minutes per month';
-                          if (plan === 'standard') return '240 minutes per month';
-                          if (plan === 'pro' || plan === 'all') return '600 minutes per month';
-                          if (plan === 'elite') return '1,800 minutes per month';
-                          return '60 minutes per month';
-                        })()}
-                      </p>
+                      {isDashboardLoading ? (
+                        <Skeleton className="h-4 w-32 mt-1" />
+                      ) : (
+                        <p className="text-sm text-muted-foreground" data-testid="text-plan-minutes">
+                          {planDetails.minutes.toLocaleString()} minutes per month
+                        </p>
+                      )}
                     </div>
                     <div className="text-right">
-                      <p className="font-semibold text-foreground">
-                        ${(() => {
-                          const plan = user?.subscriptionPlan;
-                          if (plan === 'starter' || plan === 'single') return '19.99';
-                          if (plan === 'standard') return '59.99';
-                          if (plan === 'pro' || plan === 'all') return '99.99';
-                          if (plan === 'elite') return '149.99';
-                          return '19.99';
-                        })()}/month
-                      </p>
-                      <p className="text-sm text-muted-foreground">Active</p>
+                      {isDashboardLoading ? (
+                        <>
+                          <Skeleton className="h-5 w-20" />
+                          <Skeleton className="h-4 w-12 mt-1" />
+                        </>
+                      ) : (
+                        <>
+                          <p className="font-semibold text-foreground" data-testid="text-plan-price">
+                            ${planDetails.price}/month
+                          </p>
+                          <p className="text-sm text-muted-foreground" data-testid="text-subscription-status">
+                            {user?.subscriptionStatus === 'active' ? 'Active' : 
+                             user?.subscriptionStatus === 'canceled' ? 'Canceled' : 
+                             user?.subscriptionStatus === 'paused' ? 'Paused' : 'Active'}
+                          </p>
+                        </>
+                      )}
                     </div>
                   </div>
+                  
+                  {/* Usage Display */}
+                  <div className="py-3 border-b border-border">
+                    <div className="flex justify-between items-center mb-2">
+                      <p className="font-medium text-foreground">Usage This Month</p>
+                      {isDashboardLoading ? (
+                        <Skeleton className="h-4 w-24" />
+                      ) : (
+                        <p className="text-sm text-muted-foreground" data-testid="text-usage-display">
+                          {dashboard?.usage?.voiceMinutes || '0 / 60 min'}
+                        </p>
+                      )}
+                    </div>
+                    {!isDashboardLoading && dashboard?.usage?.percentage !== undefined && (
+                      <div className="w-full bg-muted rounded-full h-2">
+                        <div 
+                          className="bg-primary h-2 rounded-full transition-all" 
+                          style={{ width: `${Math.min(dashboard.usage.percentage, 100)}%` }}
+                          data-testid="progress-usage"
+                        />
+                      </div>
+                    )}
+                  </div>
+                  
                   <div className="flex space-x-3">
                     <Button 
                       type="button"
@@ -283,12 +362,12 @@ export default function SettingsPage() {
                         <FormControl>
                           <RadioGroup
                             onValueChange={field.onChange}
-                            defaultValue={field.value}
+                            value={field.value}
                             className="grid grid-cols-1 md:grid-cols-3 gap-3"
                           >
-                            <div className="border border-primary bg-primary/5 rounded-lg p-4 cursor-pointer">
+                            <div className={`border rounded-lg p-4 cursor-pointer transition-colors ${field.value === 'cheerful' ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'}`}>
                               <div className="flex items-center space-x-3">
-                                <RadioGroupItem value="cheerful" id="cheerful" />
+                                <RadioGroupItem value="cheerful" id="cheerful" data-testid="radio-voice-cheerful" />
                                 <div>
                                   <label htmlFor="cheerful" className="font-medium text-foreground cursor-pointer">
                                     Cheerful
@@ -298,9 +377,9 @@ export default function SettingsPage() {
                               </div>
                             </div>
                             
-                            <div className="border border-border rounded-lg p-4 cursor-pointer hover:bg-muted/50 transition-colors">
+                            <div className={`border rounded-lg p-4 cursor-pointer transition-colors ${field.value === 'empathetic' ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'}`}>
                               <div className="flex items-center space-x-3">
-                                <RadioGroupItem value="empathetic" id="empathetic" />
+                                <RadioGroupItem value="empathetic" id="empathetic" data-testid="radio-voice-empathetic" />
                                 <div>
                                   <label htmlFor="empathetic" className="font-medium text-foreground cursor-pointer">
                                     Empathetic
@@ -310,9 +389,9 @@ export default function SettingsPage() {
                               </div>
                             </div>
                             
-                            <div className="border border-border rounded-lg p-4 cursor-pointer hover:bg-muted/50 transition-colors">
+                            <div className={`border rounded-lg p-4 cursor-pointer transition-colors ${field.value === 'professional' ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'}`}>
                               <div className="flex items-center space-x-3">
-                                <RadioGroupItem value="professional" id="professional" />
+                                <RadioGroupItem value="professional" id="professional" data-testid="radio-voice-professional" />
                                 <div>
                                   <label htmlFor="professional" className="font-medium text-foreground cursor-pointer">
                                     Professional
