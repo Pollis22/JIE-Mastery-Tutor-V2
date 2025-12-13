@@ -18,6 +18,7 @@ import { AudioSettings } from "@/components/AudioSettings";
 import { useEffect } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { getPlanDetails } from "@shared/plan-config";
 
 const settingsSchema = z.object({
   firstName: z.string().optional(),
@@ -43,18 +44,6 @@ interface DashboardData {
     voiceMinutes?: string;
     percentage?: number;
   };
-}
-
-function getPlanDetails(plan: string | null | undefined) {
-  const planMap: Record<string, { name: string; minutes: number; price: string }> = {
-    'starter': { name: 'Starter Plan', minutes: 60, price: '19.99' },
-    'single': { name: 'Starter Plan', minutes: 60, price: '19.99' },
-    'standard': { name: 'Standard Plan', minutes: 240, price: '59.99' },
-    'pro': { name: 'Pro Plan', minutes: 600, price: '99.99' },
-    'all': { name: 'Pro Plan', minutes: 600, price: '99.99' },
-    'elite': { name: 'Elite Plan', minutes: 1800, price: '149.99' },
-  };
-  return planMap[plan || ''] || { name: 'Starter Plan', minutes: 60, price: '19.99' };
 }
 
 export default function SettingsPage() {

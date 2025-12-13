@@ -13,6 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { User, Mail, Calendar, Shield, CreditCard, Clock } from "lucide-react";
+import { getPlanDetails } from "@shared/plan-config";
 
 interface DashboardData {
   user?: {
@@ -25,18 +26,6 @@ interface DashboardData {
     voiceMinutes?: string;
     percentage?: number;
   };
-}
-
-function getPlanDetails(plan: string | null | undefined) {
-  const planMap: Record<string, { name: string; minutes: number; price: string; color: string }> = {
-    'starter': { name: 'Starter Plan', minutes: 60, price: '19.99', color: 'bg-gray-500' },
-    'single': { name: 'Starter Plan', minutes: 60, price: '19.99', color: 'bg-gray-500' },
-    'standard': { name: 'Standard Plan', minutes: 240, price: '59.99', color: 'bg-blue-500' },
-    'pro': { name: 'Pro Plan', minutes: 600, price: '99.99', color: 'bg-purple-500' },
-    'all': { name: 'Pro Plan', minutes: 600, price: '99.99', color: 'bg-purple-500' },
-    'elite': { name: 'Elite Plan', minutes: 1800, price: '149.99', color: 'bg-amber-500' },
-  };
-  return planMap[plan || ''] || { name: 'Starter Plan', minutes: 60, price: '19.99', color: 'bg-gray-500' };
 }
 
 function getInitials(firstName?: string | null, lastName?: string | null, username?: string | null): string {
