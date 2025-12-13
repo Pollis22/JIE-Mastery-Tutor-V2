@@ -147,11 +147,15 @@ export default function SettingsPage() {
       firstName: user?.firstName || "",
       lastName: user?.lastName || "",
       email: user?.email || "",
-      preferredLanguage: "english",
-      voiceStyle: "cheerful",
-      speechSpeed: "1.0",
-      volumeLevel: 75,
-      marketingOptIn: user?.marketingOptIn || false,
+      preferredLanguage: user?.preferredLanguage || "english",
+      voiceStyle: user?.voiceStyle || "cheerful",
+      speechSpeed: user?.speechSpeed || "1.0",
+      volumeLevel: user?.volumeLevel ?? 75,
+      marketingOptIn: user?.marketingOptIn ?? false,
+    });
+    toast({
+      title: "Form reset",
+      description: "Settings have been reset to your saved values.",
     });
   };
 
