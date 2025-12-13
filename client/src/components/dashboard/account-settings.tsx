@@ -61,7 +61,7 @@ export default function AccountSettings() {
 
   const updateProfileMutation = useMutation({
     mutationFn: async (data: any) => {
-      const response = await apiRequest("PATCH", "/api/user/profile", data);
+      const response = await apiRequest("PUT", "/api/settings", data);
       if (!response.ok) throw new Error("Failed to update profile");
       return response.json();
     },
