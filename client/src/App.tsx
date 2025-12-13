@@ -49,6 +49,7 @@ import ResetPasswordPage from "@/pages/reset-password";
 import VerifyEmailPage from "@/pages/verify-email-page";
 import RegistrationSuccessPage from "@/pages/registration-success-page";
 import { PersonalityTestPage } from "@/pages/PersonalityTestPage";
+import ProfilePage from "@/pages/profile-page";
 
 function Router() {
   return (
@@ -58,6 +59,7 @@ function Router() {
       <ProtectedRoute path="/sessions/:id" component={SessionDetailsPage} />
       <ProtectedRoute path="/tutor" component={TutorPage} />
       <ProtectedRoute path="/settings" component={SettingsPage} />
+      <ProtectedRoute path="/profile" component={ProfilePage} />
       <ProtectedRoute path="/admin" component={AdminPageEnhanced} />
       <ProtectedRoute path="/admin/users" component={AdminUsers} />
       <ProtectedRoute path="/admin/subscriptions" component={AdminSubscriptions} />
