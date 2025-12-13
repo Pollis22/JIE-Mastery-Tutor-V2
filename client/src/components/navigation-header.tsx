@@ -10,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
-import aiTutorIcon from "@/assets/ai-tutor-icon.png";
+import { UserAvatar } from "@/components/UserAvatar";
 
 export function NavigationHeader() {
   const { user, logoutMutation } = useAuth();
@@ -99,10 +99,13 @@ export function NavigationHeader() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="flex items-center space-x-2 text-sm hover:bg-accent" data-testid="button-user-menu">
-                  <img 
-                    src={aiTutorIcon} 
-                    alt="AI Tutor" 
-                    className="w-8 h-8 rounded-full object-cover border border-primary/20"
+                  <UserAvatar
+                    firstName={user?.firstName}
+                    lastName={user?.lastName}
+                    username={user?.username}
+                    displayName={displayName}
+                    size="sm"
+                    className="border border-primary/20"
                   />
                   <span className="text-foreground font-medium">
                     {displayName}

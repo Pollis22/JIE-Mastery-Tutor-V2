@@ -239,7 +239,7 @@ export default function ProfilePage() {
                     <span className="text-sm font-medium">Username</span>
                   </div>
                   <p className="text-foreground" data-testid="text-profile-username">
-                    {user?.username || 'N/A'}
+                    {user?.email || 'N/A'}
                   </p>
                 </div>
                 
