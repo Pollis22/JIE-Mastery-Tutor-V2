@@ -7,7 +7,7 @@
  * Unauthorized copying, modification, or distribution is strictly prohibited.
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -45,7 +45,7 @@ interface Student {
 }
 
 export default function AccountSettings() {
-  const { user, refetch } = useAuth();
+  const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isEditing, setIsEditing] = useState(false);
@@ -53,10 +53,21 @@ export default function AccountSettings() {
   const [editingStudentId, setEditingStudentId] = useState<string | undefined>();
 
   const [profileData, setProfileData] = useState({
-    email: user?.email || "",
-    firstName: user?.firstName || "",
-    lastName: user?.lastName || ""
+    email: "",
+    firstName: "",
+    lastName: ""
   });
+
+  // Sync profileData when user data loads or changes
+  useEffect(() => {
+    if (user) {
+      setProfileData({
+        email: user.email || "",
+        firstName: user.firstName || "",
+        lastName: user.lastName || ""
+      });
+    }
+  }, [user]);
 
   const [passwordData, setPasswordData] = useState({
     currentPassword: "",
@@ -86,7 +97,6 @@ export default function AccountSettings() {
         description: "Profile updated successfully",
       });
       setIsEditing(false);
-      refetch();
       queryClient.invalidateQueries({ queryKey: ["/api/user"] });
     },
     onError: (error) => {
