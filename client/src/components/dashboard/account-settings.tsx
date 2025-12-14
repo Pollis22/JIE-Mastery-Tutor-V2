@@ -16,9 +16,10 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { Separator } from "@/components/ui/separator";
+import { StudentProfilePanel } from "@/components/StudentProfilePanel";
 import { 
   User, 
   Mail, 
@@ -29,19 +30,29 @@ import {
   Save,
   Edit3,
   Eye,
-  EyeOff
+  EyeOff,
+  GraduationCap,
+  Plus,
+  Pencil
 } from "lucide-react";
+
+interface Student {
+  id: string;
+  name: string;
+  grade?: string;
+  avatarUrl?: string;
+  avatarType?: 'default' | 'preset' | 'upload';
+}
 
 export default function AccountSettings() {
   const { user, refetch } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isEditing, setIsEditing] = useState(false);
+  const [profilePanelOpen, setProfilePanelOpen] = useState(false);
+  const [editingStudentId, setEditingStudentId] = useState<string | undefined>();
 
   const [profileData, setProfileData] = useState({
-    parentName: user?.parentName || "",
-    studentName: user?.studentName || "",
-    studentAge: user?.studentAge || "",
     email: user?.email || "",
     firstName: user?.firstName || "",
     lastName: user?.lastName || ""
@@ -57,6 +68,10 @@ export default function AccountSettings() {
     current: false,
     new: false,
     confirm: false
+  });
+
+  const { data: students = [], isLoading: studentsLoading } = useQuery<Student[]>({
+    queryKey: ['/api/students'],
   });
 
   const updateProfileMutation = useMutation({
@@ -194,6 +209,24 @@ export default function AccountSettings() {
     }
   };
 
+  const renderAvatar = (student: Student) => {
+    if (!student.avatarUrl) {
+      return <User className="h-5 w-5 text-muted-foreground" />;
+    }
+    
+    if (student.avatarType === 'upload') {
+      return (
+        <img 
+          src={student.avatarUrl} 
+          alt={student.name}
+          className="w-8 h-8 rounded-full object-cover"
+        />
+      );
+    }
+    
+    return <span className="text-lg">{student.avatarUrl}</span>;
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -209,101 +242,157 @@ export default function AccountSettings() {
             <TabsTrigger value="danger">Danger Zone</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="profile" className="space-y-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-medium">Profile Information</h3>
-              <Button
-                variant={isEditing ? "outline" : "default"}
-                size="sm"
-                onClick={() => setIsEditing(!isEditing)}
-              >
-                {isEditing ? "Cancel" : "Edit Profile"}
-                {!isEditing && <Edit3 className="ml-2 h-4 w-4" />}
-              </Button>
-            </div>
-
-            <form onSubmit={handleProfileSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="parentName">Parent/Guardian Name</Label>
-                  <Input
-                    id="parentName"
-                    value={profileData.parentName}
-                    onChange={(e) => setProfileData({...profileData, parentName: e.target.value})}
-                    disabled={!isEditing}
-                    data-testid="input-parent-name"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="studentName">Student Name</Label>
-                  <Input
-                    id="studentName"
-                    value={profileData.studentName}
-                    onChange={(e) => setProfileData({...profileData, studentName: e.target.value})}
-                    disabled={!isEditing}
-                    data-testid="input-student-name"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="firstName">First Name</Label>
-                  <Input
-                    id="firstName"
-                    value={profileData.firstName}
-                    onChange={(e) => setProfileData({...profileData, firstName: e.target.value})}
-                    disabled={!isEditing}
-                    data-testid="input-first-name"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="lastName">Last Name</Label>
-                  <Input
-                    id="lastName"
-                    value={profileData.lastName}
-                    onChange={(e) => setProfileData({...profileData, lastName: e.target.value})}
-                    disabled={!isEditing}
-                    data-testid="input-last-name"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={profileData.email}
-                    onChange={(e) => setProfileData({...profileData, email: e.target.value})}
-                    disabled={!isEditing}
-                    data-testid="input-email"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="studentAge">Student Age</Label>
-                  <Input
-                    id="studentAge"
-                    type="number"
-                    value={profileData.studentAge}
-                    onChange={(e) => setProfileData({...profileData, studentAge: e.target.value})}
-                    disabled={!isEditing}
-                    data-testid="input-student-age"
-                  />
-                </div>
+          <TabsContent value="profile" className="space-y-6">
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-medium">Account Owner</h3>
+                <Button
+                  variant={isEditing ? "outline" : "default"}
+                  size="sm"
+                  onClick={() => setIsEditing(!isEditing)}
+                  data-testid="button-edit-profile"
+                >
+                  {isEditing ? "Cancel" : "Edit Profile"}
+                  {!isEditing && <Edit3 className="ml-2 h-4 w-4" />}
+                </Button>
               </div>
 
-              {isEditing && (
-                <Button 
-                  type="submit" 
-                  disabled={updateProfileMutation.isPending}
-                  className="w-full md:w-auto"
+              <form onSubmit={handleProfileSubmit} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="firstName">First Name</Label>
+                    <Input
+                      id="firstName"
+                      value={profileData.firstName}
+                      onChange={(e) => setProfileData({...profileData, firstName: e.target.value})}
+                      disabled={!isEditing}
+                      data-testid="input-first-name"
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="lastName">Last Name</Label>
+                    <Input
+                      id="lastName"
+                      value={profileData.lastName}
+                      onChange={(e) => setProfileData({...profileData, lastName: e.target.value})}
+                      disabled={!isEditing}
+                      data-testid="input-last-name"
+                    />
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <Label htmlFor="email">Email</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      value={profileData.email}
+                      onChange={(e) => setProfileData({...profileData, email: e.target.value})}
+                      disabled={!isEditing}
+                      data-testid="input-email"
+                    />
+                  </div>
+                </div>
+
+                {isEditing && (
+                  <Button 
+                    type="submit" 
+                    disabled={updateProfileMutation.isPending}
+                    className="w-full md:w-auto"
+                    data-testid="button-save-profile"
+                  >
+                    <Save className="mr-2 h-4 w-4" />
+                    {updateProfileMutation.isPending ? "Saving..." : "Save Changes"}
+                  </Button>
+                )}
+              </form>
+            </div>
+
+            <Separator />
+
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <GraduationCap className="h-5 w-5" />
+                  <h3 className="text-lg font-medium">Student Profiles</h3>
+                </div>
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={() => {
+                    setEditingStudentId(undefined);
+                    setProfilePanelOpen(true);
+                  }}
+                  data-testid="button-add-student"
                 >
-                  <Save className="mr-2 h-4 w-4" />
-                  {updateProfileMutation.isPending ? "Saving..." : "Save Changes"}
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Student
                 </Button>
+              </div>
+
+              <p className="text-sm text-muted-foreground mb-4">
+                Student profiles linked to your account.
+              </p>
+
+              {studentsLoading ? (
+                <div className="text-sm text-muted-foreground">Loading students...</div>
+              ) : students.length === 0 ? (
+                <div className="p-4 border rounded-lg text-center">
+                  <User className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground mb-2">No student profiles yet</p>
+                  <p className="text-xs text-muted-foreground">Click "Add Student" to create your first student profile.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {students.map((student) => (
+                    <div 
+                      key={student.id}
+                      className="flex items-center justify-between p-3 border rounded-lg"
+                      data-testid={`student-card-${student.id}`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 flex items-center justify-center rounded-full bg-muted">
+                          {renderAvatar(student)}
+                        </div>
+                        <div>
+                          <p className="font-medium" data-testid={`student-name-${student.id}`}>{student.name}</p>
+                          {student.grade && (
+                            <p className="text-xs text-muted-foreground" data-testid={`student-grade-${student.id}`}>
+                              {student.grade}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setEditingStudentId(student.id);
+                          setProfilePanelOpen(true);
+                        }}
+                        data-testid={`button-edit-student-${student.id}`}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
               )}
-            </form>
+            </div>
+
+            <StudentProfilePanel
+              open={profilePanelOpen}
+              onOpenChange={setProfilePanelOpen}
+              studentId={editingStudentId}
+              onStudentSaved={() => {
+                queryClient.invalidateQueries({ queryKey: ['/api/students'] });
+                setProfilePanelOpen(false);
+              }}
+              onStudentDeleted={() => {
+                queryClient.invalidateQueries({ queryKey: ['/api/students'] });
+                setProfilePanelOpen(false);
+              }}
+            />
           </TabsContent>
 
           <TabsContent value="security" className="space-y-4">
@@ -379,6 +468,7 @@ export default function AccountSettings() {
               <Button 
                 type="submit" 
                 disabled={changePasswordMutation.isPending}
+                data-testid="button-change-password"
               >
                 <Lock className="mr-2 h-4 w-4" />
                 {changePasswordMutation.isPending ? "Changing..." : "Change Password"}
@@ -402,7 +492,7 @@ export default function AccountSettings() {
                   <p className="text-sm text-muted-foreground mb-4">
                     Download all your data including profile information, learning sessions, and progress.
                   </p>
-                  <Button variant="outline" onClick={handleExportData}>
+                  <Button variant="outline" onClick={handleExportData} data-testid="button-export-data">
                     <Download className="mr-2 h-4 w-4" />
                     Export Data
                   </Button>
@@ -427,6 +517,7 @@ export default function AccountSettings() {
               <Button 
                 variant="destructive" 
                 onClick={handleDeleteAccount}
+                data-testid="button-delete-account"
               >
                 <Trash2 className="mr-2 h-4 w-4" />
                 Delete Account
