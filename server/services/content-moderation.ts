@@ -9,6 +9,7 @@
 
 
 import Anthropic from "@anthropic-ai/sdk";
+import { withRetry } from "../utils/retry";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -194,12 +195,13 @@ export async function moderateContent(
         `This is in the context of a ${context.subject || 'general'} tutoring session for ${context.gradeLevel || 'K-12'} students${context.hasDocuments ? ' with uploaded study materials' : ''}.` :
         'This is an educational tutoring session.';
       
-      const response = await anthropic.messages.create({
-        model: "claude-3-5-haiku-20241022", // Fast, cheap model for moderation
-        max_tokens: 100,
-        messages: [{
-          role: "user",
-          content: `You are a content moderator for an educational platform serving K-12 students.
+      const response = await withRetry(async () => {
+        return anthropic.messages.create({
+          model: "claude-3-5-haiku-20241022", // Fast, cheap model for moderation
+          max_tokens: 100,
+          messages: [{
+            role: "user",
+            content: `You are a content moderator for an educational platform serving K-12 students.
 
 ${contextInfo}
 
@@ -222,7 +224,8 @@ APPROPRIATE - if this is a normal learning request
 INAPPROPRIATE - ONLY if truly violates safety rules
 
 If inappropriate, state reason in 5 words or less on next line.`
-        }]
+          }]
+        });
       });
       
       const result = response.content[0].type === 'text' ? response.content[0].text.trim() : '';
