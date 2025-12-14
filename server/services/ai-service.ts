@@ -9,6 +9,7 @@
 
 
 import Anthropic from "@anthropic-ai/sdk";
+import { withRetry, withRetryStream } from "../utils/retry";
 
 /*
 <important_code_snippet_instructions>
@@ -160,15 +161,17 @@ export async function generateTutorResponseStreaming(
     const streamStart = Date.now();
     console.log(`[AI Service] ⏱️ Starting Claude streaming...`);
     
-    // Use streaming API
-    const stream = await anthropicClient.messages.stream({
-      model: DEFAULT_MODEL_STR,
-      max_tokens: 300,
-      system: systemPrompt,
-      messages: [
-        ...conversationHistory,
-        { role: "user", content: currentTranscript }
-      ],
+    // Use streaming API with retry logic for overloaded errors
+    const stream = await withRetryStream(async () => {
+      return anthropicClient.messages.stream({
+        model: DEFAULT_MODEL_STR,
+        max_tokens: 300,
+        system: systemPrompt,
+        messages: [
+          ...conversationHistory,
+          { role: "user", content: currentTranscript }
+        ],
+      });
     });
 
     let textBuffer = '';
@@ -305,14 +308,17 @@ export async function generateTutorResponse(
     const apiStart = Date.now();
     console.log(`[AI Service] ⏱️ Calling Claude API... (prompt length: ${systemPrompt.length} chars)`);
     
-    const response = await anthropicClient.messages.create({
-      model: DEFAULT_MODEL_STR, // "claude-sonnet-4-20250514"
-      max_tokens: 300, // Keep voice responses concise
-      system: systemPrompt,
-      messages: [
-        ...conversationHistory,
-        { role: "user", content: currentTranscript }
-      ],
+    // Wrap Claude API call with retry logic for overloaded errors
+    const response = await withRetry(async () => {
+      return anthropicClient.messages.create({
+        model: DEFAULT_MODEL_STR, // "claude-sonnet-4-20250514"
+        max_tokens: 300, // Keep voice responses concise
+        system: systemPrompt,
+        messages: [
+          ...conversationHistory,
+          { role: "user", content: currentTranscript }
+        ],
+      });
     });
 
     const apiMs = Date.now() - apiStart;
