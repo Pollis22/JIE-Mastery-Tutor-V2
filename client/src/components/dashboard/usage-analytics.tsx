@@ -20,10 +20,25 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 
+interface AnalyticsData {
+  summary: {
+    totalSessions: number;
+    totalMinutesUsed: number;
+    activeDays: number;
+    uniqueStudents: number;
+  };
+  currentUsage?: {
+    minutesUsed: number;
+    minutesLimit: number;
+    bonusMinutes: number;
+    minutesRemaining: number;
+    plan: string;
+  };
+}
+
 interface WeeklyData {
-  dailyBreakdown: { day: string; minutes: number }[];
-  weeklyTotal: number;
-  lastWeekTotal: number;
+  last7Days: number;
+  previous7Days: number;
   percentChange: number;
 }
 
@@ -31,7 +46,7 @@ export default function UsageAnalytics() {
   const { user } = useAuth();
 
   // Fetch analytics data - refetch every 30 seconds for real-time updates
-  const { data: analytics, isLoading } = useQuery({
+  const { data: analytics, isLoading } = useQuery<AnalyticsData>({
     queryKey: ['/api/user/analytics'],
     enabled: !!user,
     refetchInterval: 30000
@@ -166,56 +181,52 @@ export default function UsageAnalytics() {
           <TabsContent value="weekly" className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">This Week's Activity</CardTitle>
-                <CardDescription>Your learning activity for the current week</CardDescription>
+                <CardTitle className="text-base">Weekly Activity Summary</CardTitle>
+                <CardDescription>Your learning activity over the past two weeks</CardDescription>
               </CardHeader>
               <CardContent>
                 {weeklyLoading ? (
                   <p className="text-muted-foreground text-center py-8">Loading weekly data...</p>
                 ) : (
-                  <>
-                    {/* Weekly Chart */}
-                    <div className="space-y-3">
-                      {(weeklyData?.dailyBreakdown || []).map((day) => (
-                        <div key={day.day} className="flex items-center gap-3">
-                          <span className="w-10 text-sm font-medium">{day.day}</span>
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2">
-                              <Progress 
-                                value={day.minutes * 100 / 60} 
-                                className="flex-1 h-6"
-                              />
-                              <span className="text-sm text-muted-foreground w-16">
-                                {day.minutes} min
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
+                  <div className="space-y-6">
+                    {/* Last 7 Days */}
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span>Last 7 Days</span>
+                        <span className="font-medium">{weeklyData?.last7Days || 0} minutes</span>
+                      </div>
+                      <Progress 
+                        value={Math.min(100, ((weeklyData?.last7Days || 0) / Math.max(weeklyData?.last7Days || 1, weeklyData?.previous7Days || 1)) * 100)}
+                        className="h-4"
+                      />
                     </div>
 
-                    {/* Weekly Summary */}
-                    <div className="mt-6 p-4 bg-muted/50 rounded-lg">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-medium">Weekly Total</p>
-                          <p className="text-2xl font-bold">
-                            {weeklyData?.weeklyTotal || 0} minutes
-                          </p>
-                        </div>
-                        {weeklyData && weeklyData.percentChange !== 0 && (
-                          <Badge variant={weeklyData.percentChange >= 0 ? "default" : "secondary"}>
-                            {weeklyData.percentChange >= 0 ? (
-                              <TrendingUp className="mr-1 h-3 w-3" />
-                            ) : (
-                              <TrendingDown className="mr-1 h-3 w-3" />
-                            )}
-                            {weeklyData.percentChange >= 0 ? '+' : ''}{weeklyData.percentChange}% from last week
-                          </Badge>
-                        )}
+                    {/* Previous 7 Days */}
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span>Previous 7 Days</span>
+                        <span className="font-medium">{weeklyData?.previous7Days || 0} minutes</span>
                       </div>
+                      <Progress 
+                        value={Math.min(100, ((weeklyData?.previous7Days || 0) / Math.max(weeklyData?.last7Days || 1, weeklyData?.previous7Days || 1)) * 100)}
+                        className="h-4 [&>div]:bg-muted-foreground"
+                      />
                     </div>
-                  </>
+
+                    {/* Percentage Change */}
+                    {weeklyData && weeklyData.percentChange !== 0 && (
+                      <div className="flex justify-end">
+                        <Badge variant={weeklyData.percentChange >= 0 ? "default" : "secondary"}>
+                          {weeklyData.percentChange >= 0 ? (
+                            <TrendingUp className="mr-1 h-3 w-3" />
+                          ) : (
+                            <TrendingDown className="mr-1 h-3 w-3" />
+                          )}
+                          {weeklyData.percentChange >= 0 ? '+' : ''}{weeklyData.percentChange}% from previous week
+                        </Badge>
+                      </div>
+                    )}
+                  </div>
                 )}
               </CardContent>
             </Card>
