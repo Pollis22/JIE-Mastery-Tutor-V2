@@ -167,6 +167,34 @@ export default function TutorPage() {
     enabled: !!selectedStudentId,
   });
 
+  // Auto-populate grade level from student profile
+  useEffect(() => {
+    if (selectedStudent?.grade) {
+      const grade = selectedStudent.grade.toLowerCase();
+      // Map student grade to level dropdown value
+      if (grade.includes('k') || grade === '1st' || grade === '2nd' || grade.includes('1') || grade.includes('2')) {
+        if (grade.includes('k') || parseInt(grade) <= 2) {
+          setLevel('k2');
+        }
+      }
+      if (grade === '3rd' || grade === '4th' || grade === '5th' || grade.includes('3') || grade.includes('4') || grade.includes('5')) {
+        const num = parseInt(grade.replace(/\D/g, ''));
+        if (num >= 3 && num <= 5) setLevel('g3_5');
+      }
+      if (grade === '6th' || grade === '7th' || grade === '8th' || grade.includes('6') || grade.includes('7') || grade.includes('8')) {
+        const num = parseInt(grade.replace(/\D/g, ''));
+        if (num >= 6 && num <= 8) setLevel('g6_8');
+      }
+      if (grade === '9th' || grade === '10th' || grade === '11th' || grade === '12th') {
+        const num = parseInt(grade.replace(/\D/g, ''));
+        if (num >= 9 && num <= 12) setLevel('g9_12');
+      }
+      if (grade.includes('college') || grade.includes('adult') || grade.includes('university')) {
+        setLevel('college');
+      }
+    }
+  }, [selectedStudent?.grade]);
+
   // Fetch student's pinned documents for RAG context
   const { data: pinnedDocs } = useQuery<Array<{ pin: any; document: { id: string; title: string } }>>({
     queryKey: ['/api/students', selectedStudentId, 'pinned-docs'],
@@ -575,19 +603,6 @@ export default function TutorPage() {
             </select>
 
             <select 
-              id="subject" 
-              value={subject} 
-              onChange={e => setSubject(e.target.value)}
-              className="px-3 py-2 border border-input bg-background text-foreground rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-              data-testid="select-subject"
-            >
-              <option value="general">General</option>
-              <option value="math">Math</option>
-              <option value="english">English</option>
-              <option value="spanish">Spanish</option>
-            </select>
-
-            <select 
               id="language" 
               value={selectedLanguage} 
               onChange={e => setSelectedLanguage(e.target.value)}
@@ -610,17 +625,7 @@ export default function TutorPage() {
               data-testid="button-start-tutor"
               title={!selectedStudentId ? "Please select a student profile to connect" : ""}
             >
-              Start Tutoring Session
-            </button>
-            
-            <button 
-              id="switch-btn" 
-              onClick={switchAgent} 
-              disabled={!mounted}
-              className="px-4 py-2 bg-secondary text-secondary-foreground border border-input rounded-md hover:bg-secondary/90 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary"
-              data-testid="button-switch-agent"
-            >
-              Switch Tutor
+              Talk to Your Tutor
             </button>
             
             <button 
@@ -639,7 +644,7 @@ export default function TutorPage() {
             <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">📚 How to Use JIE Mastery Tutor</h3>
             <ol className="text-sm text-gray-700 dark:text-gray-300 space-y-1.5 list-decimal list-inside">
               <li><strong>Select a student profile</strong> - Use the profile dropdown at the top to choose your profile, or create a new one. Each family member can have their own profile with custom avatar!</li>
-              <li><strong>Select your grade level and subject</strong> you want help with</li>
+              <li><strong>Select your grade level</strong> you want help with</li>
               <li><strong>Upload your materials (optional)</strong> - Share homework, worksheets, or study guides (PDF, DOCX, or images). All uploaded documents are automatically available to your tutor and retained for 6 months</li>
               <li><strong>Wait a few seconds</strong> after uploading for documents to process completely</li>
               <li><strong>Click "Talk to Your Tutor"</strong> to begin your voice conversation</li>
