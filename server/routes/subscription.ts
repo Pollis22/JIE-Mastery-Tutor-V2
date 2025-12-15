@@ -347,6 +347,7 @@ router.post('/change', async (req, res) => {
         }
 
         // Schedule the downgrade for the end of the current billing period
+        // Note: With proration_behavior: 'none', Stripe applies the new price at the next billing cycle
         const updatedSubscription = await stripe!.subscriptions.update(
           existingSubscription.id,
           {
@@ -354,8 +355,7 @@ router.post('/change', async (req, res) => {
               id: subscriptionItemId,
               price: priceId,
             }],
-            proration_behavior: 'none',  // No proration/refund for downgrade
-            billing_cycle_anchor: 'unchanged',  // Keep same billing date
+            proration_behavior: 'none',  // No proration/refund for downgrade - change applies at next billing
             metadata: {
               userId,
               plan: newPlan,
