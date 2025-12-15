@@ -58,15 +58,19 @@ const faqItems = [
     questions: [
       {
         q: "What plans are available?",
-        a: "We offer three plans: Starter ($19.99/60 min), Standard ($59.99/240 min), and Pro ($99.99/600 min) per month."
+        a: "We offer four family plans: Starter Family ($19.99/month for 60 min), Standard Family ($59.99/month for 240 min), Pro Family ($99.99/month for 600 min - Most Popular), and Elite Family ($199.99/month for 1,800 min - Best Value). All plans include unlimited student profiles!"
       },
       {
         q: "Can I change my plan?",
-        a: "Yes! You can upgrade or downgrade your plan at any time from the Subscription section in your dashboard."
+        a: "Yes! You can upgrade or downgrade your plan at any time from the Subscription section in your dashboard. Upgrades take effect immediately with prorated billing. Downgrades take effect at your next billing cycle."
       },
       {
         q: "What happens if I run out of minutes?",
-        a: "You can purchase additional 60-minute packages for $19.99, or upgrade to a higher plan for more monthly minutes."
+        a: "You can upgrade to a higher plan for more monthly minutes. Your minutes reset each billing cycle."
+      },
+      {
+        q: "Can multiple children use one account?",
+        a: "Yes! All plans include unlimited student profiles. Each child gets their own personalized tutoring experience, and parents can track each child's progress separately."
       }
     ]
   },
@@ -76,15 +80,15 @@ const faqItems = [
     questions: [
       {
         q: "What languages are supported for voice tutoring?",
-        a: "We support English, Spanish, Chinese, and Hindi for voice conversations."
+        a: "We support over 25 languages for voice tutoring, including English, Spanish, French, German, Mandarin, Japanese, Korean, Portuguese, Italian, and many more."
       },
       {
         q: "Why isn't my microphone working?",
-        a: "Make sure you've granted microphone permissions to your browser. Check your browser settings and ensure no other applications are using your microphone."
+        a: "Make sure you've granted microphone permissions to your browser. Check your browser settings and ensure no other applications are using your microphone. Try speaking more clearly with minimal background noise."
       },
       {
-        q: "Can I use text instead of voice?",
-        a: "Yes! If you run out of voice minutes or prefer text, you can continue learning through text-based conversations."
+        q: "Can I upload my homework?",
+        a: "Yes! Go to Study Materials to upload PDFs, Word documents, or images of your homework. The AI tutor will reference these materials during your tutoring session."
       }
     ]
   },
