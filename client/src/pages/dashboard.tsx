@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Switch } from "@/components/ui/switch";
 import { 
   User, 
   CreditCard, 
@@ -45,7 +46,8 @@ import UsageAnalytics from "@/components/dashboard/usage-analytics";
 import SupportCenter from "@/components/dashboard/support-center";
 import NewsletterSubscribe from "@/components/dashboard/newsletter-subscribe";
 import { AssignmentsPanel } from "@/components/AssignmentsPanel";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { format } from "date-fns";
 
 export default function DashboardPage() {
@@ -81,6 +83,26 @@ export default function DashboardPage() {
   }>({
     queryKey: ['/api/dashboard/stats'],
     enabled: !!user,
+  });
+
+  // Fetch user preferences for notifications
+  const { data: preferences } = useQuery<{
+    emailNotifications: boolean;
+    marketingEmails: boolean;
+  }>({
+    queryKey: ['/api/user/preferences'],
+    enabled: !!user,
+  });
+
+  // Mutation to update notification preferences
+  const updateNotificationsMutation = useMutation({
+    mutationFn: async (data: { emailNotifications?: boolean; marketingEmails?: boolean }) => {
+      const res = await apiRequest('PATCH', '/api/user/preferences', data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/user/preferences'] });
+    },
   });
 
   const handleLogout = async () => {
@@ -345,26 +367,38 @@ export default function DashboardPage() {
 
                     <TabsContent value="notifications" className="space-y-4">
                       <div className="space-y-4">
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between p-4 border rounded-lg">
                           <div>
                             <h4 className="font-medium">Email Notifications</h4>
                             <p className="text-sm text-muted-foreground">
                               Receive updates about your tutoring sessions
                             </p>
                           </div>
-                          <Button variant="outline" size="sm">Configure</Button>
+                          <Switch
+                            checked={preferences?.emailNotifications ?? true}
+                            onCheckedChange={(checked) => 
+                              updateNotificationsMutation.mutate({ emailNotifications: checked })
+                            }
+                            disabled={updateNotificationsMutation.isPending}
+                            data-testid="switch-email-notifications"
+                          />
                         </div>
                         
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between p-4 border rounded-lg">
                           <div>
                             <h4 className="font-medium">Marketing Emails</h4>
                             <p className="text-sm text-muted-foreground">
                               Receive newsletters and promotional offers
                             </p>
                           </div>
-                          <Button variant="outline" size="sm">
-                            {user?.marketingOptIn ? "Unsubscribe" : "Subscribe"}
-                          </Button>
+                          <Switch
+                            checked={preferences?.marketingEmails ?? false}
+                            onCheckedChange={(checked) => 
+                              updateNotificationsMutation.mutate({ marketingEmails: checked })
+                            }
+                            disabled={updateNotificationsMutation.isPending}
+                            data-testid="switch-marketing-emails"
+                          />
                         </div>
                       </div>
                     </TabsContent>
