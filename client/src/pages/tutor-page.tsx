@@ -635,14 +635,14 @@ export default function TutorPage() {
           </div>
 
           {/* Getting Started Instructions */}
-          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-4 rounded-md">
-            <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-2">📚 How to Use JIE Mastery Tutor</h3>
-            <ol className="text-sm text-blue-800 dark:text-blue-200 space-y-1.5 list-decimal list-inside">
+          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-4 rounded-md">
+            <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">📚 How to Use JIE Mastery Tutor</h3>
+            <ol className="text-sm text-gray-700 dark:text-gray-300 space-y-1.5 list-decimal list-inside">
               <li><strong>Select a student profile</strong> - Use the profile dropdown at the top to choose your profile, or create a new one. Each family member can have their own profile with custom avatar!</li>
               <li><strong>Select your grade level and subject</strong> you want help with</li>
               <li><strong>Upload your materials (optional)</strong> - Share homework, worksheets, or study guides (PDF, DOCX, or images). All uploaded documents are automatically available to your tutor and retained for 6 months</li>
               <li><strong>Wait a few seconds</strong> after uploading for documents to process completely</li>
-              <li><strong>Click "Start Tutoring Session"</strong> to begin your voice conversation</li>
+              <li><strong>Click "Talk to Your Tutor"</strong> to begin your voice conversation</li>
               <li><strong>Start speaking</strong> - Ask questions about your homework or discuss any topic. The tutor uses your uploaded documents to give personalized guidance!</li>
               <li><strong>View the transcript</strong> below to see your conversation in real-time</li>
             </ol>
