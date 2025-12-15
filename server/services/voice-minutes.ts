@@ -46,7 +46,8 @@ export async function getUserMinuteBalance(userId: string): Promise<MinuteBalanc
       subscription_minutes_limit,
       purchased_minutes_balance,
       billing_cycle_start,
-      last_reset_at
+      last_reset_at,
+      monthly_reset_date
     FROM users 
     WHERE id = ${userId}
   `);
@@ -66,11 +67,16 @@ export async function getUserMinuteBalance(userId: string): Promise<MinuteBalanc
   if (daysSinceReset >= 30) {
     console.log(`🔄 [VoiceMinutes] Resetting subscription minutes for user ${userId}`);
     
+    // Calculate next reset (30 days from now)
+    const nextResetDate = new Date(now);
+    nextResetDate.setDate(nextResetDate.getDate() + 30);
+    
     await db.execute(sql`
       UPDATE users 
       SET 
         subscription_minutes_used = 0,
-        last_reset_at = NOW()
+        last_reset_at = NOW(),
+        monthly_reset_date = ${nextResetDate.toISOString()}
       WHERE id = ${userId}
     `);
     
@@ -94,10 +100,32 @@ export async function getUserMinuteBalance(userId: string): Promise<MinuteBalanc
     (userData.subscription_minutes_limit || 60) - (userData.subscription_minutes_used || 0)
   );
 
-  // Calculate next reset date based on billing cycle (monthly on same day)
-  const nextReset = new Date(lastReset);
-  // Add 30 days for monthly cycle
-  nextReset.setDate(nextReset.getDate() + 30);
+  // Prefer persisted monthly_reset_date (synced with Stripe) over calculated date
+  // Detect stale dates (in the past) and recalculate to prevent desync
+  let nextReset: Date;
+  const storedResetDate = userData.monthly_reset_date ? new Date(userData.monthly_reset_date) : null;
+  
+  if (storedResetDate && storedResetDate > now) {
+    // Use the stored date if it's in the future (valid)
+    nextReset = storedResetDate;
+  } else {
+    // Stored date is stale (in the past) or missing - calculate from last_reset_at + 30 days
+    nextReset = new Date(lastReset);
+    nextReset.setDate(nextReset.getDate() + 30);
+    
+    // If even the calculated date is in the past, set it to 30 days from now
+    if (nextReset <= now) {
+      nextReset = new Date(now);
+      nextReset.setDate(nextReset.getDate() + 30);
+    }
+    
+    // Update the stored date to prevent future stale reads (non-blocking)
+    db.execute(sql`
+      UPDATE users 
+      SET monthly_reset_date = ${nextReset.toISOString()}
+      WHERE id = ${userId}
+    `).catch(e => console.error('[VoiceMinutes] Failed to update stale reset date:', e));
+  }
 
   return {
     subscriptionMinutes: subscriptionRemaining,

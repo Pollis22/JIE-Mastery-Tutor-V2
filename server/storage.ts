@@ -64,9 +64,11 @@ export interface IStorage {
   updateUserSettings(userId: string, settings: Partial<User>): Promise<User>;
   updateUserStripeInfo(userId: string, customerId: string, subscriptionId?: string | null): Promise<User>;
   updateUserSubscription(userId: string, plan: 'starter' | 'standard' | 'pro' | 'elite' | 'single' | 'all', status: 'active' | 'canceled' | 'paused', monthlyMinutes?: number, maxConcurrentSessions?: number, maxConcurrentLogins?: number): Promise<User>;
+  updateUserSubscriptionWithBillingCycle(userId: string, plan: 'starter' | 'standard' | 'pro' | 'elite', status: 'active' | 'canceled' | 'paused', monthlyMinutes: number, nextBillingDate: Date | null, maxConcurrentSessions?: number, maxConcurrentLogins?: number): Promise<User>;
   handleSubscriptionPlanChange(userId: string, plan: 'starter' | 'standard' | 'pro' | 'elite', newMinutesLimit: number, isUpgrade: boolean, currentUsedMinutes?: number): Promise<User>;
   updateUserVoiceUsage(userId: string, minutesUsed: number): Promise<void>;
   resetUserVoiceUsage(userId: string): Promise<void>;
+  resetUserVoiceUsageWithBillingCycle(userId: string, nextResetDate: Date | null): Promise<void>;
   canUserUseVoice(userId: string): Promise<boolean>;
   getAvailableMinutes(userId: string): Promise<{ total: number; used: number; remaining: number; bonusMinutes: number }>;
   addBonusMinutes(userId: string, minutes: number): Promise<User>;
@@ -322,10 +324,15 @@ export class DatabaseStorage implements IStorage {
       
       // If this is a plan upgrade/change, reset the usage counter for new billing cycle
       if (status === 'active') {
+        // Calculate next reset date (30 days from now)
+        const nextReset = new Date(now);
+        nextReset.setDate(nextReset.getDate() + 30);
+        
         updateData.subscriptionMinutesUsed = 0;
+        updateData.monthlyVoiceMinutesUsed = 0;
         updateData.billingCycleStart = now;
         updateData.lastResetAt = now;
-        updateData.monthlyResetDate = now; // Sync all dates!
+        updateData.monthlyResetDate = nextReset; // NEXT reset date, not current date!
       }
     }
 
@@ -339,7 +346,7 @@ export class DatabaseStorage implements IStorage {
 
   /**
    * Handle subscription plan changes (upgrades/downgrades) with proper minute allocation
-   * - Upgrades: Reset usage to 0, add remaining to new limit
+   * - Upgrades: Reset usage to 0, set minutes to new plan limit (no carry-over)
    * - Downgrades: Cap used minutes at new limit (don't reset usage)
    */
   async handleSubscriptionPlanChange(
@@ -350,6 +357,11 @@ export class DatabaseStorage implements IStorage {
     currentUsedMinutes?: number
   ): Promise<User> {
     const now = new Date();
+    
+    // Calculate next reset date (30 days from now)
+    const nextReset = new Date(now);
+    nextReset.setDate(nextReset.getDate() + 30);
+    
     const updateData: any = {
       subscriptionPlan: plan,
       subscriptionStatus: 'active',
@@ -359,12 +371,13 @@ export class DatabaseStorage implements IStorage {
     };
 
     if (isUpgrade) {
-      // UPGRADE: Reset usage counter (remaining minutes already added to limit)
+      // UPGRADE: Reset usage counter and set to new plan limit (NO carry-over of subscription minutes)
       updateData.subscriptionMinutesUsed = 0;
       updateData.monthlyVoiceMinutesUsed = 0;
       updateData.billingCycleStart = now;
       updateData.lastResetAt = now;
-      updateData.monthlyResetDate = now;
+      updateData.monthlyResetDate = nextReset; // NEXT reset date, not current date!
+      console.log(`[Storage] UPGRADE: User ${userId} reset to ${newMinutesLimit} minutes, next reset: ${nextReset.toISOString()}`);
     } else {
       // DOWNGRADE: Cap used minutes at new limit to prevent negative remaining
       // If user used 50 of 600, now limit is 60: cap used at min(50, 60) = 50
@@ -373,6 +386,7 @@ export class DatabaseStorage implements IStorage {
       updateData.subscriptionMinutesUsed = cappedUsed;
       updateData.monthlyVoiceMinutesUsed = cappedUsed;
       // Don't reset billing cycle for downgrades - preserve existing cycle
+      console.log(`[Storage] DOWNGRADE: User ${userId} set to ${newMinutesLimit} minutes, used capped at ${cappedUsed}`);
     }
 
     const [user] = await db
@@ -387,18 +401,90 @@ export class DatabaseStorage implements IStorage {
     // Reset monthly usage counter and sync reset date with billing cycle
     const now = new Date();
     
-    // Set both billing cycle start and reset dates to NOW (when subscription renews/starts)
+    // Calculate next reset date (30 days from now)
+    const nextReset = new Date(now);
+    nextReset.setDate(nextReset.getDate() + 30);
+    
+    // Set billing cycle start to NOW, reset date to NEXT billing date
     await db
       .update(users)
       .set({
         monthlyVoiceMinutesUsed: 0,
-        monthlyResetDate: now, // Sync with billing cycle
-        billingCycleStart: now, // Update billing cycle start to match
+        monthlyResetDate: nextReset, // When NEXT reset should happen
+        billingCycleStart: now, // When current billing cycle started
         lastResetAt: now, // Update last reset timestamp
         subscriptionMinutesUsed: 0, // Reset hybrid tracking counter
         updatedAt: new Date(),
       })
       .where(eq(users.id, userId));
+  }
+
+  async resetUserVoiceUsageWithBillingCycle(userId: string, nextResetDate: Date | null): Promise<void> {
+    // Reset monthly usage counter and sync reset date with Stripe's billing cycle
+    const now = new Date();
+    
+    // ALWAYS calculate a reset date - prefer Stripe's, fallback to 30 days from now
+    // This ensures we never leave users with stale dates after payment
+    const nextReset = nextResetDate || new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    
+    console.log(`[Storage] Resetting voice usage for user ${userId}, next reset: ${nextReset.toISOString()} (from ${nextResetDate ? 'Stripe' : 'fallback'})`);
+    
+    await db
+      .update(users)
+      .set({
+        monthlyVoiceMinutesUsed: 0,
+        monthlyResetDate: nextReset, // Always update to ensure fresh date
+        billingCycleStart: now, // When current billing cycle started
+        lastResetAt: now, // Update last reset timestamp
+        subscriptionMinutesUsed: 0, // Reset hybrid tracking counter
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId));
+  }
+
+  async updateUserSubscriptionWithBillingCycle(
+    userId: string, 
+    plan: 'starter' | 'standard' | 'pro' | 'elite', 
+    status: 'active' | 'canceled' | 'paused', 
+    monthlyMinutes: number,
+    nextBillingDate: Date | null,
+    maxConcurrentSessions?: number,
+    maxConcurrentLogins?: number
+  ): Promise<User> {
+    const now = new Date();
+    
+    // ALWAYS set a reset date - prefer Stripe's, fallback to 30 days from now
+    const nextReset = nextBillingDate || new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    
+    console.log(`[Storage] Updating subscription for user ${userId} to ${plan} with ${monthlyMinutes} minutes, next reset: ${nextReset.toISOString()} (from ${nextBillingDate ? 'Stripe' : 'fallback'})`);
+    
+    const updateData: any = {
+      subscriptionPlan: plan,
+      subscriptionStatus: status,
+      monthlyVoiceMinutes: monthlyMinutes,
+      subscriptionMinutesLimit: monthlyMinutes,
+      subscriptionMinutesUsed: 0, // Reset usage for new billing cycle
+      monthlyVoiceMinutesUsed: 0,
+      billingCycleStart: now,
+      lastResetAt: now,
+      monthlyResetDate: nextReset, // Always update to ensure fresh date
+      updatedAt: new Date(),
+    };
+
+    if (maxConcurrentSessions !== undefined) {
+      updateData.maxConcurrentSessions = maxConcurrentSessions;
+    }
+
+    if (maxConcurrentLogins !== undefined) {
+      updateData.maxConcurrentLogins = maxConcurrentLogins;
+    }
+
+    const [user] = await db
+      .update(users)
+      .set(updateData)
+      .where(eq(users.id, userId))
+      .returning();
+    return user;
   }
 
   async updateUserVoiceUsage(userId: string, minutesUsed: number): Promise<void> {

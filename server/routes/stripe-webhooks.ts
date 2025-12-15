@@ -331,6 +331,9 @@ router.post(
           const invoice = event.data.object as Stripe.Invoice;
           const customerId = invoice.customer as string;
           const subscriptionId = (invoice as any).subscription as string;
+          const amountPaid = (invoice.amount_paid || 0) / 100; // Convert cents to dollars
+
+          console.log(`[Stripe Webhook] 💰 Invoice paid: $${amountPaid} for customer ${customerId}`);
 
           // Find user by Stripe customer ID
           const user = await storage.getUserByStripeCustomerId(customerId);
@@ -340,10 +343,18 @@ router.post(
             break;
           }
 
-          // Check if this invoice is for a subscription with a scheduled downgrade
+          // Get subscription to sync billing cycle dates
+          let nextBillingDate: Date | null = null;
           if (subscriptionId && stripe) {
             try {
               const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+              
+              // Get the next billing date from Stripe
+              if ((subscription as any).current_period_end) {
+                nextBillingDate = new Date((subscription as any).current_period_end * 1000);
+                console.log(`[Stripe Webhook] Next billing cycle: ${nextBillingDate.toISOString()}`);
+              }
+              
               const changeType = subscription.metadata?.changeType;
               const scheduledPlan = subscription.metadata?.plan;
               
@@ -360,18 +371,16 @@ router.post(
                 
                 const newMinutes = planMinutes[scheduledPlan] || 60;
                 
-                // Apply the downgrade now
-                await storage.updateUserSubscription(
+                // Apply the downgrade now with proper billing cycle sync
+                await storage.updateUserSubscriptionWithBillingCycle(
                   user.id,
                   scheduledPlan as 'starter' | 'standard' | 'pro' | 'elite',
                   'active',
                   newMinutes,
+                  nextBillingDate,
                   scheduledPlan === 'elite' ? 3 : 1,
                   scheduledPlan === 'elite' ? 3 : 1
                 );
-                
-                // Reset usage for new billing cycle
-                await storage.resetUserVoiceUsage(user.id);
                 
                 // Clear the downgrade metadata (use empty strings, not null)
                 await stripe.subscriptions.update(subscriptionId, {
@@ -392,10 +401,10 @@ router.post(
             }
           }
 
-          // Normal billing cycle - just reset minutes
-          await storage.resetUserVoiceUsage(user.id);
+          // Normal billing cycle renewal - reset minutes and sync dates with Stripe
+          await storage.resetUserVoiceUsageWithBillingCycle(user.id, nextBillingDate);
           
-          console.log(`[Stripe Webhook] Minutes reset for user ${user.id} after payment`);
+          console.log(`[Stripe Webhook] Minutes reset for user ${user.id} after payment (next reset: ${nextBillingDate?.toISOString()})`);
           break;
         }
 
@@ -459,31 +468,31 @@ router.post(
               break;
             }
 
-            let finalMinutesLimit: number;
+            // 🚨 CRITICAL FIX: Subscription minutes should RESET to plan limit, NOT carry over
+            // Only purchased (top-off) minutes roll over, subscription minutes do not
+            const finalMinutesLimit = newPlanInfo.minutes;
 
             if (isUpgrade) {
-              // UPGRADE: Add remaining minutes to new tier's allocation
-              finalMinutesLimit = newPlanInfo.minutes + remainingMinutes;
-              console.log(`[Stripe Webhook] 📈 UPGRADE: ${remainingMinutes} remaining + ${newPlanInfo.minutes} new = ${finalMinutesLimit} total`);
+              // UPGRADE: RESET subscription minutes to new plan's allocation (no carry-over)
+              console.log(`[Stripe Webhook] 📈 UPGRADE: Resetting to ${newPlanInfo.minutes} minutes (subscription minutes do NOT carry over)`);
             } else if (isDowngrade) {
               // DOWNGRADE without scheduled flag (e.g., via Stripe dashboard) - apply immediately
-              finalMinutesLimit = newPlanInfo.minutes;
-              console.log(`[Stripe Webhook] 📉 IMMEDIATE DOWNGRADE: limit capped to ${newPlanInfo.minutes}, used=${usedMinutes}`);
+              console.log(`[Stripe Webhook] 📉 IMMEDIATE DOWNGRADE: limit set to ${newPlanInfo.minutes}, used=${usedMinutes}`);
             } else {
               // Same tier minutes but different plan name
-              finalMinutesLimit = newPlanInfo.minutes;
+              console.log(`[Stripe Webhook] Plan name change to ${newPlanInfo.plan}, minutes: ${newPlanInfo.minutes}`);
             }
 
-            // Use proper plan change handler that handles upgrade/downgrade correctly
+            // Use proper plan change handler - always reset subscription minutes
             await storage.handleSubscriptionPlanChange(
               user.id,
               newPlanInfo.plan as 'starter' | 'standard' | 'pro' | 'elite',
               finalMinutesLimit,
               isUpgrade,
-              usedMinutes
+              isDowngrade ? usedMinutes : 0  // Only preserve used for downgrades
             );
 
-            console.log(`[Stripe Webhook] Plan updated: ${newPlanInfo.plan}, minutes: ${finalMinutesLimit}`);
+            console.log(`[Stripe Webhook] Plan updated: ${newPlanInfo.plan}, minutes reset to: ${finalMinutesLimit}`);
           } else {
             // Status change only (no plan change)
             await storage.updateUserSubscription(
