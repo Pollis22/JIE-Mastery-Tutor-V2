@@ -57,18 +57,18 @@ router.patch('/', async (req, res) => {
 
     const updateData: any = {};
     
-    // Map frontend fields to database columns
+    // Map frontend fields to Drizzle ORM property names (camelCase)
     if (interfaceLanguage !== undefined) {
-      updateData.interface_language = interfaceLanguage;  // Database column name
+      updateData.interfaceLanguage = interfaceLanguage;
     }
     if (voiceLanguage !== undefined) {
-      updateData.voice_language = voiceLanguage;  // Database column name
+      updateData.voiceLanguage = voiceLanguage;
     }
     if (emailNotifications !== undefined) {
-      updateData.email_notifications = emailNotifications;  // Database column name
+      updateData.emailNotifications = emailNotifications;
     }
     if (marketingEmails !== undefined) {
-      updateData.marketing_emails = marketingEmails;  // Database column name
+      updateData.marketingEmails = marketingEmails;
     }
 
     if (Object.keys(updateData).length === 0) {
