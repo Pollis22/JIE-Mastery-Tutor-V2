@@ -406,7 +406,7 @@ export function AssignmentsPanel({
                 <div className="flex items-center gap-2 text-green-700 dark:text-green-300">
                   <CheckCircle className="w-4 h-4" />
                   <span className="text-sm">
-                    All your uploaded documents are automatically available to your tutor and will be retained for 6 months.
+                    Please select one of your previously uploaded documents if you want to use it in this session. You may also upload a document during the session once the text box becomes visible.
                   </span>
                 </div>
               </div>
