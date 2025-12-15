@@ -47,16 +47,15 @@ router.post('/contact', async (req, res) => {
 
     // If email service is available, send the support email
     try {
-      const { emailService } = await import('../services/email');
+      const { emailService } = await import('../services/email-service');
       if (emailService) {
-        await emailService.sendAdminNotification(`Support Request: ${subject}`, {
-          from: user.email,
-          category,
-          subject,
+        await emailService.sendContactForm({
+          name: user.firstName || user.studentName || 'User',
+          email: user.email,
+          subject: `[${category.toUpperCase()}] ${subject}`,
           message,
-          userId: user.id,
-          userName: user.studentName || user.firstName || 'User',
         });
+        console.log('[Support] ✅ Email sent successfully');
       }
     } catch (emailError: any) {
       // Continue even if email fails
