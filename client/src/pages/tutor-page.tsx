@@ -167,31 +167,61 @@ export default function TutorPage() {
     enabled: !!selectedStudentId,
   });
 
+  // Map student grade to dropdown level value
+  const mapGradeToLevel = (studentGrade: string): AgentLevel => {
+    if (!studentGrade) return 'college';
+    
+    // Normalize: lowercase, remove punctuation, replace spaces/dashes with single dash
+    const normalized = studentGrade
+      .toLowerCase()
+      .trim()
+      .replace(/[^\w\s-]/g, '') // Remove punctuation except dashes
+      .replace(/\s+/g, '-')     // Replace spaces with dashes
+      .replace(/-+/g, '-')      // Collapse multiple dashes
+      .replace(/^-|-$/g, '');   // Trim leading/trailing dashes
+    
+    // Check for college/adult keywords first (highest priority for explicit matches)
+    if (normalized.includes('college') || normalized.includes('adult') || normalized.includes('university')) {
+      return 'college';
+    }
+    
+    // Check for kindergarten keywords
+    if (normalized.includes('kindergarten') || normalized === 'k' || normalized.startsWith('k-')) {
+      return 'k2';
+    }
+    
+    // Check for grade band patterns: handles "3-5", "grades-3-5", "grade-3-5", "3-to-5"
+    const bandMatch = normalized.match(/(\d+)-(?:to-)?(\d+)/);
+    if (bandMatch) {
+      const lowGrade = parseInt(bandMatch[1]);
+      const highGrade = parseInt(bandMatch[2]);
+      // Map based on the range
+      if (highGrade <= 2) return 'k2';
+      if (lowGrade >= 3 && highGrade <= 5) return 'g3_5';
+      if (lowGrade >= 6 && highGrade <= 8) return 'g6_8';
+      if (lowGrade >= 9 && highGrade <= 12) return 'g9_12';
+    }
+    
+    // Extract any numeric grade (handles '5th', '5', 'grade-5', 'grade5', etc.)
+    const numMatch = normalized.match(/(\d+)/);
+    if (numMatch) {
+      const gradeNum = parseInt(numMatch[1]);
+      if (gradeNum >= 0 && gradeNum <= 2) return 'k2';
+      if (gradeNum >= 3 && gradeNum <= 5) return 'g3_5';
+      if (gradeNum >= 6 && gradeNum <= 8) return 'g6_8';
+      if (gradeNum >= 9 && gradeNum <= 12) return 'g9_12';
+      if (gradeNum > 12) return 'college';
+    }
+    
+    // Default to college/adult
+    return 'college';
+  };
+
   // Auto-populate grade level from student profile
   useEffect(() => {
     if (selectedStudent?.grade) {
-      const grade = selectedStudent.grade.toLowerCase();
-      // Map student grade to level dropdown value
-      if (grade.includes('k') || grade === '1st' || grade === '2nd' || grade.includes('1') || grade.includes('2')) {
-        if (grade.includes('k') || parseInt(grade) <= 2) {
-          setLevel('k2');
-        }
-      }
-      if (grade === '3rd' || grade === '4th' || grade === '5th' || grade.includes('3') || grade.includes('4') || grade.includes('5')) {
-        const num = parseInt(grade.replace(/\D/g, ''));
-        if (num >= 3 && num <= 5) setLevel('g3_5');
-      }
-      if (grade === '6th' || grade === '7th' || grade === '8th' || grade.includes('6') || grade.includes('7') || grade.includes('8')) {
-        const num = parseInt(grade.replace(/\D/g, ''));
-        if (num >= 6 && num <= 8) setLevel('g6_8');
-      }
-      if (grade === '9th' || grade === '10th' || grade === '11th' || grade === '12th') {
-        const num = parseInt(grade.replace(/\D/g, ''));
-        if (num >= 9 && num <= 12) setLevel('g9_12');
-      }
-      if (grade.includes('college') || grade.includes('adult') || grade.includes('university')) {
-        setLevel('college');
-      }
+      const mappedLevel = mapGradeToLevel(selectedStudent.grade);
+      setLevel(mappedLevel);
     }
   }, [selectedStudent?.grade]);
 
