@@ -166,6 +166,91 @@ router.get('/voice-balance', async (req, res) => {
   }
 });
 
+// GET /api/usage/weekly - Weekly breakdown of session activity
+router.get('/usage-weekly', async (req, res) => {
+  try {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const userId = req.user!.id;
+    console.log('📊 [WeeklyUsage] Fetching weekly data for user:', userId);
+
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const dailyBreakdown = dayNames.map(day => ({ day, minutes: 0 }));
+    let weeklyTotal = 0;
+    let lastWeekTotal = 0;
+
+    try {
+      const { db } = await import('../db');
+      const { sql } = await import('drizzle-orm');
+      
+      // Get this week's sessions (Sunday to Saturday)
+      const thisWeekResult = await db.execute(sql`
+        SELECT 
+          EXTRACT(DOW FROM started_at) as day_of_week,
+          COALESCE(SUM(minutes_used), 0) as total_minutes
+        FROM realtime_sessions
+        WHERE user_id = ${userId}
+          AND status = 'ended'
+          AND started_at >= date_trunc('week', CURRENT_DATE)
+          AND started_at < date_trunc('week', CURRENT_DATE) + interval '7 days'
+        GROUP BY EXTRACT(DOW FROM started_at)
+      `);
+
+      if (thisWeekResult.rows) {
+        for (const row of thisWeekResult.rows as any[]) {
+          const dayIndex = parseInt(row.day_of_week);
+          const minutes = Math.round(parseFloat(row.total_minutes) || 0);
+          if (dayIndex >= 0 && dayIndex < 7) {
+            dailyBreakdown[dayIndex].minutes = minutes;
+          }
+          weeklyTotal += minutes;
+        }
+      }
+
+      // Get last week's total for comparison
+      const lastWeekResult = await db.execute(sql`
+        SELECT COALESCE(SUM(minutes_used), 0) as total_minutes
+        FROM realtime_sessions
+        WHERE user_id = ${userId}
+          AND status = 'ended'
+          AND started_at >= date_trunc('week', CURRENT_DATE) - interval '7 days'
+          AND started_at < date_trunc('week', CURRENT_DATE)
+      `);
+
+      if (lastWeekResult.rows && lastWeekResult.rows[0]) {
+        lastWeekTotal = Math.round(parseFloat((lastWeekResult.rows[0] as any).total_minutes) || 0);
+      }
+    } catch (error: any) {
+      console.error('[WeeklyUsage] Error fetching weekly stats:', error);
+    }
+
+    // Calculate percent change
+    let percentChange = 0;
+    if (lastWeekTotal > 0) {
+      percentChange = Math.round(((weeklyTotal - lastWeekTotal) / lastWeekTotal) * 100);
+    }
+
+    const response = {
+      dailyBreakdown,
+      weeklyTotal,
+      lastWeekTotal,
+      percentChange
+    };
+
+    console.log('✅ [WeeklyUsage] Weekly data fetched successfully');
+    res.json(response);
+
+  } catch (error: any) {
+    console.error('❌ [WeeklyUsage] Failed to fetch weekly data:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch weekly usage data',
+      message: error.message 
+    });
+  }
+});
+
 // GET /api/user/usage-analytics - Alias for /analytics
 router.get('/usage-analytics', async (req, res) => {
   try {
