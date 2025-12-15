@@ -181,7 +181,7 @@ export default function DashboardPage() {
                     <User className="h-6 w-6 text-primary" />
                   </div>
                   <div>
-                    <h3 className="font-semibold">{user?.studentName || user?.firstName}</h3>
+                    <h3 className="font-semibold">{[user?.firstName, user?.lastName].filter(Boolean).join(' ') || user?.username || 'User'}</h3>
                     <p className="text-sm text-muted-foreground">{user?.email}</p>
                   </div>
                 </div>
@@ -255,7 +255,7 @@ export default function DashboardPage() {
                 {/* Welcome Card */}
                 <Card>
                   <CardHeader>
-                    <CardTitle>Welcome back, {user?.studentName || user?.firstName}!</CardTitle>
+                    <CardTitle>Welcome back, {user?.firstName || user?.username || 'User'}!</CardTitle>
                     <CardDescription>
                       Upload your homework, notes, or study materials and start a tutoring session
                     </CardDescription>
