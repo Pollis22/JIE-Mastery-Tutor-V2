@@ -27,6 +27,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import jieLogo from "@/assets/jie-mastery-logo-new.jpg";
+import tutorHero from "@/assets/tutor-hero.png";
 
 interface ProgressData {
   lastLevel?: string;
@@ -670,8 +671,15 @@ export default function TutorPage() {
           </div>
 
           {/* Getting Started Instructions */}
-          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-4 rounded-md">
-            <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">📚 How to Use JIE Mastery Tutor</h3>
+          <div className="relative bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-4 rounded-md overflow-hidden">
+            {/* Background image - positioned absolutely, behind content */}
+            <div 
+              className="absolute inset-0 opacity-15 pointer-events-none bg-cover bg-right-bottom"
+              style={{ backgroundImage: `url(${tutorHero})` }}
+            />
+            {/* Content - positioned relatively to appear on top */}
+            <div className="relative z-10">
+              <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">📚 How to Use JIE Mastery Tutor</h3>
             <ol className="text-sm text-gray-700 dark:text-gray-300 space-y-1.5 list-decimal list-inside">
               <li><strong>Create/Select a student profile</strong> - Use the profile dropdown at the top to choose your profile, or create a new one. Each family member can have their own profile with custom avatar!</li>
               <li><strong>Select your grade level</strong> you want help with</li>
@@ -681,6 +689,7 @@ export default function TutorPage() {
               <li><strong>Start speaking</strong> - Ask questions about your homework or discuss any topic. The tutor uses your uploaded documents to give personalized guidance!</li>
               <li><strong>View the transcript</strong> below to see your conversation in real-time</li>
             </ol>
+            </div>
           </div>
 
           {/* Document Upload Section - Using AssignmentsPanel */}
