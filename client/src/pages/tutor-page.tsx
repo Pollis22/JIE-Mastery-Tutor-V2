@@ -673,7 +673,7 @@ export default function TutorPage() {
           <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-4 rounded-md">
             <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">📚 How to Use JIE Mastery Tutor</h3>
             <ol className="text-sm text-gray-700 dark:text-gray-300 space-y-1.5 list-decimal list-inside">
-              <li><strong>Select a student profile</strong> - Use the profile dropdown at the top to choose your profile, or create a new one. Each family member can have their own profile with custom avatar!</li>
+              <li><strong>Create/Select a student profile</strong> - Use the profile dropdown at the top to choose your profile, or create a new one. Each family member can have their own profile with custom avatar!</li>
               <li><strong>Select your grade level</strong> you want help with</li>
               <li><strong>Upload your materials (optional)</strong> - Share homework, worksheets, or study guides (PDF, DOCX, or images). Select documents to use in this session, or upload new ones</li>
               <li><strong>Wait a few seconds</strong> after uploading for documents to process completely</li>
