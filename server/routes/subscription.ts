@@ -421,7 +421,28 @@ router.post('/cancel', async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
+    console.log(`[Subscription] Cancel request for user ${userId}:`, {
+      stripeSubscriptionId: user.stripeSubscriptionId,
+      subscriptionStatus: user.subscriptionStatus,
+      subscriptionPlan: user.subscriptionPlan
+    });
+
     if (!user.stripeSubscriptionId) {
+      // User has no Stripe subscription ID - this could be a data inconsistency
+      // If they have an active status, we should set them to inactive since there's nothing to cancel
+      if (user.subscriptionStatus === 'active') {
+        console.log(`[Subscription] User ${userId} has active status but no Stripe subscription - setting to inactive`);
+        await storage.updateUserSettings(userId, {
+          subscriptionStatus: 'inactive',
+          subscriptionEndsAt: null,
+          subscriptionMinutesLimit: 0,
+          subscriptionMinutesUsed: 0
+        });
+        return res.status(400).json({ 
+          error: 'No subscription found', 
+          message: 'Your account was not linked to a subscription. Status has been updated. Please subscribe to access tutoring features.'
+        });
+      }
       return res.status(400).json({ error: 'No active subscription to cancel' });
     }
 
@@ -435,6 +456,46 @@ router.post('/cancel', async (req, res) => {
 
     if (!stripe) {
       return res.status(503).json({ error: 'Stripe not configured' });
+    }
+
+    // First verify the subscription exists in Stripe
+    let stripeSubscription;
+    try {
+      stripeSubscription = await stripe.subscriptions.retrieve(user.stripeSubscriptionId);
+    } catch (stripeError: any) {
+      console.error(`[Subscription] Could not find Stripe subscription ${user.stripeSubscriptionId}:`, stripeError.message);
+      
+      // Subscription doesn't exist in Stripe - clean up our database
+      if (stripeError.code === 'resource_missing') {
+        await storage.updateUserSettings(userId, {
+          subscriptionStatus: 'inactive',
+          stripeSubscriptionId: null,
+          subscriptionEndsAt: null
+        });
+        return res.status(400).json({ 
+          error: 'Subscription not found',
+          message: 'Your subscription could not be found. It may have already been canceled. Please subscribe again to continue.'
+        });
+      }
+      throw stripeError;
+    }
+
+    // Check if already canceled in Stripe
+    if (stripeSubscription.cancel_at_period_end) {
+      const endsAt = new Date((stripeSubscription as any).current_period_end * 1000);
+      // Update our database to match
+      await storage.updateUserSettings(userId, {
+        subscriptionStatus: 'canceled',
+        subscriptionEndsAt: endsAt
+      });
+      return res.json({
+        success: true,
+        message: 'Subscription was already scheduled to cancel',
+        accessUntil: endsAt.toISOString(),
+        accessUntilFormatted: endsAt.toLocaleDateString('en-US', { 
+          month: 'long', day: 'numeric', year: 'numeric' 
+        })
+      });
     }
 
     // Cancel at period end (NOT immediately)
@@ -464,6 +525,15 @@ router.post('/cancel', async (req, res) => {
 
   } catch (error: any) {
     console.error('❌ [Subscription] Cancel error:', error);
+    
+    // Provide more specific error messages
+    if (error.type === 'StripeInvalidRequestError') {
+      return res.status(400).json({ 
+        error: 'Subscription error',
+        message: 'There was an issue with your subscription. Please contact support.'
+      });
+    }
+    
     res.status(500).json({ 
       error: 'Failed to cancel subscription',
       message: error.message 
