@@ -318,6 +318,22 @@ export default function TutorPage() {
           });
           setLocation('/pricing');
           return;
+        } else if (availabilityData.reason === 'subscription_expired' || availabilityData.reason === 'subscription_ended') {
+          toast({
+            title: "Subscription Expired",
+            description: availabilityData.message || "Your subscription has ended. Please reactivate to continue learning.",
+            variant: "destructive",
+          });
+          setLocation('/dashboard?tab=subscription');
+          return;
+        } else if (availabilityData.reason === 'payment_failed') {
+          toast({
+            title: "Payment Issue",
+            description: availabilityData.message || "There is an issue with your payment. Please update your payment method.",
+            variant: "destructive",
+          });
+          setLocation('/dashboard?tab=subscription');
+          return;
         } else if (availabilityData.reason === 'no_minutes') {
           toast({
             title: "Out of Minutes",

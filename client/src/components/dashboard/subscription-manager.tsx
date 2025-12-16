@@ -31,8 +31,21 @@ import {
   ArrowUpCircle,
   ArrowDownCircle,
   RefreshCw,
-  Tag
+  Tag,
+  AlertTriangle,
+  RotateCcw
 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 interface VoiceBalance {
   subscriptionMinutes: number;
@@ -210,13 +223,18 @@ export default function SubscriptionManager() {
   const cancelSubscriptionMutation = useMutation({
     mutationFn: async () => {
       const response = await apiRequest("POST", "/api/subscription/cancel");
-      if (!response.ok) throw new Error("Failed to cancel subscription");
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || errorData.error || "Failed to cancel subscription");
+      }
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast({
-        title: "Subscription cancelled",
-        description: "Your subscription will remain active until the end of the billing period",
+        title: "Subscription Canceled",
+        description: data.accessUntilFormatted 
+          ? `Your subscription will remain active until ${data.accessUntilFormatted}. You can reactivate anytime before then.`
+          : "Your subscription will remain active until the end of the billing period.",
       });
       refetch();
     },
@@ -224,6 +242,38 @@ export default function SubscriptionManager() {
       toast({
         title: "Error",
         description: error.message || "Failed to cancel subscription",
+        variant: "destructive",
+      });
+    }
+  });
+
+  // Reactivate subscription mutation
+  const reactivateSubscriptionMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/subscription/reactivate", {
+        planId: user?.subscriptionPlan
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || errorData.error || "Failed to reactivate subscription");
+      }
+      return response.json();
+    },
+    onSuccess: (data) => {
+      if (data.type === 'checkout' && data.url) {
+        window.location.href = data.url;
+      } else {
+        toast({
+          title: "Subscription Reactivated!",
+          description: data.message || "Your subscription is now active again.",
+        });
+        refetch();
+      }
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to reactivate subscription",
         variant: "destructive",
       });
     }
@@ -276,13 +326,32 @@ export default function SubscriptionManager() {
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <Badge variant={user?.subscriptionStatus === 'active' ? 'default' : 'secondary'}>
-                  {user?.subscriptionStatus || "Inactive"}
+                <Badge 
+                  variant={
+                    user?.subscriptionStatus === 'active' ? 'default' : 
+                    user?.subscriptionStatus === 'canceled' ? 'secondary' :
+                    user?.subscriptionStatus === 'past_due' ? 'destructive' :
+                    'outline'
+                  }
+                  className={user?.subscriptionStatus === 'canceled' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400' : ''}
+                >
+                  {user?.subscriptionStatus === 'active' ? 'Active' :
+                   user?.subscriptionStatus === 'canceled' ? 'Canceled' :
+                   user?.subscriptionStatus === 'past_due' ? 'Payment Issue' :
+                   user?.subscriptionStatus === 'inactive' ? 'Inactive' :
+                   user?.subscriptionStatus === 'trialing' ? 'Trial' :
+                   'Inactive'}
                 </Badge>
                 {user?.subscriptionStatus === 'active' && user?.monthlyResetDate && (
                   <Badge variant="outline" className="flex items-center gap-1">
                     <Calendar className="h-3 w-3" />
                     Renews {format(new Date(user.monthlyResetDate), 'MMM dd')}
+                  </Badge>
+                )}
+                {user?.subscriptionStatus === 'canceled' && user?.subscriptionEndsAt && (
+                  <Badge variant="outline" className="flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    Access until {format(new Date(user.subscriptionEndsAt), 'MMM dd, yyyy')}
                   </Badge>
                 )}
               </div>
@@ -351,32 +420,117 @@ export default function SubscriptionManager() {
               )}
             </div>
 
+            {/* Status-Specific Alerts */}
+            {user?.subscriptionStatus === 'canceled' && user?.subscriptionEndsAt && (
+              <Alert className="bg-yellow-50 border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-800">
+                <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
+                <AlertDescription className="text-yellow-800 dark:text-yellow-300">
+                  <span className="font-medium">Your subscription is scheduled to end.</span> You'll have access until {format(new Date(user.subscriptionEndsAt), 'MMMM d, yyyy')}. 
+                  You can reactivate your subscription anytime before then.
+                </AlertDescription>
+              </Alert>
+            )}
+            
+            {user?.subscriptionStatus === 'past_due' && (
+              <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>
+                  <span className="font-medium">Payment issue detected.</span> Please update your payment method to continue using voice tutoring.
+                </AlertDescription>
+              </Alert>
+            )}
+            
+            {(user?.subscriptionStatus === 'inactive' || (!user?.subscriptionStatus && !user?.stripeSubscriptionId)) && (
+              <Alert className="bg-gray-50 border-gray-200 dark:bg-gray-800 dark:border-gray-700">
+                <AlertDescription>
+                  <span className="font-medium">Your subscription has ended.</span> Reactivate to continue your learning journey!
+                </AlertDescription>
+              </Alert>
+            )}
+
             {/* Actions */}
             <div className="flex flex-wrap gap-2">
-              {user?.subscriptionStatus === 'active' ? (
+              {user?.subscriptionStatus === 'active' && (
                 <>
                   <Button
                     variant="outline"
                     onClick={() => window.open('/api/stripe/portal', '_blank')}
+                    data-testid="button-manage-billing"
                   >
                     <CreditCard className="mr-2 h-4 w-4" />
                     Manage Billing
                   </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => cancelSubscriptionMutation.mutate()}
-                    disabled={cancelSubscriptionMutation.isPending}
-                  >
-                    <XCircle className="mr-2 h-4 w-4" />
-                    Cancel Subscription
-                  </Button>
+                  
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="outline"
+                        disabled={cancelSubscriptionMutation.isPending}
+                        data-testid="button-cancel-subscription"
+                      >
+                        <XCircle className="mr-2 h-4 w-4" />
+                        Cancel Subscription
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Cancel Subscription?</AlertDialogTitle>
+                        <AlertDialogDescription className="space-y-3">
+                          <p>Are you sure you want to cancel your subscription?</p>
+                          <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
+                            <p className="text-blue-800 dark:text-blue-300 text-sm">
+                              <strong>You won't lose access immediately.</strong> You'll continue to have full access until the end of your current billing period.
+                            </p>
+                          </div>
+                          <p className="text-sm text-muted-foreground">
+                            You can reactivate anytime before your period ends to keep your subscription going.
+                          </p>
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel data-testid="button-keep-subscription">Keep Subscription</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={() => cancelSubscriptionMutation.mutate()}
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          data-testid="button-confirm-cancel"
+                        >
+                          Yes, Cancel
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </>
-              ) : (
+              )}
+              
+              {user?.subscriptionStatus === 'canceled' && (
+                <Button
+                  onClick={() => reactivateSubscriptionMutation.mutate()}
+                  disabled={reactivateSubscriptionMutation.isPending}
+                  data-testid="button-reactivate-subscription"
+                >
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                  {reactivateSubscriptionMutation.isPending ? 'Reactivating...' : 'Undo Cancellation'}
+                </Button>
+              )}
+              
+              {user?.subscriptionStatus === 'past_due' && (
+                <Button
+                  variant="destructive"
+                  onClick={() => window.open('/api/stripe/portal', '_blank')}
+                  data-testid="button-update-payment"
+                >
+                  <CreditCard className="mr-2 h-4 w-4" />
+                  Update Payment Method
+                </Button>
+              )}
+              
+              {(user?.subscriptionStatus === 'inactive' || (!user?.subscriptionStatus && !user?.stripeSubscriptionId)) && (
                 <Button
                   onClick={() => window.location.href = '/pricing'}
+                  data-testid="button-subscribe"
                 >
                   <ArrowUpCircle className="mr-2 h-4 w-4" />
-                  Subscribe Now
+                  Reactivate Subscription
                 </Button>
               )}
               
@@ -384,6 +538,7 @@ export default function SubscriptionManager() {
                 variant="secondary"
                 onClick={() => buyMinutesMutation.mutate()}
                 disabled={buyMinutesMutation.isPending}
+                data-testid="button-buy-minutes"
               >
                 <Zap className="mr-2 h-4 w-4" />
                 Buy 60 Minutes ($19.99)

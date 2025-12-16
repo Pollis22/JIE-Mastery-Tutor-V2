@@ -407,6 +407,210 @@ router.post('/change', async (req, res) => {
   }
 });
 
+// POST /api/subscription/cancel - Cancel subscription at period end
+router.post('/cancel', async (req, res) => {
+  try {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const userId = req.user!.id;
+    const user = await storage.getUserById(userId);
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (!user.stripeSubscriptionId) {
+      return res.status(400).json({ error: 'No active subscription to cancel' });
+    }
+
+    if (user.subscriptionStatus === 'canceled') {
+      return res.status(400).json({ error: 'Subscription already canceled' });
+    }
+
+    if (user.subscriptionStatus === 'inactive') {
+      return res.status(400).json({ error: 'Subscription already expired' });
+    }
+
+    if (!stripe) {
+      return res.status(503).json({ error: 'Stripe not configured' });
+    }
+
+    // Cancel at period end (NOT immediately)
+    const subscription = await stripe.subscriptions.update(
+      user.stripeSubscriptionId,
+      { cancel_at_period_end: true }
+    );
+
+    const endsAt = new Date((subscription as any).current_period_end * 1000);
+
+    // Update database with canceled status and end date
+    await storage.updateUserSettings(userId, {
+      subscriptionStatus: 'canceled',
+      subscriptionEndsAt: endsAt
+    });
+
+    console.log(`🚫 [Subscription] User ${userId} canceled - access until ${endsAt.toISOString()}`);
+
+    res.json({
+      success: true,
+      message: 'Subscription canceled',
+      accessUntil: endsAt.toISOString(),
+      accessUntilFormatted: endsAt.toLocaleDateString('en-US', { 
+        month: 'long', day: 'numeric', year: 'numeric' 
+      })
+    });
+
+  } catch (error: any) {
+    console.error('❌ [Subscription] Cancel error:', error);
+    res.status(500).json({ 
+      error: 'Failed to cancel subscription',
+      message: error.message 
+    });
+  }
+});
+
+// POST /api/subscription/reactivate - Reactivate a canceled or expired subscription
+router.post('/reactivate', async (req, res) => {
+  try {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const userId = req.user!.id;
+    const { planId } = req.body;
+
+    const user = await storage.getUserById(userId);
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    if (!stripe) {
+      return res.status(503).json({ error: 'Stripe not configured' });
+    }
+
+    // If user already has active subscription, use change endpoint instead
+    if (user.subscriptionStatus === 'active') {
+      return res.status(400).json({ 
+        error: 'Already have active subscription',
+        message: 'Use the plan change option to switch plans'
+      });
+    }
+
+    // If subscription is canceled but not expired, just remove the scheduled cancellation
+    if (user.subscriptionStatus === 'canceled' && user.stripeSubscriptionId) {
+      try {
+        // Remove the scheduled cancellation
+        await stripe.subscriptions.update(
+          user.stripeSubscriptionId,
+          { cancel_at_period_end: false }
+        );
+
+        await storage.updateUserSettings(userId, {
+          subscriptionStatus: 'active',
+          subscriptionEndsAt: null
+        });
+
+        console.log(`✅ [Subscription] User ${userId} reactivated existing subscription`);
+
+        return res.json({
+          success: true,
+          message: 'Subscription reactivated! Your subscription will continue as normal.',
+          type: 'reactivated'
+        });
+      } catch (stripeError: any) {
+        // Subscription might be fully deleted, need to create new one
+        console.log('[Subscription] Could not reactivate existing, will create new:', stripeError.message);
+      }
+    }
+
+    // For inactive users or failed reactivation, redirect to checkout with a plan
+    // They need to go through checkout to create a new subscription
+    const targetPlan = planId || user.subscriptionPlan || 'starter';
+    
+    // Price ID mapping
+    const priceIds: Record<string, string> = {
+      starter: process.env.STRIPE_PRICE_STARTER || '',
+      standard: process.env.STRIPE_PRICE_STANDARD || '',
+      pro: process.env.STRIPE_PRICE_PRO || '',
+      elite: process.env.STRIPE_PRICE_ELITE || '',
+    };
+
+    const priceId = priceIds[targetPlan];
+    if (!priceId) {
+      return res.status(400).json({ 
+        error: 'Invalid plan',
+        message: 'Please select a valid subscription plan'
+      });
+    }
+
+    // Ensure we have a Stripe customer
+    let customerId = user.stripeCustomerId;
+    if (!customerId) {
+      const customer = await stripe.customers.create({
+        email: user.email,
+        name: user.parentName || user.username,
+        metadata: { userId }
+      });
+      customerId = customer.id;
+      await storage.updateUserStripeInfo(userId, customerId, null);
+    }
+
+    // Create checkout session for new subscription
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    const session = await stripe.checkout.sessions.create({
+      customer: customerId,
+      mode: 'subscription',
+      payment_method_types: ['card'],
+      line_items: [{ 
+        price: priceId, 
+        quantity: 1 
+      }],
+      metadata: {
+        userId,
+        plan: targetPlan,
+        type: 'reactivation',
+      },
+      subscription_data: {
+        metadata: {
+          userId,
+          plan: targetPlan
+        }
+      },
+      success_url: `${baseUrl}/dashboard?subscription=reactivated&plan=${targetPlan}`,
+      cancel_url: `${baseUrl}/dashboard?subscription=cancelled`,
+      allow_promotion_codes: true,
+    });
+
+    console.log(`🔄 [Subscription] User ${userId} starting reactivation checkout for ${targetPlan}`);
+
+    res.json({
+      success: true,
+      type: 'checkout',
+      sessionId: session.id,
+      url: session.url,
+      message: 'Please complete checkout to reactivate your subscription'
+    });
+
+  } catch (error: any) {
+    console.error('❌ [Subscription] Reactivation error:', error);
+    
+    if (error.type === 'StripeCardError') {
+      return res.status(400).json({ 
+        error: 'Payment failed', 
+        message: error.message 
+      });
+    }
+    
+    res.status(500).json({ 
+      error: 'Failed to reactivate subscription',
+      message: error.message 
+    });
+  }
+});
+
 // GET /api/subscription/status - Get current subscription status
 router.get('/status', async (req, res) => {
   try {
@@ -445,13 +649,17 @@ router.get('/status', async (req, res) => {
 
     res.json({
       plan: user.subscriptionPlan || 'starter',
-      status: user.subscriptionStatus || 'active',
+      status: user.subscriptionStatus || 'inactive',
+      subscriptionEndsAt: user.subscriptionEndsAt?.toISOString(),
       minutesUsed: minutesData.used,
       minutesLimit: minutesData.total,
       minutesRemaining: minutesData.remaining,
       bonusMinutes: user.bonusMinutes || 0,
       hasActiveSubscription: !!user.stripeSubscriptionId,
-      scheduledPlanChange
+      scheduledPlanChange,
+      canUseVoice: user.subscriptionStatus === 'active' || 
+                   user.subscriptionStatus === 'trialing' ||
+                   (user.subscriptionStatus === 'canceled' && user.subscriptionEndsAt && new Date(user.subscriptionEndsAt) > new Date())
     });
 
   } catch (error: any) {

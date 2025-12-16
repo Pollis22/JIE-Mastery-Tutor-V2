@@ -428,9 +428,50 @@ router.post(
             break;
           }
 
-          // Update subscription status
-          const status = subscription.status === 'active' ? 'active' : 
-                        subscription.status === 'canceled' ? 'canceled' : 'paused';
+          console.log(`[Stripe Webhook] Subscription updated for customer ${customerId}, status: ${subscription.status}, cancel_at_period_end: ${subscription.cancel_at_period_end}`);
+
+          // Check if subscription was just canceled (scheduled to end at period end)
+          if (subscription.cancel_at_period_end === true) {
+            const endsAt = new Date((subscription as any).current_period_end * 1000);
+            console.log(`[Stripe Webhook] Subscription scheduled to cancel - access until ${endsAt.toISOString()}`);
+            
+            await storage.updateUserSettings(user.id, {
+              subscriptionStatus: 'canceled',
+              subscriptionEndsAt: endsAt
+            });
+            break;
+          }
+
+          // Check if cancellation was reversed (user reactivated before period end)
+          if (subscription.cancel_at_period_end === false && subscription.status === 'active') {
+            // Check if user was previously canceled
+            if (user.subscriptionStatus === 'canceled') {
+              console.log(`[Stripe Webhook] Cancellation reversed - subscription reactivated`);
+              
+              await storage.updateUserSettings(user.id, {
+                subscriptionStatus: 'active',
+                subscriptionEndsAt: null
+              });
+              break;
+            }
+          }
+
+          // Handle past_due status (payment failed)
+          if (subscription.status === 'past_due') {
+            console.log(`[Stripe Webhook] Subscription past due - payment failed for user ${user.id}`);
+            
+            await storage.updateUserSettings(user.id, {
+              subscriptionStatus: 'past_due'
+            });
+            break;
+          }
+
+          // Update subscription status - map Stripe status to our status
+          // Note: past_due is handled above, so we only check for active, canceled, trialing here
+          const status: 'active' | 'canceled' | 'inactive' | 'past_due' | 'trialing' | 'paused' = 
+            subscription.status === 'active' ? 'active' : 
+            subscription.status === 'canceled' ? 'inactive' : 
+            subscription.status === 'trialing' ? 'trialing' : 'paused';
           
           // Detect plan change using both current price and previous_attributes
           const currentPriceId = subscription.items.data[0]?.price.id;
@@ -502,12 +543,10 @@ router.post(
 
             console.log(`[Stripe Webhook] Plan updated: ${newPlanInfo.plan}, minutes reset to: ${finalMinutesLimit}`);
           } else {
-            // Status change only (no plan change)
-            await storage.updateUserSubscription(
-              user.id, 
-              (currentPlan) as 'starter' | 'standard' | 'pro' | 'single' | 'all', 
-              status
-            );
+            // Status change only (no plan change) - use updateUserSettings for new status types
+            await storage.updateUserSettings(user.id, {
+              subscriptionStatus: status
+            });
             
             console.log(`[Stripe Webhook] Subscription status update: ${subscription.status} for user ${user.id}`);
           }
@@ -526,14 +565,44 @@ router.post(
             break;
           }
 
-          // Cancel subscription
-          await storage.updateUserSubscription(
-            user.id, 
-            (user.subscriptionPlan || 'starter') as 'starter' | 'standard' | 'pro' | 'single' | 'all', 
-            'canceled'
-          );
+          console.log(`[Stripe Webhook] Subscription DELETED for customer ${customerId} - setting status to inactive`);
+
+          // Subscription fully ended - set to inactive status
+          // Note: Keep subscriptionEndsAt as-is for historical reference
+          await storage.updateUserSettings(user.id, {
+            subscriptionStatus: 'inactive',
+            subscriptionMinutesLimit: 0,
+            subscriptionMinutesUsed: 0,
+            stripeSubscriptionId: null
+          });
           
-          console.log(`[Stripe Webhook] Subscription canceled for user ${user.id}`);
+          console.log(`[Stripe Webhook] Subscription ended for user ${user.id} - status set to inactive`);
+          break;
+        }
+
+        case 'invoice.payment_failed': {
+          const invoice = event.data.object as Stripe.Invoice;
+          const customerId = invoice.customer as string;
+
+          // Find user by Stripe customer ID
+          const user = await storage.getUserByStripeCustomerId(customerId);
+          
+          if (!user) {
+            console.error(`[Stripe Webhook] User not found for customer ${customerId}`);
+            break;
+          }
+
+          console.log(`[Stripe Webhook] Payment FAILED for customer ${customerId}`);
+
+          // Only set to past_due if user has an active subscription
+          // This indicates payment issues that need to be resolved
+          if (user.subscriptionStatus === 'active' || user.subscriptionStatus === 'trialing') {
+            await storage.updateUserSettings(user.id, {
+              subscriptionStatus: 'past_due'
+            });
+            
+            console.log(`[Stripe Webhook] User ${user.id} set to past_due due to payment failure`);
+          }
           break;
         }
 

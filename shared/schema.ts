@@ -82,7 +82,8 @@ export const users = pgTable("users", {
   stripeCustomerId: text("stripe_customer_id"),
   stripeSubscriptionId: text("stripe_subscription_id"),
   subscriptionPlan: text("subscription_plan").$type<'starter' | 'standard' | 'pro' | 'elite' | 'single' | 'all'>(),
-  subscriptionStatus: text("subscription_status").$type<'active' | 'canceled' | 'paused'>(),
+  subscriptionStatus: text("subscription_status").$type<'active' | 'canceled' | 'inactive' | 'past_due' | 'trialing' | 'paused'>(),
+  subscriptionEndsAt: timestamp("subscription_ends_at"), // When canceled subscription expires (grace period end)
   maxConcurrentSessions: integer("max_concurrent_sessions").default(1), // Elite tier allows up to 3 voice tutoring sessions
   maxConcurrentLogins: integer("max_concurrent_logins").default(1), // Elite tier allows up to 3 device logins
   // Hybrid Minute Tracking System
