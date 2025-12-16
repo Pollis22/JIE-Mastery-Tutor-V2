@@ -139,7 +139,7 @@ export class EmailService {
     try {
       const resend = getResendClient();
       const fromEmail = getFromEmail();
-      const adminEmail = process.env.ADMIN_EMAIL || 'support@jiemastery.ai';
+      const adminEmail = process.env.ADMIN_EMAIL || 'pollis@jiemastery.ai';
       
       // Format amount as currency (treat 0 as valid, only N/A for undefined/null)
       const formattedAmount = typeof data.amount === 'number' ? `$${data.amount.toFixed(2)}` : 'N/A';
@@ -314,7 +314,7 @@ export class EmailService {
     try {
       const resend = getResendClient();
       const fromEmail = getFromEmail();
-      const adminEmail = process.env.ADMIN_EMAIL || 'support@jiemastery.ai';
+      const adminEmail = process.env.ADMIN_EMAIL || 'pollis@jiemastery.ai';
       
       // Send to admin
       await resend.emails.send({
