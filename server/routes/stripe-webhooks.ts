@@ -214,14 +214,38 @@ router.post(
               await addPurchasedMinutes(userId, minutesToAdd, pricePaid);
               console.log(`[Stripe Webhook] Added ${minutesToAdd} purchased minutes (rollover) to user ${userId}`);
               
-              // Send top-up confirmation email (non-blocking)
+              // Send professional top-off confirmation emails (non-blocking)
               const user = await storage.getUser(userId);
-              if (user && user.parentName) {
-                emailService.sendTopUpConfirmation({
+              if (user) {
+                const firstName = user.parentName?.split(' ')[0] || user.firstName || 'Customer';
+                
+                // Get new balance
+                const availableMinutes = await storage.getAvailableMinutes(userId);
+                const newBalance = availableMinutes.total || minutesToAdd;
+                
+                // Send customer email
+                emailService.sendTopOffEmail({
                   email: user.email,
-                  parentName: user.parentName,
+                  firstName,
                   minutesPurchased: minutesToAdd,
-                }).catch(error => console.error('[Stripe Webhook] Top-up email failed:', error));
+                  amountPaid: pricePaid,
+                  newBalance
+                }).catch(error => console.error('[Stripe Webhook] Top-off customer email failed:', error));
+                
+                // Send admin email
+                const planNames: Record<string, string> = {
+                  'starter': 'Starter Family',
+                  'standard': 'Standard Family',
+                  'pro': 'Pro Family',
+                  'elite': 'Elite Family',
+                };
+                emailService.sendAdminTopOffEmail({
+                  userEmail: user.email,
+                  userName: user.parentName || `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username || 'Unknown',
+                  minutesPurchased: minutesToAdd,
+                  amountPaid: pricePaid,
+                  currentPlan: planNames[user.subscriptionPlan || 'starter'] || user.subscriptionPlan || 'Unknown'
+                }).catch(error => console.error('[Stripe Webhook] Top-off admin email failed:', error));
               }
             }
             break;

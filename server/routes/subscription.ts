@@ -17,6 +17,23 @@ import {
   cancelDuplicateSubscriptions,
   stripe 
 } from '../services/stripe-service';
+import { emailService } from '../services/email-service';
+
+// Plan pricing for email notifications
+const PLAN_PRICES: Record<string, number> = {
+  'starter': 9.99,
+  'standard': 19.99,
+  'pro': 39.99,
+  'elite': 79.99,
+};
+
+// Plan display names
+const PLAN_NAMES: Record<string, string> = {
+  'starter': 'Starter Family',
+  'standard': 'Standard Family',
+  'pro': 'Pro Family',
+  'elite': 'Elite Family',
+};
 
 const router = Router();
 
@@ -297,6 +314,38 @@ router.post('/change', async (req, res) => {
 
         console.log(`✅ [Subscription] User ${userId} upgraded to ${newPlan} with ${newMinutes} minutes (discount: ${discountApplied})`);
 
+        // Send upgrade emails
+        const oldPlanName = PLAN_NAMES[currentPlan] || currentPlan;
+        const newPlanName = PLAN_NAMES[newPlan] || newPlan;
+        const oldMinutes = PLAN_MINUTES[currentPlan] || 60;
+        const oldPrice = PLAN_PRICES[currentPlan] || 9.99;
+        const newPrice = PLAN_PRICES[newPlan] || 9.99;
+        const proratedCharge = Math.max(0, newPrice - oldPrice);
+        const firstName = user.parentName?.split(' ')[0] || user.firstName || 'Customer';
+        
+        // Send customer upgrade email
+        emailService.sendUpgradeEmail({
+          email: user.email,
+          firstName,
+          oldPlan: oldPlanName,
+          newPlan: newPlanName,
+          oldMinutes,
+          newMinutes,
+          proratedCharge
+        }).catch(err => console.error('[Subscription] Failed to send upgrade email:', err));
+        
+        // Send admin upgrade email
+        emailService.sendAdminUpgradeEmail({
+          email: user.email,
+          userName: user.parentName || `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username || 'Unknown',
+          oldPlan: oldPlanName,
+          newPlan: newPlanName,
+          oldPrice,
+          newPrice,
+          proratedCharge,
+          monthlyIncrease: newPrice - oldPrice
+        }).catch(err => console.error('[Subscription] Failed to send admin upgrade email:', err));
+
         return res.json({
           success: true,
           type: 'upgrade',
@@ -375,6 +424,39 @@ router.post('/change', async (req, res) => {
         
         console.log(`📆 [Subscription] Downgrade scheduled for ${periodEnd.toLocaleDateString()}`);
         console.log(`📝 [Subscription] User keeps ${currentPlan} benefits until then`);
+
+        // Send downgrade emails
+        const currentPlanName = PLAN_NAMES[currentPlan] || currentPlan;
+        const newPlanName = PLAN_NAMES[newPlan] || newPlan;
+        const currentMinutes = PLAN_MINUTES[currentPlan] || 60;
+        const newMinutes = PLAN_MINUTES[newPlan] || 60;
+        const oldPrice = PLAN_PRICES[currentPlan] || 9.99;
+        const newPrice = PLAN_PRICES[newPlan] || 9.99;
+        const effectiveDateFormatted = periodEnd.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+        const firstName = user.parentName?.split(' ')[0] || user.firstName || 'Customer';
+        
+        // Send customer downgrade email
+        emailService.sendDowngradeEmail({
+          email: user.email,
+          firstName,
+          currentPlan: currentPlanName,
+          newPlan: newPlanName,
+          currentMinutes,
+          newMinutes,
+          effectiveDate: effectiveDateFormatted
+        }).catch(err => console.error('[Subscription] Failed to send downgrade email:', err));
+        
+        // Send admin downgrade email
+        emailService.sendAdminDowngradeEmail({
+          email: user.email,
+          userName: user.parentName || `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username || 'Unknown',
+          oldPlan: currentPlanName,
+          newPlan: newPlanName,
+          oldPrice,
+          newPrice,
+          effectiveDate: effectiveDateFormatted,
+          monthlyDecrease: oldPrice - newPrice
+        }).catch(err => console.error('[Subscription] Failed to send admin downgrade email:', err));
 
         return res.json({
           success: true,
@@ -514,13 +596,34 @@ router.post('/cancel', async (req, res) => {
 
     console.log(`🚫 [Subscription] User ${userId} canceled - access until ${endsAt.toISOString()}`);
 
+    // Send cancellation emails (don't await to not block response)
+    const planName = PLAN_NAMES[user.subscriptionPlan || 'starter'] || user.subscriptionPlan || 'Subscription';
+    const planPrice = PLAN_PRICES[user.subscriptionPlan || 'starter'] || 9.99;
+    const accessEndDate = endsAt.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    const firstName = user.parentName?.split(' ')[0] || user.firstName || 'Customer';
+    
+    // Send customer email
+    emailService.sendCancellationEmailToUser({
+      email: user.email,
+      firstName,
+      planName,
+      accessEndDate
+    }).catch(err => console.error('[Subscription] Failed to send customer cancellation email:', err));
+    
+    // Send admin email
+    emailService.sendCancellationEmailToAdmin({
+      userEmail: user.email,
+      userName: user.parentName || `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username || 'Unknown',
+      planName,
+      planPrice,
+      accessEndDate
+    }).catch(err => console.error('[Subscription] Failed to send admin cancellation email:', err));
+
     res.json({
       success: true,
       message: 'Subscription canceled',
       accessUntil: endsAt.toISOString(),
-      accessUntilFormatted: endsAt.toLocaleDateString('en-US', { 
-        month: 'long', day: 'numeric', year: 'numeric' 
-      })
+      accessUntilFormatted: accessEndDate
     });
 
   } catch (error: any) {
@@ -584,6 +687,29 @@ router.post('/reactivate', async (req, res) => {
         });
 
         console.log(`✅ [Subscription] User ${userId} reactivated existing subscription`);
+
+        // Send reactivation emails
+        const planName = PLAN_NAMES[user.subscriptionPlan || 'starter'] || user.subscriptionPlan || 'Subscription';
+        const planPrice = PLAN_PRICES[user.subscriptionPlan || 'starter'] || 9.99;
+        const minutes = PLAN_MINUTES[user.subscriptionPlan || 'starter'] || 60;
+        const firstName = user.parentName?.split(' ')[0] || user.firstName || 'Customer';
+        
+        // Send customer reactivation email
+        emailService.sendReactivationEmail({
+          email: user.email,
+          firstName,
+          planName,
+          minutes
+        }).catch(err => console.error('[Subscription] Failed to send reactivation email:', err));
+        
+        // Send admin reactivation email
+        emailService.sendAdminReactivationEmail({
+          userEmail: user.email,
+          userName: user.parentName || `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.username || 'Unknown',
+          planName,
+          planPrice,
+          reactivationType: 'undo_cancellation'
+        }).catch(err => console.error('[Subscription] Failed to send admin reactivation email:', err));
 
         return res.json({
           success: true,
