@@ -394,12 +394,15 @@ export function setupAuth(app: Express) {
           }).catch(error => console.error('[Register] Welcome email failed:', error));
         }
 
-        // Send admin notification (non-blocking)
+        // Send admin notification with complete user details (non-blocking)
         emailService.sendAdminNotification('Account Created', {
           email: user.email,
-          studentName: user.studentName,
-          gradeLevel: user.gradeLevel,
-          marketingOptIn: user.marketingOptIn,
+          parentName: user.parentName || user.firstName || '',
+          studentName: user.studentName || '',
+          gradeLevel: user.gradeLevel || '',
+          primarySubject: user.primarySubject || '',
+          plan: 'Free Trial',
+          amount: 0,
         }).catch(error => console.error('[Register] Admin notification failed:', error));
 
         console.log('[Register] ✅ Registration complete');

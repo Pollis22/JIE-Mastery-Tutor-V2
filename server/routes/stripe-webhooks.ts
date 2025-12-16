@@ -183,9 +183,13 @@ router.post(
               minutes: monthlyMinutes,
             }).catch(error => console.error('[Stripe Webhook] Welcome email failed:', error));
 
-            // Send admin notification
+            // Send admin notification with complete user details
             emailService.sendAdminNotification('New Registration (Paid)', {
               email: newUser.email,
+              parentName: newUser.parentName || newUser.username,
+              studentName: newUser.studentName || '',
+              gradeLevel: newUser.gradeLevel || '',
+              primarySubject: newUser.primarySubject || '',
               plan: planNames[plan] || plan,
               amount: session.amount_total ? session.amount_total / 100 : 0,
             }).catch(error => console.error('[Stripe Webhook] Admin notification failed:', error));
@@ -317,9 +321,13 @@ router.post(
               minutes: monthlyMinutes,
             }).catch(error => console.error('[Stripe Webhook] Subscription email failed:', error));
             
-            // Send admin notification
+            // Send admin notification with complete user details
             emailService.sendAdminNotification('New Subscription', {
               email: user.email,
+              parentName: user.parentName || user.username,
+              studentName: user.studentName || '',
+              gradeLevel: user.gradeLevel || '',
+              primarySubject: user.primarySubject || '',
               plan: planNames[plan] || plan,
               amount: session.amount_total ? session.amount_total / 100 : 0,
             }).catch(error => console.error('[Stripe Webhook] Admin notification failed:', error));

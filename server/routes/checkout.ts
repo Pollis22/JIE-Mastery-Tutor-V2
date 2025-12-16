@@ -99,6 +99,7 @@ router.post('/create-registration-session', async (req, res) => {
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       payment_method_types: ['card'],
+      customer_email: registrationData.email.toLowerCase(), // CRITICAL: Receipt goes to this email
       client_reference_id: registrationData.email, // Easy lookup
       line_items: [{
         price: priceId,

@@ -125,17 +125,114 @@ export class EmailService {
     }
   }
 
-  async sendAdminNotification(type: string, data: any) {
+  async sendAdminNotification(type: string, data: {
+    email?: string;
+    parentName?: string;
+    studentName?: string;
+    plan?: string;
+    amount?: number;
+    phone?: string;
+    gradeLevel?: string;
+    primarySubject?: string;
+    [key: string]: any;
+  }) {
     try {
       const resend = getResendClient();
       const fromEmail = getFromEmail();
       const adminEmail = process.env.ADMIN_EMAIL || 'support@jiemastery.ai';
       
+      // Format amount as currency (treat 0 as valid, only N/A for undefined/null)
+      const formattedAmount = typeof data.amount === 'number' ? `$${data.amount.toFixed(2)}` : 'N/A';
+      
+      // Build professional HTML email
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <div style="background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%); padding: 20px; border-radius: 8px 8px 0 0;">
+            <h1 style="color: white; margin: 0; font-size: 24px;">🔔 ${type}</h1>
+          </div>
+          
+          <div style="background: #f9fafb; padding: 24px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+            <h2 style="color: #111827; margin-top: 0; border-bottom: 2px solid #dc2626; padding-bottom: 8px;">
+              Customer Details
+            </h2>
+            
+            <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+              <tr style="border-bottom: 1px solid #e5e7eb;">
+                <td style="padding: 12px 0; color: #6b7280; font-weight: 500; width: 140px;">Email:</td>
+                <td style="padding: 12px 0; color: #111827;">
+                  <a href="mailto:${data.email || 'N/A'}" style="color: #dc2626; text-decoration: none;">${data.email || 'N/A'}</a>
+                </td>
+              </tr>
+              <tr style="border-bottom: 1px solid #e5e7eb;">
+                <td style="padding: 12px 0; color: #6b7280; font-weight: 500;">Parent Name:</td>
+                <td style="padding: 12px 0; color: #111827;">${data.parentName || 'N/A'}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #e5e7eb;">
+                <td style="padding: 12px 0; color: #6b7280; font-weight: 500;">Student Name:</td>
+                <td style="padding: 12px 0; color: #111827;">${data.studentName || 'N/A'}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #e5e7eb;">
+                <td style="padding: 12px 0; color: #6b7280; font-weight: 500;">Grade Level:</td>
+                <td style="padding: 12px 0; color: #111827;">${data.gradeLevel || 'N/A'}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #e5e7eb;">
+                <td style="padding: 12px 0; color: #6b7280; font-weight: 500;">Primary Subject:</td>
+                <td style="padding: 12px 0; color: #111827;">${data.primarySubject || 'N/A'}</td>
+              </tr>
+              ${data.phone ? `
+              <tr style="border-bottom: 1px solid #e5e7eb;">
+                <td style="padding: 12px 0; color: #6b7280; font-weight: 500;">Phone:</td>
+                <td style="padding: 12px 0; color: #111827;">
+                  <a href="tel:${data.phone}" style="color: #dc2626; text-decoration: none;">${data.phone}</a>
+                </td>
+              </tr>
+              ` : ''}
+            </table>
+            
+            <h2 style="color: #111827; border-bottom: 2px solid #dc2626; padding-bottom: 8px;">
+              Subscription Details
+            </h2>
+            
+            <table style="width: 100%; border-collapse: collapse;">
+              <tr style="border-bottom: 1px solid #e5e7eb;">
+                <td style="padding: 12px 0; color: #6b7280; font-weight: 500; width: 140px;">Plan:</td>
+                <td style="padding: 12px 0; color: #111827; font-weight: 600;">${data.plan || 'N/A'}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #e5e7eb;">
+                <td style="padding: 12px 0; color: #6b7280; font-weight: 500;">Amount Paid:</td>
+                <td style="padding: 12px 0; color: #16a34a; font-weight: 600; font-size: 18px;">${formattedAmount}</td>
+              </tr>
+              <tr>
+                <td style="padding: 12px 0; color: #6b7280; font-weight: 500;">Date:</td>
+                <td style="padding: 12px 0; color: #111827;">${new Date().toLocaleDateString('en-US', { 
+                  weekday: 'long', 
+                  year: 'numeric', 
+                  month: 'long', 
+                  day: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit'
+                })}</td>
+              </tr>
+            </table>
+            
+            <div style="margin-top: 24px; padding: 16px; background: #ecfdf5; border-radius: 8px; border-left: 4px solid #10b981;">
+              <p style="margin: 0; color: #065f46; font-weight: 500;">
+                ✅ New subscriber added successfully!
+              </p>
+            </div>
+          </div>
+          
+          <p style="text-align: center; color: #9ca3af; font-size: 12px; margin-top: 16px;">
+            JIE Mastery AI Tutor - Admin Notification System
+          </p>
+        </div>
+      `;
+      
       await resend.emails.send({
         from: fromEmail,
         to: adminEmail,
-        subject: `New ${type}`,
-        html: `<pre>${JSON.stringify(data, null, 2)}</pre>`
+        subject: `🔔 ${type} - ${data.parentName || data.email || 'New User'} (${data.plan || 'Unknown Plan'})`,
+        html
       });
     } catch (error) {
       console.error('[EmailService] Failed to send admin notification:', error);
