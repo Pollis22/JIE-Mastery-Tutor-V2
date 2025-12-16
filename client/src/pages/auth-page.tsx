@@ -1,5 +1,5 @@
 import { useAuth } from "@/hooks/use-auth";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,12 +12,13 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { useEffect, useState } from "react";
-import { Eye, EyeOff, Mail, FileText, Upload, Scan, Users, TrendingUp, ChevronDown, Bot, BookOpen, Sparkles } from "lucide-react";
+import { Eye, EyeOff, Mail, FileText, Upload, Scan, Users, TrendingUp, ChevronDown, Bot, BookOpen, Sparkles, CheckCircle, AlertCircle, Info } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Footer } from "@/components/footer";
 import jieLogo from "@/assets/jie-mastery-logo-new.jpg";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 const loginSchema = z.object({
   email: z.string().min(1, "Email or username is required"),
@@ -49,9 +50,15 @@ export default function AuthPage() {
   const { user, loginMutation, registerMutation } = useAuth();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
+  const searchString = useSearch();
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [showRegisterPassword, setShowRegisterPassword] = useState(false);
   const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
+  
+  // Parse verification status from URL query params
+  const searchParams = new URLSearchParams(searchString);
+  const verificationStatus = searchParams.get('verified');
+  const verificationReason = searchParams.get('reason');
 
   const resendVerificationMutation = useMutation({
     mutationFn: async (email: string) => {
@@ -227,6 +234,43 @@ export default function AuthPage() {
       </nav>
 
       <div className="container mx-auto px-4 py-8">
+        {/* Verification Status Messages */}
+        {verificationStatus && (
+          <div className="max-w-md mx-auto mb-6">
+            {verificationStatus === 'success' && (
+              <Alert className="bg-green-50 border-green-200" data-testid="alert-verification-success">
+                <CheckCircle className="h-4 w-4 text-green-600" />
+                <AlertTitle className="text-green-800">Email Verified Successfully!</AlertTitle>
+                <AlertDescription className="text-green-700">
+                  Your email has been verified. You can now log in and start learning.
+                </AlertDescription>
+              </Alert>
+            )}
+            {verificationStatus === 'already' && (
+              <Alert className="bg-blue-50 border-blue-200" data-testid="alert-verification-already">
+                <Info className="h-4 w-4 text-blue-600" />
+                <AlertTitle className="text-blue-800">Email Already Verified</AlertTitle>
+                <AlertDescription className="text-blue-700">
+                  Your email is already verified. Please log in to continue.
+                </AlertDescription>
+              </Alert>
+            )}
+            {verificationStatus === 'error' && (
+              <Alert variant="destructive" data-testid="alert-verification-error">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Verification Failed</AlertTitle>
+                <AlertDescription>
+                  {verificationReason === 'invalid_token' 
+                    ? 'This verification link is invalid. Please request a new verification email.' 
+                    : verificationReason === 'missing_token'
+                    ? 'No verification token found. Please use the link from your email.'
+                    : 'An error occurred during verification. Please try again or request a new verification email.'}
+                </AlertDescription>
+              </Alert>
+            )}
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 max-w-6xl mx-auto items-start">
           
           {/* Auth Forms */}

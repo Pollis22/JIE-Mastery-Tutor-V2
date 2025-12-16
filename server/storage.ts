@@ -76,7 +76,7 @@ export interface IStorage {
   updateUserPassword(userId: string, hashedPassword: string): Promise<User>;
   // Email verification methods
   generateEmailVerificationToken(userId: string): Promise<string>;
-  verifyEmailToken(token: string): Promise<User | null>;
+  verifyEmailToken(token: string): Promise<{ user: User; alreadyVerified: boolean } | null>;
   markUserEmailAsVerified(userId: string): Promise<User | null>;
   // Password reset methods
   generatePasswordResetToken(email: string): Promise<{ user: User; token: string } | null>;
@@ -612,18 +612,19 @@ export class DatabaseStorage implements IStorage {
     return token;
   }
 
-  async verifyEmailToken(token: string): Promise<User | null> {
+  async verifyEmailToken(token: string): Promise<{ user: User; alreadyVerified: boolean } | null> {
+    // Note: Verification links do NOT expire per business requirement
     const [user] = await db
       .select()
       .from(users)
-      .where(
-        and(
-          eq(users.emailVerificationToken, token),
-          sql`${users.emailVerificationExpiry} > NOW()`
-        )
-      );
+      .where(eq(users.emailVerificationToken, token));
     
     if (!user) return null;
+    
+    // Check if already verified
+    if (user.emailVerified) {
+      return { user, alreadyVerified: true }; // Already verified
+    }
     
     // Mark email as verified
     const [verifiedUser] = await db
@@ -637,7 +638,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(users.id, user.id))
       .returning();
     
-    return verifiedUser;
+    return { user: verifiedUser, alreadyVerified: false };
   }
 
   async markUserEmailAsVerified(userId: string): Promise<User | null> {

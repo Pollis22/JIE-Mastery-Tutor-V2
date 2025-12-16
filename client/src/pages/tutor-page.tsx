@@ -9,6 +9,7 @@ import { AssignmentsPanel } from "@/components/AssignmentsPanel";
 import { StudentSwitcher } from "@/components/StudentSwitcher";
 import { StudentProfilePanel } from "@/components/StudentProfilePanel";
 import { TopUpModal } from "@/components/TopUpModal";
+import { VerificationBanner } from "@/components/VerificationBanner";
 import { AGENTS, GREETINGS, type AgentLevel } from "@/agents";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useQuery } from "@tanstack/react-query";
@@ -310,7 +311,14 @@ export default function TutorPage() {
       const availabilityData = await response.json();
 
       if (!availabilityData.allowed) {
-        if (availabilityData.reason === 'no_subscription') {
+        if (availabilityData.code === 'EMAIL_NOT_VERIFIED') {
+          toast({
+            title: "Email Verification Required",
+            description: availabilityData.message || "Please verify your email address to start tutoring.",
+            variant: "destructive",
+          });
+          return;
+        } else if (availabilityData.reason === 'no_subscription') {
           toast({
             title: "Subscription Required",
             description: availabilityData.message,
@@ -529,6 +537,8 @@ export default function TutorPage() {
   return (
     <NetworkAwareWrapper>
       <TutorErrorBoundary>
+        {/* Show verification banner if email not verified */}
+        {user && !user.emailVerified && <VerificationBanner />}
         <div className="tutor-page max-w-3xl mx-auto p-4 space-y-4">
           {/* Header with Logo and Student Switcher */}
           <div className="mb-6">

@@ -75,6 +75,18 @@ export const requireSubscription = async (
       });
     }
 
+    // Step 2.5: Check email verification
+    if (!user.emailVerified) {
+      return res.status(403).json({
+        error: 'Email not verified',
+        code: 'EMAIL_NOT_VERIFIED',
+        message: 'Please verify your email address to access AI tutoring.',
+        email: user.email,
+        action: 'verify_email',
+        redirectTo: '/dashboard'
+      });
+    }
+
     // Step 3: Check for voice access OR purchased minutes
     const hasAccess = hasVoiceAccess(user);
     const hasPurchasedMinutes = (user.purchasedMinutesBalance || 0) > 0;

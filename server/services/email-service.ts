@@ -247,25 +247,101 @@ export class EmailService {
     try {
       const resend = getResendClient();
       const fromEmail = getFromEmail();
-      const baseUrl = process.env.REPLIT_DEV_DOMAIN || 'http://localhost:5000';
-      const verificationLink = `${baseUrl}/verify-email?token=${user.token}`;
+      const verificationUrl = `${this.getBaseUrl()}/api/verify-email?token=${user.token}`;
+      
+      const html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <style>
+            body { font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f8fafc; }
+            .container { max-width: 600px; margin: 0 auto; background: white; }
+            .header { background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%); color: white; padding: 40px 20px; text-align: center; }
+            .header h1 { margin: 0; font-size: 28px; }
+            .content { padding: 40px 30px; background: #ffffff; }
+            .verify-box { background: #fef2f2; border: 2px solid #dc2626; padding: 30px; border-radius: 12px; margin: 30px 0; text-align: center; }
+            .verify-button { display: inline-block; background: #dc2626; color: white !important; padding: 18px 40px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 18px; }
+            .feature-list { background: #f8fafc; padding: 20px; border-radius: 8px; margin: 20px 0; }
+            .feature-list li { margin: 8px 0; }
+            .link-fallback { background: #f8fafc; padding: 15px; border-radius: 8px; margin: 20px 0; word-break: break-all; font-size: 12px; color: #666; }
+            .footer { background: #f8fafc; padding: 30px; text-align: center; color: #666; font-size: 14px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>🎓 Verify Your Email</h1>
+              <p style="margin: 10px 0 0; opacity: 0.9;">One quick step to start learning</p>
+            </div>
+            
+            <div class="content">
+              <p>Hi ${user.name}!</p>
+              
+              <p>Thank you for signing up for JIE Mastery! Your payment has been processed successfully.</p>
+              
+              <p><strong>Please verify your email address</strong> to activate your account and start using the AI tutor.</p>
+              
+              <div class="verify-box">
+                <a href="${verificationUrl}" class="verify-button">
+                  ✓ Verify My Email
+                </a>
+              </div>
+              
+              <p>Once verified, you'll have immediate access to:</p>
+              <div class="feature-list">
+                <ul style="margin: 0; padding-left: 20px;">
+                  <li>🎤 Voice tutoring sessions</li>
+                  <li>📚 Upload homework and study materials</li>
+                  <li>👨‍👩‍👧‍👦 Create student profiles for your family</li>
+                  <li>📊 Track learning progress</li>
+                </ul>
+              </div>
+              
+              <div class="link-fallback">
+                <strong>Button not working?</strong> Copy and paste this link into your browser:<br>
+                ${verificationUrl}
+              </div>
+              
+              <p>If you didn't create an account with JIE Mastery, you can safely ignore this email.</p>
+              
+              <p>Welcome to the family!<br><strong>The JIE Mastery Team</strong></p>
+            </div>
+            
+            <div class="footer">
+              <p><strong>JIE Mastery AI Tutor</strong> | Patent Pending System</p>
+              <p>Questions? Reply to this email for support.</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+      
+      const text = `Hi ${user.name}!
+
+Thank you for signing up for JIE Mastery! Your payment has been processed successfully.
+
+Please verify your email address to activate your account:
+
+${verificationUrl}
+
+Once verified, you'll have immediate access to voice tutoring, study materials, and more!
+
+If you didn't create an account, you can ignore this email.
+
+Welcome to the family!
+The JIE Mastery Team`;
       
       await resend.emails.send({
         from: fromEmail,
         to: user.email,
-        subject: 'Verify Your Email - JIE Mastery Tutor',
-        html: `
-          <h1>Verify Your Email Address</h1>
-          <p>Hi ${user.name},</p>
-          <p>Thank you for signing up for JIE Mastery Tutor! Please verify your email address to activate your account.</p>
-          <a href="${verificationLink}" style="display:inline-block;padding:12px 24px;background:#dc2626;color:white;text-decoration:none;border-radius:6px;margin:20px 0;">Verify Email Address</a>
-          <p>Or copy and paste this link into your browser:</p>
-          <p style="color:#666;font-size:14px;">${verificationLink}</p>
-          <p style="margin-top:24px;color:#666;font-size:13px;">
-            This verification link will expire in 24 hours. If you didn't create an account, you can safely ignore this email.
-          </p>
-        `
+        subject: '✓ Verify Your Email - JIE Mastery',
+        html,
+        text
       });
+      
+      console.log('[EmailService] Verification email sent to:', user.email);
     } catch (error) {
       console.error('[EmailService] Failed to send email verification:', error);
       throw error;

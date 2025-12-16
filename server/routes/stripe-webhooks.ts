@@ -146,7 +146,7 @@ router.post(
               gradeLevel,
               primarySubject,
               marketingOptInDate: marketingOptIn ? new Date() : null,
-              emailVerified: true, // ✅ Auto-verify users who complete payment
+              emailVerified: false, // User must verify email before accessing tutoring
               subscriptionPlan: plan as 'starter' | 'standard' | 'pro' | 'elite',
               subscriptionStatus: 'active',
               subscriptionMinutesLimit: monthlyMinutes,
@@ -193,6 +193,16 @@ router.post(
               plan: planNames[plan] || plan,
               amount: session.amount_total ? session.amount_total / 100 : 0,
             }).catch(error => console.error('[Stripe Webhook] Admin notification failed:', error));
+
+            // Generate verification token and send verification email
+            const verificationToken = await storage.generateEmailVerificationToken(newUser.id);
+            emailService.sendEmailVerification({
+              email: newUser.email,
+              name: newUser.parentName || newUser.firstName || 'there',
+              token: verificationToken,
+            }).catch(error => console.error('[Stripe Webhook] Verification email failed:', error));
+            
+            console.log('[Stripe Webhook] 📧 Verification email sent to:', newUser.email);
 
             break;
           }

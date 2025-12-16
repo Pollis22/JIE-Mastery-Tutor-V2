@@ -554,7 +554,49 @@ export function setupAuth(app: Express) {
     });
   });
 
-  // Email Verification Endpoint
+  // Email Verification Endpoint (GET - for clicking links in email)
+  app.get("/api/verify-email", async (req, res) => {
+    try {
+      const { token } = req.query;
+      
+      if (!token || typeof token !== 'string') {
+        return res.redirect('/auth?verified=error&reason=missing_token');
+      }
+
+      console.log('[Auth] 🔍 Email verification via link');
+      
+      const result = await storage.verifyEmailToken(token);
+      
+      if (!result) {
+        console.log('[Auth] ❌ Invalid verification token');
+        return res.redirect('/auth?verified=error&reason=invalid_token');
+      }
+
+      const { user, alreadyVerified } = result;
+
+      // Check if already verified (token was reused)
+      if (alreadyVerified) {
+        console.log('[Auth] ✅ Email already verified for:', user.email);
+        return res.redirect('/auth?verified=already');
+      }
+
+      console.log('[Auth] ✅ Email verified for:', user.email);
+      
+      // Send welcome email after successful verification
+      emailService.sendWelcomeEmail({
+        email: user.email,
+        parentName: user.parentName || user.firstName || 'there',
+        studentName: user.studentName || 'your student'
+      }).catch(err => console.error('[Auth] Failed to send welcome email:', err));
+
+      res.redirect('/auth?verified=success');
+    } catch (error) {
+      console.error('[Auth] ❌ Verification error:', error);
+      res.redirect('/auth?verified=error&reason=server_error');
+    }
+  });
+
+  // Email Verification Endpoint (POST - for API calls)
   app.post("/api/auth/verify-email", async (req, res) => {
     try {
       const { token } = req.body;
@@ -567,24 +609,33 @@ export function setupAuth(app: Express) {
       
       const result = await storage.verifyEmailToken(token);
       
-      if (!result.success) {
-        console.log('[Auth] ❌ Verification failed:', result.error);
+      if (!result) {
+        console.log('[Auth] ❌ Verification failed: Invalid token');
         return res.status(400).json({ 
-          error: result.error,
-          expired: result.error?.includes('expired')
+          error: 'Invalid verification link. Please request a new verification email.',
+          code: 'INVALID_TOKEN'
         });
       }
 
-      console.log('[Auth] ✅ Email verified for:', result.user?.email);
+      const { user, alreadyVerified } = result;
+
+      if (alreadyVerified) {
+        console.log('[Auth] ✅ Email already verified for:', user.email);
+        return res.json({
+          success: true,
+          message: 'Your email is already verified. You can log in.',
+          alreadyVerified: true
+        });
+      }
+
+      console.log('[Auth] ✅ Email verified for:', user.email);
 
       // Send welcome email after successful verification
-      if (result.user) {
-        emailService.sendWelcomeEmail({
-          email: result.user.email,
-          parentName: result.user.parentName || result.user.firstName || 'there',
-          studentName: result.user.studentName || 'your student'
-        }).catch(err => console.error('[Auth] Failed to send welcome email:', err));
-      }
+      emailService.sendWelcomeEmail({
+        email: user.email,
+        parentName: user.parentName || user.firstName || 'there',
+        studentName: user.studentName || 'your student'
+      }).catch(err => console.error('[Auth] Failed to send welcome email:', err));
 
       res.json({
         success: true,
