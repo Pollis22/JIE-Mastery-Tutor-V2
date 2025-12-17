@@ -27,11 +27,20 @@ function getFromEmail(): string {
 export class EmailService {
 
   private getBaseUrl(): string {
-    return process.env.RAILWAY_PUBLIC_DOMAIN
-      ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
-      : process.env.REPLIT_DOMAINS 
-        ? `https://${process.env.REPLIT_DOMAINS.split(',')[0]}`
-        : process.env.REPLIT_DEV_DOMAIN || `http://localhost:${process.env.PORT || 5000}`;
+    // Priority: APP_URL > RAILWAY_STATIC_URL > RAILWAY_PUBLIC_DOMAIN > REPLIT_DOMAINS > localhost
+    if (process.env.APP_URL) {
+      return process.env.APP_URL.replace(/\/$/, ''); // Remove trailing slash
+    }
+    if (process.env.RAILWAY_STATIC_URL) {
+      return process.env.RAILWAY_STATIC_URL.replace(/\/$/, '');
+    }
+    if (process.env.RAILWAY_PUBLIC_DOMAIN) {
+      return `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`;
+    }
+    if (process.env.REPLIT_DOMAINS) {
+      return `https://${process.env.REPLIT_DOMAINS.split(',')[0]}`;
+    }
+    return process.env.REPLIT_DEV_DOMAIN || `http://localhost:${process.env.PORT || 5000}`;
   }
 
   async sendEmail(params: {
