@@ -81,9 +81,9 @@ export class EmailService {
             <li>Upload study materials (optional)</li>
             <li>Connect with your AI tutor and start learning</li>
           </ul>
-          <a href="${process.env.REPLIT_DEV_DOMAIN || 'http://localhost:5000'}/pricing" style="display:inline-block;padding:12px 24px;background:#dc2626;color:white;text-decoration:none;border-radius:6px;">View Plans</a>
+          <a href="${this.getBaseUrl()}/pricing" style="display:inline-block;padding:12px 24px;background:#dc2626;color:white;text-decoration:none;border-radius:6px;">View Plans</a>
           <p style="margin-top:24px;color:#666;font-size:14px;">
-            If you no longer wish to receive updates, <a href="${process.env.REPLIT_DEV_DOMAIN || 'http://localhost:5000'}/unsubscribe?email=${user.email}">unsubscribe here</a>.
+            If you no longer wish to receive updates, <a href="${this.getBaseUrl()}/unsubscribe?email=${user.email}">unsubscribe here</a>.
           </p>
         `
       });
@@ -117,10 +117,10 @@ export class EmailService {
             <li><strong>Subjects:</strong> Math, English, Science, Spanish and More</li>
           </ul>
           <p>Start your first tutoring session now:</p>
-          <a href="${process.env.REPLIT_DEV_DOMAIN || 'http://localhost:5000'}/tutor" style="display:inline-block;padding:12px 24px;background:#dc2626;color:white;text-decoration:none;border-radius:6px;">Go to Dashboard</a>
+          <a href="${this.getBaseUrl()}/tutor" style="display:inline-block;padding:12px 24px;background:#dc2626;color:white;text-decoration:none;border-radius:6px;">Go to Dashboard</a>
           <p style="margin-top:24px;">Questions? Reply to this email anytime.</p>
           <p style="margin-top:24px;color:#666;font-size:14px;">
-            <a href="${process.env.REPLIT_DEV_DOMAIN || 'http://localhost:5000'}/unsubscribe?email=${user.email}">Unsubscribe from marketing emails</a>
+            <a href="${this.getBaseUrl()}/unsubscribe?email=${user.email}">Unsubscribe from marketing emails</a>
           </p>
         `
       });
@@ -146,9 +146,9 @@ export class EmailService {
           <h1>Minutes Added!</h1>
           <p>Hi ${user.parentName},</p>
           <p>We've added ${user.minutesPurchased} minutes to your account.</p>
-          <a href="${process.env.REPLIT_DEV_DOMAIN || 'http://localhost:5000'}/tutor" style="display:inline-block;padding:12px 24px;background:#dc2626;color:white;text-decoration:none;border-radius:6px;">Continue Learning</a>
+          <a href="${this.getBaseUrl()}/tutor" style="display:inline-block;padding:12px 24px;background:#dc2626;color:white;text-decoration:none;border-radius:6px;">Continue Learning</a>
           <p style="margin-top:24px;color:#666;font-size:14px;">
-            <a href="${process.env.REPLIT_DEV_DOMAIN || 'http://localhost:5000'}/unsubscribe?email=${user.email}">Unsubscribe from marketing emails</a>
+            <a href="${this.getBaseUrl()}/unsubscribe?email=${user.email}">Unsubscribe from marketing emails</a>
           </p>
         `
       });
@@ -509,8 +509,7 @@ The JIE Mastery Team`;
     try {
       const resend = getResendClient();
       const fromEmail = getFromEmail();
-      const baseUrl = process.env.REPLIT_DEV_DOMAIN || 'http://localhost:5000';
-      const resetLink = `${baseUrl}/reset-password?token=${user.token}`;
+      const resetLink = `${this.getBaseUrl()}/reset-password?token=${user.token}`;
       
       await resend.emails.send({
         from: fromEmail,
