@@ -15,6 +15,7 @@ import { z } from "zod";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { AudioSettings } from "@/components/AudioSettings";
+import { SecuritySettings } from "@/components/SecuritySettings";
 import { useEffect } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -491,6 +492,9 @@ export default function SettingsPage() {
                   />
                 </CardContent>
               </Card>
+
+              {/* Security Settings */}
+              <SecuritySettings />
 
               {/* Save Actions */}
               <div className="flex justify-end space-x-3">

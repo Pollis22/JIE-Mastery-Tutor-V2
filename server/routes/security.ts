@@ -107,6 +107,29 @@ router.post('/user/security-questions', async (req: Request, res: Response) => {
   }
 });
 
+router.get('/user/security-questions', async (req: Request, res: Response) => {
+  try {
+    if (!req.isAuthenticated() || !req.user) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const user = await storage.getUser(req.user.id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({ 
+      hasSecurityQuestions: user.securityQuestionsSet || false,
+      securityQuestion1: user.securityQuestion1,
+      securityQuestion2: user.securityQuestion2,
+      securityQuestion3: user.securityQuestion3,
+    });
+  } catch (error: any) {
+    console.error('[Security] Get security questions error:', error);
+    res.status(500).json({ error: 'Failed to get security questions' });
+  }
+});
+
 router.get('/user/security-questions-status', async (req: Request, res: Response) => {
   try {
     if (!req.isAuthenticated() || !req.user) {
@@ -129,6 +152,44 @@ router.get('/user/security-questions-status', async (req: Request, res: Response
   } catch (error: any) {
     console.error('[Security] Get questions status error:', error);
     res.status(500).json({ error: 'Failed to get security status' });
+  }
+});
+
+router.post('/user/change-password', async (req: Request, res: Response) => {
+  try {
+    if (!req.isAuthenticated() || !req.user) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Current and new passwords are required' });
+    }
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: 'New password must be at least 8 characters' });
+    }
+
+    const user = await storage.getUser(req.user.id);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const isValidPassword = await comparePasswords(currentPassword, user.password);
+    if (!isValidPassword) {
+      return res.status(401).json({ error: 'Current password is incorrect' });
+    }
+
+    const hashedPassword = await hashPassword(newPassword);
+    await storage.updateUserPassword(user.id, hashedPassword);
+
+    console.log(`[Security] Password changed for user ${user.id}`);
+    res.json({ success: true, message: 'Password changed successfully' });
+
+  } catch (error: any) {
+    console.error('[Security] Change password error:', error);
+    res.status(500).json({ error: 'Failed to change password' });
   }
 });
 
