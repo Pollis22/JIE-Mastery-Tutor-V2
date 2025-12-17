@@ -58,7 +58,9 @@ router.post('/create-registration-session', async (req, res) => {
       });
     }
 
-    // Check Stripe for existing customer with active subscription
+    // Check Stripe for existing customer and reuse to prevent customer duplication
+    let existingStripeCustomerId: string | null = null;
+    
     try {
       const existingCustomers = await stripe.customers.list({
         email: normalizedEmail,
@@ -69,26 +71,43 @@ router.post('/create-registration-session', async (req, res) => {
         const existingCustomer = existingCustomers.data[0];
         console.log(`[Registration] Found existing Stripe customer: ${existingCustomer.id} for ${normalizedEmail}`);
 
-        // Check if they have an active subscription
+        // Check for any subscription (not just active)
         const existingSubs = await stripe.subscriptions.list({
           customer: existingCustomer.id,
-          status: 'active',
           limit: 1
         });
 
         if (existingSubs.data.length > 0) {
-          console.log(`[Registration] Blocked: Stripe customer ${existingCustomer.id} has active subscription`);
-          return res.status(409).json({
-            error: 'Active subscription exists',
-            code: 'SUBSCRIPTION_EXISTS',
-            message: 'This email already has an active subscription. Please log in to manage your account.',
-            field: 'email'
-          });
+          const sub = existingSubs.data[0];
+          
+          if (sub.status === 'active' || sub.status === 'trialing') {
+            console.log(`[Registration] Blocked: Stripe customer ${existingCustomer.id} has ${sub.status} subscription`);
+            return res.status(409).json({
+              error: 'Active subscription exists',
+              code: 'SUBSCRIPTION_EXISTS',
+              message: 'This email already has an active subscription. Please log in to manage your account.',
+              field: 'email'
+            });
+          } else if (sub.status === 'past_due') {
+            console.log(`[Registration] Blocked: Stripe customer ${existingCustomer.id} has past_due subscription`);
+            return res.status(409).json({
+              error: 'Subscription payment issue',
+              code: 'SUBSCRIPTION_PAST_DUE',
+              message: 'This email has a subscription with a payment issue. Please log in to update your payment method.',
+              field: 'email'
+            });
+          }
+          // Allow for canceled, unpaid, or other inactive states - user may be re-subscribing
+          console.log(`[Registration] Re-subscribing: Reusing Stripe customer ${existingCustomer.id} (subscription status: ${sub.status})`);
         }
+        
+        // Reuse existing Stripe customer to prevent duplication
+        existingStripeCustomerId = existingCustomer.id;
+        console.log(`[Registration] Will reuse existing Stripe customer: ${existingStripeCustomerId}`);
       }
     } catch (stripeError: any) {
       console.error('[Registration] Stripe customer check failed:', stripeError.message);
-      // Don't block registration if Stripe check fails
+      // Don't block registration if Stripe check fails - gracefully continue
     }
 
     // Price ID mapping
@@ -133,11 +152,10 @@ router.post('/create-registration-session', async (req, res) => {
       marketingOptIn: registrationData.marketingOptIn,
     });
 
-    // Only pass token to Stripe (NO sensitive data)
-    const session = await stripe.checkout.sessions.create({
+    // Create checkout session - reuse existing customer if available
+    const sessionConfig: any = {
       mode: 'subscription',
       payment_method_types: ['card'],
-      customer_email: normalizedEmail, // CRITICAL: Receipt goes to this email
       client_reference_id: normalizedEmail, // Easy lookup
       line_items: [{
         price: priceId,
@@ -158,7 +176,18 @@ router.post('/create-registration-session', async (req, res) => {
       success_url: `${baseUrl}/auth/registration-success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${baseUrl}/auth?registration=cancelled`,
       allow_promotion_codes: true,
-    });
+    };
+    
+    // CRITICAL: Reuse existing Stripe customer to prevent duplicate customers
+    if (existingStripeCustomerId) {
+      sessionConfig.customer = existingStripeCustomerId;
+      console.log(`[Registration] Using existing customer ID: ${existingStripeCustomerId}`);
+    } else {
+      sessionConfig.customer_email = normalizedEmail;
+      console.log(`[Registration] Creating new customer for: ${normalizedEmail}`);
+    }
+    
+    const session = await stripe.checkout.sessions.create(sessionConfig);
 
     console.log('✅ [Registration Checkout] Session created:', session.id);
 

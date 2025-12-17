@@ -290,42 +290,50 @@ export function setupAuth(app: Express) {
         });
       }
       
-      // Optionally check Stripe for existing customer with active subscription
-      try {
-        const Stripe = (await import('stripe')).default;
-        const stripe = process.env.STRIPE_SECRET_KEY
-          ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2025-08-27.basil' as any })
-          : null;
-          
-        if (stripe) {
-          const customers = await stripe.customers.list({
+      // Check Stripe for any existing customer (not just active subscriptions)
+      // This catches orphaned customers and prevents duplicate Stripe entries
+      if (process.env.STRIPE_SECRET_KEY) {
+        try {
+          const Stripe = (await import('stripe')).default;
+          const stripeClient = new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2025-08-27.basil' as any });
+            
+          const customers = await stripeClient.customers.list({
             email: normalizedEmail,
             limit: 1
           });
           
           if (customers.data.length > 0) {
-            // Check for active subscription
-            const subs = await stripe.subscriptions.list({
-              customer: customers.data[0].id,
-              status: 'active',
+            const existingCustomer = customers.data[0];
+            
+            // Check for any subscription (active, past_due, canceled, etc.)
+            const subs = await stripeClient.subscriptions.list({
+              customer: existingCustomer.id,
               limit: 1
             });
             
             if (subs.data.length > 0) {
-              console.log(`[Auth] Email ${normalizedEmail} has active Stripe subscription`);
-              return res.json({
-                available: false,
-                error: 'This email already has an active subscription',
-                suggestion: 'Please log in to manage your account.'
-              });
+              const sub = subs.data[0];
+              console.log(`[Auth] Email ${normalizedEmail} has Stripe subscription (status: ${sub.status})`);
+              
+              if (sub.status === 'active' || sub.status === 'trialing') {
+                return res.json({
+                  available: false,
+                  error: 'This email already has an active subscription',
+                  suggestion: 'Please log in to manage your account.'
+                });
+              } else {
+                // Has subscription but not active - still warn but may allow
+                console.log(`[Auth] Email ${normalizedEmail} has inactive Stripe subscription (${sub.status})`);
+              }
             }
             
-            console.log(`[Auth] Email ${normalizedEmail} found in Stripe but no active subscription`);
+            // Customer exists but no subscriptions - could be orphaned
+            console.log(`[Auth] Email ${normalizedEmail} found in Stripe (customer: ${existingCustomer.id}) but no subscriptions`);
           }
+        } catch (stripeError: any) {
+          console.error('[Auth] Stripe customer check failed:', stripeError.message);
+          // Don't block if Stripe check fails - gracefully continue
         }
-      } catch (stripeError: any) {
-        console.error('[Auth] Stripe customer check failed:', stripeError.message);
-        // Don't block if Stripe check fails
       }
       
       console.log(`[Auth] Email check: ${normalizedEmail} is available`);
