@@ -82,6 +82,22 @@ export interface IStorage {
   generatePasswordResetToken(email: string): Promise<{ user: User; token: string } | null>;
   verifyPasswordResetToken(token: string): Promise<User | null>;
   clearPasswordResetToken(userId: string): Promise<void>;
+  setPasswordResetToken(userId: string, token: string, expiry: Date): Promise<void>;
+  getUserByResetToken(token: string): Promise<User | null>;
+  resetUserPassword(userId: string, hashedPassword: string): Promise<void>;
+  // Security questions methods
+  updateUserSecurityQuestions(userId: string, data: {
+    securityQuestion1: string;
+    securityAnswer1: string;
+    securityQuestion2: string;
+    securityAnswer2: string;
+    securityQuestion3: string;
+    securityAnswer3: string;
+    securityQuestionsSet: boolean;
+  }): Promise<void>;
+  updateUserSecurityVerification(userId: string, token: string, expiry: Date): Promise<void>;
+  updateUserEmail(userId: string, newEmail: string): Promise<void>;
+  searchUsersByName(firstName: string, lastName: string): Promise<User[]>;
   createUsageLog(userId: string, minutesUsed: number, sessionType: 'voice' | 'text', sessionId?: string): Promise<void>;
 
   // Dashboard operations
@@ -699,6 +715,104 @@ export class DatabaseStorage implements IStorage {
         updatedAt: new Date(),
       })
       .where(eq(users.id, userId));
+  }
+
+  async setPasswordResetToken(userId: string, token: string, expiry: Date): Promise<void> {
+    await db
+      .update(users)
+      .set({
+        resetToken: token,
+        resetTokenExpiry: expiry,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId));
+  }
+
+  async getUserByResetToken(token: string): Promise<User | null> {
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(
+        and(
+          eq(users.resetToken, token),
+          sql`${users.resetTokenExpiry} > NOW()`
+        )
+      );
+    return user || null;
+  }
+
+  async resetUserPassword(userId: string, hashedPassword: string): Promise<void> {
+    await db
+      .update(users)
+      .set({
+        password: hashedPassword,
+        resetToken: null,
+        resetTokenExpiry: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId));
+  }
+
+  async updateUserSecurityQuestions(userId: string, data: {
+    securityQuestion1: string;
+    securityAnswer1: string;
+    securityQuestion2: string;
+    securityAnswer2: string;
+    securityQuestion3: string;
+    securityAnswer3: string;
+    securityQuestionsSet: boolean;
+  }): Promise<void> {
+    await db
+      .update(users)
+      .set({
+        securityQuestion1: data.securityQuestion1,
+        securityAnswer1: data.securityAnswer1,
+        securityQuestion2: data.securityQuestion2,
+        securityAnswer2: data.securityAnswer2,
+        securityQuestion3: data.securityQuestion3,
+        securityAnswer3: data.securityAnswer3,
+        securityQuestionsSet: data.securityQuestionsSet,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId));
+  }
+
+  async updateUserSecurityVerification(userId: string, token: string, expiry: Date): Promise<void> {
+    await db
+      .update(users)
+      .set({
+        securityVerificationToken: token,
+        securityVerificationExpiry: expiry,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId));
+  }
+
+  async updateUserEmail(userId: string, newEmail: string): Promise<void> {
+    await db
+      .update(users)
+      .set({
+        email: newEmail,
+        username: newEmail,
+        emailVerified: false,
+        securityVerificationToken: null,
+        securityVerificationExpiry: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId));
+  }
+
+  async searchUsersByName(firstName: string, lastName: string): Promise<User[]> {
+    const result = await db
+      .select()
+      .from(users)
+      .where(
+        and(
+          sql`LOWER(${users.firstName}) = ${firstName}`,
+          sql`LOWER(${users.lastName}) = ${lastName}`
+        )
+      );
+    return result;
   }
 
   async createUsageLog(userId: string, minutesUsed: number, sessionType: 'voice' | 'text', sessionId?: string): Promise<void> {

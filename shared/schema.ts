@@ -117,6 +117,17 @@ export const users = pgTable("users", {
   // Password reset fields
   resetToken: text("reset_token"),
   resetTokenExpiry: timestamp("reset_token_expiry"),
+  // Security questions for account recovery
+  securityQuestion1: text("security_question_1"),
+  securityAnswer1: text("security_answer_1"),
+  securityQuestion2: text("security_question_2"),
+  securityAnswer2: text("security_answer_2"),
+  securityQuestion3: text("security_question_3"),
+  securityAnswer3: text("security_answer_3"),
+  securityQuestionsSet: boolean("security_questions_set").default(false),
+  // Security verification token (for email change, etc.)
+  securityVerificationToken: text("security_verification_token"),
+  securityVerificationExpiry: timestamp("security_verification_expiry"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

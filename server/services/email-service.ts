@@ -25,6 +25,38 @@ function getFromEmail(): string {
 }
 
 export class EmailService {
+
+  private getBaseUrl(): string {
+    return process.env.RAILWAY_PUBLIC_DOMAIN
+      ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+      : process.env.REPLIT_DOMAINS 
+        ? `https://${process.env.REPLIT_DOMAINS.split(',')[0]}`
+        : process.env.REPLIT_DEV_DOMAIN || `http://localhost:${process.env.PORT || 5000}`;
+  }
+
+  async sendEmail(params: {
+    to: string;
+    subject: string;
+    html: string;
+    text?: string;
+  }): Promise<void> {
+    try {
+      const resend = getResendClient();
+      const fromEmail = getFromEmail();
+      
+      await resend.emails.send({
+        from: fromEmail,
+        to: params.to,
+        subject: params.subject,
+        html: params.html,
+        text: params.text
+      });
+      console.log(`[EmailService] Email sent to ${params.to}: ${params.subject}`);
+    } catch (error) {
+      console.error('[EmailService] Failed to send email:', error);
+      throw error;
+    }
+  }
   
   async sendWelcomeEmail(user: {
     email: string;
@@ -440,10 +472,6 @@ The JIE Mastery Team`;
   // ==========================================
   // PROFESSIONAL SUBSCRIPTION EMAIL TEMPLATES
   // ==========================================
-
-  private getBaseUrl(): string {
-    return process.env.REPLIT_DEV_DOMAIN || 'https://jie-mastery-tutor-v2-production.up.railway.app';
-  }
 
   private getAdminEmail(): string {
     return process.env.ADMIN_EMAIL || 'support@jiemastery.ai';

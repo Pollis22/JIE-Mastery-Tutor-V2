@@ -341,10 +341,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const { default: userPreferencesRoutes } = await import('./routes/user-preferences');
   const { default: subscriptionRoutes } = await import('./routes/subscription');
   const { default: checkoutRoutes } = await import('./routes/checkout');
+  const { default: securityRoutes } = await import('./routes/security');
   app.use("/api/user", userAnalyticsRoutes);
   app.use("/api/user/preferences", userPreferencesRoutes);
   app.use("/api/subscription", subscriptionRoutes);
   app.use("/api/checkout", checkoutRoutes);
+  app.use("/api", securityRoutes);
   
   // Document and context routes for RAG system
   const { default: documentRoutes } = await import('./routes/documents');
