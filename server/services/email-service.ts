@@ -271,6 +271,127 @@ export class EmailService {
     }
   }
 
+  async sendAdminRenewalNotification(params: {
+    customerEmail: string;
+    customerName: string;
+    planName: string;
+    amountPaid: number;
+    invoiceNumber: string | null;
+    invoiceUrl: string | null;
+    renewalDate: Date;
+  }): Promise<boolean> {
+    try {
+      const resend = getResendClient();
+      const fromEmail = getFromEmail();
+      const adminEmail = process.env.ADMIN_EMAIL || 'support@jiemastery.ai';
+      
+      const { customerEmail, customerName, planName, amountPaid, invoiceNumber, invoiceUrl, renewalDate } = params;
+      
+      const formattedDate = renewalDate.toLocaleDateString('en-US', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+      
+      const html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <style>
+            body { font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #333; }
+            .container { max-width: 600px; margin: 0 auto; }
+            .header { background: #10b981; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+            .content { background: #f8fafc; padding: 30px; border-radius: 0 0 8px 8px; }
+            .revenue-box { background: #d1fae5; padding: 20px; border-radius: 8px; text-align: center; margin: 20px 0; }
+            .revenue-box .amount { font-size: 32px; font-weight: bold; color: #059669; }
+            .revenue-box .label { color: #065f46; font-size: 14px; }
+            .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin: 20px 0; }
+            .info-card { background: white; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; }
+            .info-card .label { font-size: 12px; color: #666; text-transform: uppercase; margin-bottom: 5px; }
+            .info-card .value { font-size: 16px; font-weight: bold; color: #333; }
+            .invoice-link { display: inline-block; background: #10b981; color: white; padding: 10px 20px; text-decoration: none; border-radius: 6px; margin-top: 15px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>💰 Subscription Renewed!</h1>
+            </div>
+            
+            <div class="content">
+              <div class="revenue-box">
+                <div class="label">Recurring Revenue</div>
+                <div class="amount">+$${amountPaid.toFixed(2)}</div>
+                <div class="label">${planName}</div>
+              </div>
+              
+              <h3>👤 Customer Details</h3>
+              <div class="info-grid">
+                <div class="info-card">
+                  <div class="label">Customer</div>
+                  <div class="value">${customerName}</div>
+                </div>
+                <div class="info-card">
+                  <div class="label">Email</div>
+                  <div class="value">${customerEmail}</div>
+                </div>
+                <div class="info-card">
+                  <div class="label">Plan</div>
+                  <div class="value">${planName}</div>
+                </div>
+                <div class="info-card">
+                  <div class="label">Renewed</div>
+                  <div class="value">${formattedDate}</div>
+                </div>
+              </div>
+              
+              ${invoiceNumber ? `
+              <div style="margin-top: 20px; padding: 15px; background: white; border-radius: 8px; border: 1px solid #e2e8f0;">
+                <strong>Invoice:</strong> #${invoiceNumber}
+                ${invoiceUrl ? `<br><a href="${invoiceUrl}" class="invoice-link">View Invoice →</a>` : ''}
+              </div>
+              ` : ''}
+              
+              <p style="margin-top: 20px; color: #666; font-size: 14px;">
+                Customer minutes have been reset for the new billing cycle.
+              </p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+      
+      const text = `
+SUBSCRIPTION RENEWED
+
+Customer: ${customerName}
+Email: ${customerEmail}
+Plan: ${planName}
+Amount: $${amountPaid.toFixed(2)}
+Date: ${formattedDate}
+${invoiceNumber ? `Invoice: #${invoiceNumber}` : ''}
+${invoiceUrl ? `View: ${invoiceUrl}` : ''}
+      `;
+      
+      await resend.emails.send({
+        from: fromEmail,
+        to: adminEmail,
+        subject: `💰 Renewal: ${customerName} - ${planName} (+$${amountPaid.toFixed(2)})`,
+        html,
+        text
+      });
+      
+      console.log(`[EmailService] Admin renewal notification sent for ${customerEmail}`);
+      return true;
+    } catch (error) {
+      console.error('[EmailService] Failed to send admin renewal notification:', error);
+      return false;
+    }
+  }
+
   async sendEmailVerification(user: {
     email: string;
     name: string;

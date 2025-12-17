@@ -405,8 +405,11 @@ router.post(
           const customerId = invoice.customer as string;
           const subscriptionId = (invoice as any).subscription as string;
           const amountPaid = (invoice.amount_paid || 0) / 100; // Convert cents to dollars
+          const billingReason = (invoice as any).billing_reason as string;
+          const isRenewal = billingReason === 'subscription_cycle';
+          const customerEmail = (invoice as any).customer_email as string;
 
-          console.log(`[Stripe Webhook] 💰 Invoice paid: $${amountPaid} for customer ${customerId}`);
+          console.log(`[Stripe Webhook] 💰 Invoice paid: $${amountPaid} for customer ${customerId} (reason: ${billingReason})`);
 
           // Find user by Stripe customer ID
           const user = await storage.getUserByStripeCustomerId(customerId);
@@ -418,6 +421,7 @@ router.post(
 
           // Get subscription to sync billing cycle dates
           let nextBillingDate: Date | null = null;
+          let planName = 'Unknown Plan';
           if (subscriptionId && stripe) {
             try {
               const subscription = await stripe.subscriptions.retrieve(subscriptionId);
@@ -427,6 +431,16 @@ router.post(
                 nextBillingDate = new Date((subscription as any).current_period_end * 1000);
                 console.log(`[Stripe Webhook] Next billing cycle: ${nextBillingDate.toISOString()}`);
               }
+              
+              // Get plan name from price ID
+              const priceId = subscription.items.data[0]?.price?.id;
+              const priceToNameMap: Record<string, string> = {
+                [process.env.STRIPE_PRICE_STARTER || '']: 'Starter Family',
+                [process.env.STRIPE_PRICE_STANDARD || '']: 'Standard Family',
+                [process.env.STRIPE_PRICE_PRO || '']: 'Pro Family',
+                [process.env.STRIPE_PRICE_ELITE || '']: 'Elite Family',
+              };
+              planName = priceId ? (priceToNameMap[priceId] || user.subscriptionPlan || 'Unknown Plan') : user.subscriptionPlan || 'Unknown Plan';
               
               const changeType = subscription.metadata?.changeType;
               const scheduledPlan = subscription.metadata?.plan;
@@ -478,6 +492,23 @@ router.post(
           await storage.resetUserVoiceUsageWithBillingCycle(user.id, nextBillingDate);
           
           console.log(`[Stripe Webhook] Minutes reset for user ${user.id} after payment (next reset: ${nextBillingDate?.toISOString()})`);
+          
+          // Send admin notification for subscription renewals
+          if (isRenewal) {
+            const customerName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.parentName || user.email;
+            
+            emailService.sendAdminRenewalNotification({
+              customerEmail: customerEmail || user.email,
+              customerName,
+              planName,
+              amountPaid,
+              invoiceNumber: (invoice as any).number || null,
+              invoiceUrl: (invoice as any).hosted_invoice_url || null,
+              renewalDate: new Date((invoice as any).created * 1000 || Date.now())
+            }).catch(error => console.error('[Stripe Webhook] Admin renewal notification failed:', error));
+            
+            console.log(`[Stripe Webhook] 📧 Admin renewal notification sent for ${user.email}`);
+          }
           break;
         }
 
