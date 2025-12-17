@@ -14,6 +14,14 @@ The application uses a modern full-stack architecture with React 18+ (Next.js 14
 ### Authentication & Authorization
 Simple username/password authentication using Passport.js with session-based authentication and PostgreSQL session storage. It includes role-based access control with admin privileges, COPPA-compliant email verification, and production-grade WebSocket security featuring session-based authentication, session rotation, explicit session destruction on logout, and IP-based rate limiting.
 
+### Account Security Features
+Comprehensive account security with:
+- **Password Reset Flow**: Email-based password reset with secure tokens (1-hour expiry)
+- **Security Questions**: 3 configurable security questions with hashed answers (case-insensitive) for account recovery
+- **Change Password**: In-app password change with current password verification
+- **Change Email**: Email change with password verification and security question validation (if set)
+- **SecuritySettings Component**: Integrated security management in user settings page
+
 ### Access Control & Subscription Enforcement
 A three-tier access control system ensures only subscribed users with available minutes can access tutoring, including authentication, active subscription checks, minute balance enforcement, and protected voice endpoints with concurrent session limits and session-based minute deduction.
 
