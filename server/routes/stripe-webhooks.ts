@@ -70,6 +70,13 @@ router.post(
           // Handle payment-first registration
           if (type === 'registration') {
             console.log('[Stripe Webhook] 🎉 Processing registration checkout');
+            console.log('[Stripe Webhook] Session details:', {
+              sessionId: session.id,
+              customerId: session.customer,
+              subscriptionId: session.subscription,
+              customerEmail: session.customer_email || session.customer_details?.email,
+              mode: session.mode,
+            });
             
             const plan = session.metadata?.plan;
             const registrationToken = session.metadata?.registrationToken;
@@ -155,12 +162,36 @@ router.post(
               billingCycleStart: new Date(),
             });
 
-            // Update with Stripe customer and subscription IDs
+            // CRITICAL: Update with Stripe customer and subscription IDs
+            const stripeCustomerId = session.customer as string;
+            const stripeSubscriptionId = session.subscription as string;
+            
+            console.log('[Stripe Webhook] 💳 Saving Stripe IDs:', {
+              userId: newUser.id,
+              email: newUser.email,
+              customerId: stripeCustomerId,
+              subscriptionId: stripeSubscriptionId,
+              subscriptionIdType: typeof session.subscription,
+            });
+
+            if (!stripeSubscriptionId) {
+              console.error('[Stripe Webhook] ⚠️ WARNING: No subscription ID in checkout session!');
+              console.error('[Stripe Webhook] This will cause billing issues - subscription cannot be managed');
+            }
+            
             await storage.updateUserStripeInfo(
               newUser.id,
-              session.customer as string,
-              session.subscription as string
+              stripeCustomerId,
+              stripeSubscriptionId
             );
+            
+            // Verify the subscription ID was saved
+            const updatedUser = await storage.getUser(newUser.id);
+            if (!updatedUser?.stripeSubscriptionId) {
+              console.error('[Stripe Webhook] ❌ CRITICAL: Subscription ID NOT saved to database!');
+            } else {
+              console.log('[Stripe Webhook] ✅ Verified subscription ID saved:', updatedUser.stripeSubscriptionId);
+            }
 
             console.log('[Stripe Webhook] ✅ User account created:', newUser.email);
 
@@ -450,6 +481,50 @@ router.post(
           break;
         }
 
+        // BACKUP: Handle subscription creation event to catch any missing subscription IDs
+        case 'customer.subscription.created': {
+          const subscription = event.data.object as Stripe.Subscription;
+          const customerId = subscription.customer as string;
+          const subscriptionId = subscription.id;
+          const priceId = subscription.items.data[0]?.price?.id;
+
+          console.log('[Stripe Webhook] 🆕 Subscription created event:', {
+            subscriptionId,
+            customerId,
+            status: subscription.status,
+            priceId,
+          });
+
+          // Find user by Stripe customer ID
+          const user = await storage.getUserByStripeCustomerId(customerId);
+          
+          if (!user) {
+            console.log(`[Stripe Webhook] User not found yet for customer ${customerId} - may be processing`);
+            break;
+          }
+
+          // CRITICAL: If user has no subscription ID saved, save it now
+          if (!user.stripeSubscriptionId) {
+            console.log(`[Stripe Webhook] 🔧 REPAIR: Linking subscription ${subscriptionId} to user ${user.email}`);
+            
+            await storage.updateUserStripeInfo(user.id, customerId, subscriptionId);
+            
+            // Verify
+            const updatedUser = await storage.getUser(user.id);
+            if (updatedUser?.stripeSubscriptionId === subscriptionId) {
+              console.log(`[Stripe Webhook] ✅ REPAIR SUCCESS: Subscription ID saved for ${user.email}`);
+            } else {
+              console.error(`[Stripe Webhook] ❌ REPAIR FAILED: Could not save subscription ID`);
+            }
+          } else if (user.stripeSubscriptionId !== subscriptionId) {
+            console.log(`[Stripe Webhook] ⚠️ User ${user.email} already has different subscription: ${user.stripeSubscriptionId}`);
+          } else {
+            console.log(`[Stripe Webhook] ✅ Subscription ID already correctly saved for ${user.email}`);
+          }
+          
+          break;
+        }
+
         case 'customer.subscription.updated': {
           const subscription = event.data.object as Stripe.Subscription;
           const customerId = subscription.customer as string;
@@ -460,6 +535,12 @@ router.post(
           if (!user) {
             console.error(`[Stripe Webhook] User not found for customer ${customerId}`);
             break;
+          }
+
+          // SAFETY CHECK: Ensure subscription ID is saved
+          if (!user.stripeSubscriptionId && subscription.id) {
+            console.log(`[Stripe Webhook] 🔧 REPAIR: Saving missing subscription ID on update event`);
+            await storage.updateUserStripeInfo(user.id, customerId, subscription.id);
           }
 
           console.log(`[Stripe Webhook] Subscription updated for customer ${customerId}, status: ${subscription.status}, cancel_at_period_end: ${subscription.cancel_at_period_end}`);

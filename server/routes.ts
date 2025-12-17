@@ -1388,6 +1388,105 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Repair broken subscription IDs - finds users with active status but no subscription ID
+  app.post("/api/admin/repair-subscriptions", requireAdmin, async (req, res) => {
+    try {
+      console.log('[Admin] 🔧 Starting subscription repair scan...');
+      
+      // Find all users with broken subscription state
+      const allUsers = await storage.getAdminUsers({ page: 1, limit: 1000, search: '' });
+      const brokenUsers = allUsers.users.filter(
+        (u: any) => u.subscriptionStatus === 'active' && !u.stripeSubscriptionId && u.stripeCustomerId
+      );
+      
+      console.log(`[Admin] Found ${brokenUsers.length} accounts with missing subscription IDs`);
+      
+      if (brokenUsers.length === 0) {
+        return res.json({
+          success: true,
+          message: 'No broken subscriptions found',
+          totalBroken: 0,
+          results: []
+        });
+      }
+      
+      const Stripe = (await import('stripe')).default;
+      const stripe = process.env.STRIPE_SECRET_KEY
+        ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2025-08-27.basil' as any })
+        : null;
+      
+      if (!stripe) {
+        return res.status(500).json({ error: 'Stripe not configured' });
+      }
+      
+      const results: any[] = [];
+      
+      for (const user of brokenUsers) {
+        try {
+          // Look up subscription in Stripe
+          const subscriptions = await stripe.subscriptions.list({
+            customer: user.stripeCustomerId!,
+            limit: 1,
+          });
+          
+          if (subscriptions.data.length > 0) {
+            const sub = subscriptions.data[0];
+            
+            await storage.updateUserStripeInfo(user.id, user.stripeCustomerId!, sub.id);
+            
+            // Also update status to match Stripe
+            const stripeStatus = sub.status === 'active' ? 'active' : 
+                                 sub.status === 'canceled' ? 'canceled' : 
+                                 sub.status === 'past_due' ? 'past_due' : 'inactive';
+            
+            if (stripeStatus !== 'active') {
+              await storage.updateUserSettings(user.id, { subscriptionStatus: stripeStatus as any });
+            }
+            
+            results.push({
+              email: user.email,
+              status: 'fixed',
+              subscriptionId: sub.id,
+              subscriptionStatus: sub.status
+            });
+            
+            console.log(`[Admin] ✅ Fixed: ${user.email} → ${sub.id}`);
+          } else {
+            // No subscription found - mark as inactive
+            await storage.updateUserSettings(user.id, { subscriptionStatus: 'inactive' });
+            
+            results.push({
+              email: user.email,
+              status: 'marked_inactive',
+              reason: 'No Stripe subscription found'
+            });
+            
+            console.log(`[Admin] ⚠️ Marked inactive: ${user.email} (no Stripe subscription)`);
+          }
+        } catch (error: any) {
+          results.push({
+            email: user.email,
+            status: 'error',
+            error: error.message
+          });
+          console.error(`[Admin] ❌ Error repairing ${user.email}:`, error.message);
+        }
+      }
+      
+      console.log(`[Admin] 🔧 Repair complete: ${results.filter(r => r.status === 'fixed').length} fixed, ${results.filter(r => r.status === 'marked_inactive').length} marked inactive`);
+      
+      res.json({
+        success: true,
+        totalBroken: brokenUsers.length,
+        results
+      });
+      
+    } catch (error: any) {
+      console.error('[Admin] Repair subscriptions error:', error);
+      res.status(500).json({ error: 'Repair failed: ' + error.message });
+    }
+  });
+
   // Bootstrap: Make user admin (TEMPORARY - remove after first admin is created)
   app.post("/api/bootstrap/make-admin", async (req, res) => {
     try {

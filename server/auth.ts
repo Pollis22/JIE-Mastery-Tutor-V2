@@ -475,6 +475,42 @@ export function setupAuth(app: Express) {
         );
       }
       
+      // CRITICAL FIX: Repair missing subscription IDs at login time
+      if (user.subscriptionStatus === 'active' && !user.stripeSubscriptionId && user.stripeCustomerId) {
+        console.error(`[Auth] ⚠️ ALERT: User ${user.email} has active status but no subscription ID!`);
+        
+        // Try to find subscription in Stripe (non-blocking)
+        (async () => {
+          try {
+            const Stripe = (await import('stripe')).default;
+            const stripe = process.env.STRIPE_SECRET_KEY
+              ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2025-08-27.basil' as any })
+              : null;
+            
+            if (!stripe || !user.stripeCustomerId) return;
+            
+            const subscriptions = await stripe.subscriptions.list({
+              customer: user.stripeCustomerId,
+              status: 'active',
+              limit: 1,
+            });
+            
+            if (subscriptions.data.length > 0) {
+              const sub = subscriptions.data[0];
+              console.log(`[Auth] 🔧 REPAIR: Found orphaned subscription ${sub.id} - linking now`);
+              
+              await storage.updateUserStripeInfo(user.id, user.stripeCustomerId, sub.id);
+              console.log(`[Auth] ✅ REPAIR SUCCESS: Subscription ID ${sub.id} saved for ${user.email}`);
+            } else {
+              console.error(`[Auth] ❌ No active Stripe subscription found for customer ${user.stripeCustomerId}`);
+              // Don't mark inactive here - user may have valid access that was paid
+            }
+          } catch (error: any) {
+            console.error(`[Auth] Error checking Stripe subscriptions:`, error.message);
+          }
+        })();
+      }
+      
       req.login(user, async (err) => {
         if (err) {
           console.error('[Auth] Session error:', err);
