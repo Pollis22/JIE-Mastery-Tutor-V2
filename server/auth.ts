@@ -255,6 +255,91 @@ export function setupAuth(app: Express) {
     }
   });
 
+  // POST /api/check-email - Check email availability before registration
+  app.post("/api/check-email", async (req, res) => {
+    try {
+      const { email } = req.body;
+      
+      if (!email) {
+        return res.status(400).json({ 
+          available: false,
+          error: 'Email is required' 
+        });
+      }
+      
+      const normalizedEmail = email.toLowerCase().trim();
+      
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(normalizedEmail)) {
+        return res.status(400).json({ 
+          available: false,
+          error: 'Invalid email format' 
+        });
+      }
+      
+      // Check database
+      const existingUser = await storage.getUserByEmail(normalizedEmail);
+      
+      if (existingUser) {
+        console.log(`[Auth] Email check: ${normalizedEmail} already exists`);
+        return res.json({
+          available: false,
+          error: 'This email is already registered',
+          suggestion: 'Please log in or reset your password if you forgot it.'
+        });
+      }
+      
+      // Optionally check Stripe for existing customer with active subscription
+      try {
+        const Stripe = (await import('stripe')).default;
+        const stripe = process.env.STRIPE_SECRET_KEY
+          ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2025-08-27.basil' as any })
+          : null;
+          
+        if (stripe) {
+          const customers = await stripe.customers.list({
+            email: normalizedEmail,
+            limit: 1
+          });
+          
+          if (customers.data.length > 0) {
+            // Check for active subscription
+            const subs = await stripe.subscriptions.list({
+              customer: customers.data[0].id,
+              status: 'active',
+              limit: 1
+            });
+            
+            if (subs.data.length > 0) {
+              console.log(`[Auth] Email ${normalizedEmail} has active Stripe subscription`);
+              return res.json({
+                available: false,
+                error: 'This email already has an active subscription',
+                suggestion: 'Please log in to manage your account.'
+              });
+            }
+            
+            console.log(`[Auth] Email ${normalizedEmail} found in Stripe but no active subscription`);
+          }
+        }
+      } catch (stripeError: any) {
+        console.error('[Auth] Stripe customer check failed:', stripeError.message);
+        // Don't block if Stripe check fails
+      }
+      
+      console.log(`[Auth] Email check: ${normalizedEmail} is available`);
+      res.json({ available: true });
+      
+    } catch (error: any) {
+      console.error('[Auth] Email check error:', error);
+      res.status(500).json({ 
+        available: false,
+        error: 'Failed to check email availability' 
+      });
+    }
+  });
+
   app.post("/api/register", async (req, res, next) => {
     try {
       // 🔍 Log incoming registration request

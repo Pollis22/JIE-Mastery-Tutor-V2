@@ -44,13 +44,51 @@ router.post('/create-registration-session', async (req, res) => {
       });
     }
 
+    const normalizedEmail = registrationData.email.toLowerCase().trim();
+
     // Check for duplicate email before creating checkout
-    const existingUser = await storage.getUserByEmail(registrationData.email.toLowerCase());
+    const existingUser = await storage.getUserByEmail(normalizedEmail);
     if (existingUser) {
-      return res.status(400).json({ 
+      console.log(`[Registration] Blocked: Email ${normalizedEmail} already registered in database`);
+      return res.status(409).json({ 
         error: 'Email already registered',
+        code: 'EMAIL_EXISTS',
+        message: 'An account with this email already exists. Please log in or reset your password.',
         field: 'email'
       });
+    }
+
+    // Check Stripe for existing customer with active subscription
+    try {
+      const existingCustomers = await stripe.customers.list({
+        email: normalizedEmail,
+        limit: 1
+      });
+
+      if (existingCustomers.data.length > 0) {
+        const existingCustomer = existingCustomers.data[0];
+        console.log(`[Registration] Found existing Stripe customer: ${existingCustomer.id} for ${normalizedEmail}`);
+
+        // Check if they have an active subscription
+        const existingSubs = await stripe.subscriptions.list({
+          customer: existingCustomer.id,
+          status: 'active',
+          limit: 1
+        });
+
+        if (existingSubs.data.length > 0) {
+          console.log(`[Registration] Blocked: Stripe customer ${existingCustomer.id} has active subscription`);
+          return res.status(409).json({
+            error: 'Active subscription exists',
+            code: 'SUBSCRIPTION_EXISTS',
+            message: 'This email already has an active subscription. Please log in to manage your account.',
+            field: 'email'
+          });
+        }
+      }
+    } catch (stripeError: any) {
+      console.error('[Registration] Stripe customer check failed:', stripeError.message);
+      // Don't block registration if Stripe check fails
     }
 
     // Price ID mapping
@@ -99,8 +137,8 @@ router.post('/create-registration-session', async (req, res) => {
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       payment_method_types: ['card'],
-      customer_email: registrationData.email.toLowerCase(), // CRITICAL: Receipt goes to this email
-      client_reference_id: registrationData.email, // Easy lookup
+      customer_email: normalizedEmail, // CRITICAL: Receipt goes to this email
+      client_reference_id: normalizedEmail, // Easy lookup
       line_items: [{
         price: priceId,
         quantity: 1 

@@ -1487,6 +1487,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Admin duplicate check - finds accounts with issues
+  app.get("/api/admin/duplicate-check", requireAdmin, async (req, res) => {
+    try {
+      console.log('[Admin] 🔍 Running duplicate and integrity check...');
+      
+      // Get all users for analysis
+      const allUsers = await storage.getAdminUsers({ page: 1, limit: 10000, search: '' });
+      
+      // Find duplicate emails (case-insensitive)
+      const emailCounts: Record<string, any[]> = {};
+      for (const user of allUsers.users) {
+        const normalizedEmail = (user.email || '').toLowerCase();
+        if (!emailCounts[normalizedEmail]) {
+          emailCounts[normalizedEmail] = [];
+        }
+        emailCounts[normalizedEmail].push({
+          id: user.id,
+          email: user.email,
+          subscriptionStatus: user.subscriptionStatus,
+          subscriptionPlan: user.subscriptionPlan,
+          stripeCustomerId: user.stripeCustomerId,
+          stripeSubscriptionId: user.stripeSubscriptionId,
+          createdAt: user.createdAt
+        });
+      }
+      
+      const duplicateEmails = Object.entries(emailCounts)
+        .filter(([_, users]) => users.length > 1)
+        .map(([email, users]) => ({ email, count: users.length, accounts: users }));
+      
+      // Find users with no Stripe subscription ID but active status
+      const missingStripeIds = allUsers.users.filter(
+        (u: any) => u.subscriptionStatus === 'active' && !u.stripeSubscriptionId
+      ).map((u: any) => ({
+        id: u.id,
+        email: u.email,
+        subscriptionStatus: u.subscriptionStatus,
+        subscriptionPlan: u.subscriptionPlan,
+        stripeCustomerId: u.stripeCustomerId
+      }));
+      
+      // Find users with active status but no Stripe customer ID
+      const missingCustomerIds = allUsers.users.filter(
+        (u: any) => u.subscriptionStatus === 'active' && !u.stripeCustomerId
+      ).map((u: any) => ({
+        id: u.id,
+        email: u.email,
+        subscriptionStatus: u.subscriptionStatus,
+        subscriptionPlan: u.subscriptionPlan
+      }));
+      
+      console.log(`[Admin] Found ${duplicateEmails.length} duplicate emails, ${missingStripeIds.length} missing subscription IDs, ${missingCustomerIds.length} missing customer IDs`);
+      
+      res.json({
+        duplicateEmails,
+        missingStripeIds,
+        missingCustomerIds,
+        summary: {
+          totalUsers: allUsers.users.length,
+          duplicateEmailCount: duplicateEmails.length,
+          missingStripeIdCount: missingStripeIds.length,
+          missingCustomerIdCount: missingCustomerIds.length
+        }
+      });
+      
+    } catch (error: any) {
+      console.error('[Admin] Duplicate check error:', error);
+      res.status(500).json({ error: 'Duplicate check failed: ' + error.message });
+    }
+  });
+
   // Bootstrap: Make user admin (TEMPORARY - remove after first admin is created)
   app.post("/api/bootstrap/make-admin", async (req, res) => {
     try {
