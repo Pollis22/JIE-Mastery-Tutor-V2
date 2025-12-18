@@ -51,14 +51,26 @@ function buildSystemPrompt(
   inputModality?: "voice" | "text",
   language?: string
 ): string {
-  // Build context with uploaded documents
-  const documentContext = uploadedDocuments.length > 0
-    ? uploadedDocuments.map((doc, i) => {
-        const titleMatch = doc.match(/^\[Document: ([^\]]+)\]/);
-        const title = titleMatch ? titleMatch[1] : `Document ${i + 1}`;
-        const content = doc.replace(/^\[Document: [^\]]+\]\n/, '');
-        return `<document index="${i + 1}" title="${title}">\n${content}\n</document>`;
-      }).join('\n\n')
+  // Parse documents into structured format with filename and content
+  const parsedDocs = uploadedDocuments.map((doc, i) => {
+    const titleMatch = doc.match(/^\[Document: ([^\]]+)\]/);
+    const filename = titleMatch ? titleMatch[1] : `Document_${i + 1}`;
+    const content = doc.replace(/^\[Document: [^\]]+\]\n/, '');
+    // Create preview (first 500 chars of content)
+    const preview = content.substring(0, 500).trim() + (content.length > 500 ? '...' : '');
+    return { filename, content, preview };
+  });
+
+  // Build structured document list for Claude (JSON format for clarity)
+  const documentList = parsedDocs.length > 0
+    ? parsedDocs.map(doc => `- "${doc.filename}": ${doc.preview.substring(0, 200)}...`).join('\n')
+    : "";
+  
+  // Build full document context with content
+  const documentContext = parsedDocs.length > 0
+    ? parsedDocs.map((doc, i) => 
+        `<document filename="${doc.filename}">\n${doc.content}\n</document>`
+      ).join('\n\n')
     : "";
 
   const modalityContext = inputModality === "voice" 
@@ -84,6 +96,30 @@ function buildSystemPrompt(
     ? `IMPORTANT: Conduct this entire tutoring session in ${getLanguageName(language)}. Greet the student in ${getLanguageName(language)}, ask questions in ${getLanguageName(language)}, and provide all explanations in ${getLanguageName(language)}. Only use English if the student explicitly requests it.\n\n`
     : '';
 
+  // Document access rules - prevents hallucination and guessing
+  const documentAccessRules = `
+DOCUMENT ACCESS RULES (CRITICAL):
+- You ONLY have access to the documents explicitly listed below.
+- If a student asks about a document that is NOT listed:
+  - Do NOT guess its contents
+  - Do NOT assume it exists
+  - Politely explain: "I only have [filename(s)] available in this session."
+  - Ask if they want to restart the session with that document selected
+- ALWAYS reference documents by their exact filename (e.g., "Algebra_Homework_Grade10.pdf")
+- NEVER say "Document 1", "Document 2", etc. - use the actual filename
+- Each document has a filename and content. Use the filename when speaking to the student.`;
+
+  // Multiple documents disambiguation helper
+  const multiDocRules = parsedDocs.length > 1 
+    ? `
+MULTIPLE DOCUMENTS:
+- You have ${parsedDocs.length} documents available: ${parsedDocs.map(d => `"${d.filename}"`).join(', ')}
+- If the student is ambiguous about which document they mean:
+  - Ask a clarification question using filenames, NOT numbers
+  - Example: "I see ${parsedDocs.slice(0, 2).map(d => d.filename).join(' and ')}. Which one should we work on?"
+- When referencing content, always specify which document it's from.`
+    : '';
+
   let systemPrompt = "";
   
   if (systemInstruction) {
@@ -96,29 +132,36 @@ function buildSystemPrompt(
       systemPrompt = `You are an expert AI tutor helping students with homework and learning.
 
 ${modalityContext ? modalityContext + '\n' : ''}
-<uploaded_documents>
-The student has uploaded ${uploadedDocuments.length} document(s) for this tutoring session. You MUST acknowledge these documents when asked about them.
+DOCUMENTS SELECTED FOR THIS SESSION:
+${documentList}
+${documentAccessRules}
+${multiDocRules}
 
+<document_contents>
 ${documentContext}
-</uploaded_documents>
+</document_contents>
 
-CRITICAL INSTRUCTIONS FOR DOCUMENTS:
-- When the student asks "do you see my document?" or similar, ALWAYS respond affirmatively
-- Start with "Yes! I can see your document" and mention specific details from it
+WHEN STUDENT ASKS ABOUT DOCUMENTS:
+- When the student asks "do you see my document?" respond: "Yes! I can see [filename]" and mention specific content
 - Reference specific content from the documents to prove you can see them
-- Help the student with the specific problems or content in their uploaded materials
+- Help with the specific problems or content in their uploaded materials
 
 GENERAL TUTORING INSTRUCTIONS:
 - Be encouraging, patient, and clear
 - Use the Socratic method - ask questions to guide understanding
 - Keep responses VERY CONCISE (1-2 sentences max) since this is voice conversation
-- Reference the uploaded documents frequently when answering questions
+- Reference the uploaded documents BY FILENAME when answering questions
 - ${inputModality === "voice" ? "You are having a VOICE conversation - the student can HEAR you" : "The student sent you a text message"}`;
     } else {
       systemPrompt = `You are an expert AI tutor helping students with homework and learning.
 
 ${modalityContext ? modalityContext + '\n' : ''}
-IMPORTANT INSTRUCTIONS:
+NO DOCUMENTS SELECTED:
+The student has not selected any documents for this session.
+- If they ask about a specific document, explain that no documents are loaded
+- Suggest they restart the session and select the document they want help with
+
+GENERAL TUTORING INSTRUCTIONS:
 - Be encouraging, patient, and clear
 - Use the Socratic method - ask questions to guide understanding
 - Keep responses VERY CONCISE (1-2 sentences max) since this is voice conversation
