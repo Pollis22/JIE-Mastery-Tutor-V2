@@ -78,6 +78,34 @@ function shouldMergeWithPrevious(
   return endsWithConjunction || tooShort;
 }
 
+async function getAssemblyAIToken(): Promise<string> {
+  const apiKey = process.env.ASSEMBLYAI_API_KEY;
+  if (!apiKey) {
+    throw new Error('Missing ASSEMBLYAI_API_KEY environment variable');
+  }
+  
+  console.log('[AssemblyAI] 🔑 Fetching temporary token...');
+  
+  const response = await fetch('https://api.assemblyai.com/v2/realtime/token', {
+    method: 'POST',
+    headers: {
+      'Authorization': apiKey,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ expires_in: 3600 }),
+  });
+  
+  if (!response.ok) {
+    const text = await response.text();
+    console.error('[AssemblyAI] ❌ Token fetch failed:', response.status, text);
+    throw new Error(`Token fetch failed: ${response.status} ${text}`);
+  }
+  
+  const data = await response.json() as { token: string };
+  console.log('[AssemblyAI] ✅ Token obtained (expires in 3600s)');
+  return data.token;
+}
+
 function createAssemblyAIConnection(
   language: string,
   onTranscript: (text: string, endOfTurn: boolean, confidence: number) => void,
@@ -85,13 +113,11 @@ function createAssemblyAIConnection(
   onSessionStart?: (sessionId: string) => void,
   onClose?: () => void
 ): { ws: WebSocket; state: AssemblyAIState } {
-  // FORCE IMMEDIATE OUTPUT - prove we entered this function
+  console.log('████████████████████████████████████████████████████████████████');
   console.log('[AssemblyAI] ENTER createAssemblyAIConnection', { language, ts: Date.now() });
-  process.stderr.write('\n████████████████████████████████████████████████████████████████\n');
-  process.stderr.write('[AssemblyAI] CREATING CONNECTION at ' + new Date().toISOString() + '\n');
-  process.stderr.write('[AssemblyAI] API Key exists: ' + !!process.env.ASSEMBLYAI_API_KEY + '\n');
-  process.stderr.write('[AssemblyAI] API Key length: ' + (process.env.ASSEMBLYAI_API_KEY?.length || 0) + '\n');
-  process.stderr.write('████████████████████████████████████████████████████████████████\n');
+  console.log('[AssemblyAI] API Key exists:', !!process.env.ASSEMBLYAI_API_KEY);
+  console.log('[AssemblyAI] API Key length:', process.env.ASSEMBLYAI_API_KEY?.length);
+  console.log('████████████████████████████████████████████████████████████████');
   
   const state: AssemblyAIState = {
     ws: null,
@@ -105,19 +131,28 @@ function createAssemblyAIConnection(
     closeReason: null,
   };
 
-  // Build URL with REQUIRED query parameters for AssemblyAI v3 streaming
-  // Must include sample_rate and encoding in URL
-  const wsUrl = `wss://streaming.assemblyai.com/v3/ws?sample_rate=16000&encoding=pcm_s16le&format_turns=true`;
-  console.log('[AssemblyAI] 🌐 Connecting to:', wsUrl);
-  console.log('[AssemblyAI] API Key first 10 chars:', process.env.ASSEMBLYAI_API_KEY?.substring(0, 10) + '...');
-  
   // Fail fast if no API key
   if (!process.env.ASSEMBLYAI_API_KEY) {
     const err = new Error('Missing ASSEMBLYAI_API_KEY environment variable');
     console.error('[AssemblyAI] ❌', err.message);
     state.lastError = err.message;
-    throw err;
+    onError(err.message);
+    // Return dummy closed socket
+    const dummyWs = new WebSocket('wss://localhost:1');
+    dummyWs.close();
+    return { ws: dummyWs, state };
   }
+
+  // Use token-based auth for more reliable connection
+  // First get token, then connect with it
+  const speechModel = language === 'es' || language === 'spanish'
+    ? 'universal-streaming-multilingual'
+    : 'universal-streaming-english';
+  
+  // Build URL with token (we'll set it after fetching)
+  // For now, use header-based auth as fallback
+  const wsUrl = `wss://api.assemblyai.com/v2/realtime/ws?sample_rate=16000`;
+  console.log('[AssemblyAI] 🌐 Connecting to:', wsUrl);
   
   let ws: WebSocket;
   try {
@@ -128,20 +163,31 @@ function createAssemblyAIConnection(
       handshakeTimeout: 10000,
     });
     
-    // Verify WebSocket implementation
-    console.log('[AssemblyAI] WS impl check: ws.constructor.name =', (ws as any)?.constructor?.name);
+    console.log('[AssemblyAI] WS impl check: constructor.name =', ws.constructor?.name);
     console.log('[AssemblyAI] WS impl check: typeof ws.on =', typeof (ws as any).on);
-    console.log('[AssemblyAI] WS impl check: typeof ws.addEventListener =', typeof (ws as any).addEventListener);
-    console.log('[AssemblyAI] ✅ WebSocket object created - initial readyState:', ws.readyState);
+    console.log('[AssemblyAI] ✅ WebSocket created - initial readyState:', ws.readyState);
   } catch (err: any) {
     console.error('[AssemblyAI] ❌ WebSocket constructor threw:', err.message);
     state.lastError = err.message;
-    throw err;
+    onError(err.message);
+    const dummyWs = new WebSocket('wss://localhost:1');
+    dummyWs.close();
+    return { ws: dummyWs, state };
   }
   
   state.ws = ws;
   
-  // Check state after short delays to catch immediate failures
+  // 4-second handshake timeout
+  const handshakeTimeout = setTimeout(() => {
+    if (!state.isOpen) {
+      console.error('[AssemblyAI] ❌ Handshake timeout (4s) - readyState:', ws.readyState);
+      state.lastError = 'AssemblyAI WS handshake timeout';
+      onError('AssemblyAI WS handshake timeout');
+      ws.terminate();
+    }
+  }, 4000);
+  
+  // Check state after short delays
   setTimeout(() => {
     if (!state.isOpen && ws.readyState !== WebSocket.CONNECTING) {
       console.log('[AssemblyAI] 🔍 100ms check - readyState:', ws.readyState, 
@@ -149,33 +195,11 @@ function createAssemblyAIConnection(
         'closeCode:', state.closeCode, 'closeReason:', state.closeReason);
     }
   }, 100);
-  
-  setTimeout(() => {
-    if (!state.isOpen) {
-      console.log('[AssemblyAI] 🔍 1s check - readyState:', ws.readyState, 
-        'isOpen:', state.isOpen, 'lastError:', state.lastError,
-        'closeCode:', state.closeCode);
-    }
-  }, 1000);
 
   ws.on('open', () => {
-    console.log('[AssemblyAI] ✅ WebSocket OPEN - sending config');
+    clearTimeout(handshakeTimeout);
+    console.log('[AssemblyAI] ✅ WebSocket OPEN');
     state.isOpen = true;
-
-    // Send initial config message
-    const config = {
-      sample_rate: 16000,
-      format_turns: true,
-      end_of_turn_confidence_threshold: 0.65,
-      min_end_of_turn_silence_when_confident: 500,
-      max_turn_silence: 3500,
-      speech_model: language === 'es'
-        ? 'universal-streaming-multilingual'
-        : 'universal-streaming-english',
-    };
-
-    console.log('[AssemblyAI] 📤 Sending config:', JSON.stringify(config));
-    ws.send(JSON.stringify(config));
     
     // Flush any buffered audio
     if (state.audioBuffer.length > 0) {
