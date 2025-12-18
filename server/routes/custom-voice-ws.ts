@@ -244,6 +244,16 @@ function createAssemblyAIConnection(
     }
   });
 
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // CRITICAL: AssemblyAI v3 transcript handling
+  // v3 Turn messages are IMMUTABLE REFINEMENTS, not deltas!
+  // Each Turn contains the COMPLETE utterance so far - REPLACE, don't append
+  // Only fire Claude when end_of_turn=true with the final confirmed transcript
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  
+  // Track the confirmed transcript for the current turn (reset on end_of_turn)
+  let confirmedTranscript = '';
+  
   ws.on('message', (data) => {
     const msgStr = data.toString();
     console.log('[AssemblyAI v3] 📩 Message received:', msgStr.substring(0, 300));
@@ -259,51 +269,55 @@ function createAssemblyAIConnection(
       }
 
       // v3 message types: Begin, Turn, Termination
-      // v2 used: SessionBegins, PartialTranscript, FinalTranscript
       const messageType = msg.message_type || msg.type;
       
-      // v3 session start (message_type: "Begin")
-      if (messageType === 'Begin' || messageType === 'SessionBegins') {
-        console.log('[AssemblyAI v3] 🎬 Session started:', msg.session_id);
-        state.sessionId = msg.session_id || '';
+      // v3 session start (type: "Begin")
+      if (messageType === 'Begin') {
+        console.log('[AssemblyAI v3] 🎬 Session started:', msg.id);
+        state.sessionId = msg.id || '';
         if (onSessionStart) onSessionStart(state.sessionId);
         return;
       }
 
-      // v3 transcript handling (message_type: "Turn" or "PartialTurn")
-      // v3 uses "transcript" field, similar to v2
-      if (messageType === 'Turn' || messageType === 'PartialTurn' || msg.transcript !== undefined) {
-        const text = msg.transcript || '';
-        // v3 uses end_of_turn boolean
-        const endOfTurn = msg.end_of_turn === true || messageType === 'Turn';
-        const confidence = msg.end_of_turn_confidence || msg.confidence || 0;
+      // v3 transcript handling (type: "Turn")
+      // CRITICAL: v3 Turn messages contain the COMPLETE transcript, not deltas
+      // Each message REPLACES the previous, it does NOT append
+      if (messageType === 'Turn' || msg.transcript !== undefined) {
+        const text = (msg.transcript || '').trim();
+        const endOfTurn = msg.end_of_turn === true;
+        const turnIsFormatted = msg.turn_is_formatted === true;
+        const confidence = msg.end_of_turn_confidence || 0;
 
-        console.log('[AssemblyAI v3] 📝 Transcript:', {
-          type: messageType,
-          text: text.substring(0, 50) + (text.length > 50 ? '...' : ''),
+        console.log('[AssemblyAI v3] 📝 Turn:', {
+          text: text.substring(0, 60) + (text.length > 60 ? '...' : ''),
           endOfTurn,
+          turnIsFormatted,
           confidence: typeof confidence === 'number' ? confidence.toFixed(2) : confidence,
+          turnOrder: msg.turn_order,
         });
 
-        if (endOfTurn && text.trim()) {
-          const now = Date.now();
-          let finalTranscript = text;
+        // REPLACE, don't append - v3 gives us the complete transcript each time
+        if (text) {
+          confirmedTranscript = text;
+        }
 
-          if (shouldMergeWithPrevious(state.lastTranscript, state.lastTranscriptTime, now)) {
-            finalTranscript = (state.lastTranscript + ' ' + text).trim();
-          }
-
-          state.lastTranscript = finalTranscript;
-          state.lastTranscriptTime = now;
-
-          onTranscript(finalTranscript, true, confidence);
+        // Only fire callback when turn is complete
+        // Prefer the formatted version if available, otherwise use the unformatted one
+        if (endOfTurn && confirmedTranscript) {
+          console.log('[AssemblyAI v3] ✅ End of turn - sending to Claude:', confirmedTranscript);
+          
+          // Fire callback with the confirmed transcript
+          onTranscript(confirmedTranscript, true, confidence);
+          
+          // Reset for next turn
+          confirmedTranscript = '';
         }
         return;
       }
 
       // v3 termination message
       if (messageType === 'Termination') {
-        console.log('[AssemblyAI v3] 🛑 Session terminated by server');
+        console.log('[AssemblyAI v3] 🛑 Session terminated - audio:', msg.audio_duration_seconds, 's');
         return;
       }
 
