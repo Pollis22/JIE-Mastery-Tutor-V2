@@ -14,6 +14,190 @@ import { storage } from "../storage";
 import { validateWsSession, rejectWsUpgrade } from '../middleware/ws-session-validator';
 import { wsRateLimiter, getClientIp } from '../middleware/ws-rate-limiter';
 
+// ============================================
+// FEATURE FLAG: STT PROVIDER SELECTION
+// Set STT_PROVIDER=assemblyai to use AssemblyAI Universal-Streaming
+// Set STT_PROVIDER=deepgram (or leave unset) to use Deepgram Nova-2
+// ============================================
+const USE_ASSEMBLYAI = process.env.STT_PROVIDER === 'assemblyai';
+console.log(`[STT] Provider: ${USE_ASSEMBLYAI ? 'AssemblyAI Universal-Streaming' : 'Deepgram Nova-2'}`);
+
+// ============================================
+// ASSEMBLYAI UNIVERSAL-STREAMING (RFC APPROVED)
+// Semantic turn detection for natural conversation flow
+// ============================================
+
+interface AssemblyAIMessage {
+  message_type?: string;
+  session_id?: string;
+  transcript?: string;
+  turn_order?: number;
+  end_of_turn?: boolean;
+  end_of_turn_confidence?: number;
+  turn_is_formatted?: boolean;
+  error?: string;
+}
+
+interface AssemblyAIState {
+  ws: WebSocket | null;
+  lastTranscript: string;
+  lastTranscriptTime: number;
+  sessionId: string;
+}
+
+const ASSEMBLYAI_CONFIG = {
+  MERGE_WINDOW_MS: 1000,
+  CONJUNCTION_ENDINGS: [
+    'and', 'or', 'but', 'about', 'because', 'like', 'that',
+    'which', 'so', 'if', 'when', 'the', 'a', 'an', 'to', 'for'
+  ],
+  MIN_TOKENS_FOR_STANDALONE: 6,
+};
+
+function shouldMergeWithPrevious(
+  lastTranscript: string,
+  lastTranscriptTime: number,
+  currentTime: number
+): boolean {
+  if (!lastTranscript || currentTime - lastTranscriptTime > ASSEMBLYAI_CONFIG.MERGE_WINDOW_MS) {
+    return false;
+  }
+
+  const lastWord = lastTranscript.trim().split(/\s+/).pop()?.toLowerCase() || '';
+  const endsWithConjunction = ASSEMBLYAI_CONFIG.CONJUNCTION_ENDINGS.includes(lastWord);
+  const tokenCount = lastTranscript.trim().split(/\s+/).length;
+  const tooShort = tokenCount < ASSEMBLYAI_CONFIG.MIN_TOKENS_FOR_STANDALONE;
+
+  return endsWithConjunction || tooShort;
+}
+
+function createAssemblyAIConnection(
+  language: string,
+  onTranscript: (text: string, endOfTurn: boolean, confidence: number) => void,
+  onError: (error: string) => void,
+  onSessionStart?: (sessionId: string) => void,
+  onClose?: () => void
+): { ws: WebSocket; state: AssemblyAIState } {
+  console.log('[AssemblyAI] 🚀 Creating connection for language:', language);
+
+  const state: AssemblyAIState = {
+    ws: null,
+    lastTranscript: '',
+    lastTranscriptTime: 0,
+    sessionId: '',
+  };
+
+  const ws = new WebSocket('wss://streaming.assemblyai.com/v3/ws');
+  state.ws = ws;
+
+  ws.on('open', () => {
+    console.log('[AssemblyAI] ✅ WebSocket connected, sending config...');
+
+    const config = {
+      token: process.env.ASSEMBLYAI_API_KEY,
+      sample_rate: 16000,
+      format_turns: true,
+      end_of_turn_confidence_threshold: 0.65,
+      min_end_of_turn_silence_when_confident: 500,
+      max_turn_silence: 3500,
+      speech_model: language === 'es'
+        ? 'universal-streaming-multilingual'
+        : 'universal-streaming-english',
+    };
+
+    console.log('[AssemblyAI] 📤 Config:', JSON.stringify(config, null, 2));
+    ws.send(JSON.stringify(config));
+  });
+
+  ws.on('message', (data) => {
+    try {
+      const msg: AssemblyAIMessage = JSON.parse(data.toString());
+
+      if (msg.error) {
+        console.error('[AssemblyAI] ❌ Error:', msg.error);
+        onError(msg.error);
+        return;
+      }
+
+      if (msg.message_type === 'SessionBegins') {
+        console.log('[AssemblyAI] 🎬 Session started:', msg.session_id);
+        state.sessionId = msg.session_id || '';
+        if (onSessionStart) onSessionStart(state.sessionId);
+        return;
+      }
+
+      if (msg.transcript !== undefined) {
+        const text = msg.transcript;
+        const endOfTurn = msg.end_of_turn === true;
+        const confidence = msg.end_of_turn_confidence || 0;
+
+        console.log('[AssemblyAI] 📝 Transcript:', {
+          text: text.substring(0, 50) + (text.length > 50 ? '...' : ''),
+          endOfTurn,
+          confidence: confidence.toFixed(2),
+          turnOrder: msg.turn_order,
+        });
+
+        if (endOfTurn && text.trim()) {
+          const now = Date.now();
+          let finalTranscript = text;
+
+          if (shouldMergeWithPrevious(state.lastTranscript, state.lastTranscriptTime, now)) {
+            finalTranscript = (state.lastTranscript + ' ' + text).trim();
+            console.log('[AssemblyAI] 🔗 Merge guard applied:', {
+              previous: state.lastTranscript.substring(0, 30) + '...',
+              current: text.substring(0, 30) + '...',
+              merged: finalTranscript.substring(0, 50) + '...',
+            });
+          }
+
+          state.lastTranscript = finalTranscript;
+          state.lastTranscriptTime = now;
+
+          onTranscript(finalTranscript, true, confidence);
+        }
+      }
+    } catch (e) {
+      console.error('[AssemblyAI] ⚠️ Parse error:', e);
+    }
+  });
+
+  ws.on('error', (error) => {
+    console.error('[AssemblyAI] ❌ WebSocket error:', error.message);
+    onError(error.message);
+  });
+
+  ws.on('close', (code, reason) => {
+    console.log('[AssemblyAI] 🔌 Connection closed:', code, reason.toString());
+    state.lastTranscript = '';
+    state.lastTranscriptTime = 0;
+    if (onClose) onClose();
+  });
+
+  return { ws, state };
+}
+
+function sendAudioToAssemblyAI(ws: WebSocket | null, audioBuffer: Buffer): boolean {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(audioBuffer);
+    return true;
+  }
+  return false;
+}
+
+function closeAssemblyAI(ws: WebSocket | null) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    console.log('[AssemblyAI] 🛑 Closing connection...');
+    ws.send(JSON.stringify({ terminate_session: true }));
+    ws.close();
+  }
+}
+
+function resetAssemblyAIMergeGuard(state: AssemblyAIState) {
+  state.lastTranscript = '';
+  state.lastTranscriptTime = 0;
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // TIMING CONSTANTS (Dec 10, 2025): Tutor waits for complete thoughts
 // Prevents tutor from interrupting students during thinking pauses
@@ -55,6 +239,8 @@ interface SessionState {
   transcript: TranscriptEntry[];
   uploadedDocuments: string[];
   deepgramConnection: DeepgramConnection | null;
+  assemblyAIWs: WebSocket | null; // AssemblyAI WebSocket connection
+  assemblyAIState: AssemblyAIState | null; // AssemblyAI merge guard state
   isProcessing: boolean;
   transcriptQueue: string[]; // FIX #1: Queue for incoming transcripts
   sessionStartTime: number;
@@ -298,6 +484,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
       transcript: [],
       uploadedDocuments: [],
       deepgramConnection: null,
+      assemblyAIWs: null, // AssemblyAI: Initialize to null
+      assemblyAIState: null, // AssemblyAI: Merge guard state
       isProcessing: false,
       transcriptQueue: [], // FIX #1: Initialize queue
       sessionStartTime: Date.now(),
