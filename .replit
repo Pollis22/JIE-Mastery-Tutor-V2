@@ -49,3 +49,4 @@ externalPort = 80
 AUTH_TEST_MODE = "true"
 TEST_USER_EMAIL = "test@example.com"
 TEST_USER_PASSWORD = "TestPass123!"
+STT_PROVIDER = "assemblyai"
