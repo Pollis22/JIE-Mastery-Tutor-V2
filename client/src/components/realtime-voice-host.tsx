@@ -553,13 +553,22 @@ export function RealtimeVoiceHost({
         
         {customVoice.isConnected && (
           <div className="flex items-center gap-3">
-            {customVoice.isTutorSpeaking ? (
-              <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400">
+            {customVoice.isTutorThinking ? (
+              <div className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400" data-testid="status-tutor-thinking">
+                <div className="flex items-center gap-1">
+                  <span className="inline-block w-1.5 h-1.5 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <span className="inline-block w-1.5 h-1.5 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <span className="inline-block w-1.5 h-1.5 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                </div>
+                <span className="font-medium italic">JIE is thinking...</span>
+              </div>
+            ) : customVoice.isTutorSpeaking ? (
+              <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400" data-testid="status-tutor-speaking">
                 <Volume2 className="h-4 w-4 animate-pulse" />
                 <span className="font-medium">Tutor is speaking... (you can interrupt)</span>
               </div>
             ) : (
-              <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
+              <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400" data-testid="status-listening">
                 <Mic className="h-4 w-4 animate-pulse" />
                 <span className="font-semibold">I'm listening - speak anytime!</span>
               </div>
@@ -711,15 +720,25 @@ export function RealtimeVoiceHost({
       
       {/* Transcript Display */}
       <RealtimeVoiceTranscript
-        messages={customVoice.transcript.map(t => ({
-          role: t.speaker === 'student' ? 'user' as const : 'assistant' as const,
-          content: t.text,
-          timestamp: t.timestamp ? new Date(t.timestamp) : new Date()
-        }))}
+        messages={[
+          ...customVoice.transcript.map(t => ({
+            role: t.speaker === 'student' ? 'user' as const : 'assistant' as const,
+            content: t.text,
+            timestamp: t.timestamp ? new Date(t.timestamp) : new Date()
+          })),
+          // THINKING INDICATOR: Add pseudo-message when tutor is thinking
+          ...(customVoice.isTutorThinking ? [{
+            role: 'assistant' as const,
+            content: '💭 *thinking...*',
+            timestamp: new Date(),
+            isThinking: true,
+          }] : [])
+        ]}
         isConnected={customVoice.isConnected}
         status={customVoice.isConnected ? 'active' : sessionId ? 'ended' : 'idle'}
         language={language}
         voice={`${ageGroup} Tutor`}
+        isTutorThinking={customVoice.isTutorThinking}
       />
       
       {/* Chat Input - Only shown during active session */}
@@ -751,6 +770,7 @@ export function RealtimeVoiceHost({
           <div>Session ID: {sessionId || 'None'}</div>
           <div>Connected: {customVoice.isConnected ? 'Yes' : 'No'}</div>
           <div>Muted: {isMuted ? 'Yes' : 'No'}</div>
+          <div>Tutor Thinking: {customVoice.isTutorThinking ? 'Yes' : 'No'}</div>
           <div>Tutor Speaking: {customVoice.isTutorSpeaking ? 'Yes' : 'No'}</div>
           <div>Student: {studentName || 'Unknown'}</div>
           <div>Subject: {subject || 'General'}</div>

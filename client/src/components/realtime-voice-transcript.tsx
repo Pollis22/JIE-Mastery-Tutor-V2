@@ -7,6 +7,7 @@ interface RealtimeMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: Date;
+  isThinking?: boolean;
 }
 
 interface Props {
@@ -15,6 +16,7 @@ interface Props {
   status?: 'connecting' | 'active' | 'ended' | 'error' | 'idle';
   language?: string;
   voice?: string;
+  isTutorThinking?: boolean;
 }
 
 export function RealtimeVoiceTranscript({ messages, isConnected, status, language, voice }: Props) {
@@ -88,27 +90,43 @@ export function RealtimeVoiceTranscript({ messages, isConnected, status, languag
                     key={index}
                     ref={index === messages.length - 1 ? lastMessageRef : null}
                     className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                    data-testid={`message-${message.role}-${index}`}
+                    data-testid={message.isThinking ? 'message-thinking' : `message-${message.role}-${index}`}
                   >
-                    <div
-                      className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
-                        message.role === 'user'
-                          ? 'bg-primary text-primary-foreground ml-4'
-                          : 'bg-muted text-foreground mr-4'
-                      }`}
-                    >
-                      <div className="flex items-center space-x-2 mb-1">
-                        <span className="font-medium text-xs">
-                          {message.role === 'user' ? '👤 You' : '🤖 AI Tutor'}
-                        </span>
-                        <span className="text-[10px] opacity-70">
-                          {formatTime(message.timestamp)}
-                        </span>
+                    {message.isThinking ? (
+                      // THINKING INDICATOR: Special styling for thinking message
+                      <div className="max-w-[80%] rounded-lg px-3 py-2 text-sm bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 mr-4">
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1">
+                            <span className="inline-block w-1.5 h-1.5 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                            <span className="inline-block w-1.5 h-1.5 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                            <span className="inline-block w-1.5 h-1.5 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                          </div>
+                          <span className="text-amber-700 dark:text-amber-400 italic text-sm">
+                            JIE is thinking...
+                          </span>
+                        </div>
                       </div>
-                      <div className="whitespace-pre-wrap break-words">
-                        {message.content}
+                    ) : (
+                      <div
+                        className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
+                          message.role === 'user'
+                            ? 'bg-primary text-primary-foreground ml-4'
+                            : 'bg-muted text-foreground mr-4'
+                        }`}
+                      >
+                        <div className="flex items-center space-x-2 mb-1">
+                          <span className="font-medium text-xs">
+                            {message.role === 'user' ? '👤 You' : '🤖 AI Tutor'}
+                          </span>
+                          <span className="text-[10px] opacity-70">
+                            {formatTime(message.timestamp)}
+                          </span>
+                        </div>
+                        <div className="whitespace-pre-wrap break-words">
+                          {message.content}
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
                 ))
               )}

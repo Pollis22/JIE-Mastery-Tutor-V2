@@ -475,6 +475,16 @@ interface SessionState {
   inactivityWarningSent: boolean; // INACTIVITY: Track if 4-minute warning has been sent
   inactivityTimerId: NodeJS.Timeout | null; // INACTIVITY: Timer for checking inactivity
   isReconnecting: boolean; // RECONNECT: Track if Deepgram reconnection is in progress (blocks audio)
+  currentTurnId: string | null; // THINKING INDICATOR: Track current turn for thinking state
+  hasEmittedResponding: boolean; // THINKING INDICATOR: Prevent multiple tutor_responding events per turn
+}
+
+// Helper to send typed WebSocket events
+function sendWsEvent(ws: WebSocket, type: string, payload: Record<string, unknown>) {
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type, ...payload }));
+    console.log(`[WS Event] ${type}`, payload.turnId || '');
+  }
 }
 
 // FIX #3: Incremental persistence helper
@@ -720,6 +730,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
       inactivityWarningSent: false, // INACTIVITY: No warning sent yet
       inactivityTimerId: null, // INACTIVITY: Timer not started yet
       isReconnecting: false, // RECONNECT: Not reconnecting initially
+      currentTurnId: null, // THINKING INDICATOR: No turn in progress
+      hasEmittedResponding: false, // THINKING INDICATOR: No responding event yet
     };
 
     // FIX #3: Auto-persist every 10 seconds
@@ -1128,6 +1140,19 @@ export function setupCustomVoiceWebSocket(server: Server) {
         console.log(`[Pipeline] 3. Calling Claude API with: "${transcript.substring(0, 100)}${transcript.length > 100 ? '...' : ''}"`);
         
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        // THINKING INDICATOR: Generate turnId and emit tutor_thinking
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        const turnId = crypto.randomUUID();
+        state.currentTurnId = turnId;
+        state.hasEmittedResponding = false;
+        
+        sendWsEvent(ws, 'tutor_thinking', {
+          sessionId: state.sessionId,
+          turnId,
+          timestamp: Date.now(),
+        });
+        
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         
         // Generate AI response (voice input) - STREAMING for lower latency
         // LANGUAGE AUTO-DETECT: Use detected language if available, fall back to selected
@@ -1156,6 +1181,16 @@ export function setupCustomVoiceWebSocket(server: Server) {
               if (sentenceCount === 1) {
                 firstSentenceMs = sentenceStart - claudeStart;
                 console.log(`[Custom Voice] ⏱️ First sentence in ${firstSentenceMs}ms`);
+                
+                // THINKING INDICATOR: Emit tutor_responding on first sentence
+                if (!state.hasEmittedResponding && state.currentTurnId) {
+                  state.hasEmittedResponding = true;
+                  sendWsEvent(ws, 'tutor_responding', {
+                    sessionId: state.sessionId,
+                    turnId: state.currentTurnId,
+                    timestamp: Date.now(),
+                  });
+                }
                 
                 // Send full transcript placeholder for first sentence
                 ws.send(JSON.stringify({
@@ -1291,6 +1326,18 @@ export function setupCustomVoiceWebSocket(server: Server) {
       } catch (error) {
         console.error("[Custom Voice] ❌ Error processing:", error);
         state.isTutorSpeaking = false; // Reset on error
+        
+        // THINKING INDICATOR: Emit tutor_error to clear thinking state
+        if (state.currentTurnId) {
+          sendWsEvent(ws, 'tutor_error', {
+            sessionId: state.sessionId,
+            turnId: state.currentTurnId,
+            timestamp: Date.now(),
+            message: error instanceof Error ? error.message : "Unknown error",
+          });
+          state.currentTurnId = null;
+        }
+        
         ws.send(JSON.stringify({ 
           type: "error", 
           error: error instanceof Error ? error.message : "Unknown error"

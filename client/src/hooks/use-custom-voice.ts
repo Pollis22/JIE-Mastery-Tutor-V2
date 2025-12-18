@@ -21,8 +21,12 @@ export function useCustomVoice() {
   const [error, setError] = useState<string | null>(null);
   const [microphoneError, setMicrophoneError] = useState<MicrophoneError | null>(null);
   const [isTutorSpeaking, setIsTutorSpeaking] = useState(false);
+  const [isTutorThinking, setIsTutorThinking] = useState(false);
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [micEnabled, setMicEnabled] = useState(true);
+  
+  // THINKING INDICATOR: Track current turn for matching events
+  const thinkingTurnIdRef = useRef<string | null>(null);
   
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -630,7 +634,34 @@ export function useCustomVoice() {
               (window as any).__sessionEndedReason = 'inactivity_timeout';
             }
             
+            // Clear thinking indicator on session end
+            setIsTutorThinking(false);
+            thinkingTurnIdRef.current = null;
+            
             // Cleanup is handled in ws.onclose
+            break;
+          
+          // THINKING INDICATOR: Handle tutor thinking state events
+          case "tutor_thinking":
+            console.log("[Custom Voice] 💭 Tutor is thinking...", message.turnId);
+            thinkingTurnIdRef.current = message.turnId;
+            setIsTutorThinking(true);
+            break;
+          
+          case "tutor_responding":
+            console.log("[Custom Voice] 💬 Tutor is responding...", message.turnId);
+            // Only clear if turnId matches (prevents stale clears)
+            if (message.turnId === thinkingTurnIdRef.current) {
+              setIsTutorThinking(false);
+              thinkingTurnIdRef.current = null;
+            }
+            break;
+          
+          case "tutor_error":
+            console.log("[Custom Voice] ❌ Tutor error, clearing thinking", message.turnId);
+            // Clear thinking on error (any turnId)
+            setIsTutorThinking(false);
+            thinkingTurnIdRef.current = null;
             break;
         }
       };
@@ -643,6 +674,9 @@ export function useCustomVoice() {
       ws.onclose = () => {
         console.log("[Custom Voice] 🔌 Disconnected");
         setIsConnected(false);
+        // Clear thinking indicator on disconnect
+        setIsTutorThinking(false);
+        thinkingTurnIdRef.current = null;
         cleanup();
       };
 
@@ -1843,6 +1877,7 @@ export function useCustomVoice() {
     error,
     microphoneError,
     isTutorSpeaking,
+    isTutorThinking,
     audioEnabled,
     micEnabled,
   };
