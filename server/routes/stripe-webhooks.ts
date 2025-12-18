@@ -421,7 +421,7 @@ router.post(
 
           // Get subscription to sync billing cycle dates
           let nextBillingDate: Date | null = null;
-          let planName = 'Unknown Plan';
+          let planName = 'Family Plan';
           if (subscriptionId && stripe) {
             try {
               const subscription = await stripe.subscriptions.retrieve(subscriptionId);
@@ -432,15 +432,56 @@ router.post(
                 console.log(`[Stripe Webhook] Next billing cycle: ${nextBillingDate.toISOString()}`);
               }
               
-              // Get plan name from price ID
+              // Get plan name from price ID with multiple fallback methods
               const priceId = subscription.items.data[0]?.price?.id;
-              const priceToNameMap: Record<string, string> = {
-                [process.env.STRIPE_PRICE_STARTER || '']: 'Starter Family',
-                [process.env.STRIPE_PRICE_STANDARD || '']: 'Standard Family',
-                [process.env.STRIPE_PRICE_PRO || '']: 'Pro Family',
-                [process.env.STRIPE_PRICE_ELITE || '']: 'Elite Family',
+              const priceNickname = subscription.items.data[0]?.price?.nickname;
+              const productId = subscription.items.data[0]?.price?.product;
+              
+              // Helper to detect plan from text (description, nickname, product name)
+              const detectPlanFromText = (text: string | null | undefined): string | null => {
+                if (!text) return null;
+                const lower = text.toLowerCase();
+                if (lower.includes('elite')) return 'Elite Family Plan';
+                if (lower.includes('pro')) return 'Pro Family Plan';
+                if (lower.includes('standard')) return 'Standard Family Plan';
+                if (lower.includes('starter')) return 'Starter Family Plan';
+                return null;
               };
-              planName = priceId ? (priceToNameMap[priceId] || user.subscriptionPlan || 'Unknown Plan') : user.subscriptionPlan || 'Unknown Plan';
+              
+              // Method 1: Direct price ID mapping
+              const priceToNameMap: Record<string, string> = {};
+              if (process.env.STRIPE_PRICE_STARTER) priceToNameMap[process.env.STRIPE_PRICE_STARTER] = 'Starter Family Plan';
+              if (process.env.STRIPE_PRICE_STANDARD) priceToNameMap[process.env.STRIPE_PRICE_STANDARD] = 'Standard Family Plan';
+              if (process.env.STRIPE_PRICE_PRO) priceToNameMap[process.env.STRIPE_PRICE_PRO] = 'Pro Family Plan';
+              if (process.env.STRIPE_PRICE_ELITE) priceToNameMap[process.env.STRIPE_PRICE_ELITE] = 'Elite Family Plan';
+              
+              if (priceId && priceToNameMap[priceId]) {
+                planName = priceToNameMap[priceId];
+              }
+              // Method 2: Price nickname (often set in Stripe dashboard)
+              else if (detectPlanFromText(priceNickname)) {
+                planName = detectPlanFromText(priceNickname)!;
+              }
+              // Method 3: Invoice line item description
+              else {
+                const lineItemDesc = (invoice as any).lines?.data?.[0]?.description;
+                const detectedFromLineItem = detectPlanFromText(lineItemDesc);
+                if (detectedFromLineItem) {
+                  planName = detectedFromLineItem;
+                }
+                // Method 4: User's subscription plan field (database record)
+                else if (user.subscriptionPlan) {
+                  const planLabels: Record<string, string> = {
+                    'starter': 'Starter Family Plan',
+                    'standard': 'Standard Family Plan',
+                    'pro': 'Pro Family Plan',
+                    'elite': 'Elite Family Plan'
+                  };
+                  planName = planLabels[user.subscriptionPlan] || 'Family Plan';
+                }
+              }
+              
+              console.log(`[Stripe Webhook] Resolved plan name: ${planName} (priceId: ${priceId}, nickname: ${priceNickname})`);
               
               const changeType = subscription.metadata?.changeType;
               const scheduledPlan = subscription.metadata?.plan;

@@ -127,6 +127,9 @@ export class EmailService {
           </ul>
           <p>Start your first tutoring session now:</p>
           <a href="${this.getBaseUrl()}/tutor" style="display:inline-block;padding:12px 24px;background:#dc2626;color:white;text-decoration:none;border-radius:6px;">Go to Dashboard</a>
+          <p style="margin-top:30px;padding:20px;background:#fef2f2;border-radius:8px;text-align:center;color:#C41E3A;font-size:18px;font-weight:600;">
+            Thank you, we appreciate your business!
+          </p>
           <p style="margin-top:24px;">Questions? Reply to this email anytime.</p>
           <p style="margin-top:24px;color:#666;font-size:14px;">
             <a href="${this.getBaseUrl()}/unsubscribe?email=${user.email}">Unsubscribe from marketing emails</a>
@@ -156,6 +159,9 @@ export class EmailService {
           <p>Hi ${user.parentName},</p>
           <p>We've added ${user.minutesPurchased} minutes to your account.</p>
           <a href="${this.getBaseUrl()}/tutor" style="display:inline-block;padding:12px 24px;background:#dc2626;color:white;text-decoration:none;border-radius:6px;">Continue Learning</a>
+          <p style="margin-top:30px;padding:20px;background:#fef2f2;border-radius:8px;text-align:center;color:#C41E3A;font-size:18px;font-weight:600;">
+            Thank you, we appreciate your business!
+          </p>
           <p style="margin-top:24px;color:#666;font-size:14px;">
             <a href="${this.getBaseUrl()}/unsubscribe?email=${user.email}">Unsubscribe from marketing emails</a>
           </p>
@@ -305,90 +311,154 @@ export class EmailService {
         minute: '2-digit'
       });
       
+      const logoUrl = `${this.getBaseUrl()}/logo.png`;
+      
       const html = `
         <!DOCTYPE html>
         <html>
         <head>
-          <style>
-            body { font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; }
-            .header { background: #10b981; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
-            .content { background: #f8fafc; padding: 30px; border-radius: 0 0 8px 8px; }
-            .revenue-box { background: #d1fae5; padding: 20px; border-radius: 8px; text-align: center; margin: 20px 0; }
-            .revenue-box .amount { font-size: 32px; font-weight: bold; color: #059669; }
-            .revenue-box .label { color: #065f46; font-size: 14px; }
-            .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin: 20px 0; }
-            .info-card { background: white; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; }
-            .info-card .label { font-size: 12px; color: #666; text-transform: uppercase; margin-bottom: 5px; }
-            .info-card .value { font-size: 16px; font-weight: bold; color: #333; }
-            .invoice-link { display: inline-block; background: #10b981; color: white; padding: 10px 20px; text-decoration: none; border-radius: 6px; margin-top: 15px; }
-          </style>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Subscription Renewed</title>
         </head>
-        <body>
-          <div class="container">
-            <div class="header">
-              <h1>💰 Subscription Renewed!</h1>
-            </div>
-            
-            <div class="content">
-              <div class="revenue-box">
-                <div class="label">Recurring Revenue</div>
-                <div class="amount">+$${amountPaid.toFixed(2)}</div>
-                <div class="label">${planName}</div>
-              </div>
-              
-              <h3>👤 Customer Details</h3>
-              <div class="info-grid">
-                <div class="info-card">
-                  <div class="label">Customer</div>
-                  <div class="value">${customerName}</div>
-                </div>
-                <div class="info-card">
-                  <div class="label">Email</div>
-                  <div class="value">${customerEmail}</div>
-                </div>
-                <div class="info-card">
-                  <div class="label">Plan</div>
-                  <div class="value">${planName}</div>
-                </div>
-                <div class="info-card">
-                  <div class="label">Renewed</div>
-                  <div class="value">${formattedDate}</div>
-                </div>
-              </div>
-              
-              ${invoiceNumber ? `
-              <div style="margin-top: 20px; padding: 15px; background: white; border-radius: 8px; border: 1px solid #e2e8f0;">
-                <strong>Invoice:</strong> #${invoiceNumber}
-                ${invoiceUrl ? `<br><a href="${invoiceUrl}" class="invoice-link">View Invoice →</a>` : ''}
-              </div>
-              ` : ''}
-              
-              <p style="margin-top: 20px; color: #666; font-size: 14px;">
-                Customer minutes have been reset for the new billing cycle.
-              </p>
-            </div>
-          </div>
+        <body style="margin: 0; padding: 0; font-family: 'Segoe UI', Arial, sans-serif; background-color: #f4f4f4;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f4f4f4;">
+            <tr>
+              <td align="center" style="padding: 40px 20px;">
+                <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+                  
+                  <!-- Header with Logo and JIE Branding -->
+                  <tr>
+                    <td style="background: linear-gradient(135deg, #C41E3A 0%, #8B0000 100%); padding: 30px; text-align: center;">
+                      <img src="${logoUrl}" alt="JIE Mastery" width="150" style="max-width: 150px; height: auto;">
+                      <h1 style="color: #ffffff; margin: 20px 0 0; font-size: 28px; font-weight: 600;">
+                        Subscription Renewed!
+                      </h1>
+                    </td>
+                  </tr>
+                  
+                  <!-- Revenue Box -->
+                  <tr>
+                    <td style="padding: 30px;">
+                      <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                        <tr>
+                          <td style="background-color: #ecfdf5; border: 2px solid #10b981; border-radius: 12px; padding: 25px; text-align: center;">
+                            <p style="margin: 0 0 5px; color: #059669; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">Recurring Revenue</p>
+                            <p style="margin: 0; color: #047857; font-size: 42px; font-weight: 700;">+$${amountPaid.toFixed(2)}</p>
+                            <p style="margin: 10px 0 0; color: #065f46; font-size: 16px; font-weight: 500;">${planName}</p>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                  
+                  <!-- Customer Details -->
+                  <tr>
+                    <td style="padding: 0 30px 30px;">
+                      <h2 style="color: #C41E3A; font-size: 18px; margin: 0 0 20px; border-bottom: 2px solid #C41E3A; padding-bottom: 10px;">
+                        Customer Details
+                      </h2>
+                      
+                      <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                        <tr>
+                          <td width="48%" style="background-color: #f8f8f8; border-radius: 8px; padding: 15px; vertical-align: top;">
+                            <p style="margin: 0 0 5px; color: #666; font-size: 12px; text-transform: uppercase;">Customer</p>
+                            <p style="margin: 0; color: #1a1a1a; font-size: 16px; font-weight: 600;">${customerName}</p>
+                          </td>
+                          <td width="4%"></td>
+                          <td width="48%" style="background-color: #f8f8f8; border-radius: 8px; padding: 15px; vertical-align: top;">
+                            <p style="margin: 0 0 5px; color: #666; font-size: 12px; text-transform: uppercase;">Email</p>
+                            <p style="margin: 0; color: #1a1a1a; font-size: 16px; font-weight: 600;">${customerEmail}</p>
+                          </td>
+                        </tr>
+                        <tr><td colspan="3" height="15"></td></tr>
+                        <tr>
+                          <td width="48%" style="background-color: #f8f8f8; border-radius: 8px; padding: 15px; vertical-align: top;">
+                            <p style="margin: 0 0 5px; color: #666; font-size: 12px; text-transform: uppercase;">Plan</p>
+                            <p style="margin: 0; color: #1a1a1a; font-size: 16px; font-weight: 600;">${planName}</p>
+                          </td>
+                          <td width="4%"></td>
+                          <td width="48%" style="background-color: #f8f8f8; border-radius: 8px; padding: 15px; vertical-align: top;">
+                            <p style="margin: 0 0 5px; color: #666; font-size: 12px; text-transform: uppercase;">Renewed</p>
+                            <p style="margin: 0; color: #1a1a1a; font-size: 16px; font-weight: 600;">${formattedDate}</p>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                  
+                  ${invoiceNumber ? `
+                  <!-- Invoice Link -->
+                  <tr>
+                    <td style="padding: 0 30px 30px;">
+                      <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                        <tr>
+                          <td style="background-color: #fff8f8; border: 1px solid #fecaca; border-radius: 8px; padding: 20px;">
+                            <p style="margin: 0 0 10px; color: #1a1a1a; font-size: 14px;">
+                              <strong>Invoice:</strong> #${invoiceNumber}
+                            </p>
+                            ${invoiceUrl ? `
+                            <a href="${invoiceUrl}" style="display: inline-block; background-color: #C41E3A; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 14px;">
+                              View Invoice
+                            </a>
+                            ` : ''}
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                  ` : ''}
+                  
+                  <!-- Footer Note -->
+                  <tr>
+                    <td style="padding: 0 30px 20px;">
+                      <p style="margin: 0; color: #666; font-size: 14px;">
+                        Customer minutes have been reset for the new billing cycle.
+                      </p>
+                    </td>
+                  </tr>
+                  
+                  <!-- Footer -->
+                  <tr>
+                    <td style="background-color: #1a1a1a; padding: 25px; text-align: center;">
+                      <p style="margin: 0; color: #ffffff; font-size: 14px; font-weight: 600;">
+                        JIE Mastery AI Tutor
+                      </p>
+                      <p style="margin: 10px 0 0; color: #999; font-size: 12px;">
+                        Admin Notification - ${new Date().getFullYear()}
+                      </p>
+                    </td>
+                  </tr>
+                  
+                </table>
+              </td>
+            </tr>
+          </table>
         </body>
         </html>
       `;
       
       const text = `
-SUBSCRIPTION RENEWED
+JIE MASTERY - SUBSCRIPTION RENEWED
 
+Recurring Revenue: +$${amountPaid.toFixed(2)}
+Plan: ${planName}
+
+CUSTOMER DETAILS
 Customer: ${customerName}
 Email: ${customerEmail}
 Plan: ${planName}
-Amount: $${amountPaid.toFixed(2)}
-Date: ${formattedDate}
+Renewed: ${formattedDate}
 ${invoiceNumber ? `Invoice: #${invoiceNumber}` : ''}
-${invoiceUrl ? `View: ${invoiceUrl}` : ''}
+${invoiceUrl ? `View Invoice: ${invoiceUrl}` : ''}
+
+Customer minutes have been reset for the new billing cycle.
       `;
       
       await resend.emails.send({
         from: fromEmail,
         to: adminEmail,
-        subject: `💰 Renewal: ${customerName} - ${planName} (+$${amountPaid.toFixed(2)})`,
+        subject: `Renewal: ${customerName} - ${planName} (+$${amountPaid.toFixed(2)})`,
         html,
         text
       });
@@ -897,8 +967,13 @@ The JIE Mastery Team`;
                 </a>
               </center>
               
-              <p style="margin-top: 30px;">Thank you for investing in your family's education!</p>
-              <p>The JIE Mastery Team</p>
+              <div style="margin-top: 30px; padding: 20px; border-top: 1px solid #eee; text-align: center;">
+                <p style="margin: 0; color: #C41E3A; font-size: 18px; font-weight: 600;">
+                  Thank you, we appreciate your business!
+                </p>
+              </div>
+              
+              <p style="margin-top: 20px;">The JIE Mastery Team</p>
             </div>
             
             <div class="footer">
@@ -912,7 +987,7 @@ The JIE Mastery Team`;
       await resend.emails.send({
         from: fromEmail,
         to: email,
-        subject: `🚀 Upgrade Confirmed: Welcome to ${newPlan}!`,
+        subject: `Upgrade Confirmed: Welcome to ${newPlan}!`,
         html,
         text: `Upgrade Confirmed!\n\nHi ${firstName},\n\nYour plan has been upgraded from ${oldPlan} (${oldMinutes} min) to ${newPlan} (${newMinutes} min).\n\nA prorated charge of $${proratedCharge.toFixed(2)} has been applied.\n\nStart learning: ${this.getBaseUrl()}/tutor`
       });
@@ -1078,7 +1153,13 @@ The JIE Mastery Team`;
                 </a>
               </center>
               
-              <p style="margin-top: 30px;">Questions? Just reply to this email.</p>
+              <div style="margin-top: 30px; padding: 20px; border-top: 1px solid #eee; text-align: center;">
+                <p style="margin: 0; color: #C41E3A; font-size: 18px; font-weight: 600;">
+                  Thank you, we appreciate your business!
+                </p>
+              </div>
+              
+              <p style="margin-top: 20px;">Questions? Just reply to this email.</p>
               <p>The JIE Mastery Team</p>
             </div>
             
@@ -1264,11 +1345,17 @@ The JIE Mastery Team`;
               
               <center style="margin: 30px 0;">
                 <a href="${this.getBaseUrl()}/tutor" class="cta-button">
-                  Start Learning Now →
+                  Start Learning Now
                 </a>
               </center>
               
-              <p>The JIE Mastery Team</p>
+              <div style="margin-top: 30px; padding: 20px; border-top: 1px solid #eee; text-align: center;">
+                <p style="margin: 0; color: #C41E3A; font-size: 18px; font-weight: 600;">
+                  Thank you, we appreciate your business!
+                </p>
+              </div>
+              
+              <p style="margin-top: 20px;">The JIE Mastery Team</p>
             </div>
             
             <div class="footer">
@@ -1282,7 +1369,7 @@ The JIE Mastery Team`;
       await resend.emails.send({
         from: fromEmail,
         to: email,
-        subject: `⚡ ${minutesPurchased} Minutes Added to Your Account!`,
+        subject: `${minutesPurchased} Minutes Added to Your Account!`,
         html,
         text: `Hi ${firstName}!\n\n+${minutesPurchased} minutes added!\nPaid: $${amountPaid.toFixed(2)}\n\nNew balance: ${newBalance} minutes\n\nStart learning: ${this.getBaseUrl()}/tutor`
       });
