@@ -81,10 +81,52 @@ function shouldMergeWithPrevious(
 // ============================================
 // AssemblyAI Universal Streaming v3 API
 // Endpoint: wss://streaming.assemblyai.com/v3/ws
-// Authentication: API key in Authorization header
+// Authentication: Temporary token via URL param OR API key in header
 // Audio: Raw binary PCM16 (NOT base64)
 // Turn detection params go in URL query string
+// Message types: Begin, Turn, Termination
 // ============================================
+
+// Cached token for reuse (tokens last up to 1 hour)
+let assemblyAIToken: string | null = null;
+let assemblyAITokenExpiry: number = 0;
+
+async function getAssemblyAIStreamingToken(): Promise<string> {
+  // Return cached token if still valid (with 5 min buffer)
+  if (assemblyAIToken && Date.now() < assemblyAITokenExpiry - 300000) {
+    console.log('[AssemblyAI v3] 🔑 Using cached token');
+    return assemblyAIToken;
+  }
+  
+  const apiKey = process.env.ASSEMBLYAI_API_KEY;
+  if (!apiKey) {
+    throw new Error('Missing ASSEMBLYAI_API_KEY');
+  }
+  
+  console.log('[AssemblyAI v3] 🔑 Fetching new streaming token...');
+  
+  // v3 token endpoint
+  const response = await fetch('https://streaming.assemblyai.com/v3/token?expires_in_seconds=3600', {
+    method: 'GET',
+    headers: {
+      'Authorization': apiKey,
+    },
+  });
+  
+  if (!response.ok) {
+    const text = await response.text();
+    console.error('[AssemblyAI v3] ❌ Token fetch failed:', response.status, text);
+    throw new Error(`Token fetch failed: ${response.status} ${text}`);
+  }
+  
+  const data = await response.json() as { token: string; expires_in_seconds: number };
+  console.log('[AssemblyAI v3] ✅ Token obtained, expires in', data.expires_in_seconds, 'seconds');
+  
+  assemblyAIToken = data.token;
+  assemblyAITokenExpiry = Date.now() + (data.expires_in_seconds * 1000);
+  
+  return data.token;
+}
 
 function createAssemblyAIConnection(
   language: string,
@@ -124,31 +166,31 @@ function createAssemblyAIConnection(
   }
 
   // Select speech model based on language
-  // universal-streaming-english for English
-  // universal-streaming-multilingual for Spanish and other languages
   const speechModel = language === 'es' || language === 'spanish' || language === 'espanol'
-    ? 'universal-streaming-multilingual'
+    ? 'universal-streaming-multi'
     : 'universal-streaming-english';
   
-  // Build v3 WebSocket URL with all required params
-  // API reference: https://www.assemblyai.com/docs/speech-to-text/universal-streaming
-  const urlParams = new URLSearchParams({
-    sample_rate: '16000',
-    encoding: 'pcm_s16le',
-    speech_model: speechModel,
-    format_turns: 'true',
-  });
-  
-  const wsUrl = `wss://streaming.assemblyai.com/v3/ws?${urlParams.toString()}`;
-  console.log('[AssemblyAI v3] 🌐 Connecting to:', wsUrl);
-  console.log('[AssemblyAI v3] Speech model:', speechModel);
-  
+  // Get token and connect asynchronously
+  // For now, create a placeholder WebSocket that we'll replace
+  const dummyUrl = 'wss://streaming.assemblyai.com/v3/ws?sample_rate=16000&encoding=pcm_s16le';
   let ws: WebSocket;
+  
   try {
-    // v3 uses Authorization header with API key directly
+    // First try with header-based auth (simpler, works for server-side)
+    const urlParams = new URLSearchParams({
+      sample_rate: '16000',
+      encoding: 'pcm_s16le',
+      speech_model: speechModel,
+      format_turns: 'true',
+    });
+    
+    const wsUrl = `wss://streaming.assemblyai.com/v3/ws?${urlParams.toString()}`;
+    console.log('[AssemblyAI v3] 🌐 Connecting to:', wsUrl);
+    console.log('[AssemblyAI v3] Speech model:', speechModel);
+    
     ws = new WebSocket(wsUrl, {
       headers: {
-        'Authorization': process.env.ASSEMBLYAI_API_KEY,
+        'Authorization': process.env.ASSEMBLYAI_API_KEY!,
       },
       handshakeTimeout: 10000,
     });
@@ -177,22 +219,22 @@ function createAssemblyAIConnection(
   
   // Handle unexpected HTTP responses (401, 403, etc)
   (ws as any).on('unexpected-response', (req: any, res: any) => {
+    clearTimeout(handshakeTimeout);
     let body = '';
     res.on('data', (chunk: Buffer) => { body += chunk.toString(); });
     res.on('end', () => {
-      console.error('[AssemblyAI v3] ❌ Unexpected HTTP response:', res.statusCode, body);
+      console.error('[AssemblyAI v3] ❌ HTTP handshake failed:', res.statusCode, body);
       state.lastError = `HTTP ${res.statusCode}: ${body}`;
-      onError(`AssemblyAI connection failed: HTTP ${res.statusCode}`);
+      onError(`AssemblyAI connection rejected: HTTP ${res.statusCode}`);
     });
   });
 
   ws.on('open', () => {
     clearTimeout(handshakeTimeout);
-    console.log('[AssemblyAI v3] ✅ WebSocket OPEN - connection established');
+    console.log('[AssemblyAI v3] ✅ WebSocket OPEN - connection established!');
     state.isOpen = true;
     
-    // v3 does NOT require an initial config message - params are in URL
-    // Just flush any buffered audio
+    // Flush any buffered audio
     if (state.audioBuffer.length > 0) {
       console.log('[AssemblyAI v3] 📦 Flushing', state.audioBuffer.length, 'buffered audio chunks');
       for (const chunk of state.audioBuffer) {
