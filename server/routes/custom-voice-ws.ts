@@ -85,12 +85,13 @@ function createAssemblyAIConnection(
   onSessionStart?: (sessionId: string) => void,
   onClose?: () => void
 ): { ws: WebSocket; state: AssemblyAIState } {
-  // SYNC LOG - must appear immediately
-  console.log('████████████████████████████████████████████████████████████████');
-  console.log('[AssemblyAI] Creating connection...', new Date().toISOString());
-  console.log('[AssemblyAI] API Key exists:', !!process.env.ASSEMBLYAI_API_KEY);
-  console.log('[AssemblyAI] API Key length:', process.env.ASSEMBLYAI_API_KEY?.length);
-  console.log('████████████████████████████████████████████████████████████████');
+  // FORCE IMMEDIATE OUTPUT - prove we entered this function
+  console.log('[AssemblyAI] ENTER createAssemblyAIConnection', { language, ts: Date.now() });
+  process.stderr.write('\n████████████████████████████████████████████████████████████████\n');
+  process.stderr.write('[AssemblyAI] CREATING CONNECTION at ' + new Date().toISOString() + '\n');
+  process.stderr.write('[AssemblyAI] API Key exists: ' + !!process.env.ASSEMBLYAI_API_KEY + '\n');
+  process.stderr.write('[AssemblyAI] API Key length: ' + (process.env.ASSEMBLYAI_API_KEY?.length || 0) + '\n');
+  process.stderr.write('████████████████████████████████████████████████████████████████\n');
   
   const state: AssemblyAIState = {
     ws: null,
@@ -1840,17 +1841,16 @@ CRITICAL INSTRUCTIONS:
             
             console.log('████████████████████████████████████████████████████████████████');
             console.log('[DEBUG] STT SETUP - USE_ASSEMBLYAI:', USE_ASSEMBLYAI);
+            console.log('[DEBUG] File+line: custom-voice-ws.ts STT_SETUP_BLOCK');
             console.log('████████████████████████████████████████████████████████████████');
             
             if (USE_ASSEMBLYAI) {
               // ============================================
               // ASSEMBLYAI UNIVERSAL-STREAMING
               // ============================================
-              console.log('████████████████████████████████████████████████████████████████');
-              console.log('[STT] 🚀 ENTERING ASSEMBLYAI BLOCK');
-              console.log('[STT] ASSEMBLYAI_API_KEY exists:', !!process.env.ASSEMBLYAI_API_KEY);
-              console.log('[STT] API Key length:', process.env.ASSEMBLYAI_API_KEY?.length);
-              console.log('████████████████████████████████████████████████████████████████');
+              console.log('[VOICE] About to create STT connection. provider= AssemblyAI, lang=', state.language);
+              console.log('[VOICE] Env has ASSEMBLYAI_API_KEY:', !!process.env.ASSEMBLYAI_API_KEY, 'len=', process.env.ASSEMBLYAI_API_KEY?.length);
+              console.log('[VOICE] File+line marker: custom-voice-ws.ts BEFORE createAssemblyAIConnection');
               
               if (!process.env.ASSEMBLYAI_API_KEY) {
                 console.error('[AssemblyAI] ❌ ASSEMBLYAI_API_KEY not found!');

@@ -7,6 +7,11 @@
  * Unauthorized copying, modification, or distribution is strictly prohibited.
  */
 
+// DIAGNOSTIC: Prove logs are flowing to the same place we're grepping
+console.log('██████ SERVER BOOT ██████', new Date().toISOString(), 'pid=', process.pid);
+console.log('LOG DESTINATION CHECK: stdout is active');
+console.log('DEPLOY MARKER: ASSEMBLYAI_DIAG_V2');
+setInterval(() => console.log('[HEARTBEAT]', new Date().toISOString()), 5000).unref();
 
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
