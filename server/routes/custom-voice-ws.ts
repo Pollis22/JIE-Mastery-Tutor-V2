@@ -1777,12 +1777,19 @@ CRITICAL INSTRUCTIONS:
               }, USE_ASSEMBLYAI ? 500 : UTTERANCE_COMPLETE_DELAY_MS); // AssemblyAI already handles timing
             };
             
+            console.log('████████████████████████████████████████████████████████████████');
+            console.log('[DEBUG] STT SETUP - USE_ASSEMBLYAI:', USE_ASSEMBLYAI);
+            console.log('████████████████████████████████████████████████████████████████');
+            
             if (USE_ASSEMBLYAI) {
               // ============================================
               // ASSEMBLYAI UNIVERSAL-STREAMING
               // ============================================
-              console.log('[STT] 🚀 Using AssemblyAI Universal-Streaming');
+              console.log('████████████████████████████████████████████████████████████████');
+              console.log('[STT] 🚀 ENTERING ASSEMBLYAI BLOCK');
               console.log('[STT] ASSEMBLYAI_API_KEY exists:', !!process.env.ASSEMBLYAI_API_KEY);
+              console.log('[STT] API Key length:', process.env.ASSEMBLYAI_API_KEY?.length);
+              console.log('████████████████████████████████████████████████████████████████');
               
               if (!process.env.ASSEMBLYAI_API_KEY) {
                 console.error('[AssemblyAI] ❌ ASSEMBLYAI_API_KEY not found!');
