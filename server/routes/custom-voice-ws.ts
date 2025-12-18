@@ -80,8 +80,13 @@ function createAssemblyAIConnection(
   onSessionStart?: (sessionId: string) => void,
   onClose?: () => void
 ): { ws: WebSocket; state: AssemblyAIState } {
+  // IMMEDIATE sync log - this MUST appear
+  console.log('═══════════════════════════════════════════════════════');
+  console.log('[AssemblyAI] >>> ENTERING createAssemblyAIConnection <<<');
+  console.log('[AssemblyAI] Timestamp:', new Date().toISOString());
+  console.log('═══════════════════════════════════════════════════════');
+  
   try {
-    console.log('[AssemblyAI] >>> ENTERING createAssemblyAIConnection');
     console.log('[AssemblyAI] API Key exists:', !!process.env.ASSEMBLYAI_API_KEY);
     console.log('[AssemblyAI] API Key length:', process.env.ASSEMBLYAI_API_KEY?.length);
 
