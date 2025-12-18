@@ -1654,10 +1654,151 @@ CRITICAL INSTRUCTIONS:
             };
             state.transcript.push(greetingEntry);
 
-            // Start Deepgram connection with cleanup on close
+            // ============================================
+            // STT PROVIDER INITIALIZATION (FEATURE FLAG)
+            // ============================================
             const { getDeepgramLanguageCode } = await import("../services/deepgram-service");
             const deepgramLanguage = getDeepgramLanguageCode(state.language);
-            state.deepgramConnection = await startDeepgramStream(
+            
+            // Shared transcript handler for both providers
+            const handleCompleteUtterance = (transcript: string) => {
+              if (!transcript || transcript.trim().length < 3 || state.isSessionEnded) {
+                console.log("[STT] ⏭️ Skipping short/empty/ended transcript");
+                return;
+              }
+              
+              // Skip duplicates
+              if (state.lastTranscript === transcript) {
+                console.log("[STT] ⏭️ Duplicate transcript, skipping");
+                return;
+              }
+              state.lastTranscript = transcript;
+              
+              // INACTIVITY: Reset activity timer
+              state.lastActivityTime = Date.now();
+              state.inactivityWarningSent = false;
+              console.log('[Inactivity] 🎤 User activity detected, timer reset');
+              
+              // Accumulate and process
+              pendingTranscript = (pendingTranscript + ' ' + transcript).trim();
+              console.log(`[STT] 📝 Accumulated transcript: "${pendingTranscript}"`);
+              
+              if (transcriptAccumulationTimer) {
+                clearTimeout(transcriptAccumulationTimer);
+                transcriptAccumulationTimer = null;
+              }
+              
+              if (responseTimer) {
+                clearTimeout(responseTimer);
+                responseTimer = null;
+              }
+              
+              transcriptAccumulationTimer = setTimeout(() => {
+                if (pendingTranscript && !state.isSessionEnded) {
+                  const completeUtterance = pendingTranscript;
+                  console.log(`[STT] ✅ Utterance complete: "${completeUtterance}"`);
+                  pendingTranscript = '';
+                  state.transcriptQueue.push(completeUtterance);
+                  if (!state.isProcessing) {
+                    processTranscriptQueue();
+                  }
+                }
+                transcriptAccumulationTimer = null;
+              }, USE_ASSEMBLYAI ? 500 : UTTERANCE_COMPLETE_DELAY_MS); // AssemblyAI already handles timing
+            };
+            
+            if (USE_ASSEMBLYAI) {
+              // ============================================
+              // ASSEMBLYAI UNIVERSAL-STREAMING
+              // ============================================
+              console.log('[STT] 🚀 Using AssemblyAI Universal-Streaming');
+              
+              if (!process.env.ASSEMBLYAI_API_KEY) {
+                console.error('[AssemblyAI] ❌ ASSEMBLYAI_API_KEY not found!');
+                ws.send(JSON.stringify({ type: "error", error: "Voice service configuration error" }));
+                ws.close();
+                return;
+              }
+              
+              const { ws: assemblyWs, state: assemblyState } = createAssemblyAIConnection(
+                state.language,
+                (text, endOfTurn, confidence) => {
+                  console.log(`[AssemblyAI] 📝 Complete utterance (confidence: ${confidence.toFixed(2)}): "${text}"`);
+                  
+                  // Check for barge-in (tutor interruption)
+                  const timeSinceLastAudio = Date.now() - state.lastAudioSentAt;
+                  if (state.isTutorSpeaking && timeSinceLastAudio < 30000 && text.trim().length >= 2) {
+                    console.log(`[STT] 🛑 BARGE-IN detected: "${text.substring(0, 30)}..."`);
+                    state.wasInterrupted = true;
+                    state.lastInterruptionTime = Date.now();
+                    ws.send(JSON.stringify({ type: "interrupt", message: "Student is speaking" }));
+                    state.isTutorSpeaking = false;
+                  }
+                  
+                  // Reset stale tutor speaking state
+                  if (state.isTutorSpeaking && timeSinceLastAudio >= 30000) {
+                    state.isTutorSpeaking = false;
+                  }
+                  
+                  handleCompleteUtterance(text);
+                },
+                (error) => {
+                  console.error('[AssemblyAI] ❌ Error:', error);
+                  ws.send(JSON.stringify({ type: "error", error: "Voice recognition error: " + error }));
+                },
+                (sessionId) => {
+                  console.log('[AssemblyAI] 🎬 Session started:', sessionId);
+                },
+                async () => {
+                  console.log('[AssemblyAI] 🔌 Connection closed');
+                  if (state.sessionId && state.transcript.length > 0) {
+                    await persistTranscript(state.sessionId, state.transcript);
+                  }
+                  
+                  // Auto-reconnect if session is still active
+                  if (!state.isSessionEnded && state.sessionId) {
+                    console.warn('[AssemblyAI] ⚠️ Unexpected close - attempting reconnect');
+                    state.isReconnecting = true;
+                    reconnectAttempts++;
+                    
+                    if (reconnectAttempts > 3) {
+                      console.error('[AssemblyAI] ❌ Max reconnect attempts reached');
+                      state.isReconnecting = false;
+                      ws.send(JSON.stringify({ type: "error", error: "Voice connection lost. Please restart." }));
+                      return;
+                    }
+                    
+                    const backoffDelay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), 8000);
+                    setTimeout(() => {
+                      try {
+                        const { ws: newWs, state: newState } = createAssemblyAIConnection(
+                          state.language,
+                          (text, endOfTurn, confidence) => handleCompleteUtterance(text),
+                          (error) => console.error('[AssemblyAI] Reconnect error:', error),
+                          (sessionId) => console.log('[AssemblyAI] Reconnected:', sessionId)
+                        );
+                        state.assemblyAIWs = newWs;
+                        state.assemblyAIState = newState;
+                        state.isReconnecting = false;
+                        reconnectAttempts = 0;
+                        console.log('[AssemblyAI] ✅ Reconnected');
+                      } catch (e) {
+                        console.error('[AssemblyAI] Reconnect failed:', e);
+                      }
+                    }, backoffDelay);
+                  }
+                }
+              );
+              
+              state.assemblyAIWs = assemblyWs;
+              state.assemblyAIState = assemblyState;
+              
+            } else {
+              // ============================================
+              // DEEPGRAM NOVA-2 (ORIGINAL)
+              // ============================================
+              console.log('[STT] 🚀 Using Deepgram Nova-2');
+              state.deepgramConnection = await startDeepgramStream(
               async (transcript: string, isFinal: boolean, detectedLanguage?: string) => {
                 // Log EVERYTHING for debugging - including detected language
                 const spokenLang = detectedLanguage || state.language;
@@ -1909,6 +2050,7 @@ CRITICAL INSTRUCTIONS:
               },
               deepgramLanguage // LANGUAGE: Pass selected language for speech recognition
             );
+            } // End of Deepgram else block
 
             // Generate and send greeting audio
             try {
@@ -1937,11 +2079,13 @@ CRITICAL INSTRUCTIONS:
             break;
 
           case "audio":
-            // Forward audio to Deepgram with comprehensive logging
-            console.log('[Custom Voice] 📥 Audio message received from frontend:', {
+            // Forward audio to STT provider
+            const hasConnection = USE_ASSEMBLYAI ? !!state.assemblyAIWs : !!state.deepgramConnection;
+            console.log('[Custom Voice] 📥 Audio message received:', {
               hasData: !!message.data,
               dataLength: message.data?.length || 0,
-              hasDeepgramConnection: !!state.deepgramConnection,
+              provider: USE_ASSEMBLYAI ? 'AssemblyAI' : 'Deepgram',
+              hasConnection,
               isReconnecting: state.isReconnecting
             });
             
@@ -1951,7 +2095,7 @@ CRITICAL INSTRUCTIONS:
               break;
             }
             
-            if (state.deepgramConnection && message.data) {
+            if (hasConnection && message.data) {
               try {
                 const audioBuffer = Buffer.from(message.data, "base64");
                 
@@ -1966,27 +2110,37 @@ CRITICAL INSTRUCTIONS:
                   firstTenSamples: Array.from(int16View),
                   hasNonZeroSamples: hasNonZero,
                   maxAmplitude: maxAmplitude,
-                  isSilent: !hasNonZero || maxAmplitude < 10  // Lower threshold for quiet mics
+                  isSilent: !hasNonZero || maxAmplitude < 10
                 });
                 
                 if (!hasNonZero) {
                   console.warn('[Custom Voice] ⚠️ Audio buffer is COMPLETELY SILENT (all zeros)!');
                 }
                 
-                // Deepgram LiveClient handles connection state internally - just send
-                state.deepgramConnection.send(audioBuffer);
-                console.log('[Custom Voice] ✅ Audio forwarded to Deepgram successfully');
+                // Send to appropriate STT provider
+                if (USE_ASSEMBLYAI) {
+                  const sent = sendAudioToAssemblyAI(state.assemblyAIWs, audioBuffer);
+                  if (sent) {
+                    console.log('[Custom Voice] ✅ Audio forwarded to AssemblyAI');
+                  } else {
+                    console.warn('[Custom Voice] ⚠️ Failed to send audio to AssemblyAI');
+                  }
+                } else {
+                  state.deepgramConnection!.send(audioBuffer);
+                  console.log('[Custom Voice] ✅ Audio forwarded to Deepgram');
+                }
               } catch (error) {
-                console.error('[Custom Voice] ❌ Error sending audio to Deepgram:', {
+                console.error('[Custom Voice] ❌ Error sending audio:', {
+                  provider: USE_ASSEMBLYAI ? 'AssemblyAI' : 'Deepgram',
                   error: error instanceof Error ? error.message : String(error),
                   stack: error instanceof Error ? error.stack : undefined
                 });
               }
             } else {
               console.error('[Custom Voice] ❌ Cannot forward audio:', {
-                hasConnection: !!state.deepgramConnection,
-                hasData: !!message.data,
-                reason: !state.deepgramConnection ? 'No Deepgram connection' : 'No audio data'
+                provider: USE_ASSEMBLYAI ? 'AssemblyAI' : 'Deepgram',
+                hasConnection,
+                hasData: !!message.data
               });
             }
             break;
@@ -2306,8 +2460,14 @@ CRITICAL INSTRUCTIONS:
             console.log("[Session End] Session already ended?", state.isSessionEnded);
             console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
-            // Close Deepgram connection first
-            if (state.deepgramConnection) {
+            // Close STT connection first
+            if (USE_ASSEMBLYAI && state.assemblyAIWs) {
+              console.log("[Session End] 🎤 Closing AssemblyAI connection...");
+              closeAssemblyAI(state.assemblyAIWs);
+              state.assemblyAIWs = null;
+              state.assemblyAIState = null;
+              console.log("[Session End] ✅ AssemblyAI closed");
+            } else if (state.deepgramConnection) {
               console.log("[Session End] 🎤 Closing Deepgram connection...");
               state.deepgramConnection.close();
               state.deepgramConnection = null;
@@ -2373,8 +2533,12 @@ CRITICAL INSTRUCTIONS:
         responseTimer = null;
       }
       
-      // Close Deepgram first
-      if (state.deepgramConnection) {
+      // Close STT connection first
+      if (USE_ASSEMBLYAI && state.assemblyAIWs) {
+        closeAssemblyAI(state.assemblyAIWs);
+        state.assemblyAIWs = null;
+        state.assemblyAIState = null;
+      } else if (state.deepgramConnection) {
         state.deepgramConnection.close();
         state.deepgramConnection = null;
       }
@@ -2395,8 +2559,12 @@ CRITICAL INSTRUCTIONS:
         return;
       }
       
-      // Close Deepgram first
-      if (state.deepgramConnection) {
+      // Close STT connection first
+      if (USE_ASSEMBLYAI && state.assemblyAIWs) {
+        closeAssemblyAI(state.assemblyAIWs);
+        state.assemblyAIWs = null;
+        state.assemblyAIState = null;
+      } else if (state.deepgramConnection) {
         state.deepgramConnection.close();
         state.deepgramConnection = null;
       }
