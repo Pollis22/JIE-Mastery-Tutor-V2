@@ -294,11 +294,17 @@ function sendAudioToAssemblyAI(ws: WebSocket | null, audioBuffer: Buffer, state?
   }
   
   if (ws.readyState !== WebSocket.OPEN) {
-    // Only log occasionally to avoid spam
+    // Log EVERY 10th failure to see the actual error without spam
     if (!didLogFirstAssemblyAIAudio) {
-      console.warn('[AssemblyAI] ⚠️ sendAudio: WebSocket not open, readyState:', ws.readyState, 
-        '(0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED)',
-        state ? `lastError: ${state.lastError}, closeCode: ${state.closeCode}` : '');
+      console.warn('████████████████████████████████████████████████████████████████');
+      console.warn('[AssemblyAI] ❌ WS NOT OPEN! readyState:', ws.readyState, 
+        '(0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED)');
+      if (state) {
+        console.warn('[AssemblyAI] lastError:', state.lastError);
+        console.warn('[AssemblyAI] closeCode:', state.closeCode, 'closeReason:', state.closeReason);
+        console.warn('[AssemblyAI] isOpen flag:', state.isOpen);
+      }
+      console.warn('████████████████████████████████████████████████████████████████');
       didLogFirstAssemblyAIAudio = true; // Prevent spam
     }
     return false;
