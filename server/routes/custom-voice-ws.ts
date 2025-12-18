@@ -91,14 +91,18 @@ function createAssemblyAIConnection(
 
   const wsUrl = 'wss://streaming.assemblyai.com/v3/ws';
   console.log('[AssemblyAI] Connecting to URL:', wsUrl);
-  const ws = new WebSocket(wsUrl);
+  
+  const ws = new WebSocket(wsUrl, {
+    headers: {
+      'Authorization': process.env.ASSEMBLYAI_API_KEY || '',
+    },
+  });
   state.ws = ws;
 
   ws.on('open', () => {
     console.log('[AssemblyAI] ✅ WebSocket OPEN - sending config');
 
     const config = {
-      token: process.env.ASSEMBLYAI_API_KEY,
       sample_rate: 16000,
       format_turns: true,
       end_of_turn_confidence_threshold: 0.65,
