@@ -78,9 +78,9 @@ function createAssemblyAIConnection(
   onSessionStart?: (sessionId: string) => void,
   onClose?: () => void
 ): { ws: WebSocket; state: AssemblyAIState } {
-  console.log('[AssemblyAI] 🚀 Creating connection for language:', language);
-  console.log('[AssemblyAI] 🔑 API Key exists:', !!process.env.ASSEMBLYAI_API_KEY);
-  console.log('[AssemblyAI] 🔑 API Key length:', process.env.ASSEMBLYAI_API_KEY?.length || 0);
+  console.log('[AssemblyAI] Creating connection...');
+  console.log('[AssemblyAI] API Key exists:', !!process.env.ASSEMBLYAI_API_KEY);
+  console.log('[AssemblyAI] API Key length:', process.env.ASSEMBLYAI_API_KEY?.length);
 
   const state: AssemblyAIState = {
     ws: null,
@@ -90,13 +90,12 @@ function createAssemblyAIConnection(
   };
 
   const wsUrl = 'wss://streaming.assemblyai.com/v3/ws';
-  console.log('[AssemblyAI] 🌐 Connecting to:', wsUrl);
+  console.log('[AssemblyAI] Connecting to URL:', wsUrl);
   const ws = new WebSocket(wsUrl);
   state.ws = ws;
-  console.log('[AssemblyAI] 📡 WebSocket created, readyState:', ws.readyState, '(0=CONNECTING, 1=OPEN)');
 
   ws.on('open', () => {
-    console.log('[AssemblyAI] ✅ WebSocket OPENED! readyState:', ws.readyState);
+    console.log('[AssemblyAI] ✅ WebSocket OPEN - sending config');
 
     const config = {
       token: process.env.ASSEMBLYAI_API_KEY,
@@ -115,6 +114,7 @@ function createAssemblyAIConnection(
   });
 
   ws.on('message', (data) => {
+    console.log('[AssemblyAI] 📩 Message received:', data.toString().substring(0, 200));
     try {
       const msg: AssemblyAIMessage = JSON.parse(data.toString());
 
@@ -168,37 +168,24 @@ function createAssemblyAIConnection(
   });
 
   ws.on('error', (error: Error & { code?: string }) => {
-    console.error('[AssemblyAI] ❌ WebSocket ERROR:', {
-      message: error.message,
-      code: error.code,
-      name: error.name,
-      stack: error.stack?.split('\n').slice(0, 3).join('\n'),
-    });
+    console.log('[AssemblyAI] ❌ WebSocket ERROR:', error);
+    console.log('[AssemblyAI] Error details:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
     onError(error.message);
   });
 
   ws.on('close', (code, reason) => {
-    console.log('[AssemblyAI] 🔌 Connection CLOSED:', {
-      code,
-      reason: reason.toString(),
-      wasClean: code === 1000,
-      readyState: ws.readyState,
-    });
+    console.log('[AssemblyAI] 🔌 WebSocket CLOSED - code:', code, 'reason:', reason?.toString());
     state.lastTranscript = '';
     state.lastTranscriptTime = 0;
     if (onClose) onClose();
   });
 
   ws.on('unexpected-response', (req, res) => {
-    console.error('[AssemblyAI] ❌ Unexpected response:', {
-      statusCode: res.statusCode,
-      statusMessage: res.statusMessage,
-      headers: res.headers,
-    });
+    console.log('[AssemblyAI] ❌ Unexpected HTTP response - status:', res.statusCode, res.statusMessage);
     let body = '';
     res.on('data', (chunk: Buffer) => { body += chunk.toString(); });
     res.on('end', () => {
-      console.error('[AssemblyAI] ❌ Response body:', body);
+      console.log('[AssemblyAI] ❌ Response body:', body);
       onError(`HTTP ${res.statusCode}: ${body}`);
     });
   });
