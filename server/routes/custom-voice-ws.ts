@@ -193,6 +193,8 @@ function createAssemblyAIConnection(
   return { ws, state };
 }
 
+let didLogFirstAssemblyAIAudio = false;
+
 function sendAudioToAssemblyAI(ws: WebSocket | null, audioBuffer: Buffer): boolean {
   if (!ws) {
     console.warn('[AssemblyAI] ⚠️ sendAudio: No WebSocket connection');
@@ -202,8 +204,16 @@ function sendAudioToAssemblyAI(ws: WebSocket | null, audioBuffer: Buffer): boole
     console.warn('[AssemblyAI] ⚠️ sendAudio: WebSocket not open, readyState:', ws.readyState, '(0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED)');
     return false;
   }
+  if (!didLogFirstAssemblyAIAudio) {
+    console.log('[AssemblyAI] 🎵 First audio chunk bytes:', audioBuffer.length);
+    didLogFirstAssemblyAIAudio = true;
+  }
   ws.send(audioBuffer);
   return true;
+}
+
+function resetFirstAudioLog() {
+  didLogFirstAssemblyAIAudio = false;
 }
 
 function closeAssemblyAI(ws: WebSocket | null) {
@@ -212,6 +222,7 @@ function closeAssemblyAI(ws: WebSocket | null) {
     ws.send(JSON.stringify({ terminate_session: true }));
     ws.close();
   }
+  resetFirstAudioLog();
 }
 
 function resetAssemblyAIMergeGuard(state: AssemblyAIState) {
