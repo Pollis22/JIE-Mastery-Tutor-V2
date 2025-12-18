@@ -20,6 +20,8 @@ import { wsRateLimiter, getClientIp } from '../middleware/ws-rate-limiter';
 // Set STT_PROVIDER=deepgram (or leave unset) to use Deepgram Nova-2
 // ============================================
 const USE_ASSEMBLYAI = process.env.STT_PROVIDER === 'assemblyai';
+console.log('[STT] Provider config:', process.env.STT_PROVIDER);
+console.log('[STT] USE_ASSEMBLYAI flag:', USE_ASSEMBLYAI);
 console.log(`[STT] Provider: ${USE_ASSEMBLYAI ? 'AssemblyAI Universal-Streaming' : 'Deepgram Nova-2'}`);
 
 // ============================================
@@ -78,26 +80,29 @@ function createAssemblyAIConnection(
   onSessionStart?: (sessionId: string) => void,
   onClose?: () => void
 ): { ws: WebSocket; state: AssemblyAIState } {
-  console.log('[AssemblyAI] Creating connection...');
-  console.log('[AssemblyAI] API Key exists:', !!process.env.ASSEMBLYAI_API_KEY);
-  console.log('[AssemblyAI] API Key length:', process.env.ASSEMBLYAI_API_KEY?.length);
+  try {
+    console.log('[AssemblyAI] >>> ENTERING createAssemblyAIConnection');
+    console.log('[AssemblyAI] API Key exists:', !!process.env.ASSEMBLYAI_API_KEY);
+    console.log('[AssemblyAI] API Key length:', process.env.ASSEMBLYAI_API_KEY?.length);
 
-  const state: AssemblyAIState = {
-    ws: null,
-    lastTranscript: '',
-    lastTranscriptTime: 0,
-    sessionId: '',
-  };
+    const state: AssemblyAIState = {
+      ws: null,
+      lastTranscript: '',
+      lastTranscriptTime: 0,
+      sessionId: '',
+    };
 
-  const wsUrl = 'wss://streaming.assemblyai.com/v3/ws';
-  console.log('[AssemblyAI] Connecting to URL:', wsUrl);
-  
-  const ws = new WebSocket(wsUrl, {
-    headers: {
-      'Authorization': process.env.ASSEMBLYAI_API_KEY || '',
-    },
-  });
-  state.ws = ws;
+    const wsUrl = 'wss://streaming.assemblyai.com/v3/ws';
+    console.log('[AssemblyAI] Connecting to URL:', wsUrl);
+    
+    console.log('[AssemblyAI] About to create WebSocket with headers...');
+    const ws = new WebSocket(wsUrl, {
+      headers: {
+        'Authorization': process.env.ASSEMBLYAI_API_KEY || '',
+      },
+    });
+    console.log('[AssemblyAI] WebSocket created successfully');
+    state.ws = ws;
 
   ws.on('open', () => {
     console.log('[AssemblyAI] ✅ WebSocket OPEN - sending config');
@@ -184,17 +189,23 @@ function createAssemblyAIConnection(
     if (onClose) onClose();
   });
 
-  ws.on('unexpected-response', (req, res) => {
-    console.log('[AssemblyAI] ❌ Unexpected HTTP response - status:', res.statusCode, res.statusMessage);
-    let body = '';
-    res.on('data', (chunk: Buffer) => { body += chunk.toString(); });
-    res.on('end', () => {
-      console.log('[AssemblyAI] ❌ Response body:', body);
-      onError(`HTTP ${res.statusCode}: ${body}`);
+    ws.on('unexpected-response', (req, res) => {
+      console.log('[AssemblyAI] ❌ Unexpected HTTP response - status:', res.statusCode, res.statusMessage);
+      let body = '';
+      res.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+      res.on('end', () => {
+        console.log('[AssemblyAI] ❌ Response body:', body);
+        onError(`HTTP ${res.statusCode}: ${body}`);
+      });
     });
-  });
 
-  return { ws, state };
+    console.log('[AssemblyAI] <<< EXITING createAssemblyAIConnection (success)');
+    return { ws, state };
+  } catch (error: any) {
+    console.error('[AssemblyAI] ❌ CRASH in createAssemblyAIConnection:', error);
+    console.error('[AssemblyAI] Stack:', error?.stack);
+    throw error;
+  }
 }
 
 let didLogFirstAssemblyAIAudio = false;
@@ -1748,6 +1759,7 @@ CRITICAL INSTRUCTIONS:
               // ASSEMBLYAI UNIVERSAL-STREAMING
               // ============================================
               console.log('[STT] 🚀 Using AssemblyAI Universal-Streaming');
+              console.log('[STT] ASSEMBLYAI_API_KEY exists:', !!process.env.ASSEMBLYAI_API_KEY);
               
               if (!process.env.ASSEMBLYAI_API_KEY) {
                 console.error('[AssemblyAI] ❌ ASSEMBLYAI_API_KEY not found!');
@@ -1756,6 +1768,7 @@ CRITICAL INSTRUCTIONS:
                 return;
               }
               
+              console.log('[AssemblyAI] About to call createAssemblyAIConnection...');
               const { ws: assemblyWs, state: assemblyState } = createAssemblyAIConnection(
                 state.language,
                 (text, endOfTurn, confidence) => {
@@ -1826,8 +1839,10 @@ CRITICAL INSTRUCTIONS:
                 }
               );
               
+              console.log('[AssemblyAI] createAssemblyAIConnection returned successfully');
               state.assemblyAIWs = assemblyWs;
               state.assemblyAIState = assemblyState;
+              console.log('[AssemblyAI] AssemblyAI WS assigned to state');
               
             } else {
               // ============================================
