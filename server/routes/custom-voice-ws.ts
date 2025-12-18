@@ -92,16 +92,21 @@ function createAssemblyAIConnection(
       sessionId: '',
     };
 
-    const wsUrl = 'wss://streaming.assemblyai.com/v3/ws';
-    console.log('[AssemblyAI] Connecting to URL:', wsUrl);
+    // Build URL with REQUIRED query parameters for AssemblyAI v3
+    const params = new URLSearchParams({
+      sample_rate: '16000',
+      format_turns: 'true',
+    });
+    const wsUrl = `wss://streaming.assemblyai.com/v3/ws?${params.toString()}`;
+    console.log('[AssemblyAI] 🌐 Connecting to:', wsUrl);
     
-    console.log('[AssemblyAI] About to create WebSocket with headers...');
+    console.log('[AssemblyAI] About to create WebSocket with Authorization header...');
     const ws = new WebSocket(wsUrl, {
       headers: {
-        'Authorization': process.env.ASSEMBLYAI_API_KEY || '',
+        'Authorization': process.env.ASSEMBLYAI_API_KEY!,
       },
     });
-    console.log('[AssemblyAI] WebSocket created successfully');
+    console.log('[AssemblyAI] ✅ WebSocket created - readyState:', ws.readyState);
     state.ws = ws;
 
   ws.on('open', () => {
