@@ -13,6 +13,8 @@ import { moderateContent, shouldWarnUser, getModerationResponse } from "../servi
 import { storage } from "../storage";
 import { validateWsSession, rejectWsUpgrade } from '../middleware/ws-session-validator';
 import { wsRateLimiter, getClientIp } from '../middleware/ws-rate-limiter';
+import { EmailService } from '../services/email-service';
+import { users, students } from "@shared/schema";
 
 // ============================================
 // FEATURE FLAG: STT PROVIDER SELECTION
@@ -448,6 +450,7 @@ interface SessionState {
   userId: string;
   studentName: string;
   ageGroup: string;
+  subject: string; // SESSION: Tutoring subject (Math, English, Science, etc.)
   language: string; // LANGUAGE: Tutoring language code (e.g., 'en', 'es', 'fr')
   detectedLanguage: string; // LANGUAGE: Auto-detected spoken language from Deepgram
   speechSpeed: number; // User's speech speed preference from settings
@@ -595,6 +598,61 @@ async function finalizeSession(
       await deductMinutes(state.userId, durationMinutes);
       console.log(`[Custom Voice] ✅ Deducted ${durationMinutes} minutes from user ${state.userId}`);
     }
+    
+    // ============================================
+    // PARENT SESSION SUMMARY EMAIL
+    // Send email after session with constraints:
+    // - Session > 30 seconds
+    // - Transcript has >= 3 messages
+    // ============================================
+    if (durationSeconds >= 30 && state.transcript.length >= 3 && state.userId) {
+      try {
+        // Get parent info from database
+        const parentResult = await db.select({
+          email: users.email,
+          parentName: users.parentName,
+        })
+        .from(users)
+        .where(eq(users.id, state.userId))
+        .limit(1);
+        
+        const parent = parentResult[0];
+        
+        if (parent?.email) {
+          const emailService = new EmailService();
+          
+          // Use subject from session state
+          const sessionSubject = state.subject || 'General';
+          
+          // Filter and sanitize transcript: remove empty texts and map roles
+          const sanitizedTranscript = state.transcript
+            .filter(t => t.text && t.text.trim().length > 0)
+            .map(t => ({
+              role: t.speaker === 'student' ? 'user' : 'assistant',
+              text: t.text.trim()
+            }));
+          
+          await emailService.sendSessionSummary({
+            parentEmail: parent.email,
+            parentName: parent.parentName || '',
+            studentName: state.studentName || 'Your child',
+            subject: sessionSubject,
+            gradeLevel: state.ageGroup || 'K-12',
+            duration: durationMinutes,
+            messageCount: sanitizedTranscript.length,
+            transcript: sanitizedTranscript,
+            sessionDate: new Date()
+          });
+          
+          console.log(`[Custom Voice] ✉️ Parent summary email sent to ${parent.email}`);
+        }
+      } catch (emailError) {
+        // Don't fail the session if email fails
+        console.error('[Custom Voice] ⚠️ Failed to send parent email:', emailError);
+      }
+    } else {
+      console.log(`[Custom Voice] ℹ️ Skipping parent email (duration: ${durationSeconds}s, messages: ${state.transcript.length})`);
+    }
   } catch (error) {
     console.error(`[Custom Voice] ❌ Error finalizing session (${reason}):`, error);
   }
@@ -703,6 +761,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
       userId: authenticatedUserId, // Use session-authenticated userId
       studentName: "",
       ageGroup: "default",
+      subject: "General", // SESSION: Default subject, will be set from session
       language: "en", // LANGUAGE: Default to English, will be set from session
       detectedLanguage: "", // LANGUAGE: Auto-detected spoken language from Deepgram
       speechSpeed: 0.95, // Default speech speed, will be overridden by user preference
@@ -1578,6 +1637,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
             // state.userId is already set to authenticatedUserId during state initialization
             state.studentName = message.studentName || "Student";
             state.ageGroup = message.ageGroup || "College/Adult";
+            state.subject = message.subject || "General"; // SESSION: Store tutoring subject
             state.language = message.language || "en"; // LANGUAGE: Store selected language
             
             // CRITICAL FIX (Nov 14, 2025): Log userId after initialization to verify authentication

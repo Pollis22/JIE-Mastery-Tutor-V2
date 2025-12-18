@@ -1648,6 +1648,234 @@ The JIE Mastery Team`;
       return false;
     }
   }
+
+  /**
+   * Send parent a summary email after their child completes a tutoring session
+   */
+  async sendSessionSummary(data: {
+    parentEmail: string;
+    parentName: string;
+    studentName: string;
+    subject: string;
+    gradeLevel: string;
+    duration: number;
+    messageCount: number;
+    transcript: Array<{ role: string; text: string }>;
+    sessionDate: Date;
+  }): Promise<boolean> {
+    try {
+      const resend = getResendClient();
+      const fromEmail = getFromEmail();
+      
+      // Generate AI summary of what was learned
+      const learningSummary = await this.generateLearningSummary(data.transcript, data.subject);
+      
+      // Format transcript for email (last 6 messages max)
+      const highlightExchanges = this.formatTranscriptHighlights(data.transcript);
+      
+      const formattedDate = data.sessionDate.toLocaleDateString('en-US', {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric'
+      });
+      
+      await resend.emails.send({
+        from: `JIE Mastery <${fromEmail}>`,
+        to: data.parentEmail,
+        subject: `${data.studentName}'s Tutoring Session Summary - ${data.subject}`,
+        html: `
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+              body { font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f8fafc; }
+              .container { max-width: 600px; margin: 0 auto; }
+              .header { background: linear-gradient(135deg, #4F46E5 0%, #3730A3 100%); color: white; padding: 30px 20px; border-radius: 8px 8px 0 0; text-align: center; }
+              .header h1 { margin: 0; font-size: 24px; }
+              .content { background: #ffffff; padding: 30px; border-radius: 0 0 8px 8px; }
+              .summary-box { background: #f0f9ff; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #4F46E5; }
+              .summary-box h3 { margin-top: 0; color: #1e40af; }
+              .stats { display: flex; justify-content: space-around; text-align: center; margin: 25px 0; padding: 20px; background: #fafafa; border-radius: 8px; }
+              .stat { flex: 1; }
+              .stat-value { font-size: 28px; font-weight: bold; color: #4F46E5; }
+              .stat-label { font-size: 12px; color: #666; text-transform: uppercase; margin-top: 4px; }
+              .transcript { background: #fafafa; padding: 20px; border-radius: 8px; margin: 20px 0; }
+              .transcript h3 { margin-top: 0; color: #374151; }
+              .tutor-msg { color: #4F46E5; margin: 12px 0; padding-left: 12px; border-left: 2px solid #4F46E5; }
+              .student-msg { color: #059669; margin: 12px 0; padding-left: 12px; border-left: 2px solid #059669; }
+              .cta-button { display: inline-block; background: #4F46E5; color: white !important; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: 600; margin-top: 20px; }
+              .footer { text-align: center; margin-top: 30px; padding: 20px; color: #6b7280; font-size: 12px; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <div class="header">
+                <h1>📚 Session Complete!</h1>
+                <p style="margin: 8px 0 0; opacity: 0.9;">${data.studentName}'s learning session on ${formattedDate}</p>
+              </div>
+              
+              <div class="content">
+                <p>Hi ${data.parentName || 'there'},</p>
+                
+                <p>${data.studentName} just finished a tutoring session! Here's what happened:</p>
+                
+                <div class="summary-box">
+                  <h3>📖 What ${data.studentName} Learned</h3>
+                  <p style="margin-bottom: 0;">${learningSummary}</p>
+                </div>
+                
+                <div class="stats">
+                  <div class="stat">
+                    <div class="stat-value">${data.duration}</div>
+                    <div class="stat-label">Minutes</div>
+                  </div>
+                  <div class="stat">
+                    <div class="stat-value">${data.messageCount}</div>
+                    <div class="stat-label">Exchanges</div>
+                  </div>
+                  <div class="stat">
+                    <div class="stat-value">${data.subject}</div>
+                    <div class="stat-label">Subject</div>
+                  </div>
+                </div>
+                
+                <div class="transcript">
+                  <h3>💬 Session Highlights</h3>
+                  ${highlightExchanges}
+                </div>
+                
+                <p style="font-size: 18px;">Keep up the great work! 🌟</p>
+                
+                <div style="text-align: center;">
+                  <a href="${this.getBaseUrl()}/dashboard" class="cta-button">View Full Transcript</a>
+                </div>
+              </div>
+              
+              <div class="footer">
+                <p style="margin: 0;">JIE Mastery AI Tutor</p>
+                <p style="margin: 8px 0 0;">You're receiving this because ${data.studentName} completed a tutoring session.</p>
+                <p style="margin: 8px 0 0;"><a href="${this.getBaseUrl()}/settings" style="color: #6b7280;">Manage email preferences</a></p>
+              </div>
+            </div>
+          </body>
+          </html>
+        `,
+        text: `SESSION COMPLETE - ${data.studentName}
+
+${data.parentName || 'Hi there'},
+
+${data.studentName} just finished a tutoring session!
+
+WHAT ${data.studentName.toUpperCase()} LEARNED:
+${learningSummary}
+
+SESSION STATS:
+- Duration: ${data.duration} minutes
+- Exchanges: ${data.messageCount}
+- Subject: ${data.subject}
+
+Keep up the great work!
+
+View full transcript: ${this.getBaseUrl()}/dashboard
+
+--
+JIE Mastery AI Tutor`
+      });
+      
+      console.log('[EmailService] ✅ Session summary email sent to:', data.parentEmail);
+      return true;
+    } catch (error) {
+      console.error('[EmailService] Failed to send session summary email:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Generate an AI summary of what the student learned during the session
+   */
+  private async generateLearningSummary(
+    transcript: Array<{ role: string; text: string }>,
+    subject: string
+  ): Promise<string> {
+    // Fallback summary if AI fails
+    const fallbackSummary = 'Your child had a productive tutoring session today.';
+    
+    if (transcript.length < 2) {
+      return fallbackSummary;
+    }
+    
+    // Build conversation text (limit to last 20 messages to stay within token limits)
+    const recentTranscript = transcript.slice(-20);
+    const conversationText = recentTranscript
+      .map(t => `${t.role === 'assistant' ? 'Tutor' : 'Student'}: ${t.text}`)
+      .join('\n');
+    
+    try {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': process.env.ANTHROPIC_API_KEY || '',
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 150,
+          messages: [{
+            role: 'user',
+            content: `You are summarizing a tutoring session for a parent. Based on this ${subject} tutoring conversation, write a 2-3 sentence summary of what the student learned or worked on. Be positive, specific, and encouraging. Do not use quotes. Focus on concrete skills or concepts.
+
+Conversation:
+${conversationText}
+
+Summary for parent:`
+          }]
+        })
+      });
+      
+      if (!response.ok) {
+        console.error('[EmailService] Claude API error:', response.status);
+        return fallbackSummary;
+      }
+      
+      const data = await response.json();
+      const summary = data.content?.[0]?.text?.trim();
+      
+      return summary || fallbackSummary;
+    } catch (error) {
+      console.error('[EmailService] Failed to generate AI summary:', error);
+      return fallbackSummary;
+    }
+  }
+
+  /**
+   * Format the last few transcript messages as HTML highlights
+   */
+  private formatTranscriptHighlights(
+    transcript: Array<{ role: string; text: string }>
+  ): string {
+    // Get last 6 messages (3 exchanges) for highlights
+    const highlights = transcript.slice(-6);
+    
+    if (highlights.length === 0) {
+      return '<p style="color: #666; font-style: italic;">No transcript available.</p>';
+    }
+    
+    return highlights
+      .map(t => {
+        const isTutor = t.role === 'assistant';
+        const speaker = isTutor ? 'Tutor' : 'Student';
+        const className = isTutor ? 'tutor-msg' : 'student-msg';
+        const icon = isTutor ? '🎓' : '👤';
+        // Truncate long messages
+        const text = t.text.length > 200 ? t.text.substring(0, 200) + '...' : t.text;
+        return `<p class="${className}">${icon} <strong>${speaker}:</strong> ${text}</p>`;
+      })
+      .join('');
+  }
 }
 
 export const emailService = new EmailService();

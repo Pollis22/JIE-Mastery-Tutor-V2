@@ -36,6 +36,8 @@ A custom, production-ready voice stack provides real-time, natural conversations
 
 **Tutor Thinking Indicator**: Real-time visual feedback system that displays "JIE is thinking..." with animated bouncing dots when the AI is processing. Uses WebSocket events (`tutor_thinking`, `tutor_responding`, `tutor_error`) with turnId tracking to ensure accurate state management. The indicator appears in both the status banner and as a temporary transcript entry, with a 10-second safety timeout to prevent stuck states.
 
+**Parent Session Summary Emails**: Automatic email notifications sent to parents after each tutoring session ends. Uses Claude to generate a 2-3 sentence AI summary of what the child learned, includes session statistics (duration, exchanges, subject), and shows the last 6 transcript messages as highlights. Emails are sent only for sessions lasting 30+ seconds with 3+ messages. Uses the Resend email service with beautifully formatted HTML templates.
+
 ### AI & Learning Engine
 The primary AI model is Claude Sonnet 4 with an enhanced TutorMind system prompt, employing a Modified Adaptive Socratic Method. This 3-phase approach balances guided discovery, direct instruction after 2-3 attempts or frustration detection, and understanding checks. It prioritizes guiding students to think first but provides answers to prevent frustration. The system incorporates frustration prevention by recognizing 8+ signals and switching to direct teaching. Five distinct age-specific tutor personalities maintain unique tones while adhering to the Adaptive Socratic core.
 
