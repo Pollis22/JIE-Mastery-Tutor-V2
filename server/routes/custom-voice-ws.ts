@@ -101,13 +101,26 @@ function createAssemblyAIConnection(
     console.log('[AssemblyAI] 🌐 Connecting to:', wsUrl);
     
     console.log('[AssemblyAI] About to create WebSocket with Authorization header...');
+    console.log('[AssemblyAI] API Key first 10 chars:', process.env.ASSEMBLYAI_API_KEY?.substring(0, 10) + '...');
+    
     const ws = new WebSocket(wsUrl, {
       headers: {
         'Authorization': process.env.ASSEMBLYAI_API_KEY!,
       },
     });
-    console.log('[AssemblyAI] ✅ WebSocket created - readyState:', ws.readyState);
+    
+    console.log('[AssemblyAI] ✅ WebSocket object created - initial readyState:', ws.readyState);
     state.ws = ws;
+    
+    // Check state after a tick to catch immediate failures
+    process.nextTick(() => {
+      console.log('[AssemblyAI] 🔍 nextTick readyState:', ws.readyState, '(0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED)');
+    });
+    
+    // Also check after 500ms
+    setTimeout(() => {
+      console.log('[AssemblyAI] 🔍 500ms readyState:', ws.readyState, '(0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED)');
+    }, 500);
 
   ws.on('open', () => {
     console.log('[AssemblyAI] ✅ WebSocket OPEN - sending config');
