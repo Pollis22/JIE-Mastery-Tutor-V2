@@ -2464,6 +2464,7 @@ CRITICAL INSTRUCTIONS:
             if (USE_ASSEMBLYAI && state.assemblyAIWs) {
               console.log("[Session End] 🎤 Closing AssemblyAI connection...");
               closeAssemblyAI(state.assemblyAIWs);
+              if (state.assemblyAIState) resetAssemblyAIMergeGuard(state.assemblyAIState);
               state.assemblyAIWs = null;
               state.assemblyAIState = null;
               console.log("[Session End] ✅ AssemblyAI closed");
@@ -2536,6 +2537,7 @@ CRITICAL INSTRUCTIONS:
       // Close STT connection first
       if (USE_ASSEMBLYAI && state.assemblyAIWs) {
         closeAssemblyAI(state.assemblyAIWs);
+        if (state.assemblyAIState) resetAssemblyAIMergeGuard(state.assemblyAIState);
         state.assemblyAIWs = null;
         state.assemblyAIState = null;
       } else if (state.deepgramConnection) {
@@ -2562,6 +2564,7 @@ CRITICAL INSTRUCTIONS:
       // Close STT connection first
       if (USE_ASSEMBLYAI && state.assemblyAIWs) {
         closeAssemblyAI(state.assemblyAIWs);
+        if (state.assemblyAIState) resetAssemblyAIMergeGuard(state.assemblyAIState);
         state.assemblyAIWs = null;
         state.assemblyAIState = null;
       } else if (state.deepgramConnection) {
