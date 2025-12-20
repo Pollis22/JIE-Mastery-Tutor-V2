@@ -76,16 +76,16 @@ export async function generateSpeech(
     const voiceSettings = VOICE_SETTINGS_MAP[voiceId] || { stability: 0.5, similarity_boost: 0.75 };
     
     // Parse user's speech speed preference (from settings slider: 0.7-1.2)
-    // DEFAULT CHANGED TO 0.85 (Nov 4, 2025) - slower for better comprehension
+    // DEFAULT CHANGED TO 1.0 (Dec 20, 2025) - normal speed for clarity
     // NOTE: ElevenLabs API only accepts speed range 0.7-1.2
-    let speed = 0.85;  // REDUCED from 0.95 to 0.85 for more natural, slower pace
+    let speed = 1.0;  // Normal speed - clear and easy to understand
     if (userSpeechSpeed !== undefined && userSpeechSpeed !== null) {
       speed = typeof userSpeechSpeed === 'string' ? parseFloat(userSpeechSpeed) : userSpeechSpeed;
       
       // Guard against NaN and invalid values - revert to default if parsing failed
       if (!Number.isFinite(speed)) {
-        console.warn(`[ElevenLabs] ⚠️ Invalid speechSpeed value: "${userSpeechSpeed}" (parsed as ${speed}), using default 0.85`);
-        speed = 0.85;
+        console.warn(`[ElevenLabs] ⚠️ Invalid speechSpeed value: "${userSpeechSpeed}" (parsed as ${speed}), using default 1.0`);
+        speed = 1.0;
       } else {
         const originalSpeed = speed;
         // Clamp to ElevenLabs valid range (0.7-1.2)

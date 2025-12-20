@@ -764,7 +764,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
       subject: "General", // SESSION: Default subject, will be set from session
       language: "en", // LANGUAGE: Default to English, will be set from session
       detectedLanguage: "", // LANGUAGE: Auto-detected spoken language from Deepgram
-      speechSpeed: 0.95, // Default speech speed, will be overridden by user preference
+      speechSpeed: 1.0, // Default speech speed (normal), will be overridden by user preference
       systemInstruction: "",
       conversationHistory: [],
       transcript: [],
@@ -1659,12 +1659,12 @@ export function setupCustomVoiceWebSocket(server: Server) {
                 state.speechSpeed = typeof user.speechSpeed === 'string' ? parseFloat(user.speechSpeed) : user.speechSpeed;
                 console.log(`[Custom Voice] ⚙️ User's speech speed preference: ${state.speechSpeed}`);
               } else {
-                state.speechSpeed = 0.95; // Default
-                console.log(`[Custom Voice] ⚙️ Using default speech speed: 0.95`);
+                state.speechSpeed = 1.0; // Default (normal speed)
+                console.log(`[Custom Voice] ⚙️ Using default speech speed: 1.0`);
               }
             } catch (error) {
               console.error("[Custom Voice] ⚠️ Error fetching user settings, using default speech speed:", error);
-              state.speechSpeed = 0.95;
+              state.speechSpeed = 1.0;
             }
             
             // Get full tutor personality based on age group
