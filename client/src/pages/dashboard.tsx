@@ -119,7 +119,7 @@ export default function DashboardPage() {
     { id: "subscription", label: "Subscription", icon: CreditCard },
     { id: "payments", label: "Payment Methods", icon: Shield },
     { id: "documents", label: "Study Materials", icon: FileText },
-    { id: "sessions", label: "Learning Sessions", icon: BookOpen },
+    { id: "sessions", label: "Transcripts", icon: BookOpen },
     { id: "analytics", label: "Usage Analytics", icon: BarChart3 },
     { id: "preferences", label: "Preferences", icon: Settings },
     { id: "support", label: "Support & Help", icon: HelpCircle },
@@ -298,7 +298,7 @@ export default function DashboardPage() {
                 {/* Recent Sessions Preview */}
                 <Card>
                   <CardHeader>
-                    <CardTitle>Recent Learning Sessions</CardTitle>
+                    <CardTitle>Recent Transcripts</CardTitle>
                     <CardDescription>Your last 5 tutoring sessions</CardDescription>
                   </CardHeader>
                   <CardContent>
