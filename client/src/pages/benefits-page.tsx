@@ -3,6 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useLocation } from "wouter";
 import jieLogo from "@/assets/jie-mastery-logo-new.jpg";
 import girlWithRobotImage from "@/assets/girl-with-robot-tutor.png";
+import studentWithRobotImage from "@/assets/student-with-ai-robot-tutor.png";
 import { Clock, DollarSign, Target, Calendar, BookOpen, TrendingUp, Users, Shield, Brain, LightbulbIcon, Bot, Sparkles, GraduationCap } from "lucide-react";
 
 export default function BenefitsPage() {
@@ -514,25 +515,12 @@ export default function BenefitsPage() {
               <div className="space-y-6">
                 <Card className="shadow-xl overflow-hidden border-2 border-primary/20">
                   <CardContent className="p-0">
-                    <div 
-                      className="w-full aspect-video bg-gradient-to-br from-emerald-500 via-teal-500 to-cyan-500 flex flex-col items-center justify-center gap-4 relative overflow-hidden"
+                    <img 
+                      src={studentWithRobotImage}
+                      alt="Student studying with AI robot tutor"
+                      className="w-full aspect-video object-cover"
                       data-testid="img-ai-tutor-hero"
-                    >
-                      {/* Background decorative elements */}
-                      <Brain className="absolute top-4 right-6 w-10 h-10 text-white/20 animate-pulse" />
-                      <BookOpen className="absolute bottom-4 left-6 w-10 h-10 text-white/20 animate-pulse delay-75" />
-                      
-                      {/* Main icon */}
-                      <div className="relative z-10 bg-white/20 backdrop-blur-sm rounded-full p-8 shadow-2xl">
-                        <GraduationCap className="w-24 h-24 text-white" />
-                      </div>
-                      
-                      {/* Text */}
-                      <div className="relative z-10 text-center px-4">
-                        <h3 className="text-2xl font-bold text-white mb-2">Smart Learning Assistant</h3>
-                        <p className="text-white/90 text-sm max-w-sm">Homework help, document analysis, and personalized guidance</p>
-                      </div>
-                    </div>
+                    />
                   </CardContent>
                 </Card>
                 
