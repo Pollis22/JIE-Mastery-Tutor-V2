@@ -198,6 +198,12 @@ app.use((req, res, next) => {
     documentCleanupService.start();
     log('Document cleanup service started (auto-delete after 6 months)');
 
+    // Start daily digest email job (sends at 8 PM EST)
+    console.log('Starting daily digest email job...');
+    const { startDailyDigestJob } = await import('./jobs/daily-digest');
+    startDailyDigestJob();
+    log('Daily digest job started (runs at 8:00 PM EST)');
+
     app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
       const status = err.status || err.statusCode || 500;
       const message = err.message || "Internal Server Error";

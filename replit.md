@@ -38,6 +38,8 @@ A custom, production-ready voice stack provides real-time, natural conversations
 
 **Parent Session Summary Emails**: Automatic email notifications sent to parents after each tutoring session ends. Uses Claude to generate a 2-3 sentence AI summary of what the child learned, includes session statistics (duration, exchanges, subject), and shows the last 6 transcript messages as highlights. Emails are sent only for sessions lasting 30+ seconds with 3+ messages. Uses the Resend email service with beautifully formatted HTML templates.
 
+**Daily Digest Emails**: Automated daily summary emails sent to parents at 8:00 PM EST/EDT summarizing ALL tutoring sessions their children had that day. Uses node-cron with America/New_York timezone for correct DST handling. Groups sessions by student name for families with multiple children, includes AI-generated one-sentence summaries for each session, and supports manual backfill/rerun for any specific date via parameterized SQL queries. Located in `server/jobs/daily-digest.ts`.
+
 ### AI & Learning Engine
 The primary AI model is Claude Sonnet 4 with an enhanced TutorMind system prompt, employing a Modified Adaptive Socratic Method. This 3-phase approach balances guided discovery, direct instruction after 2-3 attempts or frustration detection, and understanding checks. It prioritizes guiding students to think first but provides answers to prevent frustration. The system incorporates frustration prevention by recognizing 8+ signals and switching to direct teaching. Five distinct age-specific tutor personalities maintain unique tones while adhering to the Adaptive Socratic core.
 

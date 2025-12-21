@@ -1876,6 +1876,163 @@ Summary for parent:`
       })
       .join('');
   }
+
+  /**
+   * Send a daily digest email summarizing all tutoring sessions for the day
+   */
+  async sendDailyDigest(data: {
+    parentEmail: string;
+    parentName: string;
+    sessions: Array<{
+      studentName: string;
+      subject: string;
+      duration: number;
+      messageCount: number;
+      timestamp: Date;
+      keyLearning: string;
+    }>;
+    date: Date;
+  }): Promise<boolean> {
+    if (data.sessions.length === 0) {
+      console.log('[EmailService] No sessions today, skipping digest');
+      return false;
+    }
+
+    try {
+      const resend = getResendClient();
+      const fromEmail = getFromEmail();
+
+      // Group sessions by student
+      const sessionsByStudent = new Map<string, typeof data.sessions>();
+      for (const session of data.sessions) {
+        const existing = sessionsByStudent.get(session.studentName) || [];
+        existing.push(session);
+        sessionsByStudent.set(session.studentName, existing);
+      }
+
+      // Calculate totals
+      const totalMinutes = data.sessions.reduce((sum, s) => sum + s.duration, 0);
+      const totalSessions = data.sessions.length;
+
+      // Format date
+      const dateStr = data.date.toLocaleDateString('en-US', {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric'
+      });
+
+      // Build student sections HTML
+      let studentSections = '';
+      for (const [studentName, sessions] of sessionsByStudent) {
+        const studentMinutes = sessions.reduce((sum, s) => sum + s.duration, 0);
+
+        let sessionList = '';
+        for (const session of sessions) {
+          const time = new Date(session.timestamp).toLocaleTimeString('en-US', {
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true
+          });
+
+          sessionList += `
+            <div style="background: white; padding: 15px; border-radius: 8px; margin: 10px 0; border-left: 4px solid #4F46E5;">
+              <div style="margin-bottom: 8px;">
+                <strong>${session.subject}</strong>
+                <span style="color: #6b7280; float: right;">${time} - ${session.duration} min</span>
+              </div>
+              <p style="margin: 0; color: #374151;">${session.keyLearning}</p>
+            </div>
+          `;
+        }
+
+        studentSections += `
+          <div style="margin: 25px 0;">
+            <h3 style="color: #1f2937; margin-bottom: 10px;">
+              ${studentName}
+              <span style="font-weight: normal; color: #6b7280; font-size: 14px;">
+                (${sessions.length} session${sessions.length > 1 ? 's' : ''}, ${studentMinutes} min)
+              </span>
+            </h3>
+            ${sessionList}
+          </div>
+        `;
+      }
+
+      const html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
+            .container { max-width: 600px; margin: 0 auto; }
+            .header { background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%); color: white; padding: 30px; text-align: center; }
+            .content { background: #f9fafb; padding: 25px; }
+            .stats { background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; text-align: center; }
+            .stat { display: inline-block; margin: 0 20px; }
+            .stat-value { font-size: 28px; font-weight: bold; color: #4F46E5; }
+            .stat-label { color: #6b7280; font-size: 12px; text-transform: uppercase; }
+            .cta { text-align: center; margin-top: 25px; }
+            .button { display: inline-block; background: #4F46E5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; }
+            .footer { text-align: center; padding: 20px; color: #6b7280; font-size: 12px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1 style="margin: 0 0 5px 0;">Daily Learning Summary</h1>
+              <p style="margin: 0; opacity: 0.9;">${dateStr}</p>
+            </div>
+
+            <div class="content">
+              <p>Hi ${data.parentName || 'there'},</p>
+              <p>Here's what your ${sessionsByStudent.size > 1 ? 'kids' : 'child'} learned today:</p>
+
+              <div class="stats">
+                <div class="stat">
+                  <div class="stat-value">${totalSessions}</div>
+                  <div class="stat-label">Sessions</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-value">${totalMinutes}</div>
+                  <div class="stat-label">Minutes</div>
+                </div>
+                <div class="stat">
+                  <div class="stat-value">${sessionsByStudent.size}</div>
+                  <div class="stat-label">Students</div>
+                </div>
+              </div>
+
+              ${studentSections}
+
+              <div class="cta">
+                <a href="${this.getBaseUrl()}/dashboard" class="button">View Full Transcripts</a>
+              </div>
+            </div>
+
+            <div class="footer">
+              <p>JIE Mastery AI Tutor</p>
+              <p>You received this because your family had tutoring sessions today.</p>
+              <p><a href="${this.getBaseUrl()}/dashboard/preferences" style="color: #6b7280;">Manage email preferences</a></p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+
+      await resend.emails.send({
+        from: fromEmail,
+        to: data.parentEmail,
+        subject: `Daily Learning Summary - ${dateStr}`,
+        html
+      });
+
+      console.log('[EmailService] Daily digest sent to:', data.parentEmail);
+      return true;
+    } catch (error) {
+      console.error('[EmailService] Failed to send daily digest:', error);
+      return false;
+    }
+  }
 }
 
 export const emailService = new EmailService();
