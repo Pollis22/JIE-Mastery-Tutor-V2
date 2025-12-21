@@ -142,6 +142,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Setup authentication
   setupAuth(app);
 
+  // CRITICAL SECURITY: Global email verification middleware
+  // This ensures ALL authenticated API requests require email verification (for users created after Oct 13, 2025)
+  // EXACT paths that don't require email verification
+  const EXACT_PUBLIC_PATHS = new Set([
+    '/health',
+    '/health/db',
+    '/login',
+    '/register',
+    '/logout',
+    '/user', // Allow GET /api/user to show verification banner
+    '/pricing',
+  ]);
+  
+  // Prefix paths that don't require email verification
+  const PREFIX_PUBLIC_PATHS = [
+    '/stripe', // Webhooks handled separately
+    '/auth/', // All auth routes (verify-email, resend-verification, etc.)
+    '/unsubscribe',
+    '/support', // FAQ support (public)
+  ];
+  
+  const VERIFICATION_CUTOFF_DATE = new Date('2025-10-13');
+  
+  app.use('/api', (req, res, next) => {
+    // Skip exact public paths
+    const path = req.path;
+    if (EXACT_PUBLIC_PATHS.has(path)) {
+      return next();
+    }
+    
+    // Skip prefix public paths
+    if (PREFIX_PUBLIC_PATHS.some(p => path.startsWith(p))) {
+      return next();
+    }
+    
+    // Skip if not authenticated (auth checks happen elsewhere)
+    if (!req.isAuthenticated || !req.isAuthenticated() || !req.user) {
+      return next();
+    }
+    
+    const user = req.user as any;
+    
+    // Allow users created before verification feature
+    const accountCreatedAt = user.createdAt ? new Date(user.createdAt) : new Date(0);
+    if (accountCreatedAt <= VERIFICATION_CUTOFF_DATE) {
+      return next();
+    }
+    
+    // Block unverified users from protected routes
+    if (!user.emailVerified) {
+      console.log(`[Email Verification] Blocking unverified user ${user.email} from ${req.path}`);
+      return res.status(403).json({
+        error: 'Email not verified',
+        code: 'EMAIL_NOT_VERIFIED',
+        message: 'Please verify your email address to access this feature. Check your inbox for the verification link.',
+        email: user.email,
+        redirectTo: '/dashboard'
+      });
+    }
+    
+    next();
+  });
+
   // Unsubscribe endpoint - GET version for email links (public - no authentication required)
   app.get("/api/unsubscribe", async (req, res) => {
     try {

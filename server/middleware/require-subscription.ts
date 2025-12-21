@@ -75,8 +75,11 @@ export const requireSubscription = async (
       });
     }
 
-    // Step 2.5: Check email verification
-    if (!user.emailVerified) {
+    // Step 2.5: Check email verification (only for users created after Oct 13, 2025)
+    const verificationCutoffDate = new Date('2025-10-13');
+    const accountCreatedAt = user.createdAt ? new Date(user.createdAt) : new Date(0);
+    
+    if (accountCreatedAt > verificationCutoffDate && !user.emailVerified) {
       return res.status(403).json({
         error: 'Email not verified',
         code: 'EMAIL_NOT_VERIFIED',
@@ -182,6 +185,20 @@ export const requireActiveSubscription = async (
       return res.status(404).json({ error: 'User not found' });
     }
 
+    // Check email verification (only for users created after Oct 13, 2025)
+    const verificationCutoffDate = new Date('2025-10-13');
+    const accountCreatedAt = user.createdAt ? new Date(user.createdAt) : new Date(0);
+    
+    if (accountCreatedAt > verificationCutoffDate && !user.emailVerified) {
+      return res.status(403).json({
+        error: 'Email not verified',
+        code: 'EMAIL_NOT_VERIFIED',
+        message: 'Please verify your email address to access this feature.',
+        email: user.email,
+        redirectTo: '/dashboard'
+      });
+    }
+
     const hasAccess = hasVoiceAccess(user);
     const hasPurchasedMinutes = (user.purchasedMinutesBalance || 0) > 0;
     
@@ -225,6 +242,20 @@ export const requireVoiceAccess = async (
     
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Check email verification (only for users created after Oct 13, 2025)
+    const verificationCutoffDate = new Date('2025-10-13');
+    const accountCreatedAt = user.createdAt ? new Date(user.createdAt) : new Date(0);
+    
+    if (accountCreatedAt > verificationCutoffDate && !user.emailVerified) {
+      return res.status(403).json({
+        error: 'Email not verified',
+        code: 'EMAIL_NOT_VERIFIED',
+        message: 'Please verify your email address to access voice tutoring.',
+        email: user.email,
+        redirectTo: '/dashboard'
+      });
     }
 
     if (!hasVoiceAccess(user)) {

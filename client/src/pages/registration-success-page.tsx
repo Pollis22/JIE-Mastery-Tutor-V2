@@ -2,15 +2,14 @@ import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, Loader2, XCircle } from "lucide-react";
-import { apiRequest, queryClient } from "@/lib/queryClient";
-import { useAuth } from "@/hooks/use-auth";
+import { CheckCircle2, Loader2, XCircle, Mail } from "lucide-react";
+import { apiRequest } from "@/lib/queryClient";
 
 export default function RegistrationSuccessPage() {
   const [, setLocation] = useLocation();
-  const { user } = useAuth();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [error, setError] = useState<string>('');
+  const [userEmail, setUserEmail] = useState<string>('');
 
   useEffect(() => {
     const MAX_RETRIES = 10;
@@ -51,17 +50,16 @@ export default function RegistrationSuccessPage() {
         }
 
         const data = await res.json();
-        console.log('[Registration Success] User logged in:', data.user);
+        console.log('[Registration Success] Account created:', data);
 
-        // Invalidate user query to trigger refetch and update auth context
-        await queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+        // Store email for display
+        if (data.email) {
+          setUserEmail(data.email);
+        }
 
         setStatus('success');
 
-        // Redirect to dashboard after 2 seconds
-        setTimeout(() => {
-          setLocation('/dashboard');
-        }, 2000);
+        // Note: User is NOT logged in - they must verify email first
 
       } catch (error: any) {
         console.error('[Registration Success] Error:', error);
@@ -71,7 +69,7 @@ export default function RegistrationSuccessPage() {
     };
 
     completeRegistration();
-  }, [setLocation]);
+  }, []);
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
@@ -96,18 +94,30 @@ export default function RegistrationSuccessPage() {
 
             {status === 'success' && (
               <>
-                <CheckCircle2 className="h-16 w-16 text-green-500" />
-                <div className="text-center space-y-2">
+                <Mail className="h-16 w-16 text-primary" />
+                <div className="text-center space-y-3">
                   <p className="text-lg font-semibold text-foreground">
-                    Payment successful!
+                    Check your email!
                   </p>
                   <p className="text-muted-foreground">
-                    Your account has been created and activated.
+                    Your account has been created successfully. We've sent a verification link to:
                   </p>
+                  {userEmail && (
+                    <p className="font-medium text-foreground">
+                      {userEmail}
+                    </p>
+                  )}
                   <p className="text-sm text-muted-foreground">
-                    Redirecting to your dashboard...
+                    Please click the link in your email to verify your account before logging in.
                   </p>
                 </div>
+                <Button 
+                  onClick={() => setLocation('/auth')} 
+                  className="w-full mt-4"
+                  data-testid="button-go-to-login"
+                >
+                  Go to Login
+                </Button>
               </>
             )}
 

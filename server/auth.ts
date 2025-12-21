@@ -1139,45 +1139,21 @@ export function setupAuth(app: Express) {
         });
       }
 
-      // Log the user in
-      req.login(user, async (err) => {
-        if (err) {
-          console.error('[Complete Registration] ❌ Login failed:', err);
-          return next(err);
+      // SECURITY FIX: Do NOT auto-login users until they verify their email
+      // The verification email was already sent by the Stripe webhook
+      console.log('[Complete Registration] ✅ Account created, user must verify email:', user.email);
+      
+      return res.json({
+        success: true,
+        requiresVerification: true,
+        message: 'Please check your email to verify your account before logging in.',
+        email: user.email,
+        user: {
+          email: user.email,
+          parentName: user.parentName,
+          studentName: user.studentName,
+          subscriptionPlan: user.subscriptionPlan,
         }
-
-        console.log('[Complete Registration] ✅ User logged in:', user.email);
-        
-        // Rotate session ID for security
-        const oldSessionId = req.sessionID;
-        req.session.regenerate((regenerateErr) => {
-          if (regenerateErr) {
-            console.error('[Complete Registration] Session regeneration error:', regenerateErr);
-          } else {
-            console.log('[Complete Registration] Session rotated:', oldSessionId, '->', req.sessionID);
-          }
-
-          // Re-login after regeneration
-          req.login(user, async (loginErr) => {
-            if (loginErr) {
-              console.error('[Complete Registration] Re-login failed:', loginErr);
-              return res.status(500).json({ error: 'Session error', details: loginErr.message });
-            }
-
-            res.json({
-              success: true,
-              user: {
-                id: user.id,
-                email: user.email,
-                username: user.username,
-                parentName: user.parentName,
-                studentName: user.studentName,
-                subscriptionPlan: user.subscriptionPlan,
-                subscriptionStatus: user.subscriptionStatus,
-              }
-            });
-          });
-        });
       });
 
     } catch (error: any) {
