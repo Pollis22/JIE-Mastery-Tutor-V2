@@ -166,8 +166,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const VERIFICATION_CUTOFF_DATE = new Date('2025-10-13');
   
   app.use('/api', (req, res, next) => {
+    // Normalize path by removing trailing slashes (except for root '/')
+    const rawPath = req.path;
+    const path = rawPath.length > 1 && rawPath.endsWith('/') 
+      ? rawPath.slice(0, -1) 
+      : rawPath;
+    
     // Skip exact public paths
-    const path = req.path;
     if (EXACT_PUBLIC_PATHS.has(path)) {
       return next();
     }
