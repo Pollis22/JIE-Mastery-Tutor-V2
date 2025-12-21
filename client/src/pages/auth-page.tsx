@@ -18,6 +18,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Footer } from "@/components/footer";
 import jieLogo from "@/assets/jie-mastery-logo-new.jpg";
+import studentDeskImage from "@/assets/student-desk-ai-tutor.png";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 const loginSchema = z.object({
@@ -637,29 +638,12 @@ export default function AuthPage() {
               {/* Featured Visual */}
               <Card className="shadow-2xl overflow-hidden border-2 border-primary/20 transform hover:scale-105 transition-transform duration-300">
                 <CardContent className="p-0">
-                  <div 
-                    className="w-full aspect-[4/3] bg-gradient-to-br from-blue-500 via-purple-500 to-pink-500 flex flex-col items-center justify-center gap-6 relative overflow-hidden"
+                  <img 
+                    src={studentDeskImage}
+                    alt="Student studying with AI robot tutor"
+                    className="w-full aspect-[4/3] object-cover"
                     data-testid="img-auth-hero"
-                  >
-                    {/* Background decorative elements */}
-                    <div className="absolute inset-0 bg-grid-white/10"></div>
-                    <Sparkles className="absolute top-4 right-4 w-8 h-8 text-white/50 animate-pulse" />
-                    <Sparkles className="absolute bottom-6 left-6 w-6 h-6 text-white/40 animate-pulse delay-100" />
-                    
-                    {/* Main icon */}
-                    <div className="relative z-10 bg-white/20 backdrop-blur-sm rounded-full p-8 shadow-2xl">
-                      <Bot className="w-24 h-24 text-white" />
-                    </div>
-                    
-                    {/* Text */}
-                    <div className="relative z-10 text-center px-4">
-                      <h3 className="text-2xl font-bold text-white mb-2">AI-Powered Learning</h3>
-                      <p className="text-white/90 text-sm max-w-xs">Personalized tutoring with voice conversations and real-time feedback</p>
-                    </div>
-                    
-                    {/* Bottom accent */}
-                    <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-yellow-300 via-pink-300 to-purple-300"></div>
-                  </div>
+                  />
                 </CardContent>
               </Card>
 
