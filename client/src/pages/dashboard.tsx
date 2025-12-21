@@ -121,6 +121,7 @@ export default function DashboardPage() {
     { id: "documents", label: "Study Materials", icon: FileText },
     { id: "sessions", label: "Transcripts", icon: BookOpen },
     { id: "analytics", label: "Usage Analytics", icon: BarChart3 },
+    { id: "settings", label: "Settings", icon: Settings },
     { id: "preferences", label: "Preferences", icon: Settings },
     { id: "support", label: "Support & Help", icon: HelpCircle },
   ];
@@ -340,6 +341,72 @@ export default function DashboardPage() {
             )}
             {activeTab === "sessions" && <SessionHistory />}
             {activeTab === "analytics" && <UsageAnalytics />}
+            {activeTab === "settings" && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Settings</CardTitle>
+                  <CardDescription>Manage your account and application settings</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Tabs defaultValue="appearance">
+                    <TabsList className="grid w-full grid-cols-2">
+                      <TabsTrigger value="appearance">Appearance</TabsTrigger>
+                      <TabsTrigger value="notifications">Notifications</TabsTrigger>
+                    </TabsList>
+                    
+                    <TabsContent value="appearance" className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="font-medium">Theme</h4>
+                          <p className="text-sm text-muted-foreground">
+                            Choose between light and dark mode
+                          </p>
+                        </div>
+                        <ThemeToggle showLabel />
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="notifications" className="space-y-4">
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between p-4 border rounded-lg">
+                          <div>
+                            <h4 className="font-medium">Email Notifications</h4>
+                            <p className="text-sm text-muted-foreground">
+                              Receive updates about your tutoring sessions
+                            </p>
+                          </div>
+                          <Switch
+                            checked={preferences?.emailNotifications ?? true}
+                            onCheckedChange={(checked) => 
+                              updateNotificationsMutation.mutate({ emailNotifications: checked })
+                            }
+                            disabled={updateNotificationsMutation.isPending}
+                            data-testid="switch-email-notifications"
+                          />
+                        </div>
+                        
+                        <div className="flex items-center justify-between p-4 border rounded-lg">
+                          <div>
+                            <h4 className="font-medium">Marketing Emails</h4>
+                            <p className="text-sm text-muted-foreground">
+                              Receive newsletters and promotional offers
+                            </p>
+                          </div>
+                          <Switch
+                            checked={preferences?.marketingEmails ?? false}
+                            onCheckedChange={(checked) => 
+                              updateNotificationsMutation.mutate({ marketingEmails: checked })
+                            }
+                            disabled={updateNotificationsMutation.isPending}
+                            data-testid="switch-marketing-emails"
+                          />
+                        </div>
+                      </div>
+                    </TabsContent>
+                  </Tabs>
+                </CardContent>
+              </Card>
+            )}
             {activeTab === "preferences" && (
               <Card>
                 <CardHeader>
