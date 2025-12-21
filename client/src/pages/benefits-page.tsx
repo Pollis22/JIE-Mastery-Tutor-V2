@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useLocation } from "wouter";
 import jieLogo from "@/assets/jie-mastery-logo-new.jpg";
+import girlWithRobotImage from "@/assets/girl-with-robot-tutor.png";
 import { Clock, DollarSign, Target, Calendar, BookOpen, TrendingUp, Users, Shield, Brain, LightbulbIcon, Bot, Sparkles, GraduationCap } from "lucide-react";
 
 export default function BenefitsPage() {
@@ -70,26 +71,12 @@ export default function BenefitsPage() {
               <div className="relative">
                 <Card className="shadow-2xl overflow-hidden border-4 border-white/20 transform hover:scale-105 transition-transform duration-300">
                   <CardContent className="p-0">
-                    <div 
-                      className="w-full aspect-[4/3] bg-gradient-to-br from-blue-600 via-purple-600 to-indigo-600 flex flex-col items-center justify-center gap-6 relative overflow-hidden"
+                    <img 
+                      src={girlWithRobotImage}
+                      alt="Girl studying with AI robot tutor"
+                      className="w-full aspect-[4/3] object-cover"
                       data-testid="img-hero-ai-tutor"
-                    >
-                      {/* Background decorative elements */}
-                      <Sparkles className="absolute top-6 right-8 w-12 h-12 text-white/30 animate-pulse" />
-                      <Sparkles className="absolute bottom-8 left-8 w-8 h-8 text-white/20 animate-pulse delay-150" />
-                      <GraduationCap className="absolute top-6 left-6 w-10 h-10 text-white/20 animate-bounce" />
-                      
-                      {/* Main icon */}
-                      <div className="relative z-10 bg-white/20 backdrop-blur-sm rounded-full p-10 shadow-2xl">
-                        <Bot className="w-32 h-32 text-white" />
-                      </div>
-                      
-                      {/* Text */}
-                      <div className="relative z-10 text-center px-4">
-                        <h3 className="text-3xl font-bold text-white mb-3">AI Family Tutoring</h3>
-                        <p className="text-white/95 text-lg max-w-md">One subscription for all siblings - personalized learning for every age</p>
-                      </div>
-                    </div>
+                    />
                   </CardContent>
                 </Card>
               </div>
