@@ -18,7 +18,6 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Footer } from "@/components/footer";
 import jieLogo from "@/assets/jie-mastery-logo-new.jpg";
-import studentDeskImage from "@/assets/student-desk-ai-tutor.png";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 const loginSchema = z.object({
@@ -635,17 +634,23 @@ export default function AuthPage() {
                 </p>
               </div>
 
-              {/* Featured Visual */}
-              <Card className="shadow-2xl overflow-hidden border-2 border-primary/20 transform hover:scale-105 transition-transform duration-300">
-                <CardContent className="p-0">
-                  <img 
-                    src={studentDeskImage}
-                    alt="Student studying with AI robot tutor"
-                    className="w-full aspect-[4/3] object-cover"
-                    data-testid="img-auth-hero"
-                  />
-                </CardContent>
-              </Card>
+              {/* Featured Video */}
+              <div 
+                className="relative w-full max-w-[800px] mx-auto"
+                style={{ aspectRatio: '16/9' }}
+                data-testid="video-hero-container"
+              >
+                <iframe 
+                  className="absolute top-0 left-0 w-full h-full rounded-xl shadow-2xl border-2 border-primary/20"
+                  src="https://www.youtube.com/embed/s4snNJwmU3A?si=HHB4Cb8BD3XG2zNa" 
+                  title="JIE Mastery Tutor Demo" 
+                  frameBorder="0" 
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+                  referrerPolicy="strict-origin-when-cross-origin" 
+                  allowFullScreen
+                  data-testid="video-hero-youtube"
+                />
+              </div>
 
               <div className="space-y-4">
                 <div className="flex items-center space-x-3">
