@@ -32,7 +32,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Trash2, Download, User, Camera, Loader2 } from "lucide-react";
+import { Trash2, User, Camera, Loader2 } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -314,32 +314,6 @@ export function StudentProfilePanel({
     onError: (error: any) => {
       toast({
         title: "Error deleting student",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
-
-  const exportMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest('POST', `/api/students/${studentId}/export`);
-      return res.json();
-    },
-    onSuccess: (data) => {
-      const blob = new Blob([JSON.stringify(data, null, 2)], {
-        type: "application/json",
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${student?.name || 'student'}-memory-${new Date().toISOString().split('T')[0]}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      toast({ title: "Memory exported successfully" });
-    },
-    onError: (error: any) => {
-      toast({
-        title: "Error exporting memory",
         description: error.message,
         variant: "destructive",
       });
@@ -663,29 +637,16 @@ export function StudentProfilePanel({
                 </Button>
 
                 {studentId && (
-                  <>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => exportMutation.mutate()}
-                      disabled={exportMutation.isPending}
-                      data-testid="button-export-memory"
-                    >
-                      <Download className="h-4 w-4 mr-2" />
-                      Export Memory
-                    </Button>
-
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      onClick={() => setDeleteDialogOpen(true)}
-                      disabled={deleteMutation.isPending}
-                      data-testid="button-delete-student"
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Delete
-                    </Button>
-                  </>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    onClick={() => setDeleteDialogOpen(true)}
+                    disabled={deleteMutation.isPending}
+                    data-testid="button-delete-student"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete
+                  </Button>
                 )}
               </div>
             </form>
