@@ -1,8 +1,8 @@
 # API Reference - JIE Mastery AI Tutor
 
-**Version:** 2.0  
+**Version:** 2.1  
 **Base URL**: `https://your-domain.repl.co`  
-**Last Updated:** November 19, 2025
+**Last Updated:** December 22, 2025
 
 ---
 

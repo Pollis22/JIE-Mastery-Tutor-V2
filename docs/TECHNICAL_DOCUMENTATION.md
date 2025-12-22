@@ -1,7 +1,7 @@
 # JIE Mastery AI Tutor - Technical Documentation
 
-**Version:** 2.0  
-**Last Updated:** November 19, 2025  
+**Version:** 2.1  
+**Last Updated:** December 22, 2025  
 **Status:** Production-Ready  
 
 ---
@@ -28,7 +28,7 @@
 
 ## Project Overview
 
-JIE Mastery AI Tutor is a production-ready conversational AI tutoring platform that provides personalized learning experiences for Math, English, and Spanish across 22 languages. The platform features real-time voice conversations powered by a custom voice stack (Deepgram STT + Claude Sonnet 4 + ElevenLabs TTS).
+JIE Mastery AI Tutor is a production-ready conversational AI tutoring platform that provides personalized learning experiences for Math, English, and Spanish across 25 languages. The platform features real-time voice conversations powered by a custom voice stack (Deepgram or AssemblyAI STT + Claude Sonnet 4 + ElevenLabs TTS).
 
 ### Core Vision
 Provide a globally accessible, effective, and frustration-free AI tutoring experience that adapts to individual learning needs through the **Modified Adaptive Socratic Method**.
@@ -42,7 +42,7 @@ Provide a globally accessible, effective, and frustration-free AI tutoring exper
 
 ### Key Differentiators
 1. **Age-Specific AI Tutors**: Five distinct tutor personalities optimized for different age groups
-2. **22 Language Support**: Automatic browser language detection with native TTS voices
+2. **25 Language Support**: Automatic browser language detection with native TTS voices
 3. **Modified Adaptive Socratic Method**: Balances guided discovery with direct instruction
 4. **Custom Voice Stack**: Real-time conversations with 1-2 second end-to-end latency
 5. **Document-Based Learning**: RAG system for personalized content
@@ -70,7 +70,7 @@ Provide a globally accessible, effective, and frustration-free AI tutoring exper
 │  └──────────────────────────────────────────────────────┘   │
 │  ┌──────────────────────────────────────────────────────┐   │
 │  │  WebSocket: /api/custom-voice-ws                     │   │
-│  │  - Deepgram STT  - Claude AI  - ElevenLabs TTS      │   │
+│  │  - Deepgram/AssemblyAI STT - Claude AI - ElevenLabs │   │
 │  └──────────────────────────────────────────────────────┘   │
 └────────────────────────────┬────────────────────────────────┘
                              │
@@ -82,7 +82,7 @@ Provide a globally accessible, effective, and frustration-free AI tutoring exper
 
 ┌─────────────────────────────────────────────────────────────┐
 │                   External Services                          │
-│  - Deepgram (STT)  - Anthropic Claude (AI)                  │
+│  - Deepgram/AssemblyAI (STT) - Anthropic Claude (AI)       │
 │  - ElevenLabs (TTS)  - Stripe (Payments)                    │
 │  - Resend (Email)  - Azure Speech (Backup TTS)              │
 └─────────────────────────────────────────────────────────────┘
@@ -100,7 +100,7 @@ Provide a globally accessible, effective, and frustration-free AI tutoring exper
 #### WebSocket Voice Session
 1. Client → WebSocket upgrade request (session authentication)
 2. Server → Validates session + checks rate limits
-3. Client sends audio → Deepgram STT → Text transcript
+3. Client sends audio → STT Provider (Deepgram or AssemblyAI) → Text transcript
 4. Text → Claude AI → Response text
 5. Response text → ElevenLabs TTS → Audio buffer
 6. Audio buffer → Client playback
@@ -130,10 +130,11 @@ Provide a globally accessible, effective, and frustration-free AI tutoring exper
 - **WebSocket**: ws library
 
 ### AI & Voice Services
-- **STT**: Deepgram Nova 2 (real-time streaming)
+- **STT (Primary)**: Deepgram Nova-2 (real-time streaming, default)
+- **STT (Alternative)**: AssemblyAI Universal (selectable via `STT_PROVIDER` env var)
 - **LLM**: Anthropic Claude Sonnet 4
 - **TTS**: ElevenLabs Turbo v2.5
-- **Backup TTS**: Azure Speech Services (22 languages)
+- **Backup TTS**: Azure Speech Services (25 languages)
 - **Embeddings**: OpenAI text-embedding-3-small
 
 ### Payment & Email
@@ -357,6 +358,17 @@ Provide a globally accessible, effective, and frustration-free AI tutoring exper
 
 The platform uses a **custom-built voice stack** instead of pre-built solutions like ElevenLabs Conversational AI. This provides full control over the conversation flow and supports our unique pedagogical approach.
 
+#### STT Provider Selection
+
+The platform supports two STT providers, selectable via the `STT_PROVIDER` environment variable:
+
+| Provider | Value | Description |
+|----------|-------|-------------|
+| **Deepgram** | `deepgram` (default) | Nova-2 model, excellent accuracy, real-time streaming |
+| **AssemblyAI** | `assemblyai` | Universal model, alternative provider |
+
+**Configuration**: Set `STT_PROVIDER=deepgram` or `STT_PROVIDER=assemblyai` in environment variables.
+
 #### Architecture
 
 ```
@@ -367,9 +379,10 @@ The platform uses a **custom-built voice stack** instead of pre-built solutions 
        │ PCM16 Audio (base64 over WebSocket)
        ▼
 ┌────────────────────────┐
-│  Deepgram Streaming    │
-│  STT (Nova 2)          │
-│  - Real-time           │
+│  STT Provider          │
+│  (Deepgram Nova-2 or   │
+│   AssemblyAI Universal)│
+│  - Real-time streaming │
 │  - 16kHz sample rate   │
 └──────┬─────────────────┘
        │ Text Transcript (is_final=true)
@@ -424,7 +437,7 @@ for (let i = 0; i < float32Data.length; i++) {
 - Audio context suspension protection
 - Silence detection to prevent empty chunks
 
-### 22 Languages Supported
+### 25 Languages Supported
 
 **With Azure Neural TTS Voices**:
 1. English (en-US)
@@ -449,6 +462,9 @@ for (let i = 0; i < float32Data.length; i++) {
 20. Greek (el-GR)
 21. Hebrew (he-IL)
 22. Czech (cs-CZ)
+23. Ukrainian (uk-UA)
+24. Romanian (ro-RO)
+25. Hungarian (hu-HU)
 
 **Auto-Detection**: Browser language detected via `navigator.language`
 
@@ -955,7 +971,11 @@ DATABASE_URL=postgresql://user:pass@host:5432/db
 ANTHROPIC_API_KEY=sk-ant-api03-...
 OPENAI_API_KEY=sk-...
 DEEPGRAM_API_KEY=...
+ASSEMBLYAI_API_KEY=...          # Alternative STT provider
 ELEVENLABS_API_KEY=sk_...
+
+# STT Provider Selection
+STT_PROVIDER=deepgram           # Options: deepgram (default), assemblyai
 
 # Azure Speech (Backup TTS)
 AZURE_SPEECH_KEY=...

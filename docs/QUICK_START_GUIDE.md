@@ -1,6 +1,6 @@
 # Quick Start Guide - JIE Mastery AI Tutor
 
-**For New Engineers** | Last Updated: November 19, 2025
+**For New Engineers** | Last Updated: December 22, 2025
 
 ---
 
@@ -21,9 +21,11 @@
 **Critical Secrets** (already configured):
 - `DATABASE_URL` - PostgreSQL database
 - `ANTHROPIC_API_KEY` - Claude AI
-- `DEEPGRAM_API_KEY` - Speech-to-text
+- `DEEPGRAM_API_KEY` - Speech-to-text (default provider)
+- `ASSEMBLYAI_API_KEY` - Speech-to-text (alternative provider)
 - `ELEVENLABS_API_KEY` - Text-to-speech
 - `STRIPE_SECRET_KEY` - Payment processing
+- `STT_PROVIDER` - STT provider selection (`deepgram` or `assemblyai`)
 
 ### 3. Start Development Server
 
@@ -52,7 +54,7 @@ User Profile (defaults) → Session Config (overrides) → Active Session
 ```
 - **Grade level**: Can differ per session (family sharing)
 - **Subject**: Math, English, or Spanish
-- **Language**: 22 languages supported
+- **Language**: 25 languages supported
 
 #### 2. Minute Tracking
 ```
