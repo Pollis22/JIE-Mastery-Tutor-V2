@@ -18,10 +18,10 @@ import { users, students } from "@shared/schema";
 
 // ============================================
 // FEATURE FLAG: STT PROVIDER SELECTION
-// Set STT_PROVIDER=assemblyai to use AssemblyAI Universal-Streaming
-// Set STT_PROVIDER=deepgram (or leave unset) to use Deepgram Nova-2
+// Set STT_PROVIDER=deepgram to use Deepgram Nova-2
+// Set STT_PROVIDER=assemblyai (or leave unset) to use AssemblyAI Universal-Streaming (DEFAULT)
 // ============================================
-const USE_ASSEMBLYAI = process.env.STT_PROVIDER === 'assemblyai';
+const USE_ASSEMBLYAI = process.env.STT_PROVIDER !== 'deepgram';
 console.log('[STT] Provider config:', process.env.STT_PROVIDER);
 console.log('[STT] USE_ASSEMBLYAI flag:', USE_ASSEMBLYAI);
 console.log(`[STT] Provider: ${USE_ASSEMBLYAI ? 'AssemblyAI Universal-Streaming' : 'Deepgram Nova-2'}`);

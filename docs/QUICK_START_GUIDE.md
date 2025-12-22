@@ -21,8 +21,8 @@
 **Critical Secrets** (already configured):
 - `DATABASE_URL` - PostgreSQL database
 - `ANTHROPIC_API_KEY` - Claude AI
-- `DEEPGRAM_API_KEY` - Speech-to-text (default provider)
-- `ASSEMBLYAI_API_KEY` - Speech-to-text (alternative provider)
+- `ASSEMBLYAI_API_KEY` - Speech-to-text (default provider)
+- `DEEPGRAM_API_KEY` - Speech-to-text (alternative provider)
 - `ELEVENLABS_API_KEY` - Text-to-speech
 - `STRIPE_SECRET_KEY` - Payment processing
 - `STT_PROVIDER` - STT provider selection (`deepgram` or `assemblyai`)

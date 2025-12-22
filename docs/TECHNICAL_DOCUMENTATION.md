@@ -130,8 +130,8 @@ Provide a globally accessible, effective, and frustration-free AI tutoring exper
 - **WebSocket**: ws library
 
 ### AI & Voice Services
-- **STT (Primary)**: Deepgram Nova-2 (real-time streaming, default)
-- **STT (Alternative)**: AssemblyAI Universal (selectable via `STT_PROVIDER` env var)
+- **STT (Primary)**: AssemblyAI Universal (semantic turn detection, default)
+- **STT (Alternative)**: Deepgram Nova-2 (selectable via `STT_PROVIDER=deepgram`)
 - **LLM**: Anthropic Claude Sonnet 4
 - **TTS**: ElevenLabs Turbo v2.5
 - **Backup TTS**: Azure Speech Services (25 languages)
@@ -364,8 +364,8 @@ The platform supports two STT providers, selectable via the `STT_PROVIDER` envir
 
 | Provider | Value | Description |
 |----------|-------|-------------|
-| **Deepgram** | `deepgram` (default) | Nova-2 model, excellent accuracy, real-time streaming |
-| **AssemblyAI** | `assemblyai` | Universal model, alternative provider |
+| **AssemblyAI** | `assemblyai` (default) | Universal model with semantic turn detection |
+| **Deepgram** | `deepgram` | Nova-2 model, excellent accuracy, real-time streaming |
 
 **Configuration**: Set `STT_PROVIDER=deepgram` or `STT_PROVIDER=assemblyai` in environment variables.
 
@@ -975,7 +975,7 @@ ASSEMBLYAI_API_KEY=...          # Alternative STT provider
 ELEVENLABS_API_KEY=sk_...
 
 # STT Provider Selection
-STT_PROVIDER=deepgram           # Options: deepgram (default), assemblyai
+STT_PROVIDER=assemblyai         # Options: assemblyai (default), deepgram
 
 # Azure Speech (Backup TTS)
 AZURE_SPEECH_KEY=...
