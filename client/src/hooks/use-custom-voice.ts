@@ -871,8 +871,9 @@ export function useCustomVoice() {
         const source = audioContextRef.current.createMediaStreamSource(stream);
 
         // Add a GainNode to amplify quiet microphones at the hardware level
+        // REDUCED from 3.0 to 1.5 to prevent clipping/distortion (Dec 2025)
         const gainNode = audioContextRef.current.createGain();
-        gainNode.gain.value = 3.0; // 3x amplification before processing
+        gainNode.gain.value = 1.5; // 1.5x amplification before processing
 
         const processor = new AudioWorkletNode(audioContextRef.current, 'audio-processor');
         processorRef.current = processor;
@@ -1000,8 +1001,9 @@ export function useCustomVoice() {
           const float32Data = event.data.data; // Float32Array from AudioWorklet
 
           // Convert Float32 to PCM16 with gain amplification and SOFT LIMITING
-          // Note: We already have 3x hardware gain from GainNode, so use moderate software gain
-          const GAIN = 10; // Reduced from 30 to prevent clipping (30x total with 3x hardware)
+          // Note: We have 1.5x hardware gain from GainNode, so use moderate software gain
+          // REDUCED from 10 to 4 to prevent clipping/distortion (Dec 2025) - total ~6x
+          const GAIN = 4; // Low gain to prevent clipping (6x total with 1.5x hardware)
           const SOFT_THRESHOLD = 0.8; // Start soft limiting at 80% of max amplitude
           
           // Soft limiting function - prevents harsh clipping that breaks Deepgram STT
@@ -1038,7 +1040,7 @@ export function useCustomVoice() {
         gainNode.connect(processor);
         processor.connect(audioContextRef.current.destination);
 
-        console.log("[Custom Voice] 🔊 Audio chain: mic -> gain(3x) -> worklet -> destination");
+        console.log("[Custom Voice] 🔊 Audio chain: mic -> gain(1.5x) -> worklet -> destination");
       } catch (workletError) {
         console.warn('[Custom Voice] ⚠️ AudioWorklet not supported, falling back to ScriptProcessorNode:', workletError);
 
@@ -1046,8 +1048,9 @@ export function useCustomVoice() {
         const source = audioContextRef.current.createMediaStreamSource(stream);
 
         // Add gain node for fallback path too
+        // REDUCED from 3.0 to 1.5 to prevent clipping/distortion (Dec 2025)
         const gainNode = audioContextRef.current.createGain();
-        gainNode.gain.value = 3.0; // 3x amplification
+        gainNode.gain.value = 1.5; // 1.5x amplification
 
         const processor = audioContextRef.current.createScriptProcessor(2048, 1, 1); // Smaller buffer for lower latency
         processorRef.current = processor as any;
@@ -1246,8 +1249,9 @@ export function useCustomVoice() {
           // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
           // Convert to PCM16 with amplification and SOFT LIMITING
-          // Note: We already have 3x hardware gain from GainNode, so use moderate software gain
-          const GAIN = 10; // Reduced from 30 to prevent clipping (30x total with 3x hardware)
+          // Note: We have 1.5x hardware gain from GainNode, so use moderate software gain
+          // REDUCED from 10 to 4 to prevent clipping/distortion (Dec 2025) - total ~6x
+          const GAIN = 4; // Low gain to prevent clipping (6x total with 1.5x hardware)
           const SOFT_THRESHOLD = 0.8; // Start soft limiting at 80% of max amplitude
           
           // Soft limiting function - prevents harsh clipping that breaks Deepgram STT
@@ -1284,7 +1288,7 @@ export function useCustomVoice() {
         gainNode.connect(processor);
         processor.connect(audioContextRef.current.destination);
 
-        console.log("[Custom Voice] 🔊 Audio chain (fallback): mic -> gain(3x) -> processor -> destination");
+        console.log("[Custom Voice] 🔊 Audio chain (fallback): mic -> gain(1.5x) -> processor -> destination");
         console.log('[Custom Voice] 📊 ScriptProcessor connected:', {
           bufferSize: processor.bufferSize,
           inputChannels: processor.numberOfInputs,
