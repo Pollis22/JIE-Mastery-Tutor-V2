@@ -303,12 +303,25 @@ function createAssemblyAIConnection(
           confirmedTranscript = text;
         }
 
-        // Only fire callback when turn is complete
-        // Prefer the formatted version if available, otherwise use the unformatted one
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        // CRITICAL FIX (Dec 23, 2025): Wait for FORMATTED transcript
+        // With format_turns=true, AssemblyAI sends TWO end_of_turn messages:
+        //   1. Unformatted: "spanish" (end_of_turn=true, turn_is_formatted=false)
+        //   2. Formatted: "Spanish." (end_of_turn=true, turn_is_formatted=true)
+        // Previously BOTH were sent to Claude, causing "spanish Spanish."
+        // FIX: Only fire callback when turn_is_formatted=true
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         if (endOfTurn && confirmedTranscript) {
-          console.log('[AssemblyAI v3] ✅ End of turn - sending to Claude:', confirmedTranscript);
+          // If format_turns is enabled, wait for the formatted version
+          if (!turnIsFormatted) {
+            console.log('[AssemblyAI v3] ⏳ End of turn (unformatted) - waiting for formatted version:', confirmedTranscript);
+            // Don't reset confirmedTranscript - the formatted version will replace it
+            return;
+          }
           
-          // Fire callback with the confirmed transcript
+          console.log('[AssemblyAI v3] ✅ End of turn (formatted) - sending to Claude:', confirmedTranscript);
+          
+          // Fire callback with the confirmed, formatted transcript
           onTranscript(confirmedTranscript, true, confidence);
           
           // Reset for next turn
