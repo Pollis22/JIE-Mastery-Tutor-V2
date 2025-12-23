@@ -9,6 +9,8 @@ import { emailService } from '../services/email-service';
 
 // Run at 8:00 PM America/New_York (handles EST/EDT automatically)
 const DIGEST_CRON = '0 20 * * *';
+// Weekly digest runs Sunday at 8:00 PM America/New_York
+const WEEKLY_DIGEST_CRON = '0 20 * * 0';
 const DIGEST_TIMEZONE = 'America/New_York';
 
 interface SessionRow {
@@ -44,6 +46,22 @@ export function startDailyDigestJob() {
   });
 }
 
+export function startWeeklyDigestJob() {
+  console.log('[WeeklyDigest] Starting weekly digest scheduler (runs Sundays at 8:00 PM America/New_York)');
+
+  cron.schedule(WEEKLY_DIGEST_CRON, async () => {
+    console.log('[WeeklyDigest] Running weekly digest job...');
+
+    try {
+      await sendWeeklyDigests();
+    } catch (error) {
+      console.error('[WeeklyDigest] Job failed:', error);
+    }
+  }, {
+    timezone: DIGEST_TIMEZONE
+  });
+}
+
 async function sendDailyDigests(targetDate?: Date) {
   // Use provided date or current date - allows manual backfill/rerun
   const digestDate = targetDate || new Date();
@@ -60,6 +78,7 @@ async function sendDailyDigests(targetDate?: Date) {
   console.log(`[DailyDigest] Looking for sessions on ${digestDateString} (America/New_York)`);
 
   // Use parameterized date for correct backfill/rerun support
+  // Filter by email_summary_frequency: include users with 'daily' preference or NULL (default)
   const usersWithSessions = await pool.query<UserRow>(`
     SELECT DISTINCT 
       u.id as user_id,
@@ -72,6 +91,7 @@ async function sendDailyDigests(targetDate?: Date) {
       AND rs.minutes_used >= 1
       AND rs.status = 'ended'
       AND u.email IS NOT NULL
+      AND (u.email_summary_frequency = 'daily' OR u.email_summary_frequency IS NULL)
   `, [digestDateString]);
 
   console.log(`[DailyDigest] Found ${usersWithSessions.rows.length} users with sessions on ${digestDateString}`);
@@ -176,5 +196,108 @@ async function generateSessionSummary(
   }
 }
 
+async function sendWeeklyDigests() {
+  // Get the current date (Sunday at 8 PM when cron runs)
+  const now = new Date();
+  
+  // Calculate the start of the week (7 days ago)
+  const weekStart = new Date(now);
+  weekStart.setDate(weekStart.getDate() - 7);
+  
+  // Get date strings in America/New_York
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: DIGEST_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  const startDateString = formatter.format(weekStart);
+  const endDateString = formatter.format(now);
+
+  console.log(`[WeeklyDigest] Looking for sessions from ${startDateString} to ${endDateString} (America/New_York)`);
+
+  // Get users with weekly preference who had sessions this week
+  const usersWithSessions = await pool.query<UserRow>(`
+    SELECT DISTINCT 
+      u.id as user_id,
+      u.email,
+      u."parentName" as parent_name,
+      u."firstName" as first_name
+    FROM users u
+    INNER JOIN realtime_sessions rs ON rs.user_id = u.id
+    WHERE DATE(rs.started_at AT TIME ZONE 'America/New_York') >= $1::date
+      AND DATE(rs.started_at AT TIME ZONE 'America/New_York') <= $2::date
+      AND rs.minutes_used >= 1
+      AND rs.status = 'ended'
+      AND u.email IS NOT NULL
+      AND u.email_summary_frequency = 'weekly'
+  `, [startDateString, endDateString]);
+
+  console.log(`[WeeklyDigest] Found ${usersWithSessions.rows.length} users with weekly preference`);
+
+  for (const user of usersWithSessions.rows) {
+    try {
+      await sendWeeklyDigestForUser(user, startDateString, endDateString, now);
+    } catch (error) {
+      console.error(`[WeeklyDigest] Failed for user ${user.email}:`, error);
+    }
+  }
+
+  console.log('[WeeklyDigest] Job complete');
+}
+
+async function sendWeeklyDigestForUser(
+  user: UserRow,
+  startDateString: string,
+  endDateString: string,
+  digestDate: Date
+) {
+  // Get all sessions for this user in the past week
+  const sessionsResult = await pool.query<SessionRow>(`
+    SELECT 
+      id,
+      student_name,
+      subject,
+      minutes_used,
+      total_messages,
+      started_at,
+      transcript
+    FROM realtime_sessions
+    WHERE user_id = $1 
+      AND DATE(started_at AT TIME ZONE 'America/New_York') >= $2::date
+      AND DATE(started_at AT TIME ZONE 'America/New_York') <= $3::date
+      AND minutes_used >= 1
+      AND status = 'ended'
+    ORDER BY started_at ASC
+  `, [user.user_id, startDateString, endDateString]);
+
+  if (sessionsResult.rows.length === 0) {
+    return;
+  }
+
+  // Generate AI summaries for each session
+  const sessions = await Promise.all(
+    sessionsResult.rows.map(async (session) => ({
+      studentName: session.student_name || 'Student',
+      subject: session.subject || 'General',
+      duration: session.minutes_used || 1,
+      messageCount: session.total_messages || 0,
+      timestamp: session.started_at,
+      keyLearning: await generateSessionSummary(session.transcript, session.subject)
+    }))
+  );
+
+  // Send the weekly digest (using same email template with modified subject)
+  await emailService.sendDailyDigest({
+    parentEmail: user.email,
+    parentName: user.parent_name || user.first_name || '',
+    sessions,
+    date: digestDate,
+    isWeekly: true  // Flag to indicate weekly digest
+  });
+
+  console.log(`[WeeklyDigest] Sent to ${user.email} (${sessions.length} sessions)`);
+}
+
 // Export for manual testing
-export { sendDailyDigests };
+export { sendDailyDigests, sendWeeklyDigests };

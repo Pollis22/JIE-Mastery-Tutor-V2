@@ -1892,6 +1892,7 @@ Summary for parent:`
       keyLearning: string;
     }>;
     date: Date;
+    isWeekly?: boolean;
   }): Promise<boolean> {
     if (data.sessions.length === 0) {
       console.log('[EmailService] No sessions today, skipping digest');
@@ -1914,12 +1915,17 @@ Summary for parent:`
       const totalMinutes = data.sessions.reduce((sum, s) => sum + s.duration, 0);
       const totalSessions = data.sessions.length;
 
-      // Format date
-      const dateStr = data.date.toLocaleDateString('en-US', {
-        weekday: 'long',
-        month: 'long',
-        day: 'numeric'
-      });
+      // Format date based on weekly or daily
+      const isWeekly = data.isWeekly || false;
+      const dateStr = isWeekly
+        ? `Week of ${data.date.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}`
+        : data.date.toLocaleDateString('en-US', {
+            weekday: 'long',
+            month: 'long',
+            day: 'numeric'
+          });
+      const headerTitle = isWeekly ? 'Weekly Learning Summary' : 'Daily Learning Summary';
+      const timePeriod = isWeekly ? 'this week' : 'today';
 
       // Build student sections HTML
       let studentSections = '';
@@ -1979,13 +1985,13 @@ Summary for parent:`
         <body>
           <div class="container">
             <div class="header">
-              <h1 style="margin: 0 0 5px 0;">Daily Learning Summary</h1>
+              <h1 style="margin: 0 0 5px 0;">${headerTitle}</h1>
               <p style="margin: 0; opacity: 0.9;">${dateStr}</p>
             </div>
 
             <div class="content">
               <p>Hi ${data.parentName || 'there'},</p>
-              <p>Here's what your ${sessionsByStudent.size > 1 ? 'kids' : 'child'} learned today:</p>
+              <p>Here's what your ${sessionsByStudent.size > 1 ? 'kids' : 'child'} learned ${timePeriod}:</p>
 
               <div class="stats">
                 <div class="stat">
@@ -2011,7 +2017,7 @@ Summary for parent:`
 
             <div class="footer">
               <p>JIE Mastery AI Tutor</p>
-              <p>You received this because your family had tutoring sessions today.</p>
+              <p>You received this because your family had tutoring sessions ${timePeriod}.</p>
               <p><a href="${this.getBaseUrl()}/dashboard/preferences" style="color: #6b7280;">Manage email preferences</a></p>
             </div>
           </div>
@@ -2022,11 +2028,11 @@ Summary for parent:`
       await resend.emails.send({
         from: fromEmail,
         to: data.parentEmail,
-        subject: `Daily Learning Summary - ${dateStr}`,
+        subject: `${headerTitle} - ${dateStr}`,
         html
       });
 
-      console.log('[EmailService] Daily digest sent to:', data.parentEmail);
+      console.log(`[EmailService] ${isWeekly ? 'Weekly' : 'Daily'} digest sent to:`, data.parentEmail);
       return true;
     } catch (error) {
       console.error('[EmailService] Failed to send daily digest:', error);

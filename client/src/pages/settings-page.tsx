@@ -9,6 +9,7 @@ import { Slider } from "@/components/ui/slider";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
+import { Label } from "@/components/ui/label";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -16,10 +17,13 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { AudioSettings } from "@/components/AudioSettings";
 import { SecuritySettings } from "@/components/SecuritySettings";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { getPlanDetails } from "@shared/plan-config";
+import { Mail } from "lucide-react";
+
+type EmailFrequency = 'off' | 'per_session' | 'daily' | 'weekly';
 
 const settingsSchema = z.object({
   firstName: z.string().optional(),
@@ -50,11 +54,24 @@ interface DashboardData {
 export default function SettingsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const [emailFrequency, setEmailFrequency] = useState<EmailFrequency>('daily');
+  const [savingEmailPrefs, setSavingEmailPrefs] = useState(false);
 
   const { data: dashboard, isLoading: isDashboardLoading } = useQuery<DashboardData>({
     queryKey: ["/api/dashboard"],
     enabled: !!user,
   });
+
+  const { data: emailPrefs, isLoading: isEmailPrefsLoading } = useQuery<{ emailSummaryFrequency: EmailFrequency }>({
+    queryKey: ["/api/user/email-summary-preferences"],
+    enabled: !!user,
+  });
+
+  useEffect(() => {
+    if (emailPrefs?.emailSummaryFrequency) {
+      setEmailFrequency(emailPrefs.emailSummaryFrequency);
+    }
+  }, [emailPrefs]);
 
   const form = useForm<SettingsForm>({
     resolver: zodResolver(settingsSchema),
@@ -147,6 +164,38 @@ export default function SettingsPage() {
       title: "Form reset",
       description: "Settings have been reset to your saved values.",
     });
+  };
+
+  const handleSaveEmailPreferences = async () => {
+    setSavingEmailPrefs(true);
+    try {
+      const res = await apiRequest("PATCH", "/api/user/email-summary-preferences", {
+        emailSummaryFrequency: emailFrequency,
+      });
+      
+      if (res.ok) {
+        queryClient.invalidateQueries({ queryKey: ["/api/user/email-summary-preferences"] });
+        toast({ 
+          title: "Email preferences saved",
+          description: "Your email notification preferences have been updated.",
+        });
+      } else {
+        const data = await res.json();
+        toast({ 
+          title: "Error saving preferences", 
+          description: data.message || "Something went wrong",
+          variant: "destructive" 
+        });
+      }
+    } catch (error: any) {
+      toast({ 
+        title: "Error saving preferences", 
+        description: error.message || "Something went wrong",
+        variant: "destructive" 
+      });
+    } finally {
+      setSavingEmailPrefs(false);
+    }
   };
 
   const planDetails = getPlanDetails(user?.subscriptionPlan);
@@ -464,32 +513,108 @@ export default function SettingsPage() {
               {/* Email Preferences */}
               <Card className="shadow-sm">
                 <CardHeader>
-                  <CardTitle>Email Preferences</CardTitle>
+                  <CardTitle className="flex items-center gap-2">
+                    <Mail className="h-5 w-5" />
+                    Email Preferences
+                  </CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <FormField
-                    control={form.control}
-                    name="marketingOptIn"
-                    render={({ field }) => (
-                      <FormItem className="flex flex-row items-center justify-between rounded-lg border border-border p-4">
-                        <div className="space-y-0.5">
-                          <FormLabel className="text-base">
-                            Marketing Communications
-                          </FormLabel>
-                          <FormDescription>
-                            Receive updates about new features, learning tips, and special offers
-                          </FormDescription>
+                <CardContent className="space-y-6">
+                  {/* Learning Session Summaries */}
+                  <div className="space-y-4">
+                    <div>
+                      <h4 className="text-base font-medium">Learning Session Summaries</h4>
+                      <p className="text-sm text-muted-foreground">
+                        Choose how often you receive email summaries of your child's tutoring sessions
+                      </p>
+                    </div>
+                    
+                    {isEmailPrefsLoading ? (
+                      <div className="space-y-2">
+                        <Skeleton className="h-12 w-full" />
+                        <Skeleton className="h-12 w-full" />
+                        <Skeleton className="h-12 w-full" />
+                        <Skeleton className="h-12 w-full" />
+                      </div>
+                    ) : (
+                      <RadioGroup 
+                        value={emailFrequency} 
+                        onValueChange={(v) => setEmailFrequency(v as EmailFrequency)}
+                        className="space-y-3"
+                      >
+                        <div className={`flex items-center space-x-3 rounded-lg border p-4 cursor-pointer transition-colors ${emailFrequency === 'off' ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'}`}>
+                          <RadioGroupItem value="off" id="email-off" data-testid="radio-email-off" />
+                          <Label htmlFor="email-off" className="cursor-pointer flex-1">
+                            <span className="font-medium">Off</span>
+                            <span className="block text-sm text-muted-foreground">No email summaries</span>
+                          </Label>
                         </div>
-                        <FormControl>
-                          <Switch
-                            checked={field.value}
-                            onCheckedChange={field.onChange}
-                            data-testid="switch-marketing-opt-in"
-                          />
-                        </FormControl>
-                      </FormItem>
+                        
+                        <div className={`flex items-center space-x-3 rounded-lg border p-4 cursor-pointer transition-colors ${emailFrequency === 'per_session' ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'}`}>
+                          <RadioGroupItem value="per_session" id="email-per-session" data-testid="radio-email-per-session" />
+                          <Label htmlFor="email-per-session" className="cursor-pointer flex-1">
+                            <span className="font-medium">Per Session</span>
+                            <span className="block text-sm text-muted-foreground">Email after each tutoring session</span>
+                          </Label>
+                        </div>
+                        
+                        <div className={`flex items-center space-x-3 rounded-lg border p-4 cursor-pointer transition-colors ${emailFrequency === 'daily' ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'}`}>
+                          <RadioGroupItem value="daily" id="email-daily" data-testid="radio-email-daily" />
+                          <Label htmlFor="email-daily" className="cursor-pointer flex-1">
+                            <span className="font-medium">Daily Digest</span>
+                            <span className="block text-sm text-muted-foreground">One email at 8 PM with all sessions (Recommended)</span>
+                          </Label>
+                        </div>
+                        
+                        <div className={`flex items-center space-x-3 rounded-lg border p-4 cursor-pointer transition-colors ${emailFrequency === 'weekly' ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'}`}>
+                          <RadioGroupItem value="weekly" id="email-weekly" data-testid="radio-email-weekly" />
+                          <Label htmlFor="email-weekly" className="cursor-pointer flex-1">
+                            <span className="font-medium">Weekly Digest</span>
+                            <span className="block text-sm text-muted-foreground">One email on Sundays with all sessions from the week</span>
+                          </Label>
+                        </div>
+                      </RadioGroup>
                     )}
-                  />
+                    
+                    <div className="flex items-center justify-between pt-2">
+                      <p className="text-sm text-muted-foreground">
+                        Summaries are sent to: <span className="font-medium text-foreground">{user?.email}</span>
+                      </p>
+                      <Button 
+                        type="button"
+                        onClick={handleSaveEmailPreferences}
+                        disabled={savingEmailPrefs || isEmailPrefsLoading}
+                        data-testid="button-save-email-preferences"
+                      >
+                        {savingEmailPrefs ? "Saving..." : "Save Preferences"}
+                      </Button>
+                    </div>
+                  </div>
+                  
+                  <div className="border-t pt-4">
+                    <FormField
+                      control={form.control}
+                      name="marketingOptIn"
+                      render={({ field }) => (
+                        <FormItem className="flex flex-row items-center justify-between rounded-lg border border-border p-4">
+                          <div className="space-y-0.5">
+                            <FormLabel className="text-base">
+                              Marketing Communications
+                            </FormLabel>
+                            <FormDescription>
+                              Receive updates about new features, learning tips, and special offers
+                            </FormDescription>
+                          </div>
+                          <FormControl>
+                            <Switch
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                              data-testid="switch-marketing-opt-in"
+                            />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                  </div>
                 </CardContent>
               </Card>
 

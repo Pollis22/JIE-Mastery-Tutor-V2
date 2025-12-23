@@ -198,11 +198,12 @@ app.use((req, res, next) => {
     documentCleanupService.start();
     log('Document cleanup service started (auto-delete after 6 months)');
 
-    // Start daily digest email job (sends at 8 PM EST)
-    console.log('Starting daily digest email job...');
-    const { startDailyDigestJob } = await import('./jobs/daily-digest');
+    // Start daily and weekly digest email jobs
+    console.log('Starting email digest jobs...');
+    const { startDailyDigestJob, startWeeklyDigestJob } = await import('./jobs/daily-digest');
     startDailyDigestJob();
-    log('Daily digest job started (runs at 8:00 PM EST)');
+    startWeeklyDigestJob();
+    log('Email digest jobs started (daily at 8 PM, weekly on Sundays)');
 
     app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
       const status = err.status || err.statusCode || 500;

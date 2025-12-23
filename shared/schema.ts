@@ -110,6 +110,8 @@ export const users = pgTable("users", {
   voiceLanguage: varchar("voice_language", { length: 10 }),
   emailNotifications: boolean("email_notifications"),
   marketingEmails: boolean("marketing_emails"),
+  // Email Summary Preferences (off, per_session, daily, weekly)
+  emailSummaryFrequency: varchar("email_summary_frequency", { length: 20 }).default('daily'),
   // Email verification fields
   emailVerified: boolean("email_verified").default(false),
   emailVerificationToken: text("email_verification_token"),

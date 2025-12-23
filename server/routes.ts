@@ -913,6 +913,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Update email summary frequency preference
+  app.patch("/api/user/email-summary-preferences", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const user = req.user as any;
+      const { emailSummaryFrequency } = req.body;
+      
+      // Validate the frequency value
+      const validFrequencies = ['off', 'per_session', 'daily', 'weekly'];
+      if (!validFrequencies.includes(emailSummaryFrequency)) {
+        return res.status(400).json({ 
+          message: "Invalid email summary frequency. Must be one of: off, per_session, daily, weekly" 
+        });
+      }
+      
+      // Update user's email summary frequency
+      await storage.updateUserSettings(user.id, { emailSummaryFrequency });
+      
+      res.json({ 
+        success: true, 
+        preferences: { emailSummaryFrequency } 
+      });
+    } catch (error: any) {
+      console.error('[EmailSummaryPreferences] Error updating preferences:', error);
+      res.status(500).json({ message: "Error updating preferences: " + error.message });
+    }
+  });
+
+  // Get email summary preferences
+  app.get("/api/user/email-summary-preferences", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const user = req.user as any;
+      const userData = await storage.getUser(user.id);
+      
+      res.json({
+        emailSummaryFrequency: userData?.emailSummaryFrequency || 'daily'
+      });
+    } catch (error: any) {
+      console.error('[EmailSummaryPreferences] Error fetching preferences:', error);
+      res.status(500).json({ message: "Error fetching preferences: " + error.message });
+    }
+  });
+
   // Update user settings
   app.put("/api/settings", async (req, res) => {
     if (!req.isAuthenticated()) {
