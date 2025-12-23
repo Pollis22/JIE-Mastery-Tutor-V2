@@ -490,6 +490,83 @@ export function RealtimeVoiceHost({
 
   return (
     <div className="w-full space-y-4">
+      {/* Communication Mode Selector - ALWAYS visible, before and during session */}
+      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-blue-900 dark:text-blue-100">Communication Mode:</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {Object.entries(MODES).map(([key, config]) => {
+              const ModeIcon = config.icon;
+              return (
+                <Button
+                  key={key}
+                  onClick={() => switchMode(key as 'voice' | 'hybrid' | 'text', customVoice.isConnected)}
+                  variant={communicationMode === key ? 'default' : 'outline'}
+                  size="sm"
+                  className="gap-1.5"
+                  data-testid={`button-mode-${key}`}
+                >
+                  <ModeIcon className="h-4 w-4" />
+                  <span>{config.label}</span>
+                  {communicationMode === key && <span className="ml-1">✓</span>}
+                </Button>
+              );
+            })}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {MODES[communicationMode].emoji} {MODES[communicationMode].description}
+          </p>
+          
+          {/* Additional audio controls - only show when connected */}
+          {customVoice.isConnected && (
+            <div className="flex items-center gap-3 pt-2 border-t border-blue-200 dark:border-blue-700 mt-1">
+              <Button
+                onClick={toggleTutorAudio}
+                variant="ghost"
+                size="sm"
+                className="gap-2"
+                data-testid="button-toggle-tutor-audio"
+                title={tutorAudioEnabled ? 'Mute tutor voice' : 'Unmute tutor voice'}
+              >
+                {tutorAudioEnabled ? (
+                  <>
+                    <Volume2 className="h-4 w-4" />
+                    <span>Tutor Audio</span>
+                  </>
+                ) : (
+                  <>
+                    <VolumeX className="h-4 w-4" />
+                    <span className="text-muted-foreground">Tutor Audio</span>
+                  </>
+                )}
+              </Button>
+              <Button
+                onClick={toggleStudentMic}
+                variant="ghost"
+                size="sm"
+                className="gap-2"
+                data-testid="button-toggle-student-mic"
+                title={studentMicEnabled ? 'Mute your microphone' : 'Unmute your microphone'}
+              >
+                {studentMicEnabled ? (
+                  <>
+                    <Mic className="h-4 w-4" />
+                    <span>Your Mic</span>
+                  </>
+                ) : (
+                  <>
+                    <MicOff className="h-4 w-4" />
+                    <span className="text-muted-foreground">Your Mic</span>
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
+
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           {!customVoice.isConnected ? (
@@ -581,104 +658,6 @@ export function RealtimeVoiceHost({
           </div>
         )}
       </div>
-      
-      {/* Communication Mode Controls - Only shown during active session */}
-      {customVoice.isConnected && (
-        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold text-blue-900 dark:text-blue-100">Communication Mode:</span>
-              <div className="flex gap-2">
-                {Object.entries(MODES).map(([key, config]) => {
-                  const ModeIcon = config.icon;
-                  return (
-                    <Button
-                      key={key}
-                      onClick={() => switchMode(key as 'voice' | 'hybrid' | 'text')}
-                      variant={communicationMode === key ? 'default' : 'outline'}
-                      size="sm"
-                      className="gap-1.5"
-                      data-testid={`button-mode-${key}`}
-                    >
-                      <ModeIcon className="h-4 w-4" />
-                      <span>{config.label}</span>
-                      {communicationMode === key && <span className="ml-1">✓</span>}
-                    </Button>
-                  );
-                })}
-              </div>
-            </div>
-            
-            <div className="flex items-center gap-3">
-              <Button
-                onClick={toggleTutorAudio}
-                variant="ghost"
-                size="sm"
-                className="gap-2"
-                data-testid="button-toggle-tutor-audio"
-                title={tutorAudioEnabled ? 'Mute tutor voice' : 'Unmute tutor voice'}
-              >
-                {tutorAudioEnabled ? (
-                  <>
-                    <Volume2 className="h-4 w-4" />
-                    <span>Tutor Audio</span>
-                  </>
-                ) : (
-                  <>
-                    <VolumeX className="h-4 w-4 text-red-600 dark:text-red-400" />
-                    <span className="text-red-600 dark:text-red-400">Muted</span>
-                  </>
-                )}
-              </Button>
-              
-              <div className="h-4 w-px bg-border" />
-              
-              <Button
-                onClick={toggleStudentMic}
-                variant="ghost"
-                size="sm"
-                className="gap-2"
-                data-testid="button-toggle-student-mic"
-                title={studentMicEnabled ? 'Turn off microphone' : 'Turn on microphone'}
-              >
-                {studentMicEnabled ? (
-                  <>
-                    <Mic className="h-4 w-4" />
-                    <span>Your Mic</span>
-                  </>
-                ) : (
-                  <>
-                    <MicOff className="h-4 w-4 text-red-600 dark:text-red-400" />
-                    <span className="text-red-600 dark:text-red-400">Off</span>
-                  </>
-                )}
-              </Button>
-            </div>
-          </div>
-          
-          {/* Mode indicator message */}
-          <div className="mt-3 text-sm">
-            {!tutorAudioEnabled && !studentMicEnabled && (
-              <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300 font-medium">
-                <Type className="h-4 w-4" />
-                <span>📝 Text-only mode - Type to communicate silently</span>
-              </div>
-            )}
-            {tutorAudioEnabled && !studentMicEnabled && (
-              <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300 font-medium">
-                <Headphones className="h-4 w-4" />
-                <span>🎧 Listen mode - Type to communicate, hear responses</span>
-              </div>
-            )}
-            {tutorAudioEnabled && studentMicEnabled && (
-              <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300 font-medium">
-                <Mic className="h-4 w-4" />
-                <span>🎤 Voice mode - Speak naturally with your tutor</span>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
       
       {/* Microphone Error Banner */}
       {customVoice.microphoneError && customVoice.isConnected && (
