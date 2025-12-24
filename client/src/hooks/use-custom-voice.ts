@@ -2,6 +2,54 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { VOICE_TIMING, VOICE_THRESHOLDS, VOICE_MESSAGES, EXCLUDED_DEVICE_PATTERNS } from "@/config/voice-constants";
 import { voiceLogger } from "@/utils/voice-logger";
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// VAD PROFILES: Turn-taking parameters for different learner types
+// VAD is ONLY for: 1) UI speech detection 2) Barge-in to stop tutor
+// Turn commits are controlled by AssemblyAI end_of_turn, NOT by VAD
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+type VADProfileName = 'BALANCED' | 'PATIENT' | 'FAST';
+
+interface VADProfile {
+  minSpeechMs: number;        // Minimum speech duration before considering valid
+  endSilenceMs: number;       // Silence duration before VAD speech_end
+  coalesceWindowMs: number;   // Window to merge rapid speech events
+  thinkPauseGraceMs: number;  // Grace period for thinking pauses
+  minBargeInSpeechMs: number; // Minimum sustained speech for barge-in
+  minBargeInEnergyMs: number; // Minimum sustained energy for barge-in
+}
+
+const VAD_PROFILES: Record<VADProfileName, VADProfile> = {
+  BALANCED: {
+    minSpeechMs: 250,
+    endSilenceMs: 850,
+    coalesceWindowMs: 2200,
+    thinkPauseGraceMs: 1400,
+    minBargeInSpeechMs: 400,
+    minBargeInEnergyMs: 220,
+  },
+  PATIENT: {
+    minSpeechMs: 200,
+    endSilenceMs: 1100,
+    coalesceWindowMs: 3000,
+    thinkPauseGraceMs: 2200,
+    minBargeInSpeechMs: 550,
+    minBargeInEnergyMs: 260,
+  },
+  FAST: {
+    minSpeechMs: 300,
+    endSilenceMs: 650,
+    coalesceWindowMs: 1500,
+    thinkPauseGraceMs: 900,
+    minBargeInSpeechMs: 350,
+    minBargeInEnergyMs: 200,
+  },
+};
+
+// Current active profile - starts BALANCED, can auto-escalate to PATIENT
+let activeVADProfile: VADProfileName = 'BALANCED';
+let sessionStartTime = 0;
+let shortBurstCount = 0;  // Track bursts < 500ms for auto-escalation
+
 interface TranscriptMessage {
   speaker: "student" | "tutor" | "system";
   text: string;
@@ -874,6 +922,41 @@ export function useCustomVoice() {
         console.log("[Custom Voice] ✅ Audio context resumed from suspended state");
       }
       
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      // SHARED HELPERS: Used by both AudioWorklet and ScriptProcessor paths
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      
+      // Initialize session tracking for auto-escalation (once per session)
+      if (sessionStartTime === 0) {
+        sessionStartTime = Date.now();
+        shortBurstCount = 0;
+        activeVADProfile = 'BALANCED';
+        console.log(`[VoiceHost] Session started with ${activeVADProfile} profile`);
+      }
+      
+      // Get current profile parameters
+      const getProfile = () => VAD_PROFILES[activeVADProfile];
+      
+      // Auto-escalation helper: check if we should switch to PATIENT
+      const checkAutoEscalation = (speechDuration: number) => {
+        const sessionAge = Date.now() - sessionStartTime;
+        
+        // Only check during first 60 seconds
+        if (sessionAge > 60000) return;
+        
+        // Track short bursts (< 500ms)
+        if (speechDuration > 0 && speechDuration < 500) {
+          shortBurstCount++;
+          console.log(`[VoiceHost] Short burst detected (${speechDuration}ms) - count: ${shortBurstCount}/6`);
+          
+          // If 6+ short bursts in first 60 seconds, switch to PATIENT
+          if (shortBurstCount >= 6 && activeVADProfile === 'BALANCED') {
+            activeVADProfile = 'PATIENT';
+            console.log(`[VoiceHost] Turn profile switched to PATIENT (reason: frequent short bursts)`);
+          }
+        }
+      };
+
       try {
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         // FIX (Dec 23, 2025): Load AudioWorklet via blob URL
@@ -1009,10 +1092,8 @@ registerProcessor('audio-processor', AudioProcessor);
         let workletPostInterruptionBufferActive = false;
         let workletPostInterruptionTimeout: ReturnType<typeof setTimeout> | null = null;
         
-        const MIN_SPEECH_DURATION_MS = 600;
-        const SPEECH_COALESCE_WINDOW_MS = 1000;
-        const POST_INTERRUPTION_BUFFER_MS = 2000;
-        const SPEECH_DEBOUNCE_MS = 150;
+        // Use profile values instead of hardcoded constants
+        const POST_INTERRUPTION_BUFFER_MS = 2000;  // Fixed - always protect after barge-in
         
         // Handle audio data and VAD events from AudioWorklet
         processor.port.onmessage = (event) => {
@@ -1051,16 +1132,17 @@ registerProcessor('audio-processor', AudioProcessor);
                 return;
               }
               
-              // Start debounce timer for sustained speech
+              // Start debounce timer for sustained speech using profile's minBargeInSpeechMs
+              const profile = getProfile();
               if (workletSpeechStartTime === 0) {
                 workletSpeechStartTime = now;
-                console.log(`[Custom Voice] 🎤 VAD: Speech onset detected (rms=${rms.toFixed(4)}, starting ${SPEECH_DEBOUNCE_MS}ms debounce...)`);
+                console.log(`[Custom Voice] 🎤 VAD: Speech onset detected (rms=${rms.toFixed(4)}, starting ${profile.minBargeInSpeechMs}ms debounce for barge-in, profile=${activeVADProfile})`);
                 return;
               }
               
-              // Check if speech sustained for debounce period
-              if (now - workletSpeechStartTime < SPEECH_DEBOUNCE_MS) {
-                console.log(`[Custom Voice] ⏱️ VAD debounce: ${(now - workletSpeechStartTime).toFixed(0)}ms - waiting for sustained speech`);
+              // Check if speech sustained for barge-in threshold
+              if (now - workletSpeechStartTime < profile.minBargeInSpeechMs) {
+                console.log(`[Custom Voice] ⏱️ VAD debounce: ${(now - workletSpeechStartTime).toFixed(0)}ms/${profile.minBargeInSpeechMs}ms - waiting for sustained speech`);
                 return;
               }
 
@@ -1103,16 +1185,22 @@ registerProcessor('audio-processor', AudioProcessor);
               return;
             }
             
+            // Get current profile for dynamic thresholds
+            const profile = getProfile();
+            
+            // Track for auto-escalation
+            checkAutoEscalation(speechDuration);
+            
             // MIN SPEECH DURATION: Ignore very short utterances (likely noise/hesitation)
-            if (speechDuration > 0 && speechDuration < MIN_SPEECH_DURATION_MS) {
-              console.log(`[Custom Voice] ⏱️ VAD: Speech too short (${speechDuration}ms < ${MIN_SPEECH_DURATION_MS}ms), ignoring (AudioWorklet)`);
+            if (speechDuration > 0 && speechDuration < profile.minSpeechMs) {
+              console.log(`[Custom Voice] ⏱️ VAD: Speech too short (${speechDuration}ms < ${profile.minSpeechMs}ms), ignoring (profile=${activeVADProfile})`);
               workletSpeechStartTime = 0;
               return;
             }
             
             // SPEECH COALESCING: If speech ended recently, this might be a continuation
-            if (timeSinceLastEnd < SPEECH_COALESCE_WINDOW_MS) {
-              console.log(`[Custom Voice] 🔗 VAD: Coalescing speech (${timeSinceLastEnd}ms since last end < ${SPEECH_COALESCE_WINDOW_MS}ms window) (AudioWorklet)`);
+            if (timeSinceLastEnd < profile.coalesceWindowMs) {
+              console.log(`[Custom Voice] 🔗 VAD: Coalescing speech (${timeSinceLastEnd}ms since last end < ${profile.coalesceWindowMs}ms window, profile=${activeVADProfile})`);
               return;
             }
             
@@ -1197,9 +1285,6 @@ registerProcessor('audio-processor', AudioProcessor);
         
         const MAX_SILENT_CHUNKS = 5; // Only ~100ms of silence before considering speech ended
         const VAD_THRESHOLD = 0.06; // Base speech detection threshold (was 0.003, too low)
-        const SPEECH_DEBOUNCE_MS = 150; // Require 150ms of sustained speech to trigger
-        const MIN_SPEECH_DURATION_MS = 600; // Minimum speech duration before considering complete (Dec 10, 2025)
-        const SPEECH_COALESCE_WINDOW_MS = 1000; // Coalesce rapid speech events within 1 second
         const POST_INTERRUPTION_BUFFER_MS = 2000; // After barge-in, ignore speech-end events for 2s
 
         processor.onaudioprocess = (e) => {
@@ -1262,16 +1347,17 @@ registerProcessor('audio-processor', AudioProcessor);
                 return;
               }
               
-              // Start debounce timer for sustained speech
+              // Start debounce timer for sustained speech using profile's minBargeInSpeechMs
+              const profile = getProfile();
               if (speechStartTime === 0) {
                 speechStartTime = now;
-                console.log(`[Custom Voice] 🎤 VAD (fallback): Speech onset detected (rms=${rms.toFixed(4)}, starting 150ms debounce...)`);
+                console.log(`[Custom Voice] 🎤 VAD (fallback): Speech onset detected (rms=${rms.toFixed(4)}, starting ${profile.minBargeInSpeechMs}ms debounce, profile=${activeVADProfile})`);
                 return; // Wait for debounce
               }
               
-              // Check if speech sustained for 150ms
-              if (now - speechStartTime < SPEECH_DEBOUNCE_MS) {
-                console.log(`[Custom Voice] ⏱️ VAD debounce: ${(now - speechStartTime).toFixed(0)}ms - waiting for sustained speech`);
+              // Check if speech sustained for barge-in threshold
+              if (now - speechStartTime < profile.minBargeInSpeechMs) {
+                console.log(`[Custom Voice] ⏱️ VAD debounce: ${(now - speechStartTime).toFixed(0)}ms/${profile.minBargeInSpeechMs}ms - waiting for sustained speech`);
                 return;
               }
               
@@ -1296,13 +1382,14 @@ registerProcessor('audio-processor', AudioProcessor);
               console.log('[Custom Voice] 📦 Post-interruption buffer started (2s)');
             } else {
               // Tutor not speaking - lower threshold OK
+              const profile = getProfile();
               if (speechStartTime === 0) {
                 speechStartTime = now;
                 console.log("[Custom Voice] 🎤 VAD (fallback): Speech onset (tutor not playing)");
                 return; // Wait for debounce
               }
               
-              if (now - speechStartTime < SPEECH_DEBOUNCE_MS) {
+              if (now - speechStartTime < profile.minSpeechMs) {
                 return;
               }
               
@@ -1331,18 +1418,21 @@ registerProcessor('audio-processor', AudioProcessor);
               return;
             }
             
-            // MINIMUM SPEECH DURATION CHECK (Dec 10, 2025 FIX)
-            // Require at least 600ms of speech before considering it complete
+            // MINIMUM SPEECH DURATION CHECK using profile values
+            const profile = getProfile();
             const speechDuration = speechStartTime > 0 ? now - speechStartTime : 0;
-            if (speechDuration > 0 && speechDuration < MIN_SPEECH_DURATION_MS) {
-              console.log(`[Custom Voice] ⏱️ Speech too short (${speechDuration}ms < ${MIN_SPEECH_DURATION_MS}ms), waiting for more...`);
+            
+            // Track for auto-escalation
+            checkAutoEscalation(speechDuration);
+            
+            if (speechDuration > 0 && speechDuration < profile.minSpeechMs) {
+              console.log(`[Custom Voice] ⏱️ Speech too short (${speechDuration}ms < ${profile.minSpeechMs}ms), waiting for more (profile=${activeVADProfile})`);
               return;
             }
             
-            // SPEECH COALESCING CHECK (Dec 10, 2025 FIX)
-            // If we just ended speech less than 1 second ago, this might be continuation
-            if (lastSpeechEndTime > 0 && now - lastSpeechEndTime < SPEECH_COALESCE_WINDOW_MS) {
-              console.log('[Custom Voice] 📦 Coalescing rapid speech events - waiting for more');
+            // SPEECH COALESCING CHECK using profile values
+            if (lastSpeechEndTime > 0 && now - lastSpeechEndTime < profile.coalesceWindowMs) {
+              console.log(`[Custom Voice] 📦 Coalescing rapid speech events (${now - lastSpeechEndTime}ms < ${profile.coalesceWindowMs}ms, profile=${activeVADProfile})`);
               return;
             }
             

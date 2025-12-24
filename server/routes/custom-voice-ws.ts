@@ -179,11 +179,19 @@ function createAssemblyAIConnection(
   
   try {
     // First try with header-based auth (simpler, works for server-side)
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // AssemblyAI v3 end-of-turn configuration for BALANCED profile
+    // These settings allow students time to think (1-3+ second pauses)
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     const urlParams = new URLSearchParams({
       sample_rate: '16000',
       encoding: 'pcm_s16le',
       speech_model: speechModel,
       format_turns: 'true',
+      // End-of-turn detection settings for all-ages learning
+      end_of_turn_confidence_threshold: '0.65',  // Require 65% confidence before ending turn
+      min_end_of_turn_silence_when_confident: '1000',  // Wait 1s of silence even when confident
+      max_turn_silence: '5000',  // Allow up to 5s thinking pauses
     });
     
     const wsUrl = `wss://streaming.assemblyai.com/v3/ws?${urlParams.toString()}`;
@@ -291,11 +299,14 @@ function createAssemblyAIConnection(
         const confidence = msg.end_of_turn_confidence || 0;
 
         console.log('[AssemblyAI v3] 📝 Turn:', {
+          msgType: messageType,
           text: text.substring(0, 60) + (text.length > 60 ? '...' : ''),
           endOfTurn,
           turnIsFormatted,
           confidence: typeof confidence === 'number' ? confidence.toFixed(2) : confidence,
           turnOrder: msg.turn_order,
+          hypothesisLen: text.length,
+          confirmedLen: confirmedTranscript.length,
         });
 
         // REPLACE, don't append - v3 gives us the complete transcript each time
