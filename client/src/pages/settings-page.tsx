@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Slider } from "@/components/ui/slider";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
@@ -30,9 +29,6 @@ const settingsSchema = z.object({
   lastName: z.string().optional(),
   email: z.string().email("Please enter a valid email"),
   preferredLanguage: z.string(),
-  voiceStyle: z.string(),
-  speechSpeed: z.string(),
-  volumeLevel: z.number().min(0).max(100),
   marketingOptIn: z.boolean(),
 });
 
@@ -80,9 +76,6 @@ export default function SettingsPage() {
       lastName: "",
       email: "",
       preferredLanguage: "english",
-      voiceStyle: "cheerful",
-      speechSpeed: "1.0",
-      volumeLevel: 75,
       marketingOptIn: false,
     },
   });
@@ -94,9 +87,6 @@ export default function SettingsPage() {
         lastName: user.lastName || "",
         email: user.email || "",
         preferredLanguage: user.preferredLanguage || "english",
-        voiceStyle: user.voiceStyle || "cheerful",
-        speechSpeed: user.speechSpeed || "1.0",
-        volumeLevel: user.volumeLevel ?? 75,
         marketingOptIn: user.marketingOptIn ?? false,
       });
     }
@@ -155,9 +145,6 @@ export default function SettingsPage() {
       lastName: user?.lastName || "",
       email: user?.email || "",
       preferredLanguage: user?.preferredLanguage || "english",
-      voiceStyle: user?.voiceStyle || "cheerful",
-      speechSpeed: user?.speechSpeed || "1.0",
-      volumeLevel: user?.volumeLevel ?? 75,
       marketingOptIn: user?.marketingOptIn ?? false,
     });
     toast({
@@ -389,126 +376,6 @@ export default function SettingsPage() {
 
               {/* Audio Device Settings */}
               <AudioSettings />
-
-              {/* Voice & Audio Settings */}
-              <Card className="shadow-sm">
-                <CardHeader>
-                  <CardTitle>Voice & Audio Preferences</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <FormField
-                    control={form.control}
-                    name="voiceStyle"
-                    render={({ field }) => (
-                      <FormItem className="space-y-3">
-                        <FormLabel>Voice Style</FormLabel>
-                        <FormControl>
-                          <RadioGroup
-                            onValueChange={field.onChange}
-                            value={field.value}
-                            className="grid grid-cols-1 md:grid-cols-3 gap-3"
-                          >
-                            <div className={`border rounded-lg p-4 cursor-pointer transition-colors ${field.value === 'cheerful' ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'}`}>
-                              <div className="flex items-center space-x-3">
-                                <RadioGroupItem value="cheerful" id="cheerful" data-testid="radio-voice-cheerful" />
-                                <div>
-                                  <label htmlFor="cheerful" className="font-medium text-foreground cursor-pointer">
-                                    Cheerful
-                                  </label>
-                                  <p className="text-sm text-muted-foreground">Upbeat and encouraging</p>
-                                </div>
-                              </div>
-                            </div>
-                            
-                            <div className={`border rounded-lg p-4 cursor-pointer transition-colors ${field.value === 'empathetic' ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'}`}>
-                              <div className="flex items-center space-x-3">
-                                <RadioGroupItem value="empathetic" id="empathetic" data-testid="radio-voice-empathetic" />
-                                <div>
-                                  <label htmlFor="empathetic" className="font-medium text-foreground cursor-pointer">
-                                    Empathetic
-                                  </label>
-                                  <p className="text-sm text-muted-foreground">Understanding and patient</p>
-                                </div>
-                              </div>
-                            </div>
-                            
-                            <div className={`border rounded-lg p-4 cursor-pointer transition-colors ${field.value === 'professional' ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'}`}>
-                              <div className="flex items-center space-x-3">
-                                <RadioGroupItem value="professional" id="professional" data-testid="radio-voice-professional" />
-                                <div>
-                                  <label htmlFor="professional" className="font-medium text-foreground cursor-pointer">
-                                    Professional
-                                  </label>
-                                  <p className="text-sm text-muted-foreground">Clear and focused</p>
-                                </div>
-                              </div>
-                            </div>
-                          </RadioGroup>
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <FormField
-                      control={form.control}
-                      name="speechSpeed"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Speech Speed</FormLabel>
-                          <FormControl>
-                            <div className="space-y-2">
-                              <Slider
-                                min={0.7}
-                                max={1.2}
-                                step={0.05}
-                                value={[parseFloat(field.value)]}
-                                onValueChange={([value]) => field.onChange(value.toString())}
-                                data-testid="slider-speech-speed"
-                              />
-                              <div className="flex justify-between text-xs text-muted-foreground">
-                                <span>Slow (0.7x)</span>
-                                <span>Normal (1.0x)</span>
-                                <span>Fast (1.2x)</span>
-                              </div>
-                            </div>
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    
-                    <FormField
-                      control={form.control}
-                      name="volumeLevel"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Volume Level</FormLabel>
-                          <FormControl>
-                            <div className="space-y-2">
-                              <Slider
-                                min={0}
-                                max={100}
-                                step={1}
-                                value={[field.value]}
-                                onValueChange={([value]) => field.onChange(value)}
-                                data-testid="slider-volume"
-                              />
-                              <div className="flex justify-between text-xs text-muted-foreground">
-                                <span>Quiet</span>
-                                <span>Medium</span>
-                                <span>Loud</span>
-                              </div>
-                            </div>
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  </div>
-                </CardContent>
-              </Card>
 
               {/* Email Preferences */}
               <Card className="shadow-sm">
