@@ -618,9 +618,6 @@ export default function SettingsPage() {
                 </CardContent>
               </Card>
 
-              {/* Security Settings */}
-              <SecuritySettings />
-
               {/* Save Actions */}
               <div className="flex justify-end space-x-3">
                 <Button 
@@ -641,6 +638,9 @@ export default function SettingsPage() {
               </div>
             </form>
           </Form>
+
+          {/* Security Settings - placed outside main form to prevent nested form issues */}
+          <SecuritySettings />
         </div>
       </div>
     </div>
