@@ -139,12 +139,12 @@ export function SecuritySettings() {
     mutationFn: async (data: SecurityQuestionsForm) => {
       const response = await apiRequest("POST", "/api/user/security-questions", {
         currentPassword: data.currentPassword,
-        securityQuestion1: data.question1,
-        securityAnswer1: data.answer1,
-        securityQuestion2: data.question2,
-        securityAnswer2: data.answer2,
-        securityQuestion3: data.question3,
-        securityAnswer3: data.answer3,
+        question1: data.question1,
+        answer1: data.answer1,
+        question2: data.question2,
+        answer2: data.answer2,
+        question3: data.question3,
+        answer3: data.answer3,
       });
       return await response.json();
     },
@@ -220,6 +220,7 @@ export function SecuritySettings() {
               </div>
             </div>
             <Button 
+              type="button"
               variant="outline" 
               onClick={() => setActiveSection(activeSection === "password" ? null : "password")}
               data-testid="button-change-password"
@@ -348,6 +349,7 @@ export function SecuritySettings() {
               </div>
             </div>
             <Button 
+              type="button"
               variant="outline" 
               onClick={() => setActiveSection(activeSection === "questions" ? null : "questions")}
               data-testid="button-setup-questions"
@@ -449,6 +451,7 @@ export function SecuritySettings() {
               </div>
             </div>
             <Button 
+              type="button"
               variant="outline" 
               onClick={() => setActiveSection(activeSection === "email" ? null : "email")}
               data-testid="button-change-email"
