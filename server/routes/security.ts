@@ -265,13 +265,8 @@ router.post('/forgot-password', async (req: Request, res: Response) => {
 
     await storage.setPasswordResetToken(user.id, resetToken, resetExpiry);
 
-    const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN
-      ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
-      : process.env.REPLIT_DOMAINS 
-        ? `https://${process.env.REPLIT_DOMAINS.split(',')[0]}`
-        : `http://localhost:${process.env.PORT || 5000}`;
-    
-    const resetUrl = `${baseUrl}/reset-password?token=${resetToken}`;
+    // Note: The resetUrl is built by emailService.sendPasswordReset using its getBaseUrl()
+    // This local baseUrl is kept for logging purposes only
 
     try {
       await emailService.sendPasswordReset({

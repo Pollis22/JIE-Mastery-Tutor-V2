@@ -28,19 +28,27 @@ export class EmailService {
 
   private getBaseUrl(): string {
     // Priority: APP_URL > RAILWAY_STATIC_URL > RAILWAY_PUBLIC_DOMAIN > REPLIT_DOMAINS > localhost
+    // Always ensure https:// protocol is present for production URLs
+    let baseUrl = '';
+    
     if (process.env.APP_URL) {
-      return process.env.APP_URL.replace(/\/$/, ''); // Remove trailing slash
+      baseUrl = process.env.APP_URL.replace(/\/$/, ''); // Remove trailing slash
+    } else if (process.env.RAILWAY_STATIC_URL) {
+      baseUrl = process.env.RAILWAY_STATIC_URL.replace(/\/$/, '');
+    } else if (process.env.RAILWAY_PUBLIC_DOMAIN) {
+      baseUrl = `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`;
+    } else if (process.env.REPLIT_DOMAINS) {
+      baseUrl = `https://${process.env.REPLIT_DOMAINS.split(',')[0]}`;
+    } else {
+      baseUrl = process.env.REPLIT_DEV_DOMAIN || `http://localhost:${process.env.PORT || 5000}`;
     }
-    if (process.env.RAILWAY_STATIC_URL) {
-      return process.env.RAILWAY_STATIC_URL.replace(/\/$/, '');
+    
+    // Ensure https:// protocol is present (required for Outlook email links)
+    if (baseUrl && !baseUrl.startsWith('http://') && !baseUrl.startsWith('https://')) {
+      baseUrl = `https://${baseUrl}`;
     }
-    if (process.env.RAILWAY_PUBLIC_DOMAIN) {
-      return `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`;
-    }
-    if (process.env.REPLIT_DOMAINS) {
-      return `https://${process.env.REPLIT_DOMAINS.split(',')[0]}`;
-    }
-    return process.env.REPLIT_DEV_DOMAIN || `http://localhost:${process.env.PORT || 5000}`;
+    
+    return baseUrl;
   }
 
   async sendEmail(params: {
