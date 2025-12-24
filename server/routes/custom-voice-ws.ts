@@ -631,10 +631,11 @@ async function finalizeSession(
     // ============================================
     if (durationSeconds >= 30 && state.transcript.length >= 3 && state.userId) {
       try {
-        // Get parent info from database
+        // Get parent info and email preferences from database
         const parentResult = await db.select({
           email: users.email,
           parentName: users.parentName,
+          emailSummaryFrequency: users.emailSummaryFrequency,
         })
         .from(users)
         .where(eq(users.id, state.userId))
@@ -643,32 +644,43 @@ async function finalizeSession(
         const parent = parentResult[0];
         
         if (parent?.email) {
-          const emailService = new EmailService();
+          // Check user's email preference before sending
+          const emailFrequency = parent.emailSummaryFrequency || 'daily';
           
-          // Use subject from session state
-          const sessionSubject = state.subject || 'General';
-          
-          // Filter and sanitize transcript: remove empty texts and map roles
-          const sanitizedTranscript = state.transcript
-            .filter(t => t.text && t.text.trim().length > 0)
-            .map(t => ({
-              role: t.speaker === 'student' ? 'user' : 'assistant',
-              text: t.text.trim()
-            }));
-          
-          await emailService.sendSessionSummary({
-            parentEmail: parent.email,
-            parentName: parent.parentName || '',
-            studentName: state.studentName || 'Your child',
-            subject: sessionSubject,
-            gradeLevel: state.ageGroup || 'K-12',
-            duration: durationMinutes,
-            messageCount: sanitizedTranscript.length,
-            transcript: sanitizedTranscript,
-            sessionDate: new Date()
-          });
-          
-          console.log(`[Custom Voice] ✉️ Parent summary email sent to ${parent.email}`);
+          if (emailFrequency === 'off') {
+            console.log(`[Custom Voice] ℹ️ Email summaries disabled for ${parent.email}`);
+          } else if (emailFrequency === 'per_session') {
+            // Send immediately only for 'per_session' preference
+            const emailService = new EmailService();
+            
+            // Use subject from session state
+            const sessionSubject = state.subject || 'General';
+            
+            // Filter and sanitize transcript: remove empty texts and map roles
+            const sanitizedTranscript = state.transcript
+              .filter(t => t.text && t.text.trim().length > 0)
+              .map(t => ({
+                role: t.speaker === 'student' ? 'user' : 'assistant',
+                text: t.text.trim()
+              }));
+            
+            await emailService.sendSessionSummary({
+              parentEmail: parent.email,
+              parentName: parent.parentName || '',
+              studentName: state.studentName || 'Your child',
+              subject: sessionSubject,
+              gradeLevel: state.ageGroup || 'K-12',
+              duration: durationMinutes,
+              messageCount: sanitizedTranscript.length,
+              transcript: sanitizedTranscript,
+              sessionDate: new Date()
+            });
+            
+            console.log(`[Custom Voice] ✉️ Parent summary email sent to ${parent.email}`);
+          } else {
+            // 'daily' or 'weekly' - let cron job handle it
+            console.log(`[Custom Voice] ℹ️ Email will be sent via ${emailFrequency} digest for ${parent.email}`);
+          }
         }
       } catch (emailError) {
         // Don't fail the session if email fails
