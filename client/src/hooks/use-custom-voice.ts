@@ -1078,6 +1078,47 @@ registerProcessor('audio-processor', AudioProcessor);
 
         const source = audioContextRef.current.createMediaStreamSource(stream);
 
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        // MIC METER INSTRUMENTATION (Dec 24, 2025)
+        // Diagnose mic capture before any processing
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        const analyser = audioContextRef.current.createAnalyser();
+        analyser.fftSize = 2048;
+        source.connect(analyser);
+        
+        const logMicRms = () => {
+          if (!analyser || !audioContextRef.current) return;
+          const data = new Float32Array(analyser.fftSize);
+          analyser.getFloatTimeDomainData(data);
+          let sum = 0;
+          let hasNonZero = false;
+          for (let i = 0; i < data.length; i++) {
+            sum += data[i] * data[i];
+            if (data[i] !== 0) hasNonZero = true;
+          }
+          const rms = Math.sqrt(sum / data.length);
+          
+          // Get track state
+          const track = mediaStreamRef.current?.getAudioTracks()[0];
+          const trackState = track?.readyState || 'no-track';
+          const streamActive = mediaStreamRef.current?.active || false;
+          
+          console.log(`[MicMeter] rms=${rms.toFixed(6)} hasNonZero=${hasNonZero} ctx=${audioContextRef.current?.state} track=${trackState} stream=${streamActive ? 'active' : 'inactive'}`);
+        };
+        
+        // Log mic level every 2 seconds
+        const micMeterInterval = setInterval(logMicRms, 2000);
+        
+        // Initial log
+        setTimeout(logMicRms, 100);
+        
+        // Cleanup interval when processor is disconnected
+        const originalDisconnect = () => {
+          clearInterval(micMeterInterval);
+        };
+        // Note: will be called when session ends
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
         // Add a GainNode to amplify quiet microphones at the hardware level
         // REDUCED from 3.0 to 1.5 to prevent clipping/distortion (Dec 2025)
         const gainNode = audioContextRef.current.createGain();
@@ -1265,6 +1306,36 @@ registerProcessor('audio-processor', AudioProcessor);
 
         // Fallback to ScriptProcessorNode for older browsers
         const source = audioContextRef.current.createMediaStreamSource(stream);
+
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        // MIC METER INSTRUMENTATION (ScriptProcessor fallback)
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        const fallbackAnalyser = audioContextRef.current.createAnalyser();
+        fallbackAnalyser.fftSize = 2048;
+        source.connect(fallbackAnalyser);
+        
+        const logFallbackMicRms = () => {
+          if (!fallbackAnalyser || !audioContextRef.current) return;
+          const data = new Float32Array(fallbackAnalyser.fftSize);
+          fallbackAnalyser.getFloatTimeDomainData(data);
+          let sum = 0;
+          let hasNonZero = false;
+          for (let i = 0; i < data.length; i++) {
+            sum += data[i] * data[i];
+            if (data[i] !== 0) hasNonZero = true;
+          }
+          const rms = Math.sqrt(sum / data.length);
+          
+          const track = mediaStreamRef.current?.getAudioTracks()[0];
+          const trackState = track?.readyState || 'no-track';
+          const streamActive = mediaStreamRef.current?.active || false;
+          
+          console.log(`[MicMeter-Fallback] rms=${rms.toFixed(6)} hasNonZero=${hasNonZero} ctx=${audioContextRef.current?.state} track=${trackState} stream=${streamActive ? 'active' : 'inactive'}`);
+        };
+        
+        const fallbackMicMeterInterval = setInterval(logFallbackMicRms, 2000);
+        setTimeout(logFallbackMicRms, 100);
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
         // Add gain node for fallback path too
         // REDUCED from 3.0 to 1.5 to prevent clipping/distortion (Dec 2025)
