@@ -3,7 +3,7 @@ import { randomBytes, scrypt, timingSafeEqual } from 'crypto';
 import { promisify } from 'util';
 import { storage } from '../storage';
 import { emailService } from '../services/email-service';
-import { hashPassword } from '../auth';
+import { hashPassword, comparePasswords as authComparePasswords } from '../auth';
 
 const router = Router();
 const scryptAsync = promisify(scrypt);
@@ -42,15 +42,8 @@ async function compareSecurityAnswer(supplied: string, stored: string): Promise<
 }
 
 async function comparePasswords(supplied: string, stored: string): Promise<boolean> {
-  try {
-    const [hashed, salt] = stored.split('.');
-    if (!hashed || !salt) return false;
-    const hashedBuf = Buffer.from(hashed, 'hex');
-    const suppliedBuf = (await scryptAsync(supplied, salt, 64)) as Buffer;
-    return timingSafeEqual(hashedBuf, suppliedBuf);
-  } catch {
-    return false;
-  }
+  // Use the auth module's comparePasswords which supports both bcrypt and scrypt
+  return authComparePasswords(supplied, stored);
 }
 
 router.get('/security-questions-list', (req: Request, res: Response) => {
@@ -66,17 +59,32 @@ router.post('/user/security-questions', async (req: Request, res: Response) => {
     const userId = req.user.id;
     const { question1, answer1, question2, answer2, question3, answer3, currentPassword } = req.body;
 
+    console.log('[SecurityQuestions] Save attempt for user:', req.user.email);
+    console.log('[SecurityQuestions] Fields provided:', { 
+      q1: !!question1, a1: !!answer1, 
+      q2: !!question2, a2: !!answer2, 
+      q3: !!question3, a3: !!answer3, 
+      password: !!currentPassword 
+    });
+
     if (!question1 || !answer1 || !question2 || !answer2 || !question3 || !answer3 || !currentPassword) {
+      console.log('[SecurityQuestions] Missing required fields');
       return res.status(400).json({ error: 'All fields are required' });
     }
 
     const user = await storage.getUser(userId);
     if (!user) {
+      console.log('[SecurityQuestions] User not found:', userId);
       return res.status(404).json({ error: 'User not found' });
     }
 
+    console.log('[SecurityQuestions] Password hash type:', user.password.startsWith('$2') ? 'bcrypt' : 'scrypt');
+    
     const isValidPassword = await comparePasswords(currentPassword, user.password);
+    console.log('[SecurityQuestions] Password valid:', isValidPassword);
+    
     if (!isValidPassword) {
+      console.log('[SecurityQuestions] Password verification failed for user:', req.user.email);
       return res.status(401).json({ error: 'Incorrect password' });
     }
 

@@ -34,7 +34,7 @@ export async function hashPassword(password: string) {
   return bcrypt.hash(password, 10);
 }
 
-async function comparePasswords(supplied: string, stored: string) {
+export async function comparePasswords(supplied: string, stored: string) {
   if (stored.startsWith('$2a$') || stored.startsWith('$2b$')) {
     return bcrypt.compare(supplied, stored);
   }

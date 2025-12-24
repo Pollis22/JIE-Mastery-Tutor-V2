@@ -67,6 +67,7 @@ export function SecuritySettings() {
   const { toast } = useToast();
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showQuestionsPassword, setShowQuestionsPassword] = useState(false);
   const [activeSection, setActiveSection] = useState<"password" | "questions" | "email" | null>(null);
 
   const { data: securityStatus } = useQuery<{
@@ -418,11 +419,21 @@ export function SecuritySettings() {
                           <FormLabel>Current Password</FormLabel>
                           <FormDescription>Required to save security questions</FormDescription>
                           <FormControl>
-                            <Input
-                              {...field}
-                              type="password"
-                              data-testid="input-questions-password"
-                            />
+                            <div className="relative">
+                              <Input
+                                {...field}
+                                type={showQuestionsPassword ? "text" : "password"}
+                                className="pr-10"
+                                data-testid="input-questions-password"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setShowQuestionsPassword(!showQuestionsPassword)}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                              >
+                                {showQuestionsPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                              </button>
+                            </div>
                           </FormControl>
                           <FormMessage />
                         </FormItem>
