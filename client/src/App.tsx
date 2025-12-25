@@ -37,6 +37,7 @@ import AdminSubscriptions from "@/pages/admin-subscriptions";
 import AdminDocuments from "@/pages/admin-documents";
 import AdminAnalytics from "@/pages/admin-analytics";
 import AdminLogs from "@/pages/admin-logs";
+import AdminUserDetail from "@/pages/admin-user-detail";
 import AdminContacts from "@/pages/admin/admin-contacts-page";
 import AdminAgents from "@/pages/admin/admin-agents-page";
 import TermsPage from "@/pages/terms-page";
@@ -62,6 +63,7 @@ function Router() {
       <ProtectedRoute path="/profile" component={ProfilePage} />
       <ProtectedRoute path="/admin" component={AdminPageEnhanced} />
       <ProtectedRoute path="/admin/users" component={AdminUsers} />
+      <ProtectedRoute path="/admin/users/:userId" component={AdminUserDetail} />
       <ProtectedRoute path="/admin/subscriptions" component={AdminSubscriptions} />
       <ProtectedRoute path="/admin/documents" component={AdminDocuments} />
       <ProtectedRoute path="/admin/analytics" component={AdminAnalytics} />

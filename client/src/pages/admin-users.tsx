@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { Search, UserPlus, Edit, Trash2, CreditCard } from "lucide-react";
+import { Search, UserPlus, Edit, Trash2, CreditCard, Eye } from "lucide-react";
+import { Link } from "wouter";
 import {
   Dialog,
   DialogContent,
@@ -172,6 +173,15 @@ export default function AdminUsers() {
                         </td>
                         <td className="p-3">
                           <div className="flex items-center space-x-2">
+                            <Link href={`/admin/users/${user.id}`}>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                data-testid={`button-view-user-${user.id}`}
+                              >
+                                <Eye className="w-4 h-4" />
+                              </Button>
+                            </Link>
                             <Button
                               size="sm"
                               variant="outline"
