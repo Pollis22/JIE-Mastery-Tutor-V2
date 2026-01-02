@@ -1725,6 +1725,12 @@ registerProcessor('audio-processor', AudioProcessor);
   const MAX_AUDIO_QUEUE_SIZE = 20; // Prevent unbounded queue growth
   
   const playAudio = async (base64Audio: string) => {
+    // Guard: Skip playback if audio data is empty or invalid
+    if (!base64Audio || base64Audio.length === 0) {
+      console.log('[Custom Voice] ⚠️ No audio data received, skipping playback');
+      return;
+    }
+    
     if (!audioContextRef.current) {
       audioContextRef.current = new AudioContext({ sampleRate: 16000 });
     }

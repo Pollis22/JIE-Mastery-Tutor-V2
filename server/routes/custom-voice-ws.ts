@@ -871,10 +871,11 @@ export function setupCustomVoiceWebSocket(server: Server) {
         if (state.tutorAudioEnabled) {
           try {
             const audioBuffer = await generateSpeech(warningMessage, state.ageGroup, state.speechSpeed);
-            if (audioBuffer) {
+            if (audioBuffer && audioBuffer.length > 0) {
               ws.send(JSON.stringify({
                 type: 'audio',
-                audio: audioBuffer.toString('base64'),
+                data: audioBuffer.toString('base64'), // Use 'data' to match client expectations
+                mimeType: 'audio/pcm;rate=16000',
               }));
               console.log('[Inactivity] 🔊 Warning audio sent');
             }
@@ -912,10 +913,11 @@ export function setupCustomVoiceWebSocket(server: Server) {
         if (state.tutorAudioEnabled) {
           try {
             const audioBuffer = await generateSpeech(endMessage, state.ageGroup, state.speechSpeed);
-            if (audioBuffer) {
+            if (audioBuffer && audioBuffer.length > 0) {
               ws.send(JSON.stringify({
                 type: 'audio',
-                audio: audioBuffer.toString('base64'),
+                data: audioBuffer.toString('base64'), // Use 'data' to match client expectations
+                mimeType: 'audio/pcm;rate=16000',
               }));
               console.log('[Inactivity] 🔊 End message audio sent');
             }
@@ -928,6 +930,10 @@ export function setupCustomVoiceWebSocket(server: Server) {
         setTimeout(async () => {
           console.log('[Inactivity] 🛑 Auto-ending session due to inactivity');
           
+          // Clear persistence interval to stop database writes
+          clearInterval(persistInterval);
+          console.log('[Inactivity] ✅ Persistence interval cleared');
+          
           try {
             // Send session end notification to frontend
             ws.send(JSON.stringify({
@@ -937,7 +943,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
             }));
             
             // Finalize session in database
-            await finalizeSession(state, 'normal');
+            await finalizeSession(state, 'inactivity_timeout');
             
             // Close WebSocket
             ws.close(1000, 'Session ended due to inactivity');
@@ -951,10 +957,11 @@ export function setupCustomVoiceWebSocket(server: Server) {
           
         }, 5000); // 5 second delay
         
-        // Clear the interval to prevent multiple triggers
+        // Clear the inactivity interval to prevent multiple triggers
         if (state.inactivityTimerId) {
           clearInterval(state.inactivityTimerId);
           state.inactivityTimerId = null;
+          console.log('[Inactivity] ✅ Inactivity timer cleared');
         }
       }
       
