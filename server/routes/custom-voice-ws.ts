@@ -532,6 +532,25 @@ async function persistTranscript(sessionId: string, transcript: TranscriptEntry[
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// GOODBYE DETECTION: Gracefully end session when user says goodbye
+// Works for both voice and text modes
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const GOODBYE_PHRASES = [
+  'goodbye', 'good bye', 'bye', 'bye bye', 'see you', 'see ya',
+  'talk later', 'gotta go', "i'm done", 'im done', 'end session',
+  'that\'s all', 'thats all', 'thanks bye', 'thank you bye',
+  'adios', 'au revoir', 'ciao', 'hasta luego', 'sayonara'
+];
+
+function detectGoodbye(text: string): boolean {
+  const normalized = text.toLowerCase().trim();
+  // Check if the message is primarily a goodbye (short message with goodbye intent)
+  // This prevents false positives from sentences that just mention "bye" in passing
+  if (normalized.length > 50) return false; // Long messages are not pure goodbyes
+  return GOODBYE_PHRASES.some(phrase => normalized.includes(phrase));
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // TIMING FIX (Nov 3, 2025): Incomplete thought detection
 // Detect when students are likely still formulating their response
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1021,6 +1040,78 @@ export function setupCustomVoiceWebSocket(server: Server) {
         }));
 
         console.log(`[Custom Voice] 👤 ${state.studentName}: "${transcript}"`);
+
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        // 👋 GOODBYE DETECTION - Gracefully end session on user goodbye
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        if (detectGoodbye(transcript)) {
+          console.log('[Goodbye] 👋 User said goodbye (voice), ending session gracefully');
+          
+          const goodbyeMessage = "Goodbye! Great learning with you today. Come back anytime you want to continue learning!";
+          
+          // Add tutor goodbye to transcript
+          const tutorGoodbye: TranscriptEntry = {
+            speaker: "tutor",
+            text: goodbyeMessage,
+            timestamp: new Date().toISOString(),
+            messageId: crypto.randomUUID(),
+          };
+          state.transcript.push(tutorGoodbye);
+          
+          // Send goodbye transcript
+          ws.send(JSON.stringify({
+            type: "transcript",
+            speaker: "tutor",
+            text: goodbyeMessage
+          }));
+          
+          // Generate and send goodbye audio
+          if (state.tutorAudioEnabled) {
+            try {
+              const goodbyeAudio = await generateSpeech(goodbyeMessage, state.ageGroup, state.speechSpeed);
+              if (goodbyeAudio && goodbyeAudio.length > 0) {
+                ws.send(JSON.stringify({
+                  type: "audio",
+                  data: goodbyeAudio.toString("base64"),
+                  mimeType: "audio/pcm;rate=16000"
+                }));
+                console.log('[Goodbye] 🔊 Sent goodbye audio');
+              }
+            } catch (audioError) {
+              console.error('[Goodbye] ❌ Error generating goodbye audio:', audioError);
+            }
+          }
+          
+          // End session after audio plays
+          setTimeout(async () => {
+            console.log('[Goodbye] 🛑 Ending session');
+            clearInterval(persistInterval);
+            
+            if (state.inactivityTimerId) {
+              clearInterval(state.inactivityTimerId);
+              state.inactivityTimerId = null;
+            }
+            
+            try {
+              ws.send(JSON.stringify({
+                type: 'session_ended',
+                reason: 'user_goodbye',
+                message: 'Session ended - user said goodbye'
+              }));
+              
+              await finalizeSession(state, 'normal');
+              ws.close(1000, 'Session ended - user said goodbye');
+              console.log('[Goodbye] ✅ Session ended successfully');
+            } catch (error) {
+              console.error('[Goodbye] ❌ Error ending session:', error);
+              ws.close(1011, 'Error ending session');
+            }
+          }, 4000); // 4 second delay for audio to play
+          
+          state.isProcessing = false;
+          state.isSessionEnded = true;
+          return; // Exit early, don't process further
+        }
 
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         // 🛡️ CONTENT MODERATION - Check for inappropriate content
@@ -2546,6 +2637,77 @@ CRITICAL INSTRUCTIONS:
               speaker: "student",
               text: message.message
             }));
+            
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            // 👋 GOODBYE DETECTION (Text Mode) - Gracefully end session
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            if (detectGoodbye(message.message)) {
+              console.log('[Goodbye] 👋 User said goodbye (text), ending session gracefully');
+              
+              const goodbyeMessage = "Goodbye! Great learning with you today. Come back anytime you want to continue learning!";
+              
+              // Add tutor goodbye to transcript
+              const tutorGoodbyeText: TranscriptEntry = {
+                speaker: "tutor",
+                text: goodbyeMessage,
+                timestamp: new Date().toISOString(),
+                messageId: crypto.randomUUID(),
+              };
+              state.transcript.push(tutorGoodbyeText);
+              
+              // Send goodbye transcript
+              ws.send(JSON.stringify({
+                type: "transcript",
+                speaker: "tutor",
+                text: goodbyeMessage
+              }));
+              
+              // Generate and send goodbye audio
+              if (state.tutorAudioEnabled) {
+                try {
+                  const goodbyeAudio = await generateSpeech(goodbyeMessage, state.ageGroup, state.speechSpeed);
+                  if (goodbyeAudio && goodbyeAudio.length > 0) {
+                    ws.send(JSON.stringify({
+                      type: "audio",
+                      data: goodbyeAudio.toString("base64"),
+                      mimeType: "audio/pcm;rate=16000"
+                    }));
+                    console.log('[Goodbye] 🔊 Sent goodbye audio (text mode)');
+                  }
+                } catch (audioError) {
+                  console.error('[Goodbye] ❌ Error generating goodbye audio (text):', audioError);
+                }
+              }
+              
+              // End session after audio plays
+              setTimeout(async () => {
+                console.log('[Goodbye] 🛑 Ending session (text mode)');
+                clearInterval(persistInterval);
+                
+                if (state.inactivityTimerId) {
+                  clearInterval(state.inactivityTimerId);
+                  state.inactivityTimerId = null;
+                }
+                
+                try {
+                  ws.send(JSON.stringify({
+                    type: 'session_ended',
+                    reason: 'user_goodbye',
+                    message: 'Session ended - user said goodbye'
+                  }));
+                  
+                  await finalizeSession(state, 'normal');
+                  ws.close(1000, 'Session ended - user said goodbye');
+                  console.log('[Goodbye] ✅ Session ended successfully (text mode)');
+                } catch (error) {
+                  console.error('[Goodbye] ❌ Error ending session (text):', error);
+                  ws.close(1011, 'Error ending session');
+                }
+              }, 4000); // 4 second delay for audio to play
+              
+              state.isSessionEnded = true;
+              break; // Exit the switch, don't process further
+            }
             
             // Check content moderation
             try {
