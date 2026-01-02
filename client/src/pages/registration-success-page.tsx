@@ -57,6 +57,17 @@ export default function RegistrationSuccessPage() {
           setUserEmail(data.email);
         }
 
+        // Meta Pixel: Track successful subscription purchase
+        // This fires on new user registration with paid subscription
+        if (typeof window !== 'undefined' && (window as any).fbq) {
+          (window as any).fbq('track', 'Subscribe', {
+            value: data.subscriptionPrice || 19.00, // Default to starter price
+            currency: 'USD',
+            predicted_ltv: data.subscriptionPrice ? data.subscriptionPrice * 12 : 228.00
+          });
+          console.log('[Meta Pixel] Subscribe event tracked');
+        }
+
         setStatus('success');
 
         // Note: User is NOT logged in - they must verify email first

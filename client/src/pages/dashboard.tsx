@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -54,6 +54,41 @@ export default function DashboardPage() {
   const { user, logoutMutation } = useAuth();
   const [, setLocation] = useLocation();
   const [activeTab, setActiveTab] = useState("overview");
+
+  // Meta Pixel: Track subscription purchase/upgrade on successful checkout redirect
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const sessionId = params.get('session_id');
+    const subscriptionSuccess = params.get('subscription');
+    const plan = params.get('plan');
+    
+    // Track subscription purchase when redirected from Stripe checkout
+    if ((sessionId || subscriptionSuccess === 'success' || subscriptionSuccess === 'reactivated') 
+        && typeof window !== 'undefined' && (window as any).fbq) {
+      // Determine value based on plan
+      const planPrices: Record<string, number> = {
+        'starter': 19,
+        'standard': 39,
+        'pro': 79,
+        'elite': 149
+      };
+      const value = plan ? planPrices[plan] || 39 : 39; // Default to standard
+      
+      (window as any).fbq('track', 'Purchase', {
+        value: value,
+        currency: 'USD',
+        content_name: plan ? `${plan} subscription` : 'subscription',
+        content_type: 'subscription'
+      });
+      console.log('[Meta Pixel] Purchase event tracked for subscription');
+      
+      // Clean up URL params after tracking (prevent duplicate tracking on refresh)
+      if (sessionId || subscriptionSuccess) {
+        const newUrl = window.location.pathname;
+        window.history.replaceState({}, '', newUrl);
+      }
+    }
+  }, []);
 
   // Fetch voice balance
   const { data: voiceBalance } = useQuery<{

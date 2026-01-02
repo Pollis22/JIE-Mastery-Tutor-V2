@@ -136,6 +136,27 @@ export default function TutorPage() {
     }
   }, [selectedLanguage]);
 
+  // Meta Pixel: Track minute top-up purchase on successful checkout redirect
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const topupSuccess = params.get('topup');
+    
+    if (topupSuccess === 'success' && typeof window !== 'undefined' && (window as any).fbq) {
+      // Top-up is $19.99 for 60 minutes
+      (window as any).fbq('track', 'Purchase', {
+        value: 19.99,
+        currency: 'USD',
+        content_name: '60 minute top-up',
+        content_type: 'minutes'
+      });
+      console.log('[Meta Pixel] Purchase event tracked for minute top-up');
+      
+      // Clean up URL param (prevent duplicate tracking on refresh)
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, '', newUrl);
+    }
+  }, []);
+
   // Fetch available minutes
   const { data: minutesData } = useQuery<{
     total: number;
