@@ -139,7 +139,7 @@ export default function SupportPage() {
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground">
-                  {ELEVENLABS_AGENT_ID ? 'Chat with our AI assistant' : 'Chat with support (Coming Soon)'}
+                  Chat with our live support team
                 </p>
               </CardContent>
             </Card>
