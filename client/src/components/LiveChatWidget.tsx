@@ -92,61 +92,44 @@ export function LiveChatWidget({ agentId, isOpen: controlledIsOpen, onOpenChange
       
       {isOpen && (
         <div 
-          className="fixed bottom-24 right-6 z-50 w-[380px] bg-white dark:bg-card rounded-lg shadow-2xl overflow-hidden border border-border"
+          className="fixed z-50 bg-white dark:bg-card rounded-xl shadow-2xl overflow-hidden border border-border bottom-20 right-4 left-4 h-[75vh] sm:bottom-24 sm:right-6 sm:left-auto sm:w-[420px] sm:h-[650px]"
           data-testid="container-live-chat"
         >
-          <div className="flex items-center justify-between p-4 bg-red-600 text-white">
-            <div className="flex items-center space-x-2">
-              <MessageCircle className="h-5 w-5" />
-              <span className="font-semibold">JIE Mastery Support</span>
+          {!scriptLoaded && !scriptError && (
+            <div className="flex items-center justify-center h-full bg-gray-50">
+              <div className="flex flex-col items-center space-y-2">
+                <Loader2 className="h-8 w-8 animate-spin text-red-600" />
+                <span className="text-sm text-muted-foreground">Loading support chat...</span>
+              </div>
             </div>
-            <button 
-              onClick={() => {
-                console.log('[LiveChat] Close button clicked');
-                setIsOpen(false);
-              }} 
-              className="hover:bg-red-700 rounded p-1 transition-colors"
-              aria-label="Close chat"
-              data-testid="button-close-chat"
-            >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
+          )}
           
-          <div className="min-h-[400px]">
-            {!scriptLoaded && !scriptError && (
-              <div className="flex items-center justify-center h-[400px] bg-gray-50">
-                <div className="flex flex-col items-center space-y-2">
-                  <Loader2 className="h-8 w-8 animate-spin text-red-600" />
-                  <span className="text-sm text-muted-foreground">Loading support chat...</span>
-                </div>
-              </div>
-            )}
-            
-            {scriptError && (
-              <div className="flex flex-col items-center justify-center h-[400px] bg-gray-50 p-6 text-center">
-                <p className="text-sm text-muted-foreground mb-4">
-                  Unable to load chat widget. You can still reach us:
-                </p>
-                <button
-                  onClick={handleOpenInNewTab}
-                  className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg mb-3"
-                >
-                  Open Chat in New Tab
-                </button>
-                <a 
-                  href="mailto:support@jiemastery.ai" 
-                  className="text-red-600 hover:underline text-sm"
-                >
-                  Or email support@jiemastery.ai
-                </a>
-              </div>
-            )}
-            
-            {scriptLoaded && (
-              <elevenlabs-convai agent-id={agentId}></elevenlabs-convai>
-            )}
-          </div>
+          {scriptError && (
+            <div className="flex flex-col items-center justify-center h-full bg-gray-50 p-6 text-center">
+              <p className="text-sm text-muted-foreground mb-4">
+                Unable to load chat widget. You can still reach us:
+              </p>
+              <button
+                onClick={handleOpenInNewTab}
+                className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg mb-3"
+              >
+                Open Chat in New Tab
+              </button>
+              <a 
+                href="mailto:support@jiemastery.ai" 
+                className="text-red-600 hover:underline text-sm"
+              >
+                Or email support@jiemastery.ai
+              </a>
+            </div>
+          )}
+          
+          {scriptLoaded && (
+            <elevenlabs-convai 
+              agent-id={agentId}
+              style={{ width: '100%', height: '100%', display: 'block' }}
+            ></elevenlabs-convai>
+          )}
         </div>
       )}
 
