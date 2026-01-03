@@ -30,14 +30,16 @@ export function LiveChatWidget({ agentId, isOpen: controlledIsOpen, onOpenChange
   }, [onOpenChange]);
 
   useEffect(() => {
-    if (document.querySelector('script[src="https://elevenlabs.io/convai-widget/index.js"]')) {
+    const scriptUrl = 'https://unpkg.com/@elevenlabs/convai-widget-embed@beta';
+    if (document.querySelector(`script[src="${scriptUrl}"]`)) {
       setScriptLoaded(true);
       return;
     }
 
     const script = document.createElement('script');
-    script.src = 'https://elevenlabs.io/convai-widget/index.js';
+    script.src = scriptUrl;
     script.async = true;
+    script.type = 'text/javascript';
     script.onload = () => setScriptLoaded(true);
     document.body.appendChild(script);
 
