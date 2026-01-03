@@ -4,7 +4,7 @@ import { useLocation } from "wouter";
 import jieLogo from "@/assets/jie-mastery-logo-new.jpg";
 import girlWithRobotImage from "@/assets/girl-with-robot-tutor.png";
 import studentWithRobotImage from "@/assets/student-with-ai-robot-tutor.png";
-import { Clock, DollarSign, Target, Calendar, BookOpen, TrendingUp, Users, Shield, Brain, LightbulbIcon, Bot, Sparkles, GraduationCap } from "lucide-react";
+import { Clock, DollarSign, Target, Calendar, BookOpen, TrendingUp, Users, Shield, Brain, LightbulbIcon, Bot, Sparkles, GraduationCap, Home, FileCheck, Globe, Laptop, Heart } from "lucide-react";
 
 export default function BenefitsPage() {
   const [, setLocation] = useLocation();
@@ -187,6 +187,181 @@ export default function BenefitsPage() {
                   </p>
                 </CardContent>
               </Card>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Homeschool Families Section */}
+      <section className="py-16 bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20">
+        <div className="container mx-auto px-4">
+          <div className="max-w-6xl mx-auto">
+            <div className="text-center mb-12">
+              <div className="inline-block mb-4">
+                <div className="w-16 h-16 bg-amber-500 rounded-2xl flex items-center justify-center mx-auto">
+                  <Home className="w-8 h-8 text-white" />
+                </div>
+              </div>
+              <h2 className="text-4xl font-bold text-foreground mb-4">
+                The Perfect Partner for Homeschool Families
+              </h2>
+              <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
+                Homeschooling parents wear many hats. JIE Mastery becomes your dedicated teaching assistant — providing expert instruction in subjects where you need support, so you can focus on what matters most.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
+              <Card className="shadow-lg border-2 border-amber-300 dark:border-amber-700">
+                <CardContent className="pt-6 space-y-4">
+                  <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center">
+                    <BookOpen className="w-6 h-6 text-amber-600" />
+                  </div>
+                  <h3 className="text-lg font-bold text-foreground">Curriculum Supplement</h3>
+                  <p className="text-muted-foreground text-sm">
+                    Upload your homeschool curriculum materials — worksheets, textbook pages, or lesson plans. Our AI tutor works directly from YOUR curriculum to reinforce exactly what you're teaching.
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-lg border-2 border-amber-300 dark:border-amber-700">
+                <CardContent className="pt-6 space-y-4">
+                  <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center">
+                    <Target className="w-6 h-6 text-amber-600" />
+                  </div>
+                  <h3 className="text-lg font-bold text-foreground">Fill Knowledge Gaps</h3>
+                  <p className="text-muted-foreground text-sm">
+                    Not confident teaching algebra or Spanish verb conjugations? Let our AI expert handle the tough subjects while you focus on areas where you shine. No parent can be an expert in everything!
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-lg border-2 border-amber-300 dark:border-amber-700">
+                <CardContent className="pt-6 space-y-4">
+                  <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center">
+                    <Users className="w-6 h-6 text-amber-600" />
+                  </div>
+                  <h3 className="text-lg font-bold text-foreground">Multi-Age Household Support</h3>
+                  <p className="text-muted-foreground text-sm">
+                    Teaching multiple children at different grade levels? Each child gets their own profile with age-appropriate tutoring while sharing ONE family plan. The 8-year-old learns fractions while the teen tackles calculus.
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-lg border-2 border-amber-300 dark:border-amber-700">
+                <CardContent className="pt-6 space-y-4">
+                  <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center">
+                    <FileCheck className="w-6 h-6 text-amber-600" />
+                  </div>
+                  <h3 className="text-lg font-bold text-foreground">Documentation for Records</h3>
+                  <p className="text-muted-foreground text-sm">
+                    Complete transcripts of every tutoring session! Perfect for homeschool portfolios, state reporting requirements, and showing educational progress. Export and organize your learning records easily.
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-lg border-2 border-amber-300 dark:border-amber-700">
+                <CardContent className="pt-6 space-y-4">
+                  <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center">
+                    <Globe className="w-6 h-6 text-amber-600" />
+                  </div>
+                  <h3 className="text-lg font-bold text-foreground">Learn in 25 Languages</h3>
+                  <p className="text-muted-foreground text-sm">
+                    Teach foreign languages naturally through conversation! Students can practice Spanish, French, Mandarin, and more with a patient AI that never tires of repetition. Perfect for bilingual homeschool programs.
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card className="shadow-lg border-2 border-amber-300 dark:border-amber-700">
+                <CardContent className="pt-6 space-y-4">
+                  <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center">
+                    <Laptop className="w-6 h-6 text-amber-600" />
+                  </div>
+                  <h3 className="text-lg font-bold text-foreground">Independent Study Time</h3>
+                  <p className="text-muted-foreground text-sm">
+                    Need to work with one child while another studies independently? Our AI tutor keeps students engaged and learning productively — giving you the flexibility to divide your attention without guilt.
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="bg-white dark:bg-card border-2 border-amber-500 rounded-xl p-8">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
+                <div>
+                  <h3 className="text-2xl font-bold text-foreground mb-4">
+                    Real Homeschool Use Cases
+                  </h3>
+                  <ul className="space-y-4">
+                    <li className="flex items-start space-x-3">
+                      <Heart className="w-5 h-5 text-amber-500 flex-shrink-0 mt-1" />
+                      <div>
+                        <span className="font-semibold text-foreground">"I'm not a math person"</span>
+                        <p className="text-sm text-muted-foreground">Let JIE handle Pre-Algebra through Calculus while you focus on Literature and History</p>
+                      </div>
+                    </li>
+                    <li className="flex items-start space-x-3">
+                      <Heart className="w-5 h-5 text-amber-500 flex-shrink-0 mt-1" />
+                      <div>
+                        <span className="font-semibold text-foreground">"My kids are 4 grades apart"</span>
+                        <p className="text-sm text-muted-foreground">One tutor session helps your 3rd grader with multiplication while another assists your 7th grader with equations</p>
+                      </div>
+                    </li>
+                    <li className="flex items-start space-x-3">
+                      <Heart className="w-5 h-5 text-amber-500 flex-shrink-0 mt-1" />
+                      <div>
+                        <span className="font-semibold text-foreground">"We travel full-time"</span>
+                        <p className="text-sm text-muted-foreground">Access expert tutoring anywhere with internet — RV trips, world schooling, or your kitchen table</p>
+                      </div>
+                    </li>
+                    <li className="flex items-start space-x-3">
+                      <Heart className="w-5 h-5 text-amber-500 flex-shrink-0 mt-1" />
+                      <div>
+                        <span className="font-semibold text-foreground">"I need to prepare dinner"</span>
+                        <p className="text-sm text-muted-foreground">Children can work independently with the AI tutor while you handle life's other responsibilities</p>
+                      </div>
+                    </li>
+                  </ul>
+                </div>
+                <div className="bg-gradient-to-br from-amber-100 to-orange-100 dark:from-amber-900/30 dark:to-orange-900/30 rounded-xl p-6">
+                  <div className="text-center space-y-4">
+                    <div className="text-6xl">🏠📚</div>
+                    <h4 className="text-xl font-bold text-foreground">Homeschool-Ready Features</h4>
+                    <ul className="text-left space-y-2 text-sm text-muted-foreground">
+                      <li className="flex items-center space-x-2">
+                        <span className="text-green-500">✓</span>
+                        <span>Upload any curriculum materials</span>
+                      </li>
+                      <li className="flex items-center space-x-2">
+                        <span className="text-green-500">✓</span>
+                        <span>Unlimited student profiles per family</span>
+                      </li>
+                      <li className="flex items-center space-x-2">
+                        <span className="text-green-500">✓</span>
+                        <span>Exportable transcripts for portfolios</span>
+                      </li>
+                      <li className="flex items-center space-x-2">
+                        <span className="text-green-500">✓</span>
+                        <span>K-12 + College level support</span>
+                      </li>
+                      <li className="flex items-center space-x-2">
+                        <span className="text-green-500">✓</span>
+                        <span>Math, English, Science, Spanish & More</span>
+                      </li>
+                      <li className="flex items-center space-x-2">
+                        <span className="text-green-500">✓</span>
+                        <span>Parent-controlled, safe environment</span>
+                      </li>
+                    </ul>
+                    <Button 
+                      size="lg" 
+                      className="w-full bg-amber-500 hover:bg-amber-600"
+                      onClick={() => setLocation("/auth")}
+                      data-testid="button-homeschool-cta"
+                    >
+                      Start Homeschooling Smarter
+                    </Button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
