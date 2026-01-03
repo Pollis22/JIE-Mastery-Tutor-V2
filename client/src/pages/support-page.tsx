@@ -123,7 +123,16 @@ export default function SupportPage() {
             </Card>
 
             <Card 
-              className="hover:shadow-lg transition-shadow border-2 border-orange-200"
+              className="cursor-pointer hover:shadow-lg transition-shadow border-2 border-orange-200 hover:border-orange-400"
+              onClick={() => {
+                const chatButton = document.querySelector('[data-testid="button-start-live-chat"]') as HTMLButtonElement;
+                if (chatButton) {
+                  chatButton.click();
+                }
+              }}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => e.key === 'Enter' && (e.currentTarget as HTMLElement).click()}
               data-testid="card-live-chat"
             >
               <CardHeader>
@@ -134,7 +143,7 @@ export default function SupportPage() {
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground">
-                  Click the chat button in the bottom-right corner to talk with our AI support
+                  Click to talk with our AI support
                 </p>
               </CardContent>
             </Card>
