@@ -1,11 +1,16 @@
+import { useState } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BookOpen, HelpCircle, Mail, MessageCircle } from "lucide-react";
 import jieLogo from "@/assets/jie-mastery-logo-new.jpg";
+import { LiveChatWidget } from "@/components/LiveChatWidget";
+
+const ELEVENLABS_AGENT_ID = import.meta.env.VITE_ELEVENLABS_CONVAI_AGENT_ID || '';
 
 export default function SupportPage() {
   const [, setLocation] = useLocation();
+  const [showChat, setShowChat] = useState(false);
 
   return (
     <div className="min-h-screen bg-background">
@@ -121,7 +126,11 @@ export default function SupportPage() {
               </CardContent>
             </Card>
 
-            <Card className="cursor-pointer hover:shadow-lg transition-shadow" data-testid="card-live-chat">
+            <Card 
+              className="cursor-pointer hover:shadow-lg transition-shadow border-2 border-orange-200 hover:border-orange-400" 
+              onClick={() => setShowChat(true)}
+              data-testid="card-live-chat"
+            >
               <CardHeader>
                 <div className="w-12 h-12 bg-orange-500/10 rounded-lg flex items-center justify-center mb-4">
                   <MessageCircle className="w-6 h-6 text-orange-500" />
@@ -130,7 +139,7 @@ export default function SupportPage() {
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground">
-                  Chat with support (Coming Soon)
+                  {ELEVENLABS_AGENT_ID ? 'Chat with our AI assistant' : 'Chat with support (Coming Soon)'}
                 </p>
               </CardContent>
             </Card>
@@ -209,6 +218,15 @@ export default function SupportPage() {
           </div>
         </div>
       </div>
+
+      {/* ElevenLabs Live Chat Widget */}
+      {ELEVENLABS_AGENT_ID && (
+        <LiveChatWidget 
+          agentId={ELEVENLABS_AGENT_ID}
+          isOpen={showChat}
+          onOpenChange={setShowChat}
+        />
+      )}
     </div>
   );
 }
