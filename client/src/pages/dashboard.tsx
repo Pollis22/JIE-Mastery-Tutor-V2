@@ -171,6 +171,7 @@ export default function DashboardPage() {
 
   const sidebarItems = [
     { id: "overview", label: "Overview", icon: Home },
+    { id: "support-live", label: "Live Support", icon: User, onClick: () => setLocation("/support") },
     { id: "account", label: "Account Settings", icon: User },
     { id: "subscription", label: "Subscription", icon: CreditCard },
     { id: "payments", label: "Payment Methods", icon: Shield },
@@ -254,7 +255,9 @@ export default function DashboardPage() {
                           variant={activeTab === item.id ? "secondary" : "ghost"}
                           className="w-full justify-start"
                           onClick={() => {
-                            if (item.id === "admin") {
+                            if (item.onClick) {
+                              item.onClick();
+                            } else if (item.id === "admin") {
                               setLocation("/admin");
                             } else if (item.id === "settings") {
                               setLocation("/settings");

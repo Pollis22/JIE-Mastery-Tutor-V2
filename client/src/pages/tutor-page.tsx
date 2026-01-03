@@ -594,6 +594,10 @@ export default function TutorPage() {
                       <LayoutDashboard className="mr-2 h-4 w-4" />
                       Dashboard
                     </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setLocation("/support")} data-testid="menu-item-support">
+                      <User className="mr-2 h-4 w-4" />
+                      Live Support
+                    </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => setLocation("/settings")} data-testid="menu-item-settings">
                       <Settings className="mr-2 h-4 w-4" />
                       Settings
