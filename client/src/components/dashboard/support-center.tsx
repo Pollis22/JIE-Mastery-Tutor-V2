@@ -18,7 +18,6 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import { LiveChatWidget } from "@/components/LiveChatWidget";
 import { 
   HelpCircle, 
   Mail, 
@@ -115,8 +114,6 @@ const faqItems = [
 
 export default function SupportCenter() {
   const { toast } = useToast();
-  const [showChat, setShowChat] = useState(false);
-  const ELEVENLABS_AGENT_ID = import.meta.env.VITE_ELEVENLABS_CONVAI_AGENT_ID || '';
   const [contactForm, setContactForm] = useState({
     subject: "",
     message: "",
@@ -271,24 +268,10 @@ export default function SupportCenter() {
                 </div>
                 <div className="flex items-center gap-2">
                   <MessageCircle className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm">Live chat available 24/7 with our AI Support Team</span>
-                  <Button 
-                    variant="link" 
-                    className="p-0 h-auto text-sm" 
-                    onClick={() => setShowChat(true)}
-                  >
-                    Start Chat Now
-                  </Button>
+                  <span className="text-sm">Live chat available 24/7 - use the chat button in the bottom-right corner</span>
                 </div>
               </div>
             </div>
-            {ELEVENLABS_AGENT_ID && (
-              <LiveChatWidget 
-                agentId={ELEVENLABS_AGENT_ID}
-                isOpen={showChat}
-                onOpenChange={setShowChat}
-              />
-            )}
           </TabsContent>
 
           <TabsContent value="resources" className="space-y-4">

@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,7 +9,6 @@ const ELEVENLABS_AGENT_ID = import.meta.env.VITE_ELEVENLABS_CONVAI_AGENT_ID || '
 
 export default function SupportPage() {
   const [, setLocation] = useLocation();
-  const [showChat, setShowChat] = useState(false);
 
   return (
     <div className="min-h-screen bg-background">
@@ -127,8 +125,7 @@ export default function SupportPage() {
             </Card>
 
             <Card 
-              className="cursor-pointer hover:shadow-lg transition-shadow border-2 border-orange-200 hover:border-orange-400" 
-              onClick={() => setShowChat(true)}
+              className="hover:shadow-lg transition-shadow border-2 border-orange-200"
               data-testid="card-live-chat"
             >
               <CardHeader>
@@ -139,7 +136,7 @@ export default function SupportPage() {
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground">
-                  Chat with our live support team
+                  Click the chat button in the bottom-right corner to talk with our AI support
                 </p>
               </CardContent>
             </Card>
@@ -219,13 +216,9 @@ export default function SupportPage() {
         </div>
       </div>
 
-      {/* ElevenLabs Live Chat Widget */}
+      {/* ElevenLabs Live Chat Widget - handles its own UI */}
       {ELEVENLABS_AGENT_ID && (
-        <LiveChatWidget 
-          agentId={ELEVENLABS_AGENT_ID}
-          isOpen={showChat}
-          onOpenChange={setShowChat}
-        />
+        <LiveChatWidget agentId={ELEVENLABS_AGENT_ID} />
       )}
     </div>
   );
