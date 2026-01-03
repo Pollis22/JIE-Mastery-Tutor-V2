@@ -20,6 +20,9 @@ export default function BenefitsPage() {
               <span className="text-xl font-bold text-foreground">JIE Mastery Tutor</span>
             </div>
             <div className="flex items-center space-x-4">
+              <Button variant="ghost" onClick={() => setLocation("/support")} data-testid="button-nav-support">
+                Live Support
+              </Button>
               <Button variant="ghost" onClick={() => setLocation("/pricing")} data-testid="button-nav-pricing">
                 Pricing
               </Button>

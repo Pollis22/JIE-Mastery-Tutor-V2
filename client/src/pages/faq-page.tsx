@@ -43,7 +43,7 @@ export default function FAQPage() {
                 onClick={() => setLocation("/support")} 
                 data-testid="button-nav-support"
               >
-                Support
+                Live Support
               </Button>
               <Button 
                 variant="ghost" 
