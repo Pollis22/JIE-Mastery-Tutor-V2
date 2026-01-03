@@ -66,14 +66,14 @@ export default function DashboardPage() {
     const hasPaymentConfirmation = sessionId || subscriptionSuccess === 'success' || subscriptionSuccess === 'reactivated';
     
     if (hasPaymentConfirmation && typeof window !== 'undefined') {
-      // Determine value based on plan
+      // Determine value based on plan (matches pricing page)
       const planPrices: Record<string, number> = {
-        'starter': 19,
-        'standard': 39,
-        'pro': 79,
-        'elite': 149
+        'starter': 19.99,
+        'standard': 59.99,
+        'pro': 99.99,
+        'elite': 199.99
       };
-      const value = plan ? planPrices[plan] || 39 : 39; // Default to standard
+      const value = plan ? planPrices[plan] || 59.99 : 59.99; // Default to standard
       
       // Create unique conversion key to prevent duplicate firing
       const conversionKey = `gads_conversion_${sessionId || 'upgrade_' + Date.now()}`;
