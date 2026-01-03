@@ -7,9 +7,21 @@ interface LiveChatWidgetProps {
   onOpenChange?: (open: boolean) => void;
 }
 
+declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      'elevenlabs-convai': React.DetailedHTMLProps<
+        React.HTMLAttributes<HTMLElement> & { 'agent-id': string },
+        HTMLElement
+      >;
+    }
+  }
+}
+
 export function LiveChatWidget({ agentId, isOpen: controlledIsOpen, onOpenChange }: LiveChatWidgetProps) {
   const [internalIsOpen, setInternalIsOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [scriptLoaded, setScriptLoaded] = useState(false);
+  const [scriptError, setScriptError] = useState(false);
 
   const isOpen = controlledIsOpen !== undefined ? controlledIsOpen : internalIsOpen;
   
@@ -24,25 +36,41 @@ export function LiveChatWidget({ agentId, isOpen: controlledIsOpen, onOpenChange
 
   useEffect(() => {
     console.log('[LiveChat] Component mounted, agentId:', agentId ? 'present' : 'missing');
+    
+    const scriptUrl = 'https://elevenlabs.io/convai-widget/index.js';
+    
+    if (document.querySelector(`script[src="${scriptUrl}"]`)) {
+      console.log('[LiveChat] Script already loaded');
+      setScriptLoaded(true);
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = scriptUrl;
+    script.async = true;
+    script.type = 'text/javascript';
+    
+    script.onload = () => {
+      console.log('[LiveChat] ElevenLabs widget script loaded successfully');
+      setScriptLoaded(true);
+    };
+    
+    script.onerror = (error) => {
+      console.error('[LiveChat] Failed to load ElevenLabs widget script:', error);
+      setScriptError(true);
+    };
+    
+    document.head.appendChild(script);
   }, [agentId]);
 
-  const handleIframeLoad = () => {
-    console.log('[LiveChat] Iframe loaded successfully');
-    setIsLoading(false);
-  };
-
-  const handleIframeError = () => {
-    console.error('[LiveChat] Iframe failed to load');
-    setIsLoading(false);
+  const handleOpenInNewTab = () => {
+    window.open(`https://elevenlabs.io/app/talk-to?agent_id=${agentId}`, '_blank');
   };
 
   if (!agentId) {
     console.warn('[LiveChat] No agent ID provided, widget disabled');
     return null;
   }
-
-  const iframeSrc = `https://elevenlabs.io/convai/${agentId}`;
-  console.log('[LiveChat] Rendering widget, isOpen:', isOpen, 'iframeSrc:', iframeSrc);
 
   return (
     <>
@@ -64,7 +92,7 @@ export function LiveChatWidget({ agentId, isOpen: controlledIsOpen, onOpenChange
       
       {isOpen && (
         <div 
-          className="fixed bottom-24 right-6 z-50 w-[380px] h-[600px] bg-white dark:bg-card rounded-lg shadow-2xl overflow-hidden border border-border"
+          className="fixed bottom-24 right-6 z-50 w-[380px] bg-white dark:bg-card rounded-lg shadow-2xl overflow-hidden border border-border"
           data-testid="container-live-chat"
         >
           <div className="flex items-center justify-between p-4 bg-red-600 text-white">
@@ -84,23 +112,40 @@ export function LiveChatWidget({ agentId, isOpen: controlledIsOpen, onOpenChange
               <X className="h-5 w-5" />
             </button>
           </div>
-          <div className="h-[calc(100%-64px)] relative">
-            {isLoading && (
-              <div className="absolute inset-0 flex items-center justify-center bg-gray-50">
+          
+          <div className="min-h-[400px]">
+            {!scriptLoaded && !scriptError && (
+              <div className="flex items-center justify-center h-[400px] bg-gray-50">
                 <div className="flex flex-col items-center space-y-2">
                   <Loader2 className="h-8 w-8 animate-spin text-red-600" />
-                  <span className="text-sm text-muted-foreground">Connecting to support...</span>
+                  <span className="text-sm text-muted-foreground">Loading support chat...</span>
                 </div>
               </div>
             )}
-            <iframe
-              src={iframeSrc}
-              className="w-full h-full border-0"
-              allow="microphone"
-              onLoad={handleIframeLoad}
-              onError={handleIframeError}
-              title="JIE Mastery Live Support Chat"
-            />
+            
+            {scriptError && (
+              <div className="flex flex-col items-center justify-center h-[400px] bg-gray-50 p-6 text-center">
+                <p className="text-sm text-muted-foreground mb-4">
+                  Unable to load chat widget. You can still reach us:
+                </p>
+                <button
+                  onClick={handleOpenInNewTab}
+                  className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg mb-3"
+                >
+                  Open Chat in New Tab
+                </button>
+                <a 
+                  href="mailto:support@jiemastery.ai" 
+                  className="text-red-600 hover:underline text-sm"
+                >
+                  Or email support@jiemastery.ai
+                </a>
+              </div>
+            )}
+            
+            {scriptLoaded && (
+              <elevenlabs-convai agent-id={agentId}></elevenlabs-convai>
+            )}
           </div>
         </div>
       )}
