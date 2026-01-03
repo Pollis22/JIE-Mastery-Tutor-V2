@@ -5,8 +5,6 @@ import { BookOpen, HelpCircle, Mail, MessageCircle } from "lucide-react";
 import jieLogo from "@/assets/jie-mastery-logo-new.jpg";
 import { LiveChatWidget } from "@/components/LiveChatWidget";
 
-const ELEVENLABS_AGENT_ID = import.meta.env.VITE_ELEVENLABS_CONVAI_AGENT_ID || '';
-
 export default function SupportPage() {
   const [, setLocation] = useLocation();
 
@@ -217,9 +215,7 @@ export default function SupportPage() {
       </div>
 
       {/* ElevenLabs Live Chat Widget - handles its own UI */}
-      {ELEVENLABS_AGENT_ID && (
-        <LiveChatWidget agentId={ELEVENLABS_AGENT_ID} />
-      )}
+      <LiveChatWidget />
     </div>
   );
 }
