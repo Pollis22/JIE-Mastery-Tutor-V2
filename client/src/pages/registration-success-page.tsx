@@ -68,6 +68,22 @@ export default function RegistrationSuccessPage() {
           console.log('[Meta Pixel] Subscribe event tracked');
         }
 
+        // Google Ads: Track subscription conversion ONLY after Stripe confirms payment
+        // Uses sessionStorage with sessionId to prevent duplicate firing on refresh
+        const conversionKey = `gads_conversion_${sessionId}`;
+        if (typeof window !== 'undefined' && (window as any).gtag && !sessionStorage.getItem(conversionKey)) {
+          const conversionValue = data.subscriptionPrice || 19.00;
+          (window as any).gtag('event', 'conversion', {
+            'send_to': 'AW-17252974185/JIE_Subscription',
+            'value': conversionValue,
+            'currency': 'USD',
+            'transaction_id': sessionId // Unique transaction ID prevents server-side deduplication
+          });
+          // Mark this conversion as fired to prevent duplicates on page refresh
+          sessionStorage.setItem(conversionKey, 'true');
+          console.log('[Google Ads] JIE – Subscription conversion tracked for new user, value:', conversionValue);
+        }
+
         setStatus('success');
 
         // Note: User is NOT logged in - they must verify email first

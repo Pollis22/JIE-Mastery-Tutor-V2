@@ -55,16 +55,17 @@ export default function DashboardPage() {
   const [, setLocation] = useLocation();
   const [activeTab, setActiveTab] = useState("overview");
 
-  // Meta Pixel: Track subscription purchase/upgrade on successful checkout redirect
+  // Meta Pixel & Google Ads: Track subscription purchase/upgrade on successful checkout redirect
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const sessionId = params.get('session_id');
     const subscriptionSuccess = params.get('subscription');
     const plan = params.get('plan');
     
-    // Track subscription purchase when redirected from Stripe checkout
-    if ((sessionId || subscriptionSuccess === 'success' || subscriptionSuccess === 'reactivated') 
-        && typeof window !== 'undefined' && (window as any).fbq) {
+    // Only track if we have confirmed payment indicators from Stripe
+    const hasPaymentConfirmation = sessionId || subscriptionSuccess === 'success' || subscriptionSuccess === 'reactivated';
+    
+    if (hasPaymentConfirmation && typeof window !== 'undefined') {
       // Determine value based on plan
       const planPrices: Record<string, number> = {
         'starter': 19,
@@ -74,13 +75,33 @@ export default function DashboardPage() {
       };
       const value = plan ? planPrices[plan] || 39 : 39; // Default to standard
       
-      (window as any).fbq('track', 'Purchase', {
-        value: value,
-        currency: 'USD',
-        content_name: plan ? `${plan} subscription` : 'subscription',
-        content_type: 'subscription'
-      });
-      console.log('[Meta Pixel] Purchase event tracked for subscription');
+      // Create unique conversion key to prevent duplicate firing
+      const conversionKey = `gads_conversion_${sessionId || 'upgrade_' + Date.now()}`;
+      
+      // Meta Pixel tracking
+      if ((window as any).fbq) {
+        (window as any).fbq('track', 'Purchase', {
+          value: value,
+          currency: 'USD',
+          content_name: plan ? `${plan} subscription` : 'subscription',
+          content_type: 'subscription'
+        });
+        console.log('[Meta Pixel] Purchase event tracked for subscription');
+      }
+      
+      // Google Ads: Track subscription conversion ONLY after Stripe confirms payment
+      // Uses sessionStorage to prevent duplicate firing on page refresh
+      if ((window as any).gtag && !sessionStorage.getItem(conversionKey)) {
+        (window as any).gtag('event', 'conversion', {
+          'send_to': 'AW-17252974185/JIE_Subscription',
+          'value': value,
+          'currency': 'USD',
+          'transaction_id': sessionId || `upgrade_${user?.id}_${Date.now()}` // Unique transaction ID
+        });
+        // Mark this conversion as fired to prevent duplicates
+        sessionStorage.setItem(conversionKey, 'true');
+        console.log('[Google Ads] JIE – Subscription conversion tracked, value:', value);
+      }
       
       // Clean up URL params after tracking (prevent duplicate tracking on refresh)
       if (sessionId || subscriptionSuccess) {
@@ -88,7 +109,7 @@ export default function DashboardPage() {
         window.history.replaceState({}, '', newUrl);
       }
     }
-  }, []);
+  }, [user?.id]);
 
   // Fetch voice balance
   const { data: voiceBalance } = useQuery<{
