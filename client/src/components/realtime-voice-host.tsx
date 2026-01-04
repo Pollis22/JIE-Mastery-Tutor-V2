@@ -7,6 +7,21 @@ import { Mic, MicOff, Volume2, VolumeX, AlertTriangle, FileText, Type, Headphone
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 
+interface ActiveLesson {
+  id: string;
+  grade: string;
+  subject: string;
+  topic: string;
+  lessonTitle: string;
+  learningGoal: string;
+  tutorIntroduction: string;
+  guidedQuestions: string[];
+  practicePrompts: string[];
+  checkUnderstanding: string;
+  encouragementClose: string;
+  estimatedMinutes: number;
+}
+
 interface RealtimeVoiceHostProps {
   studentId?: string;
   studentName?: string;
@@ -14,6 +29,7 @@ interface RealtimeVoiceHostProps {
   language?: string; // LANGUAGE: Now supports all 22 languages
   ageGroup?: 'K-2' | '3-5' | '6-8' | '9-12' | 'College/Adult';
   contextDocumentIds?: string[];
+  activeLesson?: ActiveLesson | null; // Practice lesson context
   onSessionStart?: () => void;
   onSessionEnd?: () => void;
 }
@@ -25,6 +41,7 @@ export function RealtimeVoiceHost({
   language = 'en',
   ageGroup = '3-5',
   contextDocumentIds = [],
+  activeLesson,
   onSessionStart,
   onSessionEnd,
 }: RealtimeVoiceHostProps) {
@@ -180,10 +197,37 @@ export function RealtimeVoiceHost({
       'College/Adult': 'Treat as a peer. Be efficient and focus on practical applications.'
     };
 
-    return `You are an AI tutor helping ${studentName || 'a student'} (${ageGroup} level) with ${subject || 'their studies'}. 
+    let baseInstruction = `You are an AI tutor helping ${studentName || 'a student'} (${ageGroup} level) with ${subject || 'their studies'}. 
     ${ageSpecificInstructions[ageGroup]}
     Keep responses concise (2-3 sentences) suitable for voice conversation.
     Speak in ${language === 'es' ? 'Spanish' : language === 'hi' ? 'Hindi' : language === 'zh' ? 'Chinese' : 'English'}.`;
+
+    // Add practice lesson context if available
+    if (activeLesson) {
+      baseInstruction += `
+
+ACTIVE PRACTICE LESSON:
+Title: ${activeLesson.lessonTitle}
+Subject: ${activeLesson.subject}
+Topic: ${activeLesson.topic}
+Learning Goal: ${activeLesson.learningGoal}
+
+YOUR OPENING (use this exact introduction): "${activeLesson.tutorIntroduction}"
+
+GUIDED QUESTIONS (ask these progressively):
+${activeLesson.guidedQuestions?.map((q, i) => `${i + 1}. ${q}`).join('\n') || 'Ask exploratory questions about the topic.'}
+
+PRACTICE PROMPTS (use when student needs practice):
+${activeLesson.practicePrompts?.map((p, i) => `${i + 1}. ${p}`).join('\n') || 'Provide practice problems related to the topic.'}
+
+CHECK UNDERSTANDING: ${activeLesson.checkUnderstanding || 'Ask student to explain in their own words.'}
+
+CLOSING ENCOURAGEMENT: ${activeLesson.encouragementClose || 'Great job! Keep up the excellent work!'}
+
+IMPORTANT: Start the session by reading the opening introduction naturally. Then guide the student through the lesson using the questions and prompts.`;
+    }
+
+    return baseInstruction;
   };
 
   const startSession = async () => {
