@@ -57,6 +57,11 @@ export default function DashboardPage() {
   const [, setLocation] = useLocation();
   const [activeTab, setActiveTab] = useState("overview");
 
+  // Debug: Track activeTab state changes
+  useEffect(() => {
+    console.log('[Dashboard] activeTab state is now:', activeTab);
+  }, [activeTab]);
+
   // Meta Pixel & Google Ads: Track subscription purchase/upgrade on successful checkout redirect
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
