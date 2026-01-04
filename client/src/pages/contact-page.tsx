@@ -13,6 +13,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { LiveChatWidget } from "@/components/LiveChatWidget";
 
 const contactSchema = z.object({
   name: z.string().min(1, "Name is required"),
@@ -151,7 +152,19 @@ export default function ContactPage() {
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card
+                className="cursor-pointer hover:shadow-lg transition-shadow border-2 border-transparent hover:border-green-400"
+                onClick={() => {
+                  const chatButton = document.querySelector('[data-testid="button-start-live-chat"]') as HTMLButtonElement;
+                  if (chatButton) {
+                    chatButton.click();
+                  }
+                }}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => e.key === 'Enter' && (e.currentTarget as HTMLElement).click()}
+                data-testid="card-live-chat"
+              >
                 <CardHeader>
                   <div className="w-12 h-12 bg-green-500/10 rounded-lg flex items-center justify-center mb-4">
                     <MessageSquare className="w-6 h-6 text-green-500" />
@@ -159,7 +172,7 @@ export default function ContactPage() {
                   <CardTitle className="text-lg">Live Chat</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-sm text-muted-foreground">Available soon for instant support</p>
+                  <p className="text-sm text-muted-foreground">Click to talk with our AI support</p>
                 </CardContent>
               </Card>
 
@@ -262,6 +275,9 @@ export default function ContactPage() {
           </div>
         </div>
       </div>
+
+      {/* ElevenLabs Live Chat Widget */}
+      <LiveChatWidget />
     </div>
   );
 }
