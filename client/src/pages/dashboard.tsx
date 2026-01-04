@@ -236,9 +236,9 @@ export default function DashboardPage() {
       </header>
 
       <div className="container mx-auto px-4 py-6">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           {/* Sidebar */}
-          <div className="lg:col-span-1">
+          <div className="md:col-span-1">
             <Card>
               <CardHeader>
                 <div className="flex items-center space-x-3">
@@ -321,7 +321,12 @@ export default function DashboardPage() {
           </div>
 
           {/* Main Content Area */}
-          <div className="lg:col-span-3">
+          <div className="md:col-span-3" data-testid="main-content-area">
+            {/* Debug: Show current active tab */}
+            <div className="mb-4 p-2 bg-blue-100 dark:bg-blue-900 rounded text-sm">
+              Current Tab: <strong>{activeTab}</strong>
+            </div>
+            
             {activeTab === "overview" && (
               <div className="space-y-6">
                 {/* Welcome Card */}
