@@ -166,15 +166,15 @@ export function PracticeLessonsSection() {
         </Select>
 
         <Select 
-          value={selectedTopic} 
-          onValueChange={setSelectedTopic}
+          value={selectedTopic || "all"} 
+          onValueChange={(val) => setSelectedTopic(val === "all" ? "" : val)}
           disabled={!selectedSubject || topics.length === 0}
         >
           <SelectTrigger data-testid="select-topic">
             <SelectValue placeholder="All Topics" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">All Topics</SelectItem>
+            <SelectItem value="all">All Topics</SelectItem>
             {topics.map(topic => (
               <SelectItem key={topic} value={topic}>{topic}</SelectItem>
             ))}
