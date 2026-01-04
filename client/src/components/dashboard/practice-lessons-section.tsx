@@ -19,8 +19,11 @@ import {
   Clock,
   ChevronRight,
   CheckCircle,
-  PlayCircle
+  PlayCircle,
+  Download,
+  Loader2
 } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
 interface PracticeLesson {
   id: string;
@@ -68,6 +71,8 @@ export function PracticeLessonsSection() {
   const [selectedGrade, setSelectedGrade] = useState<string>('K');
   const [selectedSubject, setSelectedSubject] = useState<string>('');
   const [selectedTopic, setSelectedTopic] = useState<string>('');
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const { toast } = useToast();
 
   const studentId = (() => {
     try {
@@ -107,6 +112,125 @@ export function PracticeLessonsSection() {
 
   const handleStartLesson = (lessonId: string) => {
     setLocation(`/tutor?lessonId=${lessonId}`);
+  };
+
+  const handleDownloadPDF = async (lesson: PracticeLesson) => {
+    try {
+      setDownloadingId(lesson.id);
+      console.log('[Download] Fetching full lesson details:', lesson.id);
+
+      // Fetch full lesson details from API
+      const response = await fetch(`/api/practice-lessons/${lesson.id}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch lesson details');
+      }
+      const fullLesson = await response.json();
+
+      // Dynamic import of jsPDF
+      const { jsPDF } = await import('jspdf');
+      const doc = new jsPDF();
+
+      // Title
+      doc.setFontSize(20);
+      doc.setFont('helvetica', 'bold');
+      doc.text(fullLesson.lessonTitle || lesson.lessonTitle, 20, 25);
+
+      // Subtitle
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(100);
+      doc.text(`${lesson.subject} | ${gradeLabels[lesson.grade] || `Grade ${lesson.grade}`} | ${lesson.estimatedMinutes} minutes`, 20, 35);
+
+      // Reset color
+      doc.setTextColor(0);
+      let yPos = 50;
+
+      // Learning Goal
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Learning Goal:', 20, yPos);
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'normal');
+      yPos += 8;
+      const goalLines = doc.splitTextToSize(fullLesson.learningGoal || lesson.learningGoal, 170);
+      doc.text(goalLines, 20, yPos);
+      yPos += goalLines.length * 6 + 10;
+
+      // Introduction
+      if (fullLesson.tutorIntroduction) {
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Introduction:', 20, yPos);
+        yPos += 8;
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'normal');
+        const introLines = doc.splitTextToSize(fullLesson.tutorIntroduction, 170);
+        doc.text(introLines, 20, yPos);
+        yPos += introLines.length * 6 + 10;
+      }
+
+      // Guided Questions
+      if (fullLesson.guidedQuestions?.length > 0) {
+        if (yPos > 240) { doc.addPage(); yPos = 20; }
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Practice Questions:', 20, yPos);
+        yPos += 8;
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'normal');
+        fullLesson.guidedQuestions.forEach((q: string, i: number) => {
+          if (yPos > 270) { doc.addPage(); yPos = 20; }
+          const qLines = doc.splitTextToSize(`${i + 1}. ${q}`, 165);
+          doc.text(qLines, 25, yPos);
+          yPos += qLines.length * 6 + 4;
+        });
+        yPos += 6;
+      }
+
+      // Practice Prompts
+      if (fullLesson.practicePrompts?.length > 0) {
+        if (yPos > 240) { doc.addPage(); yPos = 20; }
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Practice Exercises:', 20, yPos);
+        yPos += 8;
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'normal');
+        fullLesson.practicePrompts.forEach((p: string, i: number) => {
+          if (yPos > 270) { doc.addPage(); yPos = 20; }
+          const pLines = doc.splitTextToSize(`${i + 1}. ${p}`, 165);
+          doc.text(pLines, 25, yPos);
+          yPos += pLines.length * 6 + 4;
+        });
+      }
+
+      // Footer
+      const pageCount = doc.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(9);
+        doc.setTextColor(150);
+        doc.text(`JIE Mastery AI Tutor - Page ${i} of ${pageCount}`, 105, 290, { align: 'center' });
+      }
+
+      // Download
+      const safeTitle = lesson.lessonTitle.replace(/[^a-z0-9]/gi, '_');
+      doc.save(`${safeTitle}.pdf`);
+
+      toast({
+        title: "PDF Downloaded",
+        description: "Open the PDF to view while talking to your tutor!",
+      });
+    } catch (error) {
+      console.error('[Download] PDF generation failed:', error);
+      toast({
+        title: "Download Failed",
+        description: "Could not generate PDF. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setDownloadingId(null);
+    }
   };
 
   const grades = gradesData?.grades || [];
@@ -230,15 +354,32 @@ export function PracticeLessonsSection() {
                           </span>
                         </div>
                       </div>
-                      <Button 
-                        size="sm" 
-                        onClick={() => handleStartLesson(lesson.id)}
-                        className="flex-shrink-0"
-                        data-testid={`button-start-lesson-${lesson.id}`}
-                      >
-                        <PlayCircle className="h-4 w-4 mr-1" />
-                        Start
-                      </Button>
+                      <div className="flex flex-col gap-1 flex-shrink-0">
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={() => handleDownloadPDF(lesson)}
+                          disabled={downloadingId === lesson.id}
+                          className="text-xs"
+                          data-testid={`button-download-lesson-${lesson.id}`}
+                        >
+                          {downloadingId === lesson.id ? (
+                            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                          ) : (
+                            <Download className="h-3 w-3 mr-1" />
+                          )}
+                          PDF
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          onClick={() => handleStartLesson(lesson.id)}
+                          className="text-xs"
+                          data-testid={`button-start-lesson-${lesson.id}`}
+                        >
+                          <PlayCircle className="h-3 w-3 mr-1" />
+                          Start
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 );
