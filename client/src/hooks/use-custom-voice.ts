@@ -772,10 +772,17 @@ export function useCustomVoice() {
   };
 
   // Helper to get preferred microphone from settings
+  // Helper to check if a device is a loopback/virtual device that shouldn't be used as a mic
+  const isLoopbackDevice = (label: string): boolean => {
+    const lowerLabel = label.toLowerCase();
+    return EXCLUDED_DEVICE_PATTERNS.some(pattern => lowerLabel.includes(pattern));
+  };
+
   const getPreferredMicrophoneId = async (): Promise<string | null> => {
     try {
       const preferredId = localStorage.getItem('jie-preferred-microphone-id');
       const preferredLabel = localStorage.getItem('jie-preferred-microphone-label');
+      const allowVirtual = getAllowVirtualAudio();
       
       // If no preference set or explicitly system-default, return null
       if (!preferredId) {
@@ -786,6 +793,14 @@ export function useCustomVoice() {
       const devices = await navigator.mediaDevices.enumerateDevices();
       const byId = devices.find(d => d.kind === 'audioinput' && d.deviceId === preferredId);
       if (byId) {
+        // CRITICAL: Check if stored preference is a loopback device
+        if (!allowVirtual && isLoopbackDevice(byId.label)) {
+          console.warn('[Custom Voice] ⚠️ Stored preference is a loopback device, ignoring:', byId.label);
+          // Clear the bad preference
+          localStorage.removeItem('jie-preferred-microphone-id');
+          localStorage.removeItem('jie-preferred-microphone-label');
+          return null;
+        }
         console.log('[Custom Voice] 🎯 Found preferred mic by ID:', byId.label);
         return byId.deviceId;
       }
@@ -794,6 +809,14 @@ export function useCustomVoice() {
       if (preferredLabel) {
         const byLabel = devices.find(d => d.kind === 'audioinput' && d.label === preferredLabel);
         if (byLabel) {
+          // CRITICAL: Check if stored preference is a loopback device
+          if (!allowVirtual && isLoopbackDevice(byLabel.label)) {
+            console.warn('[Custom Voice] ⚠️ Stored preference is a loopback device, ignoring:', byLabel.label);
+            // Clear the bad preference
+            localStorage.removeItem('jie-preferred-microphone-id');
+            localStorage.removeItem('jie-preferred-microphone-label');
+            return null;
+          }
           console.log('[Custom Voice] 🎯 Found preferred mic by label:', byLabel.label);
           return byLabel.deviceId;
         }
@@ -886,9 +909,52 @@ export function useCustomVoice() {
       if (audioTrack) {
         const settings = audioTrack.getSettings();
         const actualDeviceId = settings.deviceId;
+        const allowVirtual = getAllowVirtualAudio();
+        
+        // CRITICAL: Check if acquired device is a loopback device (Stereo Mix, etc.)
+        if (!allowVirtual && isLoopbackDevice(audioTrack.label)) {
+          console.error('[Custom Voice] ❌ Browser selected a loopback device:', audioTrack.label);
+          stream.getTracks().forEach(t => t.stop());
+          
+          // Try to find a real microphone instead
+          const realMicId = await findBestMicrophone();
+          if (realMicId) {
+            console.log('[Custom Voice] 🎯 Retrying with real microphone...');
+            const realStream = await navigator.mediaDevices.getUserMedia({
+              audio: {
+                deviceId: { exact: realMicId },
+                sampleRate: 16000,
+                channelCount: 1,
+                echoCancellation: true,
+                noiseSuppression: false,
+                autoGainControl: true,
+              }
+            });
+            mediaStreamRef.current = realStream;
+            setupAudioTrackListener(realStream);
+            
+            const realTrack = realStream.getAudioTracks()[0];
+            console.log('[Custom Voice] ✅ Now using real microphone:', realTrack?.label);
+            return; // Exit and let the new stream be used
+          } else {
+            setMicrophoneError({
+              message: 'No valid microphone found. "Stereo Mix" cannot be used for voice input.',
+              troubleshooting: [
+                'Connect a real microphone (headset, USB mic, or built-in)',
+                'In Windows Sound Settings, disable "Stereo Mix" device',
+                'Check that your microphone is set as the default input device'
+              ],
+              errorType: 'LOOPBACK_DEVICE',
+            });
+            return;
+          }
+        }
+        
         if (actualDeviceId) {
           selectedMicrophoneIdRef.current = actualDeviceId;
           selectedMicrophoneLabelRef.current = audioTrack.label;
+          
+          console.log('[Custom Voice] 🎤 Using microphone:', audioTrack.label);
           
           // Always persist the acquired device so next session uses it directly
           // Only skip if user explicitly cleared preferences (system default)
@@ -1727,24 +1793,33 @@ registerProcessor('audio-processor', AudioProcessor);
   const playAudio = async (base64Audio: string) => {
     // Guard: Skip playback if audio data is empty or invalid
     if (!base64Audio || base64Audio.length === 0) {
-      console.log('[Custom Voice] ⚠️ No audio data received, skipping playback');
+      console.log('[🔊 Audio] ⚠️ No audio data received, skipping playback');
       return;
     }
     
+    console.log('[🔊 Audio] Starting playback', {
+      dataLength: base64Audio.length,
+      contextExists: !!audioContextRef.current,
+      contextState: audioContextRef.current?.state || 'none'
+    });
+    
     if (!audioContextRef.current) {
       audioContextRef.current = new AudioContext({ sampleRate: 16000 });
+      console.log('[🔊 Audio] Created new AudioContext');
     }
 
     try {
       // Safety: Prevent unbounded queue growth if playback stalls
       if (audioQueueRef.current.length >= MAX_AUDIO_QUEUE_SIZE) {
-        console.warn(`[Custom Voice] ⚠️ Audio queue at max capacity (${MAX_AUDIO_QUEUE_SIZE}), dropping oldest chunks`);
+        console.warn(`[🔊 Audio] ⚠️ Audio queue at max capacity (${MAX_AUDIO_QUEUE_SIZE}), dropping oldest chunks`);
         audioQueueRef.current = audioQueueRef.current.slice(-10); // Keep last 10 chunks
       }
       
-      // Resume audio context if suspended (browser autoplay policy)
+      // CRITICAL: Resume audio context if suspended (browser autoplay policy)
       if (audioContextRef.current.state === 'suspended') {
+        console.log('[🔊 Audio] Resuming suspended AudioContext...');
         await audioContextRef.current.resume();
+        console.log('[🔊 Audio] ✅ AudioContext resumed, state:', audioContextRef.current.state);
       }
 
       const audioData = Uint8Array.from(atob(base64Audio), c => c.charCodeAt(0));
@@ -1836,9 +1911,9 @@ registerProcessor('audio-processor', AudioProcessor);
       // CRITICAL: Start playback at scheduled time (no gaps!)
       try {
         source.start(scheduleTime);
-        console.log(`[Custom Voice] 🔊 Scheduled audio chunk at ${scheduleTime.toFixed(3)}s, duration: ${duration.toFixed(3)}s`);
+        console.log(`[🔊 Audio] ✅ Scheduled chunk at ${scheduleTime.toFixed(3)}s, duration: ${duration.toFixed(3)}s, samples: ${audioBuffer.length}`);
       } catch (startError) {
-        console.error("[Custom Voice] ❌ Failed to start audio source:", startError);
+        console.error("[🔊 Audio] ❌ Failed to start audio source:", startError);
       }
       
       // Update next play time: slight overlap for seamless transition

@@ -322,11 +322,6 @@ export default function DashboardPage() {
 
           {/* Main Content Area */}
           <div className="md:col-span-3" data-testid="main-content-area">
-            {/* Debug: Show current active tab */}
-            <div className="mb-4 p-2 bg-blue-100 dark:bg-blue-900 rounded text-sm">
-              Current Tab: <strong>{activeTab}</strong>
-            </div>
-            
             {activeTab === "overview" && (
               <div className="space-y-6">
                 {/* Welcome Card */}
