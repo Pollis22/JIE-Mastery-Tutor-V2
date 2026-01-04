@@ -1121,6 +1121,367 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ==========================================
+  // PRACTICE LESSONS CURRICULUM BROWSER API
+  // ==========================================
+
+  // Get all available grades
+  app.get("/api/practice-lessons/grades", async (req, res) => {
+    try {
+      const { practiceLessons } = await import('@shared/schema');
+      const { db } = await import('./db');
+      const { sql } = await import('drizzle-orm');
+      
+      const result = await db.selectDistinct({ grade: practiceLessons.grade })
+        .from(practiceLessons)
+        .orderBy(practiceLessons.grade);
+      
+      const grades = result.map(r => r.grade);
+      res.json({ grades });
+    } catch (error: any) {
+      console.error('[Practice Lessons] Error fetching grades:', error);
+      res.status(500).json({ message: "Error fetching grades: " + error.message });
+    }
+  });
+
+  // Get subjects for a specific grade
+  app.get("/api/practice-lessons/subjects", async (req, res) => {
+    try {
+      const { grade } = req.query;
+      if (!grade || typeof grade !== 'string') {
+        return res.status(400).json({ message: "Grade parameter is required" });
+      }
+
+      const { practiceLessons } = await import('@shared/schema');
+      const { db } = await import('./db');
+      const { eq } = await import('drizzle-orm');
+      
+      const result = await db.selectDistinct({ subject: practiceLessons.subject })
+        .from(practiceLessons)
+        .where(eq(practiceLessons.grade, grade))
+        .orderBy(practiceLessons.subject);
+      
+      const subjects = result.map(r => r.subject);
+      res.json({ subjects, grade });
+    } catch (error: any) {
+      console.error('[Practice Lessons] Error fetching subjects:', error);
+      res.status(500).json({ message: "Error fetching subjects: " + error.message });
+    }
+  });
+
+  // Get topics for a specific grade and subject
+  app.get("/api/practice-lessons/topics", async (req, res) => {
+    try {
+      const { grade, subject } = req.query;
+      if (!grade || !subject || typeof grade !== 'string' || typeof subject !== 'string') {
+        return res.status(400).json({ message: "Grade and subject parameters are required" });
+      }
+
+      const { practiceLessons } = await import('@shared/schema');
+      const { db } = await import('./db');
+      const { eq, and } = await import('drizzle-orm');
+      
+      const result = await db.selectDistinct({ topic: practiceLessons.topic })
+        .from(practiceLessons)
+        .where(and(
+          eq(practiceLessons.grade, grade),
+          eq(practiceLessons.subject, subject)
+        ))
+        .orderBy(practiceLessons.topic);
+      
+      const topics = result.map(r => r.topic);
+      res.json({ topics, grade, subject });
+    } catch (error: any) {
+      console.error('[Practice Lessons] Error fetching topics:', error);
+      res.status(500).json({ message: "Error fetching topics: " + error.message });
+    }
+  });
+
+  // Get all lessons for a specific grade, subject, and optionally topic
+  app.get("/api/practice-lessons", async (req, res) => {
+    try {
+      const { grade, subject, topic, studentId } = req.query;
+      
+      const { practiceLessons, studentLessonProgress } = await import('@shared/schema');
+      const { db } = await import('./db');
+      const { eq, and, asc } = await import('drizzle-orm');
+      
+      let conditions: any[] = [];
+      
+      if (grade && typeof grade === 'string') {
+        conditions.push(eq(practiceLessons.grade, grade));
+      }
+      if (subject && typeof subject === 'string') {
+        conditions.push(eq(practiceLessons.subject, subject));
+      }
+      if (topic && typeof topic === 'string') {
+        conditions.push(eq(practiceLessons.topic, topic));
+      }
+      
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+      
+      const lessons = await db.select({
+        id: practiceLessons.id,
+        grade: practiceLessons.grade,
+        subject: practiceLessons.subject,
+        topic: practiceLessons.topic,
+        lessonTitle: practiceLessons.lessonTitle,
+        learningGoal: practiceLessons.learningGoal,
+        difficultyLevel: practiceLessons.difficultyLevel,
+        estimatedMinutes: practiceLessons.estimatedMinutes,
+        orderIndex: practiceLessons.orderIndex,
+      })
+        .from(practiceLessons)
+        .where(whereClause)
+        .orderBy(asc(practiceLessons.orderIndex));
+      
+      // If studentId is provided, fetch their progress for these lessons
+      let progressMap: Record<string, string> = {};
+      if (studentId && typeof studentId === 'string') {
+        const lessonIds = lessons.map(l => l.id);
+        if (lessonIds.length > 0) {
+          const progressRecords = await db.select({
+            lessonId: studentLessonProgress.lessonId,
+            status: studentLessonProgress.status,
+          })
+            .from(studentLessonProgress)
+            .where(eq(studentLessonProgress.studentId, studentId));
+          
+          progressRecords.forEach(p => {
+            progressMap[p.lessonId] = p.status || 'not_started';
+          });
+        }
+      }
+      
+      const lessonsWithProgress = lessons.map(lesson => ({
+        ...lesson,
+        status: progressMap[lesson.id] || 'not_started',
+      }));
+      
+      res.json({ lessons: lessonsWithProgress });
+    } catch (error: any) {
+      console.error('[Practice Lessons] Error fetching lessons:', error);
+      res.status(500).json({ message: "Error fetching lessons: " + error.message });
+    }
+  });
+
+  // Get a specific lesson by ID with full content
+  app.get("/api/practice-lessons/:lessonId", async (req, res) => {
+    try {
+      const { lessonId } = req.params;
+      const { studentId } = req.query;
+      
+      const { practiceLessons, studentLessonProgress } = await import('@shared/schema');
+      const { db } = await import('./db');
+      const { eq, and } = await import('drizzle-orm');
+      
+      const [lesson] = await db.select()
+        .from(practiceLessons)
+        .where(eq(practiceLessons.id, lessonId))
+        .limit(1);
+      
+      if (!lesson) {
+        return res.status(404).json({ message: "Lesson not found" });
+      }
+      
+      // Get progress if studentId is provided
+      let progress = null;
+      if (studentId && typeof studentId === 'string') {
+        const [progressRecord] = await db.select()
+          .from(studentLessonProgress)
+          .where(and(
+            eq(studentLessonProgress.studentId, studentId),
+            eq(studentLessonProgress.lessonId, lessonId)
+          ))
+          .limit(1);
+        
+        progress = progressRecord || null;
+      }
+      
+      res.json({ lesson, progress });
+    } catch (error: any) {
+      console.error('[Practice Lessons] Error fetching lesson:', error);
+      res.status(500).json({ message: "Error fetching lesson: " + error.message });
+    }
+  });
+
+  // Start a lesson for a student (creates or updates progress)
+  app.post("/api/practice-lessons/:lessonId/start", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const { lessonId } = req.params;
+      const { studentId, sessionId } = req.body;
+      
+      if (!studentId) {
+        return res.status(400).json({ message: "studentId is required" });
+      }
+      
+      const { studentLessonProgress, practiceLessons } = await import('@shared/schema');
+      const { db } = await import('./db');
+      const { eq, and } = await import('drizzle-orm');
+      
+      // Verify lesson exists
+      const [lesson] = await db.select({ id: practiceLessons.id })
+        .from(practiceLessons)
+        .where(eq(practiceLessons.id, lessonId))
+        .limit(1);
+      
+      if (!lesson) {
+        return res.status(404).json({ message: "Lesson not found" });
+      }
+      
+      // Check if progress already exists
+      const [existingProgress] = await db.select()
+        .from(studentLessonProgress)
+        .where(and(
+          eq(studentLessonProgress.studentId, studentId),
+          eq(studentLessonProgress.lessonId, lessonId)
+        ))
+        .limit(1);
+      
+      if (existingProgress) {
+        // Update existing progress to in_progress
+        const [updated] = await db.update(studentLessonProgress)
+          .set({
+            status: 'in_progress',
+            sessionId: sessionId || existingProgress.sessionId,
+            startedAt: existingProgress.startedAt || new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(studentLessonProgress.id, existingProgress.id))
+          .returning();
+        
+        res.json({ progress: updated, isNew: false });
+      } else {
+        // Create new progress
+        const [newProgress] = await db.insert(studentLessonProgress)
+          .values({
+            studentId,
+            lessonId,
+            status: 'in_progress',
+            sessionId: sessionId || null,
+            startedAt: new Date(),
+          })
+          .returning();
+        
+        res.json({ progress: newProgress, isNew: true });
+      }
+    } catch (error: any) {
+      console.error('[Practice Lessons] Error starting lesson:', error);
+      res.status(500).json({ message: "Error starting lesson: " + error.message });
+    }
+  });
+
+  // Complete a lesson for a student
+  app.post("/api/practice-lessons/:lessonId/complete", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const { lessonId } = req.params;
+      const { studentId, timeSpentSeconds } = req.body;
+      
+      if (!studentId) {
+        return res.status(400).json({ message: "studentId is required" });
+      }
+      
+      const { studentLessonProgress } = await import('@shared/schema');
+      const { db } = await import('./db');
+      const { eq, and } = await import('drizzle-orm');
+      
+      // Find the progress record
+      const [existingProgress] = await db.select()
+        .from(studentLessonProgress)
+        .where(and(
+          eq(studentLessonProgress.studentId, studentId),
+          eq(studentLessonProgress.lessonId, lessonId)
+        ))
+        .limit(1);
+      
+      if (!existingProgress) {
+        return res.status(404).json({ message: "No progress found for this lesson. Please start the lesson first." });
+      }
+      
+      // Update to completed
+      const [updated] = await db.update(studentLessonProgress)
+        .set({
+          status: 'completed',
+          completedAt: new Date(),
+          timeSpentSeconds: timeSpentSeconds || existingProgress.timeSpentSeconds,
+          updatedAt: new Date(),
+        })
+        .where(eq(studentLessonProgress.id, existingProgress.id))
+        .returning();
+      
+      res.json({ progress: updated });
+    } catch (error: any) {
+      console.error('[Practice Lessons] Error completing lesson:', error);
+      res.status(500).json({ message: "Error completing lesson: " + error.message });
+    }
+  });
+
+  // Get student's lesson progress summary
+  app.get("/api/practice-lessons/student/:studentId/progress", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    try {
+      const { studentId } = req.params;
+      const { grade, subject } = req.query;
+      
+      const { studentLessonProgress, practiceLessons } = await import('@shared/schema');
+      const { db } = await import('./db');
+      const { eq, and, sql } = await import('drizzle-orm');
+      
+      // Get counts by status
+      let conditions: any[] = [eq(studentLessonProgress.studentId, studentId)];
+      
+      const progressRecords = await db.select({
+        lessonId: studentLessonProgress.lessonId,
+        status: studentLessonProgress.status,
+        startedAt: studentLessonProgress.startedAt,
+        completedAt: studentLessonProgress.completedAt,
+        timeSpentSeconds: studentLessonProgress.timeSpentSeconds,
+        lessonGrade: practiceLessons.grade,
+        lessonSubject: practiceLessons.subject,
+        lessonTopic: practiceLessons.topic,
+        lessonTitle: practiceLessons.lessonTitle,
+      })
+        .from(studentLessonProgress)
+        .innerJoin(practiceLessons, eq(studentLessonProgress.lessonId, practiceLessons.id))
+        .where(and(...conditions));
+      
+      // Filter by grade/subject if provided
+      let filteredRecords = progressRecords;
+      if (grade && typeof grade === 'string') {
+        filteredRecords = filteredRecords.filter(r => r.lessonGrade === grade);
+      }
+      if (subject && typeof subject === 'string') {
+        filteredRecords = filteredRecords.filter(r => r.lessonSubject === subject);
+      }
+      
+      const completed = filteredRecords.filter(r => r.status === 'completed').length;
+      const inProgress = filteredRecords.filter(r => r.status === 'in_progress').length;
+      const totalTimeSeconds = filteredRecords.reduce((sum, r) => sum + (r.timeSpentSeconds || 0), 0);
+      
+      res.json({
+        studentId,
+        completed,
+        inProgress,
+        totalTimeSeconds,
+        recentLessons: filteredRecords.slice(0, 5),
+      });
+    } catch (error: any) {
+      console.error('[Practice Lessons] Error fetching progress:', error);
+      res.status(500).json({ message: "Error fetching progress: " + error.message });
+    }
+  });
+
   // Dashboard API
   app.get("/api/dashboard", async (req, res) => {
     if (!req.isAuthenticated()) {

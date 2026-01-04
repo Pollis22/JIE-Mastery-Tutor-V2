@@ -34,7 +34,8 @@ import {
   Volume2,
   Mic,
   UserCog,
-  FileText
+  FileText,
+  GraduationCap
 } from "lucide-react";
 import AccountSettings from "@/components/dashboard/account-settings";
 import SubscriptionManager from "@/components/dashboard/subscription-manager";
@@ -353,6 +354,33 @@ export default function DashboardPage() {
                           <p className="text-2xl font-bold mt-2">{stats?.weeklyMinutes || 0} min</p>
                         </CardContent>
                       </Card>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Practice Lessons Quick Action */}
+                <Card className="border-primary/20 bg-gradient-to-r from-primary/5 to-primary/10">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <GraduationCap className="h-5 w-5 text-primary" />
+                      Practice Lessons
+                    </CardTitle>
+                    <CardDescription>
+                      Browse our structured curriculum with guided lessons for every subject
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+                      <div className="text-sm text-muted-foreground">
+                        Explore Kindergarten through 12th grade lessons in Math, English, and Spanish
+                      </div>
+                      <Button
+                        onClick={() => setLocation('/practice-lessons')}
+                        data-testid="button-browse-lessons"
+                      >
+                        <BookOpen className="h-4 w-4 mr-2" />
+                        Browse Lessons
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>

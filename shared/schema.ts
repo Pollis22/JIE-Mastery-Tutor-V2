@@ -730,3 +730,64 @@ export type InsertMarketingCampaign = z.infer<typeof insertMarketingCampaignSche
 // Realtime session types
 export type RealtimeSession = typeof realtimeSessions.$inferSelect;
 export type InsertRealtimeSession = z.infer<typeof insertRealtimeSessionSchema>;
+
+// Practice Lessons table - stores pre-written curriculum lessons
+export const practiceLessons = pgTable("practice_lessons", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  grade: varchar("grade", { length: 10 }).notNull(), // 'K', '1', '2', etc.
+  subject: varchar("subject", { length: 50 }).notNull(), // 'Math', 'ELA', 'Spanish'
+  topic: varchar("topic", { length: 100 }).notNull(), // 'Counting', 'Shapes', etc.
+  lessonTitle: varchar("lesson_title", { length: 200 }).notNull(),
+  learningGoal: text("learning_goal").notNull(),
+  tutorIntroduction: text("tutor_introduction").notNull(),
+  guidedQuestions: jsonb("guided_questions").notNull().$type<string[]>(),
+  practicePrompts: jsonb("practice_prompts").notNull().$type<string[]>(),
+  checkUnderstanding: text("check_understanding").notNull(),
+  encouragementClose: text("encouragement_close").notNull(),
+  difficultyLevel: integer("difficulty_level").default(1),
+  estimatedMinutes: integer("estimated_minutes").default(10),
+  orderIndex: integer("order_index").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_lessons_grade").on(table.grade),
+  index("idx_lessons_subject").on(table.subject),
+  index("idx_lessons_topic").on(table.topic),
+  uniqueIndex("idx_lessons_unique").on(table.grade, table.subject, table.topic, table.orderIndex),
+]);
+
+export const insertPracticeLessonSchema = createInsertSchema(practiceLessons).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+// Student Lesson Progress - tracks which lessons students have started/completed
+export const studentLessonProgress = pgTable("student_lesson_progress", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  studentId: varchar("student_id").notNull().references(() => students.id, { onDelete: 'cascade' }),
+  lessonId: varchar("lesson_id").notNull().references(() => practiceLessons.id, { onDelete: 'cascade' }),
+  status: varchar("status", { length: 20 }).default('not_started').$type<'not_started' | 'in_progress' | 'completed'>(),
+  sessionId: varchar("session_id"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  timeSpentSeconds: integer("time_spent_seconds").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_progress_student").on(table.studentId),
+  index("idx_progress_status").on(table.status),
+  uniqueIndex("idx_progress_unique").on(table.studentId, table.lessonId),
+]);
+
+export const insertStudentLessonProgressSchema = createInsertSchema(studentLessonProgress).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+// Practice Lessons types
+export type PracticeLesson = typeof practiceLessons.$inferSelect;
+export type InsertPracticeLesson = z.infer<typeof insertPracticeLessonSchema>;
+export type StudentLessonProgress = typeof studentLessonProgress.$inferSelect;
+export type InsertStudentLessonProgress = z.infer<typeof insertStudentLessonProgressSchema>;

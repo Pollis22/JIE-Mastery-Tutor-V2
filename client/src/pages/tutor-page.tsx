@@ -15,7 +15,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
-import { Clock, AlertCircle, Upload, File, X, Paperclip, LogOut, Settings, LayoutDashboard, User, Globe, Menu } from "lucide-react";
+import { Clock, AlertCircle, Upload, File, X, Paperclip, LogOut, Settings, LayoutDashboard, User, Globe, Menu, BookOpen, GraduationCap, ChevronRight } from "lucide-react";
 import { SUPPORTED_LANGUAGES } from "@shared/languages";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -96,6 +96,12 @@ export default function TutorPage() {
     } catch {
       return 'en';
     }
+  });
+
+  // Practice lesson context
+  const [activeLessonId, setActiveLessonId] = useState<string | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('lessonId');
   });
 
   // Debug state for Realtime debugging
@@ -253,6 +259,29 @@ export default function TutorPage() {
     queryKey: ['/api/students', selectedStudentId, 'pinned-docs'],
     enabled: !!selectedStudentId,
   });
+
+  // Fetch active lesson details for structured tutoring
+  const { data: activeLessonData } = useQuery<{
+    lesson: {
+      id: string;
+      grade: string;
+      subject: string;
+      topic: string;
+      lessonTitle: string;
+      learningGoal: string;
+      tutorIntroduction: string;
+      guidedQuestions: string[];
+      practicePrompts: string[];
+      checkUnderstanding: string;
+      encouragementClose: string;
+      estimatedMinutes: number;
+    };
+  }>({
+    queryKey: ['/api/practice-lessons', activeLessonId],
+    enabled: !!activeLessonId,
+  });
+
+  const activeLesson = activeLessonData?.lesson;
 
   const contextDocumentIds = pinnedDocs?.map(pd => pd.document.id) || [];
 
@@ -742,6 +771,56 @@ export default function TutorPage() {
             </ol>
             </div>
           </div>
+
+          {/* Active Lesson Context Card */}
+          {activeLesson && (
+            <Card className="mt-4 border-2 border-primary/30 bg-gradient-to-r from-primary/5 to-primary/10" data-testid="card-active-lesson">
+              <CardContent className="pt-4">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-2">
+                      <GraduationCap className="h-5 w-5 text-primary" />
+                      <span className="text-xs font-medium text-primary uppercase tracking-wide">
+                        Practice Lesson
+                      </span>
+                    </div>
+                    <h3 className="font-semibold text-lg mb-1">{activeLesson.lessonTitle}</h3>
+                    <p className="text-sm text-muted-foreground mb-3">{activeLesson.learningGoal}</p>
+                    
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      <span className="text-xs bg-primary/20 text-primary px-2 py-1 rounded-full">
+                        {activeLesson.subject}
+                      </span>
+                      <span className="text-xs bg-muted text-muted-foreground px-2 py-1 rounded-full">
+                        {activeLesson.topic}
+                      </span>
+                      <span className="text-xs bg-muted text-muted-foreground px-2 py-1 rounded-full flex items-center gap-1">
+                        <Clock className="h-3 w-3" />
+                        {activeLesson.estimatedMinutes} min
+                      </span>
+                    </div>
+
+                    <div className="bg-background/50 p-3 rounded-lg border">
+                      <p className="text-sm italic text-muted-foreground">
+                        "{activeLesson.tutorIntroduction}"
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setActiveLessonId(null);
+                      window.history.replaceState({}, '', '/tutor');
+                    }}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Document Upload Section - Using AssignmentsPanel */}
           {mounted && user && (
