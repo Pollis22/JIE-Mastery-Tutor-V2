@@ -256,7 +256,9 @@ export default function DashboardPage() {
                           key={item.id}
                           variant={activeTab === item.id ? "secondary" : "ghost"}
                           className="w-full justify-start"
+                          data-testid={`sidebar-${item.id}`}
                           onClick={() => {
+                            console.log(`[Sidebar] Clicked: ${item.id}`);
                             if (item.onClick) {
                               item.onClick();
                             } else if (item.id === "admin") {
@@ -264,6 +266,7 @@ export default function DashboardPage() {
                             } else if (item.id === "settings") {
                               setLocation("/settings");
                             } else {
+                              console.log(`[Sidebar] Setting activeTab to: ${item.id}`);
                               setActiveTab(item.id);
                             }
                           }}
