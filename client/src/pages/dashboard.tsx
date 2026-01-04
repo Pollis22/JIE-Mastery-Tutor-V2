@@ -47,6 +47,7 @@ import UsageAnalytics from "@/components/dashboard/usage-analytics";
 import SupportCenter from "@/components/dashboard/support-center";
 import NewsletterSubscribe from "@/components/dashboard/newsletter-subscribe";
 import { AssignmentsPanel } from "@/components/AssignmentsPanel";
+import { PracticeLessonsSection } from "@/components/dashboard/practice-lessons-section";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { format } from "date-fns";
@@ -417,14 +418,33 @@ export default function DashboardPage() {
                 <CardHeader>
                   <CardTitle>Study Materials</CardTitle>
                   <CardDescription>
-                    Upload and manage your study materials, homework, and assignments
+                    Upload your own materials or browse our practice lessons curriculum
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <AssignmentsPanel 
-                    userId={user?.id || ''}
-                    selectedDocumentIds={[]}
-                  />
+                  <Tabs defaultValue="practice" className="w-full">
+                    <TabsList className="grid w-full grid-cols-2 mb-4">
+                      <TabsTrigger value="practice" data-testid="tab-practice-lessons">
+                        <GraduationCap className="h-4 w-4 mr-2" />
+                        Practice Lessons
+                      </TabsTrigger>
+                      <TabsTrigger value="uploads" data-testid="tab-your-documents">
+                        <FileText className="h-4 w-4 mr-2" />
+                        Your Documents
+                      </TabsTrigger>
+                    </TabsList>
+                    
+                    <TabsContent value="practice">
+                      <PracticeLessonsSection />
+                    </TabsContent>
+                    
+                    <TabsContent value="uploads">
+                      <AssignmentsPanel 
+                        userId={user?.id || ''}
+                        selectedDocumentIds={[]}
+                      />
+                    </TabsContent>
+                  </Tabs>
                 </CardContent>
               </Card>
             )}

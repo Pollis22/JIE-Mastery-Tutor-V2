@@ -91,48 +91,36 @@ export default function PracticeLessonsPage() {
     }
   });
 
+  const buildLessonsUrl = () => {
+    const params = new URLSearchParams();
+    if (selectedGrade) params.set('grade', selectedGrade);
+    if (selectedSubject) params.set('subject', selectedSubject);
+    if (selectedTopic) params.set('topic', selectedTopic);
+    if (studentId) params.set('studentId', studentId);
+    return `/api/practice-lessons?${params.toString()}`;
+  };
+
   const { data: gradesData, isLoading: gradesLoading } = useQuery<{ grades: string[] }>({
     queryKey: ['/api/practice-lessons/grades'],
   });
 
   const { data: subjectsData, isLoading: subjectsLoading } = useQuery<{ subjects: string[] }>({
-    queryKey: ['/api/practice-lessons/subjects', { grade: selectedGrade }],
-    queryFn: async () => {
-      const res = await fetch(`/api/practice-lessons/subjects?grade=${encodeURIComponent(selectedGrade)}`);
-      return res.json();
-    },
+    queryKey: [`/api/practice-lessons/subjects?grade=${encodeURIComponent(selectedGrade)}`],
     enabled: !!selectedGrade,
   });
 
   const { data: topicsData, isLoading: topicsLoading } = useQuery<{ topics: string[] }>({
-    queryKey: ['/api/practice-lessons/topics', { grade: selectedGrade, subject: selectedSubject }],
-    queryFn: async () => {
-      const res = await fetch(`/api/practice-lessons/topics?grade=${encodeURIComponent(selectedGrade)}&subject=${encodeURIComponent(selectedSubject)}`);
-      return res.json();
-    },
+    queryKey: [`/api/practice-lessons/topics?grade=${encodeURIComponent(selectedGrade)}&subject=${encodeURIComponent(selectedSubject)}`],
     enabled: !!selectedGrade && !!selectedSubject,
   });
 
   const { data: lessonsData, isLoading: lessonsLoading } = useQuery<{ lessons: PracticeLesson[] }>({
-    queryKey: ['/api/practice-lessons', { grade: selectedGrade, subject: selectedSubject, topic: selectedTopic, studentId }],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      if (selectedGrade) params.set('grade', selectedGrade);
-      if (selectedSubject) params.set('subject', selectedSubject);
-      if (selectedTopic) params.set('topic', selectedTopic);
-      if (studentId) params.set('studentId', studentId);
-      const res = await fetch(`/api/practice-lessons?${params.toString()}`);
-      return res.json();
-    },
+    queryKey: [buildLessonsUrl()],
     enabled: !!selectedGrade && !!selectedSubject,
   });
 
   const { data: lessonDetailData, isLoading: lessonDetailLoading } = useQuery<{ lesson: PracticeLesson }>({
-    queryKey: ['/api/practice-lessons/detail', selectedLesson?.id],
-    queryFn: async () => {
-      const res = await fetch(`/api/practice-lessons/${selectedLesson?.id}`);
-      return res.json();
-    },
+    queryKey: [`/api/practice-lessons/${selectedLesson?.id}`],
     enabled: !!selectedLesson?.id,
   });
 
