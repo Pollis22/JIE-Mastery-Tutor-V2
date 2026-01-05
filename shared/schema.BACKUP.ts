@@ -151,8 +151,6 @@ export const lessons = pgTable("lessons", {
   title: text("title").notNull(),
   description: text("description"),
   content: jsonb("content").notNull(),
-  practiceProblems: text("practice_problems"),
-  answerKey: text("answer_key"),
   orderIndex: integer("order_index").notNull(),
   estimatedMinutes: integer("estimated_minutes").default(15),
   isActive: boolean("is_active").default(true),

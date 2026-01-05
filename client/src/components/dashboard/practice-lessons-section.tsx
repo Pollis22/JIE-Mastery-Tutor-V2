@@ -204,6 +204,34 @@ export function PracticeLessonsSection() {
         });
       }
 
+      // Practice Problems (Enhanced Content)
+      if (fullLesson.practiceProblems) {
+        doc.addPage();
+        yPos = 20;
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Practice Problems:', 20, yPos);
+        yPos += 8;
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'normal');
+        const problemLines = doc.splitTextToSize(fullLesson.practiceProblems, 170);
+        doc.text(problemLines, 20, yPos);
+      }
+
+      // Answer Key (Enhanced Content)
+      if (fullLesson.answerKey) {
+        doc.addPage();
+        yPos = 20;
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Answer Key:', 20, yPos);
+        yPos += 8;
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'normal');
+        const answerLines = doc.splitTextToSize(fullLesson.answerKey, 170);
+        doc.text(answerLines, 20, yPos);
+      }
+
       // Footer
       const pageCount = doc.getNumberOfPages();
       for (let i = 1; i <= pageCount; i++) {
