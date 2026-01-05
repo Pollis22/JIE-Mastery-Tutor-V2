@@ -347,7 +347,7 @@ export default function BenefitsPage() {
               View Pricing
             </Button>
           </div>
-          <p className="text-sm opacity-75">No credit card required • One plan for the whole family • Cancel anytime</p>
+          <p className="text-sm opacity-75">One plan for the whole family • Cancel anytime</p>
         </div>
       </section>
 
