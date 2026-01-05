@@ -4,28 +4,23 @@ import { useLocation } from "wouter";
 import jieLogo from "@/assets/jie-mastery-logo-new.jpg";
 import girlWithRobotImage from "@/assets/girl-with-robot-tutor.png";
 import { 
-  Clock, 
-  DollarSign, 
-  Target, 
-  Calendar, 
   BookOpen, 
-  TrendingUp, 
   Users, 
-  Shield, 
   Brain, 
-  LightbulbIcon, 
-  Bot, 
   Sparkles, 
   GraduationCap, 
   Home, 
-  FileCheck, 
-  Globe, 
-  Laptop, 
-  Heart,
   CheckCircle2,
   ArrowRight,
-  ShieldCheck,
-  Zap
+  MessageCircle,
+  Lightbulb,
+  Shield,
+  DollarSign,
+  Clock,
+  Calculator,
+  BookText,
+  FlaskConical,
+  Languages
 } from "lucide-react";
 
 export default function BenefitsPage() {
@@ -36,80 +31,64 @@ export default function BenefitsPage() {
 
   return (
     <div className="min-h-screen bg-background font-sans selection:bg-primary/10">
-      {/* Navigation - Minimal */}
+      {/* Navigation - Minimal for Landing Page */}
       <nav className="border-b border-border bg-card/80 backdrop-blur-md sticky top-0 z-50">
         <div className="container mx-auto px-4">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-3 cursor-pointer" onClick={() => setLocation("/")}>
               <img src={jieLogo} alt="JIE Mastery" className="h-10 w-auto" />
-              <span className="text-xl font-bold text-foreground">JIE Mastery Tutor</span>
+              <span className="text-xl font-bold text-foreground">JIE Mastery</span>
             </div>
-            <div className="flex items-center space-x-4">
-              <Button variant="ghost" onClick={() => setLocation("/support")} className="hidden sm:inline-flex">
-                Live Support
+            <div className="flex items-center space-x-3">
+              <Button variant="outline" onClick={handlePricing} data-testid="button-nav-pricing">
+                View Pricing
               </Button>
-              <Button variant="ghost" onClick={handlePricing}>
-                Pricing
-              </Button>
-              <Button variant="default" onClick={handleCTA}>
-                Get Started
+              <Button variant="default" onClick={handleCTA} data-testid="button-nav-cta">
+                Try the AI Tutor
               </Button>
             </div>
           </div>
         </div>
       </nav>
 
-      {/* Hero Section */}
-      <section className="relative overflow-hidden pt-16 pb-20 lg:pt-24 lg:pb-32 bg-gradient-to-b from-primary/5 to-background">
+      {/* Hero Section - Above the Fold */}
+      <section className="relative overflow-hidden pt-12 pb-16 lg:pt-20 lg:pb-24 bg-gradient-to-b from-primary/5 to-background">
         <div className="container mx-auto px-4 relative z-10">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-            <div className="space-y-8 text-center lg:text-left">
-              <div className="space-y-4">
-                <div className="flex flex-wrap gap-3 justify-center lg:justify-start">
-                  <span className="inline-flex items-center rounded-full bg-primary/10 px-3 py-1 text-sm font-medium text-primary ring-1 ring-inset ring-primary/20">
-                    <Zap className="mr-1.5 h-4 w-4" /> The Future of Family Tutoring
-                  </span>
-                  <span className="inline-flex items-center rounded-full bg-muted px-3 py-1 text-sm font-medium text-muted-foreground ring-1 ring-inset ring-muted-foreground/20">
-                    Patent Pending System
-                  </span>
-                </div>
-                <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight text-foreground leading-[1.1]" data-testid="heading-benefits">
-                  The <span className="text-primary">AI Tutor</span> That Teaches Your Child How to Learn.
-                </h1>
-                <p className="text-xl text-muted-foreground max-w-2xl mx-auto lg:mx-0">
-                  Real learning, not cheating. Personalized AI homework help and math support for every grade. <strong>One affordable plan for the whole family.</strong>
-                </p>
-              </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-center">
+            <div className="space-y-6 text-center lg:text-left">
+              <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight text-foreground leading-[1.1]" data-testid="heading-hero">
+                AI Tutor for Students — Homework & Math Help
+              </h1>
+              
+              <p className="text-xl md:text-2xl text-muted-foreground max-w-2xl mx-auto lg:mx-0">
+                <strong>Personalized AI tutoring</strong> that teaches students how to think, not just give answers.
+              </p>
+              
+              <p className="text-lg text-muted-foreground max-w-2xl mx-auto lg:mx-0">
+                Works for homeschool families and traditional students.<br />
+                Math, English, Science, Spanish & more.
+              </p>
 
-              <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
-                <Button size="lg" onClick={handleCTA} className="text-lg h-14 px-8 group" data-testid="button-get-started-hero">
-                  Start Learning with an AI Tutor
-                  <ArrowRight className="ml-2 h-5 w-5 transition-transform group-hover:translate-x-1" />
+              <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start pt-2">
+                <Button size="lg" onClick={handlePricing} className="text-lg h-14 px-8" data-testid="button-hero-pricing">
+                  View Pricing
                 </Button>
-                <Button size="lg" variant="outline" onClick={handlePricing} className="text-lg h-14 px-8">
-                  View Pricing & Plans
+                <Button size="lg" variant="outline" onClick={handleCTA} className="text-lg h-14 px-8" data-testid="button-hero-cta">
+                  Try the AI Tutor
                 </Button>
               </div>
 
-              <div className="flex items-center justify-center lg:justify-start space-x-4 text-sm text-muted-foreground">
-                <div className="flex -space-x-2">
-                  {[1, 2, 3, 4].map((i) => (
-                    <div key={i} className="h-8 w-8 rounded-full border-2 border-background bg-muted flex items-center justify-center">
-                      <Users className="h-4 w-4" />
-                    </div>
-                  ))}
-                </div>
-                <p>Trusted by 10,000+ happy parents and students.</p>
-              </div>
+              <p className="text-sm text-muted-foreground pt-2">
+                Plans start at <strong className="text-foreground">$19.99/month</strong> • Family friendly • Cancel anytime
+              </p>
             </div>
 
             <div className="relative lg:ml-auto">
-              <div className="absolute -inset-1 bg-gradient-to-r from-primary to-primary/50 rounded-2xl blur opacity-25 group-hover:opacity-50 transition duration-1000 group-hover:duration-200"></div>
               <Card className="relative shadow-2xl overflow-hidden border-0">
                 <CardContent className="p-0">
                   <img 
                     src={girlWithRobotImage}
-                    alt="AI Tutor for Students"
+                    alt="AI Tutor for Students - Personalized AI Tutoring"
                     className="w-full aspect-[4/3] object-cover"
                     data-testid="img-hero-ai-tutor"
                   />
@@ -120,39 +99,39 @@ export default function BenefitsPage() {
         </div>
       </section>
 
-      {/* Value Proposition Section */}
-      <section className="py-24 bg-card">
+      {/* Benefits Section */}
+      <section className="py-20 bg-card">
         <div className="container mx-auto px-4">
-          <div className="text-center max-w-3xl mx-auto mb-16 space-y-4">
-            <h2 className="text-3xl md:text-4xl font-bold tracking-tight">AI Homework Help That Actually Works</h2>
-            <p className="text-lg text-muted-foreground">JIE Mastery isn't just an app; it's a dedicated tutor that guides students through challenges step-by-step.</p>
+          <div className="text-center max-w-3xl mx-auto mb-14">
+            <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-4">Why Families Choose JIE Mastery AI Tutor</h2>
+            <p className="text-lg text-muted-foreground">Affordable online tutoring that builds real understanding.</p>
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
             {[
               {
-                icon: <Brain className="h-6 w-6 text-primary" />,
-                title: "Teaches, Not Cheats",
-                description: "Uses the Socratic method to guide students to answers through critical thinking and discovery."
+                icon: <GraduationCap className="h-7 w-7 text-primary" />,
+                title: "AI Tutor for Students",
+                description: "Personalized guidance that adapts to grade level and learning style."
               },
               {
-                icon: <Laptop className="h-6 w-6 text-primary" />,
-                title: "Personalized Help",
-                description: "Adapts to each student's unique learning pace, style, and grade level from K-12 to College."
+                icon: <Brain className="h-7 w-7 text-primary" />,
+                title: "Homework Help Without Cheating",
+                description: "Guided explanations that build understanding and confidence."
               },
               {
-                icon: <GraduationCap className="h-6 w-6 text-primary" />,
-                title: "Math Support",
-                description: "Expert assistance for every grade. From basic arithmetic to advanced calculus and beyond."
+                icon: <Home className="h-7 w-7 text-primary" />,
+                title: "Perfect for Homeschool & Traditional Learning",
+                description: "Works alongside any curriculum or classroom."
               },
               {
-                icon: <Home className="h-6 w-6 text-primary" />,
-                title: "Homeschool Perfect",
-                description: "The ideal teaching assistant for homeschool families to fill gaps and reinforce curriculum."
+                icon: <DollarSign className="h-7 w-7 text-primary" />,
+                title: "Affordable Online Tutoring",
+                description: "One subscription supports the whole family."
               }
             ].map((item, idx) => (
-              <Card key={idx} className="border-none shadow-none bg-background p-6 transition-colors hover:bg-muted/50 group">
-                <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+              <Card key={idx} className="border shadow-sm bg-background p-6 transition-all hover:shadow-md">
+                <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center mb-5">
                   {item.icon}
                 </div>
                 <h3 className="text-xl font-bold mb-3">{item.title}</h3>
@@ -160,86 +139,147 @@ export default function BenefitsPage() {
               </Card>
             ))}
           </div>
+
+          <div className="text-center mt-12">
+            <Button size="lg" onClick={handlePricing} className="text-lg h-12 px-8" data-testid="button-benefits-pricing">
+              View Pricing
+              <ArrowRight className="ml-2 h-5 w-5" />
+            </Button>
+          </div>
         </div>
       </section>
 
-      {/* Social Proof / Trust */}
-      <section className="py-20 bg-primary/5">
+      {/* Keyword-Reinforced Feature Section */}
+      <section className="py-20 bg-muted/30">
         <div className="container mx-auto px-4">
-          <div className="max-w-4xl mx-auto bg-card p-8 md:p-12 rounded-3xl shadow-xl border border-primary/10">
-            <div className="flex flex-col md:flex-row gap-8 items-center">
-              <div className="flex-1 space-y-4">
-                <div className="flex text-amber-500">
-                  {[1, 2, 3, 4, 5].map(i => <Sparkles key={i} className="h-5 w-5 fill-current" />)}
-                </div>
-                <blockquote className="text-2xl font-medium italic text-foreground leading-relaxed">
-                  "JIE Mastery changed our homework routine. Instead of just giving my son the answer, the AI tutor asks him questions that help him figure it out himself. It's safe, effective, and he's actually learning!"
-                </blockquote>
-                <div className="flex items-center space-x-3">
-                  <div className="h-10 w-10 rounded-full bg-primary/20 flex items-center justify-center font-bold text-primary">SM</div>
-                  <div>
-                    <p className="font-bold">Sarah Miller</p>
-                    <p className="text-sm text-muted-foreground">Homeschool Mom of 3</p>
+          <div className="text-center max-w-3xl mx-auto mb-14">
+            <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-4">Personalized AI Tutoring for Every Subject</h2>
+            <p className="text-lg text-muted-foreground">Online tutoring for kids that covers all the subjects they need.</p>
+          </div>
+          
+          <div className="max-w-3xl mx-auto">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {[
+                { icon: <Calculator className="h-5 w-5 text-primary" />, text: "Math homework help step-by-step" },
+                { icon: <BookText className="h-5 w-5 text-primary" />, text: "English reading and writing support" },
+                { icon: <FlaskConical className="h-5 w-5 text-primary" />, text: "Science explanations made simple" },
+                { icon: <Languages className="h-5 w-5 text-primary" />, text: "Spanish practice and tutoring" },
+                { icon: <Clock className="h-5 w-5 text-primary" />, text: "AI homework help available 24/7" },
+                { icon: <Shield className="h-5 w-5 text-primary" />, text: "Safe, parent-approved content" }
+              ].map((item, idx) => (
+                <div key={idx} className="flex items-center gap-4 bg-card p-4 rounded-xl border">
+                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                    {item.icon}
                   </div>
+                  <span className="text-lg font-medium">{item.text}</span>
                 </div>
-              </div>
-              <div className="flex flex-col gap-4 text-center md:text-left min-w-[200px]">
-                <div className="space-y-1">
-                  <p className="text-3xl font-extrabold text-primary">100% Safe</p>
-                  <p className="text-sm text-muted-foreground">Alternative to Photomath</p>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-3xl font-extrabold text-primary">24/7</p>
-                  <p className="text-sm text-muted-foreground">Live Support Available</p>
-                </div>
-              </div>
+              ))}
             </div>
+          </div>
+
+          <div className="text-center mt-12">
+            <Button size="lg" variant="outline" onClick={handleCTA} className="text-lg h-12 px-8" data-testid="button-features-cta">
+              Try the AI Tutor
+              <ArrowRight className="ml-2 h-5 w-5" />
+            </Button>
           </div>
         </div>
       </section>
 
       {/* How It Works */}
-      <section className="py-16 bg-muted/30">
+      <section className="py-20 bg-card">
         <div className="container mx-auto px-4">
-          <div className="text-center max-w-3xl mx-auto mb-12">
-            <h2 className="text-3xl md:text-4xl font-bold mb-4">How Online Tutoring for Kids Works</h2>
-            <p className="text-lg text-muted-foreground">Three simple steps to mastery.</p>
+          <div className="text-center max-w-3xl mx-auto mb-14">
+            <h2 className="text-3xl md:text-4xl font-bold mb-4">How JIE Mastery AI Tutor Works</h2>
+            <p className="text-lg text-muted-foreground">Three simple steps to better learning.</p>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
             {[
               {
-                icon: <BookOpen className="h-8 w-8 text-primary" />,
-                title: "Ask a Question",
-                description: "Type, speak, or upload a photo of any homework problem or concept you're stuck on."
+                icon: <MessageCircle className="h-8 w-8 text-primary" />,
+                title: "Student Asks a Question",
+                description: "Type, speak, or upload a photo of any homework problem or concept."
               },
               {
                 icon: <Brain className="h-8 w-8 text-primary" />,
-                title: "Guided Interaction",
-                description: "Your AI tutor uses the Socratic method to break down the problem into smaller, manageable parts."
+                title: "AI Tutor Guides Reasoning",
+                description: "The tutor asks guiding questions to help students think through the problem."
               },
               {
-                icon: <CheckCircle2 className="h-8 w-8 text-primary" />,
-                title: "True Understanding",
-                description: "Students learn the 'why' behind the 'how', building confidence that lasts a lifetime."
+                icon: <Lightbulb className="h-8 w-8 text-primary" />,
+                title: "Student Gains Understanding",
+                description: "Real comprehension and confidence that lasts beyond the assignment."
               }
             ].map((item, idx) => (
-              <Card key={idx} className="text-center p-6 border-none shadow-sm">
-                <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
+              <Card key={idx} className="text-center p-8 border shadow-sm">
+                <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-5">
                   {item.icon}
                 </div>
-                <h3 className="text-xl font-bold mb-2">{item.title}</h3>
+                <h3 className="text-xl font-bold mb-3">{item.title}</h3>
                 <p className="text-muted-foreground">{item.description}</p>
+              </Card>
+            ))}
+          </div>
+
+          <div className="text-center mt-12">
+            <Button size="lg" onClick={handlePricing} className="text-lg h-12 px-8" data-testid="button-howitworks-pricing">
+              View Pricing
+              <ArrowRight className="ml-2 h-5 w-5" />
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      {/* Social Proof / Trust Section */}
+      <section className="py-20 bg-primary/5">
+        <div className="container mx-auto px-4">
+          <div className="text-center max-w-3xl mx-auto mb-14">
+            <h2 className="text-3xl md:text-4xl font-bold mb-4">Trusted by Families and Students</h2>
+            <p className="text-lg text-muted-foreground">See what parents are saying about personalized AI tutoring.</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
+            {[
+              {
+                quote: "My child finally understands math instead of memorizing answers.",
+                initials: "SM",
+                role: "Parent of 4th grader"
+              },
+              {
+                quote: "Homework time went from stressful to productive. The AI tutor asks the right questions.",
+                initials: "JT",
+                role: "Homeschool Mom"
+              },
+              {
+                quote: "Way better value than private tutors at $50/hour. My kids use it every day.",
+                initials: "RM",
+                role: "Dad of 3"
+              }
+            ].map((item, idx) => (
+              <Card key={idx} className="p-6 border shadow-sm">
+                <div className="flex text-amber-500 mb-4">
+                  {[1, 2, 3, 4, 5].map(i => <Sparkles key={i} className="h-4 w-4 fill-current" />)}
+                </div>
+                <blockquote className="text-lg font-medium italic text-foreground mb-4">
+                  "{item.quote}"
+                </blockquote>
+                <div className="flex items-center space-x-3">
+                  <div className="h-10 w-10 rounded-full bg-primary/20 flex items-center justify-center font-bold text-primary text-sm">
+                    {item.initials}
+                  </div>
+                  <p className="text-sm text-muted-foreground">{item.role}</p>
+                </div>
               </Card>
             ))}
           </div>
         </div>
       </section>
 
-      {/* Pricing Section */}
+      {/* Pricing Preview Section */}
       <section className="py-20 bg-background">
         <div className="container mx-auto px-4">
           <div className="text-center max-w-3xl mx-auto mb-12">
-            <h2 className="text-3xl md:text-4xl font-bold mb-4">Simple, Family-Friendly Pricing</h2>
+            <h2 className="text-3xl md:text-4xl font-bold mb-4">Simple, Affordable Plans</h2>
             <p className="text-lg text-muted-foreground">One plan covers all your children. No per-child fees.</p>
           </div>
           
@@ -252,11 +292,11 @@ export default function BenefitsPage() {
             ].map((plan, idx) => (
               <Card key={idx} className={`relative p-6 ${plan.highlight ? 'border-2 border-primary shadow-lg' : 'border'}`}>
                 {plan.badge && (
-                  <div className={`absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-xs font-bold ${plan.highlight ? 'bg-primary text-white' : 'bg-muted text-foreground'}`}>
+                  <div className={`absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-xs font-bold whitespace-nowrap ${plan.highlight ? 'bg-primary text-white' : 'bg-muted text-foreground'}`}>
                     {plan.badge}
                   </div>
                 )}
-                <div className="text-center space-y-4">
+                <div className="text-center space-y-4 pt-2">
                   <h3 className="text-xl font-bold">{plan.name}</h3>
                   <div>
                     <span className="text-3xl font-extrabold">{plan.price}</span>
@@ -271,8 +311,9 @@ export default function BenefitsPage() {
                   </ul>
                   <Button 
                     onClick={handleCTA} 
-                    className={`w-full ${plan.highlight ? '' : 'bg-muted text-foreground hover:bg-muted/80'}`}
+                    className="w-full"
                     variant={plan.highlight ? 'default' : 'outline'}
+                    data-testid={`button-plan-${plan.name.toLowerCase()}`}
                   >
                     Get Started
                   </Button>
@@ -281,29 +322,32 @@ export default function BenefitsPage() {
             ))}
           </div>
           
-          <div className="text-center mt-8">
-            <Button variant="link" onClick={handlePricing} className="text-primary">
-              View full plan details and features
-              <ArrowRight className="ml-1 h-4 w-4" />
+          <div className="text-center mt-10 space-y-3">
+            <p className="text-muted-foreground">Family-friendly subscriptions • Multiple learners per account • No contracts</p>
+            <Button size="lg" onClick={handlePricing} className="text-lg h-12 px-8" data-testid="button-pricing-full">
+              View Full Pricing
+              <ArrowRight className="ml-2 h-5 w-5" />
             </Button>
           </div>
         </div>
       </section>
 
-      {/* CTA Reinforcement */}
-      <section className="py-16 bg-primary text-primary-foreground">
-        <div className="container mx-auto px-4 text-center space-y-6">
-          <h2 className="text-3xl md:text-4xl font-bold">Ready to Try the Best AI Tutor?</h2>
-          <p className="text-lg opacity-90 max-w-2xl mx-auto">Join thousands of families who have replaced expensive tutoring with JIE Mastery.</p>
+      {/* Final CTA Section */}
+      <section className="py-20 bg-primary text-primary-foreground">
+        <div className="container mx-auto px-4 text-center space-y-8">
+          <h2 className="text-3xl md:text-4xl font-bold">Ready to Improve Learning Today?</h2>
+          <p className="text-lg opacity-90 max-w-2xl mx-auto">
+            Join thousands of families using personalized AI tutoring for homework help and math support.
+          </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Button size="lg" variant="secondary" onClick={handleCTA} className="text-lg h-14 px-8">
-              Start with AI Homework Help
-            </Button>
-            <Button size="lg" onClick={handlePricing} className="text-lg h-14 px-8 bg-white/20 hover:bg-white/30 text-white border-0">
+            <Button size="lg" variant="secondary" onClick={handlePricing} className="text-lg h-14 px-8" data-testid="button-final-pricing">
               View Pricing
             </Button>
+            <Button size="lg" onClick={handleCTA} className="text-lg h-14 px-8 bg-white/20 hover:bg-white/30 text-white border-0" data-testid="button-final-cta">
+              Try the AI Tutor
+            </Button>
           </div>
-          <p className="text-sm opacity-75">No credit card required to start • One plan for the whole family</p>
+          <p className="text-sm opacity-75">No credit card required • One plan for the whole family • Cancel anytime</p>
         </div>
       </section>
 
@@ -324,8 +368,8 @@ export default function BenefitsPage() {
 
       {/* Sticky Mobile CTA */}
       <div className="sm:hidden fixed bottom-4 left-4 right-4 z-[60]">
-        <Button onClick={handleCTA} className="w-full h-14 shadow-2xl rounded-2xl text-lg font-bold">
-          Try the AI Tutor Today
+        <Button onClick={handlePricing} className="w-full h-14 shadow-2xl rounded-2xl text-lg font-bold" data-testid="button-mobile-sticky">
+          View Pricing
         </Button>
       </div>
     </div>
