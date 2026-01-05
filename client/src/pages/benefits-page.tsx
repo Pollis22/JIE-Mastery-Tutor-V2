@@ -199,52 +199,52 @@ export default function BenefitsPage() {
       </section>
 
       {/* How It Works */}
-      <section className="py-24">
+      <section className="py-16 bg-muted/30">
         <div className="container mx-auto px-4">
-          <div className="text-center max-w-3xl mx-auto mb-16">
+          <div className="text-center max-w-3xl mx-auto mb-12">
             <h2 className="text-3xl md:text-4xl font-bold mb-4">How Online Tutoring for Kids Works</h2>
             <p className="text-lg text-muted-foreground">Three simple steps to mastery.</p>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {[
               {
-                step: "01",
+                icon: <BookOpen className="h-8 w-8 text-primary" />,
                 title: "Ask a Question",
                 description: "Type, speak, or upload a photo of any homework problem or concept you're stuck on."
               },
               {
-                step: "02",
+                icon: <Brain className="h-8 w-8 text-primary" />,
                 title: "Guided Interaction",
                 description: "Your AI tutor uses the Socratic method to break down the problem into smaller, manageable parts."
               },
               {
-                step: "03",
+                icon: <CheckCircle2 className="h-8 w-8 text-primary" />,
                 title: "True Understanding",
                 description: "Students learn the 'why' behind the 'how', building confidence that lasts a lifetime."
               }
             ].map((item, idx) => (
-              <div key={idx} className="relative group text-center md:text-left">
-                <div className="text-6xl font-black text-primary/10 absolute -top-10 -left-4 z-0 group-hover:text-primary/20 transition-colors">{item.step}</div>
-                <div className="relative z-10 space-y-4">
-                  <h3 className="text-2xl font-bold">{item.title}</h3>
-                  <p className="text-muted-foreground leading-relaxed">{item.description}</p>
+              <Card key={idx} className="text-center p-6 border-none shadow-sm">
+                <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
+                  {item.icon}
                 </div>
-              </div>
+                <h3 className="text-xl font-bold mb-2">{item.title}</h3>
+                <p className="text-muted-foreground">{item.description}</p>
+              </Card>
             ))}
           </div>
         </div>
       </section>
 
       {/* CTA Reinforcement */}
-      <section className="py-20 bg-primary text-primary-foreground">
-        <div className="container mx-auto px-4 text-center space-y-8">
-          <h2 className="text-4xl md:text-5xl font-bold">Ready to Try the Best AI Tutor?</h2>
-          <p className="text-xl opacity-90 max-w-2xl mx-auto">Join thousands of families who have replaced expensive tutoring with JIE Mastery.</p>
+      <section className="py-16 bg-primary text-primary-foreground">
+        <div className="container mx-auto px-4 text-center space-y-6">
+          <h2 className="text-3xl md:text-4xl font-bold">Ready to Try the Best AI Tutor?</h2>
+          <p className="text-lg opacity-90 max-w-2xl mx-auto">Join thousands of families who have replaced expensive tutoring with JIE Mastery.</p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Button size="lg" variant="secondary" onClick={handleCTA} className="text-lg h-16 px-10">
+            <Button size="lg" variant="secondary" onClick={handleCTA} className="text-lg h-14 px-8">
               Start with AI Homework Help
             </Button>
-            <Button size="lg" variant="outline" onClick={handlePricing} className="text-lg h-16 px-10 border-primary-foreground hover:bg-primary-foreground hover:text-primary">
+            <Button size="lg" onClick={handlePricing} className="text-lg h-14 px-8 bg-white/20 hover:bg-white/30 text-white border-0">
               View Pricing
             </Button>
           </div>
