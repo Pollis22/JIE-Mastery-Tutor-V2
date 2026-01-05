@@ -44,7 +44,7 @@ export default function BenefitsPage() {
                 View Pricing
               </Button>
               <Button variant="default" onClick={handleCTA} data-testid="button-nav-cta">
-                Try the AI Tutor
+                Try JIE Mastery AI Tutor
               </Button>
             </div>
           </div>
@@ -71,7 +71,7 @@ export default function BenefitsPage() {
 
               <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start pt-2">
                 <Button size="lg" onClick={handleCTA} className="text-lg h-14 px-8" data-testid="button-hero-cta">
-                  Try the AI Tutor
+                  Try JIE Mastery AI Tutor
                 </Button>
                 <Button size="lg" variant="outline" onClick={handlePricing} className="text-lg h-14 px-8" data-testid="button-hero-pricing">
                   View Pricing
@@ -179,7 +179,7 @@ export default function BenefitsPage() {
 
           <div className="text-center mt-12">
             <Button size="lg" variant="outline" onClick={handleCTA} className="text-lg h-12 px-8" data-testid="button-features-cta">
-              Try the AI Tutor
+              Try JIE Mastery AI Tutor
               <ArrowRight className="ml-2 h-5 w-5" />
             </Button>
           </div>
@@ -341,7 +341,7 @@ export default function BenefitsPage() {
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Button size="lg" variant="secondary" onClick={handleCTA} className="text-lg h-14 px-8" data-testid="button-final-cta">
-              Try the AI Tutor
+              Try JIE Mastery AI Tutor
             </Button>
             <Button size="lg" onClick={handlePricing} className="text-lg h-14 px-8 bg-white/20 hover:bg-white/30 text-white border-0" data-testid="button-final-pricing">
               View Pricing
@@ -369,7 +369,7 @@ export default function BenefitsPage() {
       {/* Sticky Mobile CTA */}
       <div className="sm:hidden fixed bottom-4 left-4 right-4 z-[60]">
         <Button onClick={handleCTA} className="w-full h-14 shadow-2xl rounded-2xl text-lg font-bold" data-testid="button-mobile-sticky">
-          Try the AI Tutor
+          Try JIE Mastery AI Tutor
         </Button>
       </div>
     </div>
