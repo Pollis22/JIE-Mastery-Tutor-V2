@@ -235,6 +235,61 @@ export default function BenefitsPage() {
         </div>
       </section>
 
+      {/* Pricing Section */}
+      <section className="py-20 bg-background">
+        <div className="container mx-auto px-4">
+          <div className="text-center max-w-3xl mx-auto mb-12">
+            <h2 className="text-3xl md:text-4xl font-bold mb-4">Simple, Family-Friendly Pricing</h2>
+            <p className="text-lg text-muted-foreground">One plan covers all your children. No per-child fees.</p>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto">
+            {[
+              { name: "Starter", price: "$19.99", minutes: "60 min", perMin: "$0.33/min", highlight: false },
+              { name: "Standard", price: "$59.99", minutes: "240 min", perMin: "$0.25/min", highlight: false },
+              { name: "Pro", price: "$99.99", minutes: "600 min", perMin: "$0.17/min", highlight: true, badge: "Most Popular" },
+              { name: "Elite", price: "$199.99", minutes: "1,800 min", perMin: "$0.11/min", highlight: false, badge: "Best Value" }
+            ].map((plan, idx) => (
+              <Card key={idx} className={`relative p-6 ${plan.highlight ? 'border-2 border-primary shadow-lg' : 'border'}`}>
+                {plan.badge && (
+                  <div className={`absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-xs font-bold ${plan.highlight ? 'bg-primary text-white' : 'bg-muted text-foreground'}`}>
+                    {plan.badge}
+                  </div>
+                )}
+                <div className="text-center space-y-4">
+                  <h3 className="text-xl font-bold">{plan.name}</h3>
+                  <div>
+                    <span className="text-3xl font-extrabold">{plan.price}</span>
+                    <span className="text-muted-foreground">/month</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground">{plan.minutes} shared by family</p>
+                  <p className="text-xs text-primary font-medium">{plan.perMin}</p>
+                  <ul className="text-sm text-left space-y-2 pt-4 border-t">
+                    <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" /> Unlimited student profiles</li>
+                    <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" /> Socratic teaching method</li>
+                    <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" /> Math, English, Spanish</li>
+                  </ul>
+                  <Button 
+                    onClick={handleCTA} 
+                    className={`w-full ${plan.highlight ? '' : 'bg-muted text-foreground hover:bg-muted/80'}`}
+                    variant={plan.highlight ? 'default' : 'outline'}
+                  >
+                    Get Started
+                  </Button>
+                </div>
+              </Card>
+            ))}
+          </div>
+          
+          <div className="text-center mt-8">
+            <Button variant="link" onClick={handlePricing} className="text-primary">
+              View full plan details and features
+              <ArrowRight className="ml-1 h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      </section>
+
       {/* CTA Reinforcement */}
       <section className="py-16 bg-primary text-primary-foreground">
         <div className="container mx-auto px-4 text-center space-y-6">
