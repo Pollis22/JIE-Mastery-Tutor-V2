@@ -241,10 +241,10 @@ export default function BenefitsPage() {
           <h2 className="text-4xl md:text-5xl font-bold">Ready to Try the Best AI Tutor?</h2>
           <p className="text-xl opacity-90 max-w-2xl mx-auto">Join thousands of families who have replaced expensive tutoring with JIE Mastery.</p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Button size="xl" variant="secondary" onClick={handleCTA} className="text-lg h-16 px-10">
+            <Button size="lg" variant="secondary" onClick={handleCTA} className="text-lg h-16 px-10">
               Start with AI Homework Help
             </Button>
-            <Button size="xl" variant="outline" onClick={handlePricing} className="text-lg h-16 px-10 border-primary-foreground hover:bg-primary-foreground hover:text-primary">
+            <Button size="lg" variant="outline" onClick={handlePricing} className="text-lg h-16 px-10 border-primary-foreground hover:bg-primary-foreground hover:text-primary">
               View Pricing
             </Button>
           </div>
