@@ -61,7 +61,7 @@ export default function BenefitsPage() {
               </h1>
               
               <p className="text-xl md:text-2xl text-muted-foreground max-w-2xl mx-auto lg:mx-0">
-                <strong>Personalized AI tutoring</strong> that teaches students how to think, not just give answers.
+                Personalized AI tutoring that teaches students how to think — not just give answers.
               </p>
               
               <p className="text-lg text-muted-foreground max-w-2xl mx-auto lg:mx-0">
@@ -70,16 +70,16 @@ export default function BenefitsPage() {
               </p>
 
               <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start pt-2">
-                <Button size="lg" onClick={handlePricing} className="text-lg h-14 px-8" data-testid="button-hero-pricing">
-                  View Pricing
-                </Button>
-                <Button size="lg" variant="outline" onClick={handleCTA} className="text-lg h-14 px-8" data-testid="button-hero-cta">
+                <Button size="lg" onClick={handleCTA} className="text-lg h-14 px-8" data-testid="button-hero-cta">
                   Try the AI Tutor
+                </Button>
+                <Button size="lg" variant="outline" onClick={handlePricing} className="text-lg h-14 px-8" data-testid="button-hero-pricing">
+                  View Pricing
                 </Button>
               </div>
 
               <p className="text-sm text-muted-foreground pt-2">
-                Plans start at <strong className="text-foreground">$19.99/month</strong> • Family friendly • Cancel anytime
+                Plans start at <strong className="text-foreground">$19.99/month</strong> • Family-friendly • Cancel anytime
               </p>
             </div>
 
@@ -121,7 +121,7 @@ export default function BenefitsPage() {
               },
               {
                 icon: <Home className="h-7 w-7 text-primary" />,
-                title: "Perfect for Homeschool & Traditional Learning",
+                title: "Perfect for Homeschool & School",
                 description: "Works alongside any curriculum or classroom."
               },
               {
@@ -337,14 +337,14 @@ export default function BenefitsPage() {
         <div className="container mx-auto px-4 text-center space-y-8">
           <h2 className="text-3xl md:text-4xl font-bold">Ready to Improve Learning Today?</h2>
           <p className="text-lg opacity-90 max-w-2xl mx-auto">
-            Join thousands of families using personalized AI tutoring for homework help and math support.
+            Join families using personalized AI tutoring for homework help — without cheating.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Button size="lg" variant="secondary" onClick={handlePricing} className="text-lg h-14 px-8" data-testid="button-final-pricing">
-              View Pricing
-            </Button>
-            <Button size="lg" onClick={handleCTA} className="text-lg h-14 px-8 bg-white/20 hover:bg-white/30 text-white border-0" data-testid="button-final-cta">
+            <Button size="lg" variant="secondary" onClick={handleCTA} className="text-lg h-14 px-8" data-testid="button-final-cta">
               Try the AI Tutor
+            </Button>
+            <Button size="lg" onClick={handlePricing} className="text-lg h-14 px-8 bg-white/20 hover:bg-white/30 text-white border-0" data-testid="button-final-pricing">
+              View Pricing
             </Button>
           </div>
           <p className="text-sm opacity-75">No credit card required • One plan for the whole family • Cancel anytime</p>
@@ -368,8 +368,8 @@ export default function BenefitsPage() {
 
       {/* Sticky Mobile CTA */}
       <div className="sm:hidden fixed bottom-4 left-4 right-4 z-[60]">
-        <Button onClick={handlePricing} className="w-full h-14 shadow-2xl rounded-2xl text-lg font-bold" data-testid="button-mobile-sticky">
-          View Pricing
+        <Button onClick={handleCTA} className="w-full h-14 shadow-2xl rounded-2xl text-lg font-bold" data-testid="button-mobile-sticky">
+          Try the AI Tutor
         </Button>
       </div>
     </div>
