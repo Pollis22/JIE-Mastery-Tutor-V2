@@ -82,7 +82,7 @@ export default function BenefitsPage() {
               </p>
             </div>
 
-            <div className="relative lg:ml-auto">
+            <div className="relative lg:ml-auto w-full lg:w-[600px] xl:w-[700px]">
               <Card className="relative shadow-2xl overflow-hidden border-0">
                 <CardContent className="p-0">
                   <div className="aspect-video w-full">
