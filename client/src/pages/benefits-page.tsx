@@ -2,7 +2,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useLocation } from "wouter";
 import jieLogo from "@/assets/jie-mastery-logo-new.jpg";
-import girlWithRobotImage from "@/assets/girl-with-robot-tutor.png";
 import { 
   BookOpen, 
   Users, 
@@ -86,12 +85,17 @@ export default function BenefitsPage() {
             <div className="relative lg:ml-auto">
               <Card className="relative shadow-2xl overflow-hidden border-0">
                 <CardContent className="p-0">
-                  <img 
-                    src={girlWithRobotImage}
-                    alt="AI Tutor for Students - Personalized AI Tutoring"
-                    className="w-full aspect-[4/3] object-cover"
-                    data-testid="img-hero-ai-tutor"
-                  />
+                  <div className="aspect-video w-full">
+                    <iframe
+                      src="https://www.youtube.com/embed/Dzi3rJmnRg0"
+                      title="JIE Mastery AI Tutor"
+                      className="w-full h-full"
+                      frameBorder="0"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allowFullScreen
+                      data-testid="video-hero-ai-tutor"
+                    />
+                  </div>
                 </CardContent>
               </Card>
             </div>
