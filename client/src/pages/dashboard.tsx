@@ -85,7 +85,7 @@ export default function DashboardPage() {
       // Create unique conversion key to prevent duplicate firing
       const conversionKey = `gads_conversion_${sessionId || 'upgrade_' + Date.now()}`;
       
-      // Meta Pixel tracking
+      // Meta Pixel tracking (Google Ads conversion fires only on /auth/registration-success)
       if ((window as any).fbq) {
         (window as any).fbq('track', 'Purchase', {
           value: value,
@@ -94,20 +94,6 @@ export default function DashboardPage() {
           content_type: 'subscription'
         });
         console.log('[Meta Pixel] Purchase event tracked for subscription');
-      }
-      
-      // Google Ads: Track subscription conversion ONLY after Stripe confirms payment
-      // Uses sessionStorage to prevent duplicate firing on page refresh
-      if ((window as any).gtag && !sessionStorage.getItem(conversionKey)) {
-        (window as any).gtag('event', 'conversion', {
-          'send_to': 'AW-17252974185/OverCP_hvtsbEOn87aJA',
-          'value': value,
-          'currency': 'USD',
-          'transaction_id': sessionId || `upgrade_${user?.id}_${Date.now()}` // Unique transaction ID
-        });
-        // Mark this conversion as fired to prevent duplicates
-        sessionStorage.setItem(conversionKey, 'true');
-        console.log('[Google Ads] Conversion tracked (AW-17252974185/OverCP_hvtsbEOn87aJA), value:', value);
       }
       
       // Clean up URL params after tracking (prevent duplicate tracking on refresh)
