@@ -100,14 +100,14 @@ export default function DashboardPage() {
       // Uses sessionStorage to prevent duplicate firing on page refresh
       if ((window as any).gtag && !sessionStorage.getItem(conversionKey)) {
         (window as any).gtag('event', 'conversion', {
-          'send_to': 'AW-17252974185/JIE_Subscription',
+          'send_to': 'AW-17252974185/OverCP_hvtsbEOn87aJA',
           'value': value,
           'currency': 'USD',
           'transaction_id': sessionId || `upgrade_${user?.id}_${Date.now()}` // Unique transaction ID
         });
         // Mark this conversion as fired to prevent duplicates
         sessionStorage.setItem(conversionKey, 'true');
-        console.log('[Google Ads] JIE – Subscription conversion tracked, value:', value);
+        console.log('[Google Ads] Conversion tracked (AW-17252974185/OverCP_hvtsbEOn87aJA), value:', value);
       }
       
       // Clean up URL params after tracking (prevent duplicate tracking on refresh)
