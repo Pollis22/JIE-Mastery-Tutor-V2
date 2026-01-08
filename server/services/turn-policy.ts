@@ -1,24 +1,30 @@
 /**
- * K-2 Turn Policy Module
+ * Turn Policy Module
  * 
- * Implements a "Very Patient" turn-taking policy for young learners (K-2)
- * that prevents interrupting while they think aloud.
+ * Implements turn-taking policies for conversational AI tutoring:
  * 
- * Feature Flag: TURN_POLICY_K2_ENABLED (default: false)
+ * 1. K-2 "Very Patient" Policy (TURN_POLICY_K2_ENABLED)
+ *    - Prevents interrupting while young learners think aloud
+ *    - Uses hesitation/continuation detection + stall escape
  * 
- * Target Metrics:
- * - ≥30% reduction in premature interruptions
- * - <500ms increase in median response time
- * - <5% stall_escape_triggered rate
+ * 2. Reading Mode Patience (READING_MODE_PATIENCE_ENABLED)
+ *    - Extra patience when activity_mode="reading"
+ *    - +250ms min silence, +800ms max silence
+ *    - Stall prompt: "Want a moment to finish, or would you like help sounding it out?"
  * 
- * Rollback Criteria (within 48 hours of enabled rollout):
- * - >20% increase in session abandonment rate
- * - >50% increase in median time_to_first_audio_ms
- * - >3 P0 bugs
- * → Disable by setting TURN_POLICY_K2_ENABLED=false
+ * 3. Adaptive Patience (ADAPTIVE_PATIENCE_ENABLED)
+ *    - Per-session patienceScore (0.0-1.0) updated on each transcript
+ *    - Signals: hesitation markers, continuation endings, interrupt attempts
+ *    - Bounded adjustments to silence thresholds
+ * 
+ * Feature Flags:
+ * - TURN_POLICY_K2_ENABLED (default: false)
+ * - READING_MODE_PATIENCE_ENABLED (default: false)
+ * - ADAPTIVE_PATIENCE_ENABLED (default: false)
  */
 
 export type GradeBand = 'K-2' | '3-5' | '6-8' | '9-12' | 'College/Adult' | null;
+export type ActivityMode = 'default' | 'reading';
 
 export interface TurnPolicyConfig {
   end_of_turn_confidence_threshold: number;
@@ -34,7 +40,44 @@ export interface TurnPolicyState {
   stallEscapeTriggered: boolean;
   turnStartTimestamp: number;
   finalTranscriptReceivedAt: number | null;
+  // Adaptive Patience state
+  patienceScore: number;  // 0.0 - 1.0
+  hesitationCount: number;
+  continuationCount: number;
+  interruptAttempts: number;
+  // Activity mode
+  activityMode: ActivityMode;
 }
+
+// Reading Mode configuration
+export interface ReadingModeConfig {
+  minSilenceBonusMs: number;
+  maxSilenceBonusMs: number;
+  minSilenceCapMs: number;
+  maxSilenceCapMs: number;
+  stallPrompt: string;
+}
+
+// Adaptive Patience configuration
+export interface AdaptivePatienceConfig {
+  minSilenceCapMs: number;
+  maxSilenceCapMs: number;
+  graceCapMs: number;
+}
+
+const READING_MODE_CONFIG: ReadingModeConfig = {
+  minSilenceBonusMs: 250,
+  maxSilenceBonusMs: 800,
+  minSilenceCapMs: 1200,
+  maxSilenceCapMs: 6000,
+  stallPrompt: "Want a moment to finish, or would you like help sounding it out?",
+};
+
+const ADAPTIVE_PATIENCE_CONFIG: AdaptivePatienceConfig = {
+  minSilenceCapMs: 1000,
+  maxSilenceCapMs: 5000,
+  graceCapMs: 400,
+};
 
 export interface TurnPolicyEvaluation {
   grade_band: GradeBand;
@@ -88,7 +131,171 @@ export function createTurnPolicyState(): TurnPolicyState {
     stallEscapeTriggered: false,
     turnStartTimestamp: Date.now(),
     finalTranscriptReceivedAt: null,
+    // Adaptive Patience
+    patienceScore: 0.3,  // Start with slight patience
+    hesitationCount: 0,
+    continuationCount: 0,
+    interruptAttempts: 0,
+    // Activity mode
+    activityMode: 'default',
   };
+}
+
+// Feature flag checks
+export function isReadingModeEnabled(): boolean {
+  return process.env.READING_MODE_PATIENCE_ENABLED === 'true';
+}
+
+export function isAdaptivePatienceEnabled(): boolean {
+  return process.env.ADAPTIVE_PATIENCE_ENABLED === 'true';
+}
+
+export function getReadingModeConfig(): ReadingModeConfig {
+  return { ...READING_MODE_CONFIG };
+}
+
+export function getAdaptivePatienceConfig(): AdaptivePatienceConfig {
+  return { ...ADAPTIVE_PATIENCE_CONFIG };
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Adaptive Patience Functions
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const HESITATION_PATTERNS = [
+  /\b(um|uh|uhh|umm)\b/i,
+  /\b(wait|hold on|let me think)\b/i,
+  /\b(i think|maybe|hmm|hm)\b/i,
+];
+
+const CONTINUATION_PATTERNS = [
+  /\b(and|so|because|then|but)\s*$/i,
+  /\b(like|that|which|when|if)\s*$/i,
+];
+
+export function calculateSignalScore(transcript: string): number {
+  let signals = 0;
+  const total = 3;
+  
+  for (const pattern of HESITATION_PATTERNS) {
+    if (pattern.test(transcript)) {
+      signals += 1;
+      break;
+    }
+  }
+  
+  for (const pattern of CONTINUATION_PATTERNS) {
+    if (pattern.test(transcript)) {
+      signals += 1;
+      break;
+    }
+  }
+  
+  if (!/[.!?]$/.test(transcript.trim())) {
+    signals += 0.5;
+  }
+  
+  return Math.min(signals / total, 1.0);
+}
+
+export function updateAdaptivePatience(
+  state: TurnPolicyState,
+  transcript: string,
+  wasInterruptAttempt: boolean = false
+): void {
+  if (!isAdaptivePatienceEnabled()) return;
+  
+  const signalScore = calculateSignalScore(transcript);
+  
+  if (wasInterruptAttempt) {
+    state.interruptAttempts++;
+  }
+  
+  // Count hesitation markers
+  for (const pattern of HESITATION_PATTERNS) {
+    if (pattern.test(transcript)) {
+      state.hesitationCount++;
+      break;
+    }
+  }
+  
+  // Count continuation endings
+  for (const pattern of CONTINUATION_PATTERNS) {
+    if (pattern.test(transcript)) {
+      state.continuationCount++;
+      break;
+    }
+  }
+  
+  // Update patience score with exponential moving average
+  state.patienceScore = Math.max(0, Math.min(1, 
+    0.7 * state.patienceScore + 0.3 * signalScore
+  ));
+}
+
+export interface PatienceAdjustments {
+  minSilenceMs: number;
+  maxSilenceMs: number;
+  graceMs: number;
+}
+
+export function getAdjustedPatienceParams(state: TurnPolicyState): PatienceAdjustments {
+  const adaptiveEnabled = isAdaptivePatienceEnabled();
+  const readingEnabled = isReadingModeEnabled() && state.activityMode === 'reading';
+  
+  let minSilenceBonus = 0;
+  let maxSilenceBonus = 0;
+  let graceBonus = 0;
+  
+  // Adaptive patience adjustments
+  if (adaptiveEnabled) {
+    minSilenceBonus += Math.round(state.patienceScore * 250);
+    maxSilenceBonus += Math.round(state.patienceScore * 900);
+    graceBonus += Math.round(state.patienceScore * 120);
+  }
+  
+  // Reading mode overlay
+  if (readingEnabled) {
+    minSilenceBonus += READING_MODE_CONFIG.minSilenceBonusMs;
+    maxSilenceBonus += READING_MODE_CONFIG.maxSilenceBonusMs;
+  }
+  
+  // Apply caps
+  const caps = readingEnabled
+    ? { min: READING_MODE_CONFIG.minSilenceCapMs, max: READING_MODE_CONFIG.maxSilenceCapMs }
+    : { min: ADAPTIVE_PATIENCE_CONFIG.minSilenceCapMs, max: ADAPTIVE_PATIENCE_CONFIG.maxSilenceCapMs };
+  
+  return {
+    minSilenceMs: Math.min(minSilenceBonus, caps.min),
+    maxSilenceMs: Math.min(maxSilenceBonus, caps.max),
+    graceMs: Math.min(graceBonus, ADAPTIVE_PATIENCE_CONFIG.graceCapMs),
+  };
+}
+
+export function setActivityMode(state: TurnPolicyState, mode: ActivityMode): void {
+  state.activityMode = mode;
+}
+
+export function logAdaptivePatience(
+  sessionId: string,
+  gradeBand: GradeBand,
+  state: TurnPolicyState,
+  signalScore: number,
+  applied: PatienceAdjustments
+): void {
+  console.log('[adaptive_patience]', JSON.stringify({
+    sessionId: sessionId.substring(0, 8),
+    gradeBand,
+    activityMode: state.activityMode,
+    patienceScore: state.patienceScore.toFixed(3),
+    signalScore: signalScore.toFixed(3),
+    hesitationCount: state.hesitationCount,
+    continuationCount: state.continuationCount,
+    interruptAttempts: state.interruptAttempts,
+    appliedMinSilenceMs: applied.minSilenceMs,
+    appliedMaxSilenceMs: applied.maxSilenceMs,
+    appliedGraceMs: applied.graceMs,
+  }));
 }
 
 /**

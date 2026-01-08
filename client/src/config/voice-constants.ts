@@ -38,6 +38,24 @@ export const VOICE_THRESHOLDS = {
   MIC_GAIN_MULTIPLIER: 100,
 } as const;
 
+export type GradeBandType = 'K2' | 'G3-5' | 'G6-8' | 'G9-12' | 'ADV';
+
+export const ADAPTIVE_BARGE_IN = {
+  COMMON: {
+    BASELINE_WINDOW_MS: 1500,
+    DUCK_GAIN: 0.25,
+    CONFIRM_MS: 320,
+  },
+  GRADE_BANDS: {
+    'K2': { adaptiveRatio: 2.2, minSpeechMs: 140, rmsThreshold: 0.08, peakThreshold: 0.15 },
+    'G3-5': { adaptiveRatio: 2.4, minSpeechMs: 160, rmsThreshold: 0.08, peakThreshold: 0.15 },
+    'G6-8': { adaptiveRatio: 2.6, minSpeechMs: 170, rmsThreshold: 0.08, peakThreshold: 0.15 },
+    'G9-12': { adaptiveRatio: 2.8, minSpeechMs: 180, rmsThreshold: 0.08, peakThreshold: 0.15 },
+    'ADV': { adaptiveRatio: 3.0, minSpeechMs: 190, rmsThreshold: 0.08, peakThreshold: 0.15 },
+  } as Record<GradeBandType, { adaptiveRatio: number; minSpeechMs: number; rmsThreshold: number; peakThreshold: number }>,
+  DEFAULT: { adaptiveRatio: 2.5, minSpeechMs: 170, rmsThreshold: 0.08, peakThreshold: 0.15 },
+} as const;
+
 export const VOICE_MESSAGES = {
   MIC_PERMISSION_DENIED: 'Microphone access denied. Please allow microphone access in your browser settings.',
   MIC_NOT_FOUND: 'No microphone found. Please connect a microphone and try again.',

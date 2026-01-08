@@ -18,6 +18,7 @@ import { users, students } from "@shared/schema";
 import {
   type GradeBand,
   type TurnPolicyState,
+  type ActivityMode as TurnActivityMode,
   createTurnPolicyState,
   evaluateTurn,
   checkStallEscape,
@@ -26,6 +27,12 @@ import {
   getK2ResponseConstraints,
   isK2PolicyEnabled,
   getTurnPolicyConfig,
+  updateAdaptivePatience,
+  getAdjustedPatienceParams,
+  setActivityMode,
+  logAdaptivePatience,
+  calculateSignalScore,
+  isAdaptivePatienceEnabled as isTurnAdaptivePatienceEnabled,
 } from "../services/turn-policy";
 import {
   type EchoGuardState,
@@ -38,6 +45,19 @@ import {
   shouldAllowBargeIn,
   logEchoGuardStateTransition,
 } from "../services/echo-guard";
+import {
+  type ActivityMode,
+  isAdaptiveBargeInEnabled,
+  isReadingModeEnabled,
+  isAdaptivePatienceEnabled,
+  isGoodbyeHardStopEnabled,
+  normalizeGradeBand,
+  logBargeInEval,
+  evaluateBargeIn,
+  createBaselineState,
+  updateBaseline,
+  type BaselineState,
+} from "../services/adaptive-barge-in";
 
 // ============================================
 // FEATURE FLAG: STT PROVIDER SELECTION
@@ -1102,12 +1122,50 @@ export function setupCustomVoiceWebSocket(server: Server) {
         }));
 
         console.log(`[Custom Voice] 👤 ${state.studentName}: "${transcript}"`);
+        
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        // ADAPTIVE PATIENCE: Update patience score based on transcript signals
+        // Feature flag: ADAPTIVE_PATIENCE_ENABLED (checked inside function)
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        if (state.turnPolicyState && isTurnAdaptivePatienceEnabled()) {
+          const signalScore = calculateSignalScore(transcript);
+          updateAdaptivePatience(state.turnPolicyState, transcript, false);
+          const adjustments = getAdjustedPatienceParams(state.turnPolicyState);
+          logAdaptivePatience(
+            state.sessionId || 'unknown',
+            state.ageGroup as GradeBand,
+            state.turnPolicyState,
+            signalScore,
+            adjustments
+          );
+        }
 
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        // 👋 GOODBYE DETECTION - Gracefully end session on user goodbye
+        // 👋 GOODBYE DETECTION - End session on user goodbye
+        // Feature flag: SESSION_GOODBYE_HARD_STOP_ENABLED (default: true)
+        // Hard stop: Immediately stops playback, mic, and pending jobs
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        // Track if this is a goodbye so we can prevent additional processing
+        let isGoodbyeInProgress = false;
+        
         if (detectGoodbye(transcript)) {
-          console.log('[Goodbye] 👋 User said goodbye (voice), ending session gracefully');
+          const hardStopEnabled = isGoodbyeHardStopEnabled();
+          console.log(`[Goodbye] 👋 User said goodbye (voice), hard_stop=${hardStopEnabled}`);
+          isGoodbyeInProgress = true;
+          
+          // HARD STOP: Immediately notify client to stop playback and mic
+          if (hardStopEnabled) {
+            ws.send(JSON.stringify({
+              type: "interrupt",
+              reason: "goodbye_hard_stop",
+              stopMic: true,
+              stopPlayback: true,
+            }));
+            console.log('[Goodbye] 🛑 Hard stop - sent interrupt to stop playback and mic');
+            
+            // NOTE: We do NOT set isSessionEnded here to avoid interfering with finalizeSession
+            // Instead, we use isGoodbyeInProgress to skip further processing
+          }
           
           const goodbyeMessage = "Goodbye! Great learning with you today. Come back anytime you want to continue learning!";
           
@@ -1127,8 +1185,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
             text: goodbyeMessage
           }));
           
-          // Generate and send goodbye audio
-          if (state.tutorAudioEnabled) {
+          // Generate and send goodbye audio (unless hard stop with audio disabled)
+          if (state.tutorAudioEnabled && !hardStopEnabled) {
             try {
               const goodbyeAudio = await generateSpeech(goodbyeMessage, state.ageGroup, state.speechSpeed);
               if (goodbyeAudio && goodbyeAudio.length > 0) {
@@ -1144,7 +1202,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
             }
           }
           
-          // End session after audio plays
+          // End session - faster for hard stop, delayed for soft stop
+          const delayMs = hardStopEnabled ? 500 : 4000;
           setTimeout(async () => {
             console.log('[Goodbye] 🛑 Ending session');
             clearInterval(persistInterval);
@@ -1158,20 +1217,25 @@ export function setupCustomVoiceWebSocket(server: Server) {
               ws.send(JSON.stringify({
                 type: 'session_ended',
                 reason: 'user_goodbye',
-                message: 'Session ended - user said goodbye'
+                message: 'Session ended - user said goodbye',
+                hardStop: hardStopEnabled,
               }));
               
+              // Call finalizeSession FIRST, then mark as ended
               await finalizeSession(state, 'normal');
+              state.isSessionEnded = true; // Set AFTER finalization completes
               ws.close(1000, 'Session ended - user said goodbye');
               console.log('[Goodbye] ✅ Session ended successfully');
             } catch (error) {
               console.error('[Goodbye] ❌ Error ending session:', error);
+              state.isSessionEnded = true; // Mark ended even on error
               ws.close(1011, 'Error ending session');
             }
-          }, 4000); // 4 second delay for audio to play
+          }, delayMs);
           
           state.isProcessing = false;
-          state.isSessionEnded = true;
+          // NOTE: isSessionEnded is set inside setTimeout after finalizeSession completes
+          // Use isGoodbyeInProgress flag to prevent further processing
           return; // Exit early, don't process further
         }
 
@@ -2850,6 +2914,27 @@ CRITICAL INSTRUCTIONS:
 
             ws.send(JSON.stringify({ type: "ready" }));
             console.log("[Custom Voice] ✅ Session ready");
+            
+            // Send session_config for adaptive voice UX features
+            const gradeBand = normalizeGradeBand(state.ageGroup || 'G6-8');
+            const initialActivityMode: ActivityMode = 'default';
+            
+            // Initialize turn policy state with activity mode for reading patience overlay
+            if (isReadingModeEnabled()) {
+              setActivityMode(state.turnPolicyState, initialActivityMode);
+              console.log(`[Custom Voice] 📖 Reading mode patience enabled, initial mode: ${initialActivityMode}`);
+            }
+            
+            ws.send(JSON.stringify({
+              type: "session_config",
+              adaptiveBargeInEnabled: isAdaptiveBargeInEnabled(),
+              readingModeEnabled: isReadingModeEnabled(),
+              adaptivePatienceEnabled: isAdaptivePatienceEnabled(),
+              goodbyeHardStopEnabled: isGoodbyeHardStopEnabled(),
+              gradeBand,
+              activityMode: initialActivityMode,
+            }));
+            console.log(`[Custom Voice] ⚙️ Session config sent: adaptiveBargeIn=${isAdaptiveBargeInEnabled()}, gradeBand=${gradeBand}`);
             break;
 
           case "audio":
@@ -3294,6 +3379,39 @@ CRITICAL INSTRUCTIONS:
               tutorAudio: state.tutorAudioEnabled ? 'enabled' : 'muted',
               studentMic: state.studentMicEnabled ? 'enabled' : 'muted'
             });
+            break;
+          
+          case "activity_mode_update":
+            // Handle activity mode changes for reading patience overlay
+            if (isReadingModeEnabled() && message.activityMode) {
+              const newMode = message.activityMode as ActivityMode;
+              setActivityMode(state.turnPolicyState, newMode);
+              console.log(`[Custom Voice] 📖 Activity mode updated to: ${newMode}`);
+              
+              // Acknowledge the update
+              ws.send(JSON.stringify({
+                type: "activity_mode_updated",
+                activityMode: newMode,
+              }));
+            }
+            break;
+          
+          case "barge_in_event":
+            // Server-side logging for client barge-in events
+            if (isAdaptiveBargeInEnabled() && message.evaluation) {
+              const eval_ = message.evaluation;
+              logBargeInEval({
+                sessionId: state.sessionId,
+                gradeBand: normalizeGradeBand(state.ageGroup || 'G6-8'),
+                inputEnergy: eval_.inputEnergy || 0,
+                baselineRms: eval_.baselineRms || 0,
+                ratio: eval_.ratio || 0,
+                threshold: eval_.threshold || 0,
+                outcome: eval_.outcome || 'rejected',
+                duckGain: eval_.duckGain,
+                confirmWindowMs: eval_.confirmWindowMs,
+              });
+            }
             break;
           
           case "end":

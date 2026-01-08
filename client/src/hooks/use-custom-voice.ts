@@ -1,6 +1,67 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { VOICE_TIMING, VOICE_THRESHOLDS, VOICE_MESSAGES, EXCLUDED_DEVICE_PATTERNS } from "@/config/voice-constants";
+import { VOICE_TIMING, VOICE_THRESHOLDS, VOICE_MESSAGES, EXCLUDED_DEVICE_PATTERNS, ADAPTIVE_BARGE_IN, GradeBandType } from "@/config/voice-constants";
 import { voiceLogger } from "@/utils/voice-logger";
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ADAPTIVE BARGE-IN: Duck-then-confirm flow for quiet/nervous speakers
+// Feature flag: BARGE_IN_ADAPTIVE_ENABLED (from server config)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+interface BaselineState {
+  samples: number[];
+  timestamps: number[];
+}
+
+interface DuckState {
+  isActive: boolean;
+  startTime: number;
+  originalGain: number;
+  speechStartTime: number;
+}
+
+function createBaselineState(): BaselineState {
+  return { samples: [], timestamps: [] };
+}
+
+function createDuckState(): DuckState {
+  return {
+    isActive: false,
+    startTime: 0,
+    originalGain: 1.0,
+    speechStartTime: 0,
+  };
+}
+
+function updateBaseline(state: BaselineState, rms: number, windowMs: number): void {
+  const now = Date.now();
+  state.samples.push(rms);
+  state.timestamps.push(now);
+  
+  const cutoff = now - windowMs;
+  while (state.timestamps.length > 0 && state.timestamps[0] < cutoff) {
+    state.samples.shift();
+    state.timestamps.shift();
+  }
+  if (state.samples.length > 100) {
+    state.samples = state.samples.slice(-100);
+    state.timestamps = state.timestamps.slice(-100);
+  }
+}
+
+function getBaselineMedian(state: BaselineState): number {
+  if (state.samples.length === 0) return 0.01;
+  const sorted = [...state.samples].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 
+    ? (sorted[mid - 1] + sorted[mid]) / 2 
+    : sorted[mid];
+}
+
+function getBargeInConfig(gradeBand: string | null): { adaptiveRatio: number; minSpeechMs: number; rmsThreshold: number; peakThreshold: number } {
+  if (!gradeBand) return ADAPTIVE_BARGE_IN.DEFAULT;
+  const normalized = gradeBand.toUpperCase().replace(/[^A-Z0-9-]/g, '') as GradeBandType;
+  return ADAPTIVE_BARGE_IN.GRADE_BANDS[normalized] || ADAPTIVE_BARGE_IN.DEFAULT;
+}
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // VAD PROFILES: Turn-taking parameters for different learner types
@@ -114,6 +175,15 @@ export function useCustomVoice() {
   // Refs for state used in async callbacks (prevents stale closures)
   const isConnectedRef = useRef<boolean>(false);
   const isProcessingRef = useRef<boolean>(false);
+  
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // ADAPTIVE BARGE-IN STATE (Feature flag: BARGE_IN_ADAPTIVE_ENABLED)
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  const adaptiveBargeInEnabledRef = useRef<boolean>(false); // Set from server config
+  const baselineStateRef = useRef<BaselineState>(createBaselineState());
+  const duckStateRef = useRef<DuckState>(createDuckState());
+  const gradeBandRef = useRef<string | null>(null); // Set from session config
+  const activityModeRef = useRef<'default' | 'reading'>('default'); // Set from session config
   
   // Check if user allows virtual audio devices
   const getAllowVirtualAudio = (): boolean => {
@@ -575,6 +645,23 @@ export function useCustomVoice() {
               await startMicrophone();
             } else {
               console.log("[Custom Voice] 🔇 Skipping microphone (Hybrid/Text mode)");
+            }
+            break;
+          
+          case "session_config":
+            // Receive adaptive barge-in and voice UX configuration from server
+            console.log("[Custom Voice] ⚙️ Session config received:", message);
+            if (message.adaptiveBargeInEnabled !== undefined) {
+              adaptiveBargeInEnabledRef.current = message.adaptiveBargeInEnabled;
+              console.log(`[Custom Voice] 🎛️ Adaptive barge-in: ${message.adaptiveBargeInEnabled ? 'ENABLED' : 'disabled'}`);
+            }
+            if (message.gradeBand) {
+              gradeBandRef.current = message.gradeBand;
+              console.log(`[Custom Voice] 📚 Grade band: ${message.gradeBand}`);
+            }
+            if (message.activityMode) {
+              activityModeRef.current = message.activityMode;
+              console.log(`[Custom Voice] 📖 Activity mode: ${message.activityMode}`);
             }
             break;
 
@@ -1226,15 +1313,21 @@ registerProcessor('audio-processor', AudioProcessor);
           // - Reduced 300ms cooldown (was 500ms) for snappier response
           // - Post-interruption buffer prevents fragmented speech (Dec 10, 2025)
           // - Minimum speech duration and coalescing for complete utterances
+          // - ADAPTIVE BARGE-IN: Duck-then-confirm for quiet/nervous speakers (Jan 2026)
           // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
           if (event.data.type === 'speech_start') {
             const now = Date.now();
+            const rms = event.data.rms || 0;
+            const peak = event.data.peak || 0;
+            
+            // Update baseline with all RMS samples (for adaptive threshold calculation)
+            if (!isTutorSpeakingRef.current) {
+              updateBaseline(baselineStateRef.current, rms, ADAPTIVE_BARGE_IN.COMMON.BASELINE_WINDOW_MS);
+            }
             
             // If tutor is currently speaking, we need confidence that this is
             // the USER speaking and not just echo from the speakers
             if (isTutorSpeakingRef.current && isPlayingRef.current) {
-              const rms = event.data.rms || 0;
-              const peak = event.data.peak || 0;
               const timeSincePlayback = now - lastAudioPlaybackStartRef.current;
               
               // Skip VAD for 300ms after tutor audio starts (reduced from 500ms for faster response)
@@ -1243,31 +1336,71 @@ registerProcessor('audio-processor', AudioProcessor);
                 return;
               }
 
-              // Lowered thresholds for more responsive interruption
-              // Real user speech should be RMS 0.08+, ambient noise is typically 0.02-0.04
-              const BARGE_IN_RMS = 0.08;
-              const BARGE_IN_PEAK = 0.15;
+              // Get grade-specific config for adaptive thresholds
+              const bargeInCfg = getBargeInConfig(gradeBandRef.current);
+              const baseline = getBaselineMedian(baselineStateRef.current);
+              const adaptiveThreshold = baseline * bargeInCfg.adaptiveRatio;
+              
+              // ADAPTIVE BARGE-IN: Check both adaptive and absolute thresholds
+              const adaptiveTriggered = adaptiveBargeInEnabledRef.current && rms >= adaptiveThreshold;
+              const absoluteTriggered = rms >= bargeInCfg.rmsThreshold || peak >= bargeInCfg.peakThreshold;
+              const bargeInTriggered = adaptiveTriggered || absoluteTriggered;
 
-              if (rms < BARGE_IN_RMS && peak < BARGE_IN_PEAK) {
-                console.log(`[Custom Voice] 🔇 VAD: Ignoring ambient sound during tutor (rms=${rms.toFixed(4)}, peak=${peak.toFixed(4)}) - below barge-in threshold`);
+              if (!bargeInTriggered) {
+                // Log rejected barge-in for observability (only occasionally to avoid spam)
+                if (adaptiveBargeInEnabledRef.current && wsRef.current && Math.random() < 0.1) {
+                  wsRef.current.send(JSON.stringify({
+                    type: "barge_in_event",
+                    evaluation: {
+                      inputEnergy: rms,
+                      baselineRms: baseline,
+                      ratio: baseline > 0 ? rms / baseline : 0,
+                      threshold: adaptiveThreshold,
+                      outcome: 'rejected',
+                    }
+                  }));
+                }
+                console.log(`[Custom Voice] 🔇 VAD: Ignoring ambient sound during tutor (rms=${rms.toFixed(4)}, peak=${peak.toFixed(4)}, baseline=${baseline.toFixed(4)}, adaptiveThreshold=${adaptiveThreshold.toFixed(4)}) - below barge-in threshold`);
                 return;
               }
               
-              // Start debounce timer for sustained speech using profile's minBargeInSpeechMs
+              // Get profile for timing values
               const profile = getProfile();
+              const minSpeechMs = adaptiveBargeInEnabledRef.current ? bargeInCfg.minSpeechMs : profile.minBargeInSpeechMs;
+              
+              // Start debounce timer for sustained speech
               if (workletSpeechStartTime === 0) {
                 workletSpeechStartTime = now;
-                console.log(`[Custom Voice] 🎤 VAD: Speech onset detected (rms=${rms.toFixed(4)}, starting ${profile.minBargeInSpeechMs}ms debounce for barge-in, profile=${activeVADProfile})`);
+                
+                // DUCK-THEN-CONFIRM: Apply duck gain immediately on suspected barge-in
+                if (adaptiveBargeInEnabledRef.current && playbackGainNodeRef.current && !duckStateRef.current.isActive) {
+                  duckStateRef.current.isActive = true;
+                  duckStateRef.current.startTime = now;
+                  duckStateRef.current.originalGain = playbackGainNodeRef.current.gain.value;
+                  duckStateRef.current.speechStartTime = now;
+                  playbackGainNodeRef.current.gain.value = ADAPTIVE_BARGE_IN.COMMON.DUCK_GAIN;
+                  console.log(`[Custom Voice] 🔉 DUCK: Applied duck gain (${ADAPTIVE_BARGE_IN.COMMON.DUCK_GAIN}) for suspected barge-in (rms=${rms.toFixed(4)}, adaptive=${adaptiveTriggered})`);
+                }
+                
+                console.log(`[Custom Voice] 🎤 VAD: Speech onset detected (rms=${rms.toFixed(4)}, adaptive=${adaptiveTriggered}, starting ${minSpeechMs}ms debounce, grade=${gradeBandRef.current || 'default'})`);
                 return;
               }
               
               // Check if speech sustained for barge-in threshold
-              if (now - workletSpeechStartTime < profile.minBargeInSpeechMs) {
-                console.log(`[Custom Voice] ⏱️ VAD debounce: ${(now - workletSpeechStartTime).toFixed(0)}ms/${profile.minBargeInSpeechMs}ms - waiting for sustained speech`);
+              if (now - workletSpeechStartTime < minSpeechMs) {
+                console.log(`[Custom Voice] ⏱️ VAD debounce: ${(now - workletSpeechStartTime).toFixed(0)}ms/${minSpeechMs}ms - waiting for sustained speech`);
                 return;
               }
 
-              console.log(`[Custom Voice] 🛑 VAD: CONFIRMED barge-in after debounce (rms=${rms.toFixed(4)}, peak=${peak.toFixed(4)})`);
+              // CONFIRMED BARGE-IN: Stop playback
+              console.log(`[Custom Voice] 🛑 VAD: CONFIRMED barge-in after debounce (rms=${rms.toFixed(4)}, peak=${peak.toFixed(4)}, adaptive=${adaptiveTriggered})`);
+              
+              // Reset duck state before stopping
+              if (duckStateRef.current.isActive) {
+                duckStateRef.current.isActive = false;
+                console.log(`[Custom Voice] 🔉 DUCK: Confirmed barge-in, stopping playback`);
+              }
+              
               stopAudio();
               setIsTutorSpeaking(false);
               
@@ -1283,16 +1416,57 @@ registerProcessor('audio-processor', AudioProcessor);
               }, POST_INTERRUPTION_BUFFER_MS);
               console.log(`[Custom Voice] 🛡️ Post-interruption buffer active for ${POST_INTERRUPTION_BUFFER_MS}ms (AudioWorklet)`);
 
-              // Notify server for state sync
-              wsRef.current.send(JSON.stringify({ type: "speech_detected" }));
+              // Notify server for state sync with barge-in details
+              wsRef.current.send(JSON.stringify({ 
+                type: "speech_detected",
+                bargeIn: true,
+                adaptive: adaptiveTriggered,
+                gradeBand: gradeBandRef.current
+              }));
+              
+              // Send barge-in event for server-side structured logging
+              if (adaptiveBargeInEnabledRef.current) {
+                wsRef.current.send(JSON.stringify({
+                  type: "barge_in_event",
+                  evaluation: {
+                    inputEnergy: rms,
+                    baselineRms: baseline,
+                    ratio: baseline > 0 ? rms / baseline : 0,
+                    threshold: adaptiveThreshold,
+                    outcome: 'confirmed',
+                    duckGain: ADAPTIVE_BARGE_IN.COMMON.DUCK_GAIN,
+                    confirmWindowMs: minSpeechMs,
+                  }
+                }));
+              }
             } else {
               // Tutor not speaking - track speech start for min duration check
+              // Also reset duck state if it was active
+              if (duckStateRef.current.isActive && playbackGainNodeRef.current) {
+                playbackGainNodeRef.current.gain.value = duckStateRef.current.originalGain;
+                duckStateRef.current.isActive = false;
+                console.log(`[Custom Voice] 🔊 DUCK: Restored original gain (tutor stopped playing)`);
+              }
+              
               if (workletSpeechStartTime === 0) {
                 workletSpeechStartTime = now;
               }
               console.log("[Custom Voice] 🎤 VAD: Speech detected (tutor not playing)");
             }
             return;
+          }
+          
+          // Handle duck timeout - restore volume if speech not confirmed
+          if (event.data.type === 'speech_end' && duckStateRef.current.isActive) {
+            const now = Date.now();
+            const duckDuration = now - duckStateRef.current.startTime;
+            
+            // If duck active but no confirmed barge-in, restore volume
+            if (playbackGainNodeRef.current && duckDuration < ADAPTIVE_BARGE_IN.COMMON.CONFIRM_MS) {
+              playbackGainNodeRef.current.gain.value = duckStateRef.current.originalGain;
+              console.log(`[Custom Voice] 🔊 DUCK: Restored original gain (speech ended before confirmation, ${duckDuration}ms)`);
+            }
+            duckStateRef.current.isActive = false;
           }
 
           if (event.data.type === 'speech_end') {
