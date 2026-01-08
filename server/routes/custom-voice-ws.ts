@@ -27,6 +27,17 @@ import {
   isK2PolicyEnabled,
   getTurnPolicyConfig,
 } from "../services/turn-policy";
+import {
+  type EchoGuardState,
+  createEchoGuardState,
+  getEchoGuardConfig,
+  recordTutorUtterance,
+  markPlaybackStart,
+  markPlaybackEnd,
+  checkForEcho,
+  shouldAllowBargeIn,
+  logEchoGuardStateTransition,
+} from "../services/echo-guard";
 
 // ============================================
 // FEATURE FLAG: STT PROVIDER SELECTION
@@ -522,6 +533,7 @@ interface SessionState {
   lastAudioReceivedAt: number; // K2 TURN POLICY: Track when audio was last received
   guardedTranscript: string; // K2 TURN POLICY: Transcript being guarded during hesitation
   stallTimerStartedAt: number; // K2 TURN POLICY: When the current stall timer was started
+  echoGuardState: EchoGuardState; // ECHO GUARD: State for echo/self-response prevention
 }
 
 // Helper to send typed WebSocket events
@@ -877,6 +889,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
       lastAudioReceivedAt: Date.now(), // K2 TURN POLICY: Initialize to now
       guardedTranscript: '', // K2 TURN POLICY: No guarded transcript initially
       stallTimerStartedAt: 0, // K2 TURN POLICY: No stall timer initially
+      echoGuardState: createEchoGuardState(), // ECHO GUARD: Initialize echo guard state
     };
 
     // FIX #3: Auto-persist every 10 seconds
@@ -1054,6 +1067,24 @@ export function setupCustomVoiceWebSocket(server: Server) {
       const transcript = state.transcriptQueue.shift()!;
 
       try {
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        // ECHO GUARD: Filter out transcripts that are echoes of tutor speech
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        const echoGuardConfig = getEchoGuardConfig();
+        if (echoGuardConfig.enabled) {
+          const echoCheck = checkForEcho(state.echoGuardState, transcript, echoGuardConfig);
+          if (echoCheck.isEcho) {
+            console.log(`[EchoGuard] 🚫 Discarding echo transcript: "${transcript.substring(0, 50)}..." (similarity=${echoCheck.similarity.toFixed(3)}, deltaMs=${echoCheck.deltaMs})`);
+            state.isProcessing = false;
+            processingStartTime = null;
+            // Process next item in queue if any
+            if (state.transcriptQueue.length > 0 && !state.isSessionEnded) {
+              setImmediate(() => processTranscriptQueue());
+            }
+            return;
+          }
+        }
+        
         // Add to transcript log
         const transcriptEntry: TranscriptEntry = {
           speaker: "student",
@@ -1395,6 +1426,11 @@ export function setupCustomVoiceWebSocket(server: Server) {
         const turnTimestamp = Date.now();
         state.lastAudioSentAt = turnTimestamp;
         
+        // ECHO GUARD: Mark playback starting
+        const echoConfig = getEchoGuardConfig();
+        markPlaybackStart(state.echoGuardState, echoConfig);
+        logEchoGuardStateTransition('playback_start', state.echoGuardState);
+        
         // Use streaming with sentence-by-sentence TTS for minimal latency
         await new Promise<void>((resolve, reject) => {
           const callbacks: StreamingCallbacks = {
@@ -1461,6 +1497,9 @@ export function setupCustomVoiceWebSocket(server: Server) {
               const claudeMs = Date.now() - claudeStart;
               console.log(`[Pipeline] 4. Claude response received (${claudeMs}ms), generating audio...`);
               console.log(`[Custom Voice] 🤖 Tutor: "${fullText}"`);
+              
+              // ECHO GUARD: Record tutor utterance for echo comparison
+              recordTutorUtterance(state.echoGuardState, fullText, echoConfig);
               
               // Add to conversation history
               state.conversationHistory.push(
@@ -1537,6 +1576,10 @@ export function setupCustomVoiceWebSocket(server: Server) {
         if (state.lastAudioSentAt === turnTimestamp) {
           console.log("[Custom Voice] ✅ Pause complete, ready for user input");
           state.isTutorSpeaking = false;
+          
+          // ECHO GUARD: Mark playback end and start echo tail guard
+          markPlaybackEnd(state.echoGuardState, echoConfig);
+          logEchoGuardStateTransition('playback_end', state.echoGuardState);
         } else {
           console.log("[Custom Voice] ℹ️ Turn superseded by newer turn, keeping isTutorSpeaking");
         }
@@ -1550,6 +1593,9 @@ export function setupCustomVoiceWebSocket(server: Server) {
       } catch (error) {
         console.error("[Custom Voice] ❌ Error processing:", error);
         state.isTutorSpeaking = false; // Reset on error
+        
+        // ECHO GUARD: Also mark playback end on error
+        markPlaybackEnd(state.echoGuardState, getEchoGuardConfig());
         
         // THINKING INDICATOR: Emit tutor_error to clear thinking state
         if (state.currentTurnId) {

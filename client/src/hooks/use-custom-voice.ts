@@ -350,7 +350,7 @@ export function useCustomVoice() {
                 sampleRate: 16000,
                 channelCount: 1,
                 echoCancellation: true,
-                noiseSuppression: false,
+                noiseSuppression: true,  // ECHO GUARD
                 autoGainControl: true,
               }
             });
@@ -393,7 +393,7 @@ export function useCustomVoice() {
                   sampleRate: 16000,
                   channelCount: 1,
                   echoCancellation: true,
-                  noiseSuppression: false,
+                  noiseSuppression: true,  // ECHO GUARD
                   autoGainControl: true,
                 }
               });
@@ -436,7 +436,7 @@ export function useCustomVoice() {
                   sampleRate: 16000,
                   channelCount: 1,
                   echoCancellation: true,
-                  noiseSuppression: false,
+                  noiseSuppression: true,  // ECHO GUARD
                   autoGainControl: true,
                 }
               });
@@ -859,21 +859,22 @@ export function useCustomVoice() {
       const targetDeviceId = preferredMicId || selectedMicrophoneIdRef.current;
       
       // Build constraints: use the target device if we have one
+      // ECHO GUARD: Enable all WebRTC echo cancellation features
       const audioConstraints: MediaStreamConstraints['audio'] = targetDeviceId
         ? {
             deviceId: { exact: targetDeviceId },
             sampleRate: 16000,
             channelCount: 1,
-            echoCancellation: true,
-            noiseSuppression: false,  // Disable - can cut off quiet speech
-            autoGainControl: true,    // Let browser boost quiet audio
+            echoCancellation: true,   // ECHO GUARD: Essential for preventing speaker-to-mic feedback
+            noiseSuppression: true,   // ECHO GUARD: Helps filter ambient noise and echo artifacts
+            autoGainControl: true,    // ECHO GUARD: Prevents mic from boosting echo
           }
         : {
             sampleRate: 16000,
             channelCount: 1,
-            echoCancellation: true,
-            noiseSuppression: false,  // Disable - can cut off quiet speech
-            autoGainControl: true,    // Let browser boost quiet audio
+            echoCancellation: true,   // ECHO GUARD: Essential for preventing speaker-to-mic feedback
+            noiseSuppression: true,   // ECHO GUARD: Helps filter ambient noise and echo artifacts
+            autoGainControl: true,    // ECHO GUARD: Prevents mic from boosting echo
           };
       
       let stream: MediaStream;
@@ -888,9 +889,9 @@ export function useCustomVoice() {
             audio: {
               sampleRate: 16000,
               channelCount: 1,
-              echoCancellation: true,
-              noiseSuppression: false,
-              autoGainControl: true,
+              echoCancellation: true,   // ECHO GUARD
+              noiseSuppression: true,   // ECHO GUARD
+              autoGainControl: true,    // ECHO GUARD
             }
           });
         } else {
@@ -899,6 +900,19 @@ export function useCustomVoice() {
       }
       
       console.log("[Custom Voice] ✅ Microphone access granted");
+      
+      // ECHO GUARD: Log the actual applied audio settings
+      const audioTrackForLogging = stream.getAudioTracks()[0];
+      if (audioTrackForLogging) {
+        const appliedSettings = audioTrackForLogging.getSettings();
+        console.log("[Custom Voice] 🔊 ECHO GUARD: Applied audio settings:", {
+          echoCancellation: appliedSettings.echoCancellation,
+          noiseSuppression: appliedSettings.noiseSuppression,
+          autoGainControl: appliedSettings.autoGainControl,
+          deviceId: appliedSettings.deviceId?.substring(0, 8) + '...',
+          sampleRate: appliedSettings.sampleRate,
+        });
+      }
       
       // Clear any previous errors
       setMicrophoneError(null);
@@ -926,7 +940,7 @@ export function useCustomVoice() {
                 sampleRate: 16000,
                 channelCount: 1,
                 echoCancellation: true,
-                noiseSuppression: false,
+                noiseSuppression: true,  // ECHO GUARD
                 autoGainControl: true,
               }
             });
