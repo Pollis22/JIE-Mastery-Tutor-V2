@@ -38,6 +38,15 @@ Features include auto-selection of the last used profile, integrated profile man
 
 The primary AI model is Claude Sonnet 4 (`claude-sonnet-4-20250514`) with a 200k token context window and a temperature of 0.7. It employs a Modified Adaptive Socratic Method with three phases: Guided Discovery, Direct Instruction (after 2-3 attempts or frustration detection), and Understanding Check. The system includes frustration detection based on specific user phrases. Five distinct tutor personalities are defined for different age groups, each with tailored traits.
 
+### K-2 Turn Policy (Very Patient Turn-Taking)
+
+A feature-flagged turn-taking policy (`TURN_POLICY_K2_ENABLED`) for young learners (K-2) that prevents interrupting while students think aloud. Key features:
+- Hesitation detection (um, wait, let me think, etc.)
+- Continuation detection (and, so, because, etc.)
+- Stall escape hatch with gentle prompts after 4.5s silence
+- Response constraints: max 1-2 sentences, simple vocabulary, always end with a question
+- See `docs/K2_TURN_POLICY.md` for full configuration and metrics.
+
 ### Content Moderation System
 
 A balanced, context-aware moderation system uses a keyword whitelist for educational terms and multi-layered AI moderation that acts only on high-confidence violations.

@@ -15,6 +15,18 @@ import { validateWsSession, rejectWsUpgrade } from '../middleware/ws-session-val
 import { wsRateLimiter, getClientIp } from '../middleware/ws-rate-limiter';
 import { EmailService } from '../services/email-service';
 import { users, students } from "@shared/schema";
+import {
+  type GradeBand,
+  type TurnPolicyState,
+  createTurnPolicyState,
+  evaluateTurn,
+  checkStallEscape,
+  resetTurnPolicyState,
+  logTurnPolicyEvaluation,
+  getK2ResponseConstraints,
+  isK2PolicyEnabled,
+  getTurnPolicyConfig,
+} from "../services/turn-policy";
 
 // ============================================
 // FEATURE FLAG: STT PROVIDER SELECTION
@@ -504,6 +516,12 @@ interface SessionState {
   isReconnecting: boolean; // RECONNECT: Track if Deepgram reconnection is in progress (blocks audio)
   currentTurnId: string | null; // THINKING INDICATOR: Track current turn for thinking state
   hasEmittedResponding: boolean; // THINKING INDICATOR: Prevent multiple tutor_responding events per turn
+  turnPolicyState: TurnPolicyState; // K2 TURN POLICY: State for hesitation detection
+  turnPolicyK2Override: boolean | null; // K2 TURN POLICY: Session-level override
+  stallEscapeTimerId: NodeJS.Timeout | null; // K2 TURN POLICY: Timer for stall escape
+  lastAudioReceivedAt: number; // K2 TURN POLICY: Track when audio was last received
+  guardedTranscript: string; // K2 TURN POLICY: Transcript being guarded during hesitation
+  stallTimerStartedAt: number; // K2 TURN POLICY: When the current stall timer was started
 }
 
 // Helper to send typed WebSocket events
@@ -604,6 +622,13 @@ async function finalizeSession(
     clearInterval(state.inactivityTimerId);
     state.inactivityTimerId = null;
     console.log(`[Finalize] 🧹 Cleared inactivity timer (reason: ${reason})`);
+  }
+  
+  // K2 TURN POLICY: Clear stall escape timer
+  if (state.stallEscapeTimerId) {
+    clearTimeout(state.stallEscapeTimerId);
+    state.stallEscapeTimerId = null;
+    console.log(`[Finalize] 🧹 Cleared stall escape timer (reason: ${reason})`);
   }
 
   if (!state.sessionId) {
@@ -846,6 +871,12 @@ export function setupCustomVoiceWebSocket(server: Server) {
       isReconnecting: false, // RECONNECT: Not reconnecting initially
       currentTurnId: null, // THINKING INDICATOR: No turn in progress
       hasEmittedResponding: false, // THINKING INDICATOR: No responding event yet
+      turnPolicyState: createTurnPolicyState(), // K2 TURN POLICY: Initialize state
+      turnPolicyK2Override: null, // K2 TURN POLICY: No session override initially
+      stallEscapeTimerId: null, // K2 TURN POLICY: No stall escape timer initially
+      lastAudioReceivedAt: Date.now(), // K2 TURN POLICY: Initialize to now
+      guardedTranscript: '', // K2 TURN POLICY: No guarded transcript initially
+      stallTimerStartedAt: 0, // K2 TURN POLICY: No stall timer initially
     };
 
     // FIX #3: Auto-persist every 10 seconds
@@ -1899,6 +1930,15 @@ FLOW:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `;
             
+            // K2 TURN POLICY: Add response constraints for K-2 students
+            const gradeBandForPolicy = state.ageGroup as GradeBand;
+            const k2PolicyActive = gradeBandForPolicy === 'K-2' && isK2PolicyEnabled(state.turnPolicyK2Override);
+            const K2_CONSTRAINTS = k2PolicyActive ? `\n\n${getK2ResponseConstraints()}` : '';
+            
+            if (k2PolicyActive) {
+              console.log(`[TurnPolicy] 🎯 K2 policy ACTIVE for grade band: ${state.ageGroup}`);
+            }
+            
             // Build system instruction with personality and document context
             if (state.uploadedDocuments.length > 0) {
               // Extract document titles for the enhanced prompt
@@ -1908,7 +1948,7 @@ FLOW:
               });
               
               // Create enhanced system instruction that includes document awareness
-              state.systemInstruction = `${personality.systemPrompt}${VOICE_CONVERSATION_CONSTRAINTS}
+              state.systemInstruction = `${personality.systemPrompt}${VOICE_CONVERSATION_CONSTRAINTS}${K2_CONSTRAINTS}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📚 UPLOADED DOCUMENTS FOR THIS SESSION:
@@ -1925,7 +1965,7 @@ CRITICAL INSTRUCTIONS:
               console.log(`[Custom Voice] 📚 System instruction enhanced with ${state.uploadedDocuments.length} documents`);
             } else {
               // Use standard personality prompt when no documents
-              state.systemInstruction = personality.systemPrompt + VOICE_CONVERSATION_CONSTRAINTS;
+              state.systemInstruction = personality.systemPrompt + VOICE_CONVERSATION_CONSTRAINTS + K2_CONSTRAINTS;
             }
             
             // Generate enhanced personalized greeting with LANGUAGE SUPPORT
@@ -2186,10 +2226,94 @@ CRITICAL INSTRUCTIONS:
               }
               
               console.log('[AssemblyAI] About to call createAssemblyAIConnection...');
+              
+              // K2 TURN POLICY: Helper to fire Claude with optional stall prompt
+              // CRITICAL: Always preserve student transcript - stall prompt is appended, not replaced
+              const fireClaudeWithPolicy = (transcript: string, stallPrompt?: string) => {
+                if (stallPrompt && transcript.trim()) {
+                  // Stall escape - send student's transcript PLUS gentle follow-up
+                  // This preserves the student's words while prompting for continuation
+                  const trimmedTranscript = transcript.trim();
+                  // Handle punctuation: add separator only if transcript doesn't end with punctuation
+                  const endsWithPunctuation = /[.!?]$/.test(trimmedTranscript);
+                  const separator = endsWithPunctuation ? ' ' : '. ';
+                  const combinedMessage = `${trimmedTranscript}${separator}(after pause) ${stallPrompt}`;
+                  console.log('[TurnPolicy] 🆘 Stall escape triggered - preserving transcript with gentle prompt');
+                  console.log(`[TurnPolicy] Original: "${transcript}", Combined: "${combinedMessage}"`);
+                  handleCompleteUtterance(combinedMessage);
+                } else if (stallPrompt) {
+                  // Edge case: stall with no transcript (shouldn't happen, but handle gracefully)
+                  console.log('[TurnPolicy] 🆘 Stall escape with no transcript - using prompt only');
+                  handleCompleteUtterance(stallPrompt);
+                } else {
+                  handleCompleteUtterance(transcript);
+                }
+                // Reset turn policy state after firing
+                resetTurnPolicyState(state.turnPolicyState);
+                // Clear any pending stall timer
+                if (state.stallEscapeTimerId) {
+                  clearTimeout(state.stallEscapeTimerId);
+                  state.stallEscapeTimerId = null;
+                }
+              };
+              
+              // K2 TURN POLICY: Start stall escape timer if hesitation detected
+              const startStallEscapeTimer = (transcript: string, remainingMs?: number) => {
+                const gradeBand = state.ageGroup as GradeBand;
+                const config = getTurnPolicyConfig(gradeBand, state.turnPolicyK2Override);
+                
+                // Clear any existing timer
+                if (state.stallEscapeTimerId) {
+                  clearTimeout(state.stallEscapeTimerId);
+                }
+                
+                // Store guarded transcript for use after potential reconnect
+                state.guardedTranscript = transcript;
+                
+                // Use remaining time if specified (for reconnect scenarios), otherwise full duration
+                const timerDuration = remainingMs !== undefined ? remainingMs : config.max_turn_silence_ms;
+                
+                // For reconnect scenarios, calculate what the original start time would have been
+                // This ensures multi-reconnect scenarios maintain the correct elapsed time
+                if (remainingMs !== undefined) {
+                  // Reconnect: Calculate original start time from remaining time
+                  // original_start = now - (max_duration - remaining)
+                  state.stallTimerStartedAt = Date.now() - (config.max_turn_silence_ms - remainingMs);
+                } else {
+                  // Fresh timer: Use current time
+                  state.stallTimerStartedAt = Date.now();
+                }
+                
+                state.stallEscapeTimerId = setTimeout(() => {
+                  const stallResult = checkStallEscape({
+                    gradeBand,
+                    sessionK2Override: state.turnPolicyK2Override,
+                    policyState: state.turnPolicyState,
+                    currentTimestamp: Date.now(),
+                    hasAudioInput: false, // No audio received during timer
+                  });
+                  
+                  if (stallResult) {
+                    logTurnPolicyEvaluation(stallResult);
+                    // Use state.guardedTranscript to ensure we have the correct transcript
+                    // even if this timer fires after a reconnect
+                    fireClaudeWithPolicy(state.guardedTranscript || transcript, stallResult.stall_prompt);
+                  }
+                  // Clear guarded transcript after firing
+                  state.guardedTranscript = '';
+                  state.stallTimerStartedAt = 0;
+                }, timerDuration);
+                
+                console.log(`[TurnPolicy] ⏱️ Stall escape timer started: ${timerDuration}ms`);
+              };
+              
               const { ws: assemblyWs, state: assemblyState } = createAssemblyAIConnection(
                 state.language,
                 (text, endOfTurn, confidence) => {
                   console.log(`[AssemblyAI] 📝 Complete utterance (confidence: ${confidence.toFixed(2)}): "${text}"`);
+                  
+                  // Update last audio received time for stall detection
+                  state.lastAudioReceivedAt = Date.now();
                   
                   // Check for barge-in (tutor interruption)
                   const timeSinceLastAudio = Date.now() - state.lastAudioSentAt;
@@ -2206,7 +2330,34 @@ CRITICAL INSTRUCTIONS:
                     state.isTutorSpeaking = false;
                   }
                   
-                  handleCompleteUtterance(text);
+                  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                  // K2 TURN POLICY: Evaluate whether to fire Claude
+                  // For K-2 students, detect hesitation and wait for complete thought
+                  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                  const gradeBand = state.ageGroup as GradeBand;
+                  const evaluation = evaluateTurn({
+                    gradeBand,
+                    sessionK2Override: state.turnPolicyK2Override,
+                    transcript: text,
+                    eotConfidence: confidence,
+                    endOfTurn: endOfTurn,
+                    policyState: state.turnPolicyState,
+                    currentTimestamp: Date.now(),
+                  });
+                  
+                  // Log turn policy evaluation
+                  logTurnPolicyEvaluation(evaluation);
+                  
+                  if (evaluation.hesitation_guard_triggered) {
+                    // Hesitation detected - start stall escape timer instead of firing immediately
+                    console.log(`[TurnPolicy] 🤔 Hesitation detected - waiting for continuation or stall`);
+                    startStallEscapeTimer(text);
+                    return; // Don't process transcript yet
+                  }
+                  
+                  if (evaluation.should_fire_claude) {
+                    fireClaudeWithPolicy(text);
+                  }
                 },
                 (error) => {
                   console.error('[AssemblyAI] ❌ Error:', error);
@@ -2237,9 +2388,118 @@ CRITICAL INSTRUCTIONS:
                     const backoffDelay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), 8000);
                     setTimeout(() => {
                       try {
+                        // Clear any lingering stall timer from previous connection to prevent double-fire
+                        if (state.stallEscapeTimerId) {
+                          clearTimeout(state.stallEscapeTimerId);
+                          state.stallEscapeTimerId = null;
+                          console.log('[AssemblyAI-Reconnect] 🧹 Cleared lingering stall timer');
+                        }
+                        
+                        // Preserve turn policy state across reconnect to maintain "very patient" contract
+                        const wasGuardActive = state.turnPolicyState.hesitationGuardActive;
+                        const wasAwaitingEot = state.turnPolicyState.awaitingSecondEot;
+                        const savedLastEotTimestamp = state.turnPolicyState.lastEotTimestamp;
+                        const savedGuardedTranscript = state.guardedTranscript;
+                        const savedStallTimerStartedAt = state.stallTimerStartedAt;
+                        const savedLastAudioReceivedAt = state.lastAudioReceivedAt;
+                        const config = getTurnPolicyConfig(state.ageGroup as GradeBand, state.turnPolicyK2Override);
+                        
+                        // Create fresh state with current timestamps
+                        state.turnPolicyState = createTurnPolicyState();
+                        
+                        // Restore guard state if it was active during disconnect
+                        if (wasGuardActive || wasAwaitingEot) {
+                          state.turnPolicyState.hesitationGuardActive = wasGuardActive;
+                          state.turnPolicyState.awaitingSecondEot = wasAwaitingEot;
+                          // CRITICAL: Preserve original lastEotTimestamp so checkStallEscape measures total silence
+                          state.turnPolicyState.lastEotTimestamp = savedLastEotTimestamp;
+                          state.guardedTranscript = savedGuardedTranscript;
+                          // Preserve lastAudioReceivedAt to maintain silence detection accuracy
+                          state.lastAudioReceivedAt = savedLastAudioReceivedAt;
+                          
+                          // Re-arm the stall escape timer with remaining time to maintain 4.5s guarantee
+                          if (savedStallTimerStartedAt > 0) {
+                            const elapsedMs = Date.now() - savedStallTimerStartedAt;
+                            const remainingMs = Math.max(0, config.max_turn_silence_ms - elapsedMs);
+                            
+                            // Default transcript if empty (shouldn't happen but handle gracefully)
+                            const transcriptToUse = savedGuardedTranscript || '';
+                            
+                            if (remainingMs > 0) {
+                              // Still have time left - re-arm with remaining duration
+                              startStallEscapeTimer(transcriptToUse, remainingMs);
+                              console.log(`[AssemblyAI-Reconnect] 🔄 Preserved guard + re-armed timer (${remainingMs}ms remaining)`);
+                            } else {
+                              // Time already expired - fire stall escape using checkStallEscape for proper logging/metrics
+                              console.log('[AssemblyAI-Reconnect] 🔄 Guard time expired during disconnect - firing stall escape');
+                              const stallResult = checkStallEscape({
+                                gradeBand: state.ageGroup as GradeBand,
+                                sessionK2Override: state.turnPolicyK2Override,
+                                policyState: state.turnPolicyState,
+                                currentTimestamp: Date.now(),
+                                hasAudioInput: false,
+                              });
+                              if (stallResult && stallResult.stall_prompt) {
+                                logTurnPolicyEvaluation(stallResult);
+                                fireClaudeWithPolicy(transcriptToUse, stallResult.stall_prompt);
+                              } else {
+                                // Fallback: fire with default prompt if checkStallEscape doesn't return result
+                                // This can happen due to state issues - log and fire anyway to not leave student waiting
+                                console.log('[AssemblyAI-Reconnect] ⚠️ checkStallEscape returned null - using fallback stall prompt');
+                                const fallbackPrompt = "Do you want more time to think, or would you like some help?";
+                                fireClaudeWithPolicy(transcriptToUse, fallbackPrompt);
+                              }
+                              // Reset state
+                              resetTurnPolicyState(state.turnPolicyState);
+                              state.guardedTranscript = '';
+                              state.stallTimerStartedAt = 0;
+                            }
+                          } else {
+                            // No timer was running but guard was active - shouldn't happen, reset guard
+                            console.log('[AssemblyAI-Reconnect] ⚠️ Guard active but no timer - resetting guard state');
+                            resetTurnPolicyState(state.turnPolicyState);
+                          }
+                        } else {
+                          // No guard was active - fresh start
+                          state.lastAudioReceivedAt = Date.now();
+                          console.log('[AssemblyAI-Reconnect] 🔄 Fresh turn policy state for new connection');
+                        }
+                        
+                        // CRITICAL: Reconnect callback MUST use turn policy logic (same as original)
                         const { ws: newWs, state: newState } = createAssemblyAIConnection(
                           state.language,
-                          (text, endOfTurn, confidence) => handleCompleteUtterance(text),
+                          (text, endOfTurn, confidence) => {
+                            console.log(`[AssemblyAI-Reconnect] 📝 Complete utterance (confidence: ${confidence.toFixed(2)}): "${text}"`);
+                            
+                            // Update last audio received time for stall detection
+                            state.lastAudioReceivedAt = Date.now();
+                            
+                            // K2 TURN POLICY: Evaluate turn before firing Claude
+                            const gradeBand = state.ageGroup as GradeBand;
+                            const evaluation = evaluateTurn({
+                              transcript: text,
+                              endOfTurn: endOfTurn,
+                              eotConfidence: confidence, // CRITICAL: Use correct parameter name
+                              gradeBand: gradeBand,
+                              sessionK2Override: state.turnPolicyK2Override,
+                              policyState: state.turnPolicyState,
+                              currentTimestamp: Date.now(),
+                            });
+                            
+                            // Log turn policy evaluation
+                            logTurnPolicyEvaluation(evaluation);
+                            
+                            if (evaluation.hesitation_guard_triggered) {
+                              // Hesitation detected - start stall escape timer instead of firing immediately
+                              console.log(`[TurnPolicy-Reconnect] 🤔 Hesitation detected - waiting for continuation or stall`);
+                              startStallEscapeTimer(text);
+                              return; // Don't process transcript yet
+                            }
+                            
+                            if (evaluation.should_fire_claude) {
+                              fireClaudeWithPolicy(text);
+                            }
+                          },
                           (error) => console.error('[AssemblyAI] Reconnect error:', error),
                           (sessionId) => console.log('[AssemblyAI] Reconnected:', sessionId)
                         );
