@@ -20,22 +20,52 @@ interface TrialCTAProps {
   className?: string;
 }
 
+// Map error codes to user-facing messages
+const TRIAL_ERROR_MESSAGES: Record<string, { title: string; description: string }> = {
+  EMAIL_REQUIRED: {
+    title: 'Email required',
+    description: 'Please enter your email address.',
+  },
+  EMAIL_INVALID: {
+    title: 'Invalid email',
+    description: 'Please enter a valid email address.',
+  },
+  TRIAL_EMAIL_USED: {
+    title: 'Email already used',
+    description: 'This email address has already been used for a free trial. Please sign up to continue.',
+  },
+  TRIAL_DEVICE_USED: {
+    title: 'Device already used',
+    description: 'A free trial has already been used on this device. Please sign up to continue.',
+  },
+  TRIAL_RATE_LIMITED: {
+    title: 'Too many attempts',
+    description: 'Too many trial attempts from this location. Please try again later.',
+  },
+  TRIAL_EXPIRED: {
+    title: 'Trial ended',
+    description: 'Your free trial has ended. Upgrade to keep learning.',
+  },
+  TRIAL_INTERNAL_ERROR: {
+    title: 'Something went wrong',
+    description: 'Please try again in a moment.',
+  },
+};
+
 export function TrialCTA({ variant = 'primary', size = 'md', className = '' }: TrialCTAProps) {
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const { toast } = useToast();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMessage(null);
     
     if (!email || !email.includes('@')) {
-      toast({
-        title: 'Invalid email',
-        description: 'Please enter a valid email address.',
-        variant: 'destructive',
-      });
+      setErrorMessage('Please enter a valid email address.');
       return;
     }
 
@@ -47,44 +77,40 @@ export function TrialCTA({ variant = 'primary', size = 'md', className = '' }: T
 
       if (data.ok) {
         setEmailSent(true);
+        setErrorMessage(null);
         toast({
           title: 'Check your email!',
           description: 'We sent you a verification link to start your free trial.',
         });
       } else {
-        // Handle specific error codes with user-friendly messages
-        let title = 'Unable to start trial';
-        let description = data.error || 'Please try again later.';
+        // Get user-facing message from error code
+        const errorCode = data.code || '';
+        const errorInfo = TRIAL_ERROR_MESSAGES[errorCode] || {
+          title: 'Unable to start trial',
+          description: data.error || 'Please try again later.',
+        };
         
-        switch (data.code) {
-          case 'EMAIL_REQUIRED':
-            title = 'Email required';
-            description = 'Please enter your email address.';
-            break;
-          case 'EMAIL_INVALID':
-            title = 'Invalid email';
-            description = 'Please enter a valid email address.';
-            break;
-          case 'TRIAL_EMAIL_USED':
-            title = 'Email already used';
-            description = 'This email has already been used for a free trial. Sign up for a subscription to continue learning!';
-            break;
-          case 'TRIAL_RATE_LIMITED':
-            title = 'Too many requests';
-            description = 'Too many trial requests from your location. Please try again later.';
-            break;
-        }
+        // Log for debugging
+        console.log('[Trial] Error code:', errorCode, '- User message:', errorInfo.description);
         
+        // Show inline error message
+        setErrorMessage(errorInfo.description);
+        
+        // Also show toast for visibility
         toast({
-          title,
-          description,
+          title: errorInfo.title,
+          description: errorInfo.description,
           variant: 'destructive',
         });
       }
     } catch (error) {
+      // Only show network error when fetch truly fails
+      const networkError = "We're having trouble connecting right now. Please check your internet connection and try again.";
+      console.log('[Trial] Network error:', error, '- User message:', networkError);
+      setErrorMessage(networkError);
       toast({
         title: 'Connection error',
-        description: 'Please check your internet connection and try again.',
+        description: networkError,
         variant: 'destructive',
       });
     } finally {
@@ -97,6 +123,7 @@ export function TrialCTA({ variant = 'primary', size = 'md', className = '' }: T
     setTimeout(() => {
       setEmail('');
       setEmailSent(false);
+      setErrorMessage(null);
     }, 300);
   };
 
@@ -165,12 +192,20 @@ export function TrialCTA({ variant = 'primary', size = 'md', className = '' }: T
                   type="email"
                   placeholder="your@email.com"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="pl-10"
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    setErrorMessage(null); // Clear error on input change
+                  }}
+                  className={`pl-10 ${errorMessage ? 'border-red-500 focus:ring-red-500' : ''}`}
                   disabled={isSubmitting}
                   data-testid="input-trial-email"
                 />
               </div>
+              {errorMessage && (
+                <p className="text-sm text-red-600" data-testid="text-trial-error">
+                  {errorMessage}
+                </p>
+              )}
             </div>
             
             <Button

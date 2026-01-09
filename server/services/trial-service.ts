@@ -29,9 +29,19 @@ function normalizeEmail(email: string): string {
   return email.toLowerCase().trim();
 }
 
+// Standardized error codes for trial operations
+export type TrialErrorCode = 
+  | 'TRIAL_EMAIL_USED'
+  | 'TRIAL_DEVICE_USED'
+  | 'TRIAL_RATE_LIMITED'
+  | 'TRIAL_EXPIRED'
+  | 'TRIAL_INTERNAL_ERROR';
+
 export interface TrialStartResult {
   ok: boolean;
   error?: string;
+  code?: TrialErrorCode;
+  // Keep legacy errorCode for backwards compatibility
   errorCode?: 'email_used' | 'device_blocked' | 'ip_rate_limited' | 'server_error';
 }
 
@@ -95,7 +105,13 @@ export class TrialService {
           .limit(1);
 
         if (existing.length > 0) {
-          return { ok: false, error: 'This email has already been used for a trial.', errorCode: 'email_used' };
+          console.log('[TrialService] Error: TRIAL_EMAIL_USED');
+          return { 
+            ok: false, 
+            code: 'TRIAL_EMAIL_USED',
+            error: 'This email address has already been used for a free trial.',
+            errorCode: 'email_used' 
+          };
         }
       }
 
@@ -111,7 +127,13 @@ export class TrialService {
           .limit(1);
 
         if (deviceTrial.length > 0) {
-          return { ok: false, error: 'A trial has already been used on this device recently.', errorCode: 'device_blocked' };
+          console.log('[TrialService] Error: TRIAL_DEVICE_USED');
+          return { 
+            ok: false, 
+            code: 'TRIAL_DEVICE_USED',
+            error: 'A free trial has already been used on this device.',
+            errorCode: 'device_blocked' 
+          };
         }
       }
 
@@ -127,7 +149,13 @@ export class TrialService {
           .limit(1);
 
         if (ipLimit.length > 0 && (ipLimit[0].attemptCount ?? 0) >= IP_RATE_LIMIT_MAX_ATTEMPTS) {
-          return { ok: false, error: 'Too many trial requests from this location. Please try again later.', errorCode: 'ip_rate_limited' };
+          console.log('[TrialService] Error: TRIAL_RATE_LIMITED');
+          return { 
+            ok: false, 
+            code: 'TRIAL_RATE_LIMITED',
+            error: 'Too many trial attempts from this location. Please try again later.',
+            errorCode: 'ip_rate_limited' 
+          };
         }
       }
 
@@ -174,7 +202,13 @@ export class TrialService {
       return { ok: true };
     } catch (error) {
       console.error('[TrialService] Error starting trial:', error);
-      return { ok: false, error: 'An error occurred. Please try again.', errorCode: 'server_error' };
+      console.log('[TrialService] Error: TRIAL_INTERNAL_ERROR');
+      return { 
+        ok: false, 
+        code: 'TRIAL_INTERNAL_ERROR',
+        error: 'Something went wrong. Please try again.',
+        errorCode: 'server_error' 
+      };
     }
   }
 
