@@ -52,6 +52,9 @@ import RegistrationSuccessPage from "@/pages/registration-success-page";
 import { PersonalityTestPage } from "@/pages/PersonalityTestPage";
 import ProfilePage from "@/pages/profile-page";
 import PracticeLessonsPage from "@/pages/practice-lessons-page";
+import TrialVerifyPage from "@/pages/trial-verify-page";
+import TrialEndedPage from "@/pages/trial-ended-page";
+import TrialTutorPage from "@/pages/trial-tutor-page";
 
 function Router() {
   return (
@@ -91,6 +94,9 @@ function Router() {
       <Route path="/privacy" component={PrivacyPage} />
       <Route path="/trust-safety" component={TrustSafetyPage} />
       <Route path="/unsubscribe" component={UnsubscribePage} />
+      <Route path="/trial/verify" component={TrialVerifyPage} />
+      <Route path="/trial/ended" component={TrialEndedPage} />
+      <Route path="/trial/tutor" component={TrialTutorPage} />
       <Route component={NotFound} />
     </Switch>
   );
