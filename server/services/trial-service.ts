@@ -35,7 +35,15 @@ export type TrialErrorCode =
   | 'TRIAL_DEVICE_USED'
   | 'TRIAL_RATE_LIMITED'
   | 'TRIAL_EXPIRED'
-  | 'TRIAL_INTERNAL_ERROR';
+  | 'TRIAL_INTERNAL_ERROR'
+  | 'TRIAL_DB_MIGRATION_MISSING';
+
+// Helper to check if error is a missing table error
+function isMissingTableError(error: any): boolean {
+  // PostgreSQL error code 42P01 = undefined_table
+  return error?.code === '42P01' || 
+    error?.message?.includes('relation') && error?.message?.includes('does not exist');
+}
 
 export interface TrialStartResult {
   ok: boolean;
@@ -200,8 +208,22 @@ export class TrialService {
       await this.sendTrialVerificationEmail(normalizedEmail, verificationToken);
 
       return { ok: true };
-    } catch (error) {
+    } catch (error: any) {
       console.error('[TrialService] Error starting trial:', error);
+      
+      // Check if this is a missing table error (migration not applied)
+      if (isMissingTableError(error)) {
+        console.error('[TrialService] CRITICAL: trial_sessions table does not exist!');
+        console.error('[TrialService] Run migrations: npm run init-db');
+        console.error('[TrialService] Error code: TRIAL_DB_MIGRATION_MISSING');
+        return { 
+          ok: false, 
+          code: 'TRIAL_DB_MIGRATION_MISSING',
+          error: 'Trial service is temporarily unavailable. Please try again later.',
+          errorCode: 'server_error' 
+        };
+      }
+      
       console.log('[TrialService] Error: TRIAL_INTERNAL_ERROR');
       return { 
         ok: false, 

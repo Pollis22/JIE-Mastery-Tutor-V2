@@ -101,11 +101,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
-  // Database health check endpoint - verify realtime_sessions table exists
+  // Database health check endpoint - verify required tables exist
   app.get("/api/health/db", async (req, res) => {
-    const checks = {
+    const checks: Record<string, boolean | string> = {
       database: false,
       realtimeSessions: false,
+      trialSessions: false,
+      trialRateLimits: false,
       timestamp: new Date().toISOString()
     };
 
@@ -115,20 +117,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await db.execute(sql`SELECT 1`);
       checks.database = true;
 
-      // Check if realtime_sessions table exists
-      const result = await db.execute(sql`
-        SELECT EXISTS (
-          SELECT FROM information_schema.tables 
-          WHERE table_schema = 'public' 
-          AND table_name = 'realtime_sessions'
-        );
+      // Check if required tables exist
+      const tableCheckResult = await db.execute(sql`
+        SELECT table_name FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name IN ('realtime_sessions', 'trial_sessions', 'trial_rate_limits');
       `);
-      checks.realtimeSessions = result.rows[0]?.exists === true;
+      
+      const existingTables = new Set(tableCheckResult.rows.map((r: any) => r.table_name));
+      checks.realtimeSessions = existingTables.has('realtime_sessions');
+      checks.trialSessions = existingTables.has('trial_sessions');
+      checks.trialRateLimits = existingTables.has('trial_rate_limits');
 
-      const allHealthy = checks.database && checks.realtimeSessions;
+      // Core tables that must exist
+      const coreHealthy = checks.database && checks.realtimeSessions;
+      // Trial tables - warn if missing but don't fail entire health check
+      const trialTablesHealthy = checks.trialSessions && checks.trialRateLimits;
+      
+      const allHealthy = coreHealthy && trialTablesHealthy;
+      const status = allHealthy ? 'healthy' : (coreHealthy ? 'degraded' : 'unhealthy');
+      
       res.status(allHealthy ? 200 : 503).json({
-        status: allHealthy ? 'healthy' : 'degraded',
-        checks
+        status,
+        checks,
+        missingTables: !trialTablesHealthy ? 
+          ['trial_sessions', 'trial_rate_limits'].filter(t => !existingTables.has(t)) : []
       });
     } catch (error: any) {
       res.status(503).json({

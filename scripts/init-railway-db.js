@@ -258,8 +258,11 @@ async function initializeDatabase() {
     
   } catch (error) {
     console.error('❌ Database initialization failed:', error);
-    console.log('⚠️  Continuing despite errors - app will start anyway');
-    // Don't throw - allow app to start even if migration has issues
+    console.error('❌ CRITICAL: Migrations must succeed before starting the server.');
+    console.error('❌ Check DATABASE_URL and database connectivity.');
+    await pool.end();
+    // FAIL FAST: Exit with error code so Railway doesn't start the app with broken schema
+    process.exit(1);
   } finally {
     await pool.end();
   }
