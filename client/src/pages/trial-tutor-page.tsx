@@ -245,45 +245,84 @@ export default function TrialTutorPage() {
         
         // Start microphone
         try {
+          console.log('[Trial] Requesting microphone access...');
           const stream = await navigator.mediaDevices.getUserMedia({
             audio: {
-              sampleRate: 16000,
-              channelCount: 1,
               echoCancellation: true,
               noiseSuppression: true,
               autoGainControl: true,
             }
           });
           mediaStreamRef.current = stream;
+          console.log('[Trial] Mic started - stream active:', stream.active);
           
-          // Create audio context for processing
-          audioContextRef.current = new AudioContext({ sampleRate: 16000 });
-          const source = audioContextRef.current.createMediaStreamSource(stream);
+          // Create audio context - let browser choose sample rate
+          const ctx = new AudioContext();
+          audioContextRef.current = ctx;
           
-          // Create processor to send audio to server
-          const processor = audioContextRef.current.createScriptProcessor(4096, 1, 1);
+          // Resume context if suspended (browsers require user gesture)
+          if (ctx.state === 'suspended') {
+            console.log('[Trial] Resuming suspended audio context...');
+            await ctx.resume();
+          }
+          console.log('[Trial] AudioContext state:', ctx.state, 'sampleRate:', ctx.sampleRate);
+          
+          const source = ctx.createMediaStreamSource(stream);
+          
+          // Send audio config to server
+          ws.send(JSON.stringify({
+            type: 'audio_config',
+            format: 'pcm_s16le',
+            sampleRate: 16000,
+            channels: 1
+          }));
+          console.log('[Trial] Sent audio_config to server');
+          
+          // Use ScriptProcessor for audio capture (simpler than AudioWorklet)
+          const processor = ctx.createScriptProcessor(4096, 1, 1);
+          let frameCount = 0;
+          
           processor.onaudioprocess = (e) => {
-            if (ws.readyState === WebSocket.OPEN && micEnabled) {
-              const inputData = e.inputBuffer.getChannelData(0);
-              const pcm16 = new Int16Array(inputData.length);
-              for (let i = 0; i < inputData.length; i++) {
-                pcm16[i] = Math.max(-32768, Math.min(32767, inputData[i] * 32768));
-              }
-              // Convert to base64 (matching existing paid user flow)
-              const bytes = new Uint8Array(pcm16.buffer);
-              let binaryString = '';
-              for (let i = 0; i < bytes.length; i++) {
-                binaryString += String.fromCharCode(bytes[i]);
-              }
-              ws.send(JSON.stringify({
-                type: 'audio',
-                data: btoa(binaryString),
-              }));
+            if (ws.readyState !== WebSocket.OPEN) return;
+            
+            const inputData = e.inputBuffer.getChannelData(0);
+            
+            // Resample to 16kHz if needed
+            const inputSampleRate = ctx.sampleRate;
+            const outputSampleRate = 16000;
+            const ratio = inputSampleRate / outputSampleRate;
+            const outputLength = Math.floor(inputData.length / ratio);
+            
+            const pcm16 = new Int16Array(outputLength);
+            for (let i = 0; i < outputLength; i++) {
+              const srcIndex = Math.floor(i * ratio);
+              const sample = inputData[srcIndex] || 0;
+              pcm16[i] = Math.max(-32768, Math.min(32767, Math.round(sample * 32767)));
+            }
+            
+            // Convert to base64
+            const bytes = new Uint8Array(pcm16.buffer);
+            let binaryString = '';
+            for (let j = 0; j < bytes.length; j++) {
+              binaryString += String.fromCharCode(bytes[j]);
+            }
+            
+            ws.send(JSON.stringify({
+              type: 'audio',
+              data: btoa(binaryString),
+            }));
+            
+            frameCount++;
+            if (frameCount % 50 === 1) {
+              // Log every ~50 frames (throttled)
+              const maxAmp = Math.max(...Array.from(inputData).map(Math.abs));
+              console.log(`[Trial] Sending audio frame ${frameCount}, maxAmp: ${maxAmp.toFixed(4)}`);
             }
           };
           
           source.connect(processor);
-          processor.connect(audioContextRef.current.destination);
+          // Connect to a silent destination to keep the processor running
+          processor.connect(ctx.destination);
           
           setIsSessionActive(true);
           setSessionStartTime(Date.now());
@@ -428,8 +467,8 @@ export default function TrialTutorPage() {
         setIsConnected(false);
       };
       
-      ws.onclose = () => {
-        console.log('[Trial] WebSocket closed');
+      ws.onclose = (event) => {
+        console.log(`[Trial] WebSocket closed - code: ${event.code}, reason: "${event.reason || 'none'}", wasClean: ${event.wasClean}`);
         setIsConnected(false);
       };
       

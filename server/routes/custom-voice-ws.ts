@@ -668,6 +668,17 @@ async function finalizeSession(
     console.warn('[Custom Voice] ⚠️ No sessionId, skipping finalization');
     return;
   }
+  
+  // Check if this is a trial session (skip database operations for trial users)
+  const isTrialSession = state.sessionId.startsWith('trial_session_');
+  
+  if (isTrialSession) {
+    const durationSeconds = Math.floor((Date.now() - state.sessionStartTime) / 1000);
+    console.log(`[Custom Voice] 🎫 Trial session finalized (${reason}) - ${durationSeconds}s, ${state.transcript.length} messages`);
+    console.log(`[Custom Voice] 🎫 Trial session closed - reason: ${reason}`);
+    // Trial sessions don't update realtimeSessions or deduct minutes
+    return;
+  }
 
   try {
     // Calculate session duration
@@ -693,8 +704,8 @@ async function finalizeSession(
 
     console.log(`[Custom Voice] 💾 Session finalized (${reason}) - ${durationMinutes} minutes, ${state.transcript.length} messages`);
 
-    // Deduct minutes from user balance
-    if (state.userId && durationMinutes > 0) {
+    // Deduct minutes from user balance (skip for trial users)
+    if (state.userId && durationMinutes > 0 && !state.userId.startsWith('trial_')) {
       const { deductMinutes } = await import('../services/voice-minutes');
       await deductMinutes(state.userId, durationMinutes);
       console.log(`[Custom Voice] ✅ Deducted ${durationMinutes} minutes from user ${state.userId}`);
@@ -3577,8 +3588,9 @@ CRITICAL INSTRUCTIONS:
       }
     });
 
-    ws.on("close", async () => {
-      console.log("[Custom Voice] 🔌 Connection closed");
+    ws.on("close", async (code: number, reason: Buffer) => {
+      const reasonStr = reason?.toString() || 'none';
+      console.log(`[Custom Voice] 🔌 Connection closed - code: ${code}, reason: "${reasonStr}"`);
       
       // Skip if session was already ended (prevents double-deduction)
       if (state.isSessionEnded) {
