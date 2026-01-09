@@ -75,6 +75,27 @@ The RAG system supports various document formats (PDF, DOCX, Images via OCR, XLS
 
 The core database tables include `users`, `sessions`, `realtime_sessions`, `students`, `user_documents`, `document_chunks`, `document_embeddings`, `content_violations`, `user_suspensions`, `admin_logs`, and `minute_purchases`. The schema is defined in `shared/schema.ts`.
 
+### 5-Minute Free Trial System
+
+A no-account-required trial system allows potential users to experience AI tutoring before signing up:
+
+**Trial Flow**: Email entry → Email verification (6-digit code) → 5-minute tutoring session → Trial ended page with signup CTAs
+
+**Anti-Abuse Measures**:
+- 1 trial per email address (lifetime)
+- 1 trial per device per 30 days (signed cookie-based)
+- IP rate limiting (3 trials per 24 hours)
+
+**Technical Implementation**:
+- Database tables: `trial_sessions`, `trial_rate_limits`
+- Routes: `/api/trial/start`, `/api/trial/verify`, `/api/trial/status`, `/api/trial/end-session`
+- Service: `server/services/trial-service.ts`
+- Cookie middleware: `cookie-parser` with signed cookies for device identification
+
+**Trial Timer**: Counts only during active tutoring sessions (not wall-clock time). Timer displays mm:ss countdown during session.
+
+**Frontend Pages**: `/trial/verify` (email verification), `/trial/tutor` (trial session), `/trial/ended` (conversion page)
+
 ### Payment & Subscription System
 
 Stripe is integrated for subscription management and one-time purchases. A hybrid minute tracking system differentiates between monthly subscription minutes (resets, lost if unused) and purchased rollover minutes (deducted after subscription minutes are exhausted). Promo code support is included.
