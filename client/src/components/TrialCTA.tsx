@@ -42,7 +42,7 @@ export function TrialCTA({ variant = 'primary', size = 'md', className = '' }: T
     setIsSubmitting(true);
 
     try {
-      const response = await apiRequest('POST', '/api/trial/start', { email });
+      const response = await apiRequest('POST', '/api/trial/start', { email: email.trim() });
       const data = await response.json();
 
       if (data.ok) {
@@ -52,9 +52,36 @@ export function TrialCTA({ variant = 'primary', size = 'md', className = '' }: T
           description: 'We sent you a verification link to start your free trial.',
         });
       } else {
+        // Handle specific error codes with user-friendly messages
+        let title = 'Unable to start trial';
+        let description = data.error || 'Please try again later.';
+        
+        switch (data.code) {
+          case 'EMAIL_REQUIRED':
+            title = 'Email required';
+            description = 'Please enter your email address.';
+            break;
+          case 'EMAIL_INVALID':
+            title = 'Invalid email';
+            description = 'Please enter a valid email address.';
+            break;
+          case 'TRIAL_EMAIL_USED':
+            title = 'Email already used';
+            description = 'This email has already been used for a free trial. Sign up for a subscription to continue learning!';
+            break;
+          case 'TRIAL_DEVICE_BLOCKED':
+            title = 'Trial already used';
+            description = 'A free trial has already been used on this device. Sign up for a subscription to continue!';
+            break;
+          case 'TRIAL_RATE_LIMITED':
+            title = 'Too many requests';
+            description = 'Too many trial requests from your location. Please try again later.';
+            break;
+        }
+        
         toast({
-          title: 'Unable to start trial',
-          description: data.error || 'Please try again later.',
+          title,
+          description,
           variant: 'destructive',
         });
       }

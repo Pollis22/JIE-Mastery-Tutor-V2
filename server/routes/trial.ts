@@ -32,35 +32,88 @@ function getIpHash(req: Request): string {
   return createHash('sha256').update(ip).digest('hex');
 }
 
-const startTrialSchema = z.object({
-  email: z.string().email('Please enter a valid email address'),
-});
-
 router.post('/start', async (req: Request, res: Response) => {
   try {
-    const parsed = startTrialSchema.safeParse(req.body);
+    console.log('[TrialRoutes] /start received body:', JSON.stringify(req.body));
     
-    if (!parsed.success) {
+    const rawEmail = req.body?.email;
+    
+    // Strict validation: email must exist
+    if (rawEmail === undefined || rawEmail === null) {
+      console.log('[TrialRoutes] /start error: email field missing from request body');
       return res.status(400).json({ 
         ok: false, 
-        error: parsed.error.errors[0]?.message || 'Invalid email',
-        errorCode: 'validation_error'
+        error: 'Email is required.',
+        code: 'EMAIL_REQUIRED'
       });
     }
-
+    
+    // Strict validation: email must not be empty
+    if (typeof rawEmail !== 'string' || rawEmail.trim() === '') {
+      console.log('[TrialRoutes] /start error: email is blank');
+      return res.status(400).json({ 
+        ok: false, 
+        error: 'Email is required.',
+        code: 'EMAIL_REQUIRED'
+      });
+    }
+    
+    const trimmedEmail = rawEmail.trim().toLowerCase();
+    
+    // Strict validation: email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmedEmail)) {
+      console.log('[TrialRoutes] /start error: invalid email format');
+      return res.status(400).json({ 
+        ok: false, 
+        error: 'Please enter a valid email address.',
+        code: 'EMAIL_INVALID'
+      });
+    }
+    
     const deviceIdHash = getDeviceIdHash(req, res);
     const ipHash = getIpHash(req);
+    
+    // Debug logging (hashed values only for privacy)
+    const emailHash = createHash('sha256').update(trimmedEmail).digest('hex').substring(0, 12);
+    console.log('[TrialRoutes] /start processing:', {
+      emailHash: emailHash + '...',
+      deviceIdHash: deviceIdHash.substring(0, 12) + '...',
+      ipHash: ipHash.substring(0, 12) + '...',
+    });
 
-    const result = await trialService.startTrial(parsed.data.email, deviceIdHash, ipHash);
+    const result = await trialService.startTrial(trimmedEmail, deviceIdHash, ipHash);
 
     if (result.ok) {
+      console.log('[TrialRoutes] /start success: verification email sent');
       return res.json({ ok: true, message: 'Verification email sent. Please check your inbox.' });
     } else {
-      return res.status(400).json(result);
+      // Map internal error codes to client-facing codes with appropriate HTTP status
+      const errorCode = result.errorCode;
+      let httpStatus = 400;
+      let code = 'TRIAL_ERROR';
+      
+      if (errorCode === 'email_used') {
+        httpStatus = 409;
+        code = 'TRIAL_EMAIL_USED';
+      } else if (errorCode === 'device_blocked') {
+        httpStatus = 400;
+        code = 'TRIAL_DEVICE_BLOCKED';
+      } else if (errorCode === 'ip_rate_limited') {
+        httpStatus = 429;
+        code = 'TRIAL_RATE_LIMITED';
+      }
+      
+      console.log('[TrialRoutes] /start denied:', { code, error: result.error });
+      return res.status(httpStatus).json({
+        ok: false,
+        error: result.error,
+        code,
+      });
     }
   } catch (error) {
     console.error('[TrialRoutes] Error starting trial:', error);
-    return res.status(500).json({ ok: false, error: 'Server error', errorCode: 'server_error' });
+    return res.status(500).json({ ok: false, error: 'Server error', code: 'SERVER_ERROR' });
   }
 });
 
