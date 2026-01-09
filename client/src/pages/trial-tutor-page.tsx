@@ -827,7 +827,7 @@ export default function TrialTutorPage() {
                 JIE Mastery AI Tutor - Free Trial
               </CardTitle>
               <p className="text-gray-600 dark:text-gray-400">
-                Experience personalized AI tutoring for {formatTime(secondsRemaining)} more
+                Experience personalized AI tutoring for {formatTime(secondsRemaining)} minutes
               </p>
             </CardHeader>
             <CardContent className="p-8">
