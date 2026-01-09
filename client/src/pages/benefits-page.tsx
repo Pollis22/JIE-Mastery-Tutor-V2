@@ -30,7 +30,7 @@ export default function BenefitsPage() {
 
   return (
     <div className="min-h-screen bg-background font-sans selection:bg-primary/10">
-      {/* Navigation - Minimal for Landing Page */}
+      {/* Navigation - Full Navigation for Landing Page */}
       <nav className="border-b border-border bg-card/80 backdrop-blur-md sticky top-0 z-50">
         <div className="container mx-auto px-4">
           <div className="flex items-center justify-between h-16">
@@ -38,8 +38,31 @@ export default function BenefitsPage() {
               <img src={jieLogo} alt="JIE Mastery" className="h-10 w-auto" />
               <span className="text-xl font-bold text-foreground">JIE Mastery</span>
             </div>
+            
+            {/* Standard Navigation Links */}
+            <div className="hidden md:flex items-center space-x-6">
+              <a href="#benefits" className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-nav-why">
+                Why JIE Mastery AI Tutors
+              </a>
+              <button onClick={() => setLocation("/demo")} className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-nav-demo">
+                Tutor Demo
+              </button>
+              <button onClick={() => setLocation("/faq")} className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-nav-faq">
+                FAQ
+              </button>
+              <button onClick={() => setLocation("/support")} className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-nav-support">
+                Live Support
+              </button>
+              <button onClick={() => setLocation("/contact")} className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-nav-contact">
+                Contact
+              </button>
+              <button onClick={handlePricing} className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-nav-pricing">
+                Pricing
+              </button>
+            </div>
+            
             <div className="flex items-center space-x-3">
-              <Button variant="outline" onClick={handlePricing} data-testid="button-nav-pricing">
+              <Button variant="outline" onClick={handlePricing} className="hidden sm:inline-flex" data-testid="button-nav-pricing">
                 View Pricing
               </Button>
               <Button variant="default" onClick={handleCTA} data-testid="button-nav-cta">
