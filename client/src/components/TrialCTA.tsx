@@ -12,7 +12,6 @@ import {
 } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Play, Mail, CheckCircle } from 'lucide-react';
-import { apiRequest } from '@/lib/queryClient';
 
 interface TrialCTAProps {
   variant?: 'primary' | 'secondary' | 'outline';
@@ -72,7 +71,14 @@ export function TrialCTA({ variant = 'primary', size = 'md', className = '' }: T
     setIsSubmitting(true);
 
     try {
-      const response = await apiRequest('POST', '/api/trial/start', { email: email.trim() });
+      // Use raw fetch instead of apiRequest to handle 4xx responses without throwing
+      const response = await fetch('/api/trial/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email: email.trim() }),
+      });
+      
       const data = await response.json();
 
       if (data.ok) {
@@ -104,7 +110,7 @@ export function TrialCTA({ variant = 'primary', size = 'md', className = '' }: T
         });
       }
     } catch (error) {
-      // Only show network error when fetch truly fails
+      // Only show network error when fetch truly fails (no response at all)
       const networkError = "We're having trouble connecting right now. Please check your internet connection and try again.";
       console.log('[Trial] Network error:', error, '- User message:', networkError);
       setErrorMessage(networkError);
