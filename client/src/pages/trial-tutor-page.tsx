@@ -32,6 +32,50 @@ function buildWsUrl(trialToken: string): string {
   return `${protocol}//${window.location.host}/api/custom-voice-ws?trialToken=${encodeURIComponent(trialToken)}`;
 }
 
+function createWavFromPcm(pcmData: Uint8Array, sampleRate: number, numChannels: number): ArrayBuffer {
+  const bitsPerSample = 16;
+  const bytesPerSample = bitsPerSample / 8;
+  const blockAlign = numChannels * bytesPerSample;
+  const byteRate = sampleRate * blockAlign;
+  const dataSize = pcmData.length;
+  const headerSize = 44;
+  const totalSize = headerSize + dataSize;
+  
+  const buffer = new ArrayBuffer(totalSize);
+  const view = new DataView(buffer);
+  
+  // RIFF header
+  writeString(view, 0, 'RIFF');
+  view.setUint32(4, totalSize - 8, true);
+  writeString(view, 8, 'WAVE');
+  
+  // fmt subchunk
+  writeString(view, 12, 'fmt ');
+  view.setUint32(16, 16, true); // Subchunk1Size (16 for PCM)
+  view.setUint16(20, 1, true); // AudioFormat (1 = PCM)
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitsPerSample, true);
+  
+  // data subchunk
+  writeString(view, 36, 'data');
+  view.setUint32(40, dataSize, true);
+  
+  // PCM data
+  const dataView = new Uint8Array(buffer, headerSize);
+  dataView.set(pcmData);
+  
+  return buffer;
+}
+
+function writeString(view: DataView, offset: number, str: string): void {
+  for (let i = 0; i < str.length; i++) {
+    view.setUint8(offset + i, str.charCodeAt(i));
+  }
+}
+
 export default function TrialTutorPage() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -296,32 +340,64 @@ export default function TrialTutorPage() {
               break;
               
             case 'audio':
-              // Server sends audio as base64 in message.data
+              // Server sends audio as base64 in message.data with format metadata
               if (audioEnabled && message.data) {
-                console.log('[Trial] Greeting received - audio data length:', message.data.length);
+                const audioFormat = message.audioFormat || 'pcm_s16le';
+                const sampleRate = message.sampleRate || 16000;
+                const channels = message.channels || 1;
+                console.log(`[Trial] Audio received - format: ${audioFormat}, rate: ${sampleRate}, channels: ${channels}, length: ${message.data.length}`);
                 setIsTutorSpeaking(true);
+                
                 try {
                   // Decode base64 to binary
                   const binaryString = atob(message.data);
-                  const bytes = new Uint8Array(binaryString.length);
+                  const pcmBytes = new Uint8Array(binaryString.length);
                   for (let i = 0; i < binaryString.length; i++) {
-                    bytes[i] = binaryString.charCodeAt(i);
+                    pcmBytes[i] = binaryString.charCodeAt(i);
                   }
                   
-                  // Create audio context if needed
-                  const ctx = audioContextRef.current || new AudioContext();
-                  console.log('[Trial] TTS started - decoding audio...');
-                  
-                  // Decode and play
-                  const audioBuffer = await ctx.decodeAudioData(bytes.buffer.slice(0));
-                  const sourceNode = ctx.createBufferSource();
-                  sourceNode.buffer = audioBuffer;
-                  sourceNode.connect(ctx.destination);
-                  sourceNode.onended = () => {
-                    console.log('[Trial] TTS playback complete');
+                  if (audioFormat === 'pcm_s16le') {
+                    // Wrap PCM in WAV header and play via Audio element
+                    const wavBuffer = createWavFromPcm(pcmBytes, sampleRate, channels);
+                    const blob = new Blob([wavBuffer], { type: 'audio/wav' });
+                    const url = URL.createObjectURL(blob);
+                    
+                    const audio = new Audio(url);
+                    audio.onended = () => {
+                      console.log('[Trial] TTS playback complete');
+                      setIsTutorSpeaking(false);
+                      URL.revokeObjectURL(url);
+                    };
+                    audio.onerror = (e) => {
+                      console.error('[Trial] Audio element error:', e);
+                      setIsTutorSpeaking(false);
+                      URL.revokeObjectURL(url);
+                    };
+                    console.log('[Trial] TTS started - playing WAV...');
+                    await audio.play();
+                  } else if (audioFormat === 'mp3' || audioFormat === 'wav') {
+                    // Already encoded - play directly via Audio element
+                    const mimeType = audioFormat === 'mp3' ? 'audio/mpeg' : 'audio/wav';
+                    const blob = new Blob([pcmBytes], { type: mimeType });
+                    const url = URL.createObjectURL(blob);
+                    
+                    const audio = new Audio(url);
+                    audio.onended = () => {
+                      console.log('[Trial] TTS playback complete');
+                      setIsTutorSpeaking(false);
+                      URL.revokeObjectURL(url);
+                    };
+                    audio.onerror = (e) => {
+                      console.error('[Trial] Audio element error:', e);
+                      setIsTutorSpeaking(false);
+                      URL.revokeObjectURL(url);
+                    };
+                    console.log(`[Trial] TTS started - playing ${audioFormat}...`);
+                    await audio.play();
+                  } else {
+                    console.warn('[Trial] Unknown audio format:', audioFormat);
                     setIsTutorSpeaking(false);
-                  };
-                  sourceNode.start();
+                  }
                 } catch (audioError) {
                   console.error('[Trial] Audio playback error:', audioError);
                   setIsTutorSpeaking(false);

@@ -2993,13 +2993,16 @@ CRITICAL INSTRUCTIONS:
                 speaker: "tutor"
               }));
               
-              // Send greeting audio
+              // Send greeting audio with format metadata
               ws.send(JSON.stringify({
                 type: "audio",
-                data: greetingAudio.toString("base64")
+                data: greetingAudio.toString("base64"),
+                audioFormat: "pcm_s16le",
+                sampleRate: 16000,
+                channels: 1
               }));
               
-              console.log(`[Custom Voice] 🔊 Sent greeting audio (${greetingAudio.length} bytes)`);
+              console.log(`[Custom Voice] 🔊 Sent greeting audio (${greetingAudio.length} bytes, pcm_s16le 16kHz mono)`);
             } catch (error) {
               console.error("[Custom Voice] ❌ Failed to generate greeting audio:", error);
             }
