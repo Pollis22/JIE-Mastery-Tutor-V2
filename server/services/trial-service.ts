@@ -13,6 +13,14 @@ const DEVICE_COOLDOWN_DAYS = 30;
 // Device blocking is OFF by default for dev/staging. Set TRIAL_ENFORCE_DEVICE_LIMIT=1 to enable.
 const ENFORCE_DEVICE_LIMIT = process.env.TRIAL_ENFORCE_DEVICE_LIMIT === '1';
 
+// QA Mode: Set TRIAL_QA_MODE=1 to bypass IP rate limiting and device blocking for development
+// Still enforces 5-minute trial cap
+const QA_MODE = process.env.TRIAL_QA_MODE === '1';
+
+// QA Emails: Comma-separated list of emails that can bypass "email already used" restriction
+// Example: TRIAL_QA_EMAILS=test@example.com,dev@example.com
+const QA_EMAILS = (process.env.TRIAL_QA_EMAILS || '').split(',').map(e => e.toLowerCase().trim()).filter(Boolean);
+
 function hashValue(value: string): string {
   return createHash('sha256').update(value.toLowerCase().trim()).digest('hex');
 }
@@ -68,18 +76,31 @@ export class TrialService {
     try {
       const normalizedEmail = normalizeEmail(email);
       const emailHash = hashValue(normalizedEmail);
-
-      const existing = await db.select()
-        .from(trialSessions)
-        .where(eq(trialSessions.emailHash, emailHash))
-        .limit(1);
-
-      if (existing.length > 0) {
-        return { ok: false, error: 'This email has already been used for a trial.', errorCode: 'email_used' };
+      
+      // Check if this is a QA email that bypasses "email already used" restriction
+      const isQaEmail = QA_EMAILS.includes(normalizedEmail);
+      
+      if (QA_MODE) {
+        console.log('[TrialService] QA_MODE enabled - bypassing IP/device rate limits');
+        if (isQaEmail) {
+          console.log('[TrialService] QA email detected - bypassing email-already-used check:', normalizedEmail);
+        }
       }
 
-      // Device blocking check - skip if TRIAL_ENFORCE_DEVICE_LIMIT is not "1"
-      if (ENFORCE_DEVICE_LIMIT) {
+      // Email already used check - skip for QA emails in QA mode
+      if (!isQaEmail) {
+        const existing = await db.select()
+          .from(trialSessions)
+          .where(eq(trialSessions.emailHash, emailHash))
+          .limit(1);
+
+        if (existing.length > 0) {
+          return { ok: false, error: 'This email has already been used for a trial.', errorCode: 'email_used' };
+        }
+      }
+
+      // Device blocking check - skip if QA_MODE or TRIAL_ENFORCE_DEVICE_LIMIT is not "1"
+      if (ENFORCE_DEVICE_LIMIT && !QA_MODE) {
         const thirtyDaysAgo = new Date(Date.now() - DEVICE_COOLDOWN_DAYS * 24 * 60 * 60 * 1000);
         const deviceTrial = await db.select()
           .from(trialSessions)
@@ -94,17 +115,20 @@ export class TrialService {
         }
       }
 
-      const windowStart = new Date(Date.now() - IP_RATE_LIMIT_WINDOW_HOURS * 60 * 60 * 1000);
-      const ipLimit = await db.select()
-        .from(trialRateLimits)
-        .where(and(
-          eq(trialRateLimits.ipHash, ipHash),
-          gte(trialRateLimits.windowStart, windowStart)
-        ))
-        .limit(1);
+      // IP rate limiting - skip if QA_MODE
+      if (!QA_MODE) {
+        const windowStart = new Date(Date.now() - IP_RATE_LIMIT_WINDOW_HOURS * 60 * 60 * 1000);
+        const ipLimit = await db.select()
+          .from(trialRateLimits)
+          .where(and(
+            eq(trialRateLimits.ipHash, ipHash),
+            gte(trialRateLimits.windowStart, windowStart)
+          ))
+          .limit(1);
 
-      if (ipLimit.length > 0 && (ipLimit[0].attemptCount ?? 0) >= IP_RATE_LIMIT_MAX_ATTEMPTS) {
-        return { ok: false, error: 'Too many trial requests from this location. Please try again later.', errorCode: 'ip_rate_limited' };
+        if (ipLimit.length > 0 && (ipLimit[0].attemptCount ?? 0) >= IP_RATE_LIMIT_MAX_ATTEMPTS) {
+          return { ok: false, error: 'Too many trial requests from this location. Please try again later.', errorCode: 'ip_rate_limited' };
+        }
       }
 
       const verificationToken = randomBytes(32).toString('hex');
@@ -121,16 +145,28 @@ export class TrialService {
         consumedSeconds: 0,
       });
 
-      if (ipLimit.length > 0) {
-        await db.update(trialRateLimits)
-          .set({ attemptCount: sql`${trialRateLimits.attemptCount} + 1` })
-          .where(eq(trialRateLimits.ipHash, ipHash));
-      } else {
-        await db.insert(trialRateLimits).values({
-          ipHash,
-          attemptCount: 1,
-          windowStart: new Date(),
-        });
+      // Track IP rate limits (skip in QA mode)
+      if (!QA_MODE) {
+        const windowStart = new Date(Date.now() - IP_RATE_LIMIT_WINDOW_HOURS * 60 * 60 * 1000);
+        const ipLimit = await db.select()
+          .from(trialRateLimits)
+          .where(and(
+            eq(trialRateLimits.ipHash, ipHash),
+            gte(trialRateLimits.windowStart, windowStart)
+          ))
+          .limit(1);
+          
+        if (ipLimit.length > 0) {
+          await db.update(trialRateLimits)
+            .set({ attemptCount: sql`${trialRateLimits.attemptCount} + 1` })
+            .where(eq(trialRateLimits.ipHash, ipHash));
+        } else {
+          await db.insert(trialRateLimits).values({
+            ipHash,
+            attemptCount: 1,
+            windowStart: new Date(),
+          });
+        }
       }
 
       await this.sendTrialVerificationEmail(normalizedEmail, verificationToken);
