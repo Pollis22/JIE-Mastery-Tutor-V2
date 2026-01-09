@@ -383,11 +383,25 @@ export class TrialService {
     try {
       const entitlement = await this.getTrialEntitlement(deviceIdHash);
       
-      if (!entitlement.hasAccess || !entitlement.trialId) {
+      // Strictly enforce entitlement checks
+      if (!entitlement.hasAccess) {
+        console.log('[TrialService] Token denied: no access, reason:', entitlement.reason);
         return { ok: false, error: entitlement.reason };
       }
       
+      if (!entitlement.trialId) {
+        console.log('[TrialService] Token denied: no trial ID');
+        return { ok: false, error: 'trial_not_found' };
+      }
+      
+      // Verify trial still has remaining time
+      if (!entitlement.trialSecondsRemaining || entitlement.trialSecondsRemaining <= 0) {
+        console.log('[TrialService] Token denied: no seconds remaining');
+        return { ok: false, error: 'trial_expired' };
+      }
+      
       const token = this.generateSessionToken(entitlement.trialId);
+      console.log('[TrialService] Token issued for trial:', entitlement.trialId, 'remaining:', entitlement.trialSecondsRemaining);
       
       return {
         ok: true,

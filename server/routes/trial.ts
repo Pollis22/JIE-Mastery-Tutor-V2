@@ -131,9 +131,16 @@ router.post('/end-session', async (req: Request, res: Response) => {
 router.post('/session-token', async (req: Request, res: Response) => {
   try {
     const deviceIdHash = getDeviceIdHash(req, res);
+    
+    if (!deviceIdHash) {
+      console.log('[TrialRoutes] session-token: no device ID hash');
+      return res.status(400).json({ ok: false, error: 'Missing device identification' });
+    }
+    
     const result = await trialService.getSessionToken(deviceIdHash);
 
-    if (result.ok) {
+    if (result.ok && result.token) {
+      console.log('[TrialRoutes] session-token: success, trial:', result.trialId);
       return res.json({
         ok: true,
         token: result.token,
@@ -141,7 +148,8 @@ router.post('/session-token', async (req: Request, res: Response) => {
         trialId: result.trialId,
       });
     } else {
-      return res.status(403).json({ ok: false, error: result.error });
+      console.log('[TrialRoutes] session-token: denied, error:', result.error);
+      return res.status(403).json({ ok: false, error: result.error || 'Trial not available' });
     }
   } catch (error) {
     console.error('[TrialRoutes] Error getting session token:', error);

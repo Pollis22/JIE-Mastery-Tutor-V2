@@ -224,9 +224,15 @@ export default function TrialTutorPage() {
               for (let i = 0; i < inputData.length; i++) {
                 pcm16[i] = Math.max(-32768, Math.min(32767, inputData[i] * 32768));
               }
+              // Convert to base64 (matching existing paid user flow)
+              const bytes = new Uint8Array(pcm16.buffer);
+              let binaryString = '';
+              for (let i = 0; i < bytes.length; i++) {
+                binaryString += String.fromCharCode(bytes[i]);
+              }
               ws.send(JSON.stringify({
                 type: 'audio',
-                data: Array.from(new Uint8Array(pcm16.buffer))
+                data: btoa(binaryString),
               }));
             }
           };
