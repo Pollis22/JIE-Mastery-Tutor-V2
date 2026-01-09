@@ -736,7 +736,7 @@ export default function TutorPage() {
               data-testid="button-start-tutor"
               title={!selectedStudentId ? "Please select a student profile to connect" : ""}
             >
-              Talk to Your Tutor
+              Start Session
             </button>
             
             <button 
@@ -765,7 +765,7 @@ export default function TutorPage() {
               <li><strong>Select your grade level</strong> you want help with</li>
               <li><strong>Upload your materials (optional)</strong> - Share homework, worksheets, or study guides (PDF, DOCX, or images). Select documents to use in this session, or upload new ones</li>
               <li><strong>Wait a few seconds</strong> after uploading for documents to process completely</li>
-              <li><strong>Click "Talk to Your Tutor"</strong> to begin your voice conversation</li>
+              <li><strong>Click "Start Session"</strong> to begin your voice conversation</li>
               <li><strong>Start speaking</strong> - Ask questions about your homework or discuss any topic. The tutor uses your uploaded documents to give personalized guidance!</li>
               <li><strong>View the transcript</strong> below to see your conversation in real-time</li>
             </ol>
