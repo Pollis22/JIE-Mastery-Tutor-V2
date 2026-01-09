@@ -27,6 +27,26 @@ interface TranscriptMessage {
   timestamp?: string;
 }
 
+// Normalize text for comparison (trim, collapse whitespace)
+function normalizeText(text: string): string {
+  return text?.trim().replace(/\s+/g, ' ') || '';
+}
+
+// Check if newText starts with (or equals) prevText after normalization
+function isPrefixOf(prevText: string, newText: string): boolean {
+  const normPrev = normalizeText(prevText);
+  const normNew = normalizeText(newText);
+  return normNew.startsWith(normPrev);
+}
+
+// Debug logging for transcript operations
+const DEBUG_TRANSCRIPT = import.meta.env.VITE_DEBUG_TRANSCRIPT === '1';
+function logTranscript(action: 'APPEND' | 'REPLACE' | 'IGNORE_DUP', role: string, text: string) {
+  if (DEBUG_TRANSCRIPT) {
+    console.log(`[TranscriptDebug] ${action} | role=${role} | len=${text?.length || 0} | text="${text?.substring(0, 25)}..."`);
+  }
+}
+
 function buildWsUrl(trialToken: string): string {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   return `${protocol}//${window.location.host}/api/custom-voice-ws?trialToken=${encodeURIComponent(trialToken)}`;
@@ -506,28 +526,51 @@ export default function TrialTutorPage() {
             case 'transcript':
               // Handle both student and tutor transcripts
               if (message.speaker === 'tutor') {
-                // Deduplicate tutor messages using normalized text comparison
-                const normalizedText = message.text?.trim().replace(/\s+/g, ' ').toLowerCase();
-                const lastText = lastAssistantTextRef.current?.trim().replace(/\s+/g, ' ').toLowerCase();
+                const incomingText = message.text?.trim() || '';
+                const lastText = lastAssistantTextRef.current || '';
+                const normIncoming = normalizeText(incomingText);
+                const normLast = normalizeText(lastText);
                 
-                if (lastText === normalizedText) {
-                  log('Duplicate tutor transcript ignored (normalized):', normalizedText);
+                // Case 1: Exact duplicate - ignore completely
+                if (normIncoming === normLast) {
+                  log('Duplicate tutor transcript ignored (exact match)');
+                  logTranscript('IGNORE_DUP', 'tutor', incomingText);
                   break;
                 }
-                lastAssistantTextRef.current = message.text?.trim();
                 
-                log('Assistant turn received:', { turnId: message.turnId, length: message.text?.length });
+                // Case 2: New text is a prefix extension of the last (prefix-merge)
+                // i.e., new text starts with the old text - REPLACE the last message
+                const shouldReplace = normLast.length > 0 && isPrefixOf(lastText, incomingText);
+                
+                lastAssistantTextRef.current = incomingText;
+                
+                log('Assistant turn received:', { turnId: message.turnId, length: incomingText.length, replace: shouldReplace });
+                
                 setTranscript(prev => {
-                  // Final safety check: if the last message is exact duplicate, skip
                   if (prev.length > 0) {
                     const lastMsg = prev[prev.length - 1];
-                    if (lastMsg.speaker === 'tutor' && lastMsg.text.trim() === message.text.trim()) {
+                    
+                    // Exact duplicate check at state level
+                    if (lastMsg.speaker === 'tutor' && normalizeText(lastMsg.text) === normIncoming) {
+                      logTranscript('IGNORE_DUP', 'tutor', incomingText);
                       return prev;
                     }
+                    
+                    // Prefix-merge: if new text extends the last tutor message, replace it
+                    if (lastMsg.speaker === 'tutor' && isPrefixOf(lastMsg.text, incomingText)) {
+                      logTranscript('REPLACE', 'tutor', incomingText);
+                      return [...prev.slice(0, -1), {
+                        speaker: 'tutor',
+                        text: incomingText,
+                        timestamp: new Date().toISOString(),
+                      }];
+                    }
                   }
+                  
+                  logTranscript('APPEND', 'tutor', incomingText);
                   return [...prev, {
                     speaker: 'tutor',
-                    text: message.text,
+                    text: incomingText,
                     timestamp: new Date().toISOString(),
                   }];
                 });
@@ -547,28 +590,50 @@ export default function TrialTutorPage() {
               
             case 'response':
               // 'response' is often a duplicate of 'transcript' (tutor) in some pipelines
-              // Only add if it's different using same normalized comparison
-              const respText = message.text?.trim();
-              const normResp = respText?.replace(/\s+/g, ' ').toLowerCase();
-              const lastNorm = lastAssistantTextRef.current?.trim().replace(/\s+/g, ' ').toLowerCase();
+              // Use same prefix-merge logic as 'transcript' case
+              const respText = message.text?.trim() || '';
+              const respLastText = lastAssistantTextRef.current || '';
+              const normResp = normalizeText(respText);
+              const normRespLast = normalizeText(respLastText);
 
-              if (lastNorm !== normResp) {
-                log('Assistant turn (response) received:', { text: respText });
-                lastAssistantTextRef.current = respText;
-                setTranscript(prev => {
-                  if (prev.length > 0) {
-                    const lastMsg = prev[prev.length - 1];
-                    if (lastMsg.speaker === 'tutor' && lastMsg.text.trim() === respText) {
-                      return prev;
-                    }
-                  }
-                  return [...prev, {
-                    speaker: 'tutor',
-                    text: message.text,
-                    timestamp: new Date().toISOString(),
-                  }];
-                });
+              // Exact duplicate - ignore
+              if (normResp === normRespLast) {
+                log('Duplicate response ignored (exact match)');
+                logTranscript('IGNORE_DUP', 'tutor', respText);
+                break;
               }
+
+              lastAssistantTextRef.current = respText;
+              log('Assistant turn (response) received:', { text: respText });
+              
+              setTranscript(prev => {
+                if (prev.length > 0) {
+                  const lastMsg = prev[prev.length - 1];
+                  
+                  // Exact duplicate check
+                  if (lastMsg.speaker === 'tutor' && normalizeText(lastMsg.text) === normResp) {
+                    logTranscript('IGNORE_DUP', 'tutor', respText);
+                    return prev;
+                  }
+                  
+                  // Prefix-merge: if new text extends the last tutor message, replace it
+                  if (lastMsg.speaker === 'tutor' && isPrefixOf(lastMsg.text, respText)) {
+                    logTranscript('REPLACE', 'tutor', respText);
+                    return [...prev.slice(0, -1), {
+                      speaker: 'tutor',
+                      text: respText,
+                      timestamp: new Date().toISOString(),
+                    }];
+                  }
+                }
+                
+                logTranscript('APPEND', 'tutor', respText);
+                return [...prev, {
+                  speaker: 'tutor',
+                  text: respText,
+                  timestamp: new Date().toISOString(),
+                }];
+              });
               break;
               
             case 'audio':
