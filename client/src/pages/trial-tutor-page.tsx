@@ -188,13 +188,14 @@ export default function TrialTutorPage() {
         console.log('[Trial] WebSocket connected');
         setIsConnected(true);
         
-        // Send start message
+        // Send init message (must match server's expected message type)
+        console.log('[Trial] Sending init message...');
         ws.send(JSON.stringify({
-          type: 'start',
+          type: 'init',
           sessionId: `trial_${trialIdRef.current}`,
           studentName: 'Trial User',
-          ageGroup: 'College/Adult',
-          subject: 'General',
+          ageGroup: 'G3-5',
+          subject: 'Math',
           language: 'en',
         }));
         
@@ -269,7 +270,15 @@ export default function TrialTutorPage() {
               break;
               
             case 'transcript':
-              if (message.speaker === 'student') {
+              // Handle both student and tutor transcripts
+              if (message.speaker === 'tutor') {
+                console.log('[Trial] Greeting received - transcript:', message.text?.substring(0, 50) + '...');
+                setTranscript(prev => [...prev, {
+                  speaker: 'tutor',
+                  text: message.text,
+                  timestamp: new Date().toISOString(),
+                }]);
+              } else if (message.speaker === 'student') {
                 setTranscript(prev => [...prev.filter(m => m.speaker !== 'student' || !m.text.startsWith(message.text.substring(0, 10))), {
                   speaker: 'student',
                   text: message.text,
@@ -287,17 +296,32 @@ export default function TrialTutorPage() {
               break;
               
             case 'audio':
-              if (audioEnabled && message.audio) {
+              // Server sends audio as base64 in message.data
+              if (audioEnabled && message.data) {
+                console.log('[Trial] Greeting received - audio data length:', message.data.length);
                 setIsTutorSpeaking(true);
                 try {
-                  const audioData = Uint8Array.from(message.audio);
+                  // Decode base64 to binary
+                  const binaryString = atob(message.data);
+                  const bytes = new Uint8Array(binaryString.length);
+                  for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                  }
+                  
+                  // Create audio context if needed
                   const ctx = audioContextRef.current || new AudioContext();
-                  const audioBuffer = await ctx.decodeAudioData(audioData.buffer);
-                  const source = ctx.createBufferSource();
-                  source.buffer = audioBuffer;
-                  source.connect(ctx.destination);
-                  source.onended = () => setIsTutorSpeaking(false);
-                  source.start();
+                  console.log('[Trial] TTS started - decoding audio...');
+                  
+                  // Decode and play
+                  const audioBuffer = await ctx.decodeAudioData(bytes.buffer.slice(0));
+                  const sourceNode = ctx.createBufferSource();
+                  sourceNode.buffer = audioBuffer;
+                  sourceNode.connect(ctx.destination);
+                  sourceNode.onended = () => {
+                    console.log('[Trial] TTS playback complete');
+                    setIsTutorSpeaking(false);
+                  };
+                  sourceNode.start();
                 } catch (audioError) {
                   console.error('[Trial] Audio playback error:', audioError);
                   setIsTutorSpeaking(false);

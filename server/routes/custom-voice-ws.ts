@@ -896,8 +896,13 @@ export function setupCustomVoiceWebSocket(server: Server) {
     // Get authenticated userId that was attached during upgrade
     const authenticatedUserId = (ws as any).authenticatedUserId as string;
     const user = (ws as any).user;
+    const isTrialSession = (ws as any).isTrialSession as boolean;
+    const trialId = (ws as any).trialId as string | undefined;
     
     console.log("[Custom Voice] 🔌 New authenticated connection for user:", authenticatedUserId);
+    if (isTrialSession) {
+      console.log("[Custom Voice] 🎫 Trial WS connected, trialId:", trialId);
+    }
     
     // FIX #2C: Turn-taking timeout for natural conversation flow
     let responseTimer: NodeJS.Timeout | null = null;
@@ -1857,195 +1862,235 @@ export function setupCustomVoiceWebSocket(server: Server) {
           case "init":
             console.log("[Custom Voice] 🚀 Initializing session:", message.sessionId);
             
-            // SECURITY: Use authenticated userId from session, not client message
-            if (!message.sessionId) {
-              console.error(`[Custom Voice] ❌ Missing sessionId`);
-              ws.send(JSON.stringify({ 
-                type: "error", 
-                error: "Missing sessionId" 
-              }));
-              ws.close();
-              return;
-            }
-
-            // SECURITY: Verify client's userId matches authenticated userId (consistency check only)
-            if (message.userId && message.userId !== authenticatedUserId) {
-              console.warn(`[Custom Voice] ⚠️ Client userId mismatch (ignoring client value)`, {
-                clientUserId: message.userId,
-                authenticatedUserId: authenticatedUserId
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            // TRIAL SESSION PATH - Skip realtimeSessions and suspension checks
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            if (isTrialSession) {
+              console.log("[Custom Voice] 🎫 Trial entitlement OK - skipping paid session checks");
+              // Trial users get a synthetic session ID
+              state.sessionId = `trial_session_${trialId}`;
+              state.studentName = message.studentName || "Friend";
+              state.ageGroup = message.ageGroup || "G3-5"; // Default age group for trials
+              state.subject = message.subject || "Math";
+              state.language = message.language || "en";
+              state.speechSpeed = 1.0;
+              
+              console.log(`[Custom Voice] 🎫 Trial session initialized:`, {
+                sessionId: state.sessionId,
+                userId: state.userId,
+                studentName: state.studentName,
+                ageGroup: state.ageGroup,
+                language: state.language
               });
-            }
-
-            // SECURITY: Validate session exists and belongs to authenticated user
-            try {
-              const session = await db.select()
-                .from(realtimeSessions)
-                .where(eq(realtimeSessions.id, message.sessionId))
-                .limit(1);
-
-              if (session.length === 0) {
-                console.error(`[Custom Voice] ❌ Session not found: ${message.sessionId}`);
+              // Trial path continues below to greeting generation
+            } else {
+              // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+              // PAID USER PATH - Full validation required
+              // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+              
+              // SECURITY: Use authenticated userId from session, not client message
+              if (!message.sessionId) {
+                console.error(`[Custom Voice] ❌ Missing sessionId`);
                 ws.send(JSON.stringify({ 
                   type: "error", 
-                  error: "Session not found. Please refresh and try again." 
+                  error: "Missing sessionId" 
                 }));
                 ws.close();
                 return;
               }
 
-              // SECURITY: Verify session belongs to authenticated user
-              if (session[0].userId !== authenticatedUserId) {
-                console.error(`[Custom Voice] ❌ Session ${message.sessionId} does not belong to authenticated user`, {
-                  sessionUserId: session[0].userId,
+              // SECURITY: Verify client's userId matches authenticated userId (consistency check only)
+              if (message.userId && message.userId !== authenticatedUserId) {
+                console.warn(`[Custom Voice] ⚠️ Client userId mismatch (ignoring client value)`, {
+                  clientUserId: message.userId,
                   authenticatedUserId: authenticatedUserId
                 });
-                ws.send(JSON.stringify({ 
-                  type: "error", 
-                  error: "Unauthorized session access" 
-                }));
-                ws.close();
-                return;
               }
 
-              console.log(`[Custom Voice] ✅ Session validated for authenticated user ${authenticatedUserId}`);
-              
-              // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-              // 🛡️ CHECK FOR ACTIVE SUSPENSIONS
-              // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-              
-              // SECURITY: Check suspension using authenticated userId
-              const suspension = await db.select()
-                .from(userSuspensions)
-                .where(and(
-                  eq(userSuspensions.userId, authenticatedUserId),
-                  eq(userSuspensions.isActive, true),
-                  or(
-                    eq(userSuspensions.isPermanent, true),
-                    gte(userSuspensions.suspendedUntil, new Date())
-                  )
-                ))
-                .limit(1);
-              
-              if (suspension.length > 0) {
-                const susp = suspension[0];
-                console.log("[Custom Voice] ⛔ User is suspended");
+              // SECURITY: Validate session exists and belongs to authenticated user
+              try {
+                const session = await db.select()
+                  .from(realtimeSessions)
+                  .where(eq(realtimeSessions.id, message.sessionId))
+                  .limit(1);
+
+                if (session.length === 0) {
+                  console.error(`[Custom Voice] ❌ Session not found: ${message.sessionId}`);
+                  ws.send(JSON.stringify({ 
+                    type: "error", 
+                    error: "Session not found. Please refresh and try again." 
+                  }));
+                  ws.close();
+                  return;
+                }
+
+                // SECURITY: Verify session belongs to authenticated user
+                if (session[0].userId !== authenticatedUserId) {
+                  console.error(`[Custom Voice] ❌ Session ${message.sessionId} does not belong to authenticated user`, {
+                    sessionUserId: session[0].userId,
+                    authenticatedUserId: authenticatedUserId
+                  });
+                  ws.send(JSON.stringify({ 
+                    type: "error", 
+                    error: "Unauthorized session access" 
+                  }));
+                  ws.close();
+                  return;
+                }
+
+                console.log(`[Custom Voice] ✅ Session validated for authenticated user ${authenticatedUserId}`);
                 
-                const message = susp.isPermanent
-                  ? `Your account has been permanently suspended due to violations of our terms of service. Reason: ${susp.reason}. Please contact support.`
-                  : `Your account is temporarily suspended until ${susp.suspendedUntil ? new Date(susp.suspendedUntil).toLocaleString() : 'further notice'}. Reason: ${susp.reason}`;
+                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                // 🛡️ CHECK FOR ACTIVE SUSPENSIONS
+                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                 
-                ws.send(JSON.stringify({
-                  type: "error",
-                  error: message
+                // SECURITY: Check suspension using authenticated userId
+                const suspension = await db.select()
+                  .from(userSuspensions)
+                  .where(and(
+                    eq(userSuspensions.userId, authenticatedUserId),
+                    eq(userSuspensions.isActive, true),
+                    or(
+                      eq(userSuspensions.isPermanent, true),
+                      gte(userSuspensions.suspendedUntil, new Date())
+                    )
+                  ))
+                  .limit(1);
+                
+                if (suspension.length > 0) {
+                  const susp = suspension[0];
+                  console.log("[Custom Voice] ⛔ User is suspended");
+                  
+                  const suspMessage = susp.isPermanent
+                    ? `Your account has been permanently suspended due to violations of our terms of service. Reason: ${susp.reason}. Please contact support.`
+                    : `Your account is temporarily suspended until ${susp.suspendedUntil ? new Date(susp.suspendedUntil).toLocaleString() : 'further notice'}. Reason: ${susp.reason}`;
+                  
+                  ws.send(JSON.stringify({
+                    type: "error",
+                    error: suspMessage
+                  }));
+                  
+                  ws.close();
+                  return;
+                }
+                
+                console.log("[Custom Voice] ✅ No active suspensions found");
+              } catch (error) {
+                console.error("[Custom Voice] ❌ Session validation error:", error);
+                ws.send(JSON.stringify({ 
+                  type: "error", 
+                  error: "Session validation failed" 
                 }));
-                
                 ws.close();
                 return;
               }
-              
-              console.log("[Custom Voice] ✅ No active suspensions found");
-            } catch (error) {
-              console.error("[Custom Voice] ❌ Session validation error:", error);
-              ws.send(JSON.stringify({ 
-                type: "error", 
-                error: "Session validation failed" 
-              }));
-              ws.close();
-              return;
             }
             
-            // SECURITY: Session state already has authenticated userId from upgrade
-            state.sessionId = message.sessionId;
-            // state.userId is already set to authenticatedUserId during state initialization
-            state.studentName = message.studentName || "Student";
-            state.ageGroup = message.ageGroup || "College/Adult";
-            state.subject = message.subject || "General"; // SESSION: Store tutoring subject
-            state.language = message.language || "en"; // LANGUAGE: Store selected language
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            // COMMON PATH - Both trial and paid users continue here
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             
-            // CRITICAL FIX (Nov 14, 2025): Log userId after initialization to verify authentication
-            console.log(`[Custom Voice] 🔐 Session state initialized:`, {
-              sessionId: state.sessionId,
-              userId: state.userId,
-              authenticatedUserId: authenticatedUserId,
-              hasUserId: !!state.userId,
-              userIdType: typeof state.userId,
-              studentName: state.studentName,
-              ageGroup: state.ageGroup,
-              language: state.language
-            });
-            
-            // Fetch user's speech speed preference from database using authenticated userId
-            try {
-              const user = await storage.getUser(authenticatedUserId);
-              if (user && user.speechSpeed) {
-                state.speechSpeed = typeof user.speechSpeed === 'string' ? parseFloat(user.speechSpeed) : user.speechSpeed;
-                console.log(`[Custom Voice] ⚙️ User's speech speed preference: ${state.speechSpeed}`);
-              } else {
-                state.speechSpeed = 1.0; // Default (normal speed)
-                console.log(`[Custom Voice] ⚙️ Using default speech speed: 1.0`);
+            // Set session state (trial users already have these set above)
+            if (!isTrialSession) {
+              // SECURITY: Session state already has authenticated userId from upgrade
+              state.sessionId = message.sessionId;
+              // state.userId is already set to authenticatedUserId during state initialization
+              state.studentName = message.studentName || "Student";
+              state.ageGroup = message.ageGroup || "College/Adult";
+              state.subject = message.subject || "General"; // SESSION: Store tutoring subject
+              state.language = message.language || "en"; // LANGUAGE: Store selected language
+              
+              // CRITICAL FIX (Nov 14, 2025): Log userId after initialization to verify authentication
+              console.log(`[Custom Voice] 🔐 Session state initialized:`, {
+                sessionId: state.sessionId,
+                userId: state.userId,
+                authenticatedUserId: authenticatedUserId,
+                hasUserId: !!state.userId,
+                userIdType: typeof state.userId,
+                studentName: state.studentName,
+                ageGroup: state.ageGroup,
+                language: state.language
+              });
+              
+              // Fetch user's speech speed preference from database using authenticated userId
+              try {
+                const user = await storage.getUser(authenticatedUserId);
+                if (user && user.speechSpeed) {
+                  state.speechSpeed = typeof user.speechSpeed === 'string' ? parseFloat(user.speechSpeed) : user.speechSpeed;
+                  console.log(`[Custom Voice] ⚙️ User's speech speed preference: ${state.speechSpeed}`);
+                } else {
+                  state.speechSpeed = 1.0; // Default (normal speed)
+                  console.log(`[Custom Voice] ⚙️ Using default speech speed: 1.0`);
+                }
+              } catch (error) {
+                console.error("[Custom Voice] ⚠️ Error fetching user settings, using default speech speed:", error);
+                state.speechSpeed = 1.0;
               }
-            } catch (error) {
-              console.error("[Custom Voice] ⚠️ Error fetching user settings, using default speech speed:", error);
-              state.speechSpeed = 1.0;
             }
             
             // Get full tutor personality based on age group
             const personality = getTutorPersonality(state.ageGroup);
             console.log(`[Custom Voice] 🎭 Using personality: ${personality.name} for ${state.ageGroup}`);
             
-            // Load document chunks and format as content strings
-            // Check if documents are provided (either as IDs or as content strings)
-            const messageDocuments = message.documents || [];
-            
-            try {
-              // Check if documents are already provided as content strings from frontend
-              if (messageDocuments.length > 0 && typeof messageDocuments[0] === 'string' && messageDocuments[0].startsWith('[Document:')) {
-                // Frontend has already loaded and sent document content
-                console.log(`[Custom Voice] 📚 Received ${messageDocuments.length} pre-loaded documents from frontend`);
-                state.uploadedDocuments = messageDocuments;
-                const totalChars = messageDocuments.join('').length;
-                console.log(`[Custom Voice] 📄 Document context ready: ${messageDocuments.length} documents, total length: ${totalChars} chars`);
-              } 
-              // Otherwise, treat them as document IDs to load from database
-              else {
-                let documentIds = messageDocuments;
-                
-                // If no specific documents requested, get all user documents using authenticated userId
-                if (documentIds.length === 0) {
-                  console.log(`[Custom Voice] 📄 No specific documents provided, loading all user documents from database...`);
-                  const allUserDocs = await storage.getUserDocuments(authenticatedUserId);
-                  const readyDocs = allUserDocs.filter(doc => doc.processingStatus === 'ready');
-                  documentIds = readyDocs.map(doc => doc.id);
-                  console.log(`[Custom Voice] 📚 Found ${readyDocs.length} ready documents for user`);
-                }
-                
-                if (documentIds.length > 0) {
-                  console.log(`[Custom Voice] 📄 Loading ${documentIds.length} documents from database...`);
-                  const { chunks, documents } = await storage.getDocumentContext(authenticatedUserId, documentIds);
-                  console.log(`[Custom Voice] ✅ Loaded ${chunks.length} chunks from ${documents.length} documents`);
+            // Load document chunks and format as content strings (skip for trial users)
+            if (!isTrialSession) {
+              // Check if documents are provided (either as IDs or as content strings)
+              const messageDocuments = message.documents || [];
+              
+              try {
+                // Check if documents are already provided as content strings from frontend
+                if (messageDocuments.length > 0 && typeof messageDocuments[0] === 'string' && messageDocuments[0].startsWith('[Document:')) {
+                  // Frontend has already loaded and sent document content
+                  console.log(`[Custom Voice] 📚 Received ${messageDocuments.length} pre-loaded documents from frontend`);
+                  state.uploadedDocuments = messageDocuments;
+                  const totalChars = messageDocuments.join('').length;
+                  console.log(`[Custom Voice] 📄 Document context ready: ${messageDocuments.length} documents, total length: ${totalChars} chars`);
+                } 
+                // Otherwise, treat them as document IDs to load from database
+                else {
+                  let documentIds = messageDocuments;
                   
-                  // Format chunks as content strings grouped by document
-                  const documentContents: string[] = [];
-                  for (const doc of documents) {
-                    const docChunks = chunks
-                      .filter(c => c.documentId === doc.id)
-                      .sort((a, b) => a.chunkIndex - b.chunkIndex); // Ensure correct chunk order
-                    if (docChunks.length > 0) {
-                      const content = `📄 ${doc.title || doc.originalName}\n${docChunks.map(c => c.content).join('\n\n')}`;
-                      documentContents.push(content);
-                    }
+                  // If no specific documents requested, get all user documents using authenticated userId
+                  if (documentIds.length === 0) {
+                    console.log(`[Custom Voice] 📄 No specific documents provided, loading all user documents from database...`);
+                    const allUserDocs = await storage.getUserDocuments(authenticatedUserId);
+                    const readyDocs = allUserDocs.filter(doc => doc.processingStatus === 'ready');
+                    documentIds = readyDocs.map(doc => doc.id);
+                    console.log(`[Custom Voice] 📚 Found ${readyDocs.length} ready documents for user`);
                   }
                   
-                  state.uploadedDocuments = documentContents;
-                  console.log(`[Custom Voice] 📚 Document context prepared: ${documentContents.length} documents, total length: ${documentContents.join('').length} chars`);
-                } else {
-                  state.uploadedDocuments = [];
-                  console.log(`[Custom Voice] ℹ️ No documents available for this user`);
+                  if (documentIds.length > 0) {
+                    console.log(`[Custom Voice] 📄 Loading ${documentIds.length} documents from database...`);
+                    const { chunks, documents } = await storage.getDocumentContext(authenticatedUserId, documentIds);
+                    console.log(`[Custom Voice] ✅ Loaded ${chunks.length} chunks from ${documents.length} documents`);
+                    
+                    // Format chunks as content strings grouped by document
+                    const documentContents: string[] = [];
+                    for (const doc of documents) {
+                      const docChunks = chunks
+                        .filter(c => c.documentId === doc.id)
+                        .sort((a, b) => a.chunkIndex - b.chunkIndex); // Ensure correct chunk order
+                      if (docChunks.length > 0) {
+                        const content = `📄 ${doc.title || doc.originalName}\n${docChunks.map(c => c.content).join('\n\n')}`;
+                        documentContents.push(content);
+                      }
+                    }
+                    
+                    state.uploadedDocuments = documentContents;
+                    console.log(`[Custom Voice] 📚 Document context prepared: ${documentContents.length} documents, total length: ${documentContents.join('').length} chars`);
+                  } else {
+                    state.uploadedDocuments = [];
+                    console.log(`[Custom Voice] ℹ️ No documents available for this user`);
+                  }
                 }
+              } catch (error) {
+                console.error('[Custom Voice] ❌ Error loading documents:', error);
+                state.uploadedDocuments = [];
               }
-            } catch (error) {
-              console.error('[Custom Voice] ❌ Error loading documents:', error);
+            } else {
+              // Trial users don't have documents
               state.uploadedDocuments = [];
+              console.log(`[Custom Voice] 🎫 Trial session - no documents to load`);
             }
             
             // VOICE CONVERSATION CONSTRAINTS (Dec 10, 2025 FIX)
