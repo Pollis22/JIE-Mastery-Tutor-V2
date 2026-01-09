@@ -471,6 +471,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const { default: sessionsRoutes } = await import('./routes/sessions');
   app.use("/api/sessions", sessionsRoutes);
 
+  // Trial routes (5-minute free trial - no auth required)
+  const { default: trialRoutes } = await import('./routes/trial');
+  app.use("/api/trial", trialRoutes);
+
   // Legacy voice API routes (for compatibility)
   // Note: live-token endpoint is now handled in voiceRoutes
 
