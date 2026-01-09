@@ -38,6 +38,22 @@ Features include auto-selection of the last used profile, integrated profile man
 
 The primary AI model is Claude Sonnet 4 (`claude-sonnet-4-20250514`) with a 200k token context window and a temperature of 0.7. It employs a Modified Adaptive Socratic Method with three phases: Guided Discovery, Direct Instruction (after 2-3 attempts or frustration detection), and Understanding Check. The system includes frustration detection based on specific user phrases. Five distinct tutor personalities are defined for different age groups, each with tailored traits.
 
+### Voice Turn-Taking System (Production-Ready)
+
+A comprehensive voice interaction system that creates natural, patient, and interruption-friendly conversations across all age groups. Key improvements:
+
+**Adaptive Barge-In Detection**: Rolling microphone noise baseline with relative energy detection and duck-then-confirm flow. Per-grade-band configuration (K-2 through Adult) with age-appropriate thresholds.
+
+**Bounded Patience Logic**: Turn-taking evaluates whether a student's thought is complete using hesitation markers (um, wait, let me think) and continuation patterns (and, so, because), not just silence detection.
+
+**Reading Mode Patience**: Extra patience during reading activities with +250ms minimum and +800ms maximum silence bonuses, accommodating slow readers and ESL learners.
+
+**Adaptive Session-Level Patience**: Dynamic patience scoring (0.0-1.0) that adjusts based on learner behavior signals within strict caps to prevent sluggishness.
+
+**Reliable Goodbye Shutdown**: Hard stop immediately cancels audio, transcription, and pending responses when session ends, eliminating trailing tutor messages.
+
+See `docs/VOICE_UX_FEATURES.md` for full configuration, metrics, and feature flags.
+
 ### K-2 Turn Policy (Very Patient Turn-Taking)
 
 A feature-flagged turn-taking policy (`TURN_POLICY_K2_ENABLED`) for young learners (K-2) that prevents interrupting while students think aloud. Key features:

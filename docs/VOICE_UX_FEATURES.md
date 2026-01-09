@@ -2,6 +2,56 @@
 
 This document describes the voice user experience improvements for the JIE Mastery AI Tutor.
 
+## Executive Summary
+
+The voice turn-taking system was completely redesigned to create a natural, patient, and interruption-friendly conversational experience suitable for children, nervous speakers, ESL users, and adults alike.
+
+### Problem Statement
+
+Initial testing revealed three core issues:
+1. The tutor occasionally cut off students mid-thought
+2. Users were sometimes unable to interrupt the tutor while it was speaking
+3. Occasional trailing responses occurred after a clear goodbye
+
+These issues were amplified for younger learners and slower or quieter speakers.
+
+### Root Causes Identified
+
+The issues were traced to:
+- Reliance on **absolute audio thresholds** for barge-in detection
+- **Silence-only end-of-turn logic** that ignored semantic context
+- **Lack of session-level cancellation** when conversations ended
+
+These approaches work in ideal conditions but fail under real-world variability in speech patterns, volume, accents, and devices.
+
+### Key Fixes Implemented
+
+1. **Adaptive Barge-In Detection**: Rolling microphone noise baseline with relative energy detection; duck-then-confirm phase temporarily lowers tutor audio before stopping playback.
+
+2. **Bounded Patience Logic**: Turn-taking evaluates whether a student's thought is complete, not just whether silence occurred.
+
+3. **Reading Mode Patience**: Additional patience when sessions involve reading aloud, accommodating slow readers and ESL learners.
+
+4. **Adaptive Session-Level Patience**: Dynamic patience adjustments based on hesitation markers and interaction patterns, within strict caps.
+
+5. **Reliable Goodbye Shutdown**: Hard stop cancels audio, transcription, and pending responses when session ends.
+
+### Why This Worked
+
+These changes shifted the system from rigid timing rules to **human-centered conversational signals**. By separating barge-in from silence detection, layering semantic understanding over audio cues, and bounding all adaptations with safe limits, the tutor now behaves consistently across environments and age groups.
+
+### Outcome
+
+Post-implementation testing across K-2, 3-5, 6-8, 9-12, and adult sessions showed:
+- Smooth turn-taking
+- Reliable interruption capability
+- No echo or self-response issues
+- Markedly more natural conversational flow
+
+This represents a **production-ready voice interaction model** suitable for JIE Mastery's educational mission.
+
+---
+
 ## Feature Flags
 
 All features are behind feature flags for safe rollout:
