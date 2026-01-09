@@ -506,20 +506,31 @@ export default function TrialTutorPage() {
             case 'transcript':
               // Handle both student and tutor transcripts
               if (message.speaker === 'tutor') {
-                // Deduplicate tutor messages
-                const normalizedText = message.text?.trim();
-                if (lastAssistantTextRef.current === normalizedText) {
-                  log('Duplicate tutor transcript ignored:', normalizedText);
+                // Deduplicate tutor messages using normalized text comparison
+                const normalizedText = message.text?.trim().replace(/\s+/g, ' ').toLowerCase();
+                const lastText = lastAssistantTextRef.current?.trim().replace(/\s+/g, ' ').toLowerCase();
+                
+                if (lastText === normalizedText) {
+                  log('Duplicate tutor transcript ignored (normalized):', normalizedText);
                   break;
                 }
-                lastAssistantTextRef.current = normalizedText;
+                lastAssistantTextRef.current = message.text?.trim();
                 
                 log('Assistant turn received:', { turnId: message.turnId, length: message.text?.length });
-                setTranscript(prev => [...prev, {
-                  speaker: 'tutor',
-                  text: message.text,
-                  timestamp: new Date().toISOString(),
-                }]);
+                setTranscript(prev => {
+                  // Final safety check: if the last message is exact duplicate, skip
+                  if (prev.length > 0) {
+                    const lastMsg = prev[prev.length - 1];
+                    if (lastMsg.speaker === 'tutor' && lastMsg.text.trim() === message.text.trim()) {
+                      return prev;
+                    }
+                  }
+                  return [...prev, {
+                    speaker: 'tutor',
+                    text: message.text,
+                    timestamp: new Date().toISOString(),
+                  }];
+                });
               } else if (message.speaker === 'student') {
                 if (message.isFinal) {
                   log('User turn FINAL:', { turnId: message.turnId, text: message.text });
@@ -536,16 +547,27 @@ export default function TrialTutorPage() {
               
             case 'response':
               // 'response' is often a duplicate of 'transcript' (tutor) in some pipelines
-              // Only add if it's different
+              // Only add if it's different using same normalized comparison
               const respText = message.text?.trim();
-              if (lastAssistantTextRef.current !== respText) {
+              const normResp = respText?.replace(/\s+/g, ' ').toLowerCase();
+              const lastNorm = lastAssistantTextRef.current?.trim().replace(/\s+/g, ' ').toLowerCase();
+
+              if (lastNorm !== normResp) {
                 log('Assistant turn (response) received:', { text: respText });
                 lastAssistantTextRef.current = respText;
-                setTranscript(prev => [...prev, {
-                  speaker: 'tutor',
-                  text: message.text,
-                  timestamp: new Date().toISOString(),
-                }]);
+                setTranscript(prev => {
+                  if (prev.length > 0) {
+                    const lastMsg = prev[prev.length - 1];
+                    if (lastMsg.speaker === 'tutor' && lastMsg.text.trim() === respText) {
+                      return prev;
+                    }
+                  }
+                  return [...prev, {
+                    speaker: 'tutor',
+                    text: message.text,
+                    timestamp: new Date().toISOString(),
+                  }];
+                });
               }
               break;
               
