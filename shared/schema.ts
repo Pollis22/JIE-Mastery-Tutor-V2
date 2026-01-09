@@ -793,3 +793,49 @@ export type PracticeLesson = typeof practiceLessons.$inferSelect;
 export type InsertPracticeLesson = z.infer<typeof insertPracticeLessonSchema>;
 export type StudentLessonProgress = typeof studentLessonProgress.$inferSelect;
 export type InsertStudentLessonProgress = z.infer<typeof insertStudentLessonProgressSchema>;
+
+// Trial Sessions table - for 5-minute free trial (completely separate from users)
+export const trialSessions = pgTable("trial_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  emailHash: varchar("email_hash", { length: 64 }).notNull(),
+  email: text("email"),
+  verificationToken: varchar("verification_token", { length: 64 }),
+  verificationExpiry: timestamp("verification_expiry"),
+  verifiedAt: timestamp("verified_at"),
+  trialStartedAt: timestamp("trial_started_at"),
+  trialEndsAt: timestamp("trial_ends_at"),
+  consumedSeconds: integer("consumed_seconds").default(0),
+  status: varchar("status", { length: 20 }).default('pending').$type<'pending' | 'active' | 'expired' | 'blocked'>(),
+  deviceIdHash: varchar("device_id_hash", { length: 64 }),
+  ipHash: varchar("ip_hash", { length: 64 }),
+  lastActiveAt: timestamp("last_active_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  uniqueIndex("idx_trial_email_hash").on(table.emailHash),
+  index("idx_trial_device_hash").on(table.deviceIdHash),
+  index("idx_trial_status").on(table.status),
+  index("idx_trial_verification_token").on(table.verificationToken),
+]);
+
+export const insertTrialSessionSchema = createInsertSchema(trialSessions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+// Trial rate limiting table - tracks IP-based rate limits
+export const trialRateLimits = pgTable("trial_rate_limits", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  ipHash: varchar("ip_hash", { length: 64 }).notNull(),
+  attemptCount: integer("attempt_count").default(1),
+  windowStart: timestamp("window_start").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  uniqueIndex("idx_rate_limit_ip").on(table.ipHash),
+]);
+
+// Trial Session types
+export type TrialSession = typeof trialSessions.$inferSelect;
+export type InsertTrialSession = z.infer<typeof insertTrialSessionSchema>;
+export type TrialRateLimit = typeof trialRateLimits.$inferSelect;
