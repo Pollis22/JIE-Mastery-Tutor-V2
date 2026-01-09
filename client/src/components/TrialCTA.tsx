@@ -69,10 +69,6 @@ export function TrialCTA({ variant = 'primary', size = 'md', className = '' }: T
             title = 'Email already used';
             description = 'This email has already been used for a free trial. Sign up for a subscription to continue learning!';
             break;
-          case 'TRIAL_DEVICE_BLOCKED':
-            title = 'Trial already used';
-            description = 'A free trial has already been used on this device. Sign up for a subscription to continue!';
-            break;
           case 'TRIAL_RATE_LIMITED':
             title = 'Too many requests';
             description = 'Too many trial requests from your location. Please try again later.';

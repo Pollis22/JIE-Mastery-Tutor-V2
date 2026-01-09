@@ -10,6 +10,9 @@ const IP_RATE_LIMIT_WINDOW_HOURS = 24;
 const IP_RATE_LIMIT_MAX_ATTEMPTS = 3;
 const DEVICE_COOLDOWN_DAYS = 30;
 
+// Device blocking is OFF by default for dev/staging. Set TRIAL_ENFORCE_DEVICE_LIMIT=1 to enable.
+const ENFORCE_DEVICE_LIMIT = process.env.TRIAL_ENFORCE_DEVICE_LIMIT === '1';
+
 function hashValue(value: string): string {
   return createHash('sha256').update(value.toLowerCase().trim()).digest('hex');
 }
@@ -75,17 +78,20 @@ export class TrialService {
         return { ok: false, error: 'This email has already been used for a trial.', errorCode: 'email_used' };
       }
 
-      const thirtyDaysAgo = new Date(Date.now() - DEVICE_COOLDOWN_DAYS * 24 * 60 * 60 * 1000);
-      const deviceTrial = await db.select()
-        .from(trialSessions)
-        .where(and(
-          eq(trialSessions.deviceIdHash, deviceIdHash),
-          gte(trialSessions.createdAt, thirtyDaysAgo)
-        ))
-        .limit(1);
+      // Device blocking check - skip if TRIAL_ENFORCE_DEVICE_LIMIT is not "1"
+      if (ENFORCE_DEVICE_LIMIT) {
+        const thirtyDaysAgo = new Date(Date.now() - DEVICE_COOLDOWN_DAYS * 24 * 60 * 60 * 1000);
+        const deviceTrial = await db.select()
+          .from(trialSessions)
+          .where(and(
+            eq(trialSessions.deviceIdHash, deviceIdHash),
+            gte(trialSessions.createdAt, thirtyDaysAgo)
+          ))
+          .limit(1);
 
-      if (deviceTrial.length > 0) {
-        return { ok: false, error: 'A trial has already been used on this device recently.', errorCode: 'device_blocked' };
+        if (deviceTrial.length > 0) {
+          return { ok: false, error: 'A trial has already been used on this device recently.', errorCode: 'device_blocked' };
+        }
       }
 
       const windowStart = new Date(Date.now() - IP_RATE_LIMIT_WINDOW_HOURS * 60 * 60 * 1000);
