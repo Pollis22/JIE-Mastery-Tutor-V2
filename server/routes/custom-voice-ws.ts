@@ -381,6 +381,9 @@ function createAssemblyAIConnection(
           
           // Reset for next turn
           confirmedTranscript = '';
+          
+          // Log for diagnostics
+          console.log(`[TurnDiagnostics] User turn FINAL: ${text.substring(0, 30)}... confidence: ${confidence.toFixed(2)}`);
         }
         return;
       }

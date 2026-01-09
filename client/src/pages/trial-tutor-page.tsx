@@ -104,6 +104,82 @@ export default function TrialTutorPage() {
   const greetingPlayedRef = useRef(false);
   const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
   const audioUrlRef = useRef<string | null>(null);
+  const audioQueueRef = useRef<string[]>([]);
+  const lastProcessedTurnIdRef = useRef<string | null>(null);
+  const lastAssistantTextRef = useRef<string | null>(null);
+  const isPlayingRef = useRef(false);
+
+  // DEBUG Flag
+  const DEBUG = true;
+
+  const log = (msg: string, ...args: any[]) => {
+    if (DEBUG) console.log(`[TrialVoice] ${msg}`, ...args);
+  };
+
+  const stopPlayback = useCallback(() => {
+    if (ttsAudioRef.current) {
+      log('Stopping playback due to interruption/cleanup');
+      ttsAudioRef.current.pause();
+      ttsAudioRef.current.src = '';
+      ttsAudioRef.current = null;
+    }
+    if (audioUrlRef.current) {
+      URL.revokeObjectURL(audioUrlRef.current);
+      audioUrlRef.current = null;
+    }
+    audioQueueRef.current = [];
+    isPlayingRef.current = false;
+    setIsTutorSpeaking(false);
+  }, []);
+
+  const playNextInQueue = useCallback(async () => {
+    if (isPlayingRef.current || audioQueueRef.current.length === 0) return;
+    
+    const nextUrl = audioQueueRef.current.shift();
+    if (!nextUrl) return;
+
+    isPlayingRef.current = true;
+    setIsTutorSpeaking(true);
+    
+    const audio = new Audio(nextUrl);
+    ttsAudioRef.current = audio;
+    audioUrlRef.current = nextUrl;
+
+    log('TTS playback started');
+
+    audio.onended = () => {
+      log('TTS playback completed');
+      isPlayingRef.current = false;
+      URL.revokeObjectURL(nextUrl);
+      if (audioUrlRef.current === nextUrl) audioUrlRef.current = null;
+      if (ttsAudioRef.current === audio) ttsAudioRef.current = null;
+      
+      if (audioQueueRef.current.length > 0) {
+        playNextInQueue();
+      } else {
+        setIsTutorSpeaking(false);
+      }
+    };
+
+    audio.onerror = (e) => {
+      console.error('[TrialVoice] Audio playback error:', e);
+      isPlayingRef.current = false;
+      setIsTutorSpeaking(false);
+      playNextInQueue();
+    };
+
+    try {
+      await audio.play();
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        log('Playback aborted (normal during interruptions)');
+      } else {
+        console.error('[TrialVoice] Playback error:', err);
+      }
+      isPlayingRef.current = false;
+      setIsTutorSpeaking(false);
+    }
+  }, []);
 
   useEffect(() => {
     checkTrialStatus();
@@ -433,13 +509,26 @@ export default function TrialTutorPage() {
             case 'transcript':
               // Handle both student and tutor transcripts
               if (message.speaker === 'tutor') {
-                console.log('[Trial] Greeting received - transcript:', message.text?.substring(0, 50) + '...');
+                // Deduplicate tutor messages
+                const normalizedText = message.text?.trim();
+                if (lastAssistantTextRef.current === normalizedText) {
+                  log('Duplicate tutor transcript ignored:', normalizedText);
+                  break;
+                }
+                lastAssistantTextRef.current = normalizedText;
+                
+                log('Assistant turn received:', { turnId: message.turnId, length: message.text?.length });
                 setTranscript(prev => [...prev, {
                   speaker: 'tutor',
                   text: message.text,
                   timestamp: new Date().toISOString(),
                 }]);
               } else if (message.speaker === 'student') {
+                if (message.isFinal) {
+                  log('User turn FINAL:', { turnId: message.turnId, text: message.text });
+                  // Stop playback on final student transcript (Barge-in)
+                  stopPlayback();
+                }
                 setTranscript(prev => [...prev.filter(m => m.speaker !== 'student' || !m.text.startsWith(message.text.substring(0, 10))), {
                   speaker: 'student',
                   text: message.text,
@@ -449,42 +538,34 @@ export default function TrialTutorPage() {
               break;
               
             case 'response':
-              setTranscript(prev => [...prev, {
-                speaker: 'tutor',
-                text: message.text,
-                timestamp: new Date().toISOString(),
-              }]);
+              // 'response' is often a duplicate of 'transcript' (tutor) in some pipelines
+              // Only add if it's different
+              const respText = message.text?.trim();
+              if (lastAssistantTextRef.current !== respText) {
+                log('Assistant turn (response) received:', { text: respText });
+                lastAssistantTextRef.current = respText;
+                setTranscript(prev => [...prev, {
+                  speaker: 'tutor',
+                  text: message.text,
+                  timestamp: new Date().toISOString(),
+                }]);
+              }
               break;
               
             case 'audio':
               // Server sends audio as base64 in message.data with format metadata
               if (audioEnabled && message.data) {
-                // Check if this is greeting audio and if we've already played it
                 const isGreeting = message.isGreeting === true;
                 if (isGreeting && greetingPlayedRef.current) {
-                  console.log(`[Trial] Greeting suppressed (already played) [${sid}]`);
+                  log('Greeting suppressed (already played)');
                   break;
                 }
                 
                 const audioFormat = message.audioFormat || 'pcm_s16le';
                 const sampleRate = message.sampleRate || 16000;
                 const channels = message.channels || 1;
-                console.log(`[Trial] Audio received [${sid}] - format: ${audioFormat}, rate: ${sampleRate}, greeting: ${isGreeting}, length: ${message.data.length}`);
-                
-                // Stop any currently playing audio before starting new
-                if (ttsAudioRef.current) {
-                  ttsAudioRef.current.pause();
-                  ttsAudioRef.current.src = '';
-                }
-                if (audioUrlRef.current) {
-                  URL.revokeObjectURL(audioUrlRef.current);
-                  audioUrlRef.current = null;
-                }
-                
-                setIsTutorSpeaking(true);
                 
                 try {
-                  // Decode base64 to binary
                   const binaryString = atob(message.data);
                   const pcmBytes = new Uint8Array(binaryString.length);
                   for (let i = 0; i < binaryString.length; i++) {
@@ -493,58 +574,29 @@ export default function TrialTutorPage() {
                   
                   let blob: Blob;
                   if (audioFormat === 'pcm_s16le') {
-                    // Wrap PCM in WAV header
                     const wavBuffer = createWavFromPcm(pcmBytes, sampleRate, channels);
                     blob = new Blob([wavBuffer], { type: 'audio/wav' });
-                  } else if (audioFormat === 'mp3' || audioFormat === 'wav') {
+                  } else {
                     const mimeType = audioFormat === 'mp3' ? 'audio/mpeg' : 'audio/wav';
                     blob = new Blob([pcmBytes], { type: mimeType });
-                  } else {
-                    console.warn('[Trial] Unknown audio format:', audioFormat);
-                    setIsTutorSpeaking(false);
-                    break;
                   }
                   
                   const url = URL.createObjectURL(blob);
-                  audioUrlRef.current = url;
-                  
-                  const audio = new Audio(url);
-                  ttsAudioRef.current = audio;
-                  
-                  audio.onended = () => {
-                    console.log(`[Trial] TTS playback complete [${sid}]`);
-                    setIsTutorSpeaking(false);
-                    if (audioUrlRef.current === url) {
-                      URL.revokeObjectURL(url);
-                      audioUrlRef.current = null;
-                    }
-                    if (ttsAudioRef.current === audio) {
-                      ttsAudioRef.current = null;
-                    }
-                  };
-                  audio.onerror = (e) => {
-                    console.error('[Trial] Audio element error:', e);
-                    setIsTutorSpeaking(false);
-                    if (audioUrlRef.current === url) {
-                      URL.revokeObjectURL(url);
-                      audioUrlRef.current = null;
-                    }
-                    if (ttsAudioRef.current === audio) {
-                      ttsAudioRef.current = null;
-                    }
-                  };
-                  
                   if (isGreeting) {
                     greetingPlayedRef.current = true;
-                    console.log(`[Trial] Greeting played [${sid}]`);
                   }
-                  console.log(`[Trial] TTS started [${sid}] - playing ${audioFormat}...`);
-                  await audio.play();
+                  
+                  audioQueueRef.current.push(url);
+                  playNextInQueue();
                 } catch (audioError) {
-                  console.error('[Trial] Audio playback error:', audioError);
-                  setIsTutorSpeaking(false);
+                  console.error('[TrialVoice] Audio preparation error:', audioError);
                 }
               }
+              break;
+              
+            case 'interrupt':
+              log('Barge-in detected by server, stopping playback');
+              stopPlayback();
               break;
               
             case 'audio_end':
