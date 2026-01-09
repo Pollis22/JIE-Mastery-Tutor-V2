@@ -93,8 +93,17 @@ export default function TrialTutorPage() {
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
+  const processorRef = useRef<ScriptProcessorNode | null>(null);
   const trialTokenRef = useRef<string | null>(null);
   const trialIdRef = useRef<string | null>(null);
+  
+  // Guards to prevent double-start and duplicate audio (React StrictMode / reconnect issues)
+  const startedRef = useRef(false);
+  const sessionIdRef = useRef<string | null>(null);
+  const initSentRef = useRef(false);
+  const greetingPlayedRef = useRef(false);
+  const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
+  const audioUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
     checkTrialStatus();
@@ -135,6 +144,26 @@ export default function TrialTutorPage() {
   }, [isSessionActive, sessionStartTime]);
 
   const cleanup = useCallback(() => {
+    const sid = sessionIdRef.current?.slice(-4) || '????';
+    console.log(`[Trial] cleanup [${sid}]`);
+    
+    // Stop any playing audio
+    if (ttsAudioRef.current) {
+      ttsAudioRef.current.pause();
+      ttsAudioRef.current.src = '';
+      ttsAudioRef.current = null;
+    }
+    if (audioUrlRef.current) {
+      URL.revokeObjectURL(audioUrlRef.current);
+      audioUrlRef.current = null;
+    }
+    
+    // Disconnect processor before closing context
+    if (processorRef.current) {
+      processorRef.current.disconnect();
+      processorRef.current = null;
+    }
+    
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
@@ -147,6 +176,12 @@ export default function TrialTutorPage() {
       audioContextRef.current.close();
       audioContextRef.current = null;
     }
+    
+    // Reset guards for next session
+    startedRef.current = false;
+    initSentRef.current = false;
+    greetingPlayedRef.current = false;
+    sessionIdRef.current = null;
   }, []);
 
   const checkTrialStatus = async () => {
@@ -203,6 +238,26 @@ export default function TrialTutorPage() {
   }, [sessionStartTime, setLocation, toast, cleanup]);
 
   const startSession = async () => {
+    // Guard: prevent double-start in React StrictMode or rapid clicks
+    if (startedRef.current) {
+      console.log('[Trial] startSession skipped (already started)');
+      return;
+    }
+    startedRef.current = true;
+    
+    // Generate unique session ID for this start attempt
+    const newSessionId = `trial_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    sessionIdRef.current = newSessionId;
+    const sid = newSessionId.slice(-4);
+    console.log(`[Trial] startSession invoked [${sid}]`);
+    
+    // Close any existing WebSocket before creating new one
+    if (wsRef.current) {
+      console.log(`[Trial] closing old WS before start [${sid}]`);
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    
     try {
       setLoading(true);
       
@@ -215,6 +270,7 @@ export default function TrialTutorPage() {
       const tokenData: TrialSessionToken = await tokenResponse.json();
       
       if (!tokenData.ok || !tokenData.token) {
+        startedRef.current = false; // Reset guard on failure
         throw new Error(tokenData.error || 'Failed to get session token');
       }
       
@@ -223,20 +279,33 @@ export default function TrialTutorPage() {
       
       // Connect to WebSocket
       const wsUrl = buildWsUrl(tokenData.token);
-      console.log('[Trial] Connecting to WebSocket:', wsUrl.replace(tokenData.token, 'TOKEN'));
+      console.log(`[Trial] Connecting to WebSocket [${sid}]:`, wsUrl.replace(tokenData.token, 'TOKEN'));
       
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
       
       ws.onopen = async () => {
-        console.log('[Trial] WebSocket connected');
+        // Verify this WS belongs to current session
+        if (sessionIdRef.current !== newSessionId) {
+          console.log(`[Trial] WS open ignored (stale session) [${sid}]`);
+          ws.close();
+          return;
+        }
+        
+        console.log(`[Trial] WS open [${sid}]`);
         setIsConnected(true);
         
-        // Send init message (must match server's expected message type)
-        console.log('[Trial] Sending init message...');
+        // Guard: only send init once per session
+        if (initSentRef.current) {
+          console.log(`[Trial] init skipped (already sent) [${sid}]`);
+          return;
+        }
+        initSentRef.current = true;
+        
+        console.log(`[Trial] Init sent [${sid}]`);
         ws.send(JSON.stringify({
           type: 'init',
-          sessionId: `trial_${trialIdRef.current}`,
+          sessionId: newSessionId,
           studentName: 'Trial User',
           ageGroup: 'G3-5',
           subject: 'Math',
@@ -280,10 +349,13 @@ export default function TrialTutorPage() {
           
           // Use ScriptProcessor for audio capture (simpler than AudioWorklet)
           const processor = ctx.createScriptProcessor(4096, 1, 1);
+          processorRef.current = processor;
           let frameCount = 0;
           
           processor.onaudioprocess = (e) => {
             if (ws.readyState !== WebSocket.OPEN) return;
+            // Verify this processor belongs to current session
+            if (sessionIdRef.current !== newSessionId) return;
             
             const inputData = e.inputBuffer.getChannelData(0);
             
@@ -344,12 +416,18 @@ export default function TrialTutorPage() {
       };
       
       ws.onmessage = async (event) => {
+        // Ignore messages from stale sessions
+        if (sessionIdRef.current !== newSessionId) {
+          console.log(`[Trial] Message ignored (stale session) [${sid}]`);
+          return;
+        }
+        
         try {
           const message = JSON.parse(event.data);
           
           switch (message.type) {
             case 'ready':
-              console.log('[Trial] Server ready');
+              console.log(`[Trial] Server ready [${sid}]`);
               break;
               
             case 'transcript':
@@ -381,10 +459,28 @@ export default function TrialTutorPage() {
             case 'audio':
               // Server sends audio as base64 in message.data with format metadata
               if (audioEnabled && message.data) {
+                // Check if this is greeting audio and if we've already played it
+                const isGreeting = message.isGreeting === true;
+                if (isGreeting && greetingPlayedRef.current) {
+                  console.log(`[Trial] Greeting suppressed (already played) [${sid}]`);
+                  break;
+                }
+                
                 const audioFormat = message.audioFormat || 'pcm_s16le';
                 const sampleRate = message.sampleRate || 16000;
                 const channels = message.channels || 1;
-                console.log(`[Trial] Audio received - format: ${audioFormat}, rate: ${sampleRate}, channels: ${channels}, length: ${message.data.length}`);
+                console.log(`[Trial] Audio received [${sid}] - format: ${audioFormat}, rate: ${sampleRate}, greeting: ${isGreeting}, length: ${message.data.length}`);
+                
+                // Stop any currently playing audio before starting new
+                if (ttsAudioRef.current) {
+                  ttsAudioRef.current.pause();
+                  ttsAudioRef.current.src = '';
+                }
+                if (audioUrlRef.current) {
+                  URL.revokeObjectURL(audioUrlRef.current);
+                  audioUrlRef.current = null;
+                }
+                
                 setIsTutorSpeaking(true);
                 
                 try {
@@ -395,48 +491,55 @@ export default function TrialTutorPage() {
                     pcmBytes[i] = binaryString.charCodeAt(i);
                   }
                   
+                  let blob: Blob;
                   if (audioFormat === 'pcm_s16le') {
-                    // Wrap PCM in WAV header and play via Audio element
+                    // Wrap PCM in WAV header
                     const wavBuffer = createWavFromPcm(pcmBytes, sampleRate, channels);
-                    const blob = new Blob([wavBuffer], { type: 'audio/wav' });
-                    const url = URL.createObjectURL(blob);
-                    
-                    const audio = new Audio(url);
-                    audio.onended = () => {
-                      console.log('[Trial] TTS playback complete');
-                      setIsTutorSpeaking(false);
-                      URL.revokeObjectURL(url);
-                    };
-                    audio.onerror = (e) => {
-                      console.error('[Trial] Audio element error:', e);
-                      setIsTutorSpeaking(false);
-                      URL.revokeObjectURL(url);
-                    };
-                    console.log('[Trial] TTS started - playing WAV...');
-                    await audio.play();
+                    blob = new Blob([wavBuffer], { type: 'audio/wav' });
                   } else if (audioFormat === 'mp3' || audioFormat === 'wav') {
-                    // Already encoded - play directly via Audio element
                     const mimeType = audioFormat === 'mp3' ? 'audio/mpeg' : 'audio/wav';
-                    const blob = new Blob([pcmBytes], { type: mimeType });
-                    const url = URL.createObjectURL(blob);
-                    
-                    const audio = new Audio(url);
-                    audio.onended = () => {
-                      console.log('[Trial] TTS playback complete');
-                      setIsTutorSpeaking(false);
-                      URL.revokeObjectURL(url);
-                    };
-                    audio.onerror = (e) => {
-                      console.error('[Trial] Audio element error:', e);
-                      setIsTutorSpeaking(false);
-                      URL.revokeObjectURL(url);
-                    };
-                    console.log(`[Trial] TTS started - playing ${audioFormat}...`);
-                    await audio.play();
+                    blob = new Blob([pcmBytes], { type: mimeType });
                   } else {
                     console.warn('[Trial] Unknown audio format:', audioFormat);
                     setIsTutorSpeaking(false);
+                    break;
                   }
+                  
+                  const url = URL.createObjectURL(blob);
+                  audioUrlRef.current = url;
+                  
+                  const audio = new Audio(url);
+                  ttsAudioRef.current = audio;
+                  
+                  audio.onended = () => {
+                    console.log(`[Trial] TTS playback complete [${sid}]`);
+                    setIsTutorSpeaking(false);
+                    if (audioUrlRef.current === url) {
+                      URL.revokeObjectURL(url);
+                      audioUrlRef.current = null;
+                    }
+                    if (ttsAudioRef.current === audio) {
+                      ttsAudioRef.current = null;
+                    }
+                  };
+                  audio.onerror = (e) => {
+                    console.error('[Trial] Audio element error:', e);
+                    setIsTutorSpeaking(false);
+                    if (audioUrlRef.current === url) {
+                      URL.revokeObjectURL(url);
+                      audioUrlRef.current = null;
+                    }
+                    if (ttsAudioRef.current === audio) {
+                      ttsAudioRef.current = null;
+                    }
+                  };
+                  
+                  if (isGreeting) {
+                    greetingPlayedRef.current = true;
+                    console.log(`[Trial] Greeting played [${sid}]`);
+                  }
+                  console.log(`[Trial] TTS started [${sid}] - playing ${audioFormat}...`);
+                  await audio.play();
                 } catch (audioError) {
                   console.error('[Trial] Audio playback error:', audioError);
                   setIsTutorSpeaking(false);
@@ -463,13 +566,14 @@ export default function TrialTutorPage() {
       };
       
       ws.onerror = (error) => {
-        console.error('[Trial] WebSocket error:', error);
+        console.error(`[Trial] WebSocket error [${sid}]:`, error);
         setIsConnected(false);
       };
       
       ws.onclose = (event) => {
-        console.log(`[Trial] WebSocket closed - code: ${event.code}, reason: "${event.reason || 'none'}", wasClean: ${event.wasClean}`);
+        console.log(`[Trial] WS closed [${sid}] code=${event.code}, reason="${event.reason || 'none'}", wasClean=${event.wasClean}`);
         setIsConnected(false);
+        // Do NOT reconnect automatically - user must click Start again
       };
       
     } catch (error) {
