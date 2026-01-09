@@ -221,18 +221,10 @@ export default function TrialTutorPage() {
 
   const cleanup = useCallback(() => {
     const sid = sessionIdRef.current?.slice(-4) || '????';
-    console.log(`[Trial] cleanup [${sid}]`);
+    log(`cleanup [${sid}]`);
     
-    // Stop any playing audio
-    if (ttsAudioRef.current) {
-      ttsAudioRef.current.pause();
-      ttsAudioRef.current.src = '';
-      ttsAudioRef.current = null;
-    }
-    if (audioUrlRef.current) {
-      URL.revokeObjectURL(audioUrlRef.current);
-      audioUrlRef.current = null;
-    }
+    // Stop any playing audio and clear queue
+    stopPlayback();
     
     // Disconnect processor before closing context
     if (processorRef.current) {
@@ -258,7 +250,9 @@ export default function TrialTutorPage() {
     initSentRef.current = false;
     greetingPlayedRef.current = false;
     sessionIdRef.current = null;
-  }, []);
+    lastAssistantTextRef.current = null;
+    lastProcessedTurnIdRef.current = null;
+  }, [stopPlayback]);
 
   const checkTrialStatus = async () => {
     try {
