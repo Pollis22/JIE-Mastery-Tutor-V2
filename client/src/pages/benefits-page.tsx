@@ -101,6 +101,9 @@ export default function BenefitsPage() {
                 <Button size="lg" onClick={handleCTA} className="text-lg h-14 px-8" data-testid="button-hero-cta">
                   Try JIE Mastery AI Tutor
                 </Button>
+                <Button size="lg" onClick={() => setLocation("/support")} className="text-lg h-14 px-8 bg-red-600 hover:bg-red-700 text-white border-0" data-testid="button-chat-live">
+                  Chat with Live AI Agent
+                </Button>
                 <Button size="lg" variant="outline" onClick={handlePricing} className="text-lg h-14 px-8" data-testid="button-hero-pricing">
                   View Pricing
                 </Button>
