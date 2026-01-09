@@ -96,15 +96,15 @@ export default function BenefitsPage() {
                 Math, English, Science, Spanish & more.
               </p>
 
-              <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start pt-2">
-                <TrialCTA size="lg" className="text-lg h-14 px-8" />
-                <Button size="lg" onClick={handleCTA} className="text-lg h-14 px-8" data-testid="button-hero-cta">
+              <div className="flex flex-col gap-4 max-w-sm mx-auto lg:mx-0 pt-2">
+                <TrialCTA size="lg" className="text-lg h-14 w-full" />
+                <Button size="lg" onClick={handleCTA} className="text-lg h-14 w-full" data-testid="button-hero-cta">
                   Try JIE Mastery AI Tutor
                 </Button>
-                <Button size="lg" onClick={() => setLocation("/support")} className="text-lg h-14 px-8 bg-red-600 hover:bg-red-700 text-white border-0" data-testid="button-chat-live">
+                <Button size="lg" onClick={() => setLocation("/support")} className="text-lg h-14 w-full bg-red-600 hover:bg-red-700 text-white border-0" data-testid="button-chat-live">
                   Chat with Live AI Agent
                 </Button>
-                <Button size="lg" variant="outline" onClick={handlePricing} className="text-lg h-14 px-8" data-testid="button-hero-pricing">
+                <Button size="lg" variant="outline" onClick={handlePricing} className="text-lg h-14 w-full" data-testid="button-hero-pricing">
                   View Pricing
                 </Button>
               </div>
