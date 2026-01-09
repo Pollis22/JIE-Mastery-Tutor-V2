@@ -14,6 +14,7 @@ console.log('DEPLOY MARKER: ASSEMBLYAI_DIAG_V2');
 setInterval(() => console.log('[HEARTBEAT]', new Date().toISOString()), 5000).unref();
 
 import express, { type Request, Response, NextFunction } from "express";
+import cookieParser from "cookie-parser";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import * as dotenv from "dotenv";
@@ -58,6 +59,10 @@ app.use((req, res, next) => {
 });
 
 app.use(express.urlencoded({ extended: false }));
+
+// Cookie parser with secret for signed cookies (used by trial system)
+const cookieSecret = process.env.SESSION_SECRET || 'development-session-secret-only';
+app.use(cookieParser(cookieSecret));
 
 // Explicitly set headers to indicate this is a web application for deployment
 app.use((req, res, next) => {

@@ -9,7 +9,7 @@ const TRIAL_COOKIE_NAME = 'trial_device_id';
 const TRIAL_COOKIE_MAX_AGE = 365 * 24 * 60 * 60 * 1000;
 
 function getDeviceIdHash(req: Request, res: Response): string {
-  let deviceId = req.cookies?.[TRIAL_COOKIE_NAME];
+  let deviceId = req.signedCookies?.[TRIAL_COOKIE_NAME];
   
   if (!deviceId) {
     deviceId = randomUUID();
