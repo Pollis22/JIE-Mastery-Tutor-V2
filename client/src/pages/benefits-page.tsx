@@ -82,6 +82,10 @@ export default function BenefitsPage() {
                 AI Tutor for Students — Homework & Math Help
               </h1>
               
+              <p className="text-lg font-semibold text-primary bg-primary/10 px-4 py-2 rounded-lg inline-block" data-testid="text-promo-discount">
+                Get 50% off the first month with your discount code! <button onClick={() => setLocation("/contact")} className="underline hover:no-underline">Contact us</button> if you need the code.
+              </p>
+              
               <p className="text-xl md:text-2xl text-muted-foreground max-w-2xl mx-auto lg:mx-0">
                 Personalized AI tutoring that teaches students how to think — not just give answers.
               </p>

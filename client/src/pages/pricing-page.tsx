@@ -176,6 +176,9 @@ export default function PricingPage() {
             <h1 className="text-5xl font-bold text-foreground mb-6" data-testid="text-hero-title">
               One Family Plan. All Your Kids Learn.
             </h1>
+            <p className="text-lg font-semibold text-primary bg-primary/10 px-4 py-2 rounded-lg inline-block mb-4" data-testid="text-promo-discount">
+              Get 50% off the first month with your discount code! <button onClick={() => setLocation("/contact")} className="underline hover:no-underline">Contact us</button> if you need the code.
+            </p>
             <p className="text-xl text-muted-foreground mb-4 max-w-3xl mx-auto">
               <strong>Save hundreds per month!</strong> Instead of separate tutors for each child, get one family plan that all siblings share. 
               Create unlimited profiles - each child gets personalized tutoring from kindergarten through college.
