@@ -1881,11 +1881,10 @@ export function setupCustomVoiceWebSocket(server: Server) {
             // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             if (isTrialSession) {
               console.log("[Custom Voice] 🎫 Trial entitlement OK - skipping paid session checks");
-              // Trial users get a synthetic session ID
               state.sessionId = `trial_session_${trialId}`;
               state.studentName = message.studentName || "Friend";
-              state.ageGroup = message.ageGroup || "G3-5"; // Default age group for trials
-              state.subject = message.subject || "Math";
+              state.ageGroup = message.ageGroup || "College/Adult";
+              state.subject = message.subject || "General";
               state.language = message.language || "en";
               state.speechSpeed = 1.0;
               
@@ -1894,9 +1893,9 @@ export function setupCustomVoiceWebSocket(server: Server) {
                 userId: state.userId,
                 studentName: state.studentName,
                 ageGroup: state.ageGroup,
+                subject: state.subject,
                 language: state.language
               });
-              // Trial path continues below to greeting generation
             } else {
               // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
               // PAID USER PATH - Full validation required

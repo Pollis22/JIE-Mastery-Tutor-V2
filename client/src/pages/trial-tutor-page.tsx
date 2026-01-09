@@ -376,9 +376,12 @@ export default function TrialTutorPage() {
         ws.send(JSON.stringify({
           type: 'init',
           sessionId: newSessionId,
-          studentName: 'Trial User',
+          userId: `trial_${trialIdRef.current || 'anonymous'}`,
+          studentName: 'Friend',
           ageGroup: 'G3-5',
-          subject: 'Math',
+          subject: 'General',
+          systemInstruction: '',
+          documents: [],
           language: 'en',
         }));
         
