@@ -209,6 +209,51 @@ async function initializeDatabase() {
     `);
     console.log('✅ Trial management columns added');
 
+    // Create trial_sessions table for 5-minute free trial system
+    console.log('📝 Creating trial_sessions table...');
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS trial_sessions (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        email_hash VARCHAR(64) NOT NULL,
+        email TEXT,
+        verification_token VARCHAR(64),
+        verification_expiry TIMESTAMPTZ,
+        verified_at TIMESTAMPTZ,
+        trial_started_at TIMESTAMPTZ,
+        trial_ends_at TIMESTAMPTZ,
+        consumed_seconds INTEGER DEFAULT 0,
+        status VARCHAR(20) DEFAULT 'pending',
+        device_id_hash VARCHAR(64),
+        ip_hash VARCHAR(64),
+        last_active_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_trial_email_hash ON trial_sessions(email_hash);
+      CREATE INDEX IF NOT EXISTS idx_trial_device_hash ON trial_sessions(device_id_hash);
+      CREATE INDEX IF NOT EXISTS idx_trial_status ON trial_sessions(status);
+      CREATE INDEX IF NOT EXISTS idx_trial_verification_token ON trial_sessions(verification_token);
+      CREATE INDEX IF NOT EXISTS idx_trial_ip_hash ON trial_sessions(ip_hash);
+      CREATE INDEX IF NOT EXISTS idx_trial_last_active ON trial_sessions(last_active_at);
+    `);
+    console.log('✅ trial_sessions table created');
+
+    // Create trial_rate_limits table for IP-based rate limiting
+    console.log('📝 Creating trial_rate_limits table...');
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS trial_rate_limits (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        ip_hash VARCHAR(64) NOT NULL,
+        attempt_count INTEGER DEFAULT 1,
+        window_start TIMESTAMPTZ DEFAULT NOW(),
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_rate_limit_ip ON trial_rate_limits(ip_hash);
+    `);
+    console.log('✅ trial_rate_limits table created');
+
     console.log('✅ Database initialization complete!');
     
   } catch (error) {
