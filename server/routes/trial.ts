@@ -127,4 +127,26 @@ router.post('/end-session', async (req: Request, res: Response) => {
   }
 });
 
+// Get a session token for WebSocket connection (trial users only)
+router.post('/session-token', async (req: Request, res: Response) => {
+  try {
+    const deviceIdHash = getDeviceIdHash(req, res);
+    const result = await trialService.getSessionToken(deviceIdHash);
+
+    if (result.ok) {
+      return res.json({
+        ok: true,
+        token: result.token,
+        secondsRemaining: result.secondsRemaining,
+        trialId: result.trialId,
+      });
+    } else {
+      return res.status(403).json({ ok: false, error: result.error });
+    }
+  } catch (error) {
+    console.error('[TrialRoutes] Error getting session token:', error);
+    return res.status(500).json({ ok: false, error: 'Server error' });
+  }
+});
+
 export default router;

@@ -15,6 +15,7 @@ import { validateWsSession, rejectWsUpgrade } from '../middleware/ws-session-val
 import { wsRateLimiter, getClientIp } from '../middleware/ws-rate-limiter';
 import { EmailService } from '../services/email-service';
 import { users, students } from "@shared/schema";
+import { trialService } from '../services/trial-service';
 import {
   type GradeBand,
   type TurnPolicyState,
@@ -798,19 +799,63 @@ export function setupCustomVoiceWebSocket(server: Server) {
       return;
     }
 
-    // Step 2: Session validation (no Express middleware reuse)
-    const sessionSecret = process.env.SESSION_SECRET || 'development-session-secret-only';
-    const validationResult = await validateWsSession(request, sessionSecret);
+    // Step 2: Check for trial token in query string first
+    const urlObj = new URL(url, `http://${request.headers.host || 'localhost'}`);
+    const trialToken = urlObj.searchParams.get('trialToken');
     
-    if (!validationResult.valid) {
-      console.error(`[WebSocket] ❌ Session validation failed:`, validationResult.error);
-      rejectWsUpgrade(socket, validationResult.statusCode || 401, validationResult.error || 'Unauthorized');
-      return;
-    }
+    let userId: string;
+    let sessionId: string;
+    let isTrialSession = false;
+    let trialId: string | undefined;
+    
+    if (trialToken) {
+      // Trial user - validate trial token
+      console.log('[WebSocket] 🎫 Checking trial token...');
+      const trialPayload = trialService.validateSessionToken(trialToken);
+      
+      if (!trialPayload) {
+        console.error('[WebSocket] ❌ Invalid trial token');
+        rejectWsUpgrade(socket, 401, 'Invalid trial token');
+        return;
+      }
+      
+      // Verify trial is still active
+      const trial = await trialService.getTrialById(trialPayload.trialId);
+      if (!trial || trial.status !== 'active') {
+        console.error('[WebSocket] ❌ Trial expired or not found');
+        rejectWsUpgrade(socket, 403, 'Trial expired');
+        return;
+      }
+      
+      // Check remaining time
+      const consumedSeconds = trial.consumedSeconds ?? 0;
+      const secondsRemaining = 300 - consumedSeconds;
+      if (secondsRemaining <= 0) {
+        console.error('[WebSocket] ❌ Trial time exhausted');
+        rejectWsUpgrade(socket, 403, 'Trial time exhausted');
+        return;
+      }
+      
+      userId = `trial_${trialPayload.trialId}`;
+      sessionId = `trial_session_${trialPayload.trialId}`;
+      isTrialSession = true;
+      trialId = trialPayload.trialId;
+      console.log('[WebSocket] ✅ Trial token validated, remaining seconds:', secondsRemaining);
+    } else {
+      // Regular user - session validation (no Express middleware reuse)
+      const sessionSecret = process.env.SESSION_SECRET || 'development-session-secret-only';
+      const validationResult = await validateWsSession(request, sessionSecret);
+      
+      if (!validationResult.valid) {
+        console.error(`[WebSocket] ❌ Session validation failed:`, validationResult.error);
+        rejectWsUpgrade(socket, validationResult.statusCode || 401, validationResult.error || 'Unauthorized');
+        return;
+      }
 
-    const userId = validationResult.userId!;
-    const sessionId = validationResult.sessionId!;
-    console.log('[WebSocket] ✅ Session validated for user:', userId);
+      userId = validationResult.userId!;
+      sessionId = validationResult.sessionId!;
+      console.log('[WebSocket] ✅ Session validated for user:', userId);
+    }
 
     // Step 3: Upgrade to WebSocket
     try {
@@ -828,8 +873,10 @@ export function setupCustomVoiceWebSocket(server: Server) {
         (ws as any).authenticatedUserId = userId;
         (ws as any).sessionId = sessionId;
         (ws as any).clientIp = clientIp;
+        (ws as any).isTrialSession = isTrialSession;
+        (ws as any).trialId = trialId;
         
-        console.log('[WebSocket] ✅ Connection tracked for user:', userId);
+        console.log('[WebSocket] ✅ Connection tracked for user:', userId, isTrialSession ? '(TRIAL)' : '');
         
         // Release connection when socket closes
         ws.on('close', () => {

@@ -1,10 +1,11 @@
 import { db } from '../db';
 import { trialSessions, trialRateLimits, TrialSession } from '@shared/schema';
 import { eq, and, gte, sql } from 'drizzle-orm';
-import { createHash, randomBytes } from 'crypto';
+import { createHash, randomBytes, createHmac } from 'crypto';
 import { EmailService } from './email-service';
 
 const TRIAL_DURATION_SECONDS = 300;
+const TRIAL_TOKEN_EXPIRY_SECONDS = 600; // 10 minutes token validity
 const IP_RATE_LIMIT_WINDOW_HOURS = 24;
 const IP_RATE_LIMIT_MAX_ATTEMPTS = 3;
 const DEVICE_COOLDOWN_DAYS = 30;
@@ -36,6 +37,21 @@ export interface TrialEntitlement {
   reason: 'trial_active' | 'trial_expired' | 'trial_not_found' | 'trial_not_verified';
   trialSecondsRemaining?: number;
   trialId?: string;
+}
+
+export interface TrialSessionToken {
+  type: 'trial';
+  trialId: string;
+  issuedAt: number;
+  expiresAt: number;
+}
+
+export interface TrialSessionTokenResult {
+  ok: boolean;
+  token?: string;
+  secondsRemaining?: number;
+  trialId?: string;
+  error?: string;
 }
 
 export class TrialService {
@@ -307,6 +323,81 @@ export class TrialService {
       return `https://${process.env.REPLIT_DOMAINS.split(',')[0]}`;
     } else {
       return process.env.REPLIT_DEV_DOMAIN || `http://localhost:${process.env.PORT || 5000}`;
+    }
+  }
+
+  // Generate a signed session token for WebSocket authentication
+  generateSessionToken(trialId: string): string {
+    const secret = process.env.SESSION_SECRET || 'development-session-secret-only';
+    const now = Math.floor(Date.now() / 1000);
+    const payload: TrialSessionToken = {
+      type: 'trial',
+      trialId,
+      issuedAt: now,
+      expiresAt: now + TRIAL_TOKEN_EXPIRY_SECONDS,
+    };
+    const data = JSON.stringify(payload);
+    const signature = createHmac('sha256', secret).update(data).digest('hex');
+    return Buffer.from(`${data}.${signature}`).toString('base64');
+  }
+
+  // Validate a session token and return the payload
+  validateSessionToken(token: string): TrialSessionToken | null {
+    try {
+      const secret = process.env.SESSION_SECRET || 'development-session-secret-only';
+      const decoded = Buffer.from(token, 'base64').toString('utf-8');
+      const lastDotIndex = decoded.lastIndexOf('.');
+      if (lastDotIndex === -1) return null;
+      
+      const data = decoded.substring(0, lastDotIndex);
+      const signature = decoded.substring(lastDotIndex + 1);
+      
+      const expectedSignature = createHmac('sha256', secret).update(data).digest('hex');
+      if (signature !== expectedSignature) {
+        console.log('[TrialService] Token signature mismatch');
+        return null;
+      }
+      
+      const payload = JSON.parse(data) as TrialSessionToken;
+      const now = Math.floor(Date.now() / 1000);
+      
+      if (payload.expiresAt < now) {
+        console.log('[TrialService] Token expired');
+        return null;
+      }
+      
+      if (payload.type !== 'trial') {
+        console.log('[TrialService] Invalid token type');
+        return null;
+      }
+      
+      return payload;
+    } catch (error) {
+      console.error('[TrialService] Token validation error:', error);
+      return null;
+    }
+  }
+
+  // Get a session token for WebSocket connection
+  async getSessionToken(deviceIdHash: string): Promise<TrialSessionTokenResult> {
+    try {
+      const entitlement = await this.getTrialEntitlement(deviceIdHash);
+      
+      if (!entitlement.hasAccess || !entitlement.trialId) {
+        return { ok: false, error: entitlement.reason };
+      }
+      
+      const token = this.generateSessionToken(entitlement.trialId);
+      
+      return {
+        ok: true,
+        token,
+        secondsRemaining: entitlement.trialSecondsRemaining,
+        trialId: entitlement.trialId,
+      };
+    } catch (error) {
+      console.error('[TrialService] Error generating session token:', error);
+      return { ok: false, error: 'server_error' };
     }
   }
 }
