@@ -61,14 +61,21 @@ export class EmailService {
       const resend = getResendClient();
       const fromEmail = getFromEmail();
       
-      await resend.emails.send({
+      // Debug: Log email content type
+      console.log(`[EmailService] Sending email to ${params.to}`);
+      console.log(`[EmailService] Subject: ${params.subject}`);
+      console.log(`[EmailService] Has HTML: ${!!params.html} (${params.html?.length || 0} chars)`);
+      console.log(`[EmailService] Has Text: ${!!params.text} (${params.text?.length || 0} chars)`);
+      console.log(`[EmailService] HTML preview: ${params.html?.substring(0, 200)}...`);
+      
+      const result = await resend.emails.send({
         from: fromEmail,
         to: params.to,
         subject: params.subject,
         html: params.html,
         text: params.text
       });
-      console.log(`[EmailService] Email sent to ${params.to}: ${params.subject}`);
+      console.log(`[EmailService] Email sent successfully. Resend ID: ${(result as any)?.data?.id || 'unknown'}`);
     } catch (error) {
       console.error('[EmailService] Failed to send email:', error);
       throw error;
