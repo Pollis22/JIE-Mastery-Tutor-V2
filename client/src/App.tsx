@@ -55,6 +55,7 @@ import PracticeLessonsPage from "@/pages/practice-lessons-page";
 import TrialVerifyPage from "@/pages/trial-verify-page";
 import TrialEndedPage from "@/pages/trial-ended-page";
 import TrialTutorPage from "@/pages/trial-tutor-page";
+import OfferPage from "@/pages/offer-page";
 
 function Router() {
   return (
@@ -97,6 +98,8 @@ function Router() {
       <Route path="/trial/verify" component={TrialVerifyPage} />
       <Route path="/trial/ended" component={TrialEndedPage} />
       <Route path="/trial/tutor" component={TrialTutorPage} />
+      <Route path="/offer" component={OfferPage} />
+      <Route path="/welcome" component={OfferPage} />
       <Route component={NotFound} />
     </Switch>
   );

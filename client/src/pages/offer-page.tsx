@@ -1,0 +1,324 @@
+import { useEffect } from 'react';
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { useLocation } from "wouter";
+import jieLogo from "@/assets/jie-mastery-logo-new.jpg";
+import { 
+  CheckCircle2,
+  ArrowRight,
+  MessageCircle,
+  Mic,
+  Brain,
+  BookOpen,
+  Clock,
+  Users,
+  Heart,
+  ChevronDown,
+  ChevronUp,
+  Sparkles
+} from "lucide-react";
+import { useState } from 'react';
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+
+declare global {
+  interface Window {
+    fbq?: (...args: any[]) => void;
+  }
+}
+
+export default function OfferPage() {
+  const [, setLocation] = useLocation();
+
+  useEffect(() => {
+    document.title = "Free Trial + 50% Off | JIE Mastery AI Tutor";
+    
+    const meta = document.createElement('meta');
+    meta.name = 'robots';
+    meta.content = 'noindex, nofollow';
+    document.head.appendChild(meta);
+
+    const canonical = document.createElement('link');
+    canonical.rel = 'canonical';
+    canonical.href = 'https://www.jiemastery.ai/offer';
+    document.head.appendChild(canonical);
+
+    if (typeof window !== 'undefined' && window.fbq) {
+      window.fbq('track', 'PageView');
+      window.fbq('track', 'ViewContent', {
+        content_name: 'Offer Landing Page',
+        content_category: 'Landing Page',
+        value: 0,
+        currency: 'USD'
+      });
+      console.log('[Meta Pixel] PageView + ViewContent tracked on /offer');
+    }
+
+    return () => {
+      document.head.removeChild(meta);
+      document.head.removeChild(canonical);
+    };
+  }, []);
+
+  const handleStartTrial = () => {
+    const currentParams = new URLSearchParams(window.location.search);
+    const newParams = new URLSearchParams();
+    
+    currentParams.forEach((value, key) => {
+      newParams.set(key, value);
+    });
+    
+    if (!newParams.has('src')) newParams.set('src', 'meta');
+    if (!newParams.has('camp')) newParams.set('camp', 'offer');
+    
+    setLocation(`/benefits?${newParams.toString()}`);
+  };
+
+  const handleSignUp = () => {
+    const currentParams = new URLSearchParams(window.location.search);
+    const newParams = new URLSearchParams();
+    
+    currentParams.forEach((value, key) => {
+      newParams.set(key, value);
+    });
+    
+    if (!newParams.has('src')) newParams.set('src', 'meta');
+    if (!newParams.has('camp')) newParams.set('camp', 'offer');
+    
+    setLocation(`/auth?${newParams.toString()}`);
+  };
+
+  const handleHowItWorks = () => {
+    document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  return (
+    <div className="min-h-screen bg-background font-sans selection:bg-primary/10" data-testid="page-offer">
+      <header className="border-b border-border bg-card/80 backdrop-blur-md sticky top-0 z-50">
+        <div className="container mx-auto px-4">
+          <div className="flex items-center justify-center h-14">
+            <div className="flex items-center space-x-2">
+              <img src={jieLogo} alt="JIE Mastery" className="h-8 w-auto" />
+              <span className="text-lg font-bold text-foreground">JIE Mastery</span>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <section className="relative overflow-hidden pt-8 pb-12 lg:pt-12 lg:pb-16 bg-gradient-to-b from-primary/5 to-background">
+        <div className="container mx-auto px-4 relative z-10">
+          <div className="max-w-3xl mx-auto text-center space-y-6">
+            <div className="inline-flex items-center gap-2 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 px-4 py-2 rounded-full text-sm font-semibold" data-testid="badge-offer">
+              <Sparkles className="h-4 w-4" />
+              Free Trial + 50% Off Your First Month
+            </div>
+
+            <h1 className="text-3xl md:text-4xl lg:text-5xl font-extrabold tracking-tight text-foreground leading-tight" data-testid="heading-hero">
+              Voice-First AI Tutoring for Busy Families
+            </h1>
+            
+            <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto">
+              One subscription. The whole family learns. Real tutoring—guided conversation, not answers.
+            </p>
+
+            <div className="bg-primary/10 border border-primary/20 rounded-xl p-4 max-w-md mx-auto" data-testid="discount-callout">
+              <p className="text-lg font-bold text-primary">
+                Use code <span className="bg-primary text-white px-2 py-1 rounded">WELCOME50</span> for 50% off your first month
+              </p>
+              <p className="text-sm text-muted-foreground mt-2">Family plans start at $19.99/month</p>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
+              <Button 
+                size="lg" 
+                onClick={handleStartTrial} 
+                className="text-lg h-14 px-8"
+                data-testid="button-hero-start-trial"
+              >
+                Start Free Trial
+                <ArrowRight className="ml-2 h-5 w-5" />
+              </Button>
+              <Button 
+                size="lg" 
+                variant="outline"
+                onClick={handleHowItWorks} 
+                className="text-lg h-14 px-8"
+                data-testid="button-hero-how-it-works"
+              >
+                See How It Works
+              </Button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="py-12 bg-card">
+        <div className="container mx-auto px-4">
+          <div className="text-center mb-8">
+            <h2 className="text-2xl md:text-3xl font-bold mb-2">Who It's For</h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
+            {[
+              { icon: <Heart className="h-6 w-6 text-primary" />, text: "Parents who want less homework stress" },
+              { icon: <BookOpen className="h-6 w-6 text-primary" />, text: "Homeschool families who want daily support" },
+              { icon: <MessageCircle className="h-6 w-6 text-primary" />, text: "Students who learn better by talking it out" }
+            ].map((item, idx) => (
+              <div key={idx} className="flex items-center gap-4 bg-background p-4 rounded-xl border" data-testid={`trust-item-${idx}`}>
+                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                  {item.icon}
+                </div>
+                <span className="text-base font-medium">{item.text}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="py-12 bg-muted/30">
+        <div className="container mx-auto px-4">
+          <div className="text-center mb-8">
+            <h2 className="text-2xl md:text-3xl font-bold mb-2">Key Benefits</h2>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-5xl mx-auto">
+            {[
+              { icon: <Mic className="h-5 w-5" />, title: "Voice-first tutoring", desc: "Guided conversation, not chatbots" },
+              { icon: <Brain className="h-5 w-5" />, title: "Builds independence", desc: "Socratic method teaches thinking" },
+              { icon: <BookOpen className="h-5 w-5" />, title: "Multiple subjects", desc: "Math, English, Science, Spanish + more" },
+              { icon: <Clock className="h-5 w-5" />, title: "Available anytime", desc: "Even nights and weekends" },
+              { icon: <Users className="h-5 w-5" />, title: "Family plans", desc: "Multiple student profiles included" },
+              { icon: <Heart className="h-5 w-5" />, title: "Parent-friendly", desc: "Supports consistent learning habits" }
+            ].map((item, idx) => (
+              <Card key={idx} className="p-4 border shadow-sm" data-testid={`benefit-tile-${idx}`}>
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 text-primary">
+                    {item.icon}
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-base">{item.title}</h3>
+                    <p className="text-sm text-muted-foreground">{item.desc}</p>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section id="how-it-works" className="py-12 bg-card scroll-mt-20">
+        <div className="container mx-auto px-4">
+          <div className="text-center mb-8">
+            <h2 className="text-2xl md:text-3xl font-bold mb-2">How It Works</h2>
+            <p className="text-muted-foreground">Three simple steps</p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
+            {[
+              { step: "1", title: "Choose a subject and grade", desc: "Pick from Math, English, Science, Spanish, and more" },
+              { step: "2", title: "Talk with your tutor", desc: "Voice or text—whatever works best for your child" },
+              { step: "3", title: "Get guided help", desc: "Practice until it clicks with patient, personalized support" }
+            ].map((item, idx) => (
+              <Card key={idx} className="text-center p-6 border shadow-sm" data-testid={`step-${idx}`}>
+                <div className="w-12 h-12 rounded-full bg-primary text-white flex items-center justify-center mx-auto mb-4 text-xl font-bold">
+                  {item.step}
+                </div>
+                <h3 className="text-lg font-bold mb-2">{item.title}</h3>
+                <p className="text-sm text-muted-foreground">{item.desc}</p>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="py-10 bg-primary text-primary-foreground">
+        <div className="container mx-auto px-4 text-center space-y-4">
+          <h2 className="text-xl md:text-2xl font-bold">Start your free trial today</h2>
+          <p className="text-lg opacity-90">
+            Use code <span className="font-bold bg-white/20 px-2 py-1 rounded">WELCOME50</span> — 50% off your first month
+          </p>
+          <Button 
+            size="lg" 
+            variant="secondary" 
+            onClick={handleStartTrial} 
+            className="text-lg h-14 px-8"
+            data-testid="button-offer-strip-cta"
+          >
+            Start Free Trial
+            <ArrowRight className="ml-2 h-5 w-5" />
+          </Button>
+        </div>
+      </section>
+
+      <section className="py-12 bg-background">
+        <div className="container mx-auto px-4">
+          <div className="text-center mb-8">
+            <h2 className="text-2xl md:text-3xl font-bold mb-2">Frequently Asked Questions</h2>
+          </div>
+          <div className="max-w-2xl mx-auto">
+            <Accordion type="single" collapsible className="space-y-2">
+              {[
+                { q: "Is there a free trial?", a: "Yes! You get 5 minutes of free tutoring to try it out—no credit card required. Just enter your email to start." },
+                { q: "What does the family plan include?", a: "All plans include unlimited student profiles. One subscription covers your whole family—no extra per-child fees." },
+                { q: "Does it give answers or teach?", a: "JIE Mastery uses the Socratic method to guide students through problems step-by-step. We teach thinking, not just answers." },
+                { q: "What subjects are included?", a: "Math, English, Science, and Spanish are all included. We support K-12 and college-level content." },
+                { q: "Can I cancel anytime?", a: "Absolutely. No contracts, no cancellation fees. You can cancel your subscription anytime from your account settings." }
+              ].map((item, idx) => (
+                <AccordionItem key={idx} value={`faq-${idx}`} className="border rounded-lg px-4" data-testid={`faq-item-${idx}`}>
+                  <AccordionTrigger className="text-left font-semibold hover:no-underline">
+                    {item.q}
+                  </AccordionTrigger>
+                  <AccordionContent className="text-muted-foreground">
+                    {item.a}
+                  </AccordionContent>
+                </AccordionItem>
+              ))}
+            </Accordion>
+          </div>
+        </div>
+      </section>
+
+      <section className="py-16 bg-gradient-to-b from-muted/30 to-background">
+        <div className="container mx-auto px-4 text-center space-y-6">
+          <h2 className="text-2xl md:text-3xl font-bold">Try JIE Mastery AI Tutor Risk-Free</h2>
+          <Button 
+            size="lg" 
+            onClick={handleStartTrial} 
+            className="text-lg h-14 px-8"
+            data-testid="button-final-cta"
+          >
+            Start Free Trial
+            <ArrowRight className="ml-2 h-5 w-5" />
+          </Button>
+          <p className="text-muted-foreground">
+            Code: <span className="font-bold text-primary">WELCOME50</span> (50% off first month)
+          </p>
+        </div>
+      </section>
+
+      <footer className="py-8 border-t border-border">
+        <div className="container mx-auto px-4 text-center text-sm text-muted-foreground space-y-2">
+          <div className="flex items-center justify-center space-x-2">
+            <img src={jieLogo} alt="JIE Mastery" className="h-5 w-auto grayscale opacity-50" />
+            <span>&copy; 2026 JIE Mastery AI Tutor</span>
+          </div>
+          <div className="flex justify-center space-x-6">
+            <a onClick={() => setLocation("/terms")} className="hover:text-primary cursor-pointer transition-colors">Terms</a>
+            <a onClick={() => setLocation("/privacy")} className="hover:text-primary cursor-pointer transition-colors">Privacy</a>
+          </div>
+        </div>
+      </footer>
+
+      <div className="sm:hidden fixed bottom-4 left-4 right-4 z-[60]">
+        <Button 
+          onClick={handleStartTrial} 
+          className="w-full h-14 shadow-2xl rounded-2xl text-lg font-bold" 
+          data-testid="button-mobile-sticky"
+        >
+          Start Free Trial
+        </Button>
+      </div>
+    </div>
+  );
+}
