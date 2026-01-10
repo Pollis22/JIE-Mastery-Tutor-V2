@@ -406,32 +406,49 @@ export class TrialService {
     }
 
     const htmlContent = `<!DOCTYPE html>
-<html>
+<html xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<!--[if mso]>
+<xml>
+<o:OfficeDocumentSettings>
+<o:AllowPNG/>
+<o:PixelsPerInch>96</o:PixelsPerInch>
+</o:OfficeDocumentSettings>
+</xml>
+<![endif]-->
 <title>Start Your Free Trial</title>
 </head>
 <body style="margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;background-color:#f4f4f4;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f4;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f4f4;">
 <tr>
 <td align="center" style="padding:40px 20px;">
-<table width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:8px;max-width:600px;">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="background-color:#ffffff;border-radius:8px;max-width:600px;">
 <tr>
 <td style="padding:40px;">
-<h1 style="margin:0 0 20px 0;color:#dc2626;font-size:28px;font-weight:bold;">Start Your Free Trial!</h1>
-<p style="margin:0 0 30px 0;color:#333333;font-size:16px;line-height:24px;">Thank you for your interest in JIE Mastery AI Tutor. Click the button below to verify your email and start your 5-minute free trial.</p>
-<table cellpadding="0" cellspacing="0" style="margin:0 0 30px 0;">
+<h1 style="margin:0 0 20px 0;color:#dc2626;font-size:28px;font-weight:bold;font-family:Arial,Helvetica,sans-serif;">Start Your Free Trial!</h1>
+<p style="margin:0 0 30px 0;color:#333333;font-size:16px;line-height:24px;font-family:Arial,Helvetica,sans-serif;">Thank you for your interest in JIE Mastery AI Tutor. Click the button below to verify your email and start your 5-minute free trial.</p>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 30px 0;">
 <tr>
-<td align="center" bgcolor="#dc2626" style="border-radius:6px;">
-<a href="${verifyUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:14px 28px;font-size:16px;font-weight:bold;color:#ffffff;text-decoration:none;">Start My Free Trial</a>
+<td align="center">
+<!--[if mso]>
+<v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${verifyUrl}" style="height:48px;v-text-anchor:middle;width:220px;" arcsize="10%" strokecolor="#dc2626" fillcolor="#dc2626">
+<w:anchorlock/>
+<center style="color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:bold;">Start My Free Trial</center>
+</v:roundrect>
+<![endif]-->
+<!--[if !mso]><!-->
+<a href="${verifyUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:14px 28px;font-size:16px;font-weight:bold;color:#ffffff;text-decoration:none;background-color:#dc2626;border-radius:6px;font-family:Arial,Helvetica,sans-serif;">Start My Free Trial</a>
+<!--<![endif]-->
 </td>
 </tr>
 </table>
-<p style="margin:0 0 10px 0;color:#666666;font-size:14px;">If the button doesn't work, copy and paste this link into your browser:</p>
-<p style="margin:0 0 20px 0;color:#666666;font-size:14px;word-break:break-all;"><a href="${verifyUrl}" style="color:#dc2626;text-decoration:underline;">${verifyUrl}</a></p>
-<p style="margin:0 0 10px 0;color:#666666;font-size:14px;">This link expires in 30 minutes.</p>
-<p style="margin:0;color:#666666;font-size:14px;">If you didn't request this, you can safely ignore this email.</p>
+<p style="margin:0 0 10px 0;color:#666666;font-size:14px;font-family:Arial,Helvetica,sans-serif;">If the button doesn't work, copy and paste this link into your browser:</p>
+<p style="margin:0 0 20px 0;color:#666666;font-size:14px;word-break:break-all;font-family:Arial,Helvetica,sans-serif;"><a href="${verifyUrl}" style="color:#dc2626;text-decoration:underline;">${verifyUrl}</a></p>
+<p style="margin:0 0 10px 0;color:#666666;font-size:14px;font-family:Arial,Helvetica,sans-serif;">This link expires in 30 minutes.</p>
+<p style="margin:0;color:#666666;font-size:14px;font-family:Arial,Helvetica,sans-serif;">If you didn't request this, you can safely ignore this email.</p>
 </td>
 </tr>
 </table>
