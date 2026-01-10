@@ -389,22 +389,59 @@ export class TrialService {
   private async sendTrialVerificationEmail(email: string, token: string): Promise<void> {
     const baseUrl = this.getBaseUrl();
     const verifyUrl = `${baseUrl}/trial/verify?token=${token}`;
+    
+    // Validate URL format
+    if (!verifyUrl.startsWith('https://') && !verifyUrl.startsWith('http://')) {
+      console.error('[TrialService] ERROR: verifyUrl does not start with https:// - emails may not work');
+    }
+    
+    // Dev logging only (don't log full token in production)
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[TrialService] Sending trial email to:', email);
+      console.log('[TrialService] verifyUrl:', verifyUrl);
+      console.log('[TrialService] URL starts with https:', verifyUrl.startsWith('https://'));
+    } else {
+      console.log('[TrialService] Sending trial email to:', email);
+      console.log('[TrialService] baseUrl:', baseUrl);
+    }
 
-    await this.emailService.sendEmail({
-      to: email,
-      subject: 'Verify your email for JIE Mastery Free Trial',
-      html: `
-        <h1 style="color:#dc2626;">Start Your Free Trial!</h1>
-        <p>Thank you for your interest in JIE Mastery AI Tutor. Click the button below to verify your email and start your 5-minute free trial.</p>
-        <p style="margin:30px 0;">
-          <a href="${verifyUrl}" style="display:inline-block;padding:12px 24px;background:#dc2626;color:white;text-decoration:none;border-radius:6px;font-weight:bold;">Start My Free Trial</a>
-        </p>
-        <p style="color:#666;font-size:14px;">If the button doesn't work, copy and paste this link into your browser:</p>
-        <p style="color:#666;font-size:14px;word-break:break-all;"><a href="${verifyUrl}" style="color:#dc2626;">${verifyUrl}</a></p>
-        <p style="color:#666;font-size:14px;margin-top:20px;">This link expires in 30 minutes.</p>
-        <p style="color:#666;font-size:14px;">If you didn't request this, you can safely ignore this email.</p>
-      `,
-      text: `Start Your Free Trial!
+    const htmlContent = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Start Your Free Trial</title>
+</head>
+<body style="margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;background-color:#f4f4f4;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f4;">
+<tr>
+<td align="center" style="padding:40px 20px;">
+<table width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:8px;max-width:600px;">
+<tr>
+<td style="padding:40px;">
+<h1 style="margin:0 0 20px 0;color:#dc2626;font-size:28px;font-weight:bold;">Start Your Free Trial!</h1>
+<p style="margin:0 0 30px 0;color:#333333;font-size:16px;line-height:24px;">Thank you for your interest in JIE Mastery AI Tutor. Click the button below to verify your email and start your 5-minute free trial.</p>
+<table cellpadding="0" cellspacing="0" style="margin:0 0 30px 0;">
+<tr>
+<td align="center" bgcolor="#dc2626" style="border-radius:6px;">
+<a href="${verifyUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:14px 28px;font-size:16px;font-weight:bold;color:#ffffff;text-decoration:none;">Start My Free Trial</a>
+</td>
+</tr>
+</table>
+<p style="margin:0 0 10px 0;color:#666666;font-size:14px;">If the button doesn't work, copy and paste this link into your browser:</p>
+<p style="margin:0 0 20px 0;color:#666666;font-size:14px;word-break:break-all;"><a href="${verifyUrl}" style="color:#dc2626;text-decoration:underline;">${verifyUrl}</a></p>
+<p style="margin:0 0 10px 0;color:#666666;font-size:14px;">This link expires in 30 minutes.</p>
+<p style="margin:0;color:#666666;font-size:14px;">If you didn't request this, you can safely ignore this email.</p>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</body>
+</html>`;
+
+    const textContent = `Start Your Free Trial!
 
 Thank you for your interest in JIE Mastery AI Tutor.
 
@@ -414,7 +451,13 @@ ${verifyUrl}
 
 This link expires in 30 minutes.
 
-If you didn't request this, you can safely ignore this email.`,
+If you didn't request this, you can safely ignore this email.`;
+
+    await this.emailService.sendEmail({
+      to: email,
+      subject: 'Verify your email for JIE Mastery Free Trial',
+      html: htmlContent,
+      text: textContent,
     });
   }
 
