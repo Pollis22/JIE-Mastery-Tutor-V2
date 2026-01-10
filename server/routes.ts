@@ -14,7 +14,7 @@ import { auditActions } from "./middleware/audit-log";
 import { convertUsersToCSV, generateFilename } from "./utils/csv-export";
 import { sql, desc, eq } from "drizzle-orm";
 import { db } from "./db";
-import { realtimeSessions } from "@shared/schema";
+import { realtimeSessions, trialSessions } from "@shared/schema";
 import Stripe from "stripe";
 import { z } from "zod";
 import { createHmac, timingSafeEqual } from "crypto";
@@ -2508,6 +2508,72 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error('[Admin] Agent stats error:', error);
       res.status(500).json({ message: "Error fetching agent stats: " + error.message });
+    }
+  });
+
+  // Admin: Get trial leads (emails from free trial signups)
+  app.get("/api/admin/trial-leads", requireAdmin, auditActions.viewAnalytics, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const offset = (page - 1) * limit;
+
+      const leads = await db.select({
+        id: trialSessions.id,
+        email: trialSessions.email,
+        status: trialSessions.status,
+        verifiedAt: trialSessions.verifiedAt,
+        trialStartedAt: trialSessions.trialStartedAt,
+        trialEndsAt: trialSessions.trialEndsAt,
+        consumedSeconds: trialSessions.consumedSeconds,
+        createdAt: trialSessions.createdAt,
+      })
+        .from(trialSessions)
+        .orderBy(desc(trialSessions.createdAt))
+        .limit(limit)
+        .offset(offset);
+
+      const countResult = await db.select({ count: sql<number>`count(*)` })
+        .from(trialSessions);
+      const total = Number(countResult[0]?.count || 0);
+
+      res.json({
+        leads,
+        total,
+        page,
+        totalPages: Math.ceil(total / limit),
+      });
+    } catch (error: any) {
+      console.error('[Admin] Trial leads error:', error);
+      res.status(500).json({ message: "Error fetching trial leads: " + error.message });
+    }
+  });
+
+  // Admin: Export trial leads as CSV
+  app.get("/api/admin/trial-leads/export", requireAdmin, auditActions.exportData, async (req, res) => {
+    try {
+      const leads = await db.select({
+        email: trialSessions.email,
+        status: trialSessions.status,
+        verifiedAt: trialSessions.verifiedAt,
+        trialStartedAt: trialSessions.trialStartedAt,
+        consumedSeconds: trialSessions.consumedSeconds,
+        createdAt: trialSessions.createdAt,
+      })
+        .from(trialSessions)
+        .orderBy(desc(trialSessions.createdAt));
+
+      const csvHeader = 'Email,Status,Verified At,Trial Started,Seconds Used,Created At\n';
+      const csvRows = leads.map(lead => 
+        `"${lead.email || ''}","${lead.status || ''}","${lead.verifiedAt || ''}","${lead.trialStartedAt || ''}","${lead.consumedSeconds || 0}","${lead.createdAt || ''}"`
+      ).join('\n');
+
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="trial-leads-${new Date().toISOString().split('T')[0]}.csv"`);
+      res.send(csvHeader + csvRows);
+    } catch (error: any) {
+      console.error('[Admin] Trial leads export error:', error);
+      res.status(500).json({ message: "Error exporting trial leads: " + error.message });
     }
   });
 
