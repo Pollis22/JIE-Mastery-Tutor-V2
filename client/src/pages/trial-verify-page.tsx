@@ -3,7 +3,6 @@ import { useLocation } from 'wouter';
 import { Loader2, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { apiRequest } from '@/lib/queryClient';
 
 type VerifyStatus = 'verifying' | 'success' | 'error' | 'expired';
 
@@ -28,7 +27,14 @@ export default function TrialVerifyPage() {
 
   const verifyToken = async (token: string) => {
     try {
-      const response = await apiRequest('POST', '/api/trial/verify', { token });
+      // Use fetch directly to handle non-2xx responses without throwing
+      const response = await fetch('/api/trial/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
+        credentials: 'include',
+      });
+      
       const data = await response.json();
 
       if (data.ok) {
@@ -42,16 +48,16 @@ export default function TrialVerifyPage() {
       } else {
         if (data.errorCode === 'expired_token') {
           setStatus('expired');
-          setMessage(data.error);
+          setMessage(data.error || 'Verification link has expired.');
         } else {
           setStatus('error');
-          setMessage(data.error || 'Verification failed.');
+          setMessage(data.error || 'Verification failed. Please try again.');
         }
       }
     } catch (error) {
       console.error('Verification error:', error);
       setStatus('error');
-      setMessage('Network error. Please try again.');
+      setMessage('Network error. Please check your connection and try again.');
     }
   };
 
