@@ -1,10 +1,10 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { useLocation } from "wouter";
 import jieLogo from "@/assets/jie-mastery-logo-new.jpg";
+import { useAuth } from "@/hooks/use-auth";
 import { 
-  CheckCircle2,
   ArrowRight,
   MessageCircle,
   Mic,
@@ -13,11 +13,10 @@ import {
   Clock,
   Users,
   Heart,
-  ChevronDown,
-  ChevronUp,
-  Sparkles
+  Sparkles,
+  Menu,
+  X
 } from "lucide-react";
-import { useState } from 'react';
 import {
   Accordion,
   AccordionContent,
@@ -33,6 +32,8 @@ declare global {
 
 export default function OfferPage() {
   const [, setLocation] = useLocation();
+  const { user, isLoading } = useAuth();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     document.title = "Free Trial + 50% Off | JIE Mastery AI Tutor";
@@ -75,11 +76,16 @@ export default function OfferPage() {
     if (!newParams.has('camp')) newParams.set('camp', 'offer');
     
     window.scrollTo(0, 0);
-    setLocation(`/benefits?${newParams.toString()}`);
-    setTimeout(() => window.scrollTo(0, 0), 100);
+    
+    if (user) {
+      setLocation(`/tutor?${newParams.toString()}`);
+    } else {
+      newParams.set('returnTo', '/tutor');
+      setLocation(`/auth?${newParams.toString()}`);
+    }
   };
 
-  const handleSignUp = () => {
+  const handleGetStarted = () => {
     const currentParams = new URLSearchParams(window.location.search);
     const newParams = new URLSearchParams();
     
@@ -93,22 +99,66 @@ export default function OfferPage() {
     setLocation(`/auth?${newParams.toString()}`);
   };
 
-  const handleHowItWorks = () => {
-    document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' });
+  const navigateTo = (path: string) => {
+    setMobileMenuOpen(false);
+    setLocation(path);
   };
 
   return (
     <div className="min-h-screen bg-background font-sans selection:bg-primary/10" data-testid="page-offer">
-      <header className="border-b border-border bg-card/80 backdrop-blur-md sticky top-0 z-50">
+      <nav className="border-b border-border bg-card/80 backdrop-blur-md sticky top-0 z-50">
         <div className="container mx-auto px-4">
-          <div className="flex items-center justify-center h-14">
-            <div className="flex items-center space-x-2">
-              <img src={jieLogo} alt="JIE Mastery" className="h-8 w-auto" />
-              <span className="text-lg font-bold text-foreground">JIE Mastery</span>
+          <div className="flex items-center justify-between h-16">
+            <div className="flex items-center space-x-3 cursor-pointer" onClick={() => navigateTo("/")}>
+              <img src={jieLogo} alt="JIE Mastery" className="h-10 w-auto" />
+              <span className="text-xl font-bold text-foreground">JIE Mastery</span>
             </div>
+            
+            <div className="hidden md:flex items-center space-x-6">
+              <button onClick={() => navigateTo("/benefits")} className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-nav-benefits">
+                Benefits
+              </button>
+              <button onClick={() => navigateTo("/pricing")} className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-nav-pricing">
+                Pricing
+              </button>
+              <button onClick={() => navigateTo("/demo")} className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-nav-demo">
+                How It Works
+              </button>
+              <button onClick={() => navigateTo("/faq")} className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-nav-faq">
+                FAQ
+              </button>
+              <button onClick={() => navigateTo("/auth")} className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-nav-login">
+                Login
+              </button>
+            </div>
+            
+            <div className="hidden md:flex items-center space-x-3">
+              <Button variant="default" onClick={handleStartTrial} data-testid="button-nav-cta">
+                Start Free Trial
+              </Button>
+            </div>
+
+            <button 
+              className="md:hidden p-2" 
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              data-testid="button-mobile-menu"
+            >
+              {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+            </button>
           </div>
+
+          {mobileMenuOpen && (
+            <div className="md:hidden border-t border-border py-4 space-y-3">
+              <button onClick={() => navigateTo("/benefits")} className="block w-full text-left py-2 text-muted-foreground hover:text-foreground">Benefits</button>
+              <button onClick={() => navigateTo("/pricing")} className="block w-full text-left py-2 text-muted-foreground hover:text-foreground">Pricing</button>
+              <button onClick={() => navigateTo("/demo")} className="block w-full text-left py-2 text-muted-foreground hover:text-foreground">How It Works</button>
+              <button onClick={() => navigateTo("/faq")} className="block w-full text-left py-2 text-muted-foreground hover:text-foreground">FAQ</button>
+              <button onClick={() => navigateTo("/auth")} className="block w-full text-left py-2 text-muted-foreground hover:text-foreground">Login</button>
+              <Button onClick={handleStartTrial} className="w-full mt-2">Start Free Trial</Button>
+            </div>
+          )}
         </div>
-      </header>
+      </nav>
 
       <section className="relative overflow-hidden pt-8 pb-12 lg:pt-12 lg:pb-16 bg-gradient-to-b from-primary/5 to-background">
         <div className="container mx-auto px-4 relative z-10">
@@ -146,11 +196,11 @@ export default function OfferPage() {
               <Button 
                 size="lg" 
                 variant="outline"
-                onClick={handleHowItWorks} 
+                onClick={handleGetStarted} 
                 className="text-lg h-14 px-8"
-                data-testid="button-hero-how-it-works"
+                data-testid="button-hero-get-started"
               >
-                See How It Works
+                Get Started
               </Button>
             </div>
           </div>
@@ -305,8 +355,8 @@ export default function OfferPage() {
             <span>&copy; 2026 JIE Mastery AI Tutor</span>
           </div>
           <div className="flex justify-center space-x-6">
-            <a onClick={() => setLocation("/terms")} className="hover:text-primary cursor-pointer transition-colors">Terms</a>
-            <a onClick={() => setLocation("/privacy")} className="hover:text-primary cursor-pointer transition-colors">Privacy</a>
+            <a onClick={() => navigateTo("/terms")} className="hover:text-primary cursor-pointer transition-colors">Terms</a>
+            <a onClick={() => navigateTo("/privacy")} className="hover:text-primary cursor-pointer transition-colors">Privacy</a>
           </div>
         </div>
       </footer>
