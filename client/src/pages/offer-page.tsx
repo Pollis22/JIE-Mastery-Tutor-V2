@@ -3,9 +3,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useLocation } from "wouter";
 import jieLogo from "@/assets/jie-mastery-logo-new.jpg";
-import { useAuth } from "@/hooks/use-auth";
+import { TrialCTA } from "@/components/TrialCTA";
 import { 
-  ArrowRight,
   MessageCircle,
   Mic,
   Brain,
@@ -32,7 +31,6 @@ declare global {
 
 export default function OfferPage() {
   const [, setLocation] = useLocation();
-  const { user, isLoading } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -63,27 +61,6 @@ export default function OfferPage() {
       document.head.removeChild(canonical);
     };
   }, []);
-
-  const handleStartTrial = () => {
-    const currentParams = new URLSearchParams(window.location.search);
-    const newParams = new URLSearchParams();
-    
-    currentParams.forEach((value, key) => {
-      newParams.set(key, value);
-    });
-    
-    if (!newParams.has('src')) newParams.set('src', 'meta');
-    if (!newParams.has('camp')) newParams.set('camp', 'offer');
-    
-    window.scrollTo(0, 0);
-    
-    if (user) {
-      setLocation(`/tutor?${newParams.toString()}`);
-    } else {
-      newParams.set('returnTo', '/tutor');
-      setLocation(`/auth?${newParams.toString()}`);
-    }
-  };
 
   const handleGetStarted = () => {
     const currentParams = new URLSearchParams(window.location.search);
@@ -133,9 +110,7 @@ export default function OfferPage() {
             </div>
             
             <div className="hidden md:flex items-center space-x-3">
-              <Button variant="default" onClick={handleStartTrial} data-testid="button-nav-cta">
-                Start Free Trial
-              </Button>
+              <TrialCTA size="md" />
             </div>
 
             <button 
@@ -154,7 +129,9 @@ export default function OfferPage() {
               <button onClick={() => navigateTo("/demo")} className="block w-full text-left py-2 text-muted-foreground hover:text-foreground">How It Works</button>
               <button onClick={() => navigateTo("/faq")} className="block w-full text-left py-2 text-muted-foreground hover:text-foreground">FAQ</button>
               <button onClick={() => navigateTo("/auth")} className="block w-full text-left py-2 text-muted-foreground hover:text-foreground">Login</button>
-              <Button onClick={handleStartTrial} className="w-full mt-2">Start Free Trial</Button>
+              <div className="mt-2">
+                <TrialCTA size="md" className="w-full" />
+              </div>
             </div>
           )}
         </div>
@@ -184,15 +161,7 @@ export default function OfferPage() {
             </div>
 
             <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
-              <Button 
-                size="lg" 
-                onClick={handleStartTrial} 
-                className="text-lg h-14 px-8"
-                data-testid="button-hero-start-trial"
-              >
-                Start Free Trial
-                <ArrowRight className="ml-2 h-5 w-5" />
-              </Button>
+              <TrialCTA size="lg" className="text-lg h-14 px-8" />
               <Button 
                 size="lg" 
                 variant="outline"
@@ -289,16 +258,7 @@ export default function OfferPage() {
           <p className="text-lg opacity-90">
             Use code <span className="font-bold bg-white/20 px-2 py-1 rounded">WELCOME50</span> — 50% off your first month
           </p>
-          <Button 
-            size="lg" 
-            variant="secondary" 
-            onClick={handleStartTrial} 
-            className="text-lg h-14 px-8"
-            data-testid="button-offer-strip-cta"
-          >
-            Start Free Trial
-            <ArrowRight className="ml-2 h-5 w-5" />
-          </Button>
+          <TrialCTA size="lg" variant="secondary" className="text-lg h-14 px-8" />
         </div>
       </section>
 
@@ -333,15 +293,7 @@ export default function OfferPage() {
       <section className="py-16 bg-gradient-to-b from-muted/30 to-background">
         <div className="container mx-auto px-4 text-center space-y-6">
           <h2 className="text-2xl md:text-3xl font-bold">Try JIE Mastery AI Tutor Risk-Free</h2>
-          <Button 
-            size="lg" 
-            onClick={handleStartTrial} 
-            className="text-lg h-14 px-8"
-            data-testid="button-final-cta"
-          >
-            Start Free Trial
-            <ArrowRight className="ml-2 h-5 w-5" />
-          </Button>
+          <TrialCTA size="lg" className="text-lg h-14 px-8" />
           <p className="text-muted-foreground">
             Code: <span className="font-bold text-primary">WELCOME50</span> (50% off first month)
           </p>
@@ -362,13 +314,7 @@ export default function OfferPage() {
       </footer>
 
       <div className="sm:hidden fixed bottom-4 left-4 right-4 z-[60]">
-        <Button 
-          onClick={handleStartTrial} 
-          className="w-full h-14 shadow-2xl rounded-2xl text-lg font-bold" 
-          data-testid="button-mobile-sticky"
-        >
-          Start Free Trial
-        </Button>
+        <TrialCTA size="lg" className="w-full h-14 shadow-2xl rounded-2xl text-lg font-bold" />
       </div>
     </div>
   );
