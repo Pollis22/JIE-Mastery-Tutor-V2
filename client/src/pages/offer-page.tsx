@@ -74,7 +74,9 @@ export default function OfferPage() {
     if (!newParams.has('src')) newParams.set('src', 'meta');
     if (!newParams.has('camp')) newParams.set('camp', 'offer');
     
+    window.scrollTo(0, 0);
     setLocation(`/benefits?${newParams.toString()}`);
+    setTimeout(() => window.scrollTo(0, 0), 100);
   };
 
   const handleSignUp = () => {

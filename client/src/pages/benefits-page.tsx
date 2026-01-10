@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useLocation } from "wouter";
@@ -25,6 +26,10 @@ import {
 
 export default function BenefitsPage() {
   const [, setLocation] = useLocation();
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
 
   const handleCTA = () => setLocation("/auth");
   const handlePricing = () => setLocation("/pricing");
