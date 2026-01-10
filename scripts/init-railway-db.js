@@ -230,7 +230,6 @@ async function initializeDatabase() {
         updated_at TIMESTAMPTZ DEFAULT NOW()
       );
 
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_trial_email_hash ON trial_sessions(email_hash);
       CREATE INDEX IF NOT EXISTS idx_trial_device_hash ON trial_sessions(device_id_hash);
       CREATE INDEX IF NOT EXISTS idx_trial_status ON trial_sessions(status);
       CREATE INDEX IF NOT EXISTS idx_trial_verification_token ON trial_sessions(verification_token);
@@ -238,6 +237,28 @@ async function initializeDatabase() {
       CREATE INDEX IF NOT EXISTS idx_trial_last_active ON trial_sessions(last_active_at);
     `);
     console.log('✅ trial_sessions table created');
+
+    // Deduplicate trial_sessions before adding UNIQUE constraint
+    // Keep only the most recent row per email_hash (by updated_at desc)
+    console.log('📝 Deduplicating trial_sessions by email_hash...');
+    await pool.query(`
+      DELETE FROM trial_sessions t1
+      USING trial_sessions t2
+      WHERE t1.email_hash = t2.email_hash
+        AND t1.id != t2.id
+        AND (
+          t1.updated_at < t2.updated_at
+          OR (t1.updated_at = t2.updated_at AND t1.id < t2.id)
+        );
+    `);
+    console.log('✅ trial_sessions deduplicated');
+
+    // Now add UNIQUE constraint on email_hash (if not exists)
+    console.log('📝 Adding UNIQUE constraint on trial_sessions.email_hash...');
+    await pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_trial_email_hash ON trial_sessions(email_hash);
+    `);
+    console.log('✅ UNIQUE constraint added to trial_sessions.email_hash');
 
     // Create trial_rate_limits table for IP-based rate limiting
     console.log('📝 Creating trial_rate_limits table...');

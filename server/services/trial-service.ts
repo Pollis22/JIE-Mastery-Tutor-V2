@@ -105,15 +105,18 @@ export class TrialService {
         }
       }
 
-      // Email already used check - skip for QA emails in QA mode
-      if (!isQaEmail) {
-        const existing = await db.select()
-          .from(trialSessions)
-          .where(eq(trialSessions.emailHash, emailHash))
-          .limit(1);
+      // Check if trial already exists for this email
+      const existing = await db.select()
+        .from(trialSessions)
+        .where(eq(trialSessions.emailHash, emailHash))
+        .limit(1);
 
-        if (existing.length > 0) {
-          console.log('[TrialService] Error: TRIAL_EMAIL_USED');
+      // If trial exists and is verified/active/expired, block re-use (except QA emails)
+      if (existing.length > 0 && !isQaEmail) {
+        const existingTrial = existing[0];
+        // Only block if the trial was actually verified (used)
+        if (existingTrial.verifiedAt !== null) {
+          console.log('[TrialService] Error: TRIAL_EMAIL_USED - trial was already verified');
           return { 
             ok: false, 
             code: 'TRIAL_EMAIL_USED',
@@ -121,6 +124,7 @@ export class TrialService {
             errorCode: 'email_used' 
           };
         }
+        // Pending trials can be re-used (resend verification)
       }
 
       // Device blocking check - skip if QA_MODE or TRIAL_ENFORCE_DEVICE_LIMIT is not "1"
@@ -134,7 +138,7 @@ export class TrialService {
           ))
           .limit(1);
 
-        if (deviceTrial.length > 0) {
+        if (deviceTrial.length > 0 && deviceTrial[0].verifiedAt !== null) {
           console.log('[TrialService] Error: TRIAL_DEVICE_USED');
           return { 
             ok: false, 
@@ -169,17 +173,40 @@ export class TrialService {
 
       const verificationToken = randomBytes(32).toString('hex');
       const verificationExpiry = new Date(Date.now() + 30 * 60 * 1000);
+      const now = new Date();
 
-      await db.insert(trialSessions).values({
-        emailHash,
-        email: normalizedEmail,
-        verificationToken,
-        verificationExpiry,
-        deviceIdHash,
-        ipHash,
-        status: 'pending',
-        consumedSeconds: 0,
-      });
+      // UPSERT: Insert or update by email_hash (unique constraint)
+      if (existing.length > 0) {
+        // Update existing pending trial with new verification token
+        console.log('[TrialService] Updating existing pending trial for email_hash:', emailHash.substring(0, 12) + '...');
+        await db.update(trialSessions)
+          .set({
+            verificationToken,
+            verificationExpiry,
+            deviceIdHash,
+            ipHash,
+            status: 'pending',
+            consumedSeconds: 0,
+            lastActiveAt: now,
+            updatedAt: now,
+          })
+          .where(eq(trialSessions.emailHash, emailHash));
+      } else {
+        // Insert new trial
+        console.log('[TrialService] Creating new trial for email_hash:', emailHash.substring(0, 12) + '...');
+        await db.insert(trialSessions).values({
+          emailHash,
+          email: normalizedEmail,
+          verificationToken,
+          verificationExpiry,
+          deviceIdHash,
+          ipHash,
+          status: 'pending',
+          consumedSeconds: 0,
+          lastActiveAt: now,
+          updatedAt: now,
+        });
+      }
 
       // Track IP rate limits (skip in QA mode)
       if (!QA_MODE) {
@@ -234,47 +261,67 @@ export class TrialService {
     }
   }
 
-  async verifyTrialToken(token: string): Promise<TrialVerifyResult> {
+  async verifyTrialToken(token: string): Promise<TrialVerifyResult & { emailHash?: string }> {
     try {
+      console.log('[TrialService] verifyTrialToken called with token:', token.substring(0, 12) + '...');
+      
       const trial = await db.select()
         .from(trialSessions)
         .where(eq(trialSessions.verificationToken, token))
         .limit(1);
 
       if (trial.length === 0) {
+        console.log('[TrialService] VERIFY FAILED: token not found');
         return { ok: false, error: 'Invalid verification link.', errorCode: 'invalid_token' };
       }
 
       const trialSession = trial[0];
+      console.log('[TrialService] VERIFY: Found trial', {
+        emailHash: trialSession.emailHash.substring(0, 12) + '...',
+        status: trialSession.status,
+        verifiedAt: trialSession.verifiedAt ? 'set' : 'null',
+        trialEndsAt: trialSession.trialEndsAt ? trialSession.trialEndsAt.toISOString() : 'null',
+      });
 
       if (trialSession.verificationExpiry && new Date() > trialSession.verificationExpiry) {
+        console.log('[TrialService] VERIFY FAILED: token expired');
         return { ok: false, error: 'Verification link has expired. Please start a new trial.', errorCode: 'expired_token' };
       }
 
       if (trialSession.status === 'expired') {
+        console.log('[TrialService] VERIFY FAILED: trial already expired');
         return { ok: false, error: 'This trial has already expired.', errorCode: 'already_expired' };
       }
 
       const now = new Date();
       const trialEndsAt = new Date(now.getTime() + TRIAL_DURATION_SECONDS * 1000);
 
-      if (!trialSession.verifiedAt) {
-        await db.update(trialSessions)
-          .set({
-            verifiedAt: now,
-            trialStartedAt: now,
-            trialEndsAt,
-            status: 'active',
-            verificationToken: null,
-            updatedAt: now,
-          })
-          .where(eq(trialSessions.id, trialSession.id));
-      }
+      // ALWAYS update the trial to active state (even if already verified)
+      // This ensures all required fields are populated for /status check
+      await db.update(trialSessions)
+        .set({
+          verifiedAt: now,
+          trialStartedAt: now,
+          trialEndsAt,
+          status: 'active',
+          verificationToken: null,
+          lastActiveAt: now,
+          updatedAt: now,
+        })
+        .where(eq(trialSessions.id, trialSession.id));
+
+      console.log('[TrialService] VERIFY SUCCESS:', {
+        emailHash: trialSession.emailHash.substring(0, 12) + '...',
+        status: 'active',
+        verifiedAt: now.toISOString(),
+        trialEndsAt: trialEndsAt.toISOString(),
+      });
 
       return {
         ok: true,
         status: 'active',
         secondsRemaining: TRIAL_DURATION_SECONDS - (trialSession.consumedSeconds ?? 0),
+        emailHash: trialSession.emailHash,
       };
     } catch (error) {
       console.error('[TrialService] Error verifying trial:', error);
@@ -293,6 +340,69 @@ export class TrialService {
     } catch (error) {
       console.error('[TrialService] Error getting trial status:', error);
       return null;
+    }
+  }
+
+  async getTrialByEmailHash(emailHash: string): Promise<TrialSession | null> {
+    try {
+      const trial = await db.select()
+        .from(trialSessions)
+        .where(eq(trialSessions.emailHash, emailHash))
+        .limit(1);
+
+      return trial.length > 0 ? trial[0] : null;
+    } catch (error) {
+      console.error('[TrialService] Error getting trial by email hash:', error);
+      return null;
+    }
+  }
+
+  async getTrialEntitlementByEmailHash(emailHash: string, lookupPath: string): Promise<TrialEntitlement> {
+    try {
+      const trial = await this.getTrialByEmailHash(emailHash);
+
+      console.log('[TrialService] STATUS lookup:', {
+        emailHash: emailHash.substring(0, 12) + '...',
+        lookupPath,
+        status: trial?.status ?? 'not_found',
+        verifiedAt: trial?.verifiedAt ? 'set' : 'null',
+        trialEndsAt: trial?.trialEndsAt ? trial.trialEndsAt.toISOString() : 'null',
+      });
+
+      if (!trial) {
+        return { hasAccess: false, reason: 'trial_not_found' };
+      }
+
+      if (!trial.verifiedAt) {
+        return { hasAccess: false, reason: 'trial_not_verified' };
+      }
+
+      // Check if trial has expired by time
+      const now = new Date();
+      if (trial.trialEndsAt && now > trial.trialEndsAt) {
+        // Update status to expired in DB
+        await db.update(trialSessions)
+          .set({ status: 'expired', updatedAt: now })
+          .where(eq(trialSessions.id, trial.id));
+        return { hasAccess: false, reason: 'trial_expired', trialId: trial.id };
+      }
+
+      const consumedSeconds = trial.consumedSeconds ?? 0;
+      const secondsRemaining = TRIAL_DURATION_SECONDS - consumedSeconds;
+
+      if (secondsRemaining <= 0 || trial.status === 'expired') {
+        return { hasAccess: false, reason: 'trial_expired', trialId: trial.id };
+      }
+
+      return {
+        hasAccess: true,
+        reason: 'trial_active',
+        trialSecondsRemaining: secondsRemaining,
+        trialId: trial.id,
+      };
+    } catch (error) {
+      console.error('[TrialService] Error getting trial entitlement by email hash:', error);
+      return { hasAccess: false, reason: 'trial_not_found' };
     }
   }
 

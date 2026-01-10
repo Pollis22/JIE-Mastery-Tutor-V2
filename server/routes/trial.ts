@@ -6,6 +6,7 @@ import { z } from 'zod';
 const router = Router();
 
 const TRIAL_COOKIE_NAME = 'trial_device_id';
+const TRIAL_EMAIL_HASH_COOKIE = 'trial_email_hash';
 const TRIAL_COOKIE_MAX_AGE = 365 * 24 * 60 * 60 * 1000;
 
 function getDeviceIdHash(req: Request, res: Response): string {
@@ -135,7 +136,21 @@ router.post('/verify', async (req: Request, res: Response) => {
 
     const result = await trialService.verifyTrialToken(parsed.data.token);
 
-    if (result.ok) {
+    if (result.ok && result.emailHash) {
+      // Set email_hash cookie for deterministic status lookup
+      res.cookie(TRIAL_EMAIL_HASH_COOKIE, result.emailHash, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: TRIAL_COOKIE_MAX_AGE,
+        signed: true,
+      });
+      console.log('[TrialRoutes] /verify: set email_hash cookie for:', result.emailHash.substring(0, 12) + '...');
+      
+      // Don't return emailHash to client
+      const { emailHash, ...clientResult } = result;
+      return res.json(clientResult);
+    } else if (result.ok) {
       return res.json(result);
     } else {
       return res.status(400).json(result);
@@ -148,8 +163,31 @@ router.post('/verify', async (req: Request, res: Response) => {
 
 router.get('/status', async (req: Request, res: Response) => {
   try {
+    // Deterministic lookup priority:
+    // 1. email_hash cookie (set during verification)
+    // 2. device_id_hash fallback
+    const emailHashFromCookie = req.signedCookies?.[TRIAL_EMAIL_HASH_COOKIE];
     const deviceIdHash = getDeviceIdHash(req, res);
-    const entitlement = await trialService.getTrialEntitlement(deviceIdHash);
+    
+    let entitlement;
+    let lookupPath: string;
+    
+    if (emailHashFromCookie) {
+      // Primary: lookup by email_hash (most reliable)
+      lookupPath = 'email_hash_cookie';
+      entitlement = await trialService.getTrialEntitlementByEmailHash(emailHashFromCookie, lookupPath);
+    } else {
+      // Fallback: lookup by device_id_hash
+      lookupPath = 'device_id_hash_fallback';
+      console.log('[TrialRoutes] /status: no email_hash cookie, using device fallback:', deviceIdHash.substring(0, 12) + '...');
+      entitlement = await trialService.getTrialEntitlement(deviceIdHash);
+    }
+
+    console.log('[TrialRoutes] /status result:', {
+      lookupPath,
+      hasAccess: entitlement.hasAccess,
+      reason: entitlement.reason,
+    });
 
     return res.json({
       hasAccess: entitlement.hasAccess,
