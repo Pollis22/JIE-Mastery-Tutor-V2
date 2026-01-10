@@ -394,19 +394,41 @@ export class TrialService {
       to: email,
       subject: 'Verify your email for JIE Mastery Free Trial',
       html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h1 style="color: #dc2626;">Start Your Free Trial!</h1>
-          <p>Thank you for your interest in JIE Mastery AI Tutor. Click the button below to verify your email and start your 5-minute free trial.</p>
-          <div style="margin: 30px 0;">
-            <a href="${verifyUrl}" style="display: inline-block; padding: 14px 28px; background: #dc2626; color: white; text-decoration: none; border-radius: 8px; font-weight: bold;">
-              Start My Free Trial
-            </a>
-          </div>
-          <p style="color: #666; font-size: 14px;">This link expires in 30 minutes.</p>
-          <p style="color: #666; font-size: 14px;">If you didn't request this, you can safely ignore this email.</p>
-        </div>
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Start Your Free Trial</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: Arial, Helvetica, sans-serif; background-color: #f4f4f4;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color: #f4f4f4;">
+    <tr>
+      <td align="center" style="padding: 40px 20px;">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 8px; max-width: 600px;">
+          <tr>
+            <td style="padding: 40px 40px 30px 40px;">
+              <h1 style="margin: 0 0 20px 0; color: #dc2626; font-size: 28px; font-weight: bold;">Start Your Free Trial!</h1>
+              <p style="margin: 0 0 30px 0; color: #333333; font-size: 16px; line-height: 24px;">Thank you for your interest in JIE Mastery AI Tutor. Click the button below to verify your email and start your 5-minute free trial.</p>
+              <table role="presentation" cellpadding="0" cellspacing="0" style="margin: 0 0 30px 0;">
+                <tr>
+                  <td align="center" bgcolor="#dc2626" style="border-radius: 6px;">
+                    <a href="${verifyUrl}" target="_blank" style="display: inline-block; padding: 14px 28px; font-size: 16px; font-weight: bold; color: #ffffff; text-decoration: none; border-radius: 6px;">Start My Free Trial</a>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin: 0 0 10px 0; color: #666666; font-size: 14px;">This link expires in 30 minutes.</p>
+              <p style="margin: 0; color: #666666; font-size: 14px;">If you didn't request this, you can safely ignore this email.</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
       `,
-      text: `Start your JIE Mastery free trial by visiting: ${verifyUrl}`,
+      text: `Start your JIE Mastery free trial!\n\nThank you for your interest in JIE Mastery AI Tutor.\n\nClick the link below to verify your email and start your 5-minute free trial:\n${verifyUrl}\n\nThis link expires in 30 minutes.\n\nIf you didn't request this, you can safely ignore this email.`,
     });
   }
 
