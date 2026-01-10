@@ -48,14 +48,13 @@ export default function OfferPage() {
     document.head.appendChild(canonical);
 
     if (typeof window !== 'undefined' && window.fbq) {
-      window.fbq('track', 'PageView');
       window.fbq('track', 'ViewContent', {
         content_name: 'Offer Landing Page',
         content_category: 'Landing Page',
         value: 0,
         currency: 'USD'
       });
-      console.log('[Meta Pixel] PageView + ViewContent tracked on /offer');
+      console.log('[Meta Pixel] ViewContent tracked on /offer (PageView fires globally)');
     }
 
     return () => {
