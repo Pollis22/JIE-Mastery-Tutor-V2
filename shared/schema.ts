@@ -682,6 +682,16 @@ export const realtimeSessions = pgTable("realtime_sessions", {
   endedAt: timestamp("ended_at"),
   minutesUsed: integer("minutes_used").default(0),
   errorMessage: text("error_message"),
+  safetyFlags: jsonb("safety_flags").$type<Array<{
+    type: string;
+    timestamp: string;
+    messageIndex?: number;
+    triggerText?: string;
+    tutorResponse?: string;
+    severity: 'info' | 'warning' | 'alert' | 'critical';
+  }>>().default(sql`'[]'::jsonb`),
+  strikeCount: integer("strike_count").default(0),
+  terminatedForSafety: boolean("terminated_for_safety").default(false),
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => [
   index("idx_realtime_sessions_user").on(table.userId),
@@ -839,3 +849,33 @@ export const trialRateLimits = pgTable("trial_rate_limits", {
 export type TrialSession = typeof trialSessions.$inferSelect;
 export type InsertTrialSession = z.infer<typeof insertTrialSessionSchema>;
 export type TrialRateLimit = typeof trialRateLimits.$inferSelect;
+
+// Safety incidents table - tracks all safety-related incidents
+export const safetyIncidents = pgTable("safety_incidents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").references(() => realtimeSessions.id, { onDelete: 'cascade' }),
+  studentId: varchar("student_id").references(() => students.id, { onDelete: 'set null' }),
+  userId: varchar("user_id").references(() => users.id, { onDelete: 'cascade' }),
+  flagType: varchar("flag_type", { length: 50 }).notNull(),
+  severity: varchar("severity", { length: 20 }).notNull().$type<'info' | 'warning' | 'alert' | 'critical'>(),
+  triggerText: text("trigger_text"),
+  tutorResponse: text("tutor_response"),
+  actionTaken: varchar("action_taken", { length: 50 }),
+  adminNotified: boolean("admin_notified").default(false),
+  parentNotified: boolean("parent_notified").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_safety_incidents_user").on(table.userId),
+  index("idx_safety_incidents_session").on(table.sessionId),
+  index("idx_safety_incidents_type").on(table.flagType),
+  index("idx_safety_incidents_severity").on(table.severity),
+]);
+
+export const insertSafetyIncidentSchema = createInsertSchema(safetyIncidents).omit({
+  id: true,
+  createdAt: true,
+});
+
+// Safety Incident types
+export type SafetyIncident = typeof safetyIncidents.$inferSelect;
+export type InsertSafetyIncident = z.infer<typeof insertSafetyIncidentSchema>;

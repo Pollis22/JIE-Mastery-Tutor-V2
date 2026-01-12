@@ -14,7 +14,7 @@ import { auditActions } from "./middleware/audit-log";
 import { convertUsersToCSV, generateFilename } from "./utils/csv-export";
 import { sql, desc, eq } from "drizzle-orm";
 import { db } from "./db";
-import { realtimeSessions, trialSessions } from "@shared/schema";
+import { realtimeSessions, trialSessions, safetyIncidents } from "@shared/schema";
 import Stripe from "stripe";
 import { z } from "zod";
 import { createHmac, timingSafeEqual } from "crypto";
@@ -2574,6 +2574,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error('[Admin] Trial leads export error:', error);
       res.status(500).json({ message: "Error exporting trial leads: " + error.message });
+    }
+  });
+
+  // Admin: Get safety incidents
+  app.get("/api/admin/safety-incidents", requireAdmin, auditActions.viewAnalytics, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const offset = (page - 1) * limit;
+
+      const incidents = await db.select()
+        .from(safetyIncidents)
+        .orderBy(desc(safetyIncidents.createdAt))
+        .limit(limit)
+        .offset(offset);
+
+      const countResult = await db.select({ count: sql<number>`count(*)` })
+        .from(safetyIncidents);
+      const total = Number(countResult[0]?.count || 0);
+
+      res.json({
+        incidents,
+        total,
+        page,
+        totalPages: Math.ceil(total / limit),
+      });
+    } catch (error: any) {
+      console.error('[Admin] Safety incidents error:', error);
+      res.status(500).json({ message: "Error fetching safety incidents: " + error.message });
     }
   });
 

@@ -16,6 +16,9 @@ import { wsRateLimiter, getClientIp } from '../middleware/ws-rate-limiter';
 import { EmailService } from '../services/email-service';
 import { users, students } from "@shared/schema";
 import { trialService } from '../services/trial-service';
+import { detectSafetyIssues, getStrikeMessage, shouldTerminateSession, SafetyDetectionResult } from '../services/safety-detection-service';
+import { sendAdminSafetyAlert, logSafetyIncident, SafetyAlertData } from '../services/safety-alert-service';
+import { safetyIncidents } from '@shared/schema';
 import {
   type GradeBand,
   type TurnPolicyState,
@@ -558,6 +561,18 @@ interface SessionState {
   guardedTranscript: string; // K2 TURN POLICY: Transcript being guarded during hesitation
   stallTimerStartedAt: number; // K2 TURN POLICY: When the current stall timer was started
   echoGuardState: EchoGuardState; // ECHO GUARD: State for echo/self-response prevention
+  safetyStrikeCount: number; // SAFETY: Track strikes for session termination
+  safetyFlags: Array<{
+    type: string;
+    timestamp: string;
+    messageIndex?: number;
+    triggerText?: string;
+    tutorResponse?: string;
+    severity: 'info' | 'warning' | 'alert' | 'critical';
+  }>; // SAFETY: Track safety incidents in session
+  terminatedForSafety: boolean; // SAFETY: Whether session was ended due to safety violations
+  parentEmail?: string; // SAFETY: Parent email for alerts
+  studentId?: string; // SAFETY: Student ID for incident tracking
 }
 
 // Helper to send typed WebSocket events
@@ -583,6 +598,121 @@ async function persistTranscript(sessionId: string, transcript: TranscriptEntry[
   } catch (error) {
     console.error("[Custom Voice] ❌ Error persisting transcript:", error);
   }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// SAFETY GUARDRAILS: Detect and handle safety concerns
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+interface SafetyCheckResult {
+  shouldBlock: boolean;
+  shouldTerminate: boolean;
+  tutorResponse: string | null;
+  strikeCount: number;
+}
+
+async function processSafetyCheck(
+  text: string,
+  state: SessionState,
+  ws: WebSocket
+): Promise<SafetyCheckResult> {
+  const detection = detectSafetyIssues(text, state.ageGroup);
+  
+  if (!detection.detected) {
+    return {
+      shouldBlock: false,
+      shouldTerminate: false,
+      tutorResponse: null,
+      strikeCount: state.safetyStrikeCount
+    };
+  }
+  
+  console.log(`[Safety] 🛡️ Detected: ${detection.flagType} (severity: ${detection.severity})`);
+  
+  // Add safety flag to session state
+  const safetyFlag = {
+    type: detection.flagType!,
+    timestamp: new Date().toISOString(),
+    messageIndex: state.transcript.length,
+    triggerText: text.substring(0, 100), // Limit stored text
+    tutorResponse: detection.tutorResponse || undefined,
+    severity: detection.severity
+  };
+  state.safetyFlags.push(safetyFlag);
+  
+  // Increment strike count if needed
+  let newStrikeCount = state.safetyStrikeCount;
+  if (detection.incrementStrike) {
+    newStrikeCount = state.safetyStrikeCount + 1;
+    state.safetyStrikeCount = newStrikeCount;
+    console.log(`[Safety] ⚠️ Strike ${newStrikeCount}/3`);
+  }
+  
+  // Log safety incident to database
+  if (state.sessionId) {
+    try {
+      const alertData: SafetyAlertData = {
+        flagType: detection.flagType!,
+        severity: detection.severity,
+        sessionId: state.sessionId,
+        studentId: state.studentId,
+        studentName: state.studentName,
+        gradeLevel: state.ageGroup,
+        parentEmail: state.parentEmail,
+        userId: state.userId,
+        triggerText: text.substring(0, 200),
+        tutorResponse: detection.tutorResponse || 'Redirect to learning',
+        actionTaken: detection.action
+      };
+      
+      // Log incident
+      await logSafetyIncident(alertData);
+      
+      // Send admin alert for critical incidents
+      if (detection.adminAlert) {
+        await sendAdminSafetyAlert(alertData);
+      }
+      
+      // Update session safety data in database
+      await db.update(realtimeSessions)
+        .set({
+          safetyFlags: state.safetyFlags,
+          strikeCount: newStrikeCount,
+        })
+        .where(eq(realtimeSessions.id, state.sessionId));
+        
+    } catch (error) {
+      console.error('[Safety] ❌ Error logging safety incident:', error);
+    }
+  }
+  
+  // Check for session termination
+  const shouldTerminate = shouldTerminateSession(newStrikeCount) || 
+    detection.action === 'end_session_warning';
+    
+  if (shouldTerminate) {
+    state.terminatedForSafety = true;
+    console.log('[Safety] 🛑 Session will be terminated for safety');
+    
+    // Update database
+    if (state.sessionId) {
+      try {
+        await db.update(realtimeSessions)
+          .set({ terminatedForSafety: true })
+          .where(eq(realtimeSessions.id, state.sessionId));
+      } catch (error) {
+        console.error('[Safety] ❌ Error updating termination status:', error);
+      }
+    }
+  }
+  
+  return {
+    shouldBlock: detection.action !== 'none',
+    shouldTerminate,
+    tutorResponse: shouldTerminate 
+      ? getStrikeMessage(newStrikeCount)
+      : detection.tutorResponse,
+    strikeCount: newStrikeCount
+  };
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -641,7 +771,7 @@ function isLikelyIncompleteThought(transcript: string): boolean {
 // Centralized session finalization helper (prevents double-processing and ensures consistency)
 async function finalizeSession(
   state: SessionState,
-  reason: 'normal' | 'disconnect' | 'error' | 'violation' | 'inactivity_timeout',
+  reason: 'normal' | 'disconnect' | 'error' | 'violation' | 'inactivity_timeout' | 'safety',
   errorMessage?: string
 ) {
   // Idempotent: skip if already finalized
@@ -976,6 +1106,11 @@ export function setupCustomVoiceWebSocket(server: Server) {
       guardedTranscript: '', // K2 TURN POLICY: No guarded transcript initially
       stallTimerStartedAt: 0, // K2 TURN POLICY: No stall timer initially
       echoGuardState: createEchoGuardState(), // ECHO GUARD: Initialize echo guard state
+      safetyStrikeCount: 0, // SAFETY: Initialize strike count
+      safetyFlags: [], // SAFETY: Initialize safety flags array
+      terminatedForSafety: false, // SAFETY: Not terminated initially
+      parentEmail: undefined, // SAFETY: Will be set from user data
+      studentId: undefined, // SAFETY: Will be set from session data
     };
 
     // FIX #3: Auto-persist every 10 seconds
@@ -3206,6 +3341,80 @@ CRITICAL INSTRUCTIONS:
               
               state.isSessionEnded = true;
               break; // Exit the switch, don't process further
+            }
+            
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            // 🛡️ SAFETY CHECK (Text Mode) - Process safety concerns
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            const safetyResult = await processSafetyCheck(message.message, state, ws);
+            
+            if (safetyResult.shouldBlock && safetyResult.tutorResponse) {
+              console.log(`[Safety] 🛡️ Blocking input, responding with safety message`);
+              
+              // Add tutor response to transcript
+              const safetyEntry: TranscriptEntry = {
+                speaker: "tutor",
+                text: safetyResult.tutorResponse,
+                timestamp: new Date().toISOString(),
+                messageId: crypto.randomUUID(),
+              };
+              state.transcript.push(safetyEntry);
+              
+              // Send transcript update
+              ws.send(JSON.stringify({
+                type: "transcript",
+                speaker: "tutor",
+                text: safetyResult.tutorResponse
+              }));
+              
+              // Generate and send audio
+              if (state.tutorAudioEnabled) {
+                try {
+                  const safetyAudio = await generateSpeech(safetyResult.tutorResponse, state.ageGroup, state.speechSpeed);
+                  if (safetyAudio && safetyAudio.length > 0) {
+                    ws.send(JSON.stringify({
+                      type: "audio",
+                      data: safetyAudio.toString("base64"),
+                      mimeType: "audio/pcm;rate=16000"
+                    }));
+                  }
+                } catch (audioError) {
+                  console.error('[Safety] ❌ Error generating safety response audio:', audioError);
+                }
+              }
+              
+              // If session should terminate, end it
+              if (safetyResult.shouldTerminate) {
+                console.log('[Safety] 🛑 Terminating session for safety (text mode)');
+                
+                setTimeout(async () => {
+                  clearInterval(persistInterval);
+                  
+                  if (state.inactivityTimerId) {
+                    clearInterval(state.inactivityTimerId);
+                    state.inactivityTimerId = null;
+                  }
+                  
+                  try {
+                    ws.send(JSON.stringify({
+                      type: 'session_ended',
+                      reason: 'safety_termination',
+                      message: 'Session ended due to conduct policy'
+                    }));
+                    
+                    await finalizeSession(state, 'safety');
+                    ws.close(1000, 'Session ended - safety policy');
+                    console.log('[Safety] ✅ Session terminated successfully (text mode)');
+                  } catch (error) {
+                    console.error('[Safety] ❌ Error terminating session:', error);
+                    ws.close(1011, 'Error ending session');
+                  }
+                }, 4000);
+                
+                state.isSessionEnded = true;
+              }
+              
+              break; // Don't process further
             }
             
             // Check content moderation

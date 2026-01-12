@@ -11,7 +11,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { Download, Users, Clock, Activity, TrendingUp, FileText, DollarSign, Mail } from "lucide-react";
+import { Download, Users, Clock, Activity, TrendingUp, FileText, DollarSign, Mail, Shield, AlertTriangle } from "lucide-react";
 
 interface AdminStats {
   totalUsers?: number;
@@ -91,6 +91,30 @@ interface TrialLeadsData {
   totalPages: number;
 }
 
+interface SafetyIncident {
+  id: string;
+  sessionId: string | null;
+  studentId: string | null;
+  userId: string | null;
+  flagType: string;
+  severity: 'info' | 'warning' | 'alert' | 'critical';
+  triggerText: string | null;
+  tutorResponse: string | null;
+  actionTaken: string | null;
+  adminNotified: boolean | null;
+  parentNotified: boolean | null;
+  createdAt: string | null;
+  studentName?: string;
+  parentEmail?: string;
+}
+
+interface SafetyIncidentsData {
+  incidents: SafetyIncident[];
+  total: number;
+  page: number;
+  totalPages: number;
+}
+
 export default function AdminPageEnhanced() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -98,6 +122,7 @@ export default function AdminPageEnhanced() {
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [trialLeadsPage, setTrialLeadsPage] = useState(1);
+  const [safetyIncidentsPage, setSafetyIncidentsPage] = useState(1);
   const [activeTab, setActiveTab] = useState("overview");
 
   // Check admin access
@@ -151,6 +176,24 @@ export default function AdminPageEnhanced() {
       return response.json();
     },
     enabled: !!user?.isAdmin && activeTab === 'trial-leads',
+  });
+
+  const { data: safetyIncidentsData, isLoading: safetyIncidentsLoading } = useQuery<SafetyIncidentsData>({
+    queryKey: ["/api/admin/safety-incidents", safetyIncidentsPage],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        page: safetyIncidentsPage.toString(),
+        limit: '20',
+      });
+      const response = await fetch(`/api/admin/safety-incidents?${params}`, {
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to fetch safety incidents: ${response.status}`);
+      }
+      return response.json();
+    },
+    enabled: !!user?.isAdmin && activeTab === 'safety-incidents',
   });
 
   const exportMutation = useMutation({
@@ -257,11 +300,12 @@ export default function AdminPageEnhanced() {
 
           {/* Tab Navigation */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-5">
+            <TabsList className="grid w-full grid-cols-6">
               <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
               <TabsTrigger value="users" data-testid="tab-users">Users</TabsTrigger>
               <TabsTrigger value="sessions" data-testid="tab-sessions">Sessions</TabsTrigger>
               <TabsTrigger value="trial-leads" data-testid="tab-trial-leads">Trial Leads</TabsTrigger>
+              <TabsTrigger value="safety-incidents" data-testid="tab-safety-incidents">Safety</TabsTrigger>
               <TabsTrigger value="usage" data-testid="tab-usage">Usage</TabsTrigger>
             </TabsList>
 
@@ -692,6 +736,118 @@ export default function AdminPageEnhanced() {
                               size="sm"
                               onClick={() => setTrialLeadsPage(p => Math.min(trialLeadsData.totalPages, p + 1))}
                               disabled={trialLeadsPage >= trialLeadsData.totalPages}
+                            >
+                              Next
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* Safety Incidents Tab */}
+            <TabsContent value="safety-incidents" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Shield className="h-5 w-5" />
+                    Safety Incidents
+                  </CardTitle>
+                  <CardDescription>
+                    Review flagged sessions and safety-related incidents ({safetyIncidentsData?.total || 0} total)
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {safetyIncidentsLoading ? (
+                    <div className="flex justify-center py-8">
+                      <div className="animate-spin w-6 h-6 border-4 border-primary border-t-transparent rounded-full" />
+                    </div>
+                  ) : (
+                    <>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Type</TableHead>
+                            <TableHead>Severity</TableHead>
+                            <TableHead>Trigger Text</TableHead>
+                            <TableHead>Action</TableHead>
+                            <TableHead>Notified</TableHead>
+                            <TableHead>Date</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {safetyIncidentsData?.incidents?.map((incident) => (
+                            <TableRow key={incident.id} data-testid={`safety-incident-row-${incident.id}`}>
+                              <TableCell className="font-medium">
+                                <div className="flex items-center gap-2">
+                                  <AlertTriangle className={`h-4 w-4 ${
+                                    incident.severity === 'critical' ? 'text-red-500' :
+                                    incident.severity === 'alert' ? 'text-orange-500' :
+                                    incident.severity === 'warning' ? 'text-yellow-500' :
+                                    'text-blue-500'
+                                  }`} />
+                                  {incident.flagType.replace(/_/g, ' ')}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant={
+                                  incident.severity === 'critical' ? 'destructive' :
+                                  incident.severity === 'alert' ? 'default' :
+                                  incident.severity === 'warning' ? 'secondary' : 'outline'
+                                }>
+                                  {incident.severity}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="max-w-xs truncate" title={incident.triggerText || ''}>
+                                {incident.triggerText ? incident.triggerText.substring(0, 50) + (incident.triggerText.length > 50 ? '...' : '') : '-'}
+                              </TableCell>
+                              <TableCell>
+                                <span className="text-xs text-muted-foreground">{incident.actionTaken || '-'}</span>
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex gap-1">
+                                  {incident.adminNotified && <Badge variant="outline" className="text-xs">Admin</Badge>}
+                                  {incident.parentNotified && <Badge variant="outline" className="text-xs">Parent</Badge>}
+                                  {!incident.adminNotified && !incident.parentNotified && <span className="text-muted-foreground">-</span>}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                {incident.createdAt ? new Date(incident.createdAt).toLocaleString() : '-'}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                          {(!safetyIncidentsData?.incidents || safetyIncidentsData.incidents.length === 0) && (
+                            <TableRow>
+                              <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                                No safety incidents recorded
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </TableBody>
+                      </Table>
+                      
+                      {safetyIncidentsData && safetyIncidentsData.totalPages > 1 && (
+                        <div className="flex justify-between items-center mt-4">
+                          <p className="text-sm text-muted-foreground">
+                            Page {safetyIncidentsData.page} of {safetyIncidentsData.totalPages}
+                          </p>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setSafetyIncidentsPage(p => Math.max(1, p - 1))}
+                              disabled={safetyIncidentsPage === 1}
+                            >
+                              Previous
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setSafetyIncidentsPage(p => Math.min(safetyIncidentsData.totalPages, p + 1))}
+                              disabled={safetyIncidentsPage >= safetyIncidentsData.totalPages}
                             >
                               Next
                             </Button>
