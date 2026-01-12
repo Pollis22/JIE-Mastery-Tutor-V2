@@ -177,6 +177,22 @@ export function useCustomVoice() {
   const isProcessingRef = useRef<boolean>(false);
   
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // SESSION ACTIVE FLAG - Hard stop for audio when session ends
+  // Set to false on session_ended to immediately stop all audio sending
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  const isSessionActiveRef = useRef<boolean>(false);
+  
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // SILENT AUDIO WATCHDOG - Detects when mic produces all zeros
+  // Triggers recovery if audio is silent for too long while track is "live"
+  // Uses time-based approach (ms) instead of frame counting for accuracy
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  const silentSinceTimestampRef = useRef<number>(0); // When silence started (0 = not silent)
+  const lastRecoveryCooldownRef = useRef<number>(0); // Prevent recovery spam
+  const SILENT_WATCHDOG_THRESHOLD_MS = 3000; // 3 seconds of all-zero audio
+  const RECOVERY_COOLDOWN_MS = 10000; // 10 second cooldown between recoveries
+  
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // ADAPTIVE BARGE-IN STATE (Feature flag: BARGE_IN_ADAPTIVE_ENABLED)
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   const adaptiveBargeInEnabledRef = useRef<boolean>(false); // Set from server config
@@ -639,6 +655,11 @@ export function useCustomVoice() {
             console.log("[Custom Voice] ✅ Session ready");
             setIsConnected(true);
             
+            // Mark session as active - enables audio processing
+            isSessionActiveRef.current = true;
+            silentSinceTimestampRef.current = 0; // Reset silent watchdog
+            console.log("[Custom Voice] 🟢 Session marked ACTIVE");
+            
             // Only start microphone if student mic is enabled
             if (micEnabledRef.current) {
               console.log("[Custom Voice] 🎤 Starting microphone (Voice mode)");
@@ -761,6 +782,38 @@ export function useCustomVoice() {
             console.log("[Custom Voice] Session ID:", message.sessionId);
             console.log("[Custom Voice] Reason:", message.reason);
             console.log("[Custom Voice] Transcript length:", message.transcriptLength);
+            
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            // HARD STOP: Immediately stop all audio capture and sending
+            // This prevents "Cannot forward audio" spam after session ends
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            console.log("[Custom Voice] 🛑 HARD STOP: Stopping audio capture immediately");
+            isSessionActiveRef.current = false;
+            
+            // CRITICAL: Set cleanup flag BEFORE stopping tracks to prevent
+            // track.onended from triggering false recovery attempts
+            streamCleanupTriggeredRef.current = true;
+            
+            // Stop mic tracks immediately
+            if (mediaStreamRef.current) {
+              mediaStreamRef.current.getTracks().forEach(track => {
+                track.stop();
+                console.log("[Custom Voice] ⏸️ Stopped track on session_ended:", track.kind);
+              });
+              mediaStreamRef.current = null;
+            }
+            
+            // Disconnect audio worklet/processor
+            if (processorRef.current) {
+              try {
+                processorRef.current.disconnect();
+                console.log("[Custom Voice] 🔌 Disconnected audio processor on session_ended");
+              } catch (e) { /* ignore */ }
+              processorRef.current = null;
+            }
+            
+            // Reset silent watchdog
+            silentSinceTimestampRef.current = 0;
             
             // Show notification if session ended due to inactivity
             if (message.reason === 'inactivity_timeout') {
@@ -1613,6 +1666,11 @@ registerProcessor('audio-processor', AudioProcessor);
         const POST_INTERRUPTION_BUFFER_MS = 2000; // After barge-in, ignore speech-end events for 2s
 
         processor.onaudioprocess = (e) => {
+          // HARD STOP: Don't process audio if session has ended
+          if (!isSessionActiveRef.current) {
+            return;
+          }
+          
           if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
 
           // Check if media stream is still active - trigger recovery if died
@@ -1635,12 +1693,55 @@ registerProcessor('audio-processor', AudioProcessor);
           // Calculate RMS for VAD
           let sumSquares = 0;
           let maxAmplitude = 0;
+          let hasNonZeroSample = false;
           for (let i = 0; i < inputData.length; i++) {
             const amplitude = Math.abs(inputData[i]);
             sumSquares += inputData[i] * inputData[i];
             if (amplitude > maxAmplitude) maxAmplitude = amplitude;
+            if (inputData[i] !== 0) hasNonZeroSample = true;
           }
           const rms = Math.sqrt(sumSquares / inputData.length);
+          
+          // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          // SILENT AUDIO WATCHDOG: Detect dead mic producing all zeros
+          // Uses time-based approach for accuracy regardless of buffer size
+          // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          const watchdogNow = Date.now();
+          if (!hasNonZeroSample && maxAmplitude === 0) {
+            // Start or continue silence timer
+            if (silentSinceTimestampRef.current === 0) {
+              silentSinceTimestampRef.current = watchdogNow;
+            }
+            
+            const silentDurationMs = watchdogNow - silentSinceTimestampRef.current;
+            
+            // Log every ~1.5s to avoid spam
+            if (silentDurationMs > 0 && silentDurationMs % 1500 < 150) {
+              const track = mediaStreamRef.current?.getAudioTracks()[0];
+              console.warn(`[Custom Voice] ⚠️ Audio buffer is COMPLETELY SILENT (all zeros) - ${Math.floor(silentDurationMs / 1000)}s`, {
+                trackState: track?.readyState,
+                trackEnabled: track?.enabled,
+                trackMuted: track?.muted,
+                streamActive: mediaStreamRef.current?.active
+              });
+            }
+            
+            // Trigger recovery if silent for 3+ seconds and outside cooldown
+            if (silentDurationMs >= SILENT_WATCHDOG_THRESHOLD_MS &&
+                watchdogNow - lastRecoveryCooldownRef.current > RECOVERY_COOLDOWN_MS) {
+              const track = mediaStreamRef.current?.getAudioTracks()[0];
+              console.error('[Custom Voice] ❌ SILENT AUDIO WATCHDOG: Mic producing all zeros for 3s+, triggering recovery');
+              console.error('[Custom Voice] Track state:', track?.readyState, 'enabled:', track?.enabled);
+              lastRecoveryCooldownRef.current = watchdogNow;
+              silentSinceTimestampRef.current = 0; // Reset timer
+              attemptMicRecovery();
+            }
+          } else {
+            // Reset timer on non-silent audio
+            if (silentSinceTimestampRef.current !== 0) {
+              silentSinceTimestampRef.current = 0;
+            }
+          }
 
           // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
           // RESPONSIVE VAD with ECHO PROTECTION for ScriptProcessor fallback
@@ -2213,10 +2314,15 @@ registerProcessor('audio-processor', AudioProcessor);
     
     disconnectInProgress.current = true;
     
+    // IMMEDIATELY mark session as inactive to stop all audio processing
+    isSessionActiveRef.current = false;
+    silentSinceTimestampRef.current = 0;
+    
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     console.log("[Custom Voice] 🛑 DISCONNECT CALLED");
     console.log("[Custom Voice] Session ID:", sessionId);
     console.log("[Custom Voice] WebSocket state:", wsRef.current?.readyState);
+    console.log("[Custom Voice] Session marked INACTIVE");
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     
     // Capture current WebSocket instance to prevent issues if wsRef changes during async ops
