@@ -40,6 +40,13 @@ export function Footer() {
               Why JIE Mastery AI
             </button>
             <button
+              onClick={() => setLocation("/offer")}
+              className="text-muted-foreground hover:text-foreground transition-colors text-sm"
+              data-testid="link-offers"
+            >
+              Offers
+            </button>
+            <button
               onClick={() => setLocation("/pricing")}
               className="text-muted-foreground hover:text-foreground transition-colors text-sm"
               data-testid="link-pricing"

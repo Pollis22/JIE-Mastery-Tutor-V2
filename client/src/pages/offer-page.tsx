@@ -95,6 +95,9 @@ export default function OfferPage() {
               <button onClick={() => navigateTo("/benefits")} className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-nav-benefits">
                 Benefits
               </button>
+              <button onClick={() => navigateTo("/offer")} className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-nav-offers">
+                Offers
+              </button>
               <button onClick={() => navigateTo("/pricing")} className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-nav-pricing">
                 Pricing
               </button>
@@ -125,6 +128,7 @@ export default function OfferPage() {
           {mobileMenuOpen && (
             <div className="md:hidden border-t border-border py-4 space-y-3">
               <button onClick={() => navigateTo("/benefits")} className="block w-full text-left py-2 text-muted-foreground hover:text-foreground">Benefits</button>
+              <button onClick={() => navigateTo("/offer")} className="block w-full text-left py-2 text-muted-foreground hover:text-foreground">Offers</button>
               <button onClick={() => navigateTo("/pricing")} className="block w-full text-left py-2 text-muted-foreground hover:text-foreground">Pricing</button>
               <button onClick={() => navigateTo("/demo")} className="block w-full text-left py-2 text-muted-foreground hover:text-foreground">How It Works</button>
               <button onClick={() => navigateTo("/faq")} className="block w-full text-left py-2 text-muted-foreground hover:text-foreground">FAQ</button>

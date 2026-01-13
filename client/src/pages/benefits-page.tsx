@@ -62,6 +62,9 @@ export default function BenefitsPage() {
               <button onClick={() => setLocation("/contact")} className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-nav-contact">
                 Contact
               </button>
+              <button onClick={() => setLocation("/offer")} className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-nav-offers">
+                Offers
+              </button>
               <button onClick={handlePricing} className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-nav-pricing">
                 Pricing
               </button>

@@ -54,6 +54,13 @@ export default function FAQPage() {
               </Button>
               <Button 
                 variant="ghost" 
+                onClick={() => setLocation("/offer")} 
+                data-testid="button-nav-offers"
+              >
+                Offers
+              </Button>
+              <Button 
+                variant="ghost" 
                 onClick={() => setLocation("/pricing")} 
                 data-testid="button-nav-pricing"
               >
