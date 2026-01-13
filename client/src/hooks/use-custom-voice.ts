@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { VOICE_TIMING, VOICE_THRESHOLDS, VOICE_MESSAGES, EXCLUDED_DEVICE_PATTERNS, ADAPTIVE_BARGE_IN, GradeBandType } from "@/config/voice-constants";
+import { VOICE_TIMING, VOICE_THRESHOLDS, VOICE_MESSAGES, EXCLUDED_DEVICE_PATTERNS, ADAPTIVE_BARGE_IN, GradeBandType, TURN_TAKING_FLAGS, FILLER_WORDS } from "@/config/voice-constants";
 import { voiceLogger } from "@/utils/voice-logger";
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -61,6 +61,63 @@ function getBargeInConfig(gradeBand: string | null): { adaptiveRatio: number; mi
   if (!gradeBand) return ADAPTIVE_BARGE_IN.DEFAULT;
   const normalized = gradeBand.toUpperCase().replace(/[^A-Z0-9-]/g, '') as GradeBandType;
   return ADAPTIVE_BARGE_IN.GRADE_BANDS[normalized] || ADAPTIVE_BARGE_IN.DEFAULT;
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// TURN-TAKING HELPERS (Jan 2026)
+// Fix ghost turns and interruption gating
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// A) Single truth function for tutor speaking state
+interface TutorSpeakingState {
+  isTutorSpeakingFlag: boolean;
+  isPlayingFlag: boolean;
+  audioQueueSize: number;
+  scheduledSourcesCount: number;
+}
+
+function isTutorActuallySpeaking(state: TutorSpeakingState): boolean {
+  return Boolean(
+    state.isTutorSpeakingFlag ||
+    state.isPlayingFlag ||
+    state.audioQueueSize > 0 ||
+    state.scheduledSourcesCount > 0
+  );
+}
+
+// C) Ghost turn guardrails - check if text is valid student turn
+function isValidStudentTurn(text: string, lastFinalTranscript: string, lastFinalTimestamp: number): { valid: boolean; reason: string } {
+  if (!TURN_TAKING_FLAGS.GHOST_GUARD_ENABLED) {
+    return { valid: true, reason: 'guard_disabled' };
+  }
+  
+  const trimmed = text.trim().toLowerCase();
+  
+  // C1) Minimum content guard
+  if (trimmed.length < TURN_TAKING_FLAGS.MIN_TURN_CHARS) {
+    return { valid: false, reason: 'min_content' };
+  }
+  
+  // Check if only punctuation
+  if (/^[.,!?;:\-'"()[\]{}]+$/.test(trimmed)) {
+    return { valid: false, reason: 'punctuation_only' };
+  }
+  
+  // Check if only filler words
+  const words = trimmed.split(/\s+/).filter(w => w.length > 0);
+  const nonFillerWords = words.filter(w => !FILLER_WORDS.includes(w as any));
+  if (nonFillerWords.length === 0 && words.length > 0) {
+    return { valid: false, reason: 'filler_only' };
+  }
+  
+  // C2) Duplicate transcript guard
+  const now = Date.now();
+  if (trimmed === lastFinalTranscript.trim().toLowerCase() && 
+      (now - lastFinalTimestamp) < TURN_TAKING_FLAGS.DUPLICATE_WINDOW_MS) {
+    return { valid: false, reason: 'duplicate' };
+  }
+  
+  return { valid: true, reason: 'valid' };
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1325,16 +1382,32 @@ registerProcessor('audio-processor', AudioProcessor);
               updateBaseline(baselineStateRef.current, rms, ADAPTIVE_BARGE_IN.COMMON.BASELINE_WINDOW_MS);
             }
             
+            // A) Check tutor speaking state using single truth function
+            const tutorState: TutorSpeakingState = {
+              isTutorSpeakingFlag: isTutorSpeakingRef.current,
+              isPlayingFlag: isPlayingRef.current,
+              audioQueueSize: audioQueueRef.current.length,
+              scheduledSourcesCount: scheduledSourcesRef.current.length
+            };
+            const tutorActuallySpeaking = isTutorActuallySpeaking(tutorState);
+            
             // If tutor is currently speaking, we need confidence that this is
             // the USER speaking and not just echo from the speakers
-            if (isTutorSpeakingRef.current && isPlayingRef.current) {
+            if (tutorActuallySpeaking) {
               const timeSincePlayback = now - lastAudioPlaybackStartRef.current;
               
-              // Skip VAD for 300ms after tutor audio starts (reduced from 500ms for faster response)
-              if (timeSincePlayback < 300) {
-                console.log(`[Custom Voice] ⏱️ VAD cooldown active (${(300 - timeSincePlayback).toFixed(0)}ms) - ignoring speech`);
+              // B) Barge-in path: use much shorter cooldown (or bypass entirely)
+              const cooldownMs = TURN_TAKING_FLAGS.BARGE_IN_COOLDOWN_BYPASS_ENABLED 
+                ? TURN_TAKING_FLAGS.BARGE_IN_MAX_COOLDOWN_MS 
+                : 300;
+              
+              if (timeSincePlayback < cooldownMs) {
+                console.log(`[Custom Voice] ⏱️ VAD barge-in cooldown (${(cooldownMs - timeSincePlayback).toFixed(0)}ms) - waiting`);
                 return;
               }
+              
+              // Log barge-in evaluation for debugging
+              console.log(`[Custom Voice] 🎯 barge_in_eval: tutorActuallySpeaking=${tutorActuallySpeaking}, isPlaying=${isPlayingRef.current}, queueSize=${audioQueueRef.current.length}, scheduledSources=${scheduledSourcesRef.current.length}`);
 
               // Get grade-specific config for adaptive thresholds
               const bargeInCfg = getBargeInConfig(gradeBandRef.current);

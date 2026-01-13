@@ -75,3 +75,34 @@ export const EXCLUDED_DEVICE_PATTERNS = [
   'virtual',
   'cable',
 ] as const;
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// TURN-TAKING FEATURE FLAGS (Jan 2026)
+// Fine-tune voice turn-taking reliability
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+export const TURN_TAKING_FLAGS = {
+  // Ghost turn guardrails - blocks empty/junk turns from reaching LLM
+  GHOST_GUARD_ENABLED: true,
+  
+  // Bypass cooldown for barge-in when tutor is speaking
+  BARGE_IN_COOLDOWN_BYPASS_ENABLED: true,
+  
+  // Post-utterance grace period for turn coalescing
+  POST_UTTERANCE_GRACE_ENABLED: true,
+  POST_UTTERANCE_GRACE_MS: 450,
+  
+  // Minimum characters for a valid student turn
+  MIN_TURN_CHARS: 3,
+  
+  // Minimum sustained speech for barge-in during tutor playback (ms)
+  MIN_BARGEIN_SPEECH_MS: 250,
+  
+  // Maximum cooldown for barge-in path (ms) - much shorter than student turn cooldown
+  BARGE_IN_MAX_COOLDOWN_MS: 50,
+  
+  // Duplicate transcript detection window (ms)
+  DUPLICATE_WINDOW_MS: 2000,
+} as const;
+
+// Filler words to ignore when checking for content
+export const FILLER_WORDS = ['um', 'uh', 'hmm', 'hm', 'ah', 'er', 'like', 'you know'] as const;

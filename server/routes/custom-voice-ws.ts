@@ -75,6 +75,70 @@ console.log('[STT] USE_ASSEMBLYAI flag:', USE_ASSEMBLYAI);
 console.log(`[STT] Provider: ${USE_ASSEMBLYAI ? 'AssemblyAI Universal-Streaming' : 'Deepgram Nova-2'}`);
 
 // ============================================
+// TURN-TAKING FEATURE FLAGS (Jan 2026)
+// Fine-tune voice turn-taking reliability
+// ============================================
+const TURN_TAKING_FLAGS = {
+  GHOST_GUARD_ENABLED: true,
+  POST_UTTERANCE_GRACE_ENABLED: true,
+  POST_UTTERANCE_GRACE_MS: 450,
+  MIN_TURN_CHARS: 3,
+  DUPLICATE_WINDOW_MS: 2000,
+};
+
+const FILLER_WORDS = ['um', 'uh', 'hmm', 'hm', 'ah', 'er', 'like', 'you know'];
+
+// Ghost-turn guardrails - check if text is valid student turn
+function isValidStudentTurn(
+  text: string, 
+  lastFinalTranscript: string, 
+  lastFinalTimestamp: number,
+  isTutorSpeaking: boolean
+): { valid: boolean; reason: string } {
+  if (!TURN_TAKING_FLAGS.GHOST_GUARD_ENABLED) {
+    return { valid: true, reason: 'guard_disabled' };
+  }
+  
+  const trimmed = text.trim().toLowerCase();
+  
+  // C1) Minimum content guard
+  if (trimmed.length < TURN_TAKING_FLAGS.MIN_TURN_CHARS) {
+    return { valid: false, reason: 'min_content' };
+  }
+  
+  // Check if empty
+  if (trimmed.length === 0) {
+    return { valid: false, reason: 'empty' };
+  }
+  
+  // Check if only punctuation
+  if (/^[.,!?;:\-'"()[\]{}]+$/.test(trimmed)) {
+    return { valid: false, reason: 'punctuation_only' };
+  }
+  
+  // Check if only filler words
+  const words = trimmed.split(/\s+/).filter(w => w.length > 0);
+  const nonFillerWords = words.filter(w => !FILLER_WORDS.includes(w));
+  if (nonFillerWords.length === 0 && words.length > 0) {
+    return { valid: false, reason: 'filler_only' };
+  }
+  
+  // C2) Duplicate transcript guard
+  const now = Date.now();
+  if (trimmed === lastFinalTranscript.trim().toLowerCase() && 
+      (now - lastFinalTimestamp) < TURN_TAKING_FLAGS.DUPLICATE_WINDOW_MS) {
+    return { valid: false, reason: 'duplicate' };
+  }
+  
+  // C3) Playback contamination guard - require stronger evidence during tutor playback
+  if (isTutorSpeaking && trimmed.length < 5) {
+    return { valid: false, reason: 'playback_contamination' };
+  }
+  
+  return { valid: true, reason: 'valid' };
+}
+
+// ============================================
 // ASSEMBLYAI UNIVERSAL-STREAMING (RFC APPROVED)
 // Semantic turn detection for natural conversation flow
 // ============================================
@@ -541,6 +605,9 @@ interface SessionState {
   sessionStartTime: number;
   lastPersisted: number;
   lastTranscript: string; // FIX #1A: Track last transcript to avoid duplicates
+  lastTranscriptTimestamp: number; // TURN-TAKING: Timestamp of last final transcript
+  postUtteranceGraceTimer: NodeJS.Timeout | null; // TURN-TAKING: Post-utterance grace period timer
+  pendingUtterance: string; // TURN-TAKING: Accumulated utterance during grace period
   violationCount: number; // Track content violations in this session
   isSessionEnded: boolean; // Flag to prevent further processing after termination
   isTutorSpeaking: boolean; // PACING FIX: Track if tutor is currently speaking
@@ -1086,6 +1153,9 @@ export function setupCustomVoiceWebSocket(server: Server) {
       sessionStartTime: Date.now(),
       lastPersisted: Date.now(),
       lastTranscript: "", // FIX #1A: Initialize duplicate tracker
+      lastTranscriptTimestamp: 0, // TURN-TAKING: Initialize timestamp
+      postUtteranceGraceTimer: null, // TURN-TAKING: No grace timer initially
+      pendingUtterance: '', // TURN-TAKING: No pending utterance initially
       tutorAudioEnabled: true, // MODE: Default to audio enabled
       studentMicEnabled: true, // MODE: Default to mic enabled
       violationCount: 0, // Initialize violation counter
@@ -2676,6 +2746,89 @@ CRITICAL INSTRUCTIONS:
                     state.isTutorSpeaking = false;
                   }
                   
+                  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                  // C) GHOST-TURN GUARDRAILS: Block invalid turns (Jan 2026)
+                  // Prevents empty/junk/duplicate transcripts from reaching LLM
+                  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                  const turnValidation = isValidStudentTurn(
+                    text, 
+                    state.lastTranscript, 
+                    state.lastTranscriptTimestamp,
+                    state.isTutorSpeaking
+                  );
+                  
+                  if (!turnValidation.valid) {
+                    console.log(`[TurnGuard] 🚫 turn_dropped: reason=${turnValidation.reason}, text="${text.substring(0, 40)}...", tutorSpeaking=${state.isTutorSpeaking}`);
+                    return; // Don't process this transcript
+                  }
+                  
+                  // Update tracking for duplicate detection
+                  state.lastTranscript = text;
+                  state.lastTranscriptTimestamp = Date.now();
+                  
+                  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                  // D) POST-UTTERANCE GRACE: Coalesce rapid follow-ups (Jan 2026)
+                  // Wait briefly to catch "one more thought" additions
+                  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                  if (TURN_TAKING_FLAGS.POST_UTTERANCE_GRACE_ENABLED) {
+                    // If there's already a pending utterance, coalesce
+                    if (state.postUtteranceGraceTimer) {
+                      clearTimeout(state.postUtteranceGraceTimer);
+                      state.pendingUtterance = text; // Replace with latest complete utterance
+                      console.log(`[TurnGuard] 🔗 grace_coalesce: appending to pending turn`);
+                    } else {
+                      state.pendingUtterance = text;
+                    }
+                    
+                    // Start/reset grace timer
+                    state.postUtteranceGraceTimer = setTimeout(() => {
+                      const finalText = state.pendingUtterance;
+                      state.postUtteranceGraceTimer = null;
+                      state.pendingUtterance = '';
+                      
+                      if (finalText.trim().length > 0) {
+                        console.log(`[TurnGuard] ✅ grace_expired: firing with "${finalText.substring(0, 40)}..."`);
+                        processValidTurn(finalText, endOfTurn, confidence);
+                      }
+                    }, TURN_TAKING_FLAGS.POST_UTTERANCE_GRACE_MS);
+                    
+                    return; // Wait for grace period to expire
+                  }
+                  
+                  // No grace period - process immediately
+                  processValidTurn(text, endOfTurn, confidence);
+                },
+                (error) => {
+                  console.error('[AssemblyAI] ❌ Error:', error);
+                  ws.send(JSON.stringify({ type: "error", error: "Voice recognition error: " + error }));
+                },
+                (sessionId) => {
+                  console.log('[AssemblyAI] 🎬 Session started:', sessionId);
+                },
+                async () => {
+                  console.log('[AssemblyAI] 🔌 Connection closed');
+                  if (state.sessionId && state.transcript.length > 0) {
+                    await persistTranscript(state.sessionId, state.transcript);
+                  }
+                  
+                  // Auto-reconnect if session is still active
+                  if (!state.isSessionEnded && state.sessionId) {
+                    console.warn('[AssemblyAI] ⚠️ Unexpected close - attempting reconnect');
+                    state.isReconnecting = true;
+                    reconnectAttempts++;
+                    
+                    if (reconnectAttempts > 3) {
+                      console.error('[AssemblyAI] ❌ Max reconnect attempts reached');
+                      state.isReconnecting = false;
+                      ws.send(JSON.stringify({ type: "error", error: "Voice connection lost. Please restart." }));
+                      return;
+                    }
+                    
+                    // Rest of reconnection logic...
+              );
+              
+              // Helper function to process valid turns through the turn policy
+              const processValidTurn = (text: string, endOfTurn: boolean, confidence: number) => {
                   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                   // K2 TURN POLICY: Evaluate whether to fire Claude
                   // For K-2 students, detect hesitation and wait for complete thought
