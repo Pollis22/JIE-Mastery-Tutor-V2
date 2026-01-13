@@ -61,6 +61,7 @@ import {
   createBaselineState,
   updateBaseline,
   type BaselineState,
+  type BargeInEvalResult,
 } from "../services/adaptive-barge-in";
 
 // ============================================
@@ -2213,13 +2214,15 @@ export function setupCustomVoiceWebSocket(server: Server) {
                     console.log(`[Custom Voice] ✅ Loaded ${chunks.length} chunks from ${documents.length} documents`);
                     
                     // Format chunks as content strings grouped by document
+                    // IMPORTANT: Use [Document: filename] format to match regex in ai-service.ts
                     const documentContents: string[] = [];
                     for (const doc of documents) {
                       const docChunks = chunks
                         .filter(c => c.documentId === doc.id)
                         .sort((a, b) => a.chunkIndex - b.chunkIndex); // Ensure correct chunk order
                       if (docChunks.length > 0) {
-                        const content = `📄 ${doc.title || doc.originalName}\n${docChunks.map(c => c.content).join('\n\n')}`;
+                        const filename = doc.originalName || doc.title || 'unknown';
+                        const content = `[Document: ${filename}]\n${docChunks.map(c => c.content).join('\n\n')}`;
                         documentContents.push(content);
                       }
                     }
@@ -3604,6 +3607,32 @@ CRITICAL INSTRUCTIONS:
                   
                   console.log(`[Custom Voice] ✅ Added document to session context (${chunks.length} chunks)`);
                   
+                  // CRITICAL: Rebuild system instruction to include the new document
+                  // This ensures the AI knows about the document on subsequent turns
+                  const personality = getTutorPersonality(state.ageGroup);
+                  const docTitles = state.uploadedDocuments.map((doc, i) => {
+                    const titleMatch = doc.match(/^\[Document: ([^\]]+)\]/);
+                    return titleMatch ? titleMatch[1] : `Document ${i + 1}`;
+                  });
+                  
+                  // Update system instruction with document awareness
+                  state.systemInstruction = `${personality.systemPrompt}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📚 UPLOADED DOCUMENTS FOR THIS SESSION:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+The student has uploaded ${state.uploadedDocuments.length} document(s): ${docTitles.join(', ')}
+
+CRITICAL INSTRUCTIONS:
+✅ When asked "do you see my document?" ALWAYS respond: "Yes! I can see your ${docTitles[docTitles.length - 1]}"
+✅ Reference specific content from the documents to prove you can see them
+✅ Help with the specific homework/problems in their uploaded materials
+✅ Use phrases like "Looking at your document..." or "In ${docTitles[docTitles.length - 1]}..."
+✅ The document content is available in the conversation context
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+                  
+                  console.log(`[Custom Voice] 📚 System instruction updated with ${state.uploadedDocuments.length} documents`);
+                  
                   // Send acknowledgment via voice
                   const ackMessage = `Great! I can now see "${message.filename}". What would you like to know about it?`;
                   
@@ -3717,17 +3746,26 @@ CRITICAL INSTRUCTIONS:
             // Server-side logging for client barge-in events
             if (isAdaptiveBargeInEnabled() && message.evaluation) {
               const eval_ = message.evaluation;
-              logBargeInEval({
-                sessionId: state.sessionId,
-                gradeBand: normalizeGradeBand(state.ageGroup || 'G6-8'),
-                inputEnergy: eval_.inputEnergy || 0,
-                baselineRms: eval_.baselineRms || 0,
-                ratio: eval_.ratio || 0,
-                threshold: eval_.threshold || 0,
-                outcome: eval_.outcome || 'rejected',
-                duckGain: eval_.duckGain,
-                confirmWindowMs: eval_.confirmWindowMs,
-              });
+              // Build BargeInEvalResult object from client event data
+              const bargeInResult: BargeInEvalResult = {
+                triggered: eval_.outcome === 'confirmed' || eval_.outcome === 'ducked',
+                adaptiveTriggered: eval_.outcome === 'confirmed' || eval_.outcome === 'ducked',
+                absoluteTriggered: false,
+                reason: eval_.outcome || 'unknown',
+                rms: eval_.inputEnergy || 0,
+                peak: eval_.inputEnergy || 0,
+                baseline: eval_.baselineRms || 0,
+                adaptiveThreshold: eval_.threshold || 0,
+              };
+              logBargeInEval(
+                state.sessionId,
+                normalizeGradeBand(state.ageGroup || 'G6-8'),
+                'tutoring' as ActivityMode, // Default activity mode
+                bargeInResult,
+                eval_.duckGain !== undefined, // duckApplied
+                eval_.outcome === 'confirmed', // confirmedInterrupt
+                eval_.outcome === 'confirmed' || eval_.outcome === 'ducked' // stoppedPlayback
+              );
             }
             break;
           
