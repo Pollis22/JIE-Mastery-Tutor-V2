@@ -11,7 +11,15 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { Download, Users, Clock, Activity, TrendingUp, FileText, DollarSign, Mail, Shield, AlertTriangle, Eye } from "lucide-react";
+import { Download, Users, Clock, Activity, TrendingUp, FileText, DollarSign, Mail, Shield, AlertTriangle, Eye, BarChart3, Calendar } from "lucide-react";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+
+interface PageViewsStats {
+  todayCount: number;
+  thisMonthViews: number;
+  lastMonthViews: number;
+  monthlyHistory: Array<{ month: string; label: string; views: number }>;
+}
 
 interface AdminStats {
   totalUsers?: number;
@@ -160,7 +168,7 @@ export default function AdminPageEnhanced() {
     enabled: !!user?.isAdmin,
   });
 
-  const { data: pageViewsStats } = useQuery<{ todayCount: number }>({
+  const { data: pageViewsStats } = useQuery<PageViewsStats>({
     queryKey: ["/api/admin/page-views-stats"],
     enabled: !!user?.isAdmin,
   });
@@ -316,8 +324,8 @@ export default function AdminPageEnhanced() {
 
             {/* Overview Tab */}
             <TabsContent value="overview" className="space-y-6">
-              {/* Key Metrics */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+              {/* Page Views Row */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium">Page Views (Today)</CardTitle>
@@ -325,7 +333,7 @@ export default function AdminPageEnhanced() {
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold" data-testid="text-page-views-today">
-                      {pageViewsStats?.todayCount || 0}
+                      {(pageViewsStats?.todayCount || 0).toLocaleString()}
                     </div>
                     <p className="text-xs text-muted-foreground">
                       Site traffic today
@@ -333,6 +341,39 @@ export default function AdminPageEnhanced() {
                   </CardContent>
                 </Card>
 
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Page Views (This Month)</CardTitle>
+                    <Calendar className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold" data-testid="text-page-views-month">
+                      {(pageViewsStats?.thisMonthViews || 0).toLocaleString()}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      vs {(pageViewsStats?.lastMonthViews || 0).toLocaleString()} last month
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Last 12 Months Total</CardTitle>
+                    <BarChart3 className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold" data-testid="text-page-views-12mo">
+                      {(pageViewsStats?.monthlyHistory?.reduce((sum, m) => sum + m.views, 0) || 0).toLocaleString()}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Total views
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Key Metrics */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium">Total Users</CardTitle>
@@ -446,6 +487,67 @@ export default function AdminPageEnhanced() {
                   </CardContent>
                 </Card>
               </div>
+
+              {/* Page Views History Chart */}
+              {pageViewsStats?.monthlyHistory && pageViewsStats.monthlyHistory.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center space-x-2">
+                      <BarChart3 className="w-5 h-5" />
+                      <span>Page Views History (Last 12 Months)</span>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <ResponsiveContainer width="100%" height={250}>
+                      <BarChart data={[...pageViewsStats.monthlyHistory].reverse()}>
+                        <XAxis 
+                          dataKey="label" 
+                          tick={{ fontSize: 11 }} 
+                          angle={-45}
+                          textAnchor="end"
+                          height={60}
+                        />
+                        <YAxis tick={{ fontSize: 11 }} />
+                        <Tooltip 
+                          formatter={(value: number) => [value.toLocaleString(), 'Views']}
+                          labelFormatter={(label) => `Month: ${label}`}
+                        />
+                        <Bar dataKey="views" fill="#dc2626" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                    
+                    {/* Monthly breakdown table */}
+                    <div className="mt-4 max-h-48 overflow-y-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Month</TableHead>
+                            <TableHead className="text-right">Views</TableHead>
+                            <TableHead className="text-right">Change</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {pageViewsStats.monthlyHistory.map((month, idx) => {
+                            const prevMonth = pageViewsStats.monthlyHistory[idx + 1];
+                            const change = prevMonth && prevMonth.views > 0
+                              ? ((month.views - prevMonth.views) / prevMonth.views * 100).toFixed(0)
+                              : null;
+                            return (
+                              <TableRow key={month.month}>
+                                <TableCell>{month.label}</TableCell>
+                                <TableCell className="text-right">{month.views.toLocaleString()}</TableCell>
+                                <TableCell className={`text-right ${Number(change) > 0 ? 'text-green-600' : Number(change) < 0 ? 'text-red-600' : ''}`}>
+                                  {change !== null ? `${Number(change) > 0 ? '+' : ''}${change}%` : '-'}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </TabsContent>
 
             {/* Users Tab */}

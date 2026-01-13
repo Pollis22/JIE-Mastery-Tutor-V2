@@ -2198,22 +2198,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Admin: Get page views stats (today count)
+  // Admin: Get page views stats (today, this month, history)
   app.get("/api/admin/page-views-stats", requireAdmin, async (req, res) => {
     try {
-      const { pageViews } = await import('@shared/schema');
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      const result = await db.execute(sql`
+      // Today's views
+      const todayResult = await db.execute(sql`
         SELECT COUNT(*) as count FROM page_views 
-        WHERE created_at >= ${today}
+        WHERE created_at >= CURRENT_DATE
+      `);
+      const todayCount = parseInt(todayResult.rows[0]?.count as string || '0', 10);
+      
+      // This month's views
+      const thisMonthResult = await db.execute(sql`
+        SELECT COUNT(*) as count FROM page_views 
+        WHERE created_at >= DATE_TRUNC('month', CURRENT_DATE)
+      `);
+      const thisMonthViews = parseInt(thisMonthResult.rows[0]?.count as string || '0', 10);
+      
+      // Last month's views
+      const lastMonthResult = await db.execute(sql`
+        SELECT COUNT(*) as count FROM page_views 
+        WHERE created_at >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')
+          AND created_at < DATE_TRUNC('month', CURRENT_DATE)
+      `);
+      const lastMonthViews = parseInt(lastMonthResult.rows[0]?.count as string || '0', 10);
+      
+      // Last 12 months breakdown
+      const historyResult = await db.execute(sql`
+        SELECT 
+          TO_CHAR(DATE_TRUNC('month', created_at), 'YYYY-MM') as month,
+          TO_CHAR(DATE_TRUNC('month', created_at), 'Mon YYYY') as label,
+          COUNT(*) as views
+        FROM page_views
+        WHERE created_at >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '11 months')
+        GROUP BY DATE_TRUNC('month', created_at)
+        ORDER BY month DESC
       `);
       
-      const todayCount = parseInt(result.rows[0]?.count as string || '0', 10);
-      res.json({ todayCount });
+      const monthlyHistory = historyResult.rows.map((row: any) => ({
+        month: row.month,
+        label: row.label,
+        views: parseInt(row.views as string || '0', 10)
+      }));
+      
+      res.json({ 
+        todayCount, 
+        thisMonthViews, 
+        lastMonthViews,
+        monthlyHistory 
+      });
     } catch (error: any) {
-      res.json({ todayCount: 0 });
+      console.error('[Admin] Error fetching page views stats:', error);
+      res.json({ todayCount: 0, thisMonthViews: 0, lastMonthViews: 0, monthlyHistory: [] });
     }
   });
 
