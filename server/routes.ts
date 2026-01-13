@@ -152,6 +152,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Page view analytics endpoint - passive, fire-and-forget, no auth required
+  app.post("/api/analytics/page-view", async (req, res) => {
+    try {
+      const { pagePath, pageTitle, sessionId, userId } = req.body;
+      
+      if (!pagePath || typeof pagePath !== 'string') {
+        return res.json({ success: false });
+      }
+      
+      const { pageViews } = await import('@shared/schema');
+      await db.insert(pageViews).values({
+        pagePath,
+        pageTitle: pageTitle || null,
+        sessionId: sessionId || null,
+        userId: userId || null,
+      });
+      
+      res.json({ success: true });
+    } catch {
+      res.json({ success: false });
+    }
+  });
+
   // Setup authentication
   setupAuth(app);
 
@@ -174,6 +197,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     '/auth/', // All auth routes (verify-email, resend-verification, etc.)
     '/unsubscribe',
     '/support', // FAQ support (public)
+    '/analytics/', // Page view tracking (public, fire-and-forget)
   ];
   
   const VERIFICATION_CUTOFF_DATE = new Date('2025-10-13');
@@ -2171,6 +2195,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(stats);
     } catch (error: any) {
       res.status(500).json({ message: "Error fetching stats: " + error.message });
+    }
+  });
+
+  // Admin: Get page views stats (today count)
+  app.get("/api/admin/page-views-stats", requireAdmin, async (req, res) => {
+    try {
+      const { pageViews } = await import('@shared/schema');
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      const result = await db.execute(sql`
+        SELECT COUNT(*) as count FROM page_views 
+        WHERE created_at >= ${today}
+      `);
+      
+      const todayCount = parseInt(result.rows[0]?.count as string || '0', 10);
+      res.json({ todayCount });
+    } catch (error: any) {
+      res.json({ todayCount: 0 });
     }
   });
 

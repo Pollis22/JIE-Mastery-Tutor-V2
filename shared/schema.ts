@@ -879,3 +879,25 @@ export const insertSafetyIncidentSchema = createInsertSchema(safetyIncidents).om
 // Safety Incident types
 export type SafetyIncident = typeof safetyIncidents.$inferSelect;
 export type InsertSafetyIncident = z.infer<typeof insertSafetyIncidentSchema>;
+
+// Page Views table - passive analytics tracking (additive only)
+export const pageViews = pgTable("page_views", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  pagePath: text("page_path").notNull(),
+  pageTitle: text("page_title"),
+  sessionId: text("session_id"),
+  userId: varchar("user_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_page_views_created_at").on(table.createdAt),
+  index("idx_page_views_page_path").on(table.pagePath),
+]);
+
+export const insertPageViewSchema = createInsertSchema(pageViews).omit({
+  id: true,
+  createdAt: true,
+});
+
+// Page View types
+export type PageView = typeof pageViews.$inferSelect;
+export type InsertPageView = z.infer<typeof insertPageViewSchema>;
