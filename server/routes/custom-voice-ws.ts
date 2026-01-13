@@ -2197,18 +2197,14 @@ export function setupCustomVoiceWebSocket(server: Server) {
                 } 
                 // Otherwise, treat them as document IDs to load from database
                 else {
-                  let documentIds = messageDocuments;
+                  const documentIds = messageDocuments;
                   
-                  // If no specific documents requested, get all user documents using authenticated userId
+                  // Only load documents that were explicitly selected by the user
+                  // Do NOT fall back to loading all user documents - respect user's selection
                   if (documentIds.length === 0) {
-                    console.log(`[Custom Voice] 📄 No specific documents provided, loading all user documents from database...`);
-                    const allUserDocs = await storage.getUserDocuments(authenticatedUserId);
-                    const readyDocs = allUserDocs.filter(doc => doc.processingStatus === 'ready');
-                    documentIds = readyDocs.map(doc => doc.id);
-                    console.log(`[Custom Voice] 📚 Found ${readyDocs.length} ready documents for user`);
-                  }
-                  
-                  if (documentIds.length > 0) {
+                    console.log(`[Custom Voice] ℹ️ No documents selected by user - proceeding without documents`);
+                    state.uploadedDocuments = [];
+                  } else if (documentIds.length > 0) {
                     console.log(`[Custom Voice] 📄 Loading ${documentIds.length} documents from database...`);
                     const { chunks, documents } = await storage.getDocumentContext(authenticatedUserId, documentIds);
                     console.log(`[Custom Voice] ✅ Loaded ${chunks.length} chunks from ${documents.length} documents`);
@@ -2229,9 +2225,6 @@ export function setupCustomVoiceWebSocket(server: Server) {
                     
                     state.uploadedDocuments = documentContents;
                     console.log(`[Custom Voice] 📚 Document context prepared: ${documentContents.length} documents, total length: ${documentContents.join('').length} chars`);
-                  } else {
-                    state.uploadedDocuments = [];
-                    console.log(`[Custom Voice] ℹ️ No documents available for this user`);
                   }
                 }
               } catch (error) {
