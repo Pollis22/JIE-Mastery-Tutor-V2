@@ -1976,8 +1976,8 @@ Summary for parent:`
 
       // Build student sections HTML
       let studentSections = '';
-      for (const [studentName, sessions] of sessionsByStudent) {
-        const studentMinutes = sessions.reduce((sum, s) => sum + s.duration, 0);
+      for (const [studentName, sessions] of Array.from(sessionsByStudent.entries())) {
+        const studentMinutes = sessions.reduce((sum: number, s: { duration: number }) => sum + s.duration, 0);
 
         let sessionList = '';
         for (const session of sessions) {
