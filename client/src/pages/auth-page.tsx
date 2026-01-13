@@ -12,7 +12,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { useEffect, useState } from "react";
-import { Eye, EyeOff, Mail, FileText, Upload, Scan, Users, TrendingUp, ChevronDown, Bot, BookOpen, Sparkles, CheckCircle, AlertCircle, Info } from "lucide-react";
+import { Eye, EyeOff, Mail, FileText, Upload, Scan, Users, TrendingUp, ChevronDown, Bot, BookOpen, Sparkles, CheckCircle, AlertCircle, Info, Play } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -639,6 +639,23 @@ export default function AuthPage() {
                 <p className="text-xl text-muted-foreground max-w-md">
                   One subscription, whole family learns. Experience personalized AI tutoring for Math, English, Science, Spanish and More with interactive voice conversations and adaptive learning paths.
                 </p>
+              </div>
+
+              {/* Free Trial CTA */}
+              <div className="flex flex-col items-center lg:items-start space-y-2" data-testid="free-trial-cta-container">
+                <div className="flex items-center gap-4">
+                  <Button 
+                    size="lg"
+                    className="bg-primary hover:bg-primary/90 text-white px-8 py-6 text-lg font-semibold rounded-lg shadow-lg"
+                    onClick={() => setLocation("/trial/verify")}
+                    data-testid="button-free-trial-hero"
+                  >
+                    <Play className="w-5 h-5 mr-2" />
+                    Try 5 Minutes Free
+                  </Button>
+                  <span className="text-muted-foreground font-medium">Get Started</span>
+                </div>
+                <p className="text-sm text-muted-foreground">No credit card needed</p>
               </div>
 
               {/* Featured Video */}
