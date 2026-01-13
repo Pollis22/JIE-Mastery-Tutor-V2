@@ -146,11 +146,11 @@ export default function OfferPage() {
             </div>
 
             <h1 className="text-3xl md:text-4xl lg:text-5xl font-extrabold tracking-tight text-foreground leading-tight" data-testid="heading-hero">
-              Voice-First AI Tutoring for Busy Families
+              AI Homework Help That Teaches Kids to Think
             </h1>
             
             <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto">
-              One subscription. The whole family learns. Real tutoring—guided conversation, not answers.
+              Online homework help for the whole family. An AI tutor for students that guides learning—not just gives answers.
             </p>
 
             <div className="bg-primary/10 border border-primary/20 rounded-xl p-4 max-w-md mx-auto" data-testid="discount-callout">
@@ -183,9 +183,9 @@ export default function OfferPage() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto">
             {[
-              { icon: <Heart className="h-6 w-6 text-primary" />, text: "Parents who want less homework stress" },
-              { icon: <BookOpen className="h-6 w-6 text-primary" />, text: "Homeschool families who want daily support" },
-              { icon: <MessageCircle className="h-6 w-6 text-primary" />, text: "Students who learn better by talking it out" }
+              { icon: <Heart className="h-6 w-6 text-primary" />, text: "Parents looking to help their child with homework" },
+              { icon: <BookOpen className="h-6 w-6 text-primary" />, text: "Homeschool families seeking an online tutor for daily support" },
+              { icon: <MessageCircle className="h-6 w-6 text-primary" />, text: "Students who learn better with guided conversation" }
             ].map((item, idx) => (
               <div key={idx} className="flex items-center gap-4 bg-background p-4 rounded-xl border" data-testid={`trust-item-${idx}`}>
                 <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
@@ -205,12 +205,12 @@ export default function OfferPage() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-5xl mx-auto">
             {[
-              { icon: <Mic className="h-5 w-5" />, title: "Voice-first tutoring", desc: "Guided conversation, not chatbots" },
+              { icon: <Mic className="h-5 w-5" />, title: "Online tutor for kids", desc: "Voice-first guided conversation" },
               { icon: <Brain className="h-5 w-5" />, title: "Builds independence", desc: "Socratic method teaches thinking" },
-              { icon: <BookOpen className="h-5 w-5" />, title: "Multiple subjects", desc: "Math, English, Science, Spanish + more" },
-              { icon: <Clock className="h-5 w-5" />, title: "Available anytime", desc: "Even nights and weekends" },
+              { icon: <BookOpen className="h-5 w-5" />, title: "Homework help for students", desc: "Math, English, Science, Spanish + more" },
+              { icon: <Clock className="h-5 w-5" />, title: "Available 24/7", desc: "AI homework help anytime you need it" },
               { icon: <Users className="h-5 w-5" />, title: "Family plans", desc: "Multiple student profiles included" },
-              { icon: <Heart className="h-5 w-5" />, title: "Parent-friendly", desc: "Supports consistent learning habits" }
+              { icon: <Heart className="h-5 w-5" />, title: "Homeschool learning support", desc: "Perfect for any curriculum" }
             ].map((item, idx) => (
               <Card key={idx} className="p-4 border shadow-sm" data-testid={`benefit-tile-${idx}`}>
                 <div className="flex items-start gap-3">
@@ -270,11 +270,11 @@ export default function OfferPage() {
           <div className="max-w-2xl mx-auto">
             <Accordion type="single" collapsible className="space-y-2">
               {[
-                { q: "Is there a free trial?", a: "Yes! You get 5 minutes of free tutoring to try it out—no credit card required. Just enter your email to start." },
-                { q: "What does the family plan include?", a: "All plans include unlimited student profiles. One subscription covers your whole family—no extra per-child fees." },
-                { q: "Does it give answers or teach?", a: "JIE Mastery uses the Socratic method to guide students through problems step-by-step. We teach thinking, not just answers." },
-                { q: "What subjects are included?", a: "Math, English, Science, and Spanish are all included. We support K-12 and college-level content." },
-                { q: "Can I cancel anytime?", a: "Absolutely. No contracts, no cancellation fees. You can cancel your subscription anytime from your account settings." }
+                { q: "Is there a free trial?", a: "Yes! You get 5 minutes of free AI tutoring to try it out—no credit card required. Just enter your email to start." },
+                { q: "What does the family plan include?", a: "All plans include unlimited student profiles. One subscription covers your whole family—perfect for homeschool tutoring or after-school help." },
+                { q: "Does it give answers or teach?", a: "JIE Mastery uses the Socratic method to guide students through problems step-by-step. It's real homework help for students—teaching thinking, not just answers." },
+                { q: "What subjects are included?", a: "Math, English, Science, and Spanish are all included. Our AI tutor for students supports K-12 and college-level content." },
+                { q: "Is this good for homeschool families?", a: "Absolutely! JIE Mastery works as an AI tutor for homeschool students, providing on-demand online homeschool tutoring that adapts to any curriculum." }
               ].map((item, idx) => (
                 <AccordionItem key={idx} value={`faq-${idx}`} className="border rounded-lg px-4" data-testid={`faq-item-${idx}`}>
                   <AccordionTrigger className="text-left font-semibold hover:no-underline">

@@ -85,7 +85,7 @@ export default function BenefitsPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-center">
             <div className="space-y-6 text-center lg:text-left">
               <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tight text-foreground leading-[1.1]" data-testid="heading-hero">
-                AI Tutor for Students — Homework & Math Help
+                Online Homework Help — AI Tutor for Students
               </h1>
               
               <p className="text-lg font-semibold text-primary bg-primary/10 px-4 py-2 rounded-lg inline-block" data-testid="text-promo-discount">
@@ -93,11 +93,11 @@ export default function BenefitsPage() {
               </p>
               
               <p className="text-xl md:text-2xl text-muted-foreground max-w-2xl mx-auto lg:mx-0">
-                Personalized AI tutoring that teaches students how to think — not just give answers.
+                Personalized AI homework help that teaches students how to think — not just give answers.
               </p>
               
               <p className="text-lg text-muted-foreground max-w-2xl mx-auto lg:mx-0">
-                Works for homeschool families and traditional students.<br />
+                An online tutor for kids in homeschool and traditional classrooms.<br />
                 Math, English, Science, Spanish & more.
               </p>
 
@@ -144,8 +144,8 @@ export default function BenefitsPage() {
       <section className="py-20 bg-card">
         <div className="container mx-auto px-4">
           <div className="text-center max-w-3xl mx-auto mb-14">
-            <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-4">Why Families Choose JIE Mastery AI Tutor</h2>
-            <p className="text-lg text-muted-foreground">Affordable online tutoring that builds real understanding.</p>
+            <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-4">Why Families Choose JIE Mastery for Homework Help</h2>
+            <p className="text-lg text-muted-foreground">Affordable AI tutoring that builds real understanding for students of all ages.</p>
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
@@ -153,22 +153,22 @@ export default function BenefitsPage() {
               {
                 icon: <GraduationCap className="h-7 w-7 text-primary" />,
                 title: "AI Tutor for Students",
-                description: "Personalized guidance that adapts to grade level and learning style."
+                description: "Personalized online homework help that adapts to grade level and learning style."
               },
               {
                 icon: <Brain className="h-7 w-7 text-primary" />,
-                title: "Homework Help Without Cheating",
-                description: "Guided explanations that build understanding and confidence."
+                title: "Help My Child With Homework",
+                description: "Guided explanations that build understanding—no answer-giving."
               },
               {
                 icon: <Home className="h-7 w-7 text-primary" />,
-                title: "Perfect for Homeschool & School",
-                description: "Works alongside any curriculum or classroom."
+                title: "Homeschool Tutor & Classroom Support",
+                description: "Online homeschool tutoring that works with any curriculum."
               },
               {
                 icon: <DollarSign className="h-7 w-7 text-primary" />,
                 title: "Affordable Online Tutoring",
-                description: "One subscription supports the whole family."
+                description: "One subscription gives your whole family AI homework help."
               }
             ].map((item, idx) => (
               <Card key={idx} className="border shadow-sm bg-background p-6 transition-all hover:shadow-md">
@@ -194,19 +194,19 @@ export default function BenefitsPage() {
       <section className="py-20 bg-muted/30">
         <div className="container mx-auto px-4">
           <div className="text-center max-w-3xl mx-auto mb-14">
-            <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-4">Personalized AI Tutoring for Every Subject</h2>
-            <p className="text-lg text-muted-foreground">Online tutoring for kids that covers all the subjects they need.</p>
+            <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-4">Homework Help for Students in Every Subject</h2>
+            <p className="text-lg text-muted-foreground">An online tutor for kids and teens covering all the subjects they need—from K-12 to college.</p>
           </div>
           
           <div className="max-w-3xl mx-auto">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {[
-                { icon: <Calculator className="h-5 w-5 text-primary" />, text: "Math homework help step-by-step" },
+                { icon: <Calculator className="h-5 w-5 text-primary" />, text: "Math homework help—step by step" },
                 { icon: <BookText className="h-5 w-5 text-primary" />, text: "English reading and writing support" },
                 { icon: <FlaskConical className="h-5 w-5 text-primary" />, text: "Science explanations made simple" },
                 { icon: <Languages className="h-5 w-5 text-primary" />, text: "Spanish practice and tutoring" },
-                { icon: <Clock className="h-5 w-5 text-primary" />, text: "AI homework help available 24/7" },
-                { icon: <Shield className="h-5 w-5 text-primary" />, text: "Safe, parent-approved content" }
+                { icon: <Clock className="h-5 w-5 text-primary" />, text: "Homeschool homework help—available 24/7" },
+                { icon: <Shield className="h-5 w-5 text-primary" />, text: "Safe, parent-approved homeschool learning support" }
               ].map((item, idx) => (
                 <div key={idx} className="flex items-center gap-4 bg-card p-4 rounded-xl border">
                   <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
@@ -276,23 +276,23 @@ export default function BenefitsPage() {
         <div className="container mx-auto px-4">
           <div className="text-center max-w-3xl mx-auto mb-14">
             <h2 className="text-3xl md:text-4xl font-bold mb-4">Trusted by Families and Students</h2>
-            <p className="text-lg text-muted-foreground">See what parents are saying about personalized AI tutoring.</p>
+            <p className="text-lg text-muted-foreground">See what parents are saying about our AI tutor for students.</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
             {[
               {
-                quote: "My child finally understands math instead of memorizing answers.",
+                quote: "My child finally understands math instead of memorizing answers. This is real homework help for students.",
                 initials: "SM",
                 role: "Parent of 4th grader"
               },
               {
-                quote: "Homework time went from stressful to productive. The AI tutor asks the right questions.",
+                quote: "As a homeschool mom, having an AI tutor for homeschool students changed everything. Homework time is now productive.",
                 initials: "JT",
                 role: "Homeschool Mom"
               },
               {
-                quote: "Way better value than private tutors at $50/hour. My kids use it every day.",
+                quote: "Way better value than private tutors at $50/hour. The AI tutor is available whenever my kids need it.",
                 initials: "RM",
                 role: "Dad of 3"
               }
@@ -376,9 +376,9 @@ export default function BenefitsPage() {
       {/* Final CTA Section */}
       <section className="py-20 bg-primary text-primary-foreground">
         <div className="container mx-auto px-4 text-center space-y-8">
-          <h2 className="text-3xl md:text-4xl font-bold">Ready to Improve Learning Today?</h2>
+          <h2 className="text-3xl md:text-4xl font-bold">Ready for Better Homework Help?</h2>
           <p className="text-lg opacity-90 max-w-2xl mx-auto">
-            Join families using personalized AI tutoring for homework help — without cheating.
+            Join families using personalized AI tutoring for homework help—teaching, not cheating.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Button size="lg" variant="secondary" onClick={handleCTA} className="text-lg h-14 px-8" data-testid="button-final-cta">
