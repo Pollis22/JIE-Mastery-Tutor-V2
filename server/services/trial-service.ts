@@ -234,6 +234,11 @@ export class TrialService {
 
       await this.sendTrialVerificationEmail(normalizedEmail, verificationToken);
 
+      // Send admin notification (non-blocking)
+      this.sendAdminTrialNotification(normalizedEmail, 'pending', TRIAL_DURATION_SECONDS / 60).catch(err => {
+        console.error('[TrialService] Failed to send admin trial notification:', err);
+      });
+
       return { ok: true };
     } catch (error: any) {
       console.error('[TrialService] Error starting trial:', error);
@@ -586,6 +591,87 @@ If you didn't request this, you can safely ignore this email.`;
       html: htmlContent,
       text: textContent,
     });
+  }
+
+  private async sendAdminTrialNotification(email: string, status: string, trialMinutes: number): Promise<void> {
+    // Admin email for trial notifications - uses existing admin email if available
+    const adminEmail = process.env.ADMIN_TRIAL_ALERT_EMAIL || process.env.ADMIN_EMAIL || 'admin@jiemastery.ai';
+    
+    const baseUrl = this.getBaseUrl();
+    const adminPanelLink = `${baseUrl}/admin`;
+    const createdAt = new Date().toLocaleString('en-US', { 
+      timeZone: 'America/New_York',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    });
+
+    console.log(`[TrialService] Sending admin trial notification to: ${adminEmail}`);
+
+    const htmlContent = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>New Free Trial Started</title>
+</head>
+<body style="margin:0;padding:20px;font-family:Arial,Helvetica,sans-serif;background-color:#f4f4f4;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr>
+<td align="center">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="background-color:#ffffff;border-radius:8px;max-width:600px;">
+<tr>
+<td style="padding:30px;">
+<h2 style="margin:0 0 20px 0;color:#dc2626;font-size:22px;">New JIE Mastery Free Trial Started</h2>
+<table role="presentation" cellpadding="8" cellspacing="0" border="0" style="margin-bottom:20px;width:100%;">
+<tr>
+<td style="color:#666;font-size:14px;width:120px;"><strong>Email:</strong></td>
+<td style="color:#333;font-size:14px;">${email}</td>
+</tr>
+<tr>
+<td style="color:#666;font-size:14px;"><strong>Status:</strong></td>
+<td style="color:#333;font-size:14px;">${status.charAt(0).toUpperCase() + status.slice(1)}</td>
+</tr>
+<tr>
+<td style="color:#666;font-size:14px;"><strong>Trial Minutes:</strong></td>
+<td style="color:#333;font-size:14px;">${trialMinutes}</td>
+</tr>
+<tr>
+<td style="color:#666;font-size:14px;"><strong>Created:</strong></td>
+<td style="color:#333;font-size:14px;">${createdAt} (ET)</td>
+</tr>
+</table>
+<p style="margin:20px 0 0 0;">
+<a href="${adminPanelLink}" style="display:inline-block;padding:10px 20px;font-size:14px;color:#ffffff;text-decoration:none;background-color:#dc2626;border-radius:4px;">View in Admin Panel</a>
+</p>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</body>
+</html>`;
+
+    const textContent = `New JIE Mastery Free Trial Started
+
+Email: ${email}
+Status: ${status.charAt(0).toUpperCase() + status.slice(1)}
+Trial Minutes: ${trialMinutes}
+Created: ${createdAt} (ET)
+
+View in Admin Panel: ${adminPanelLink}`;
+
+    await this.emailService.sendEmail({
+      to: adminEmail,
+      subject: 'New JIE Mastery Free Trial Started',
+      html: htmlContent,
+      text: textContent,
+    });
+
+    console.log(`[TrialService] Admin trial notification sent successfully`);
   }
 
   private getBaseUrl(): string {
