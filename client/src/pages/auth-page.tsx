@@ -653,6 +653,32 @@ export default function AuthPage() {
                 JIE Mastery Tutor is a voice-first AI tutoring platform designed to help students understand homework, not just complete it. Families use JIE for math homework help, homeschool support, and personalized learning across grade levels. Start instantly with a free trial — no credit card required.
               </p>
             </div>
+            
+            {/* How It Works - Static Info Block */}
+            <div className="w-full max-w-md mt-4 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-6">
+              <h3 className="font-bold text-foreground text-lg mb-4">How JIE Mastery Tutor Works</h3>
+              <ol className="space-y-3 text-sm text-foreground list-decimal list-inside">
+                <li>Start a free 5-minute trial (no credit card needed).</li>
+                <li>Ask questions by voice or text for instant homework support.</li>
+                <li>Get step-by-step tutoring for Math, English, Science, and Spanish.</li>
+              </ol>
+              
+              <h4 className="font-semibold text-foreground text-sm mt-5 mb-3">Great for Homeschool Families and Busy Parents</h4>
+              <ul className="space-y-2 text-sm text-muted-foreground">
+                <li className="flex items-start gap-2">
+                  <span className="text-primary mt-0.5">•</span>
+                  <span>One subscription, unlimited student profiles for siblings</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-primary mt-0.5">•</span>
+                  <span>Flexible minute pools shared across the whole family</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-primary mt-0.5">•</span>
+                  <span>AI tutor for students from K-12 through college</span>
+                </li>
+              </ul>
+            </div>
           </div>
 
           {/* Hero Section */}

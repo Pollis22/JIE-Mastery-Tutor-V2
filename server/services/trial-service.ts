@@ -594,8 +594,13 @@ If you didn't request this, you can safely ignore this email.`;
   }
 
   private async sendAdminTrialNotification(email: string, status: string, trialMinutes: number): Promise<void> {
-    // Admin email for trial notifications - uses existing admin email if available
-    const adminEmail = process.env.ADMIN_TRIAL_ALERT_EMAIL || process.env.ADMIN_EMAIL || 'admin@jiemastery.ai';
+    // Admin email for trial notifications - uses TRIAL_LEAD_NOTIFY_EMAIL or fallbacks
+    const adminEmail = process.env.TRIAL_LEAD_NOTIFY_EMAIL || process.env.ADMIN_TRIAL_ALERT_EMAIL || process.env.ADMIN_EMAIL;
+    
+    if (!adminEmail) {
+      console.warn('[TrialService] TRIAL_LEAD_NOTIFY_EMAIL not set - skipping admin notification');
+      return;
+    }
     
     const baseUrl = this.getBaseUrl();
     const adminPanelLink = `${baseUrl}/admin`;
