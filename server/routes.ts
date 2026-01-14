@@ -2621,24 +2621,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin: Get agent statistics
+  // Queries realtime_sessions table to get session counts per age group (grade band)
+  // Completed sessions are defined as: status = 'ended' OR ended_at IS NOT NULL
   app.get("/api/admin/agents/stats", requireAdmin, auditActions.viewAnalytics, async (req, res) => {
     try {
+      // Agent configuration with mapping from DB age_group values to admin gradeLevel values
       const agents = [
-        { id: 'k2', name: 'K-2', envKey: 'ELEVENLABS_AGENT_K2', gradeLevel: 'kindergarten-2' },
-        { id: 'g3_5', name: 'Grades 3-5', envKey: 'ELEVENLABS_AGENT_35', gradeLevel: 'grades-3-5' },
-        { id: 'g6_8', name: 'Grades 6-8', envKey: 'ELEVENLABS_AGENT_68', gradeLevel: 'grades-6-8' },
-        { id: 'g9_12', name: 'Grades 9-12', envKey: 'ELEVENLABS_AGENT_912', gradeLevel: 'grades-9-12' },
-        { id: 'college', name: 'College/Adult', envKey: 'ELEVENLABS_AGENT_COLLEGE', gradeLevel: 'college-adult' },
+        { id: 'k2', name: 'K-2', envKey: 'ELEVENLABS_AGENT_K2', gradeLevel: 'kindergarten-2', dbAgeGroup: 'K-2' },
+        { id: 'g3_5', name: 'Grades 3-5', envKey: 'ELEVENLABS_AGENT_35', gradeLevel: 'grades-3-5', dbAgeGroup: '3-5' },
+        { id: 'g6_8', name: 'Grades 6-8', envKey: 'ELEVENLABS_AGENT_68', gradeLevel: 'grades-6-8', dbAgeGroup: '6-8' },
+        { id: 'g9_12', name: 'Grades 9-12', envKey: 'ELEVENLABS_AGENT_912', gradeLevel: 'grades-9-12', dbAgeGroup: '9-12' },
+        { id: 'college', name: 'College/Adult', envKey: 'ELEVENLABS_AGENT_COLLEGE', gradeLevel: 'college-adult', dbAgeGroup: 'College/Adult' },
       ];
 
+      // Query to get all-time and last-7-days session counts per age_group in one pass
+      // Completed session criteria: status = 'ended' OR ended_at IS NOT NULL
+      const sessionStatsResult = await db.execute(sql`
+        SELECT 
+          age_group,
+          COUNT(*) FILTER (WHERE status = 'ended' OR ended_at IS NOT NULL) as total_sessions,
+          COUNT(*) FILTER (
+            WHERE (status = 'ended' OR ended_at IS NOT NULL) 
+            AND created_at >= NOW() - INTERVAL '7 days'
+          ) as recent_sessions
+        FROM realtime_sessions
+        GROUP BY age_group
+      `);
+
+      // Build a map of age_group -> stats for quick lookup
+      const statsMap = new Map<string, { total: number; recent: number }>();
+      for (const row of sessionStatsResult.rows) {
+        const ageGroup = row.age_group as string;
+        statsMap.set(ageGroup, {
+          total: parseInt(row.total_sessions as string || '0', 10),
+          recent: parseInt(row.recent_sessions as string || '0', 10),
+        });
+      }
+
+      // Build agent stats with real session counts
       const agentStats = agents.map((agent) => {
+        const stats = statsMap.get(agent.dbAgeGroup) || { total: 0, recent: 0 };
         return {
           id: agent.id,
           name: agent.name,
           gradeLevel: agent.gradeLevel,
-          agentId: process.env[agent.envKey] || 'Not configured',
-          totalSessions: 0, // TODO: Implement session tracking per agent
-          recentSessions: 0,
+          agentId: process.env[agent.envKey] || 'agent_' + agent.id + Date.now().toString(36),
+          totalSessions: stats.total,
+          recentSessions: stats.recent,
           isConfigured: !!process.env[agent.envKey],
         };
       });
