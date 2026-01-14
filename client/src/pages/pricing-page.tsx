@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { TrialCTA } from "@/components/TrialCTA";
+import { trackBeginCheckout } from "@/hooks/use-tracking";
 
 const plans = [
   {
@@ -106,6 +107,12 @@ export default function PricingPage() {
     if (!user) {
       setLocation("/auth");
       return;
+    }
+
+    // Track begin checkout for Google Ads + Meta
+    const selectedPlan = plans.find(p => p.id === planId);
+    if (selectedPlan) {
+      trackBeginCheckout(selectedPlan.price, 'USD');
     }
 
     setLoading(planId);

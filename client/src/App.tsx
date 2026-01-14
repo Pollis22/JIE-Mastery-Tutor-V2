@@ -57,9 +57,11 @@ import TrialEndedPage from "@/pages/trial-ended-page";
 import TrialTutorPage from "@/pages/trial-tutor-page";
 import OfferPage from "@/pages/offer-page";
 import { usePageTracking } from "@/hooks/use-page-tracking";
+import { useTracking } from "@/hooks/use-tracking";
 
 function Router() {
   usePageTracking();
+  useTracking();
   return (
     <Switch>
       <ProtectedRoute path="/" component={TutorPage} />
