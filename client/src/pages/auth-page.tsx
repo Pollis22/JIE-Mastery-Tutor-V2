@@ -19,6 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Footer } from "@/components/footer";
 import jieLogo from "@/assets/jie-mastery-logo-new.jpg";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { TrialCTA } from "@/components/TrialCTA";
 
 const loginSchema = z.object({
   email: z.string().min(1, "Email or username is required"),
@@ -635,15 +636,7 @@ export default function AuthPage() {
 
                 {/* CTAs */}
                 <div className="flex flex-col sm:flex-row items-center lg:items-start gap-4" data-testid="free-trial-cta-container">
-                  <Button 
-                    size="lg"
-                    className="bg-primary hover:bg-primary/90 text-white px-8 py-6 text-lg font-semibold rounded-lg shadow-lg w-full sm:w-auto"
-                    onClick={() => setLocation("/trial/verify")}
-                    data-testid="button-free-trial-hero"
-                  >
-                    <Play className="w-5 h-5 mr-2" />
-                    Try 5 Minutes Free
-                  </Button>
+                  <TrialCTA size="lg" className="px-8 py-6 text-lg font-semibold rounded-lg shadow-lg w-full sm:w-auto h-auto" />
                   <Button 
                     size="lg"
                     variant="outline"
@@ -775,15 +768,7 @@ export default function AuthPage() {
             </div>
 
             <div className="mt-12">
-              <Button 
-                size="lg"
-                className="bg-primary hover:bg-primary/90 text-white px-8 py-6 text-lg font-semibold rounded-lg"
-                onClick={() => setLocation("/trial/verify")}
-                data-testid="button-free-trial-bottom"
-              >
-                <Play className="w-5 h-5 mr-2" />
-                Try 5 Minutes Free
-              </Button>
+              <TrialCTA size="lg" className="px-8 py-6 text-lg font-semibold rounded-lg" />
             </div>
           </div>
         </div>
