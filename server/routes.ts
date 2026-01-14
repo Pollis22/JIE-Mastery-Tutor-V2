@@ -152,7 +152,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Page view analytics endpoint - passive, fire-and-forget, no auth required
+  // Site visit analytics endpoint - tracks unique visits (once per session)
+  // This is the primary traffic tracking endpoint
+  app.post("/api/analytics/site-visit", async (req, res) => {
+    try {
+      const { landingPage, pageTitle, sessionId, referrer } = req.body;
+      
+      if (!landingPage || typeof landingPage !== 'string') {
+        return res.json({ success: false });
+      }
+      
+      const { pageViews } = await import('@shared/schema');
+      await db.insert(pageViews).values({
+        pagePath: landingPage,
+        pageTitle: pageTitle || null,
+        sessionId: sessionId || null,
+        userId: null,
+      });
+      
+      console.log(`[Analytics] Site visit: ${landingPage} (referrer: ${referrer || 'direct'})`);
+      res.json({ success: true });
+    } catch {
+      res.json({ success: false });
+    }
+  });
+
+  // Legacy page view endpoint - kept for backwards compatibility
   app.post("/api/analytics/page-view", async (req, res) => {
     try {
       const { pagePath, pageTitle, sessionId, userId } = req.body;
@@ -2198,8 +2223,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Admin: Get page views stats (today, this month, history)
-  app.get("/api/admin/page-views-stats", requireAdmin, async (req, res) => {
+  // Admin: Get site views stats (unique visits, today, this month, history)
+  // Note: Using page_views table which now stores site visits (one per session)
+  const getSiteViewsStats = async (req: any, res: any) => {
     try {
       // Today's views
       const todayResult = await db.execute(sql`
@@ -2248,10 +2274,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         monthlyHistory 
       });
     } catch (error: any) {
-      console.error('[Admin] Error fetching page views stats:', error);
+      console.error('[Admin] Error fetching site views stats:', error);
       res.json({ todayCount: 0, thisMonthViews: 0, lastMonthViews: 0, monthlyHistory: [] });
     }
-  });
+  };
+  
+  // Register both endpoints - new name and legacy alias
+  app.get("/api/admin/site-views-stats", requireAdmin, getSiteViewsStats);
+  app.get("/api/admin/page-views-stats", requireAdmin, getSiteViewsStats);
 
   app.get("/api/admin/export", requireAdmin, auditActions.exportData, async (req, res) => {
     try {

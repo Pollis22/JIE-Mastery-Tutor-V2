@@ -324,30 +324,30 @@ export default function AdminPageEnhanced() {
 
             {/* Overview Tab */}
             <TabsContent value="overview" className="space-y-6">
-              {/* Page Views Row */}
+              {/* Site Views Row */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Page Views (Today)</CardTitle>
+                    <CardTitle className="text-sm font-medium">Site Visits (Today)</CardTitle>
                     <Eye className="h-4 w-4 text-muted-foreground" />
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold" data-testid="text-page-views-today">
+                    <div className="text-2xl font-bold" data-testid="text-site-views-today">
                       {(pageViewsStats?.todayCount || 0).toLocaleString()}
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Site traffic today
+                      Unique visits today
                     </p>
                   </CardContent>
                 </Card>
 
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                    <CardTitle className="text-sm font-medium">Page Views (This Month)</CardTitle>
+                    <CardTitle className="text-sm font-medium">Site Visits (This Month)</CardTitle>
                     <Calendar className="h-4 w-4 text-muted-foreground" />
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold" data-testid="text-page-views-month">
+                    <div className="text-2xl font-bold" data-testid="text-site-views-month">
                       {(pageViewsStats?.thisMonthViews || 0).toLocaleString()}
                     </div>
                     <p className="text-xs text-muted-foreground">
@@ -362,11 +362,11 @@ export default function AdminPageEnhanced() {
                     <BarChart3 className="h-4 w-4 text-muted-foreground" />
                   </CardHeader>
                   <CardContent>
-                    <div className="text-2xl font-bold" data-testid="text-page-views-12mo">
+                    <div className="text-2xl font-bold" data-testid="text-site-views-12mo">
                       {(pageViewsStats?.monthlyHistory?.reduce((sum, m) => sum + m.views, 0) || 0).toLocaleString()}
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Total views
+                      Total visits
                     </p>
                   </CardContent>
                 </Card>
@@ -488,13 +488,13 @@ export default function AdminPageEnhanced() {
                 </Card>
               </div>
 
-              {/* Page Views History Chart */}
+              {/* Site Visits History Chart */}
               {pageViewsStats?.monthlyHistory && pageViewsStats.monthlyHistory.length > 0 && (
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center space-x-2">
                       <BarChart3 className="w-5 h-5" />
-                      <span>Page Views History (Last 12 Months)</span>
+                      <span>Site Visits History (Last 12 Months)</span>
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
