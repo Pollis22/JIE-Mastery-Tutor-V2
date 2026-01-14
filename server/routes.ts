@@ -2223,7 +2223,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Admin: Get site views stats (unique visits, today, this month, history)
+  // Admin: Get site views stats (unique visits, today, this week, this month, history)
   // Note: Using page_views table which now stores site visits (one per session)
   const getSiteViewsStats = async (req: any, res: any) => {
     try {
@@ -2233,6 +2233,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         WHERE created_at >= CURRENT_DATE
       `);
       const todayCount = parseInt(todayResult.rows[0]?.count as string || '0', 10);
+      
+      // This week's views (Monday start - PostgreSQL DATE_TRUNC('week', ...) uses ISO weeks starting Monday)
+      const thisWeekResult = await db.execute(sql`
+        SELECT COUNT(*) as count FROM page_views 
+        WHERE created_at >= DATE_TRUNC('week', CURRENT_DATE)
+      `);
+      const thisWeekViews = parseInt(thisWeekResult.rows[0]?.count as string || '0', 10);
       
       // This month's views
       const thisMonthResult = await db.execute(sql`
@@ -2268,14 +2275,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }));
       
       res.json({ 
-        todayCount, 
+        todayCount,
+        thisWeekViews,
         thisMonthViews, 
         lastMonthViews,
         monthlyHistory 
       });
     } catch (error: any) {
       console.error('[Admin] Error fetching site views stats:', error);
-      res.json({ todayCount: 0, thisMonthViews: 0, lastMonthViews: 0, monthlyHistory: [] });
+      res.json({ todayCount: 0, thisWeekViews: 0, thisMonthViews: 0, lastMonthViews: 0, monthlyHistory: [] });
     }
   };
   

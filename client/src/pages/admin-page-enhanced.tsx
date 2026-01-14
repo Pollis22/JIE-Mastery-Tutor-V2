@@ -16,6 +16,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recha
 
 interface PageViewsStats {
   todayCount: number;
+  thisWeekViews: number;
   thisMonthViews: number;
   lastMonthViews: number;
   monthlyHistory: Array<{ month: string; label: string; views: number }>;
@@ -325,7 +326,7 @@ export default function AdminPageEnhanced() {
             {/* Overview Tab */}
             <TabsContent value="overview" className="space-y-6">
               {/* Site Views Row */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium">Site Visits (Today)</CardTitle>
@@ -333,10 +334,25 @@ export default function AdminPageEnhanced() {
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold" data-testid="text-site-views-today">
-                      {(pageViewsStats?.todayCount || 0).toLocaleString()}
+                      {pageViewsStats?.todayCount != null ? pageViewsStats.todayCount.toLocaleString() : '—'}
                     </div>
                     <p className="text-xs text-muted-foreground">
                       Unique visits today
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Site Visits (This Week)</CardTitle>
+                    <Calendar className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold" data-testid="text-site-views-week">
+                      {pageViewsStats?.thisWeekViews != null ? pageViewsStats.thisWeekViews.toLocaleString() : '—'}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Mon–Sun (current week)
                     </p>
                   </CardContent>
                 </Card>
@@ -348,7 +364,7 @@ export default function AdminPageEnhanced() {
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold" data-testid="text-site-views-month">
-                      {(pageViewsStats?.thisMonthViews || 0).toLocaleString()}
+                      {pageViewsStats?.thisMonthViews != null ? pageViewsStats.thisMonthViews.toLocaleString() : '—'}
                     </div>
                     <p className="text-xs text-muted-foreground">
                       vs {(pageViewsStats?.lastMonthViews || 0).toLocaleString()} last month
@@ -363,7 +379,7 @@ export default function AdminPageEnhanced() {
                   </CardHeader>
                   <CardContent>
                     <div className="text-2xl font-bold" data-testid="text-site-views-12mo">
-                      {(pageViewsStats?.monthlyHistory?.reduce((sum, m) => sum + m.views, 0) || 0).toLocaleString()}
+                      {pageViewsStats?.monthlyHistory ? pageViewsStats.monthlyHistory.reduce((sum, m) => sum + m.views, 0).toLocaleString() : '—'}
                     </div>
                     <p className="text-xs text-muted-foreground">
                       Total visits
