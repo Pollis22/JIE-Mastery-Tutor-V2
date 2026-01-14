@@ -622,6 +622,37 @@ export default function AuthPage() {
                 </Tabs>
               </CardContent>
             </Card>
+            
+            {/* Why Parents Choose - Trust Block */}
+            <div className="w-full max-w-md mt-6 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 border border-blue-200 dark:border-blue-800 rounded-xl p-6">
+              <h3 className="font-bold text-foreground text-lg mb-4">Why Parents Choose JIE Mastery Tutor</h3>
+              <ul className="space-y-3 text-sm text-foreground">
+                <li className="flex items-start gap-2">
+                  <span className="text-green-600 mt-0.5">✓</span>
+                  <span>AI homework help for math, English, science, and Spanish</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-green-600 mt-0.5">✓</span>
+                  <span>Voice-based tutoring that explains, not just answers</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-green-600 mt-0.5">✓</span>
+                  <span>Ideal for homeschool families and busy parents</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-green-600 mt-0.5">✓</span>
+                  <span>One subscription shared across multiple children</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-green-600 mt-0.5">✓</span>
+                  <span>No credit card required to try</span>
+                </li>
+              </ul>
+              
+              <p className="mt-5 text-xs text-muted-foreground leading-relaxed">
+                JIE Mastery Tutor is a voice-first AI tutoring platform designed to help students understand homework, not just complete it. Families use JIE for math homework help, homeschool support, and personalized learning across grade levels. Start instantly with a free trial — no credit card required.
+              </p>
+            </div>
           </div>
 
           {/* Hero Section */}
@@ -630,14 +661,14 @@ export default function AuthPage() {
               <div className="space-y-4">
                 <div className="inline-block mb-3">
                   <span className="text-sm font-semibold text-primary uppercase tracking-wide bg-primary/10 px-4 py-2 rounded-full">
-                    The Future of Family Tutoring
+                    AI Homework Help for K-12 & College
                   </span>
                 </div>
                 <h1 className="text-4xl lg:text-5xl font-bold text-foreground leading-tight">
-                  Master Every Subject with <span className="text-primary">JIE Mastery Tutor</span>
+                  AI Homework Help & <span className="text-primary">Voice-Based Tutoring</span> for Students
                 </h1>
                 <p className="text-xl text-muted-foreground max-w-md">
-                  One subscription, whole family learns. Experience personalized AI tutoring for Math, English, Science, Spanish and More with interactive voice conversations and adaptive learning paths.
+                  Get instant math homework help, English support, and personalized tutoring through real voice conversations. Perfect for homeschool families and busy parents. One subscription covers your whole family.
                 </p>
               </div>
 
@@ -653,9 +684,17 @@ export default function AuthPage() {
                     <Play className="w-5 h-5 mr-2" />
                     Try 5 Minutes Free
                   </Button>
-                  <span className="text-muted-foreground font-medium">Get Started</span>
+                  <Button 
+                    size="lg"
+                    variant="outline"
+                    className="px-6 py-6 text-lg font-semibold rounded-lg"
+                    onClick={() => setLocation("/pricing")}
+                    data-testid="button-get-started-hero"
+                  >
+                    Get Started
+                  </Button>
                 </div>
-                <p className="text-sm text-muted-foreground">No credit card needed</p>
+                <p className="text-sm text-muted-foreground">No credit card required &bull; Works instantly &bull; K-12 & College support</p>
               </div>
 
               {/* Featured Video */}
