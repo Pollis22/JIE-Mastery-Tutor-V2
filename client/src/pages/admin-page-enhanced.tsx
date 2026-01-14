@@ -17,6 +17,8 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recha
 interface PageViewsStats {
   todayCount: number;
   thisWeekViews: number;
+  lastWeekViews: number;
+  weeklyWoWPercent: number | null;
   thisMonthViews: number;
   lastMonthViews: number;
   monthlyHistory: Array<{ month: string; label: string; views: number }>;
@@ -352,7 +354,19 @@ export default function AdminPageEnhanced() {
                       {pageViewsStats?.thisWeekViews != null ? pageViewsStats.thisWeekViews.toLocaleString() : '—'}
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Mon–Sun (current week)
+                      {pageViewsStats?.weeklyWoWPercent != null ? (
+                        <span className={
+                          pageViewsStats.weeklyWoWPercent > 0 
+                            ? 'text-green-600' 
+                            : pageViewsStats.weeklyWoWPercent < 0 
+                              ? 'text-red-600' 
+                              : ''
+                        }>
+                          {pageViewsStats.weeklyWoWPercent > 0 ? '+' : ''}{pageViewsStats.weeklyWoWPercent}% vs last week
+                        </span>
+                      ) : (
+                        <span>— vs last week</span>
+                      )}
                     </p>
                   </CardContent>
                 </Card>

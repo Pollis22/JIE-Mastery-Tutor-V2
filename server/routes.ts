@@ -2241,6 +2241,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       `);
       const thisWeekViews = parseInt(thisWeekResult.rows[0]?.count as string || '0', 10);
       
+      // Last week's views (previous Monday 00:00 to this Monday 00:00)
+      const lastWeekResult = await db.execute(sql`
+        SELECT COUNT(*) as count FROM page_views 
+        WHERE created_at >= DATE_TRUNC('week', CURRENT_DATE - INTERVAL '7 days')
+          AND created_at < DATE_TRUNC('week', CURRENT_DATE)
+      `);
+      const lastWeekViews = parseInt(lastWeekResult.rows[0]?.count as string || '0', 10);
+      
+      // Calculate Week-over-Week percentage
+      let weeklyWoWPercent: number | null = null;
+      if (lastWeekViews <= 0) {
+        if (thisWeekViews > 0) {
+          weeklyWoWPercent = null; // Can't calculate % from 0
+        } else {
+          weeklyWoWPercent = 0; // Both are 0
+        }
+      } else {
+        weeklyWoWPercent = Math.round(((thisWeekViews - lastWeekViews) / lastWeekViews) * 1000) / 10; // Round to 1 decimal
+      }
+      
       // This month's views
       const thisMonthResult = await db.execute(sql`
         SELECT COUNT(*) as count FROM page_views 
@@ -2277,13 +2297,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ 
         todayCount,
         thisWeekViews,
+        lastWeekViews,
+        weeklyWoWPercent,
         thisMonthViews, 
         lastMonthViews,
         monthlyHistory 
       });
     } catch (error: any) {
       console.error('[Admin] Error fetching site views stats:', error);
-      res.json({ todayCount: 0, thisWeekViews: 0, thisMonthViews: 0, lastMonthViews: 0, monthlyHistory: [] });
+      res.json({ todayCount: 0, thisWeekViews: 0, lastWeekViews: 0, weeklyWoWPercent: null, thisMonthViews: 0, lastMonthViews: 0, monthlyHistory: [] });
     }
   };
   
