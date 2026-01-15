@@ -131,6 +131,9 @@ export interface MagicLinkRequestResult {
   code?: MagicLinkErrorCode;
   error?: string;
   verificationResent?: boolean;
+  instantResume?: boolean;
+  emailHash?: string;
+  secondsRemaining?: number;
 }
 
 export interface MagicLinkValidateResult {
@@ -1161,41 +1164,35 @@ View in Admin Panel: ${adminPanelLink}`;
         return { ok: false, code: 'NOT_VERIFIED', error: 'Please verify your email first. We\'ve resent the verification email.', verificationResent: true };
       }
 
-      // Check if trial is exhausted
-      const consumedSeconds = trial.consumedSeconds ?? 0;
-      const secondsRemaining = TRIAL_DURATION_SECONDS - consumedSeconds;
+      // Check if trial is exhausted using trial_ends_at as single source of truth
+      const now = new Date();
+      const trialEndsAt = trial.trialEndsAt;
+      
+      // Calculate seconds remaining from trial_ends_at (authoritative)
+      let secondsRemaining = 0;
+      if (trialEndsAt && trialEndsAt > now) {
+        secondsRemaining = Math.floor((trialEndsAt.getTime() - now.getTime()) / 1000);
+      } else {
+        // Fallback to consumed seconds calculation if trialEndsAt not set
+        const consumedSeconds = trial.consumedSeconds ?? 0;
+        secondsRemaining = TRIAL_DURATION_SECONDS - consumedSeconds;
+      }
       
       if (secondsRemaining <= 0 || trial.status === 'expired') {
-        console.log('[TrialService] Magic link: trial exhausted');
+        console.log('[TrialService] Continue trial: trial exhausted, secondsRemaining:', secondsRemaining);
         return { ok: false, code: 'TRIAL_EXHAUSTED', error: 'Your trial has ended. Please sign up to continue using JIE Mastery.' };
       }
 
-      // Invalidate any previous unused tokens for this trial session
-      await db.update(trialLoginTokens)
-        .set({ usedAt: new Date() })
-        .where(and(
-          eq(trialLoginTokens.trialSessionId, trial.id),
-          isNull(trialLoginTokens.usedAt)
-        ));
-
-      // Generate new login token: store hash in DB, send raw token in email
-      const rawToken = randomBytes(32).toString('hex');
-      const tokenHash = hashValue(rawToken); // Same sha256 hashing used for emails
-      const expiresAt = new Date(Date.now() + MAGIC_TOKEN_EXPIRY_MINUTES * 60 * 1000);
-
-      await db.insert(trialLoginTokens).values({
-        trialSessionId: trial.id,
-        tokenHash,
-        expiresAt,
-      });
-
-      // Send magic link email with raw token (not hash)
-      if (trial.email) {
-        await this.sendMagicLinkEmail(trial.email, rawToken);
-      }
-
-      console.log('[TrialService] Magic link sent for email_hash:', emailHash.substring(0, 12) + '...');
-      return { ok: true };
+      // INSTANT RESUME: Trial is verified AND active - return instant resume (NO magic link email)
+      // This is the key change: previously verified users can resume immediately
+      console.log('[TrialService] Continue trial: INSTANT RESUME for verified active trial, secondsRemaining:', secondsRemaining);
+      
+      return { 
+        ok: true, 
+        instantResume: true,
+        emailHash,
+        secondsRemaining,
+      };
     } catch (error: any) {
       console.error('[TrialService] Error requesting magic link:', error);
       

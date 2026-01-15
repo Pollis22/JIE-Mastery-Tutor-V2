@@ -289,6 +289,28 @@ router.post('/magic-link', async (req: Request, res: Response) => {
     const result = await trialService.requestMagicLink(email);
 
     if (result.ok) {
+      // Check if this is an instant resume (verified active trial)
+      if (result.instantResume && result.emailHash) {
+        console.log('[TrialRoutes] /magic-link: INSTANT RESUME, setting cookie and redirecting');
+        
+        // Set the email hash cookie so the trial session is linked to this browser
+        res.cookie(TRIAL_EMAIL_HASH_COOKIE, result.emailHash, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
+          maxAge: TRIAL_COOKIE_MAX_AGE,
+          signed: true,
+        });
+        
+        return res.json({ 
+          ok: true,
+          instantResume: true,
+          secondsRemaining: result.secondsRemaining,
+          redirectTo: '/trial/tutor',
+        });
+      }
+      
+      // Not instant resume - either email not found or magic link sent
       console.log('[TrialRoutes] /magic-link: link sent (or safe response for unknown email)');
       return res.json({ 
         ok: true, 
