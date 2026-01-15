@@ -335,15 +335,10 @@ export function TrialCTA({ variant = 'primary', size = 'md', className = '', sho
             <p className="text-gray-600 text-center mb-3" data-testid="text-email-sent-description">
               We've sent a verification email to your address.
             </p>
-            <div className="bg-red-600 rounded-lg p-4 mb-4 w-full" data-testid="notice-spam-folder">
-              <div className="flex items-start gap-3">
-                <Mail className="w-5 h-5 text-white flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-sm font-semibold text-white mb-1">Check Your Inbox!</p>
-                  <p className="text-sm text-white/90 mb-2">If a trial exists for this email, you'll receive a verification link shortly.</p>
-                  <p className="text-sm font-medium text-white">Don't forget to check your Spam/Junk folder!</p>
-                </div>
-              </div>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 w-full" data-testid="notice-spam-folder">
+              <p className="text-sm text-blue-800 text-center">
+                If you don't see it within a minute, please check your Spam or Junk folder and mark it as "Not Spam."
+              </p>
             </div>
             <p className="text-sm text-gray-500 text-center">
               Still can't find it?{' '}
@@ -476,15 +471,10 @@ export function TrialCTA({ variant = 'primary', size = 'md', className = '', sho
                 <p className="text-gray-600 text-center mb-3">
                   We've sent a sign-in link to your email address.
                 </p>
-                <div className="bg-red-600 rounded-lg p-4 mb-4 w-full">
-                  <div className="flex items-start gap-3">
-                    <Mail className="w-5 h-5 text-white flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-sm font-semibold text-white mb-1">Check Your Inbox!</p>
-                      <p className="text-sm text-white/90 mb-2">If a trial exists for this email, you'll receive a sign-in link shortly.</p>
-                      <p className="text-sm font-medium text-white">Don't forget to check your Spam/Junk folder!</p>
-                    </div>
-                  </div>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 w-full">
+                  <p className="text-sm text-blue-800 text-center">
+                    If you don't see it, check your Spam or Junk folder and mark it as "Not Spam."
+                  </p>
                 </div>
                 <Button
                   variant="outline"
