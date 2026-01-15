@@ -814,6 +814,7 @@ export const trialSessions = pgTable("trial_sessions", {
   verifiedAt: timestamp("verified_at"),
   trialStartedAt: timestamp("trial_started_at"),
   trialEndsAt: timestamp("trial_ends_at"),
+  trialGraceAppliedAt: timestamp("trial_grace_applied_at"),
   consumedSeconds: integer("consumed_seconds").default(0),
   status: varchar("status", { length: 20 }).default('pending').$type<'pending' | 'active' | 'expired' | 'blocked'>(),
   deviceIdHash: varchar("device_id_hash", { length: 64 }),

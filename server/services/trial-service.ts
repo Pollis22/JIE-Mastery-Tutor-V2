@@ -144,7 +144,20 @@ export interface MagicLinkValidateResult {
   errorCode?: 'invalid_token' | 'expired_token' | 'trial_exhausted' | 'server_error';
 }
 
+export type ResumeReason = 'trial_expired' | 'trial_exhausted' | 'trial_not_found' | 'not_verified' | 'not_active';
+
+export interface ResumeTrialResult {
+  ok: boolean;
+  canResume: boolean;
+  secondsRemaining?: number;
+  emailHash?: string;
+  reason?: ResumeReason;
+  courtesyApplied?: boolean;
+  error?: string;
+}
+
 const MAGIC_TOKEN_EXPIRY_MINUTES = 15;
+const COURTESY_EXTENSION_SECONDS = 60;
 
 export class TrialService {
   private emailService: EmailService;
@@ -1204,6 +1217,116 @@ View in Admin Panel: ${adminPanelLink}`;
       }
       
       return { ok: false, code: 'INTERNAL_ERROR', error: 'Something went wrong. Please try again.' };
+    }
+  }
+
+  // Resume Trial: Allow returning users to resume without re-verification
+  // This is the primary endpoint for "Continue Free Trial" - no magic link needed
+  async resumeTrial(email: string): Promise<ResumeTrialResult> {
+    try {
+      const normalizedEmail = normalizeEmail(email);
+      const emailHash = hashValue(normalizedEmail);
+      const now = new Date();
+
+      console.log('[TrialService] Resume trial requested for email_hash:', emailHash.substring(0, 12) + '...');
+
+      // Find trial by email hash
+      const trials = await db.select()
+        .from(trialSessions)
+        .where(eq(trialSessions.emailHash, emailHash))
+        .limit(1);
+
+      if (trials.length === 0) {
+        console.log('[TrialService] Resume trial: not found');
+        return { ok: true, canResume: false, reason: 'trial_not_found' };
+      }
+
+      const trial = trials[0];
+
+      // Check if trial is verified
+      if (!trial.verifiedAt) {
+        console.log('[TrialService] Resume trial: not verified');
+        return { ok: true, canResume: false, reason: 'not_verified' };
+      }
+
+      // Check if status is active
+      if (trial.status !== 'active') {
+        console.log('[TrialService] Resume trial: status is not active:', trial.status);
+        return { ok: true, canResume: false, reason: 'not_active' };
+      }
+
+      // Calculate seconds remaining from trial_ends_at
+      let secondsRemaining = 0;
+      let courtesyApplied = false;
+      
+      if (trial.trialEndsAt) {
+        secondsRemaining = Math.floor((trial.trialEndsAt.getTime() - now.getTime()) / 1000);
+      } else {
+        // Fallback for old trials without trialEndsAt
+        const consumedSeconds = trial.consumedSeconds ?? 0;
+        secondsRemaining = TRIAL_DURATION_SECONDS - consumedSeconds;
+      }
+
+      // Check if courtesy extension is eligible
+      // Conditions:
+      // 1. Trial is expired OR has very low remaining time (<= 30 seconds)
+      // 2. Grace has not been applied yet
+      // 3. Trial is recent (updated within last 7 days)
+      const graceNotApplied = trial.trialGraceAppliedAt === null;
+      const isRecentTrial = trial.updatedAt && 
+        (now.getTime() - trial.updatedAt.getTime()) < 7 * 24 * 60 * 60 * 1000; // 7 days
+      const needsCourtesy = secondsRemaining <= 30;
+
+      if (needsCourtesy && graceNotApplied && isRecentTrial) {
+        // Apply one-time courtesy extension
+        const newTrialEndsAt = new Date(Math.max(
+          trial.trialEndsAt?.getTime() || now.getTime(),
+          now.getTime()
+        ) + COURTESY_EXTENSION_SECONDS * 1000);
+
+        await db.update(trialSessions)
+          .set({
+            trialEndsAt: newTrialEndsAt,
+            trialGraceAppliedAt: now,
+            lastActiveAt: now,
+            updatedAt: now,
+          })
+          .where(eq(trialSessions.id, trial.id));
+
+        secondsRemaining = Math.floor((newTrialEndsAt.getTime() - now.getTime()) / 1000);
+        courtesyApplied = true;
+
+        console.log('[TrialService] Courtesy grace applied: trialId=' + trial.id + 
+          ', emailHash=' + emailHash.substring(0, 12) + '..., newTrialEndsAt=' + newTrialEndsAt.toISOString());
+      }
+
+      // Check if still no time remaining after courtesy check
+      if (secondsRemaining <= 0) {
+        console.log('[TrialService] Resume trial: trial expired, secondsRemaining:', secondsRemaining);
+        return { ok: true, canResume: false, reason: 'trial_expired' };
+      }
+
+      // Update last active timestamp
+      await db.update(trialSessions)
+        .set({
+          lastActiveAt: now,
+          updatedAt: now,
+        })
+        .where(eq(trialSessions.id, trial.id));
+
+      console.log('[TrialService] Resume trial: SUCCESS, secondsRemaining:', secondsRemaining, 
+        courtesyApplied ? '(courtesy applied)' : '');
+
+      return {
+        ok: true,
+        canResume: true,
+        secondsRemaining,
+        emailHash,
+        courtesyApplied,
+      };
+    } catch (error: any) {
+      console.error('[TrialService] Error resuming trial:', error);
+      return { ok: false, canResume: false, error: 'Something went wrong. Please try again.' };
     }
   }
 
