@@ -660,7 +660,7 @@ export default function AuthPage() {
                 >
                   <iframe 
                     className="absolute top-0 left-0 w-full h-full rounded-xl shadow-xl border border-border"
-                    src="https://www.youtube.com/embed/s4snNJwmU3A?si=HHB4Cb8BD3XG2zNa" 
+                    src="https://www.youtube.com/embed/UN7vOUoGGmA" 
                     title="JIE Mastery Tutor Demo" 
                     frameBorder="0" 
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
