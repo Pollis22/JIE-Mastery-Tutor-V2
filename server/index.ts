@@ -210,6 +210,12 @@ app.use((req, res, next) => {
     startWeeklyDigestJob();
     log('Email digest jobs started (daily at 8 PM, weekly on Sundays)');
 
+    // Start trial verification reminder job (every 6 hours)
+    console.log('Starting trial reminder job...');
+    const { startTrialReminderJob } = await import('./jobs/trial-reminders');
+    startTrialReminderJob();
+    log('Trial reminder job started (every 6 hours)');
+
     app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
       const status = err.status || err.statusCode || 500;
       const message = err.message || "Internal Server Error";

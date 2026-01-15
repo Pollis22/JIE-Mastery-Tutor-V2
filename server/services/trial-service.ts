@@ -1,7 +1,7 @@
 import { db } from '../db';
 import { trialSessions, trialRateLimits, TrialSession } from '@shared/schema';
-import { eq, and, gte, sql } from 'drizzle-orm';
-import { createHash, randomBytes, createHmac } from 'crypto';
+import { eq, and, gte, sql, isNull, lt, or } from 'drizzle-orm';
+import crypto, { createHash, randomBytes, createHmac } from 'crypto';
 import { EmailService } from './email-service';
 
 const TRIAL_DURATION_SECONDS = 300;
@@ -1029,6 +1029,223 @@ If you didn't request this, you can safely ignore this email.`;
       console.error('[TrialService] Error getting trial by email:', error);
       return null;
     }
+  }
+
+  // ========================================
+  // VERIFICATION REMINDER METHODS
+  // ========================================
+
+  private readonly MAX_REMINDERS = 2; // Cap reminders at 2 per lead
+  private readonly REMINDER_INTERVAL_HOURS = 6; // Minimum hours between reminders
+
+  // Get pending trials eligible for reminders
+  async getPendingTrialsForReminders(): Promise<TrialSession[]> {
+    try {
+      const sixHoursAgo = new Date(Date.now() - this.REMINDER_INTERVAL_HOURS * 60 * 60 * 1000);
+      
+      // Query for pending trials where:
+      // - status = 'pending'
+      // - verifiedAt IS NULL
+      // - reminderCount < MAX_REMINDERS
+      // - lastReminderAt IS NULL OR lastReminderAt < 6 hours ago
+      const pendingTrials = await db.select()
+        .from(trialSessions)
+        .where(
+          and(
+            eq(trialSessions.status, 'pending'),
+            isNull(trialSessions.verifiedAt),
+            or(
+              isNull(trialSessions.verificationReminderCount),
+              lt(trialSessions.verificationReminderCount, this.MAX_REMINDERS)
+            ),
+            or(
+              isNull(trialSessions.lastVerificationReminderAt),
+              lt(trialSessions.lastVerificationReminderAt, sixHoursAgo)
+            )
+          )
+        );
+      
+      console.log(`[TrialService] Found ${pendingTrials.length} pending trials eligible for reminders`);
+      return pendingTrials;
+    } catch (error) {
+      console.error('[TrialService] Error getting pending trials for reminders:', error);
+      return [];
+    }
+  }
+
+  // Send reminder email for a single trial
+  async sendVerificationReminder(trial: TrialSession): Promise<{ success: boolean; error?: string }> {
+    try {
+      if (!trial.email) {
+        console.log(`[TrialService] Skipping reminder - no email for trial ${trial.id}`);
+        return { success: false, error: 'No email address' };
+      }
+
+      // Check if already verified
+      if (trial.verifiedAt) {
+        console.log(`[TrialService] Skipping reminder - trial ${trial.id} already verified`);
+        return { success: false, error: 'Already verified' };
+      }
+
+      // Check reminder count cap
+      const currentCount = trial.verificationReminderCount ?? 0;
+      if (currentCount >= this.MAX_REMINDERS) {
+        console.log(`[TrialService] Skipping reminder - trial ${trial.id} reached max reminders (${currentCount})`);
+        return { success: false, error: 'Max reminders reached' };
+      }
+
+      // Check time since last reminder
+      if (trial.lastVerificationReminderAt) {
+        const hoursSinceLastReminder = (Date.now() - trial.lastVerificationReminderAt.getTime()) / (1000 * 60 * 60);
+        if (hoursSinceLastReminder < this.REMINDER_INTERVAL_HOURS) {
+          console.log(`[TrialService] Skipping reminder - too soon (${hoursSinceLastReminder.toFixed(1)}h < ${this.REMINDER_INTERVAL_HOURS}h)`);
+          return { success: false, error: 'Too soon since last reminder' };
+        }
+      }
+
+      // Generate a fresh verification token
+      const verificationToken = crypto.randomBytes(32).toString('hex');
+      const verificationExpiry = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
+
+      // Update trial with new token and increment reminder count
+      await db.update(trialSessions)
+        .set({
+          verificationToken,
+          verificationExpiry,
+          lastVerificationReminderAt: new Date(),
+          verificationReminderCount: currentCount + 1,
+          updatedAt: new Date(),
+        })
+        .where(eq(trialSessions.id, trial.id));
+
+      // Send the reminder email
+      await this.sendVerificationReminderEmail(trial.email, verificationToken, currentCount + 1);
+
+      console.log(`[TrialService] Sent reminder #${currentCount + 1} to ${trial.email}`);
+      return { success: true };
+    } catch (error) {
+      console.error(`[TrialService] Error sending reminder for trial ${trial.id}:`, error);
+      return { success: false, error: String(error) };
+    }
+  }
+
+  // Process all pending reminders (called by scheduler or admin)
+  async processPendingReminders(): Promise<{ sent: number; skipped: number; errors: number }> {
+    console.log('[TrialService] Starting pending reminders processing...');
+    
+    const pendingTrials = await this.getPendingTrialsForReminders();
+    let sent = 0;
+    let skipped = 0;
+    let errors = 0;
+
+    for (const trial of pendingTrials) {
+      const result = await this.sendVerificationReminder(trial);
+      if (result.success) {
+        sent++;
+      } else if (result.error && result.error.includes('error')) {
+        errors++;
+      } else {
+        skipped++;
+      }
+      
+      // Small delay between emails to avoid rate limiting
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    console.log(`[TrialService] Pending reminders complete: sent=${sent}, skipped=${skipped}, errors=${errors}`);
+    return { sent, skipped, errors };
+  }
+
+  // Reminder email template
+  private async sendVerificationReminderEmail(email: string, token: string, reminderNumber: number): Promise<void> {
+    const baseUrl = this.getBaseUrl();
+    const verifyUrl = `${baseUrl}/trial/verify?token=${token}`;
+    
+    console.log(`[TrialService] Sending reminder email #${reminderNumber} to: ${email}`);
+
+    const subject = reminderNumber === 1 
+      ? 'Reminder: Complete your JIE Mastery Free Trial signup'
+      : 'Final Reminder: Your JIE Mastery Free Trial is waiting';
+
+    const urgencyText = reminderNumber === 1
+      ? 'You started signing up for your free trial but haven\'t verified your email yet.'
+      : 'This is your final reminder. Don\'t miss out on your 5-minute free AI tutoring session!';
+
+    const htmlContent = `<!DOCTYPE html>
+<html xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<!--[if mso]>
+<xml>
+<o:OfficeDocumentSettings>
+<o:AllowPNG/>
+<o:PixelsPerInch>96</o:PixelsPerInch>
+</o:OfficeDocumentSettings>
+</xml>
+<![endif]-->
+<title>Complete Your Free Trial</title>
+</head>
+<body style="margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;background-color:#f4f4f4;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f4f4;">
+<tr>
+<td align="center" style="padding:40px 20px;">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="background-color:#ffffff;border-radius:8px;max-width:600px;">
+<tr>
+<td style="padding:40px;">
+<h1 style="margin:0 0 20px 0;color:#dc2626;font-size:28px;font-weight:bold;font-family:Arial,Helvetica,sans-serif;">Complete Your Free Trial</h1>
+<p style="margin:0 0 20px 0;color:#333333;font-size:16px;line-height:24px;font-family:Arial,Helvetica,sans-serif;">${urgencyText}</p>
+<p style="margin:0 0 30px 0;color:#333333;font-size:16px;line-height:24px;font-family:Arial,Helvetica,sans-serif;">Click the button below to verify your email and experience our AI tutor. Your personalized learning session awaits!</p>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 30px 0;">
+<tr>
+<td align="center">
+<!--[if mso]>
+<v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${verifyUrl}" style="height:48px;v-text-anchor:middle;width:220px;" arcsize="10%" strokecolor="#dc2626" fillcolor="#dc2626">
+<w:anchorlock/>
+<center style="color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:bold;">Verify & Start Trial</center>
+</v:roundrect>
+<![endif]-->
+<!--[if !mso]><!-->
+<a href="${verifyUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:14px 28px;font-size:16px;font-weight:bold;color:#ffffff;text-decoration:none;background-color:#dc2626;border-radius:6px;font-family:Arial,Helvetica,sans-serif;">Verify & Start Trial</a>
+<!--<![endif]-->
+</td>
+</tr>
+</table>
+<p style="margin:0 0 10px 0;color:#666666;font-size:14px;font-family:Arial,Helvetica,sans-serif;">If the button doesn't work, copy and paste this link into your browser:</p>
+<p style="margin:0 0 20px 0;color:#666666;font-size:14px;word-break:break-all;font-family:Arial,Helvetica,sans-serif;"><a href="${verifyUrl}" style="color:#dc2626;text-decoration:underline;">${verifyUrl}</a></p>
+<p style="margin:0 0 10px 0;color:#666666;font-size:14px;font-family:Arial,Helvetica,sans-serif;">This link expires in 30 minutes.</p>
+<p style="margin:0 0 10px 0;color:#666666;font-size:14px;font-family:Arial,Helvetica,sans-serif;"><strong>Pro tip:</strong> Check your Spam/Junk folder if you don't see our emails in your inbox.</p>
+<p style="margin:0;color:#666666;font-size:14px;font-family:Arial,Helvetica,sans-serif;">If you no longer wish to receive these reminders, simply ignore this email.</p>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</body>
+</html>`;
+
+    const textContent = `Complete Your Free Trial
+
+${urgencyText}
+
+Click the link below to verify your email and experience our AI tutor:
+
+${verifyUrl}
+
+This link expires in 30 minutes.
+
+Pro tip: Check your Spam/Junk folder if you don't see our emails in your inbox.
+
+If you no longer wish to receive these reminders, simply ignore this email.`;
+
+    await this.emailService.sendEmail({
+      to: email,
+      subject,
+      html: htmlContent,
+      text: textContent,
+    });
   }
 }
 
