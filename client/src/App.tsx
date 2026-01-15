@@ -55,6 +55,7 @@ import PracticeLessonsPage from "@/pages/practice-lessons-page";
 import TrialVerifyPage from "@/pages/trial-verify-page";
 import TrialEndedPage from "@/pages/trial-ended-page";
 import TrialTutorPage from "@/pages/trial-tutor-page";
+import MagicLinkPage from "@/pages/magic-link-page";
 import OfferPage from "@/pages/offer-page";
 import { usePageTracking } from "@/hooks/use-page-tracking";
 import { useTracking } from "@/hooks/use-tracking";
@@ -84,6 +85,7 @@ function Router() {
       <ProtectedRoute path="/personality-test" component={PersonalityTestPage} />
       <Route path="/auth" component={AuthPage} />
       <Route path="/auth/registration-success" component={RegistrationSuccessPage} />
+      <Route path="/auth/magic" component={MagicLinkPage} />
       <Route path="/login" component={AuthPage} />
       <Route path="/forgot-password" component={ForgotPasswordPage} />
       <Route path="/reset-password" component={ResetPasswordPage} />
