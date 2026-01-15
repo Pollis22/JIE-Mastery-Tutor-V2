@@ -173,17 +173,25 @@ export function TrialCTA({ variant = 'primary', size = 'md', className = '' }: T
             <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
               <CheckCircle className="w-8 h-8 text-green-600" />
             </div>
-            <p className="text-gray-600 text-center mb-4">
-              Check your inbox for the verification email from JIE Mastery.
+            <p className="text-lg font-semibold text-gray-800 text-center mb-2" data-testid="text-email-sent-title">
+              Check your inbox to continue.
             </p>
+            <p className="text-gray-600 text-center mb-3" data-testid="text-email-sent-description">
+              We've sent a verification email to your address.
+            </p>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 w-full" data-testid="notice-spam-folder">
+              <p className="text-sm text-blue-800 text-center">
+                If you don't see it within a minute, please check your Spam or Junk folder and mark it as "Not Spam."
+              </p>
+            </div>
             <p className="text-sm text-gray-500 text-center">
-              Didn't receive it? Check your spam folder or{' '}
+              Still can't find it?{' '}
               <button 
                 onClick={() => setEmailSent(false)}
                 className="text-red-600 hover:underline"
                 data-testid="link-try-again"
               >
-                try again
+                Try again
               </button>
             </p>
           </div>
