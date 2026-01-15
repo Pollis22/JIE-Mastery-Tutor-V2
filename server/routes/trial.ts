@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { trialService } from '../services/trial-service';
+import { trialService, hashEmail, normalizeEmail, TrialResolutionResult } from '../services/trial-service';
 import { createHash, randomUUID } from 'crypto';
 import { z } from 'zod';
 
@@ -172,37 +172,26 @@ router.post('/verify', async (req: Request, res: Response) => {
 
 router.get('/status', async (req: Request, res: Response) => {
   try {
-    // Deterministic lookup priority:
-    // 1. email_hash cookie (set during verification)
-    // 2. device_id_hash fallback
+    // Use UNIFIED lookup: email_hash cookie (primary) or email from body (fallback)
+    // NEVER uses deviceIdHash or ipHash for trial lookup
     const emailHashFromCookie = req.signedCookies?.[TRIAL_EMAIL_HASH_COOKIE];
-    const deviceIdHash = getDeviceIdHash(req, res);
+    const emailFromQuery = typeof req.query.email === 'string' ? req.query.email : undefined;
     
-    let entitlement;
-    let lookupPath: string;
-    
-    if (emailHashFromCookie) {
-      // Primary: lookup by email_hash (most reliable)
-      lookupPath = 'email_hash_cookie';
-      entitlement = await trialService.getTrialEntitlementByEmailHash(emailHashFromCookie, lookupPath);
-    } else {
-      // Fallback: lookup by device_id_hash
-      lookupPath = 'device_id_hash_fallback';
-      console.log('[TrialRoutes] /status: no email_hash cookie, using device fallback:', deviceIdHash.substring(0, 12) + '...');
-      entitlement = await trialService.getTrialEntitlement(deviceIdHash);
-    }
+    const resolution = await trialService.resolveTrialFromRequest(emailHashFromCookie, emailFromQuery);
 
     console.log('[TrialRoutes] /status result:', {
-      lookupPath,
-      hasAccess: entitlement.hasAccess,
-      reason: entitlement.reason,
+      lookupPath: resolution.lookupPath,
+      emailHashUsed: resolution.emailHashUsed ? resolution.emailHashUsed.substring(0, 12) + '...' : 'null',
+      trialId: resolution.trialId,
+      hasAccess: resolution.hasAccess,
+      reason: resolution.reason,
     });
 
     return res.json({
-      hasAccess: entitlement.hasAccess,
-      reason: entitlement.reason,
-      secondsRemaining: entitlement.trialSecondsRemaining,
-      trialId: entitlement.trialId,
+      hasAccess: resolution.hasAccess,
+      reason: resolution.reason,
+      secondsRemaining: resolution.secondsRemaining,
+      trialId: resolution.trialId,
     });
   } catch (error) {
     console.error('[TrialRoutes] Error getting trial status:', error);
