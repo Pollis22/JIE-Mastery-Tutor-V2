@@ -474,95 +474,100 @@ export function TrialCTA({ variant = 'primary', size = 'md', className = '', sho
       </Dialog>
 
       {showContinueLink && (
-        <Dialog open={continueOpen} onOpenChange={(o) => o ? setContinueOpen(true) : handleContinueClose()}>
-          <DialogTrigger asChild>
-            <button
-              className="text-sm text-gray-600 hover:text-red-600 hover:underline transition-colors"
-              data-testid="link-continue-trial"
-            >
-              Already started a trial? Continue free trial
-            </button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-md" data-testid="modal-continue-trial">
-            <DialogHeader>
-              <DialogTitle className="text-xl font-bold text-center">
-                Continue Your Free Trial
-              </DialogTitle>
-              <DialogDescription className="text-center">
-                Enter your email to resume instantly. If you haven't verified yet, we'll send a verification link.
-              </DialogDescription>
-            </DialogHeader>
+        <div className="flex flex-col items-center gap-1">
+          <Dialog open={continueOpen} onOpenChange={(o) => o ? setContinueOpen(true) : handleContinueClose()}>
+            <DialogTrigger asChild>
+              <button
+                className="text-sm text-gray-600 hover:text-red-600 hover:underline transition-colors"
+                data-testid="link-continue-trial"
+              >
+                Already started a trial? Continue free trial
+              </button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-md" data-testid="modal-continue-trial">
+              <DialogHeader>
+                <DialogTitle className="text-xl font-bold text-center">
+                  Continue Your Free Trial
+                </DialogTitle>
+                <DialogDescription className="text-center">
+                  Enter your email to resume instantly. If you haven't verified yet, we'll send a verification link.
+                </DialogDescription>
+              </DialogHeader>
 
-            {!continueSent ? (
-              <form onSubmit={handleContinueSubmit} className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <Label htmlFor="continue-trial-email">Email Address</Label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                    <Input
-                      id="continue-trial-email"
-                      type="email"
-                      placeholder="your@email.com"
-                      value={continueEmail}
-                      onChange={(e) => setContinueEmail(e.target.value)}
-                      className="pl-10"
-                      disabled={continueSubmitting}
-                      data-testid="input-continue-trial-email"
-                    />
+              {!continueSent ? (
+                <form onSubmit={handleContinueSubmit} className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="continue-trial-email">Email Address</Label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                      <Input
+                        id="continue-trial-email"
+                        type="email"
+                        placeholder="your@email.com"
+                        value={continueEmail}
+                        onChange={(e) => setContinueEmail(e.target.value)}
+                        className="pl-10"
+                        disabled={continueSubmitting}
+                        data-testid="input-continue-trial-email"
+                      />
+                    </div>
                   </div>
-                </div>
-                
-                <Button
-                  type="submit"
-                  className="w-full"
-                  disabled={continueSubmitting}
-                  data-testid="button-send-continue-link"
-                >
-                  {continueSubmitting ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Loading...
-                    </>
-                  ) : (
-                    <>
-                      Continue Trial
-                      <ArrowRight className="w-4 h-4 ml-2" />
-                    </>
-                  )}
-                </Button>
-              </form>
-            ) : (
-              <div className="flex flex-col items-center py-6">
-                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
-                  <CheckCircle className="w-8 h-8 text-green-600" />
-                </div>
-                <p className="text-lg font-semibold text-gray-800 text-center mb-2" data-testid="text-continue-email-sent">
-                  Check your inbox!
-                </p>
-                <p className="text-gray-600 text-center mb-3">
-                  We've sent a sign-in link to your email address.
-                </p>
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 w-full">
-                  <p className="text-sm text-blue-800 text-center">
-                    If you don't see it, check your Spam or Junk folder and mark it as "Not Spam."
+                  
+                  <Button
+                    type="submit"
+                    className="w-full"
+                    disabled={continueSubmitting}
+                    data-testid="button-send-continue-link"
+                  >
+                    {continueSubmitting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Loading...
+                      </>
+                    ) : (
+                      <>
+                        Continue Trial
+                        <ArrowRight className="w-4 h-4 ml-2" />
+                      </>
+                    )}
+                  </Button>
+                </form>
+              ) : (
+                <div className="flex flex-col items-center py-6">
+                  <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
+                    <CheckCircle className="w-8 h-8 text-green-600" />
+                  </div>
+                  <p className="text-lg font-semibold text-gray-800 text-center mb-2" data-testid="text-continue-email-sent">
+                    Check your inbox!
                   </p>
+                  <p className="text-gray-600 text-center mb-3">
+                    We've sent a sign-in link to your email address.
+                  </p>
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 w-full">
+                    <p className="text-sm text-blue-800 text-center">
+                      If you don't see it, check your Spam or Junk folder and mark it as "Not Spam."
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setContinueSent(false);
+                      setContinueEmail('');
+                    }}
+                    disabled={resendCooldown > 0}
+                    className="w-full"
+                    data-testid="button-resend-continue-link"
+                  >
+                    {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Try a Different Email'}
+                  </Button>
                 </div>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setContinueSent(false);
-                    setContinueEmail('');
-                  }}
-                  disabled={resendCooldown > 0}
-                  className="w-full"
-                  data-testid="button-resend-continue-link"
-                >
-                  {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Try a Different Email'}
-                </Button>
-              </div>
-            )}
-          </DialogContent>
-        </Dialog>
+              )}
+            </DialogContent>
+          </Dialog>
+          <p className="text-[10px] text-gray-400 italic">
+            *Note: Document upload is not available during trial sessions.
+          </p>
+        </div>
       )}
     </div>
   );

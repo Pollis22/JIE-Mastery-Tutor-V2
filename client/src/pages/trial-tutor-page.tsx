@@ -856,9 +856,14 @@ export default function TrialTutorPage() {
               <CardTitle className="text-2xl font-bold text-red-600">
                 JIE Mastery AI Tutor - Free Trial
               </CardTitle>
-              <p className="text-gray-600 dark:text-gray-400">
-                Experience personalized AI tutoring for {formatTime(secondsRemaining)} minutes
-              </p>
+              <div className="space-y-1">
+                <p className="text-gray-600 dark:text-gray-400">
+                  Experience personalized AI tutoring for {formatTime(secondsRemaining)} minutes
+                </p>
+                <p className="text-xs font-medium text-blue-600 bg-blue-50 dark:bg-blue-900/30 py-1 px-3 rounded-full inline-block">
+                  Note: Document upload is only available with paid plans.
+                </p>
+              </div>
             </CardHeader>
             <CardContent className="p-8">
               <div className="flex flex-col items-center justify-center min-h-[400px]">
