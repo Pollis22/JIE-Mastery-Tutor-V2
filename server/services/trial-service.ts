@@ -205,10 +205,11 @@ export class TrialService {
         
         // Case 1: Verified and still active (not expired) - block with 409
         if (existingTrial.verifiedAt !== null) {
-          const consumedSeconds = existingTrial.consumedSeconds ?? 0;
-          const secondsRemaining = TRIAL_DURATION_SECONDS - consumedSeconds;
-          const isExpired = secondsRemaining <= 0 || existingTrial.status === 'expired' ||
-            (existingTrial.trialEndsAt && now > existingTrial.trialEndsAt);
+          const usedSeconds = existingTrial.usedSeconds ?? existingTrial.consumedSeconds ?? 0;
+          const secondsRemaining = TRIAL_DURATION_SECONDS - usedSeconds;
+          const isExpired = secondsRemaining <= 0 || 
+            existingTrial.status === 'expired' || 
+            existingTrial.status === 'ended';
           
           if (!isExpired) {
             // Active trial - return 409 with continue trial path
@@ -683,14 +684,16 @@ export class TrialService {
         TRIAL_DURATION_SECONDS
       );
 
-      const newStatus = newConsumed >= TRIAL_DURATION_SECONDS ? 'expired' : 'active';
+      const newStatus: 'active' | 'ended' = newConsumed >= TRIAL_DURATION_SECONDS ? 'ended' : 'active';
+      const now = new Date();
 
       await db.update(trialSessions)
         .set({
+          usedSeconds: newConsumed,
           consumedSeconds: newConsumed,
-          status: newStatus as 'pending' | 'active' | 'expired' | 'blocked',
-          lastActiveAt: new Date(),
-          updatedAt: new Date(),
+          status: newStatus,
+          lastActiveAt: now,
+          updatedAt: now,
         })
         .where(eq(trialSessions.id, trialId));
 
@@ -1089,21 +1092,12 @@ View in Admin Panel: ${adminPanelLink}`;
         return { ok: false, code: 'NOT_VERIFIED', error: 'Please verify your email first. We\'ve resent the verification email.', verificationResent: true };
       }
 
-      // Check if trial is exhausted using trial_ends_at as single source of truth
+      // Check if trial is exhausted using usedSeconds as single source of truth
       const now = new Date();
-      const trialEndsAt = trial.trialEndsAt;
+      const usedSeconds = trial.usedSeconds ?? trial.consumedSeconds ?? 0;
+      const secondsRemaining = Math.max(0, TRIAL_DURATION_SECONDS - usedSeconds);
       
-      // Calculate seconds remaining from trial_ends_at (authoritative)
-      let secondsRemaining = 0;
-      if (trialEndsAt && trialEndsAt > now) {
-        secondsRemaining = Math.floor((trialEndsAt.getTime() - now.getTime()) / 1000);
-      } else {
-        // Fallback to consumed seconds calculation if trialEndsAt not set
-        const consumedSeconds = trial.consumedSeconds ?? 0;
-        secondsRemaining = TRIAL_DURATION_SECONDS - consumedSeconds;
-      }
-      
-      if (secondsRemaining <= 0 || trial.status === 'expired') {
+      if (secondsRemaining <= 0 || trial.status === 'expired' || trial.status === 'ended') {
         console.log('[TrialService] Continue trial: trial exhausted, secondsRemaining:', secondsRemaining);
         return { ok: false, code: 'TRIAL_EXHAUSTED', error: 'Your trial has ended. Please sign up to continue using JIE Mastery.' };
       }
@@ -1161,27 +1155,20 @@ View in Admin Panel: ${adminPanelLink}`;
         return { ok: true, action: 'VERIFY_REQUIRED', reason: 'not_verified' };
       }
 
-      // Check if status is not active (blocked, expired, etc.)
+      // Check if status is not active (blocked, expired, ended, etc.)
       if (trial.status !== 'active') {
         console.log('[TrialService] Resume trial: status is not active:', trial.status, '- action: ENDED');
         return { ok: true, action: 'ENDED', reason: 'not_active' };
       }
 
-      // Calculate seconds remaining from trial_ends_at
-      let secondsRemaining = 0;
+      // Calculate seconds remaining from usedSeconds (usage-based tracking)
+      const usedSeconds = trial.usedSeconds ?? trial.consumedSeconds ?? 0;
+      let secondsRemaining = Math.max(0, TRIAL_DURATION_SECONDS - usedSeconds);
       let courtesyApplied = false;
-      
-      if (trial.trialEndsAt) {
-        secondsRemaining = Math.floor((trial.trialEndsAt.getTime() - now.getTime()) / 1000);
-      } else {
-        // Fallback for old trials without trialEndsAt
-        const consumedSeconds = trial.consumedSeconds ?? 0;
-        secondsRemaining = TRIAL_DURATION_SECONDS - consumedSeconds;
-      }
 
       // Check if courtesy extension is eligible
       // Conditions:
-      // 1. Trial is expired OR has very low remaining time (<= 30 seconds)
+      // 1. Trial has very low remaining time (<= 30 seconds)
       // 2. Grace has not been applied yet
       // 3. Trial is recent (updated within last 7 days)
       const graceNotApplied = trial.trialGraceAppliedAt === null;
@@ -1190,26 +1177,24 @@ View in Admin Panel: ${adminPanelLink}`;
       const needsCourtesy = secondsRemaining <= 30;
 
       if (needsCourtesy && graceNotApplied && isRecentTrial) {
-        // Apply one-time courtesy extension
-        const newTrialEndsAt = new Date(Math.max(
-          trial.trialEndsAt?.getTime() || now.getTime(),
-          now.getTime()
-        ) + COURTESY_EXTENSION_SECONDS * 1000);
+        // Apply one-time courtesy extension by reducing usedSeconds
+        const newUsedSeconds = Math.max(0, usedSeconds - COURTESY_EXTENSION_SECONDS);
 
         await db.update(trialSessions)
           .set({
-            trialEndsAt: newTrialEndsAt,
+            usedSeconds: newUsedSeconds,
+            consumedSeconds: newUsedSeconds,
             trialGraceAppliedAt: now,
             lastActiveAt: now,
             updatedAt: now,
           })
           .where(eq(trialSessions.id, trial.id));
 
-        secondsRemaining = Math.floor((newTrialEndsAt.getTime() - now.getTime()) / 1000);
+        secondsRemaining = TRIAL_DURATION_SECONDS - newUsedSeconds;
         courtesyApplied = true;
 
         console.log('[TrialService] Courtesy grace applied: trialId=' + trial.id + 
-          ', emailHash=' + emailHash.substring(0, 12) + '..., newTrialEndsAt=' + newTrialEndsAt.toISOString());
+          ', emailHash=' + emailHash.substring(0, 12) + '..., newUsedSeconds=' + newUsedSeconds);
       }
 
       // Check if still no time remaining after courtesy check
@@ -1289,11 +1274,11 @@ View in Admin Panel: ${adminPanelLink}`;
 
       const trialSession = trials[0];
 
-      // Check if trial is exhausted
-      const consumedSeconds = trialSession.consumedSeconds ?? 0;
-      const secondsRemaining = TRIAL_DURATION_SECONDS - consumedSeconds;
+      // Check if trial is exhausted using usedSeconds (usage-based tracking)
+      const usedSeconds = trialSession.usedSeconds ?? trialSession.consumedSeconds ?? 0;
+      const secondsRemaining = Math.max(0, TRIAL_DURATION_SECONDS - usedSeconds);
       
-      if (secondsRemaining <= 0 || trialSession.status === 'expired') {
+      if (secondsRemaining <= 0 || trialSession.status === 'expired' || trialSession.status === 'ended') {
         console.log('[TrialService] Magic token: trial exhausted');
         return { ok: false, error: 'Your trial has ended. Please sign up to continue.', errorCode: 'trial_exhausted' };
       }

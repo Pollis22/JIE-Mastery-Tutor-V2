@@ -207,7 +207,8 @@ router.post('/end-session', async (req: Request, res: Response) => {
       return res.status(400).json({ ok: false, error: 'Invalid request' });
     }
 
-    const success = await trialService.updateConsumedSeconds(trialId, secondsUsed);
+    // Use endTrialSession which tracks actual usage time in usedSeconds field
+    const success = await trialService.endTrialSession(trialId, secondsUsed);
 
     return res.json({ ok: success });
   } catch (error) {
