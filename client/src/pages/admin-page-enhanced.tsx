@@ -212,42 +212,27 @@ export default function AdminPageEnhanced() {
     enabled: !!user?.isAdmin && activeTab === 'safety-incidents',
   });
 
+  // Direct link export - more reliable for file downloads with session auth
+  const handleExportDirect = (type: string) => {
+    let endpoint = '/api/admin/export';
+    if (type === 'sessions') endpoint = '/api/admin/sessions/export';
+    if (type === 'trial-leads') endpoint = '/api/admin/trial-leads/export';
+    
+    // Use window.location for direct download - this ensures cookies are sent
+    window.location.href = endpoint;
+  };
+
+  // Keep mutation for backwards compatibility but use direct approach
   const exportMutation = useMutation({
     mutationFn: async (type: string) => {
-      let endpoint = '/api/admin/export';
-      if (type === 'sessions') endpoint = '/api/admin/sessions/export';
-      if (type === 'trial-leads') endpoint = '/api/admin/trial-leads/export';
-      
-      const response = await fetch(endpoint, {
-        method: 'GET',
-        credentials: 'include',
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Export failed: ${response.statusText}`);
-      }
-      
-      return { response, type };
+      // Use direct link approach - more reliable with session cookies
+      handleExportDirect(type);
+      return { type };
     },
-    onSuccess: async ({ response, type }) => {
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.style.display = 'none';
-      a.href = url;
-      const filenames: Record<string, string> = {
-        sessions: 'sessions-export.csv',
-        'trial-leads': 'trial-leads-export.csv',
-        users: 'users-export.csv',
-      };
-      a.download = filenames[type] || 'export.csv';
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      
+    onSuccess: async ({ type }) => {
       toast({
-        title: "Export successful",
-        description: `Data exported to CSV.`,
+        title: "Export started",
+        description: `Downloading ${type} export...`,
       });
     },
     onError: (error: Error) => {
