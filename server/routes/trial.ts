@@ -217,40 +217,50 @@ router.post('/end-session', async (req: Request, res: Response) => {
 });
 
 // Get a session token for WebSocket connection (trial users only)
-// Uses SAME lookup logic as /status: email_hash cookie first, device ID fallback
+// Uses SAME UNIFIED lookup as /status: email_hash cookie (primary), email body (fallback)
+// NEVER uses deviceIdHash or ipHash for trial lookup
 router.post('/session-token', async (req: Request, res: Response) => {
   try {
     const emailHashFromCookie = req.signedCookies?.[TRIAL_EMAIL_HASH_COOKIE];
-    const deviceIdHash = getDeviceIdHash(req, res);
+    const emailFromBody = typeof req.body?.email === 'string' ? req.body.email : undefined;
     
-    let lookupPath: string;
-    let result;
-    
-    // Use same lookup priority as /status endpoint
-    if (emailHashFromCookie) {
-      // Primary: lookup by email_hash (most reliable, matches /status behavior)
-      lookupPath = 'email_hash_cookie';
-      console.log('[TrialRoutes] session-token: using email_hash cookie, hash:', emailHashFromCookie.substring(0, 12) + '...');
-      result = await trialService.getSessionTokenByEmailHash(emailHashFromCookie, lookupPath);
-    } else {
-      // Fallback: lookup by device_id_hash
-      lookupPath = 'device_id_hash_fallback';
-      console.log('[TrialRoutes] session-token: no email_hash cookie, using device fallback:', deviceIdHash.substring(0, 12) + '...');
-      result = await trialService.getSessionToken(deviceIdHash);
+    // Use UNIFIED lookup - SAME as /status endpoint
+    const resolution = await trialService.resolveTrialFromRequest(emailHashFromCookie, emailFromBody);
+
+    console.log('[TrialRoutes] session-token resolution:', {
+      lookupPath: resolution.lookupPath,
+      emailHashUsed: resolution.emailHashUsed ? resolution.emailHashUsed.substring(0, 12) + '...' : 'null',
+      trialId: resolution.trialId,
+      hasAccess: resolution.hasAccess,
+      reason: resolution.reason,
+    });
+
+    if (!resolution.hasAccess) {
+      // Return same denial reason as /status
+      console.log('[TrialRoutes] session-token: denied, reason:', resolution.reason);
+      return res.status(403).json({ ok: false, error: resolution.reason });
     }
 
-    if (result.ok && result.token) {
-      console.log('[TrialRoutes] session-token: success, trial:', result.trialId, 'lookupPath:', lookupPath);
-      return res.json({
-        ok: true,
-        token: result.token,
-        secondsRemaining: result.secondsRemaining,
-        trialId: result.trialId,
-      });
-    } else {
-      console.log('[TrialRoutes] session-token: denied, error:', result.error, 'lookupPath:', lookupPath, 'cookiePresent:', !!emailHashFromCookie);
-      return res.status(403).json({ ok: false, error: result.error || 'Trial not available' });
+    if (!resolution.trialId) {
+      console.log('[TrialRoutes] session-token: denied, no trial ID');
+      return res.status(403).json({ ok: false, error: 'trial_not_found' });
     }
+
+    if (resolution.secondsRemaining <= 0) {
+      console.log('[TrialRoutes] session-token: denied, no seconds remaining');
+      return res.status(403).json({ ok: false, error: 'trial_expired' });
+    }
+
+    // Mint session token using the resolved trial ID
+    const token = trialService.generateSessionToken(resolution.trialId);
+    
+    console.log('[TrialRoutes] session-token: success, trial:', resolution.trialId, 'lookupPath:', resolution.lookupPath);
+    return res.json({
+      ok: true,
+      token,
+      secondsRemaining: resolution.secondsRemaining,
+      trialId: resolution.trialId,
+    });
   } catch (error) {
     console.error('[TrialRoutes] Error getting session token:', error);
     return res.status(500).json({ ok: false, error: 'Server error' });
