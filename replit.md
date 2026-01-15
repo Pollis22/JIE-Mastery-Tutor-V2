@@ -81,15 +81,33 @@ A no-account-required trial system allows potential users to experience AI tutor
 
 **Trial Flow**: Email entry → Email verification (6-digit code) → 5-minute tutoring session → Trial ended page with signup CTAs
 
-**Anti-Abuse Measures**:
-- 1 trial per email address (lifetime)
-- 1 trial per device per 30 days (signed cookie-based)
-- IP rate limiting (3 trials per 24 hours)
+**Single Source of Truth**: Trial entitlement is determined ONLY by:
+- `verified_at IS NOT NULL` (email verified)
+- `used_seconds < allowance` (base 300s + courtesy 300s if applied)
+- `status != 'blocked'`
+
+DO NOT gate access on: `trial_ends_at`, `verification_expiry`, magic links, rate limits, IP/device counters. The `trial_ends_at` field is DERIVED/INFORMATIONAL only.
+
+**Resume Behavior** (`/api/trial/resume`):
+- IF verified AND `used_seconds < allowance`: Return `RESUME`, set cookie, NO email
+- IF `used_seconds >= allowance`: Apply courtesy extension (once), OR return `ENDED` with `showWelcome50: true`
+- IF not verified: Return `VERIFY_REQUIRED`
+
+**Courtesy Extension**:
+- Applied once when transitioning ACTIVE → ENDED
+- Adds +300 seconds (5 minutes) to allowance
+- Tracked via `trial_grace_applied_at` timestamp
+- Sends "Trial Extended" email notification
+
+**Idempotent Session Ending**:
+- Uses MAX semantics: `max(currentUsed, absoluteUsedSeconds)`
+- Frontend tracks `baselineUsedSecondsRef` and sends absolute totals
+- Baseline refreshed from `/status` and `/session-token` responses
 
 **Technical Implementation**:
 - Database tables: `trial_sessions`, `trial_rate_limits`
-- Routes: `/api/trial/start`, `/api/trial/verify`, `/api/trial/status`, `/api/trial/end-session`
-- Service: `server/services/trial-service.ts`
+- Routes: `/api/trial/start`, `/api/trial/verify`, `/api/trial/status`, `/api/trial/resume`, `/api/trial/session-token`, `/api/trial/end-session`
+- Service: `server/services/trial-service.ts` with `calculateTrialEntitlement()` as single source of truth
 - Cookie middleware: `cookie-parser` with signed cookies for device identification
 
 **Trial Timer**: Counts only during active tutoring sessions (not wall-clock time). Timer displays mm:ss countdown during session.

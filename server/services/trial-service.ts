@@ -4,7 +4,8 @@ import { eq, and, gte, sql, isNull, lt, or } from 'drizzle-orm';
 import crypto, { createHash, randomBytes, createHmac } from 'crypto';
 import { EmailService } from './email-service';
 
-const TRIAL_DURATION_SECONDS = 300;
+const TRIAL_DURATION_SECONDS = 300; // Base trial: 5 minutes
+const COURTESY_EXTENSION_SECONDS = 300; // One-time courtesy extension: 5 minutes
 const TRIAL_TOKEN_EXPIRY_SECONDS = 600; // 10 minutes token validity
 const IP_RATE_LIMIT_WINDOW_HOURS = 24;
 const IP_RATE_LIMIT_MAX_ATTEMPTS = 3;
@@ -13,9 +14,13 @@ const DEVICE_COOLDOWN_DAYS = 30;
 // =============================================================================
 // SINGLE SOURCE OF TRUTH: Trial Entitlement Calculation
 // =============================================================================
-// ALL endpoints (/status, /resume, /session-token, etc.) MUST use this function
-// to determine trial access. used_seconds is the authoritative field.
-// trial_ends_at is DERIVED/OPTIONAL and only set when trial is ended.
+// Trial entitlement is determined ONLY by:
+//   - status = 'active'
+//   - verified_at IS NOT NULL  
+//   - used_seconds < allowance (base + courtesy if applied)
+//
+// DO NOT gate on: trial_ends_at, verification_expiry, magic links, rate limits,
+// IP/device attempt counters. trial_ends_at is DERIVED/INFORMATIONAL only.
 // =============================================================================
 
 export interface TrialEntitlementResult {
@@ -23,56 +28,84 @@ export interface TrialEntitlementResult {
   reason: 'trial_active' | 'trial_expired' | 'trial_not_verified' | 'trial_blocked';
   secondsRemaining: number;
   usedSeconds: number;
+  allowance: number; // Total allowance (base + courtesy if applied)
+}
+
+/**
+ * Calculate the total allowance for a trial (base + courtesy if applied)
+ */
+export function getTrialAllowance(trial: TrialSession): number {
+  const base = TRIAL_DURATION_SECONDS;
+  const courtesyApplied = trial.trialGraceAppliedAt !== null;
+  return courtesyApplied ? base + COURTESY_EXTENSION_SECONDS : base;
 }
 
 /**
  * SINGLE SOURCE OF TRUTH for trial entitlement.
- * All endpoints must use this function to calculate access.
  * 
- * @param trial - The trial session object
- * @returns Entitlement result with hasAccess, reason, secondsRemaining
+ * Entitlement determined ONLY by:
+ *   - verified_at IS NOT NULL
+ *   - status = 'active'
+ *   - used_seconds < allowance
+ * 
+ * DOES NOT check: trial_ends_at, verification_expiry, rate limits, IP/device counters
  */
 export function calculateTrialEntitlement(trial: TrialSession): TrialEntitlementResult {
-  // Source of truth: used_seconds field (fallback to consumed_seconds for legacy)
   const usedSeconds = trial.usedSeconds ?? trial.consumedSeconds ?? 0;
-  const secondsRemaining = Math.max(0, TRIAL_DURATION_SECONDS - usedSeconds);
+  const allowance = getTrialAllowance(trial);
+  const secondsRemaining = Math.max(0, allowance - usedSeconds);
   
-  // Check verification first
+  // Check 1: verified_at IS NOT NULL
   if (!trial.verifiedAt) {
     return {
       hasAccess: false,
       reason: 'trial_not_verified',
       secondsRemaining,
       usedSeconds,
+      allowance,
     };
   }
   
-  // Check blocked status
+  // Check 2: status = 'blocked' → denied
   if (trial.status === 'blocked') {
     return {
       hasAccess: false,
       reason: 'trial_blocked',
       secondsRemaining: 0,
       usedSeconds,
+      allowance,
     };
   }
   
-  // Check if trial is exhausted: used_seconds >= 300 OR status is ended/expired
-  if (secondsRemaining <= 0 || trial.status === 'ended' || trial.status === 'expired') {
+  // Check 3: status must be 'active' (not 'ended', 'expired', etc.)
+  if (trial.status !== 'active') {
     return {
       hasAccess: false,
       reason: 'trial_expired',
       secondsRemaining: 0,
       usedSeconds,
+      allowance,
     };
   }
   
-  // Trial is active
+  // Check 4: used_seconds < allowance
+  if (usedSeconds >= allowance) {
+    return {
+      hasAccess: false,
+      reason: 'trial_expired',
+      secondsRemaining: 0,
+      usedSeconds,
+      allowance,
+    };
+  }
+  
+  // Trial is active: verified + status='active' + has time remaining
   return {
     hasAccess: true,
     reason: 'trial_active',
     secondsRemaining,
     usedSeconds,
+    allowance,
   };
 }
 
@@ -221,11 +254,11 @@ export interface ResumeTrialResult {
   emailHash?: string;
   reason?: ResumeReason;
   courtesyApplied?: boolean;
+  showWelcome50?: boolean; // Signal to show Welcome50 promo when trial ended
   error?: string;
 }
 
 const MAGIC_TOKEN_EXPIRY_MINUTES = 15;
-const COURTESY_EXTENSION_SECONDS = 60;
 
 export class TrialService {
   private emailService: EmailService;
@@ -1244,15 +1277,23 @@ View in Admin Panel: ${adminPanelLink}`;
     }
   }
 
-  // Resume Trial: Allow returning users to resume without re-verification
-  // This is the primary endpoint for "Continue Free Trial" - no magic link needed
+  // =============================================================================
+  // RESUME TRIAL: Single Source of Truth Implementation
+  // =============================================================================
+  // Entitlement determined ONLY by:
+  //   - verified_at IS NOT NULL
+  //   - used_seconds < allowance (base + courtesy if applied)
+  //
+  // DO NOT check: trial_ends_at, verification_expiry, magic links, rate limits,
+  // IP/device attempt counters
+  // =============================================================================
   async resumeTrial(email: string): Promise<ResumeTrialResult> {
     try {
       const normalizedEmail = normalizeEmail(email);
       const emailHash = hashValue(normalizedEmail);
       const now = new Date();
 
-      console.log('[TrialService] Resume trial requested for email_hash:', emailHash.substring(0, 12) + '...');
+      console.log('[TrialService] resumeTrial: email_hash:', emailHash.substring(0, 12) + '...');
 
       // Find trial by email hash
       const trials = await db.select()
@@ -1266,79 +1307,88 @@ View in Admin Panel: ${adminPanelLink}`;
       }
 
       const trial = trials[0];
+      const usedSeconds = trial.usedSeconds ?? trial.consumedSeconds ?? 0;
+      const allowance = getTrialAllowance(trial);
 
-      // USE SINGLE SOURCE OF TRUTH: calculateTrialEntitlement
-      let entitlement = calculateTrialEntitlement(trial);
-      let courtesyApplied = false;
-      let currentUsedSeconds = entitlement.usedSeconds;
-
-      console.log('[TrialService] resumeTrial: initial entitlement:', {
+      console.log('[TrialService] resumeTrial: trial found', {
         trialId: trial.id,
-        hasAccess: entitlement.hasAccess,
-        reason: entitlement.reason,
-        secondsRemaining: entitlement.secondsRemaining,
-        usedSeconds: entitlement.usedSeconds,
+        verifiedAt: trial.verifiedAt ? 'yes' : 'no',
+        usedSeconds,
+        allowance,
+        graceApplied: trial.trialGraceAppliedAt ? 'yes' : 'no',
       });
 
-      // Map entitlement reasons to resume actions
-      if (entitlement.reason === 'trial_not_verified') {
+      // =================================================================
+      // RULE 1: IF verified_at IS NULL → VERIFY_REQUIRED
+      // =================================================================
+      if (!trial.verifiedAt) {
+        console.log('[TrialService] resumeTrial: not verified - action: VERIFY_REQUIRED');
         return { ok: true, action: 'VERIFY_REQUIRED', reason: 'not_verified' };
       }
 
-      if (entitlement.reason === 'trial_blocked') {
-        return { ok: true, action: 'ENDED', reason: 'not_active' };
-      }
+      // =================================================================
+      // RULE 2: IF used_seconds >= allowance → ENDED (with showWelcome50)
+      // But first, check if we can apply courtesy extension
+      // =================================================================
+      if (usedSeconds >= allowance) {
+        // Check if courtesy extension can be applied (ACTIVE → ENDED transition)
+        const canApplyCourtesy = trial.trialGraceAppliedAt === null && trial.email;
+        
+        if (canApplyCourtesy) {
+          // Apply one-time courtesy extension: +300 seconds
+          const newAllowance = allowance + COURTESY_EXTENSION_SECONDS;
+          const newSecondsRemaining = newAllowance - usedSeconds;
+          
+          // Set status back to 'active' and apply courtesy extension
+          await db.update(trialSessions)
+            .set({
+              status: 'active', // Restore active status for entitlement checks
+              trialGraceAppliedAt: now,
+              lastActiveAt: now,
+              updatedAt: now,
+            })
+            .where(eq(trialSessions.id, trial.id));
 
-      // Check if courtesy extension is eligible BEFORE returning ENDED
-      // Conditions:
-      // 1. Trial has very low remaining time (<= 30 seconds)
-      // 2. Grace has not been applied yet
-      // 3. Trial is recent (updated within last 7 days)
-      const graceNotApplied = trial.trialGraceAppliedAt === null;
-      const isRecentTrial = trial.updatedAt && 
-        (now.getTime() - trial.updatedAt.getTime()) < 7 * 24 * 60 * 60 * 1000; // 7 days
-      const needsCourtesy = entitlement.secondsRemaining <= 30;
+          // Send "Trial Extended" email
+          await this.sendTrialExtendedEmail(trial.email!, COURTESY_EXTENSION_SECONDS);
 
-      if (needsCourtesy && graceNotApplied && isRecentTrial && trial.status === 'active') {
-        // Apply one-time courtesy extension by reducing usedSeconds
-        const newUsedSeconds = Math.max(0, currentUsedSeconds - COURTESY_EXTENSION_SECONDS);
+          console.log('[TrialService] resumeTrial: courtesy extension applied', {
+            trialId: trial.id,
+            newAllowance,
+            newSecondsRemaining,
+          });
 
-        await db.update(trialSessions)
-          .set({
-            usedSeconds: newUsedSeconds,
-            consumedSeconds: newUsedSeconds,
-            trialGraceAppliedAt: now,
-            lastActiveAt: now,
-            updatedAt: now,
-          })
-          .where(eq(trialSessions.id, trial.id));
+          // Now trial has time remaining - return RESUME
+          return {
+            ok: true,
+            action: 'RESUME',
+            secondsRemaining: newSecondsRemaining,
+            trialId: trial.id,
+            emailHash,
+            courtesyApplied: true,
+          };
+        }
 
-        // Recalculate entitlement after courtesy extension
-        currentUsedSeconds = newUsedSeconds;
-        entitlement = {
-          hasAccess: true,
-          reason: 'trial_active',
-          secondsRemaining: TRIAL_DURATION_SECONDS - newUsedSeconds,
-          usedSeconds: newUsedSeconds,
+        // No courtesy available - trial is ended
+        console.log('[TrialService] resumeTrial: trial exhausted - action: ENDED');
+        return { 
+          ok: true, 
+          action: 'ENDED', 
+          reason: 'trial_expired',
+          showWelcome50: true, // Signal to show Welcome50 promo
         };
-        courtesyApplied = true;
-
-        console.log('[TrialService] resumeTrial: courtesy applied:', {
-          trialId: trial.id,
-          newUsedSeconds,
-          newSecondsRemaining: entitlement.secondsRemaining,
-        });
       }
 
-      // After courtesy check, if still expired, return ENDED
-      if (!entitlement.hasAccess || entitlement.reason === 'trial_expired') {
-        console.log('[TrialService] resumeTrial: trial expired - action: ENDED');
-        return { ok: true, action: 'ENDED', reason: 'trial_expired' };
-      }
+      // =================================================================
+      // RULE 3: verified_at IS NOT NULL AND used_seconds < allowance → RESUME
+      // Set cookie, return RESUME, DO NOT send email, DO NOT increment counters
+      // =================================================================
+      const secondsRemaining = allowance - usedSeconds;
 
-      // Update last active timestamp
+      // Ensure status is 'active' for entitlement checks to pass
       await db.update(trialSessions)
         .set({
+          status: 'active', // Ensure active status for consistent entitlement
           lastActiveAt: now,
           updatedAt: now,
         })
@@ -1346,22 +1396,87 @@ View in Admin Panel: ${adminPanelLink}`;
 
       console.log('[TrialService] resumeTrial: SUCCESS - action: RESUME', {
         trialId: trial.id,
-        secondsRemaining: entitlement.secondsRemaining,
-        usedSeconds: currentUsedSeconds,
-        courtesyApplied,
+        secondsRemaining,
+        usedSeconds,
+        allowance,
       });
 
       return {
         ok: true,
         action: 'RESUME',
-        secondsRemaining: entitlement.secondsRemaining,
+        secondsRemaining,
         trialId: trial.id,
         emailHash,
-        courtesyApplied,
+        courtesyApplied: false,
       };
     } catch (error: any) {
       console.error('[TrialService] Error resuming trial:', error);
       return { ok: false, error: 'Something went wrong. Please try again.' };
+    }
+  }
+
+  // Send "Trial Extended" email when courtesy extension is applied
+  private async sendTrialExtendedEmail(email: string, extensionSeconds: number): Promise<void> {
+    const extensionMinutes = Math.floor(extensionSeconds / 60);
+    const baseUrl = this.getBaseUrl();
+    const resumeUrl = `${baseUrl}/trial/verify`;
+
+    console.log('[TrialService] Sending trial extended email to:', email);
+
+    const htmlContent = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Your Trial Has Been Extended!</title>
+</head>
+<body style="margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;background-color:#f4f4f4;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f4f4;">
+<tr>
+<td align="center" style="padding:40px 20px;">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="background-color:#ffffff;border-radius:8px;max-width:600px;">
+<tr>
+<td style="padding:40px;">
+<h1 style="margin:0 0 20px 0;color:#16a34a;font-size:28px;font-weight:bold;">Your Trial Has Been Extended!</h1>
+<p style="margin:0 0 20px 0;color:#333333;font-size:16px;line-height:24px;">Great news! We've added <strong>${extensionMinutes} more minutes</strong> to your JIE Mastery AI Tutor trial.</p>
+<p style="margin:0 0 30px 0;color:#333333;font-size:16px;line-height:24px;">Continue your learning journey right where you left off.</p>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 30px 0;">
+<tr>
+<td align="center">
+<a href="${resumeUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:14px 28px;font-size:16px;font-weight:bold;color:#ffffff;text-decoration:none;background-color:#16a34a;border-radius:6px;">Continue My Trial</a>
+</td>
+</tr>
+</table>
+<p style="margin:0;color:#666666;font-size:14px;">Ready to unlock unlimited learning? <a href="${baseUrl}/pricing" style="color:#dc2626;text-decoration:underline;">View our plans</a></p>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</body>
+</html>`;
+
+    const textContent = `Your Trial Has Been Extended!
+
+Great news! We've added ${extensionMinutes} more minutes to your JIE Mastery AI Tutor trial.
+
+Continue your learning journey: ${resumeUrl}
+
+Ready to unlock unlimited learning? View our plans: ${baseUrl}/pricing`;
+
+    try {
+      const emailService = new EmailService();
+      await emailService.sendEmail({
+        to: email,
+        subject: 'Your JIE Mastery Trial Has Been Extended!',
+        html: htmlContent,
+        text: textContent,
+      });
+      console.log('[TrialService] Trial extended email sent successfully to:', email);
+    } catch (error) {
+      console.error('[TrialService] Failed to send trial extended email:', error);
+      // Don't throw - email failure shouldn't block the extension
     }
   }
 
