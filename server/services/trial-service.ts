@@ -37,6 +37,7 @@ export type TrialErrorCode =
   | 'TRIAL_EXPIRED'
   | 'TRIAL_INTERNAL_ERROR'
   | 'TRIAL_DB_MIGRATION_MISSING'
+  | 'TRIAL_DB_SCHEMA_MISMATCH'
   | 'TRIAL_DB_ERROR'
   | 'EMAIL_SEND_FAILED'
   | 'TRIAL_CONFIG_ERROR';
@@ -46,6 +47,20 @@ function isMissingTableError(error: any): boolean {
   // PostgreSQL error code 42P01 = undefined_table
   return error?.code === '42P01' || 
     error?.message?.includes('relation') && error?.message?.includes('does not exist');
+}
+
+// Helper to check if error is a missing column error
+function isMissingColumnError(error: any): boolean {
+  // PostgreSQL error code 42703 = undefined_column
+  return error?.code === '42703' || 
+    (error?.message?.includes('column') && error?.message?.includes('does not exist'));
+}
+
+// Extract column name from error message
+function extractMissingColumn(error: any): string | null {
+  const match = error?.message?.match(/column ["']?(\w+)["']? (?:of relation|does not exist)/i) ||
+                error?.message?.match(/column (\w+) does not exist/i);
+  return match ? match[1] : null;
 }
 
 export interface TrialStartResult {
@@ -306,9 +321,24 @@ export class TrialService {
       // Check if this is a missing table error (migration not applied)
       if (isMissingTableError(error)) {
         console.error(`[TrialService:${requestId}] CRITICAL: trial_sessions table does not exist!`);
+        console.error(`[TrialService:${requestId}] ACTION REQUIRED: Run 'npm run db:push' to sync schema`);
         return { 
           ok: false, 
           code: 'TRIAL_DB_MIGRATION_MISSING',
+          error: 'Trial service is temporarily unavailable. Please try again later.',
+          errorCode: 'server_error' 
+        };
+      }
+      
+      // Check if this is a missing column error (schema mismatch)
+      if (isMissingColumnError(error)) {
+        const missingColumn = extractMissingColumn(error);
+        console.error(`[TrialService:${requestId}] CRITICAL: Schema mismatch - column '${missingColumn}' does not exist!`);
+        console.error(`[TrialService:${requestId}] ACTION REQUIRED: Run 'npm run db:push' to add missing columns`);
+        console.error(`[TrialService:${requestId}] Error code: 42703 (undefined_column)`);
+        return { 
+          ok: false, 
+          code: 'TRIAL_DB_SCHEMA_MISMATCH',
           error: 'Trial service is temporarily unavailable. Please try again later.',
           errorCode: 'server_error' 
         };
@@ -948,8 +978,16 @@ View in Admin Panel: ${adminPanelLink}`;
 
       console.log('[TrialService] Magic link sent for email_hash:', emailHash.substring(0, 12) + '...');
       return { ok: true };
-    } catch (error) {
+    } catch (error: any) {
       console.error('[TrialService] Error requesting magic link:', error);
+      
+      // Check for schema mismatch (missing column)
+      if (isMissingColumnError(error)) {
+        const missingColumn = extractMissingColumn(error);
+        console.error(`[TrialService] CRITICAL: Schema mismatch in requestMagicLink - column '${missingColumn}' does not exist!`);
+        console.error('[TrialService] ACTION REQUIRED: Run \'npm run db:push\' to add missing columns');
+      }
+      
       return { ok: false, code: 'INTERNAL_ERROR', error: 'Something went wrong. Please try again.' };
     }
   }
@@ -1003,8 +1041,16 @@ View in Admin Panel: ${adminPanelLink}`;
         trial: trialSession,
         secondsRemaining,
       };
-    } catch (error) {
+    } catch (error: any) {
       console.error('[TrialService] Error validating magic token:', error);
+      
+      // Check for schema mismatch (missing column)
+      if (isMissingColumnError(error)) {
+        const missingColumn = extractMissingColumn(error);
+        console.error(`[TrialService] CRITICAL: Schema mismatch in validateMagicToken - column '${missingColumn}' does not exist!`);
+        console.error('[TrialService] ACTION REQUIRED: Run \'npm run db:push\' to add missing columns');
+      }
+      
       return { ok: false, error: 'An error occurred. Please try again.', errorCode: 'server_error' };
     }
   }

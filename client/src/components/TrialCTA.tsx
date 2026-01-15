@@ -20,7 +20,7 @@ interface TrialCTAProps {
 }
 
 // Map error codes to user-facing messages
-const TRIAL_ERROR_MESSAGES: Record<string, { title: string; description: string }> = {
+const TRIAL_ERROR_MESSAGES: Record<string, { title: string; description: string; showContinueTrial?: boolean }> = {
   EMAIL_REQUIRED: {
     title: 'Email required',
     description: 'Please enter your email address.',
@@ -30,8 +30,9 @@ const TRIAL_ERROR_MESSAGES: Record<string, { title: string; description: string 
     description: 'Please enter a valid email address.',
   },
   TRIAL_EMAIL_USED: {
-    title: 'This email has already been used for a free trial.',
-    description: 'Please sign up or log in to continue, or try a different email address.',
+    title: 'Email already used',
+    description: 'This email has already been used for a free trial. Want to continue your trial? Use "Continue Trial" on the login page.',
+    showContinueTrial: true,
   },
   TRIAL_DEVICE_USED: {
     title: 'Device already used',
@@ -44,6 +45,22 @@ const TRIAL_ERROR_MESSAGES: Record<string, { title: string; description: string 
   TRIAL_EXPIRED: {
     title: 'Trial ended',
     description: 'Your free trial has ended. Please sign up to continue learning.',
+  },
+  TRIAL_DB_SCHEMA_MISMATCH: {
+    title: 'Service temporarily unavailable',
+    description: 'We\'re performing maintenance. Please try again in a few minutes.',
+  },
+  TRIAL_DB_MIGRATION_MISSING: {
+    title: 'Service temporarily unavailable',
+    description: 'We\'re performing maintenance. Please try again in a few minutes.',
+  },
+  EMAIL_SEND_FAILED: {
+    title: 'Email delivery issue',
+    description: 'We couldn\'t send the verification email. Please try again in a moment.',
+  },
+  TRIAL_CONFIG_ERROR: {
+    title: 'Service configuration issue',
+    description: 'Please try again in a few minutes or contact support.',
   },
 };
 

@@ -101,8 +101,8 @@ router.post('/start', async (req: Request, res: Response) => {
         httpStatus = 429;
       } else if (internalCode === 'EMAIL_SEND_FAILED') {
         httpStatus = 502;
-      } else if (internalCode === 'TRIAL_CONFIG_ERROR' || internalCode === 'TRIAL_DB_MIGRATION_MISSING') {
-        httpStatus = 500;
+      } else if (internalCode === 'TRIAL_CONFIG_ERROR' || internalCode === 'TRIAL_DB_MIGRATION_MISSING' || internalCode === 'TRIAL_DB_SCHEMA_MISMATCH') {
+        httpStatus = 503; // Service Unavailable - signals deployment issue
       } else if (internalCode === 'TRIAL_INTERNAL_ERROR') {
         httpStatus = 500;
       }
