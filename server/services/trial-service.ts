@@ -1178,19 +1178,20 @@ View in Admin Panel: ${adminPanelLink}`;
           isNull(trialLoginTokens.usedAt)
         ));
 
-      // Generate new login token and store in trial_login_tokens table
-      const loginToken = randomBytes(32).toString('hex');
+      // Generate new login token: store hash in DB, send raw token in email
+      const rawToken = randomBytes(32).toString('hex');
+      const tokenHash = hashValue(rawToken); // Same sha256 hashing used for emails
       const expiresAt = new Date(Date.now() + MAGIC_TOKEN_EXPIRY_MINUTES * 60 * 1000);
 
       await db.insert(trialLoginTokens).values({
         trialSessionId: trial.id,
-        token: loginToken,
+        tokenHash,
         expiresAt,
       });
 
-      // Send magic link email
+      // Send magic link email with raw token (not hash)
       if (trial.email) {
-        await this.sendMagicLinkEmail(trial.email, loginToken);
+        await this.sendMagicLinkEmail(trial.email, rawToken);
       }
 
       console.log('[TrialService] Magic link sent for email_hash:', emailHash.substring(0, 12) + '...');
@@ -1211,14 +1212,16 @@ View in Admin Panel: ${adminPanelLink}`;
 
   // Magic Link: Validate magic token and return trial session
   // Uses trial_login_tokens table (one-time use tokens)
-  async validateMagicToken(token: string): Promise<MagicLinkValidateResult> {
+  async validateMagicToken(rawToken: string): Promise<MagicLinkValidateResult> {
     try {
-      console.log('[TrialService] Validating magic token:', token.substring(0, 12) + '...');
+      // Hash the incoming raw token to match stored hash
+      const tokenHash = hashValue(rawToken);
+      console.log('[TrialService] Validating magic token hash:', tokenHash.substring(0, 12) + '...');
 
-      // Find token in trial_login_tokens table
+      // Find token in trial_login_tokens table by hash
       const tokenRecords = await db.select()
         .from(trialLoginTokens)
-        .where(eq(trialLoginTokens.token, token))
+        .where(eq(trialLoginTokens.tokenHash, tokenHash))
         .limit(1);
 
       if (tokenRecords.length === 0) {

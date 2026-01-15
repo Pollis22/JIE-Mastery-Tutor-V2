@@ -856,12 +856,12 @@ export type TrialRateLimit = typeof trialRateLimits.$inferSelect;
 export const trialLoginTokens = pgTable("trial_login_tokens", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   trialSessionId: varchar("trial_session_id", { length: 36 }).notNull().references(() => trialSessions.id, { onDelete: 'cascade' }),
-  token: varchar("token", { length: 64 }).notNull(),
+  tokenHash: text("token_hash").notNull(),
   expiresAt: timestamp("expires_at").notNull(),
   usedAt: timestamp("used_at"),
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => [
-  uniqueIndex("idx_trial_login_token").on(table.token),
+  uniqueIndex("idx_trial_login_token_hash").on(table.tokenHash),
   index("idx_trial_login_session").on(table.trialSessionId),
 ]);
 
