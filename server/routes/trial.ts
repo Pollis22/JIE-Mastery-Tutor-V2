@@ -127,6 +127,7 @@ router.post('/verify', async (req: Request, res: Response) => {
     const parsed = verifyTrialSchema.safeParse(req.body);
     
     if (!parsed.success) {
+      console.log('[TrialRoutes] /verify FAILED: validation error - missing or invalid token');
       return res.status(400).json({ 
         ok: false, 
         error: 'Invalid token',
@@ -134,6 +135,9 @@ router.post('/verify', async (req: Request, res: Response) => {
       });
     }
 
+    const tokenPreview = parsed.data.token.substring(0, 12) + '...';
+    console.log('[TrialRoutes] /verify: attempting verification for token:', tokenPreview);
+    
     const result = await trialService.verifyTrialToken(parsed.data.token);
 
     if (result.ok && result.emailHash) {
@@ -145,18 +149,21 @@ router.post('/verify', async (req: Request, res: Response) => {
         maxAge: TRIAL_COOKIE_MAX_AGE,
         signed: true,
       });
-      console.log('[TrialRoutes] /verify: set email_hash cookie for:', result.emailHash.substring(0, 12) + '...');
+      console.log('[TrialRoutes] /verify SUCCESS: email verified, cookie set for:', result.emailHash.substring(0, 12) + '...');
+      console.log('[TrialRoutes] /verify: status updated to active, secondsRemaining:', result.secondsRemaining);
       
       // Don't return emailHash to client
       const { emailHash, ...clientResult } = result;
       return res.json(clientResult);
     } else if (result.ok) {
+      console.log('[TrialRoutes] /verify SUCCESS: but no emailHash returned');
       return res.json(result);
     } else {
+      console.log('[TrialRoutes] /verify FAILED:', { errorCode: result.errorCode, error: result.error });
       return res.status(400).json(result);
     }
   } catch (error) {
-    console.error('[TrialRoutes] Error verifying trial:', error);
+    console.error('[TrialRoutes] /verify ERROR:', error);
     return res.status(500).json({ ok: false, error: 'Server error', errorCode: 'server_error' });
   }
 });
