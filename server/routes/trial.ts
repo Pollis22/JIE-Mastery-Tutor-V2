@@ -304,26 +304,6 @@ const magicTokenSchema = z.object({
   token: z.string().min(1, 'Token is required'),
 });
 
-router.post('/admin/run-reminders', async (req: Request, res: Response) => {
-  try {
-    console.log('[TrialRoutes] Admin: /admin/run-reminders triggered');
-    
-    const { runTrialRemindersNow } = await import('../jobs/trial-reminders');
-    const result = await runTrialRemindersNow();
-    
-    console.log(`[TrialRoutes] Admin reminders complete: sent=${result.sent}, skipped=${result.skipped}, errors=${result.errors}`);
-    
-    return res.json({
-      ok: true,
-      message: 'Pending reminders processed',
-      ...result,
-    });
-  } catch (error) {
-    console.error('[TrialRoutes] Error running reminders:', error);
-    return res.status(500).json({ ok: false, error: 'Failed to run reminders' });
-  }
-});
-
 router.post('/magic-validate', async (req: Request, res: Response) => {
   try {
     console.log('[TrialRoutes] /magic-validate received');

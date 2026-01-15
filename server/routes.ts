@@ -1924,6 +1924,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin routes
+  // Trial verification reminder - run now (admin only)
+  app.post("/api/admin/trial-reminders", requireAdmin, async (req, res) => {
+    try {
+      console.log('[Admin] Running trial verification reminders...');
+      const { runTrialRemindersNow } = await import('./jobs/trial-reminders');
+      const result = await runTrialRemindersNow();
+      console.log(`[Admin] Trial reminders complete: sent=${result.sent}, skipped=${result.skipped}, errors=${result.errors}`);
+      res.json({
+        success: true,
+        message: 'Pending reminders processed',
+        ...result,
+      });
+    } catch (error: any) {
+      console.error('[Admin] Trial reminders error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Stripe customer cleanup endpoint (admin only)
   app.post("/api/admin/cleanup-stripe", requireAdmin, async (req, res) => {
     try {
