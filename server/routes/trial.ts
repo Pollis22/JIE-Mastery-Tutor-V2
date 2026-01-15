@@ -255,4 +255,102 @@ router.post('/session-token', async (req: Request, res: Response) => {
   }
 });
 
+// Magic Link: Request a magic link to continue trial
+const magicLinkRequestSchema = z.object({
+  email: z.string().email('Please enter a valid email address'),
+});
+
+router.post('/magic-link', async (req: Request, res: Response) => {
+  try {
+    console.log('[TrialRoutes] /magic-link received');
+    
+    const parsed = magicLinkRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ 
+        ok: false, 
+        error: 'Please enter a valid email address.',
+        code: 'EMAIL_INVALID' 
+      });
+    }
+
+    const { email } = parsed.data;
+    const result = await trialService.requestMagicLink(email);
+
+    if (result.ok) {
+      console.log('[TrialRoutes] /magic-link: link sent (or safe response for unknown email)');
+      return res.json({ 
+        ok: true, 
+        message: 'If a trial exists for this email, you will receive a sign-in link shortly.' 
+      });
+    } else {
+      // Return specific error codes for frontend handling
+      const httpStatus = result.code === 'TRIAL_EXHAUSTED' ? 410 : 400;
+      console.log('[TrialRoutes] /magic-link: error:', result.code, result.error);
+      return res.status(httpStatus).json({
+        ok: false,
+        error: result.error,
+        code: result.code,
+        verificationResent: result.verificationResent,
+      });
+    }
+  } catch (error) {
+    console.error('[TrialRoutes] Error requesting magic link:', error);
+    return res.status(500).json({ ok: false, error: 'Server error', code: 'SERVER_ERROR' });
+  }
+});
+
+// Magic Link: Validate token and set session cookie
+const magicTokenSchema = z.object({
+  token: z.string().min(1, 'Token is required'),
+});
+
+router.post('/magic-validate', async (req: Request, res: Response) => {
+  try {
+    console.log('[TrialRoutes] /magic-validate received');
+    
+    const parsed = magicTokenSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ 
+        ok: false, 
+        error: 'Invalid request.',
+        errorCode: 'invalid_token' 
+      });
+    }
+
+    const { token } = parsed.data;
+    const result = await trialService.validateMagicToken(token);
+
+    if (result.ok && result.trial) {
+      console.log('[TrialRoutes] /magic-validate: success, trial:', result.trial.id);
+      
+      // Set the email hash cookie so the trial session is linked to this browser
+      res.cookie(TRIAL_EMAIL_HASH_COOKIE, result.trial.emailHash, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: TRIAL_COOKIE_MAX_AGE,
+        signed: true,
+      });
+
+      return res.json({
+        ok: true,
+        trialId: result.trial.id,
+        secondsRemaining: result.secondsRemaining,
+        email: result.trial.email,
+      });
+    } else {
+      console.log('[TrialRoutes] /magic-validate: error:', result.errorCode, result.error);
+      const httpStatus = result.errorCode === 'trial_exhausted' ? 410 : 400;
+      return res.status(httpStatus).json({
+        ok: false,
+        error: result.error,
+        errorCode: result.errorCode,
+      });
+    }
+  } catch (error) {
+    console.error('[TrialRoutes] Error validating magic token:', error);
+    return res.status(500).json({ ok: false, error: 'Server error', errorCode: 'server_error' });
+  }
+});
+
 export default router;

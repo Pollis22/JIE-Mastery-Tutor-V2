@@ -83,6 +83,30 @@ export interface TrialSessionTokenResult {
   error?: string;
 }
 
+export type MagicLinkErrorCode = 
+  | 'NOT_FOUND'
+  | 'NOT_VERIFIED'
+  | 'TRIAL_EXHAUSTED'
+  | 'RATE_LIMITED'
+  | 'INTERNAL_ERROR';
+
+export interface MagicLinkRequestResult {
+  ok: boolean;
+  code?: MagicLinkErrorCode;
+  error?: string;
+  verificationResent?: boolean;
+}
+
+export interface MagicLinkValidateResult {
+  ok: boolean;
+  trial?: TrialSession;
+  secondsRemaining?: number;
+  error?: string;
+  errorCode?: 'invalid_token' | 'expired_token' | 'trial_exhausted' | 'server_error';
+}
+
+const MAGIC_TOKEN_EXPIRY_MINUTES = 15;
+
 export class TrialService {
   private emailService: EmailService;
 
@@ -788,6 +812,223 @@ View in Admin Panel: ${adminPanelLink}`;
     } catch (error) {
       console.error('[TrialService] Error generating session token:', error);
       return { ok: false, error: 'server_error' };
+    }
+  }
+
+  // Magic Link: Request a magic link for returning trial users
+  async requestMagicLink(email: string): Promise<MagicLinkRequestResult> {
+    try {
+      const normalizedEmail = normalizeEmail(email);
+      const emailHash = hashValue(normalizedEmail);
+
+      console.log('[TrialService] Magic link requested for email_hash:', emailHash.substring(0, 12) + '...');
+
+      // Find trial by email hash
+      const trial = await this.getTrialByEmailHash(emailHash);
+
+      if (!trial) {
+        // Don't reveal if email exists - return generic success message
+        console.log('[TrialService] Magic link: email not found (returning safe response)');
+        return { ok: true }; // Safe response - don't reveal if email exists
+      }
+
+      // Check if trial is verified
+      if (!trial.verifiedAt) {
+        console.log('[TrialService] Magic link: trial not verified, resending verification email');
+        // Resend verification email if trial exists but not verified
+        if (trial.email) {
+          const verificationToken = randomBytes(32).toString('hex');
+          const verificationExpiry = new Date(Date.now() + 30 * 60 * 1000);
+          
+          await db.update(trialSessions)
+            .set({
+              verificationToken,
+              verificationExpiry,
+              updatedAt: new Date(),
+            })
+            .where(eq(trialSessions.id, trial.id));
+          
+          await this.sendTrialVerificationEmail(trial.email, verificationToken);
+        }
+        return { ok: false, code: 'NOT_VERIFIED', error: 'Please verify your email first. We\'ve resent the verification email.', verificationResent: true };
+      }
+
+      // Check if trial is exhausted
+      const consumedSeconds = trial.consumedSeconds ?? 0;
+      const secondsRemaining = TRIAL_DURATION_SECONDS - consumedSeconds;
+      
+      if (secondsRemaining <= 0 || trial.status === 'expired') {
+        console.log('[TrialService] Magic link: trial exhausted');
+        return { ok: false, code: 'TRIAL_EXHAUSTED', error: 'Your trial has ended. Please sign up to continue using JIE Mastery.' };
+      }
+
+      // Generate magic token
+      const magicToken = randomBytes(32).toString('hex');
+      const magicTokenExpiry = new Date(Date.now() + MAGIC_TOKEN_EXPIRY_MINUTES * 60 * 1000);
+
+      await db.update(trialSessions)
+        .set({
+          magicToken,
+          magicTokenExpiry,
+          updatedAt: new Date(),
+        })
+        .where(eq(trialSessions.id, trial.id));
+
+      // Send magic link email
+      if (trial.email) {
+        await this.sendMagicLinkEmail(trial.email, magicToken);
+      }
+
+      console.log('[TrialService] Magic link sent for email_hash:', emailHash.substring(0, 12) + '...');
+      return { ok: true };
+    } catch (error) {
+      console.error('[TrialService] Error requesting magic link:', error);
+      return { ok: false, code: 'INTERNAL_ERROR', error: 'Something went wrong. Please try again.' };
+    }
+  }
+
+  // Magic Link: Validate magic token and return trial session
+  async validateMagicToken(token: string): Promise<MagicLinkValidateResult> {
+    try {
+      console.log('[TrialService] Validating magic token:', token.substring(0, 12) + '...');
+
+      const trial = await db.select()
+        .from(trialSessions)
+        .where(eq(trialSessions.magicToken, token))
+        .limit(1);
+
+      if (trial.length === 0) {
+        console.log('[TrialService] Magic token: not found');
+        return { ok: false, error: 'Invalid or expired sign-in link.', errorCode: 'invalid_token' };
+      }
+
+      const trialSession = trial[0];
+
+      // Check if token expired
+      if (trialSession.magicTokenExpiry && new Date() > trialSession.magicTokenExpiry) {
+        console.log('[TrialService] Magic token: expired');
+        return { ok: false, error: 'This sign-in link has expired. Please request a new one.', errorCode: 'expired_token' };
+      }
+
+      // Check if trial is exhausted
+      const consumedSeconds = trialSession.consumedSeconds ?? 0;
+      const secondsRemaining = TRIAL_DURATION_SECONDS - consumedSeconds;
+      
+      if (secondsRemaining <= 0 || trialSession.status === 'expired') {
+        console.log('[TrialService] Magic token: trial exhausted');
+        return { ok: false, error: 'Your trial has ended. Please sign up to continue.', errorCode: 'trial_exhausted' };
+      }
+
+      // Clear the magic token (one-time use)
+      await db.update(trialSessions)
+        .set({
+          magicToken: null,
+          magicTokenExpiry: null,
+          lastActiveAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(trialSessions.id, trialSession.id));
+
+      console.log('[TrialService] Magic token validated for email_hash:', trialSession.emailHash.substring(0, 12) + '...', 'remaining:', secondsRemaining);
+
+      return {
+        ok: true,
+        trial: trialSession,
+        secondsRemaining,
+      };
+    } catch (error) {
+      console.error('[TrialService] Error validating magic token:', error);
+      return { ok: false, error: 'An error occurred. Please try again.', errorCode: 'server_error' };
+    }
+  }
+
+  // Send magic link email
+  private async sendMagicLinkEmail(email: string, token: string): Promise<void> {
+    const baseUrl = this.getBaseUrl();
+    const magicUrl = `${baseUrl}/auth/magic?token=${token}`;
+
+    console.log('[TrialService] Sending magic link email to:', email);
+
+    const htmlContent = `<!DOCTYPE html>
+<html xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<!--[if mso]>
+<xml>
+<o:OfficeDocumentSettings>
+<o:AllowPNG/>
+<o:PixelsPerInch>96</o:PixelsPerInch>
+</o:OfficeDocumentSettings>
+</xml>
+<![endif]-->
+<title>Continue Your Free Trial</title>
+</head>
+<body style="margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;background-color:#f4f4f4;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f4f4f4;">
+<tr>
+<td align="center" style="padding:40px 20px;">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="background-color:#ffffff;border-radius:8px;max-width:600px;">
+<tr>
+<td style="padding:40px;">
+<h1 style="margin:0 0 20px 0;color:#dc2626;font-size:28px;font-weight:bold;font-family:Arial,Helvetica,sans-serif;">Continue Your Free Trial</h1>
+<p style="margin:0 0 30px 0;color:#333333;font-size:16px;line-height:24px;font-family:Arial,Helvetica,sans-serif;">Click the button below to sign in and continue your JIE Mastery AI Tutor free trial.</p>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 30px 0;">
+<tr>
+<td align="center">
+<!--[if mso]>
+<v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${magicUrl}" style="height:48px;v-text-anchor:middle;width:220px;" arcsize="10%" strokecolor="#dc2626" fillcolor="#dc2626">
+<w:anchorlock/>
+<center style="color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:bold;">Continue My Trial</center>
+</v:roundrect>
+<![endif]-->
+<!--[if !mso]><!-->
+<a href="${magicUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:14px 28px;font-size:16px;font-weight:bold;color:#ffffff;text-decoration:none;background-color:#dc2626;border-radius:6px;font-family:Arial,Helvetica,sans-serif;">Continue My Trial</a>
+<!--<![endif]-->
+</td>
+</tr>
+</table>
+<p style="margin:0 0 10px 0;color:#666666;font-size:14px;font-family:Arial,Helvetica,sans-serif;">If the button doesn't work, copy and paste this link into your browser:</p>
+<p style="margin:0 0 20px 0;color:#666666;font-size:14px;word-break:break-all;font-family:Arial,Helvetica,sans-serif;"><a href="${magicUrl}" style="color:#dc2626;text-decoration:underline;">${magicUrl}</a></p>
+<p style="margin:0 0 10px 0;color:#666666;font-size:14px;font-family:Arial,Helvetica,sans-serif;">This link expires in ${MAGIC_TOKEN_EXPIRY_MINUTES} minutes and can only be used once.</p>
+<p style="margin:0;color:#666666;font-size:14px;font-family:Arial,Helvetica,sans-serif;">If you didn't request this, you can safely ignore this email.</p>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+</table>
+</body>
+</html>`;
+
+    const textContent = `Continue Your Free Trial
+
+Click the link below to sign in and continue your JIE Mastery AI Tutor free trial:
+
+${magicUrl}
+
+This link expires in ${MAGIC_TOKEN_EXPIRY_MINUTES} minutes and can only be used once.
+
+If you didn't request this, you can safely ignore this email.`;
+
+    await this.emailService.sendEmail({
+      to: email,
+      subject: 'Continue Your JIE Mastery Free Trial',
+      html: htmlContent,
+      text: textContent,
+    });
+  }
+
+  // Get trial by email (for magic link lookup)
+  async getTrialByEmail(email: string): Promise<TrialSession | null> {
+    try {
+      const normalizedEmail = normalizeEmail(email);
+      const emailHash = hashValue(normalizedEmail);
+      return this.getTrialByEmailHash(emailHash);
+    } catch (error) {
+      console.error('[TrialService] Error getting trial by email:', error);
+      return null;
     }
   }
 }
