@@ -11,12 +11,13 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Play, Mail, CheckCircle } from 'lucide-react';
+import { Loader2, Play, Mail, CheckCircle, ArrowRight } from 'lucide-react';
 
 interface TrialCTAProps {
   variant?: 'primary' | 'secondary' | 'outline';
   size?: 'sm' | 'md' | 'lg';
   className?: string;
+  showContinueLink?: boolean;
 }
 
 // Map error codes to user-facing messages
@@ -64,13 +65,19 @@ const TRIAL_ERROR_MESSAGES: Record<string, { title: string; description: string;
   },
 };
 
-export function TrialCTA({ variant = 'primary', size = 'md', className = '' }: TrialCTAProps) {
+export function TrialCTA({ variant = 'primary', size = 'md', className = '', showContinueLink = true }: TrialCTAProps) {
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const { toast } = useToast();
+  
+  const [continueOpen, setContinueOpen] = useState(false);
+  const [continueEmail, setContinueEmail] = useState('');
+  const [continueSent, setContinueSent] = useState(false);
+  const [continueSubmitting, setContinueSubmitting] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -179,6 +186,88 @@ export function TrialCTA({ variant = 'primary', size = 'md', className = '' }: T
     }, 300);
   };
 
+  const handleContinueClose = () => {
+    setContinueOpen(false);
+    setTimeout(() => {
+      setContinueEmail('');
+      setContinueSent(false);
+    }, 300);
+  };
+
+  const handleContinueSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (continueSubmitting || resendCooldown > 0) return;
+    
+    if (!continueEmail || !continueEmail.includes('@')) {
+      toast({
+        title: 'Email required',
+        description: 'Please enter a valid email address.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setContinueSubmitting(true);
+
+    try {
+      const response = await fetch('/api/trial/magic-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email: continueEmail.trim() }),
+      });
+      
+      const data = await response.json();
+
+      if (data.ok) {
+        setContinueSent(true);
+        setResendCooldown(60);
+        const interval = setInterval(() => {
+          setResendCooldown(prev => {
+            if (prev <= 1) {
+              clearInterval(interval);
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+        toast({
+          title: 'Check your email!',
+          description: 'We sent you a sign-in link to continue your trial.',
+        });
+      } else {
+        const code = data.code || '';
+        if (code === 'NOT_VERIFIED') {
+          toast({
+            title: 'Verification required',
+            description: "We've resent the verification email. Please verify your email first.",
+          });
+        } else if (code === 'TRIAL_EXHAUSTED') {
+          toast({
+            title: 'Trial ended',
+            description: 'Your trial has ended. Please sign up to continue using JIE Mastery.',
+            variant: 'destructive',
+          });
+          handleContinueClose();
+        } else {
+          toast({
+            title: 'Something went wrong',
+            description: data.error || 'Please try again.',
+            variant: 'destructive',
+          });
+        }
+      }
+    } catch (error) {
+      toast({
+        title: 'Connection error',
+        description: 'Please check your internet connection and try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setContinueSubmitting(false);
+    }
+  };
+
   const buttonClasses = {
     primary: 'bg-red-600 hover:bg-red-700 text-white',
     secondary: 'bg-white hover:bg-gray-100 text-red-600 border-2 border-red-600',
@@ -192,16 +281,17 @@ export function TrialCTA({ variant = 'primary', size = 'md', className = '' }: T
   };
 
   return (
-    <Dialog open={open} onOpenChange={(o) => o ? setOpen(true) : handleClose()}>
-      <DialogTrigger asChild>
-        <Button
-          className={`${buttonClasses[variant]} ${sizeClasses[size]} ${className}`}
-          data-testid="button-trial-cta"
-        >
-          <Play className="w-4 h-4 mr-2" />
-          Try 5 Minutes Free
-        </Button>
-      </DialogTrigger>
+    <div className="flex flex-col items-center gap-2">
+      <Dialog open={open} onOpenChange={(o) => o ? setOpen(true) : handleClose()}>
+        <DialogTrigger asChild>
+          <Button
+            className={`${buttonClasses[variant]} ${sizeClasses[size]} ${className}`}
+            data-testid="button-trial-cta"
+          >
+            <Play className="w-4 h-4 mr-2" />
+            Try 5 Minutes Free
+          </Button>
+        </DialogTrigger>
       <DialogContent className="sm:max-w-md" data-testid="modal-trial">
         <DialogHeader>
           <DialogTitle className="text-2xl font-bold text-center">
@@ -290,6 +380,99 @@ export function TrialCTA({ variant = 'primary', size = 'md', className = '' }: T
           </form>
         )}
       </DialogContent>
-    </Dialog>
+      </Dialog>
+
+      {showContinueLink && (
+        <Dialog open={continueOpen} onOpenChange={(o) => o ? setContinueOpen(true) : handleContinueClose()}>
+          <DialogTrigger asChild>
+            <button
+              className="text-sm text-gray-600 hover:text-red-600 hover:underline transition-colors"
+              data-testid="link-continue-trial"
+            >
+              Already started a trial? Continue free trial
+            </button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-md" data-testid="modal-continue-trial">
+            <DialogHeader>
+              <DialogTitle className="text-xl font-bold text-center">
+                Continue Your Free Trial
+              </DialogTitle>
+              <DialogDescription className="text-center">
+                Enter the email you used to start your free trial. We'll send you a sign-in link.
+              </DialogDescription>
+            </DialogHeader>
+
+            {!continueSent ? (
+              <form onSubmit={handleContinueSubmit} className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="continue-trial-email">Email Address</Label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                    <Input
+                      id="continue-trial-email"
+                      type="email"
+                      placeholder="your@email.com"
+                      value={continueEmail}
+                      onChange={(e) => setContinueEmail(e.target.value)}
+                      className="pl-10"
+                      disabled={continueSubmitting}
+                      data-testid="input-continue-trial-email"
+                    />
+                  </div>
+                </div>
+                
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={continueSubmitting}
+                  data-testid="button-send-continue-link"
+                >
+                  {continueSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Sending...
+                    </>
+                  ) : (
+                    <>
+                      Send Sign-in Link
+                      <ArrowRight className="w-4 h-4 ml-2" />
+                    </>
+                  )}
+                </Button>
+              </form>
+            ) : (
+              <div className="flex flex-col items-center py-6">
+                <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
+                  <CheckCircle className="w-8 h-8 text-green-600" />
+                </div>
+                <p className="text-lg font-semibold text-gray-800 text-center mb-2" data-testid="text-continue-email-sent">
+                  Check your inbox!
+                </p>
+                <p className="text-gray-600 text-center mb-3">
+                  We've sent a sign-in link to your email address.
+                </p>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 w-full">
+                  <p className="text-sm text-blue-800 text-center">
+                    If you don't see it, check your Spam or Junk folder and mark it as "Not Spam."
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setContinueSent(false);
+                    setContinueEmail('');
+                  }}
+                  disabled={resendCooldown > 0}
+                  className="w-full"
+                  data-testid="button-resend-continue-link"
+                >
+                  {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Try a Different Email'}
+                </Button>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+      )}
+    </div>
   );
 }
