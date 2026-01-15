@@ -228,19 +228,30 @@ router.post('/end-session', async (req: Request, res: Response) => {
 });
 
 // Get a session token for WebSocket connection (trial users only)
+// Uses SAME lookup logic as /status: email_hash cookie first, device ID fallback
 router.post('/session-token', async (req: Request, res: Response) => {
   try {
+    const emailHashFromCookie = req.signedCookies?.[TRIAL_EMAIL_HASH_COOKIE];
     const deviceIdHash = getDeviceIdHash(req, res);
     
-    if (!deviceIdHash) {
-      console.log('[TrialRoutes] session-token: no device ID hash');
-      return res.status(400).json({ ok: false, error: 'Missing device identification' });
-    }
+    let lookupPath: string;
+    let result;
     
-    const result = await trialService.getSessionToken(deviceIdHash);
+    // Use same lookup priority as /status endpoint
+    if (emailHashFromCookie) {
+      // Primary: lookup by email_hash (most reliable, matches /status behavior)
+      lookupPath = 'email_hash_cookie';
+      console.log('[TrialRoutes] session-token: using email_hash cookie, hash:', emailHashFromCookie.substring(0, 12) + '...');
+      result = await trialService.getSessionTokenByEmailHash(emailHashFromCookie, lookupPath);
+    } else {
+      // Fallback: lookup by device_id_hash
+      lookupPath = 'device_id_hash_fallback';
+      console.log('[TrialRoutes] session-token: no email_hash cookie, using device fallback:', deviceIdHash.substring(0, 12) + '...');
+      result = await trialService.getSessionToken(deviceIdHash);
+    }
 
     if (result.ok && result.token) {
-      console.log('[TrialRoutes] session-token: success, trial:', result.trialId);
+      console.log('[TrialRoutes] session-token: success, trial:', result.trialId, 'lookupPath:', lookupPath);
       return res.json({
         ok: true,
         token: result.token,
@@ -248,7 +259,7 @@ router.post('/session-token', async (req: Request, res: Response) => {
         trialId: result.trialId,
       });
     } else {
-      console.log('[TrialRoutes] session-token: denied, error:', result.error);
+      console.log('[TrialRoutes] session-token: denied, error:', result.error, 'lookupPath:', lookupPath, 'cookiePresent:', !!emailHashFromCookie);
       return res.status(403).json({ ok: false, error: result.error || 'Trial not available' });
     }
   } catch (error) {

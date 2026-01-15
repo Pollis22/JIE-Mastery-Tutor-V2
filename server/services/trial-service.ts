@@ -912,6 +912,48 @@ View in Admin Panel: ${adminPanelLink}`;
     }
   }
 
+  // Get a session token using email hash (primary lookup - matches /status behavior)
+  async getSessionTokenByEmailHash(emailHash: string, lookupPath: string): Promise<TrialSessionTokenResult> {
+    try {
+      console.log('[TrialService] getSessionTokenByEmailHash:', {
+        emailHash: emailHash.substring(0, 12) + '...',
+        lookupPath,
+      });
+
+      const entitlement = await this.getTrialEntitlementByEmailHash(emailHash, lookupPath);
+      
+      // Strictly enforce entitlement checks
+      if (!entitlement.hasAccess) {
+        console.log('[TrialService] Token denied (emailHash): no access, reason:', entitlement.reason, 'lookupPath:', lookupPath);
+        return { ok: false, error: entitlement.reason };
+      }
+      
+      if (!entitlement.trialId) {
+        console.log('[TrialService] Token denied (emailHash): no trial ID, lookupPath:', lookupPath);
+        return { ok: false, error: 'trial_not_found' };
+      }
+      
+      // Verify trial still has remaining time
+      if (!entitlement.trialSecondsRemaining || entitlement.trialSecondsRemaining <= 0) {
+        console.log('[TrialService] Token denied (emailHash): no seconds remaining, lookupPath:', lookupPath);
+        return { ok: false, error: 'trial_expired' };
+      }
+      
+      const token = this.generateSessionToken(entitlement.trialId);
+      console.log('[TrialService] Token issued (emailHash) for trial:', entitlement.trialId, 'remaining:', entitlement.trialSecondsRemaining, 'lookupPath:', lookupPath);
+      
+      return {
+        ok: true,
+        token,
+        secondsRemaining: entitlement.trialSecondsRemaining,
+        trialId: entitlement.trialId,
+      };
+    } catch (error) {
+      console.error('[TrialService] Error generating session token by emailHash:', error);
+      return { ok: false, error: 'server_error' };
+    }
+  }
+
   // Magic Link: Request a magic link for returning trial users
   // Uses trial_login_tokens table (separate from verification_token)
   async requestMagicLink(email: string): Promise<MagicLinkRequestResult> {
