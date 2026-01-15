@@ -10,6 +10,72 @@ const IP_RATE_LIMIT_WINDOW_HOURS = 24;
 const IP_RATE_LIMIT_MAX_ATTEMPTS = 3;
 const DEVICE_COOLDOWN_DAYS = 30;
 
+// =============================================================================
+// SINGLE SOURCE OF TRUTH: Trial Entitlement Calculation
+// =============================================================================
+// ALL endpoints (/status, /resume, /session-token, etc.) MUST use this function
+// to determine trial access. used_seconds is the authoritative field.
+// trial_ends_at is DERIVED/OPTIONAL and only set when trial is ended.
+// =============================================================================
+
+export interface TrialEntitlementResult {
+  hasAccess: boolean;
+  reason: 'trial_active' | 'trial_expired' | 'trial_not_verified' | 'trial_blocked';
+  secondsRemaining: number;
+  usedSeconds: number;
+}
+
+/**
+ * SINGLE SOURCE OF TRUTH for trial entitlement.
+ * All endpoints must use this function to calculate access.
+ * 
+ * @param trial - The trial session object
+ * @returns Entitlement result with hasAccess, reason, secondsRemaining
+ */
+export function calculateTrialEntitlement(trial: TrialSession): TrialEntitlementResult {
+  // Source of truth: used_seconds field (fallback to consumed_seconds for legacy)
+  const usedSeconds = trial.usedSeconds ?? trial.consumedSeconds ?? 0;
+  const secondsRemaining = Math.max(0, TRIAL_DURATION_SECONDS - usedSeconds);
+  
+  // Check verification first
+  if (!trial.verifiedAt) {
+    return {
+      hasAccess: false,
+      reason: 'trial_not_verified',
+      secondsRemaining,
+      usedSeconds,
+    };
+  }
+  
+  // Check blocked status
+  if (trial.status === 'blocked') {
+    return {
+      hasAccess: false,
+      reason: 'trial_blocked',
+      secondsRemaining: 0,
+      usedSeconds,
+    };
+  }
+  
+  // Check if trial is exhausted: used_seconds >= 300 OR status is ended/expired
+  if (secondsRemaining <= 0 || trial.status === 'ended' || trial.status === 'expired') {
+    return {
+      hasAccess: false,
+      reason: 'trial_expired',
+      secondsRemaining: 0,
+      usedSeconds,
+    };
+  }
+  
+  // Trial is active
+  return {
+    hasAccess: true,
+    reason: 'trial_active',
+    secondsRemaining,
+    usedSeconds,
+  };
+}
+
 // Device blocking is OFF by default for dev/staging. Set TRIAL_ENFORCE_DEVICE_LIMIT=1 to enable.
 const ENFORCE_DEVICE_LIMIT = process.env.TRIAL_ENFORCE_DEVICE_LIMIT === '1';
 
@@ -541,38 +607,26 @@ export class TrialService {
       };
     }
 
-    const usedSeconds = trial.usedSeconds ?? trial.consumedSeconds ?? 0;
-    const secondsRemaining = Math.max(0, 300 - usedSeconds);
+    // USE SINGLE SOURCE OF TRUTH: calculateTrialEntitlement
+    const entitlement = calculateTrialEntitlement(trial);
+    
+    // Map blocked to expired for API consistency
+    const reason = entitlement.reason === 'trial_blocked' ? 'trial_expired' : entitlement.reason;
 
-    if (!trial.verifiedAt) {
-      return {
-        trialSession: trial,
-        hasAccess: false,
-        reason: 'trial_not_verified',
-        secondsRemaining,
-        trialId: trial.id,
-        lookupPath,
-        emailHashUsed,
-      };
-    }
-
-    if (secondsRemaining <= 0 || trial.status === 'ended' || trial.status === 'expired') {
-      return {
-        trialSession: trial,
-        hasAccess: false,
-        reason: 'trial_expired',
-        secondsRemaining: 0,
-        trialId: trial.id,
-        lookupPath,
-        emailHashUsed,
-      };
-    }
+    console.log('[TrialService] resolveTrialFromRequest:', {
+      trialId: trial.id,
+      lookupPath,
+      hasAccess: entitlement.hasAccess,
+      reason,
+      secondsRemaining: entitlement.secondsRemaining,
+      usedSeconds: entitlement.usedSeconds,
+    });
 
     return {
       trialSession: trial,
-      hasAccess: true,
-      reason: 'trial_active',
-      secondsRemaining,
+      hasAccess: entitlement.hasAccess,
+      reason: reason as any,
+      secondsRemaining: entitlement.secondsRemaining,
       trialId: trial.id,
       lookupPath,
       emailHashUsed,
@@ -587,21 +641,26 @@ export class TrialService {
         return { hasAccess: false, reason: 'trial_not_found' };
       }
 
-      if (!trial.verifiedAt) {
-        return { hasAccess: false, reason: 'trial_not_verified', trialId: trial.id };
-      }
+      // USE SINGLE SOURCE OF TRUTH: calculateTrialEntitlement
+      const entitlement = calculateTrialEntitlement(trial);
+      
+      // Map blocked to expired for API consistency
+      const reason = entitlement.reason === 'trial_blocked' ? 'trial_expired' : entitlement.reason;
 
-      const usedSeconds = trial.usedSeconds ?? trial.consumedSeconds ?? 0;
-      const secondsRemaining = Math.max(0, 300 - usedSeconds);
-
-      if (secondsRemaining <= 0 || trial.status === 'ended' || trial.status === 'expired') {
-        return { hasAccess: false, reason: 'trial_expired', trialId: trial.id, trialSecondsRemaining: 0 };
-      }
+      console.log('[TrialService] getTrialEntitlementByEmailHash:', {
+        trialId: trial.id,
+        lookupPath,
+        hasAccess: entitlement.hasAccess,
+        reason,
+        secondsRemaining: entitlement.secondsRemaining,
+        usedSeconds: entitlement.usedSeconds,
+      });
 
       return {
-        hasAccess: true,
+        hasAccess: entitlement.hasAccess,
+        reason: reason as any,
         trialId: trial.id,
-        trialSecondsRemaining: secondsRemaining,
+        trialSecondsRemaining: entitlement.secondsRemaining,
       };
     } catch (error) {
       console.error('[TrialService] Error getting trial entitlement by email hash:', error);
@@ -621,21 +680,26 @@ export class TrialService {
       }
 
       const trialSession = trial[0];
-      if (!trialSession.verifiedAt) {
-        return { hasAccess: false, reason: 'trial_not_verified', trialId: trialSession.id };
-      }
+      
+      // USE SINGLE SOURCE OF TRUTH: calculateTrialEntitlement
+      const entitlement = calculateTrialEntitlement(trialSession);
+      
+      // Map blocked to expired for API consistency
+      const reason = entitlement.reason === 'trial_blocked' ? 'trial_expired' : entitlement.reason;
 
-      const usedSeconds = trialSession.usedSeconds ?? trialSession.consumedSeconds ?? 0;
-      const secondsRemaining = Math.max(0, 300 - usedSeconds);
-
-      if (secondsRemaining <= 0 || trialSession.status === 'ended' || trialSession.status === 'expired') {
-        return { hasAccess: false, reason: 'trial_expired', trialId: trialSession.id, trialSecondsRemaining: 0 };
-      }
+      console.log('[TrialService] getTrialEntitlement:', {
+        trialId: trialSession.id,
+        hasAccess: entitlement.hasAccess,
+        reason,
+        secondsRemaining: entitlement.secondsRemaining,
+        usedSeconds: entitlement.usedSeconds,
+      });
 
       return {
-        hasAccess: true,
+        hasAccess: entitlement.hasAccess,
+        reason: reason as any,
         trialId: trialSession.id,
-        trialSecondsRemaining: secondsRemaining,
+        trialSecondsRemaining: entitlement.secondsRemaining,
       };
     } catch (error) {
       console.error('[TrialService] Error getting trial entitlement:', error);
@@ -643,29 +707,77 @@ export class TrialService {
     }
   }
 
-  async endTrialSession(trialId: string, elapsedSeconds: number): Promise<boolean> {
+  /**
+   * End a trial tutoring session and set the absolute used seconds.
+   * IDEMPOTENT: Safe to call multiple times with the same absoluteUsedSeconds.
+   * Uses MAX semantics - only increases usedSeconds, never decreases.
+   * 
+   * @param trialId - The trial session ID
+   * @param absoluteUsedSeconds - The total seconds that should now be marked as used (absolute, not delta)
+   * @returns true if successful
+   */
+  async endTrialSession(trialId: string, absoluteUsedSeconds: number): Promise<boolean> {
     try {
       const trial = await this.getTrialById(trialId);
-      if (!trial) return false;
+      if (!trial) {
+        console.log('[TrialService] endTrialSession: trial not found', trialId);
+        return false;
+      }
 
-      // Only add time if it's meaningful usage
-      if (elapsedSeconds <= 0) return true;
+      // IDEMPOTENT: If trial already ended, just return success
+      if (trial.status === 'ended' || trial.status === 'expired') {
+        console.log('[TrialService] endTrialSession: trial already ended, idempotent return', {
+          trialId,
+          status: trial.status,
+          usedSeconds: trial.usedSeconds,
+        });
+        return true;
+      }
+
+      // Only update if there's meaningful time
+      if (absoluteUsedSeconds <= 0) {
+        console.log('[TrialService] endTrialSession: no time to set', { trialId, absoluteUsedSeconds });
+        return true;
+      }
 
       const currentUsed = trial.usedSeconds ?? trial.consumedSeconds ?? 0;
-      const newUsedSeconds = Math.min(300, currentUsed + elapsedSeconds);
-      const newStatus = newUsedSeconds >= 300 ? 'ended' : 'active';
+      
+      // IDEMPOTENT: Use MAX - only increase, never decrease (prevents double-counting on retry)
+      // If caller sends same value twice, second call is a no-op
+      const newUsedSeconds = Math.min(TRIAL_DURATION_SECONDS, Math.max(currentUsed, absoluteUsedSeconds));
+      
+      // If no change needed, skip the DB update (true idempotency)
+      if (newUsedSeconds === currentUsed) {
+        console.log('[TrialService] endTrialSession: no change needed (idempotent)', {
+          trialId,
+          currentUsed,
+          absoluteUsedSeconds,
+        });
+        return true;
+      }
+      
+      const newStatus: 'active' | 'ended' = newUsedSeconds >= TRIAL_DURATION_SECONDS ? 'ended' : 'active';
       const now = new Date();
 
       await db.update(trialSessions)
         .set({
           usedSeconds: newUsedSeconds,
-          consumedSeconds: newUsedSeconds,
-          status: newStatus as any,
+          consumedSeconds: newUsedSeconds, // Keep in sync for legacy
+          status: newStatus,
           lastActiveAt: now,
           updatedAt: now,
-          trialEndsAt: newStatus === 'ended' ? now : trial.trialEndsAt,
+          // Only set trialEndsAt when trial ends (derived field)
+          ...(newStatus === 'ended' ? { trialEndsAt: now } : {}),
         })
         .where(eq(trialSessions.id, trialId));
+
+      console.log('[TrialService] endTrialSession: updated', {
+        trialId,
+        previousUsed: currentUsed,
+        absoluteUsedSeconds,
+        newUsedSeconds,
+        newStatus,
+      });
 
       return true;
     } catch (error) {
@@ -1067,13 +1179,24 @@ View in Admin Panel: ${adminPanelLink}`;
 
       if (!trial) {
         // Don't reveal if email exists - return generic success message
-        console.log('[TrialService] Magic link: email not found (returning safe response)');
+        console.log('[TrialService] requestMagicLink: email not found (returning safe response)');
         return { ok: true }; // Safe response - don't reveal if email exists
       }
 
+      // USE SINGLE SOURCE OF TRUTH: calculateTrialEntitlement
+      const entitlement = calculateTrialEntitlement(trial);
+
+      console.log('[TrialService] requestMagicLink: entitlement:', {
+        trialId: trial.id,
+        hasAccess: entitlement.hasAccess,
+        reason: entitlement.reason,
+        secondsRemaining: entitlement.secondsRemaining,
+        usedSeconds: entitlement.usedSeconds,
+      });
+
       // Check if trial is verified
-      if (!trial.verifiedAt) {
-        console.log('[TrialService] Magic link: trial not verified, resending verification email');
+      if (entitlement.reason === 'trial_not_verified') {
+        console.log('[TrialService] requestMagicLink: trial not verified, resending verification email');
         // Resend verification email if trial exists but not verified
         if (trial.email) {
           const verificationToken = randomBytes(32).toString('hex');
@@ -1092,25 +1215,20 @@ View in Admin Panel: ${adminPanelLink}`;
         return { ok: false, code: 'NOT_VERIFIED', error: 'Please verify your email first. We\'ve resent the verification email.', verificationResent: true };
       }
 
-      // Check if trial is exhausted using usedSeconds as single source of truth
-      const now = new Date();
-      const usedSeconds = trial.usedSeconds ?? trial.consumedSeconds ?? 0;
-      const secondsRemaining = Math.max(0, TRIAL_DURATION_SECONDS - usedSeconds);
-      
-      if (secondsRemaining <= 0 || trial.status === 'expired' || trial.status === 'ended') {
-        console.log('[TrialService] Continue trial: trial exhausted, secondsRemaining:', secondsRemaining);
+      // Check if trial is exhausted
+      if (!entitlement.hasAccess) {
+        console.log('[TrialService] requestMagicLink: trial exhausted, reason:', entitlement.reason);
         return { ok: false, code: 'TRIAL_EXHAUSTED', error: 'Your trial has ended. Please sign up to continue using JIE Mastery.' };
       }
 
       // INSTANT RESUME: Trial is verified AND active - return instant resume (NO magic link email)
-      // This is the key change: previously verified users can resume immediately
-      console.log('[TrialService] Continue trial: INSTANT RESUME for verified active trial, secondsRemaining:', secondsRemaining);
+      console.log('[TrialService] requestMagicLink: INSTANT RESUME for verified active trial');
       
       return { 
         ok: true, 
         instantResume: true,
         emailHash,
-        secondsRemaining,
+        secondsRemaining: entitlement.secondsRemaining,
       };
     } catch (error: any) {
       console.error('[TrialService] Error requesting magic link:', error);
@@ -1143,30 +1261,35 @@ View in Admin Panel: ${adminPanelLink}`;
         .limit(1);
 
       if (trials.length === 0) {
-        console.log('[TrialService] Resume trial: not found - action: START');
+        console.log('[TrialService] resumeTrial: not found - action: START');
         return { ok: true, action: 'START', reason: 'trial_not_found' };
       }
 
       const trial = trials[0];
 
-      // Check if trial is pending (not verified) - needs verification email
-      if (!trial.verifiedAt) {
-        console.log('[TrialService] Resume trial: not verified - action: VERIFY_REQUIRED');
+      // USE SINGLE SOURCE OF TRUTH: calculateTrialEntitlement
+      let entitlement = calculateTrialEntitlement(trial);
+      let courtesyApplied = false;
+      let currentUsedSeconds = entitlement.usedSeconds;
+
+      console.log('[TrialService] resumeTrial: initial entitlement:', {
+        trialId: trial.id,
+        hasAccess: entitlement.hasAccess,
+        reason: entitlement.reason,
+        secondsRemaining: entitlement.secondsRemaining,
+        usedSeconds: entitlement.usedSeconds,
+      });
+
+      // Map entitlement reasons to resume actions
+      if (entitlement.reason === 'trial_not_verified') {
         return { ok: true, action: 'VERIFY_REQUIRED', reason: 'not_verified' };
       }
 
-      // Check if status is not active (blocked, expired, ended, etc.)
-      if (trial.status !== 'active') {
-        console.log('[TrialService] Resume trial: status is not active:', trial.status, '- action: ENDED');
+      if (entitlement.reason === 'trial_blocked') {
         return { ok: true, action: 'ENDED', reason: 'not_active' };
       }
 
-      // Calculate seconds remaining from usedSeconds (usage-based tracking)
-      const usedSeconds = trial.usedSeconds ?? trial.consumedSeconds ?? 0;
-      let secondsRemaining = Math.max(0, TRIAL_DURATION_SECONDS - usedSeconds);
-      let courtesyApplied = false;
-
-      // Check if courtesy extension is eligible
+      // Check if courtesy extension is eligible BEFORE returning ENDED
       // Conditions:
       // 1. Trial has very low remaining time (<= 30 seconds)
       // 2. Grace has not been applied yet
@@ -1174,11 +1297,11 @@ View in Admin Panel: ${adminPanelLink}`;
       const graceNotApplied = trial.trialGraceAppliedAt === null;
       const isRecentTrial = trial.updatedAt && 
         (now.getTime() - trial.updatedAt.getTime()) < 7 * 24 * 60 * 60 * 1000; // 7 days
-      const needsCourtesy = secondsRemaining <= 30;
+      const needsCourtesy = entitlement.secondsRemaining <= 30;
 
-      if (needsCourtesy && graceNotApplied && isRecentTrial) {
+      if (needsCourtesy && graceNotApplied && isRecentTrial && trial.status === 'active') {
         // Apply one-time courtesy extension by reducing usedSeconds
-        const newUsedSeconds = Math.max(0, usedSeconds - COURTESY_EXTENSION_SECONDS);
+        const newUsedSeconds = Math.max(0, currentUsedSeconds - COURTESY_EXTENSION_SECONDS);
 
         await db.update(trialSessions)
           .set({
@@ -1190,16 +1313,26 @@ View in Admin Panel: ${adminPanelLink}`;
           })
           .where(eq(trialSessions.id, trial.id));
 
-        secondsRemaining = TRIAL_DURATION_SECONDS - newUsedSeconds;
+        // Recalculate entitlement after courtesy extension
+        currentUsedSeconds = newUsedSeconds;
+        entitlement = {
+          hasAccess: true,
+          reason: 'trial_active',
+          secondsRemaining: TRIAL_DURATION_SECONDS - newUsedSeconds,
+          usedSeconds: newUsedSeconds,
+        };
         courtesyApplied = true;
 
-        console.log('[TrialService] Courtesy grace applied: trialId=' + trial.id + 
-          ', emailHash=' + emailHash.substring(0, 12) + '..., newUsedSeconds=' + newUsedSeconds);
+        console.log('[TrialService] resumeTrial: courtesy applied:', {
+          trialId: trial.id,
+          newUsedSeconds,
+          newSecondsRemaining: entitlement.secondsRemaining,
+        });
       }
 
-      // Check if still no time remaining after courtesy check
-      if (secondsRemaining <= 0) {
-        console.log('[TrialService] Resume trial: trial expired, secondsRemaining:', secondsRemaining, '- action: ENDED');
+      // After courtesy check, if still expired, return ENDED
+      if (!entitlement.hasAccess || entitlement.reason === 'trial_expired') {
+        console.log('[TrialService] resumeTrial: trial expired - action: ENDED');
         return { ok: true, action: 'ENDED', reason: 'trial_expired' };
       }
 
@@ -1211,13 +1344,17 @@ View in Admin Panel: ${adminPanelLink}`;
         })
         .where(eq(trialSessions.id, trial.id));
 
-      console.log('[TrialService] Resume trial: SUCCESS - action: RESUME, trialId:', trial.id, 
-        ', secondsRemaining:', secondsRemaining, courtesyApplied ? '(courtesy applied)' : '');
+      console.log('[TrialService] resumeTrial: SUCCESS - action: RESUME', {
+        trialId: trial.id,
+        secondsRemaining: entitlement.secondsRemaining,
+        usedSeconds: currentUsedSeconds,
+        courtesyApplied,
+      });
 
       return {
         ok: true,
         action: 'RESUME',
-        secondsRemaining,
+        secondsRemaining: entitlement.secondsRemaining,
         trialId: trial.id,
         emailHash,
         courtesyApplied,
@@ -1274,12 +1411,19 @@ View in Admin Panel: ${adminPanelLink}`;
 
       const trialSession = trials[0];
 
-      // Check if trial is exhausted using usedSeconds (usage-based tracking)
-      const usedSeconds = trialSession.usedSeconds ?? trialSession.consumedSeconds ?? 0;
-      const secondsRemaining = Math.max(0, TRIAL_DURATION_SECONDS - usedSeconds);
+      // USE SINGLE SOURCE OF TRUTH: calculateTrialEntitlement
+      const entitlement = calculateTrialEntitlement(trialSession);
+
+      console.log('[TrialService] validateMagicToken: entitlement:', {
+        trialId: trialSession.id,
+        hasAccess: entitlement.hasAccess,
+        reason: entitlement.reason,
+        secondsRemaining: entitlement.secondsRemaining,
+        usedSeconds: entitlement.usedSeconds,
+      });
       
-      if (secondsRemaining <= 0 || trialSession.status === 'expired' || trialSession.status === 'ended') {
-        console.log('[TrialService] Magic token: trial exhausted');
+      if (!entitlement.hasAccess) {
+        console.log('[TrialService] Magic token: trial exhausted, reason:', entitlement.reason);
         return { ok: false, error: 'Your trial has ended. Please sign up to continue.', errorCode: 'trial_exhausted' };
       }
 
@@ -1296,12 +1440,12 @@ View in Admin Panel: ${adminPanelLink}`;
         })
         .where(eq(trialSessions.id, trialSession.id));
 
-      console.log('[TrialService] Magic token validated for email_hash:', trialSession.emailHash.substring(0, 12) + '...', 'remaining:', secondsRemaining);
+      console.log('[TrialService] Magic token validated for email_hash:', trialSession.emailHash.substring(0, 12) + '...', 'remaining:', entitlement.secondsRemaining);
 
       return {
         ok: true,
         trial: trialSession,
-        secondsRemaining,
+        secondsRemaining: entitlement.secondsRemaining,
       };
     } catch (error: any) {
       console.error('[TrialService] Error validating magic token:', error);

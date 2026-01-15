@@ -116,6 +116,8 @@ export default function TrialTutorPage() {
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const trialTokenRef = useRef<string | null>(null);
   const trialIdRef = useRef<string | null>(null);
+  // Track baseline usedSeconds at session start for idempotent /end-session calls
+  const baselineUsedSecondsRef = useRef<number>(0);
   
   // Guards to prevent double-start and duplicate audio (React StrictMode / reconnect issues)
   const startedRef = useRef(false);
@@ -227,10 +229,12 @@ export default function TrialTutorPage() {
   useEffect(() => {
     const handleBeforeUnload = () => {
       if (isSessionActive && sessionStartTime && trialIdRef.current) {
-        const secondsUsed = Math.floor((Date.now() - sessionStartTime) / 1000);
+        const sessionSeconds = Math.floor((Date.now() - sessionStartTime) / 1000);
+        // Send ABSOLUTE total (baseline + session time) for idempotent handling
+        const absoluteUsedSeconds = baselineUsedSecondsRef.current + sessionSeconds;
         navigator.sendBeacon('/api/trial/end-session', JSON.stringify({
           trialId: trialIdRef.current,
-          secondsUsed,
+          secondsUsed: absoluteUsedSeconds,
         }));
       }
     };
@@ -291,6 +295,8 @@ export default function TrialTutorPage() {
 
       setSecondsRemaining(data.secondsRemaining || 300);
       trialIdRef.current = data.trialId;
+      // Set baseline: total used at session start = 300 - secondsRemaining
+      baselineUsedSecondsRef.current = 300 - (data.secondsRemaining || 300);
     } catch (error) {
       console.error('Error checking trial status:', error);
       toast({
@@ -308,11 +314,13 @@ export default function TrialTutorPage() {
     cleanup();
     
     if (trialIdRef.current && sessionStartTime) {
-      const secondsUsed = Math.floor((Date.now() - sessionStartTime) / 1000);
+      const sessionSeconds = Math.floor((Date.now() - sessionStartTime) / 1000);
+      // Send ABSOLUTE total (baseline + session time) for idempotent handling
+      const absoluteUsedSeconds = baselineUsedSecondsRef.current + sessionSeconds;
       try {
         await apiRequest('POST', '/api/trial/end-session', {
           trialId: trialIdRef.current,
-          secondsUsed,
+          secondsUsed: absoluteUsedSeconds,
         });
       } catch (error) {
         console.error('Error ending trial session:', error);
@@ -366,6 +374,11 @@ export default function TrialTutorPage() {
       
       trialTokenRef.current = tokenData.token;
       trialIdRef.current = tokenData.trialId || null;
+      // Update baseline from session-token response (most current)
+      if (tokenData.secondsRemaining !== undefined) {
+        baselineUsedSecondsRef.current = 300 - tokenData.secondsRemaining;
+        setSecondsRemaining(tokenData.secondsRemaining);
+      }
       
       // Connect to WebSocket
       const wsUrl = buildWsUrl(tokenData.token);
@@ -728,17 +741,21 @@ export default function TrialTutorPage() {
     cleanup();
     
     if (trialIdRef.current && sessionStartTime) {
-      const secondsUsed = Math.floor((Date.now() - sessionStartTime) / 1000);
+      const sessionSeconds = Math.floor((Date.now() - sessionStartTime) / 1000);
+      // Send ABSOLUTE total (baseline + session time) for idempotent handling
+      const absoluteUsedSeconds = baselineUsedSecondsRef.current + sessionSeconds;
       try {
         await apiRequest('POST', '/api/trial/end-session', {
           trialId: trialIdRef.current,
-          secondsUsed,
+          secondsUsed: absoluteUsedSeconds,
         });
         
         const response = await fetch('/api/trial/status', { credentials: 'include' });
         const data = await response.json();
         setTrialStatus(data);
         setSecondsRemaining(data.secondsRemaining || 0);
+        // Update baseline after fetching new status for next session
+        baselineUsedSecondsRef.current = 300 - (data.secondsRemaining || 0);
         
         if (!data.hasAccess) {
           setLocation('/trial/ended');
