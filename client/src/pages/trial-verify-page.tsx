@@ -42,6 +42,18 @@ export default function TrialVerifyPage() {
         setSecondsRemaining(data.secondsRemaining || 300);
         setMessage('Your email is verified! Redirecting to your trial...');
         
+        // Fire Google Ads "Free Trial Started" conversion (idempotent - once per session)
+        const trialConversionKey = 'gtag_trial_started_fired';
+        if (!sessionStorage.getItem(trialConversionKey)) {
+          sessionStorage.setItem(trialConversionKey, 'true');
+          if (typeof window !== 'undefined' && (window as any).gtag) {
+            (window as any).gtag('event', 'conversion', {
+              send_to: 'AW-17252974185/REPLACE_WITH_LABEL'
+            });
+            console.log('[Analytics] Google Ads Free Trial Started conversion fired');
+          }
+        }
+        
         setTimeout(() => {
           setLocation('/trial/tutor');
         }, 2000);
