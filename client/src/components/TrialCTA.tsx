@@ -30,12 +30,12 @@ const TRIAL_ERROR_MESSAGES: Record<string, { title: string; description: string 
     description: 'Please enter a valid email address.',
   },
   TRIAL_EMAIL_USED: {
-    title: 'Email already used',
-    description: 'This email address has already been used for a free trial. Please sign up to continue.',
+    title: 'This email has already been used for a free trial.',
+    description: 'Please sign up or log in to continue, or try a different email address.',
   },
   TRIAL_DEVICE_USED: {
     title: 'Device already used',
-    description: 'A free trial has already been used on this device. Please sign up to continue.',
+    description: 'A free trial has already been used on this device. Please sign up or log in to continue.',
   },
   TRIAL_RATE_LIMITED: {
     title: 'Too many attempts',
@@ -43,11 +43,7 @@ const TRIAL_ERROR_MESSAGES: Record<string, { title: string; description: string 
   },
   TRIAL_EXPIRED: {
     title: 'Trial ended',
-    description: 'Your free trial has ended. Upgrade to keep learning.',
-  },
-  TRIAL_INTERNAL_ERROR: {
-    title: 'Something went wrong',
-    description: 'Please try again in a moment.',
+    description: 'Your free trial has ended. Please sign up to continue learning.',
   },
 };
 
@@ -61,6 +57,12 @@ export function TrialCTA({ variant = 'primary', size = 'md', className = '' }: T
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Prevent duplicate submissions (rapid clicks or Enter key)
+    if (isSubmitting) {
+      return;
+    }
+    
     setErrorMessage(null);
     
     if (!email || !email.includes('@')) {
@@ -112,23 +114,29 @@ export function TrialCTA({ variant = 'primary', size = 'md', className = '' }: T
       } else {
         // Get user-facing message from error code
         const errorCode = data.code || '';
-        const errorInfo = TRIAL_ERROR_MESSAGES[errorCode] || {
-          title: 'Unable to start trial',
-          description: data.error || 'Please try again later.',
-        };
+        const errorInfo = TRIAL_ERROR_MESSAGES[errorCode];
         
-        // Log for debugging
-        console.log('[Trial] Error code:', errorCode, '- User message:', errorInfo.description);
+        // Log for debugging (always log the actual error code)
+        console.log('[Trial] Error code:', errorCode, '- Backend message:', data.error);
         
-        // Show inline error message
-        setErrorMessage(errorInfo.description);
-        
-        // Also show toast for visibility
-        toast({
-          title: errorInfo.title,
-          description: errorInfo.description,
-          variant: 'destructive',
-        });
+        if (errorInfo) {
+          // Known error - show specific message
+          setErrorMessage(`${errorInfo.title} ${errorInfo.description}`);
+          toast({
+            title: errorInfo.title,
+            description: errorInfo.description,
+            variant: 'destructive',
+          });
+        } else {
+          // Unknown error - show generic message
+          const genericMessage = 'Something went wrong. Please try again.';
+          setErrorMessage(genericMessage);
+          toast({
+            title: 'Something went wrong',
+            description: 'Please try again.',
+            variant: 'destructive',
+          });
+        }
       }
     } catch (error) {
       // Only show network error when fetch truly fails (no response at all)
