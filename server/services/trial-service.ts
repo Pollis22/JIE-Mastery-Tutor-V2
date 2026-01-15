@@ -1,5 +1,5 @@
 import { db } from '../db';
-import { trialSessions, trialRateLimits, TrialSession } from '@shared/schema';
+import { trialSessions, trialRateLimits, trialLoginTokens, TrialSession } from '@shared/schema';
 import { eq, and, gte, sql, isNull, lt, or } from 'drizzle-orm';
 import crypto, { createHash, randomBytes, createHmac } from 'crypto';
 import { EmailService } from './email-service';
@@ -913,6 +913,7 @@ View in Admin Panel: ${adminPanelLink}`;
   }
 
   // Magic Link: Request a magic link for returning trial users
+  // Uses trial_login_tokens table (separate from verification_token)
   async requestMagicLink(email: string): Promise<MagicLinkRequestResult> {
     try {
       const normalizedEmail = normalizeEmail(email);
@@ -959,21 +960,27 @@ View in Admin Panel: ${adminPanelLink}`;
         return { ok: false, code: 'TRIAL_EXHAUSTED', error: 'Your trial has ended. Please sign up to continue using JIE Mastery.' };
       }
 
-      // Generate magic token
-      const magicToken = randomBytes(32).toString('hex');
-      const magicTokenExpiry = new Date(Date.now() + MAGIC_TOKEN_EXPIRY_MINUTES * 60 * 1000);
+      // Invalidate any previous unused tokens for this trial session
+      await db.update(trialLoginTokens)
+        .set({ usedAt: new Date() })
+        .where(and(
+          eq(trialLoginTokens.trialSessionId, trial.id),
+          isNull(trialLoginTokens.usedAt)
+        ));
 
-      await db.update(trialSessions)
-        .set({
-          magicToken,
-          magicTokenExpiry,
-          updatedAt: new Date(),
-        })
-        .where(eq(trialSessions.id, trial.id));
+      // Generate new login token and store in trial_login_tokens table
+      const loginToken = randomBytes(32).toString('hex');
+      const expiresAt = new Date(Date.now() + MAGIC_TOKEN_EXPIRY_MINUTES * 60 * 1000);
+
+      await db.insert(trialLoginTokens).values({
+        trialSessionId: trial.id,
+        token: loginToken,
+        expiresAt,
+      });
 
       // Send magic link email
       if (trial.email) {
-        await this.sendMagicLinkEmail(trial.email, magicToken);
+        await this.sendMagicLinkEmail(trial.email, loginToken);
       }
 
       console.log('[TrialService] Magic link sent for email_hash:', emailHash.substring(0, 12) + '...');
@@ -981,11 +988,11 @@ View in Admin Panel: ${adminPanelLink}`;
     } catch (error: any) {
       console.error('[TrialService] Error requesting magic link:', error);
       
-      // Check for schema mismatch (missing column)
-      if (isMissingColumnError(error)) {
+      // Check for schema mismatch (missing table/column)
+      if (isMissingColumnError(error) || isMissingTableError(error)) {
         const missingColumn = extractMissingColumn(error);
-        console.error(`[TrialService] CRITICAL: Schema mismatch in requestMagicLink - column '${missingColumn}' does not exist!`);
-        console.error('[TrialService] ACTION REQUIRED: Run \'npm run db:push\' to add missing columns');
+        console.error(`[TrialService] CRITICAL: Schema mismatch in requestMagicLink - '${missingColumn || 'table'}' does not exist!`);
+        console.error('[TrialService] ACTION REQUIRED: Run \'npm run db:push\' to sync schema');
       }
       
       return { ok: false, code: 'INTERNAL_ERROR', error: 'Something went wrong. Please try again.' };
@@ -993,27 +1000,48 @@ View in Admin Panel: ${adminPanelLink}`;
   }
 
   // Magic Link: Validate magic token and return trial session
+  // Uses trial_login_tokens table (one-time use tokens)
   async validateMagicToken(token: string): Promise<MagicLinkValidateResult> {
     try {
       console.log('[TrialService] Validating magic token:', token.substring(0, 12) + '...');
 
-      const trial = await db.select()
-        .from(trialSessions)
-        .where(eq(trialSessions.magicToken, token))
+      // Find token in trial_login_tokens table
+      const tokenRecords = await db.select()
+        .from(trialLoginTokens)
+        .where(eq(trialLoginTokens.token, token))
         .limit(1);
 
-      if (trial.length === 0) {
+      if (tokenRecords.length === 0) {
         console.log('[TrialService] Magic token: not found');
         return { ok: false, error: 'Invalid or expired sign-in link.', errorCode: 'invalid_token' };
       }
 
-      const trialSession = trial[0];
+      const tokenRecord = tokenRecords[0];
+
+      // Check if token already used
+      if (tokenRecord.usedAt) {
+        console.log('[TrialService] Magic token: already used');
+        return { ok: false, error: 'This sign-in link has already been used. Please request a new one.', errorCode: 'invalid_token' };
+      }
 
       // Check if token expired
-      if (trialSession.magicTokenExpiry && new Date() > trialSession.magicTokenExpiry) {
+      if (new Date() > tokenRecord.expiresAt) {
         console.log('[TrialService] Magic token: expired');
         return { ok: false, error: 'This sign-in link has expired. Please request a new one.', errorCode: 'expired_token' };
       }
+
+      // Get the associated trial session
+      const trials = await db.select()
+        .from(trialSessions)
+        .where(eq(trialSessions.id, tokenRecord.trialSessionId))
+        .limit(1);
+
+      if (trials.length === 0) {
+        console.log('[TrialService] Magic token: trial session not found');
+        return { ok: false, error: 'Trial session not found.', errorCode: 'invalid_token' };
+      }
+
+      const trialSession = trials[0];
 
       // Check if trial is exhausted
       const consumedSeconds = trialSession.consumedSeconds ?? 0;
@@ -1024,11 +1052,14 @@ View in Admin Panel: ${adminPanelLink}`;
         return { ok: false, error: 'Your trial has ended. Please sign up to continue.', errorCode: 'trial_exhausted' };
       }
 
-      // Clear the magic token (one-time use)
+      // Mark the token as used (one-time use)
+      await db.update(trialLoginTokens)
+        .set({ usedAt: new Date() })
+        .where(eq(trialLoginTokens.id, tokenRecord.id));
+
+      // Update trial session last active
       await db.update(trialSessions)
         .set({
-          magicToken: null,
-          magicTokenExpiry: null,
           lastActiveAt: new Date(),
           updatedAt: new Date(),
         })
@@ -1044,11 +1075,11 @@ View in Admin Panel: ${adminPanelLink}`;
     } catch (error: any) {
       console.error('[TrialService] Error validating magic token:', error);
       
-      // Check for schema mismatch (missing column)
-      if (isMissingColumnError(error)) {
+      // Check for schema mismatch (missing table/column)
+      if (isMissingColumnError(error) || isMissingTableError(error)) {
         const missingColumn = extractMissingColumn(error);
-        console.error(`[TrialService] CRITICAL: Schema mismatch in validateMagicToken - column '${missingColumn}' does not exist!`);
-        console.error('[TrialService] ACTION REQUIRED: Run \'npm run db:push\' to add missing columns');
+        console.error(`[TrialService] CRITICAL: Schema mismatch in validateMagicToken - '${missingColumn || 'table'}' does not exist!`);
+        console.error('[TrialService] ACTION REQUIRED: Run \'npm run db:push\' to sync schema');
       }
       
       return { ok: false, error: 'An error occurred. Please try again.', errorCode: 'server_error' };

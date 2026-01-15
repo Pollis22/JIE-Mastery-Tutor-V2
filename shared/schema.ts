@@ -855,6 +855,28 @@ export type TrialSession = typeof trialSessions.$inferSelect;
 export type InsertTrialSession = z.infer<typeof insertTrialSessionSchema>;
 export type TrialRateLimit = typeof trialRateLimits.$inferSelect;
 
+// Trial Login Tokens table - for "Continue Trial" magic links (separate from verification tokens)
+export const trialLoginTokens = pgTable("trial_login_tokens", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  trialSessionId: varchar("trial_session_id", { length: 36 }).notNull().references(() => trialSessions.id, { onDelete: 'cascade' }),
+  token: varchar("token", { length: 64 }).notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  usedAt: timestamp("used_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  uniqueIndex("idx_trial_login_token").on(table.token),
+  index("idx_trial_login_session").on(table.trialSessionId),
+]);
+
+export const insertTrialLoginTokenSchema = createInsertSchema(trialLoginTokens).omit({
+  id: true,
+  createdAt: true,
+});
+
+// Trial Login Token types
+export type TrialLoginToken = typeof trialLoginTokens.$inferSelect;
+export type InsertTrialLoginToken = z.infer<typeof insertTrialLoginTokenSchema>;
+
 // Safety incidents table - tracks all safety-related incidents
 export const safetyIncidents = pgTable("safety_incidents", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
