@@ -198,7 +198,7 @@ export function TrialCTA({ variant = 'primary', size = 'md', className = '', sho
 
   const handleContinueSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (continueSubmitting || resendCooldown > 0) return;
+    if (continueSubmitting) return;
     
     if (!continueEmail || !continueEmail.includes('@')) {
       toast({
@@ -212,7 +212,8 @@ export function TrialCTA({ variant = 'primary', size = 'md', className = '', sho
     setContinueSubmitting(true);
 
     try {
-      const response = await fetch('/api/trial/magic-link', {
+      // First try /api/trial/resume - the primary endpoint for returning users
+      const response = await fetch('/api/trial/resume', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -221,55 +222,60 @@ export function TrialCTA({ variant = 'primary', size = 'md', className = '', sho
       
       const data = await response.json();
 
-      if (data.ok) {
-        // Check if this is an instant resume (active verified trial)
-        if (data.instantResume && data.redirectTo) {
-          toast({
-            title: 'Welcome back!',
-            description: 'Resuming your free trial...',
-          });
-          handleContinueClose();
-          setLocation(data.redirectTo);
-          return;
-        }
-        
-        // Not instant resume - email was sent or email not found (safe response)
-        setContinueSent(true);
-        setResendCooldown(60);
-        const interval = setInterval(() => {
-          setResendCooldown(prev => {
-            if (prev <= 1) {
-              clearInterval(interval);
-              return 0;
-            }
-            return prev - 1;
-          });
-        }, 1000);
+      if (data.canResume) {
+        // Trial can be resumed immediately
         toast({
-          title: 'Check your email!',
-          description: 'We sent you a sign-in link to continue your trial.',
+          title: data.courtesyApplied ? 'Welcome back! (+60s bonus)' : 'Welcome back!',
+          description: 'Resuming your free trial...',
         });
-      } else {
-        const code = data.code || '';
-        if (code === 'NOT_VERIFIED') {
+        handleContinueClose();
+        setLocation('/trial/tutor');
+        return;
+      }
+      
+      // Cannot resume - handle different reasons
+      const reason = data.reason;
+      
+      if (reason === 'not_verified') {
+        // Need verification - fall back to magic-link which will resend verification
+        const magicResponse = await fetch('/api/trial/magic-link', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ email: continueEmail.trim() }),
+        });
+        const magicData = await magicResponse.json();
+        
+        if (magicData.verificationResent) {
           toast({
             title: 'Verification required',
             description: "We've resent the verification email. Please verify your email first.",
           });
-        } else if (code === 'TRIAL_EXHAUSTED') {
-          toast({
-            title: 'Trial ended',
-            description: 'Your trial has ended. Please sign up to continue using JIE Mastery.',
-            variant: 'destructive',
-          });
-          handleContinueClose();
         } else {
           toast({
-            title: 'Something went wrong',
-            description: data.error || 'Please try again.',
-            variant: 'destructive',
+            title: 'Verification required',
+            description: 'Please check your email to verify your trial.',
           });
         }
+      } else if (reason === 'trial_expired' || reason === 'trial_exhausted' || reason === 'not_active') {
+        toast({
+          title: 'Trial ended',
+          description: 'Your trial has ended. Please sign up to continue using JIE Mastery.',
+          variant: 'destructive',
+        });
+        handleContinueClose();
+      } else if (reason === 'trial_not_found') {
+        toast({
+          title: 'Trial not found',
+          description: 'No trial found for this email. Start a new trial instead.',
+          variant: 'destructive',
+        });
+      } else {
+        toast({
+          title: 'Something went wrong',
+          description: data.error || 'Please try again.',
+          variant: 'destructive',
+        });
       }
     } catch (error) {
       toast({

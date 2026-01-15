@@ -267,6 +267,61 @@ router.post('/session-token', async (req: Request, res: Response) => {
   }
 });
 
+// Resume Trial: Allow returning users to resume without re-verification
+const resumeTrialSchema = z.object({
+  email: z.string().email('Please enter a valid email address'),
+});
+
+router.post('/resume', async (req: Request, res: Response) => {
+  try {
+    console.log('[TrialRoutes] /resume received');
+    
+    const parsed = resumeTrialSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ 
+        ok: false, 
+        canResume: false,
+        error: 'Please enter a valid email address.',
+        reason: 'invalid_email' 
+      });
+    }
+
+    const { email } = parsed.data;
+    const result = await trialService.resumeTrial(email);
+
+    if (result.canResume && result.emailHash) {
+      console.log('[TrialRoutes] /resume: SUCCESS, setting cookie');
+      
+      // Set the email hash cookie so the trial session is linked to this browser
+      res.cookie(TRIAL_EMAIL_HASH_COOKIE, result.emailHash, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: TRIAL_COOKIE_MAX_AGE,
+        signed: true,
+      });
+      
+      return res.json({ 
+        ok: true,
+        canResume: true,
+        secondsRemaining: result.secondsRemaining,
+        courtesyApplied: result.courtesyApplied,
+      });
+    } else {
+      // Cannot resume - return reason
+      console.log('[TrialRoutes] /resume: cannot resume, reason:', result.reason);
+      return res.json({
+        ok: true,
+        canResume: false,
+        reason: result.reason,
+      });
+    }
+  } catch (error) {
+    console.error('[TrialRoutes] Error resuming trial:', error);
+    return res.status(500).json({ ok: false, canResume: false, error: 'Server error' });
+  }
+});
+
 // Magic Link: Request a magic link to continue trial
 const magicLinkRequestSchema = z.object({
   email: z.string().email('Please enter a valid email address'),
