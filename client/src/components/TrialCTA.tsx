@@ -93,7 +93,7 @@ export function TrialCTA({ variant = 'primary', size = 'md', className = '' }: T
           // Google Ads conversion
           if (typeof window !== 'undefined' && (window as any).gtag) {
             (window as any).gtag('event', 'conversion', {
-              send_to: 'AW-17252974185/REPLACE_WITH_LABEL'
+              send_to: 'AW-17252974185/0nuHCOXJgOYbEOn87aJA'
             });
             console.log('[Analytics] Google Ads Free Trial Signup conversion fired');
           }
