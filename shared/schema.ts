@@ -815,8 +815,9 @@ export const trialSessions = pgTable("trial_sessions", {
   trialStartedAt: timestamp("trial_started_at"),
   trialEndsAt: timestamp("trial_ends_at"),
   trialGraceAppliedAt: timestamp("trial_grace_applied_at"),
+  usedSeconds: integer("used_seconds").default(0), // Actual tutoring seconds consumed
   consumedSeconds: integer("consumed_seconds").default(0),
-  status: varchar("status", { length: 20 }).default('pending').$type<'pending' | 'active' | 'expired' | 'blocked'>(),
+  status: varchar("status", { length: 20 }).default('pending').$type<'pending' | 'active' | 'expired' | 'blocked' | 'ended'>(),
   deviceIdHash: varchar("device_id_hash", { length: 64 }),
   ipHash: varchar("ip_hash", { length: 64 }),
   lastActiveAt: timestamp("last_active_at"),
