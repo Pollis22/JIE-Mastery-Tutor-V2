@@ -280,17 +280,17 @@ router.post('/resume', async (req: Request, res: Response) => {
     if (!parsed.success) {
       return res.status(400).json({ 
         ok: false, 
-        canResume: false,
+        action: 'ENDED',
         error: 'Please enter a valid email address.',
-        reason: 'invalid_email' 
       });
     }
 
     const { email } = parsed.data;
     const result = await trialService.resumeTrial(email);
 
-    if (result.canResume && result.emailHash) {
-      console.log('[TrialRoutes] /resume: SUCCESS, setting cookie');
+    // Handle RESUME action - set cookie and allow immediate redirect
+    if (result.action === 'RESUME' && result.emailHash) {
+      console.log('[TrialRoutes] /resume: action=RESUME, setting cookie');
       
       // Set the email hash cookie so the trial session is linked to this browser
       res.cookie(TRIAL_EMAIL_HASH_COOKIE, result.emailHash, {
@@ -303,22 +303,22 @@ router.post('/resume', async (req: Request, res: Response) => {
       
       return res.json({ 
         ok: true,
-        canResume: true,
+        action: 'RESUME',
         secondsRemaining: result.secondsRemaining,
         courtesyApplied: result.courtesyApplied,
       });
-    } else {
-      // Cannot resume - return reason
-      console.log('[TrialRoutes] /resume: cannot resume, reason:', result.reason);
-      return res.json({
-        ok: true,
-        canResume: false,
-        reason: result.reason,
-      });
     }
+    
+    // Handle other actions (START, VERIFY_REQUIRED, ENDED)
+    console.log('[TrialRoutes] /resume: action=' + result.action + ', reason=' + result.reason);
+    return res.json({
+      ok: true,
+      action: result.action,
+      reason: result.reason,
+    });
   } catch (error) {
     console.error('[TrialRoutes] Error resuming trial:', error);
-    return res.status(500).json({ ok: false, canResume: false, error: 'Server error' });
+    return res.status(500).json({ ok: false, action: 'ENDED', error: 'Server error' });
   }
 });
 

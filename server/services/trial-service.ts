@@ -144,11 +144,12 @@ export interface MagicLinkValidateResult {
   errorCode?: 'invalid_token' | 'expired_token' | 'trial_exhausted' | 'server_error';
 }
 
+export type ResumeAction = 'RESUME' | 'START' | 'VERIFY_REQUIRED' | 'ENDED';
 export type ResumeReason = 'trial_expired' | 'trial_exhausted' | 'trial_not_found' | 'not_verified' | 'not_active';
 
 export interface ResumeTrialResult {
   ok: boolean;
-  canResume: boolean;
+  action: ResumeAction;
   secondsRemaining?: number;
   emailHash?: string;
   reason?: ResumeReason;
@@ -1237,22 +1238,22 @@ View in Admin Panel: ${adminPanelLink}`;
         .limit(1);
 
       if (trials.length === 0) {
-        console.log('[TrialService] Resume trial: not found');
-        return { ok: true, canResume: false, reason: 'trial_not_found' };
+        console.log('[TrialService] Resume trial: not found - action: START');
+        return { ok: true, action: 'START', reason: 'trial_not_found' };
       }
 
       const trial = trials[0];
 
-      // Check if trial is verified
+      // Check if trial is pending (not verified) - needs verification email
       if (!trial.verifiedAt) {
-        console.log('[TrialService] Resume trial: not verified');
-        return { ok: true, canResume: false, reason: 'not_verified' };
+        console.log('[TrialService] Resume trial: not verified - action: VERIFY_REQUIRED');
+        return { ok: true, action: 'VERIFY_REQUIRED', reason: 'not_verified' };
       }
 
-      // Check if status is active
+      // Check if status is not active (blocked, expired, etc.)
       if (trial.status !== 'active') {
-        console.log('[TrialService] Resume trial: status is not active:', trial.status);
-        return { ok: true, canResume: false, reason: 'not_active' };
+        console.log('[TrialService] Resume trial: status is not active:', trial.status, '- action: ENDED');
+        return { ok: true, action: 'ENDED', reason: 'not_active' };
       }
 
       // Calculate seconds remaining from trial_ends_at
@@ -1302,8 +1303,8 @@ View in Admin Panel: ${adminPanelLink}`;
 
       // Check if still no time remaining after courtesy check
       if (secondsRemaining <= 0) {
-        console.log('[TrialService] Resume trial: trial expired, secondsRemaining:', secondsRemaining);
-        return { ok: true, canResume: false, reason: 'trial_expired' };
+        console.log('[TrialService] Resume trial: trial expired, secondsRemaining:', secondsRemaining, '- action: ENDED');
+        return { ok: true, action: 'ENDED', reason: 'trial_expired' };
       }
 
       // Update last active timestamp
@@ -1314,19 +1315,19 @@ View in Admin Panel: ${adminPanelLink}`;
         })
         .where(eq(trialSessions.id, trial.id));
 
-      console.log('[TrialService] Resume trial: SUCCESS, secondsRemaining:', secondsRemaining, 
+      console.log('[TrialService] Resume trial: SUCCESS - action: RESUME, secondsRemaining:', secondsRemaining, 
         courtesyApplied ? '(courtesy applied)' : '');
 
       return {
         ok: true,
-        canResume: true,
+        action: 'RESUME',
         secondsRemaining,
         emailHash,
         courtesyApplied,
       };
     } catch (error: any) {
       console.error('[TrialService] Error resuming trial:', error);
-      return { ok: false, canResume: false, error: 'Something went wrong. Please try again.' };
+      return { ok: false, action: 'ENDED', error: 'Something went wrong. Please try again.' };
     }
   }
 
