@@ -796,19 +796,49 @@ export default function TrialTutorPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900" data-testid="page-trial-tutor">
-      <div className="fixed top-0 left-0 right-0 bg-gradient-to-r from-red-600 to-red-700 text-white py-3 px-4 z-50">
+      <div className="fixed top-0 left-0 right-0 bg-gradient-to-r from-red-600 to-red-700 text-white py-3 px-4 z-50 shadow-md">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Clock className="w-5 h-5" />
-            <span className="font-semibold">Free Trial</span>
-            {isConnected && <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />}
+          <div className="flex items-center gap-3 md:gap-6">
+            <div className="flex items-center gap-2">
+              <Clock className="w-5 h-5" />
+              <span className="font-bold uppercase tracking-wider text-sm md:text-base">Free Trial</span>
+              {isConnected && <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse ml-1" />}
+            </div>
+            
+            <nav className="hidden md:flex items-center gap-1 border-l border-red-500/50 pl-6">
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="text-white hover:bg-white/10 hover:text-white font-medium"
+                onClick={() => setLocation('/')}
+              >
+                Home
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="text-white hover:bg-white/10 hover:text-white font-medium"
+                onClick={() => setLocation('/benefits')}
+              >
+                Benefits
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="text-white hover:bg-white/10 hover:text-white font-medium"
+                onClick={() => setLocation('/pricing')}
+              >
+                Pricing
+              </Button>
+            </nav>
           </div>
+          
           <div className="flex items-center gap-4">
-            <div className={`text-2xl font-mono font-bold ${secondsRemaining < 60 ? 'animate-pulse text-yellow-300' : ''}`} data-testid="text-trial-timer">
+            <div className={`text-2xl font-mono font-bold bg-black/10 px-3 py-1 rounded ${secondsRemaining < 60 ? 'animate-pulse text-yellow-300' : ''}`} data-testid="text-trial-timer">
               {formatTime(secondsRemaining)}
             </div>
             <Button 
-              variant="secondary"
+              className="bg-white text-red-600 hover:bg-gray-100 font-bold shadow-sm"
               size="sm"
               onClick={() => setLocation('/pricing')}
               data-testid="button-upgrade"

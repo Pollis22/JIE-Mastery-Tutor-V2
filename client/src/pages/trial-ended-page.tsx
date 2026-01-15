@@ -60,13 +60,22 @@ export default function TrialEndedPage() {
               <Link href="/pricing">
                 <Button 
                   variant="outline"
-                  className="w-full text-lg py-6"
+                  className="w-full text-lg py-6 border-2 border-red-600 text-red-600 hover:bg-red-50 hover:text-red-700"
                   data-testid="button-view-plans"
                 >
                   <CreditCard className="w-5 h-5 mr-2" />
                   View Plans
                 </Button>
               </Link>
+
+              <div className="grid grid-cols-2 gap-4 mt-2">
+                <Link href="/">
+                  <Button variant="ghost" className="w-full text-gray-600">Home</Button>
+                </Link>
+                <Link href="/benefits">
+                  <Button variant="ghost" className="w-full text-gray-600">Benefits</Button>
+                </Link>
+              </div>
             </div>
             
             <p className="text-center text-gray-500 dark:text-gray-400 text-sm">
