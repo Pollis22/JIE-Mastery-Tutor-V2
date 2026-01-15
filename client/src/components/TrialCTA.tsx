@@ -84,6 +84,27 @@ export function TrialCTA({ variant = 'primary', size = 'md', className = '' }: T
       if (data.ok) {
         setEmailSent(true);
         setErrorMessage(null);
+        
+        // Fire Google Ads + Meta Pixel conversions (idempotent - once per session)
+        const trialSignupConversionKey = 'gtag_trial_signup_fired';
+        if (!sessionStorage.getItem(trialSignupConversionKey)) {
+          sessionStorage.setItem(trialSignupConversionKey, 'true');
+          
+          // Google Ads conversion
+          if (typeof window !== 'undefined' && (window as any).gtag) {
+            (window as any).gtag('event', 'conversion', {
+              send_to: 'AW-17252974185/REPLACE_WITH_LABEL'
+            });
+            console.log('[Analytics] Google Ads Free Trial Signup conversion fired');
+          }
+          
+          // Meta Pixel conversion
+          if (typeof window !== 'undefined' && (window as any).fbq) {
+            (window as any).fbq('track', 'CompleteRegistration');
+            console.log('[Analytics] Meta Pixel CompleteRegistration conversion fired');
+          }
+        }
+        
         toast({
           title: 'Check your email!',
           description: 'We sent you a verification link to start your free trial.',
