@@ -2225,27 +2225,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Admin: Get site views stats (unique visits, today, this week, this month, history)
   // Note: Using page_views table which now stores site visits (one per session)
+  // All queries use US Central timezone (America/Chicago) for consistent daily resets at midnight Central
   const getSiteViewsStats = async (req: any, res: any) => {
     try {
-      // Today's views
+      // Today's views (Central timezone - resets at midnight Central)
       const todayResult = await db.execute(sql`
         SELECT COUNT(*) as count FROM page_views 
-        WHERE created_at >= CURRENT_DATE
+        WHERE created_at >= DATE_TRUNC('day', NOW() AT TIME ZONE 'America/Chicago') AT TIME ZONE 'America/Chicago'
       `);
       const todayCount = parseInt(todayResult.rows[0]?.count as string || '0', 10);
       
-      // This week's views (Monday start - PostgreSQL DATE_TRUNC('week', ...) uses ISO weeks starting Monday)
+      // This week's views (Monday start, Central timezone)
       const thisWeekResult = await db.execute(sql`
         SELECT COUNT(*) as count FROM page_views 
-        WHERE created_at >= DATE_TRUNC('week', CURRENT_DATE)
+        WHERE created_at >= DATE_TRUNC('week', NOW() AT TIME ZONE 'America/Chicago') AT TIME ZONE 'America/Chicago'
       `);
       const thisWeekViews = parseInt(thisWeekResult.rows[0]?.count as string || '0', 10);
       
-      // Last week's views (previous Monday 00:00 to this Monday 00:00)
+      // Last week's views (previous Monday 00:00 to this Monday 00:00, Central timezone)
       const lastWeekResult = await db.execute(sql`
         SELECT COUNT(*) as count FROM page_views 
-        WHERE created_at >= DATE_TRUNC('week', CURRENT_DATE - INTERVAL '7 days')
-          AND created_at < DATE_TRUNC('week', CURRENT_DATE)
+        WHERE created_at >= DATE_TRUNC('week', (NOW() AT TIME ZONE 'America/Chicago') - INTERVAL '7 days') AT TIME ZONE 'America/Chicago'
+          AND created_at < DATE_TRUNC('week', NOW() AT TIME ZONE 'America/Chicago') AT TIME ZONE 'America/Chicago'
       `);
       const lastWeekViews = parseInt(lastWeekResult.rows[0]?.count as string || '0', 10);
       
@@ -2261,30 +2262,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         weeklyWoWPercent = Math.round(((thisWeekViews - lastWeekViews) / lastWeekViews) * 1000) / 10; // Round to 1 decimal
       }
       
-      // This month's views
+      // This month's views (Central timezone)
       const thisMonthResult = await db.execute(sql`
         SELECT COUNT(*) as count FROM page_views 
-        WHERE created_at >= DATE_TRUNC('month', CURRENT_DATE)
+        WHERE created_at >= DATE_TRUNC('month', NOW() AT TIME ZONE 'America/Chicago') AT TIME ZONE 'America/Chicago'
       `);
       const thisMonthViews = parseInt(thisMonthResult.rows[0]?.count as string || '0', 10);
       
-      // Last month's views
+      // Last month's views (Central timezone)
       const lastMonthResult = await db.execute(sql`
         SELECT COUNT(*) as count FROM page_views 
-        WHERE created_at >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')
-          AND created_at < DATE_TRUNC('month', CURRENT_DATE)
+        WHERE created_at >= DATE_TRUNC('month', (NOW() AT TIME ZONE 'America/Chicago') - INTERVAL '1 month') AT TIME ZONE 'America/Chicago'
+          AND created_at < DATE_TRUNC('month', NOW() AT TIME ZONE 'America/Chicago') AT TIME ZONE 'America/Chicago'
       `);
       const lastMonthViews = parseInt(lastMonthResult.rows[0]?.count as string || '0', 10);
       
-      // Last 12 months breakdown
+      // Last 12 months breakdown (Central timezone)
       const historyResult = await db.execute(sql`
         SELECT 
-          TO_CHAR(DATE_TRUNC('month', created_at), 'YYYY-MM') as month,
-          TO_CHAR(DATE_TRUNC('month', created_at), 'Mon YYYY') as label,
+          TO_CHAR(DATE_TRUNC('month', created_at AT TIME ZONE 'America/Chicago'), 'YYYY-MM') as month,
+          TO_CHAR(DATE_TRUNC('month', created_at AT TIME ZONE 'America/Chicago'), 'Mon YYYY') as label,
           COUNT(*) as views
         FROM page_views
-        WHERE created_at >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '11 months')
-        GROUP BY DATE_TRUNC('month', created_at)
+        WHERE created_at >= DATE_TRUNC('month', (NOW() AT TIME ZONE 'America/Chicago') - INTERVAL '11 months') AT TIME ZONE 'America/Chicago'
+        GROUP BY DATE_TRUNC('month', created_at AT TIME ZONE 'America/Chicago')
         ORDER BY month DESC
       `);
       
