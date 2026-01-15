@@ -280,7 +280,6 @@ router.post('/resume', async (req: Request, res: Response) => {
     if (!parsed.success) {
       return res.status(400).json({ 
         ok: false, 
-        action: 'ENDED',
         error: 'Please enter a valid email address.',
       });
     }
@@ -318,7 +317,7 @@ router.post('/resume', async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('[TrialRoutes] Error resuming trial:', error);
-    return res.status(500).json({ ok: false, action: 'ENDED', error: 'Server error' });
+    return res.status(500).json({ ok: false, error: 'Server error' });
   }
 });
 

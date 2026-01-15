@@ -222,6 +222,17 @@ export function TrialCTA({ variant = 'primary', size = 'md', className = '', sho
       });
       
       const data = await response.json();
+      
+      // Handle error responses (validation errors, server errors)
+      if (!data.ok) {
+        toast({
+          title: 'Something went wrong',
+          description: data.error || 'Please try again.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      
       const action = data.action;
 
       // Branch by action (RESUME, START, VERIFY_REQUIRED, ENDED)
@@ -238,6 +249,7 @@ export function TrialCTA({ variant = 'primary', size = 'md', className = '', sho
       
       if (action === 'VERIFY_REQUIRED') {
         // Pending trial - need to resend verification email
+        // Call /api/trial/start which handles resending for pending trials
         const startResponse = await fetch('/api/trial/start', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -249,13 +261,45 @@ export function TrialCTA({ variant = 'primary', size = 'md', className = '', sho
         if (startData.ok) {
           setContinueSent(true);
           toast({
-            title: 'Verification required',
-            description: "We've resent the verification email. Please check your inbox.",
+            title: 'Verification email sent!',
+            description: "Please check your inbox to verify and continue your trial.",
           });
+        } else if (startData.code === 'TRIAL_EMAIL_USED') {
+          // Edge case: trial was verified between check and resend
+          // Call /resume again to set the cookie and get proper status
+          const retryResponse = await fetch('/api/trial/resume', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ email: continueEmail.trim() }),
+          });
+          const retryData = await retryResponse.json();
+          
+          if (retryData.action === 'RESUME') {
+            toast({
+              title: 'Trial ready!',
+              description: 'Redirecting to your trial...',
+            });
+            handleContinueClose();
+            setLocation('/trial/tutor');
+          } else if (retryData.action === 'ENDED') {
+            toast({
+              title: 'Trial ended',
+              description: 'Your trial has ended. Sign up with code WELCOME50 for 50% off!',
+              variant: 'destructive',
+            });
+            handleContinueClose();
+          } else {
+            toast({
+              title: 'Something went wrong',
+              description: 'Please try again.',
+              variant: 'destructive',
+            });
+          }
         } else {
           toast({
             title: 'Verification required',
-            description: 'Please check your email to verify your trial.',
+            description: startData.error || 'Please check your email to verify your trial.',
           });
         }
         return;
