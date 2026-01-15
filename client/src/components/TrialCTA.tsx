@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useLocation } from 'wouter';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -66,6 +67,7 @@ const TRIAL_ERROR_MESSAGES: Record<string, { title: string; description: string;
 };
 
 export function TrialCTA({ variant = 'primary', size = 'md', className = '', showContinueLink = true }: TrialCTAProps) {
+  const [, setLocation] = useLocation();
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -220,6 +222,18 @@ export function TrialCTA({ variant = 'primary', size = 'md', className = '', sho
       const data = await response.json();
 
       if (data.ok) {
+        // Check if this is an instant resume (active verified trial)
+        if (data.instantResume && data.redirectTo) {
+          toast({
+            title: 'Welcome back!',
+            description: 'Resuming your free trial...',
+          });
+          handleContinueClose();
+          setLocation(data.redirectTo);
+          return;
+        }
+        
+        // Not instant resume - email was sent or email not found (safe response)
         setContinueSent(true);
         setResendCooldown(60);
         const interval = setInterval(() => {
