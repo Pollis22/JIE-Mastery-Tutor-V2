@@ -311,8 +311,8 @@ router.post('/magic-link', async (req: Request, res: Response) => {
   }
 });
 
-// Magic Link: Validate token and set session cookie
-const magicTokenSchema = z.object({
+// Continue-trial: Validate token and set session cookie
+const continueTrialTokenSchema = z.object({
   token: z.string().min(1, 'Token is required'),
 });
 
@@ -320,7 +320,7 @@ router.post('/magic-validate', async (req: Request, res: Response) => {
   try {
     console.log('[TrialRoutes] /magic-validate received');
     
-    const parsed = magicTokenSchema.safeParse(req.body);
+    const parsed = continueTrialTokenSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ 
         ok: false, 

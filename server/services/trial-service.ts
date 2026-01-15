@@ -180,21 +180,47 @@ export class TrialService {
         .limit(1);
       console.log(`[TrialService:${requestId}] Step: ${currentStep} OK - found: ${existing.length}`);
 
-      // If trial exists and is verified/active/expired, block re-use (except QA emails)
+      // Handle existing trials (except QA emails which bypass all checks)
       if (existing.length > 0 && !isQaEmail) {
         const existingTrial = existing[0];
-        // Only block if the trial was actually verified (used)
+        const now = new Date();
+        
+        // Case 1: Verified and still active (not expired) - block with 409
         if (existingTrial.verifiedAt !== null) {
-          console.log(`[TrialService:${requestId}] BLOCKED: TRIAL_EMAIL_USED - trial was already verified`);
-          return { 
-            ok: false, 
-            code: 'TRIAL_EMAIL_USED',
-            error: 'This email address has already been used for a free trial.',
-            errorCode: 'email_used' 
-          };
+          const consumedSeconds = existingTrial.consumedSeconds ?? 0;
+          const secondsRemaining = TRIAL_DURATION_SECONDS - consumedSeconds;
+          const isExpired = secondsRemaining <= 0 || existingTrial.status === 'expired' ||
+            (existingTrial.trialEndsAt && now > existingTrial.trialEndsAt);
+          
+          if (!isExpired) {
+            // Active trial - return 409 with continue trial path
+            console.log(`[TrialService:${requestId}] BLOCKED: TRIAL_EMAIL_USED - active trial exists, secondsRemaining: ${secondsRemaining}`);
+            return { 
+              ok: false, 
+              code: 'TRIAL_EMAIL_USED',
+              error: 'This email has an active trial. Use "Continue Trial" to resume.',
+              errorCode: 'email_used' 
+            };
+          } else {
+            // Expired trial - block without continue path
+            console.log(`[TrialService:${requestId}] BLOCKED: TRIAL_EMAIL_USED - trial expired, no new trial allowed`);
+            return { 
+              ok: false, 
+              code: 'TRIAL_EMAIL_USED',
+              error: 'This email address has already been used for a free trial.',
+              errorCode: 'email_used' 
+            };
+          }
         }
-        // Pending trials can be re-used (resend verification)
-        console.log(`[TrialService:${requestId}] Existing trial is pending - will resend verification`);
+        
+        // Case 2: Pending trial with expired verification token - rotate and resend
+        if (existingTrial.verificationExpiry && now > existingTrial.verificationExpiry) {
+          console.log(`[TrialService:${requestId}] Existing trial is pending with expired verification - will rotate token and resend`);
+          // Continue to upsert logic below which will refresh token
+        } else {
+          // Case 3: Pending trial with valid verification token - resend same token
+          console.log(`[TrialService:${requestId}] Existing trial is pending with valid verification - will resend verification`);
+        }
       }
 
       // Device blocking check - skip if QA_MODE or TRIAL_ENFORCE_DEVICE_LIMIT is not "1"
@@ -353,8 +379,7 @@ export class TrialService {
       if (isMissingColumnError(error)) {
         const missingColumn = extractMissingColumn(error);
         console.error(`[TrialService:${requestId}] CRITICAL: Schema mismatch - column '${missingColumn}' does not exist!`);
-        console.error(`[TrialService:${requestId}] NOTE: magic_token columns are NOT used - continue-trial tokens live in trial_login_tokens table`);
-        console.error(`[TrialService:${requestId}] If seeing magic_token error, ensure code does not reference it. Error code: 42703`);
+        console.error(`[TrialService:${requestId}] Continue-trial tokens use trial_login_tokens table. Error code: 42703`);
         return { 
           ok: false, 
           code: 'TRIAL_DB_SCHEMA_MISMATCH',
@@ -1177,7 +1202,7 @@ View in Admin Panel: ${adminPanelLink}`;
       if (isMissingColumnError(error) || isMissingTableError(error)) {
         const missingColumn = extractMissingColumn(error);
         console.error(`[TrialService] CRITICAL: Schema mismatch in requestMagicLink - '${missingColumn || 'table'}' does not exist!`);
-        console.error('[TrialService] NOTE: Continue-trial tokens use trial_login_tokens table, NOT magic_token columns');
+        console.error('[TrialService] Continue-trial tokens use trial_login_tokens table.');
       }
       
       return { ok: false, code: 'INTERNAL_ERROR', error: 'Something went wrong. Please try again.' };
@@ -1264,7 +1289,7 @@ View in Admin Panel: ${adminPanelLink}`;
       if (isMissingColumnError(error) || isMissingTableError(error)) {
         const missingColumn = extractMissingColumn(error);
         console.error(`[TrialService] CRITICAL: Schema mismatch in validateMagicToken - '${missingColumn || 'table'}' does not exist!`);
-        console.error('[TrialService] NOTE: Continue-trial tokens use trial_login_tokens table, NOT magic_token columns');
+        console.error('[TrialService] Continue-trial tokens use trial_login_tokens table.');
       }
       
       return { ok: false, error: 'An error occurred. Please try again.', errorCode: 'server_error' };
