@@ -149,8 +149,9 @@ export type ResumeReason = 'trial_expired' | 'trial_exhausted' | 'trial_not_foun
 
 export interface ResumeTrialResult {
   ok: boolean;
-  action: ResumeAction;
+  action?: ResumeAction;  // Only present when ok=true
   secondsRemaining?: number;
+  trialId?: string;
   emailHash?: string;
   reason?: ResumeReason;
   courtesyApplied?: boolean;
@@ -1315,19 +1316,20 @@ View in Admin Panel: ${adminPanelLink}`;
         })
         .where(eq(trialSessions.id, trial.id));
 
-      console.log('[TrialService] Resume trial: SUCCESS - action: RESUME, secondsRemaining:', secondsRemaining, 
-        courtesyApplied ? '(courtesy applied)' : '');
+      console.log('[TrialService] Resume trial: SUCCESS - action: RESUME, trialId:', trial.id, 
+        ', secondsRemaining:', secondsRemaining, courtesyApplied ? '(courtesy applied)' : '');
 
       return {
         ok: true,
         action: 'RESUME',
         secondsRemaining,
+        trialId: trial.id,
         emailHash,
         courtesyApplied,
       };
     } catch (error: any) {
       console.error('[TrialService] Error resuming trial:', error);
-      return { ok: false, action: 'ENDED', error: 'Something went wrong. Please try again.' };
+      return { ok: false, error: 'Something went wrong. Please try again.' };
     }
   }
 

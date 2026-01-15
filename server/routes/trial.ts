@@ -287,9 +287,18 @@ router.post('/resume', async (req: Request, res: Response) => {
     const { email } = parsed.data;
     const result = await trialService.resumeTrial(email);
 
+    // Handle error case (no action field)
+    if (!result.ok || !result.action) {
+      console.log('[TrialRoutes] /resume: error -', result.error);
+      return res.status(500).json({ 
+        ok: false, 
+        error: result.error || 'Something went wrong. Please try again.' 
+      });
+    }
+
     // Handle RESUME action - set cookie and allow immediate redirect
     if (result.action === 'RESUME' && result.emailHash) {
-      console.log('[TrialRoutes] /resume: action=RESUME, setting cookie');
+      console.log('[TrialRoutes] /resume: action=RESUME, setting cookie, trialId:', result.trialId);
       
       // Set the email hash cookie so the trial session is linked to this browser
       res.cookie(TRIAL_EMAIL_HASH_COOKIE, result.emailHash, {
@@ -304,6 +313,7 @@ router.post('/resume', async (req: Request, res: Response) => {
         ok: true,
         action: 'RESUME',
         secondsRemaining: result.secondsRemaining,
+        trialId: result.trialId,
         courtesyApplied: result.courtesyApplied,
       });
     }
