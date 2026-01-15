@@ -821,6 +821,8 @@ export const trialSessions = pgTable("trial_sessions", {
   lastActiveAt: timestamp("last_active_at"),
   magicToken: varchar("magic_token", { length: 64 }),
   magicTokenExpiry: timestamp("magic_token_expiry"),
+  lastVerificationReminderAt: timestamp("last_verification_reminder_at"),
+  verificationReminderCount: integer("verification_reminder_count").default(0),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
