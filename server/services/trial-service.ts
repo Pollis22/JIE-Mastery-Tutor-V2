@@ -21,12 +21,20 @@ const QA_MODE = process.env.TRIAL_QA_MODE === '1';
 // Example: TRIAL_QA_EMAILS=test@example.com,dev@example.com
 const QA_EMAILS = (process.env.TRIAL_QA_EMAILS || '').split(',').map(e => e.toLowerCase().trim()).filter(Boolean);
 
-function hashValue(value: string): string {
-  return createHash('sha256').update(value.toLowerCase().trim()).digest('hex');
+// Canonical hashing function - used EVERYWHERE for consistency
+export function hashEmail(email: string): string {
+  const normalized = email.toLowerCase().trim();
+  return createHash('sha256').update(normalized).digest('hex');
 }
 
-function normalizeEmail(email: string): string {
+// Canonical email normalization - used EVERYWHERE
+export function normalizeEmail(email: string): string {
   return email.toLowerCase().trim();
+}
+
+// Legacy alias for internal use - DO NOT use in new code
+function hashValue(value: string): string {
+  return createHash('sha256').update(value.toLowerCase().trim()).digest('hex');
 }
 
 // Standardized error codes for trial operations
@@ -84,6 +92,17 @@ export interface TrialEntitlement {
   reason: 'trial_active' | 'trial_expired' | 'trial_not_found' | 'trial_not_verified';
   trialSecondsRemaining?: number;
   trialId?: string;
+}
+
+// Unified trial resolution result - used by both /status and /session-token
+export interface TrialResolutionResult {
+  trialSession: TrialSession | null;
+  hasAccess: boolean;
+  reason: 'trial_active' | 'trial_expired' | 'trial_not_found' | 'trial_not_verified';
+  secondsRemaining: number;
+  trialId: string | null;
+  lookupPath: 'email_hash_cookie' | 'email_body_fallback';
+  emailHashUsed: string | null;
 }
 
 export interface TrialSessionToken {
@@ -481,6 +500,130 @@ export class TrialService {
       console.error('[TrialService] Error getting trial by email hash:', error);
       return null;
     }
+  }
+
+  /**
+   * UNIFIED TRIAL RESOLUTION - used by BOTH /status AND /session-token
+   * 
+   * Lookup priority:
+   * 1. email_hash cookie (set during verification)
+   * 2. email from request body → normalize → hash (fallback only)
+   * 
+   * NEVER uses deviceIdHash or ipHash for trial lookup (those are for rate limiting only)
+   */
+  async resolveTrialFromRequest(
+    emailHashFromCookie: string | undefined,
+    emailFromBody: string | undefined
+  ): Promise<TrialResolutionResult> {
+    let emailHashUsed: string | null = null;
+    let lookupPath: 'email_hash_cookie' | 'email_body_fallback';
+
+    // Primary: email_hash cookie
+    if (emailHashFromCookie) {
+      emailHashUsed = emailHashFromCookie;
+      lookupPath = 'email_hash_cookie';
+    } else if (emailFromBody) {
+      // Fallback: email from request body → normalize → hash
+      emailHashUsed = hashEmail(emailFromBody);
+      lookupPath = 'email_body_fallback';
+    } else {
+      // No identification available
+      console.log('[TrialService] resolveTrialFromRequest: NO email_hash cookie or email body');
+      return {
+        trialSession: null,
+        hasAccess: false,
+        reason: 'trial_not_found',
+        secondsRemaining: 0,
+        trialId: null,
+        lookupPath: 'email_hash_cookie',
+        emailHashUsed: null,
+      };
+    }
+
+    console.log('[TrialService] resolveTrialFromRequest:', {
+      lookupPath,
+      emailHash: emailHashUsed.substring(0, 12) + '...',
+    });
+
+    // Query trial_sessions by email_hash ONLY
+    const trial = await this.getTrialByEmailHash(emailHashUsed);
+
+    if (!trial) {
+      console.log('[TrialService] resolveTrialFromRequest: trial NOT FOUND for hash:', emailHashUsed.substring(0, 12) + '...');
+      return {
+        trialSession: null,
+        hasAccess: false,
+        reason: 'trial_not_found',
+        secondsRemaining: 0,
+        trialId: null,
+        lookupPath,
+        emailHashUsed,
+      };
+    }
+
+    console.log('[TrialService] resolveTrialFromRequest: trial FOUND:', {
+      trialId: trial.id,
+      status: trial.status,
+      verifiedAt: trial.verifiedAt ? 'set' : 'null',
+      lookupPath,
+    });
+
+    // Check verification status
+    if (!trial.verifiedAt) {
+      return {
+        trialSession: trial,
+        hasAccess: false,
+        reason: 'trial_not_verified',
+        secondsRemaining: 0,
+        trialId: trial.id,
+        lookupPath,
+        emailHashUsed,
+      };
+    }
+
+    // Check if trial has expired by time
+    const now = new Date();
+    if (trial.trialEndsAt && now > trial.trialEndsAt) {
+      await db.update(trialSessions)
+        .set({ status: 'expired', updatedAt: now })
+        .where(eq(trialSessions.id, trial.id));
+      return {
+        trialSession: trial,
+        hasAccess: false,
+        reason: 'trial_expired',
+        secondsRemaining: 0,
+        trialId: trial.id,
+        lookupPath,
+        emailHashUsed,
+      };
+    }
+
+    // Check consumed seconds
+    const consumedSeconds = trial.consumedSeconds ?? 0;
+    const secondsRemaining = TRIAL_DURATION_SECONDS - consumedSeconds;
+
+    if (secondsRemaining <= 0 || trial.status === 'expired') {
+      return {
+        trialSession: trial,
+        hasAccess: false,
+        reason: 'trial_expired',
+        secondsRemaining: 0,
+        trialId: trial.id,
+        lookupPath,
+        emailHashUsed,
+      };
+    }
+
+    // Trial is active
+    return {
+      trialSession: trial,
+      hasAccess: true,
+      reason: 'trial_active',
+      secondsRemaining,
+      trialId: trial.id,
+      lookupPath,
+      emailHashUsed,
+    };
   }
 
   async getTrialEntitlementByEmailHash(emailHash: string, lookupPath: string): Promise<TrialEntitlement> {
