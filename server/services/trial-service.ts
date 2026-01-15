@@ -188,7 +188,7 @@ export interface TrialVerifyResult {
 
 export interface TrialEntitlement {
   hasAccess: boolean;
-  reason: 'trial_active' | 'trial_expired' | 'trial_not_found' | 'trial_not_verified';
+  reason: 'trial_active' | 'trial_expired' | 'trial_not_found' | 'trial_not_verified' | 'server_error';
   trialSecondsRemaining?: number;
   trialId?: string;
 }
@@ -1652,6 +1652,36 @@ If you didn't request this, you can safely ignore this email.`;
       html: htmlContent,
       text: textContent,
     });
+  }
+
+  // Get trial by ID (core lookup method)
+  async getTrialById(trialId: string): Promise<TrialSession | null> {
+    try {
+      const trials = await db.select()
+        .from(trialSessions)
+        .where(eq(trialSessions.id, trialId))
+        .limit(1);
+      
+      return trials.length > 0 ? trials[0] : null;
+    } catch (error) {
+      console.error('[TrialService] Error getting trial by id:', error);
+      return null;
+    }
+  }
+
+  // Get trial by email hash (core lookup method)
+  async getTrialByEmailHash(emailHash: string): Promise<TrialSession | null> {
+    try {
+      const trials = await db.select()
+        .from(trialSessions)
+        .where(eq(trialSessions.emailHash, emailHash))
+        .limit(1);
+      
+      return trials.length > 0 ? trials[0] : null;
+    } catch (error) {
+      console.error('[TrialService] Error getting trial by email hash:', error);
+      return null;
+    }
   }
 
   // Get trial by email (for magic link lookup)
