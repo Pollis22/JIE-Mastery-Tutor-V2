@@ -819,8 +819,6 @@ export const trialSessions = pgTable("trial_sessions", {
   deviceIdHash: varchar("device_id_hash", { length: 64 }),
   ipHash: varchar("ip_hash", { length: 64 }),
   lastActiveAt: timestamp("last_active_at"),
-  magicToken: varchar("magic_token", { length: 64 }),
-  magicTokenExpiry: timestamp("magic_token_expiry"),
   lastVerificationReminderAt: timestamp("last_verification_reminder_at"),
   verificationReminderCount: integer("verification_reminder_count").default(0),
   createdAt: timestamp("created_at").defaultNow(),
@@ -830,7 +828,6 @@ export const trialSessions = pgTable("trial_sessions", {
   index("idx_trial_device_hash").on(table.deviceIdHash),
   index("idx_trial_status").on(table.status),
   index("idx_trial_verification_token").on(table.verificationToken),
-  index("idx_trial_magic_token").on(table.magicToken),
 ]);
 
 export const insertTrialSessionSchema = createInsertSchema(trialSessions).omit({

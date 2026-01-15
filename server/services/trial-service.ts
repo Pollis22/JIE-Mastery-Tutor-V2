@@ -321,7 +321,7 @@ export class TrialService {
       // Check if this is a missing table error (migration not applied)
       if (isMissingTableError(error)) {
         console.error(`[TrialService:${requestId}] CRITICAL: trial_sessions table does not exist!`);
-        console.error(`[TrialService:${requestId}] ACTION REQUIRED: Run 'npm run db:push' to sync schema`);
+        console.error(`[TrialService:${requestId}] ACTION REQUIRED: Ensure trial_sessions table exists in database`);
         return { 
           ok: false, 
           code: 'TRIAL_DB_MIGRATION_MISSING',
@@ -334,8 +334,8 @@ export class TrialService {
       if (isMissingColumnError(error)) {
         const missingColumn = extractMissingColumn(error);
         console.error(`[TrialService:${requestId}] CRITICAL: Schema mismatch - column '${missingColumn}' does not exist!`);
-        console.error(`[TrialService:${requestId}] ACTION REQUIRED: Run 'npm run db:push' to add missing columns`);
-        console.error(`[TrialService:${requestId}] Error code: 42703 (undefined_column)`);
+        console.error(`[TrialService:${requestId}] NOTE: magic_token columns are NOT used - continue-trial tokens live in trial_login_tokens table`);
+        console.error(`[TrialService:${requestId}] If seeing magic_token error, ensure code does not reference it. Error code: 42703`);
         return { 
           ok: false, 
           code: 'TRIAL_DB_SCHEMA_MISMATCH',
@@ -992,7 +992,7 @@ View in Admin Panel: ${adminPanelLink}`;
       if (isMissingColumnError(error) || isMissingTableError(error)) {
         const missingColumn = extractMissingColumn(error);
         console.error(`[TrialService] CRITICAL: Schema mismatch in requestMagicLink - '${missingColumn || 'table'}' does not exist!`);
-        console.error('[TrialService] ACTION REQUIRED: Run \'npm run db:push\' to sync schema');
+        console.error('[TrialService] NOTE: Continue-trial tokens use trial_login_tokens table, NOT magic_token columns');
       }
       
       return { ok: false, code: 'INTERNAL_ERROR', error: 'Something went wrong. Please try again.' };
@@ -1079,7 +1079,7 @@ View in Admin Panel: ${adminPanelLink}`;
       if (isMissingColumnError(error) || isMissingTableError(error)) {
         const missingColumn = extractMissingColumn(error);
         console.error(`[TrialService] CRITICAL: Schema mismatch in validateMagicToken - '${missingColumn || 'table'}' does not exist!`);
-        console.error('[TrialService] ACTION REQUIRED: Run \'npm run db:push\' to sync schema');
+        console.error('[TrialService] NOTE: Continue-trial tokens use trial_login_tokens table, NOT magic_token columns');
       }
       
       return { ok: false, error: 'An error occurred. Please try again.', errorCode: 'server_error' };
