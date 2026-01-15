@@ -36,7 +36,10 @@ export type TrialErrorCode =
   | 'TRIAL_RATE_LIMITED'
   | 'TRIAL_EXPIRED'
   | 'TRIAL_INTERNAL_ERROR'
-  | 'TRIAL_DB_MIGRATION_MISSING';
+  | 'TRIAL_DB_MIGRATION_MISSING'
+  | 'TRIAL_DB_ERROR'
+  | 'EMAIL_SEND_FAILED'
+  | 'TRIAL_CONFIG_ERROR';
 
 // Helper to check if error is a missing table error
 function isMissingTableError(error: any): boolean {
@@ -114,32 +117,41 @@ export class TrialService {
   }
 
   async startTrial(email: string, deviceIdHash: string, ipHash: string): Promise<TrialStartResult> {
+    const requestId = randomBytes(4).toString('hex');
+    let currentStep = 'init';
+    
     try {
+      console.log(`[TrialService:${requestId}] startTrial BEGIN`);
+      currentStep = 'normalize_email';
       const normalizedEmail = normalizeEmail(email);
       const emailHash = hashValue(normalizedEmail);
+      console.log(`[TrialService:${requestId}] Step: ${currentStep} OK - emailHash: ${emailHash.substring(0, 12)}...`);
       
       // Check if this is a QA email that bypasses "email already used" restriction
       const isQaEmail = QA_EMAILS.includes(normalizedEmail);
       
       if (QA_MODE) {
-        console.log('[TrialService] QA_MODE enabled - bypassing IP/device rate limits');
+        console.log(`[TrialService:${requestId}] QA_MODE enabled - bypassing IP/device rate limits`);
         if (isQaEmail) {
-          console.log('[TrialService] QA email detected - bypassing email-already-used check:', normalizedEmail);
+          console.log(`[TrialService:${requestId}] QA email detected - bypassing email-already-used check`);
         }
       }
 
       // Check if trial already exists for this email
+      currentStep = 'check_existing_trial';
+      console.log(`[TrialService:${requestId}] Step: ${currentStep}...`);
       const existing = await db.select()
         .from(trialSessions)
         .where(eq(trialSessions.emailHash, emailHash))
         .limit(1);
+      console.log(`[TrialService:${requestId}] Step: ${currentStep} OK - found: ${existing.length}`);
 
       // If trial exists and is verified/active/expired, block re-use (except QA emails)
       if (existing.length > 0 && !isQaEmail) {
         const existingTrial = existing[0];
         // Only block if the trial was actually verified (used)
         if (existingTrial.verifiedAt !== null) {
-          console.log('[TrialService] Error: TRIAL_EMAIL_USED - trial was already verified');
+          console.log(`[TrialService:${requestId}] BLOCKED: TRIAL_EMAIL_USED - trial was already verified`);
           return { 
             ok: false, 
             code: 'TRIAL_EMAIL_USED',
@@ -148,10 +160,13 @@ export class TrialService {
           };
         }
         // Pending trials can be re-used (resend verification)
+        console.log(`[TrialService:${requestId}] Existing trial is pending - will resend verification`);
       }
 
       // Device blocking check - skip if QA_MODE or TRIAL_ENFORCE_DEVICE_LIMIT is not "1"
       if (ENFORCE_DEVICE_LIMIT && !QA_MODE) {
+        currentStep = 'check_device_limit';
+        console.log(`[TrialService:${requestId}] Step: ${currentStep}...`);
         const thirtyDaysAgo = new Date(Date.now() - DEVICE_COOLDOWN_DAYS * 24 * 60 * 60 * 1000);
         const deviceTrial = await db.select()
           .from(trialSessions)
@@ -160,9 +175,10 @@ export class TrialService {
             gte(trialSessions.createdAt, thirtyDaysAgo)
           ))
           .limit(1);
+        console.log(`[TrialService:${requestId}] Step: ${currentStep} OK - found: ${deviceTrial.length}`);
 
         if (deviceTrial.length > 0 && deviceTrial[0].verifiedAt !== null) {
-          console.log('[TrialService] Error: TRIAL_DEVICE_USED');
+          console.log(`[TrialService:${requestId}] BLOCKED: TRIAL_DEVICE_USED`);
           return { 
             ok: false, 
             code: 'TRIAL_DEVICE_USED',
@@ -170,10 +186,14 @@ export class TrialService {
             errorCode: 'device_blocked' 
           };
         }
+      } else {
+        console.log(`[TrialService:${requestId}] Step: check_device_limit SKIPPED (QA_MODE or disabled)`);
       }
 
       // IP rate limiting - skip if QA_MODE
       if (!QA_MODE) {
+        currentStep = 'check_ip_rate_limit';
+        console.log(`[TrialService:${requestId}] Step: ${currentStep}...`);
         const windowStart = new Date(Date.now() - IP_RATE_LIMIT_WINDOW_HOURS * 60 * 60 * 1000);
         const ipLimit = await db.select()
           .from(trialRateLimits)
@@ -182,9 +202,10 @@ export class TrialService {
             gte(trialRateLimits.windowStart, windowStart)
           ))
           .limit(1);
+        console.log(`[TrialService:${requestId}] Step: ${currentStep} OK - found: ${ipLimit.length}, count: ${ipLimit[0]?.attemptCount ?? 0}`);
 
         if (ipLimit.length > 0 && (ipLimit[0].attemptCount ?? 0) >= IP_RATE_LIMIT_MAX_ATTEMPTS) {
-          console.log('[TrialService] Error: TRIAL_RATE_LIMITED');
+          console.log(`[TrialService:${requestId}] BLOCKED: TRIAL_RATE_LIMITED`);
           return { 
             ok: false, 
             code: 'TRIAL_RATE_LIMITED',
@@ -192,16 +213,21 @@ export class TrialService {
             errorCode: 'ip_rate_limited' 
           };
         }
+      } else {
+        console.log(`[TrialService:${requestId}] Step: check_ip_rate_limit SKIPPED (QA_MODE)`);
       }
 
+      currentStep = 'generate_token';
       const verificationToken = randomBytes(32).toString('hex');
       const verificationExpiry = new Date(Date.now() + 30 * 60 * 1000);
       const now = new Date();
+      console.log(`[TrialService:${requestId}] Step: ${currentStep} OK - token: ${verificationToken.substring(0, 12)}...`);
 
       // UPSERT: Insert or update by email_hash (unique constraint)
       if (existing.length > 0) {
         // Update existing pending trial with new verification token
-        console.log('[TrialService] Updating existing pending trial for email_hash:', emailHash.substring(0, 12) + '...');
+        currentStep = 'db_update_trial';
+        console.log(`[TrialService:${requestId}] Step: ${currentStep}...`);
         await db.update(trialSessions)
           .set({
             verificationToken,
@@ -214,9 +240,11 @@ export class TrialService {
             updatedAt: now,
           })
           .where(eq(trialSessions.emailHash, emailHash));
+        console.log(`[TrialService:${requestId}] Step: ${currentStep} OK`);
       } else {
         // Insert new trial
-        console.log('[TrialService] Creating new trial for email_hash:', emailHash.substring(0, 12) + '...');
+        currentStep = 'db_insert_trial';
+        console.log(`[TrialService:${requestId}] Step: ${currentStep}...`);
         await db.insert(trialSessions).values({
           emailHash,
           email: normalizedEmail,
@@ -229,10 +257,13 @@ export class TrialService {
           lastActiveAt: now,
           updatedAt: now,
         });
+        console.log(`[TrialService:${requestId}] Step: ${currentStep} OK`);
       }
 
       // Track IP rate limits (skip in QA mode)
       if (!QA_MODE) {
+        currentStep = 'update_ip_rate_limit';
+        console.log(`[TrialService:${requestId}] Step: ${currentStep}...`);
         const windowStart = new Date(Date.now() - IP_RATE_LIMIT_WINDOW_HOURS * 60 * 60 * 1000);
         const ipLimit = await db.select()
           .from(trialRateLimits)
@@ -253,24 +284,28 @@ export class TrialService {
             windowStart: new Date(),
           });
         }
+        console.log(`[TrialService:${requestId}] Step: ${currentStep} OK`);
       }
 
+      currentStep = 'send_verification_email';
+      console.log(`[TrialService:${requestId}] Step: ${currentStep}...`);
       await this.sendTrialVerificationEmail(normalizedEmail, verificationToken);
+      console.log(`[TrialService:${requestId}] Step: ${currentStep} OK`);
 
       // Send admin notification (non-blocking)
       this.sendAdminTrialNotification(normalizedEmail, 'pending', TRIAL_DURATION_SECONDS / 60).catch(err => {
-        console.error('[TrialService] Failed to send admin trial notification:', err);
+        console.error(`[TrialService:${requestId}] Failed to send admin trial notification:`, err);
       });
 
+      console.log(`[TrialService:${requestId}] startTrial SUCCESS`);
       return { ok: true };
     } catch (error: any) {
-      console.error('[TrialService] Error starting trial:', error);
+      console.error(`[TrialService:${requestId}] ERROR at step '${currentStep}':`, error?.message || error);
+      console.error(`[TrialService:${requestId}] Full error:`, error);
       
       // Check if this is a missing table error (migration not applied)
       if (isMissingTableError(error)) {
-        console.error('[TrialService] CRITICAL: trial_sessions table does not exist!');
-        console.error('[TrialService] Run migrations: npm run init-db');
-        console.error('[TrialService] Error code: TRIAL_DB_MIGRATION_MISSING');
+        console.error(`[TrialService:${requestId}] CRITICAL: trial_sessions table does not exist!`);
         return { 
           ok: false, 
           code: 'TRIAL_DB_MIGRATION_MISSING',
@@ -279,7 +314,40 @@ export class TrialService {
         };
       }
       
-      console.log('[TrialService] Error: TRIAL_INTERNAL_ERROR');
+      // Check for DB constraint violations
+      if (error?.code === '23505') { // unique_violation
+        console.error(`[TrialService:${requestId}] DB unique constraint violation`);
+        return { 
+          ok: false, 
+          code: 'TRIAL_DB_ERROR',
+          error: 'A trial with this email already exists.',
+          errorCode: 'email_used' 
+        };
+      }
+      
+      // Check for email provider errors
+      if (currentStep === 'send_verification_email') {
+        console.error(`[TrialService:${requestId}] Email send failed`);
+        return { 
+          ok: false, 
+          code: 'EMAIL_SEND_FAILED',
+          error: 'Failed to send verification email. Please try again.',
+          errorCode: 'server_error' 
+        };
+      }
+      
+      // Check for missing env vars
+      if (error?.message?.includes('environment variable') || error?.message?.includes('API key')) {
+        console.error(`[TrialService:${requestId}] Config error - missing env var`);
+        return { 
+          ok: false, 
+          code: 'TRIAL_CONFIG_ERROR',
+          error: 'Trial service is misconfigured. Please contact support.',
+          errorCode: 'server_error' 
+        };
+      }
+      
+      console.error(`[TrialService:${requestId}] INTERNAL_ERROR at step '${currentStep}'`);
       return { 
         ok: false, 
         code: 'TRIAL_INTERNAL_ERROR',

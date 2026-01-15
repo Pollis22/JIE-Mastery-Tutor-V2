@@ -90,22 +90,24 @@ router.post('/start', async (req: Request, res: Response) => {
       return res.json({ ok: true, message: 'Verification email sent. Please check your inbox.' });
     } else {
       // Map internal error codes to client-facing codes with appropriate HTTP status
-      const errorCode = result.errorCode;
+      const internalCode = result.code;
       let httpStatus = 400;
-      let code = 'TRIAL_ERROR';
+      let code = internalCode || 'TRIAL_ERROR';
       
-      if (errorCode === 'email_used') {
+      // Map codes to HTTP status
+      if (internalCode === 'TRIAL_EMAIL_USED' || internalCode === 'TRIAL_DB_ERROR') {
         httpStatus = 409;
-        code = 'TRIAL_EMAIL_USED';
-      } else if (errorCode === 'device_blocked') {
-        httpStatus = 400;
-        code = 'TRIAL_DEVICE_BLOCKED';
-      } else if (errorCode === 'ip_rate_limited') {
+      } else if (internalCode === 'TRIAL_RATE_LIMITED') {
         httpStatus = 429;
-        code = 'TRIAL_RATE_LIMITED';
+      } else if (internalCode === 'EMAIL_SEND_FAILED') {
+        httpStatus = 502;
+      } else if (internalCode === 'TRIAL_CONFIG_ERROR' || internalCode === 'TRIAL_DB_MIGRATION_MISSING') {
+        httpStatus = 500;
+      } else if (internalCode === 'TRIAL_INTERNAL_ERROR') {
+        httpStatus = 500;
       }
       
-      console.log('[TrialRoutes] /start denied:', { code, error: result.error });
+      console.log('[TrialRoutes] /start denied:', { code, httpStatus, error: result.error });
       return res.status(httpStatus).json({
         ok: false,
         error: result.error,
