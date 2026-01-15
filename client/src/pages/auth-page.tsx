@@ -12,7 +12,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { useEffect, useState } from "react";
-import { Eye, EyeOff, Mail, FileText, Upload, Scan, Users, TrendingUp, ChevronDown, Bot, BookOpen, Sparkles, CheckCircle, AlertCircle, Info, Play, Mic, FileImage, GraduationCap } from "lucide-react";
+import { Eye, EyeOff, Mail, FileText, Upload, Scan, Users, TrendingUp, ChevronDown, Bot, BookOpen, Sparkles, CheckCircle, AlertCircle, Info, Play, Mic, FileImage, GraduationCap, ArrowRight } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -55,6 +56,9 @@ export default function AuthPage() {
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [showRegisterPassword, setShowRegisterPassword] = useState(false);
   const [unverifiedEmail, setUnverifiedEmail] = useState<string | null>(null);
+  const [continueTrialOpen, setContinueTrialOpen] = useState(false);
+  const [continueTrialEmail, setContinueTrialEmail] = useState('');
+  const [continueTrialSent, setContinueTrialSent] = useState(false);
   
   const searchParams = new URLSearchParams(searchString);
   const verificationStatus = searchParams.get('verified');
@@ -79,6 +83,52 @@ export default function AuthPage() {
       });
     },
   });
+
+  const continueTrialMutation = useMutation({
+    mutationFn: async (email: string) => {
+      const res = await apiRequest("POST", "/api/trial/magic-link", { email });
+      return await res.json();
+    },
+    onSuccess: (data) => {
+      setContinueTrialSent(true);
+    },
+    onError: (error: any) => {
+      const code = error?.code || '';
+      if (code === 'NOT_VERIFIED') {
+        toast({
+          title: "Email not verified",
+          description: "We've resent your verification email. Please check your inbox.",
+        });
+      } else if (code === 'TRIAL_EXHAUSTED') {
+        toast({
+          title: "Trial ended",
+          description: "Your trial has ended. Please sign up to continue using JIE Mastery.",
+          variant: "destructive",
+        });
+        setContinueTrialOpen(false);
+        setLocation('/pricing');
+      } else {
+        toast({
+          title: "Something went wrong",
+          description: error.message || "Please try again later.",
+          variant: "destructive",
+        });
+      }
+    },
+  });
+
+  const handleContinueTrial = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!continueTrialEmail.trim()) {
+      toast({
+        title: "Email required",
+        description: "Please enter your email address.",
+        variant: "destructive",
+      });
+      return;
+    }
+    continueTrialMutation.mutate(continueTrialEmail.trim().toLowerCase());
+  };
 
   const loginForm = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
@@ -399,6 +449,89 @@ export default function AuthPage() {
                               Forgot your password?
                             </Button>
                           </div>
+
+                          <div className="relative">
+                            <div className="absolute inset-0 flex items-center">
+                              <span className="w-full border-t" />
+                            </div>
+                            <div className="relative flex justify-center text-xs uppercase">
+                              <span className="bg-card px-2 text-muted-foreground">Or</span>
+                            </div>
+                          </div>
+
+                          <Dialog open={continueTrialOpen} onOpenChange={(open) => {
+                            setContinueTrialOpen(open);
+                            if (!open) {
+                              setContinueTrialEmail('');
+                              setContinueTrialSent(false);
+                            }
+                          }}>
+                            <DialogTrigger asChild>
+                              <Button 
+                                type="button"
+                                variant="outline" 
+                                className="w-full border-primary/50 text-primary hover:bg-primary/5"
+                                data-testid="button-continue-trial"
+                              >
+                                <Play className="h-4 w-4 mr-2" />
+                                Continue Free Trial
+                              </Button>
+                            </DialogTrigger>
+                            <DialogContent className="sm:max-w-md">
+                              <DialogHeader>
+                                <DialogTitle>Continue Your Free Trial</DialogTitle>
+                                <DialogDescription>
+                                  Enter the email you used to start your free trial. We'll send you a sign-in link.
+                                </DialogDescription>
+                              </DialogHeader>
+                              {!continueTrialSent ? (
+                                <form onSubmit={handleContinueTrial} className="space-y-4">
+                                  <div className="space-y-2">
+                                    <Label htmlFor="continue-trial-email">Email Address</Label>
+                                    <Input
+                                      id="continue-trial-email"
+                                      type="email"
+                                      placeholder="your@email.com"
+                                      value={continueTrialEmail}
+                                      onChange={(e) => setContinueTrialEmail(e.target.value)}
+                                      data-testid="input-continue-trial-email"
+                                    />
+                                  </div>
+                                  <Button 
+                                    type="submit" 
+                                    className="w-full"
+                                    disabled={continueTrialMutation.isPending}
+                                    data-testid="button-send-magic-link"
+                                  >
+                                    {continueTrialMutation.isPending ? "Sending..." : "Send Sign-in Link"}
+                                    <ArrowRight className="ml-2 h-4 w-4" />
+                                  </Button>
+                                </form>
+                              ) : (
+                                <div className="space-y-4">
+                                  <Alert className="bg-green-50 border-green-200">
+                                    <Mail className="h-4 w-4 text-green-600" />
+                                    <AlertTitle className="text-green-800">Check Your Inbox!</AlertTitle>
+                                    <AlertDescription className="text-green-700">
+                                      If a trial exists for this email, you'll receive a sign-in link shortly. 
+                                      <strong className="block mt-2">Don't forget to check your Spam/Junk folder!</strong>
+                                    </AlertDescription>
+                                  </Alert>
+                                  <Button 
+                                    variant="outline" 
+                                    className="w-full"
+                                    onClick={() => {
+                                      setContinueTrialSent(false);
+                                      setContinueTrialEmail('');
+                                    }}
+                                    data-testid="button-try-different-email"
+                                  >
+                                    Try a Different Email
+                                  </Button>
+                                </div>
+                              )}
+                            </DialogContent>
+                          </Dialog>
                         </form>
                       </Form>
                     </TabsContent>
