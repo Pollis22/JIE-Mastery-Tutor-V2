@@ -84,7 +84,6 @@ export interface TrialSessionTokenResult {
 }
 
 export type MagicLinkErrorCode = 
-  | 'NOT_FOUND'
   | 'NOT_VERIFIED'
   | 'TRIAL_EXHAUSTED'
   | 'RATE_LIMITED'
