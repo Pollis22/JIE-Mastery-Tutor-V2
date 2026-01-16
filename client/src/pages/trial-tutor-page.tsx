@@ -130,6 +130,9 @@ export default function TrialTutorPage() {
   const lastProcessedTurnIdRef = useRef<string | null>(null);
   const lastAssistantTextRef = useRef<string | null>(null);
   const isPlayingRef = useRef(false);
+  // iOS audio unlock: persistent audio element that gets "unlocked" on user gesture
+  const iosUnlockedAudioRef = useRef<HTMLAudioElement | null>(null);
+  const audioUnlockedRef = useRef(false);
 
   // DEBUG Flag
   const DEBUG = true;
@@ -154,6 +157,39 @@ export default function TrialTutorPage() {
     setIsTutorSpeaking(false);
   }, []);
 
+  // Unlock audio for iOS Safari - must be called from a user gesture
+  const unlockAudioForIOS = useCallback(() => {
+    if (audioUnlockedRef.current) return;
+    
+    log('Unlocking audio for iOS...');
+    
+    // Create a persistent audio element
+    const audio = new Audio();
+    audio.volume = 1;
+    audio.muted = false;
+    
+    // Create a tiny silent WAV file (44 bytes)
+    const silentWav = new Uint8Array([
+      0x52, 0x49, 0x46, 0x46, 0x24, 0x00, 0x00, 0x00, 0x57, 0x41, 0x56, 0x45,
+      0x66, 0x6D, 0x74, 0x20, 0x10, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00,
+      0x44, 0xAC, 0x00, 0x00, 0x88, 0x58, 0x01, 0x00, 0x02, 0x00, 0x10, 0x00,
+      0x64, 0x61, 0x74, 0x61, 0x00, 0x00, 0x00, 0x00
+    ]);
+    const blob = new Blob([silentWav], { type: 'audio/wav' });
+    audio.src = URL.createObjectURL(blob);
+    
+    // Play silent audio to unlock iOS audio
+    audio.play().then(() => {
+      log('iOS audio unlocked successfully');
+      audioUnlockedRef.current = true;
+      iosUnlockedAudioRef.current = audio;
+    }).catch(err => {
+      log('iOS audio unlock failed (might work anyway):', err);
+      // Even if this fails, we'll still try to play audio later
+      audioUnlockedRef.current = true;
+    });
+  }, []);
+
   const playNextInQueue = useCallback(async () => {
     if (isPlayingRef.current || audioQueueRef.current.length === 0) return;
     
@@ -163,7 +199,15 @@ export default function TrialTutorPage() {
     isPlayingRef.current = true;
     setIsTutorSpeaking(true);
     
-    const audio = new Audio(nextUrl);
+    // Use the unlocked audio element on iOS if available, otherwise create new
+    let audio: HTMLAudioElement;
+    if (iosUnlockedAudioRef.current) {
+      audio = iosUnlockedAudioRef.current;
+      audio.src = nextUrl;
+    } else {
+      audio = new Audio(nextUrl);
+    }
+    
     ttsAudioRef.current = audio;
     audioUrlRef.current = nextUrl;
 
@@ -174,7 +218,11 @@ export default function TrialTutorPage() {
       isPlayingRef.current = false;
       URL.revokeObjectURL(nextUrl);
       if (audioUrlRef.current === nextUrl) audioUrlRef.current = null;
-      if (ttsAudioRef.current === audio) ttsAudioRef.current = null;
+      
+      // Don't null out the audio ref if it's our iOS unlocked element
+      if (ttsAudioRef.current === audio && !iosUnlockedAudioRef.current) {
+        ttsAudioRef.current = null;
+      }
       
       if (audioQueueRef.current.length > 0) {
         playNextInQueue();
@@ -342,6 +390,10 @@ export default function TrialTutorPage() {
       return;
     }
     startedRef.current = true;
+    
+    // CRITICAL: Unlock audio for iOS Safari - must happen during user gesture (button click)
+    // iOS requires a user interaction to enable audio playback
+    unlockAudioForIOS();
     
     // Generate unique session ID for this start attempt
     const newSessionId = `trial_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
