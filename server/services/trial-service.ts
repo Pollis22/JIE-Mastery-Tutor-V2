@@ -439,30 +439,32 @@ export class TrialService {
       }
 
       // Track IP rate limits (skip in QA mode)
+      // Use UPSERT to prevent race condition / unique constraint violation
       if (!QA_MODE) {
         currentStep = 'update_ip_rate_limit';
         console.log(`[TrialService:${requestId}] Step: ${currentStep}...`);
-        const windowStart = new Date(Date.now() - IP_RATE_LIMIT_WINDOW_HOURS * 60 * 60 * 1000);
-        const ipLimit = await db.select()
-          .from(trialRateLimits)
-          .where(and(
-            eq(trialRateLimits.ipHash, ipHash),
-            gte(trialRateLimits.windowStart, windowStart)
-          ))
-          .limit(1);
-          
-        if (ipLimit.length > 0) {
-          await db.update(trialRateLimits)
-            .set({ attemptCount: sql`${trialRateLimits.attemptCount} + 1` })
-            .where(eq(trialRateLimits.ipHash, ipHash));
-        } else {
-          await db.insert(trialRateLimits).values({
-            ipHash,
-            attemptCount: 1,
-            windowStart: new Date(),
-          });
+        try {
+          // UPSERT: Insert if not exists, otherwise increment count
+          // This is atomic and prevents 23505 unique constraint violations
+          await db.insert(trialRateLimits)
+            .values({
+              ipHash,
+              attemptCount: 1,
+              windowStart: new Date(),
+            })
+            .onConflictDoUpdate({
+              target: trialRateLimits.ipHash,
+              set: {
+                attemptCount: sql`${trialRateLimits.attemptCount} + 1`,
+                // Note: windowStart is NOT updated on conflict - we keep the original window start
+              },
+            });
+          console.log(`[TrialService:${requestId}] Step: ${currentStep} OK`);
+        } catch (rateLimitError: any) {
+          // Defensive: Rate-limit tracking failure should NOT block trial creation
+          // Log and continue - trial is more important than rate-limit telemetry
+          console.warn(`[TrialService:${requestId}] Step: ${currentStep} WARN - rate-limit update failed (continuing):`, rateLimitError?.message || rateLimitError);
         }
-        console.log(`[TrialService:${requestId}] Step: ${currentStep} OK`);
       }
 
       currentStep = 'send_verification_email';
