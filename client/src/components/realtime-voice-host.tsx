@@ -231,6 +231,10 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
   };
 
   const startSession = async () => {
+    // CRITICAL: Unlock audio for iOS/Android FIRST - must happen synchronously during user gesture (button tap)
+    // Do NOT await this - fire it immediately to catch the gesture timing window
+    customVoice.unlockAudioForMobile();
+    
     try {
       console.log('🎯 [VoiceHost] Starting custom voice session...');
       

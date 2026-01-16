@@ -194,6 +194,9 @@ export function useCustomVoice() {
   // THINKING INDICATOR: Track current turn for matching events
   const thinkingTurnIdRef = useRef<string | null>(null);
   
+  // iOS/mobile audio unlock state
+  const audioUnlockedRef = useRef<boolean>(false);
+  
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -2494,6 +2497,53 @@ registerProcessor('audio-processor', AudioProcessor);
     });
   }, [addTranscriptMessage]);
 
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // iOS/Android AUDIO UNLOCK
+  // Must be called during a user gesture (button tap) to enable audio playback
+  // iOS Safari and some Android browsers require user interaction before audio
+  // IMPORTANT: This function fires synchronously to catch the gesture timing window
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  const unlockAudioForMobile = useCallback(() => {
+    if (audioUnlockedRef.current) {
+      voiceLogger.debug("Audio already unlocked, skipping");
+      return;
+    }
+    
+    voiceLogger.info("Unlocking audio for iOS/Android...");
+    
+    try {
+      // Create AudioContext synchronously during user gesture
+      if (!audioContextRef.current) {
+        audioContextRef.current = new AudioContext({ sampleRate: 16000 });
+        voiceLogger.info("Created AudioContext for mobile unlock");
+      }
+      
+      // Play a tiny silent buffer immediately to unlock audio playback
+      // This must happen synchronously during the gesture
+      const silentBuffer = audioContextRef.current.createBuffer(1, 1, 16000);
+      const source = audioContextRef.current.createBufferSource();
+      source.buffer = silentBuffer;
+      source.connect(audioContextRef.current.destination);
+      source.start(0);
+      
+      // Resume context asynchronously (but audio is already unlocked by silent play)
+      if (audioContextRef.current.state === 'suspended') {
+        audioContextRef.current.resume().then(() => {
+          voiceLogger.info("AudioContext resumed from suspended state");
+        }).catch(err => {
+          voiceLogger.warn("AudioContext resume failed:", err);
+        });
+      }
+      
+      audioUnlockedRef.current = true;
+      voiceLogger.info("Audio unlocked successfully for mobile");
+    } catch (err) {
+      voiceLogger.warn("Audio unlock attempt failed (may still work):", err);
+      // Mark as unlocked anyway - we tried during user gesture
+      audioUnlockedRef.current = true;
+    }
+  }, []);
+
   // Cleanup all timers on unmount
   useEffect(() => {
     return () => {
@@ -2510,6 +2560,7 @@ registerProcessor('audio-processor', AudioProcessor);
     addSystemMessage,
     retryMicrophone,
     dismissMicrophoneError,
+    unlockAudioForMobile,
     isConnected,
     transcript,
     error,
