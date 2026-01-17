@@ -57,6 +57,7 @@ import TrialEndedPage from "@/pages/trial-ended-page";
 import TrialTutorPage from "@/pages/trial-tutor-page";
 import MagicLinkPage from "@/pages/magic-link-page";
 import OfferPage from "@/pages/offer-page";
+import StartTrialPage from "@/pages/start-trial-page";
 import { usePageTracking } from "@/hooks/use-page-tracking";
 import { useTracking } from "@/hooks/use-tracking";
 
@@ -106,6 +107,7 @@ function Router() {
       <Route path="/trial/tutor" component={TrialTutorPage} />
       <Route path="/offer" component={OfferPage} />
       <Route path="/welcome" component={OfferPage} />
+      <Route path="/start-trial" component={StartTrialPage} />
       <Route component={NotFound} />
     </Switch>
   );

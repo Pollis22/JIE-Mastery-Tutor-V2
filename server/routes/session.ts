@@ -109,6 +109,34 @@ sessionRouter.post('/check-availability', async (req, res) => {
       });
     }
 
+    // Check if user is on active trial
+    if (user.trialActive) {
+      const trialMinutesRemaining = (user.trialMinutesTotal || 30) - (user.trialMinutesUsed || 0);
+      
+      if (trialMinutesRemaining <= 0) {
+        return res.json({ 
+          allowed: false, 
+          reason: 'trial_expired',
+          message: 'Your free trial has ended. Subscribe to continue learning!',
+          total: user.trialMinutesTotal || 30,
+          used: user.trialMinutesUsed || 0,
+          remaining: 0,
+          bonusMinutes: 0,
+          isTrial: true
+        });
+      }
+      
+      return res.json({ 
+        allowed: true,
+        total: user.trialMinutesTotal || 30,
+        used: user.trialMinutesUsed || 0,
+        remaining: trialMinutesRemaining,
+        bonusMinutes: 0,
+        isTrial: true,
+        warningThreshold: trialMinutesRemaining < 5
+      });
+    }
+
     // Check if user has an active subscription or purchased minutes
     const hasPurchasedMinutes = (user.purchasedMinutesBalance || 0) > 0;
     if ((!user.subscriptionStatus || user.subscriptionStatus !== 'active') && !hasPurchasedMinutes) {

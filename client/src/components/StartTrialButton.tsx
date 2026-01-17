@@ -20,7 +20,7 @@ export function StartTrialButton({
 
   const handleClick = () => {
     trackEvent('start_free_trial_click');
-    setLocation('/auth');
+    setLocation('/start-trial');
   };
 
   const buttonClasses = {
@@ -47,7 +47,7 @@ export function StartTrialButton({
       </Button>
       {showSubtext && (
         <p className="text-xs text-gray-500 text-center">
-          30-minute free trial in the real app
+          30-minute free trial in the real app. No credit card required.
         </p>
       )}
     </div>

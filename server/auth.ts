@@ -133,7 +133,7 @@ export function setupAuth(app: Express) {
             monthlyResetDate: new Date(),
             weeklyVoiceMinutesUsed: 0,
             weeklyResetDate: new Date(),
-            preferredLanguage: 'en', // Fixed: Use ISO language code instead of 'english'
+            preferredLanguage: 'en' as const, // Fixed: Use ISO language code instead of 'english'
             voiceStyle: 'cheerful',
             speechSpeed: '1.0',
             volumeLevel: 75,
@@ -254,7 +254,7 @@ export function setupAuth(app: Express) {
         monthlyResetDate: new Date(),
         weeklyVoiceMinutesUsed: 0,
         weeklyResetDate: new Date(),
-        preferredLanguage: 'english',
+        preferredLanguage: 'en' as const,
         voiceStyle: 'cheerful',
         speechSpeed: '1.0',
         volumeLevel: 75,
@@ -574,6 +574,261 @@ export function setupAuth(app: Express) {
       return res.status(500).json({ 
         error: "Registration failed. Please try again.",
         details: process.env.NODE_ENV === 'development' ? error.message : undefined,
+      });
+    }
+  });
+
+  // POST /api/auth/trial-signup - Create trial account and start 30-minute trial
+  app.post("/api/auth/trial-signup", async (req, res, next) => {
+    try {
+      const { createHash } = await import('crypto');
+      
+      console.log('[Trial Signup] 📝 Trial signup attempt:', {
+        email: req.body.email,
+        studentName: req.body.studentName,
+        gradeLevel: req.body.gradeLevel,
+      });
+
+      // Validate trial signup payload
+      const trialSignupSchema = z.object({
+        email: z.string().min(1, "Email is required").email("Invalid email format"),
+        password: z.string().min(1, "Password is required").min(8, "Password must be at least 8 characters"),
+        studentName: z.string().min(1, "Student name is required"),
+        studentAge: z.number().int().min(4).max(99).optional(),
+        gradeLevel: z.string().min(1, "Grade level is required"),
+        primarySubject: z.string().optional(),
+        deviceId: z.string().optional(),
+      });
+
+      const validation = trialSignupSchema.safeParse(req.body);
+      
+      if (!validation.success) {
+        const firstError = validation.error.errors[0];
+        return res.status(400).json({ 
+          error: firstError.message,
+          field: firstError.path.join('.'),
+        });
+      }
+
+      const { email, password, studentName, studentAge, gradeLevel, primarySubject, deviceId } = validation.data;
+      const normalizedEmail = email.toLowerCase().trim();
+
+      // Check for existing user
+      const existingUser = await storage.getUserByEmail(normalizedEmail);
+      if (existingUser) {
+        return res.status(400).json({ 
+          error: "Email already registered. Please log in instead.",
+          field: "email",
+          redirect: "/auth"
+        });
+      }
+
+      // Generate abuse prevention hashes
+      const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || 
+                       req.socket?.remoteAddress || 'unknown';
+      const ipHash = createHash('sha256').update(clientIp).digest('hex');
+      const deviceHash = deviceId ? createHash('sha256').update(deviceId).digest('hex') : null;
+
+      // Check abuse limits (soft limits: warn on 2nd, block on 3rd)
+      const { db } = await import('./db');
+      const { trialAbuseTracking } = await import('@shared/schema');
+      const { eq, or, and, gte } = await import('drizzle-orm');
+      
+      const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      
+      // Check IP-based abuse (max 3 per IP/week)
+      const ipAbuse = await db.select()
+        .from(trialAbuseTracking)
+        .where(and(
+          eq(trialAbuseTracking.ipHash, ipHash),
+          gte(trialAbuseTracking.lastTrialAt, oneWeekAgo)
+        ))
+        .limit(1);
+
+      const ipTrialCount = ipAbuse[0]?.trialCount || 0;
+      
+      if (ipTrialCount >= 3) {
+        console.log('[Trial Signup] ❌ IP rate limit exceeded:', ipHash.substring(0, 8));
+        return res.status(429).json({ 
+          error: "Too many trial accounts from this location. Please try again next week or subscribe now.",
+          blocked: true
+        });
+      }
+
+      // Check if IP is blocked
+      if (ipAbuse[0]?.blocked) {
+        console.log('[Trial Signup] ❌ IP is blocked:', ipHash.substring(0, 8));
+        return res.status(429).json({ 
+          error: "Trial access is not available from this location. Please subscribe to continue.",
+          blocked: true
+        });
+      }
+
+      // Check device-based abuse (max 2 per device)
+      let deviceTrialCount = 0;
+      let deviceAbuseRecord: any = null;
+      if (deviceHash) {
+        const deviceAbuse = await db.select()
+          .from(trialAbuseTracking)
+          .where(eq(trialAbuseTracking.deviceHash, deviceHash))
+          .limit(1);
+        deviceAbuseRecord = deviceAbuse[0];
+        deviceTrialCount = deviceAbuseRecord?.trialCount || 0;
+        
+        // Check if device is blocked
+        if (deviceAbuseRecord?.blocked) {
+          console.log('[Trial Signup] ❌ Device is blocked:', deviceHash.substring(0, 8));
+          return res.status(429).json({ 
+            error: "Trial access is not available on this device. Please subscribe to continue.",
+            blocked: true
+          });
+        }
+        
+        if (deviceTrialCount >= 2) {
+          console.log('[Trial Signup] ❌ Device rate limit exceeded:', deviceHash.substring(0, 8));
+          return res.status(429).json({ 
+            error: "Trial limit reached on this device. Please subscribe to continue learning.",
+            blocked: true
+          });
+        }
+      }
+
+      // Auto-generate username from email
+      const emailPrefix = normalizedEmail.split('@')[0];
+      const randomSuffix = Math.random().toString(36).substring(2, 8);
+      const autoGeneratedUsername = `trial_${emailPrefix}_${randomSuffix}`;
+
+      // Create trial user
+      const user = await storage.createUser({
+        email: normalizedEmail,
+        username: autoGeneratedUsername,
+        password: await hashPassword(password),
+        studentName,
+        studentAge: studentAge || null,
+        gradeLevel: gradeLevel as any,
+        primarySubject: primarySubject as any || 'general',
+        firstName: studentName.split(' ')[0],
+        lastName: studentName.split(' ').slice(1).join(' ') || null,
+        parentName: null,
+        subscriptionPlan: null,
+        subscriptionStatus: 'trialing',
+        subscriptionMinutesLimit: 0,
+        subscriptionMinutesUsed: 0,
+        purchasedMinutesBalance: 0,
+        billingCycleStart: new Date(),
+        trialActive: true,
+        trialMinutesTotal: 30,
+        trialMinutesUsed: 0,
+        trialStartedAt: new Date(),
+        trialDeviceHash: deviceHash,
+        trialIpHash: ipHash,
+        emailVerified: false,
+      });
+
+      console.log('[Trial Signup] ✅ Trial user created:', user.email);
+
+      // Record abuse tracking for IP
+      try {
+        if (ipAbuse[0]) {
+          await db.update(trialAbuseTracking)
+            .set({ 
+              trialCount: ipTrialCount + 1,
+              lastTrialAt: new Date(),
+              userId: user.id
+            })
+            .where(eq(trialAbuseTracking.ipHash, ipHash));
+        } else {
+          await db.insert(trialAbuseTracking).values({
+            ipHash,
+            deviceHash: null,
+            userId: user.id,
+            trialCount: 1,
+            lastTrialAt: new Date(),
+            weekStart: new Date(),
+          });
+        }
+        
+        // Record device abuse tracking separately if device hash provided
+        if (deviceHash) {
+          if (deviceAbuseRecord) {
+            await db.update(trialAbuseTracking)
+              .set({ 
+                trialCount: deviceTrialCount + 1,
+                lastTrialAt: new Date(),
+                userId: user.id
+              })
+              .where(eq(trialAbuseTracking.deviceHash, deviceHash));
+          } else {
+            await db.insert(trialAbuseTracking).values({
+              ipHash: null,
+              deviceHash,
+              userId: user.id,
+              trialCount: 1,
+              lastTrialAt: new Date(),
+              weekStart: new Date(),
+            });
+          }
+        }
+      } catch (trackingError) {
+        // Log but don't fail the signup if tracking fails
+        console.error('[Trial Signup] ⚠️ Abuse tracking error (non-fatal):', trackingError);
+      }
+
+      // Log the user in immediately
+      req.login(user, async (err) => {
+        if (err) {
+          console.error('[Trial Signup] ❌ Login after trial signup failed:', err);
+          return next(err);
+        }
+        
+        console.log('[Trial Signup] ✓ User logged in after trial signup');
+        
+        // Send admin notification (non-blocking)
+        emailService.sendAdminNotification('Trial Account Created', {
+          email: user.email,
+          parentName: '',
+          studentName: user.studentName || '',
+          gradeLevel: user.gradeLevel || '',
+          primarySubject: user.primarySubject || '',
+          plan: '30-Minute Free Trial',
+          amount: 0,
+        }).catch(error => console.error('[Trial Signup] Admin notification failed:', error));
+
+        // Return success with warning if approaching limits
+        const response: any = { 
+          success: true,
+          user: {
+            id: user.id,
+            email: user.email,
+            studentName: user.studentName,
+            gradeLevel: user.gradeLevel,
+            trialActive: user.trialActive,
+            trialMinutesTotal: user.trialMinutesTotal,
+            trialMinutesUsed: user.trialMinutesUsed,
+          },
+          redirect: '/tutor'
+        };
+
+        // Add warning if approaching limits
+        if (ipTrialCount >= 2 || deviceTrialCount >= 1) {
+          response.warning = "This is your last trial from this device/location.";
+        }
+
+        res.status(201).json(response);
+      });
+      
+    } catch (error: any) {
+      console.error('[Trial Signup] ❌ Error:', error);
+      
+      if (error.code === '23505') {
+        return res.status(400).json({ 
+          error: "Email already registered",
+          field: "email",
+        });
+      }
+      
+      return res.status(500).json({ 
+        error: "Trial signup failed. Please try again.",
       });
     }
   });
