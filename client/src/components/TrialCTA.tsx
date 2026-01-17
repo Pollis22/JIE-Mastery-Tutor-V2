@@ -23,6 +23,20 @@ interface TrialCTAProps {
 
 // Map error codes to user-facing messages
 const TRIAL_ERROR_MESSAGES: Record<string, { title: string; description: string; showContinueTrial?: boolean }> = {
+  // Standardized codes
+  TRIAL_BAD_REQUEST: {
+    title: 'Invalid request',
+    description: 'Please enter a valid email address.',
+  },
+  TRIAL_RATE_LIMITED: {
+    title: 'Too many attempts',
+    description: 'Too many trial attempts from this location. Please try again later.',
+  },
+  TRIAL_INTERNAL_ERROR: {
+    title: 'Something went wrong',
+    description: 'Please try again in a moment. If the problem persists, contact support.',
+  },
+  // Legacy codes for backward compatibility
   EMAIL_REQUIRED: {
     title: 'Email required',
     description: 'Please enter your email address.',
@@ -39,10 +53,6 @@ const TRIAL_ERROR_MESSAGES: Record<string, { title: string; description: string;
   TRIAL_DEVICE_USED: {
     title: 'Device already used',
     description: 'A free trial has already been used on this device. Please sign up or log in to continue.',
-  },
-  TRIAL_RATE_LIMITED: {
-    title: 'Too many attempts',
-    description: 'Too many trial attempts from this location. Please try again later.',
   },
   TRIAL_EXPIRED: {
     title: 'Trial ended',
@@ -113,29 +123,37 @@ export function TrialCTA({ variant = 'primary', size = 'md', className = '', sho
         setEmailSent(true);
         setErrorMessage(null);
         
-        // Fire Google Ads + Meta Pixel conversions (idempotent - once per session)
-        const trialSignupConversionKey = 'gtag_trial_signup_fired';
-        if (!sessionStorage.getItem(trialSignupConversionKey)) {
-          sessionStorage.setItem(trialSignupConversionKey, 'true');
-          
-          // Google Ads conversion
-          if (typeof window !== 'undefined' && (window as any).gtag) {
-            (window as any).gtag('event', 'conversion', {
-              send_to: 'AW-17252974185/0nuHCOXJgOYbEOn87aJA'
-            });
-            console.log('[Analytics] Google Ads Free Trial Signup conversion fired');
-          }
-          
-          // Meta Pixel conversion
-          if (typeof window !== 'undefined' && (window as any).fbq) {
-            (window as any).fbq('track', 'CompleteRegistration');
-            console.log('[Analytics] Meta Pixel CompleteRegistration conversion fired');
+        // Check if this was a resend (pending trial already existed)
+        const isResend = data.status === 'resent';
+        
+        // Fire Google Ads + Meta Pixel conversions (idempotent - once per session, only for new trials)
+        if (!isResend) {
+          const trialSignupConversionKey = 'gtag_trial_signup_fired';
+          if (!sessionStorage.getItem(trialSignupConversionKey)) {
+            sessionStorage.setItem(trialSignupConversionKey, 'true');
+            
+            // Google Ads conversion
+            if (typeof window !== 'undefined' && (window as any).gtag) {
+              (window as any).gtag('event', 'conversion', {
+                send_to: 'AW-17252974185/0nuHCOXJgOYbEOn87aJA'
+              });
+              console.log('[Analytics] Google Ads Free Trial Signup conversion fired');
+            }
+            
+            // Meta Pixel conversion
+            if (typeof window !== 'undefined' && (window as any).fbq) {
+              (window as any).fbq('track', 'CompleteRegistration');
+              console.log('[Analytics] Meta Pixel CompleteRegistration conversion fired');
+            }
           }
         }
         
+        // Show appropriate message based on whether this was a new trial or resend
         toast({
-          title: 'Check your email!',
-          description: 'We sent you a verification link to start your free trial.',
+          title: isResend ? 'Verification re-sent!' : 'Check your email!',
+          description: isResend 
+            ? 'We re-sent your verification email. Please check your inbox (and spam folder).'
+            : 'We sent you a verification link to start your free trial.',
         });
       } else {
         // Get user-facing message from error code

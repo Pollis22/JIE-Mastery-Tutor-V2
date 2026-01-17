@@ -172,6 +172,8 @@ function extractMissingColumn(error: any): string | null {
 
 export interface TrialStartResult {
   ok: boolean;
+  status?: 'sent' | 'resent';  // Present when ok=true
+  message?: string;             // User-facing message
   error?: string;
   code?: TrialErrorCode;
   // Keep legacy errorCode for backwards compatibility
@@ -269,6 +271,7 @@ export class TrialService {
 
   async startTrial(email: string, deviceIdHash: string, ipHash: string): Promise<TrialStartResult> {
     const requestId = randomBytes(4).toString('hex');
+    const startTime = Date.now();
     let currentStep = 'init';
     
     try {
@@ -477,8 +480,31 @@ export class TrialService {
         console.error(`[TrialService:${requestId}] Failed to send admin trial notification:`, err);
       });
 
-      console.log(`[TrialService:${requestId}] startTrial SUCCESS`);
-      return { ok: true };
+      // Determine if this was a new trial or resend
+      const isResend = existing.length > 0;
+      const status = isResend ? 'resent' : 'sent';
+      const durationMs = Date.now() - startTime;
+      
+      // STRUCTURED LOGGING: Trial start metrics
+      console.log(JSON.stringify({
+        event: 'trial_start',
+        result: status,
+        emailHash: emailHash.substring(0, 12),
+        ipHash: ipHash.substring(0, 12),
+        deviceIdHash: deviceIdHash.substring(0, 12),
+        requestId,
+        durationMs,
+        timestamp: new Date().toISOString(),
+      }));
+
+      console.log(`[TrialService:${requestId}] startTrial SUCCESS (${status})`);
+      return { 
+        ok: true, 
+        status,
+        message: isResend 
+          ? 'We re-sent your verification email. Please check your inbox (and spam folder).'
+          : 'Verification email sent. Please check your inbox.',
+      };
     } catch (error: any) {
       console.error(`[TrialService:${requestId}] ERROR at step '${currentStep}':`, error?.message || error);
       console.error(`[TrialService:${requestId}] Full error:`, error);
