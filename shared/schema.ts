@@ -4,6 +4,7 @@ import {
   text, 
   varchar, 
   timestamp, 
+  date,
   integer, 
   decimal, 
   boolean, 
@@ -870,12 +871,19 @@ export const trialAbuseTracking = pgTable("trial_abuse_tracking", {
   userId: varchar("user_id").references(() => users.id, { onDelete: 'set null' }),
   trialCount: integer("trial_count").default(1),
   lastTrialAt: timestamp("last_trial_at").defaultNow(),
-  weekStart: timestamp("week_start").defaultNow(),
+  weekStart: date("week_start").defaultNow(),
   blocked: boolean("blocked").default(false),
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => [
+  // Basic lookup indexes
   index("idx_trial_abuse_device").on(table.deviceHash),
   index("idx_trial_abuse_ip").on(table.ipHash),
+  // UNIQUE constraint for UPSERT operations (ip_hash + week_start)
+  uniqueIndex("idx_trial_abuse_ip_week").on(table.ipHash, table.weekStart),
+  // Performance indexes
+  index("idx_trial_abuse_ip_recent").on(table.ipHash, table.lastTrialAt),
+  index("idx_trial_abuse_week_start").on(table.weekStart),
+  index("idx_trial_abuse_user_id").on(table.userId),
 ]);
 
 export type TrialAbuseTracking = typeof trialAbuseTracking.$inferSelect;
