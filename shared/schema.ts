@@ -866,14 +866,14 @@ export type TrialRateLimit = typeof trialRateLimits.$inferSelect;
 // Account-based trial abuse tracking (for 30-minute real trials)
 export const trialAbuseTracking = pgTable("trial_abuse_tracking", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  deviceHash: varchar("device_hash", { length: 64 }),
-  ipHash: varchar("ip_hash", { length: 64 }),
+  deviceHash: text("device_hash"),
+  ipHash: text("ip_hash").notNull(),
   userId: varchar("user_id").references(() => users.id, { onDelete: 'set null' }),
-  trialCount: integer("trial_count").default(1),
-  lastTrialAt: timestamp("last_trial_at").defaultNow(),
-  weekStart: date("week_start").defaultNow(),
-  blocked: boolean("blocked").default(false),
-  createdAt: timestamp("created_at").defaultNow(),
+  trialCount: integer("trial_count").notNull().default(0),
+  lastTrialAt: timestamp("last_trial_at"),
+  weekStart: date("week_start").notNull().default(sql`date_trunc('week', now())::date`),
+  blocked: boolean("blocked").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => [
   // Basic lookup indexes
   index("idx_trial_abuse_device").on(table.deviceHash),

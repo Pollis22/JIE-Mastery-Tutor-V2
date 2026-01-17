@@ -1,4 +1,6 @@
 import { execSync } from 'child_process';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { db, pool } from './db';
 import { sql } from 'drizzle-orm';
 
@@ -54,6 +56,12 @@ export async function initializeDatabase() {
     } else {
       console.log('[DB-Init] ✅ Database schema already exists');
     }
+    
+    // Run trial abuse tracking migration (idempotent)
+    await runTrialAbuseTrackingMigration();
+    
+    // CRITICAL: Verify trial_abuse_tracking table exists (fail-fast)
+    await verifyTrialAbuseTrackingTable();
     
     // REGRESSION GUARD: Verify critical trial column exists with correct name
     await verifyTrialSchemaColumns();
@@ -175,5 +183,119 @@ async function verifyTrialSchemaColumns() {
   } catch (error) {
     console.error('[DB-Init] ❌ Failed to verify trial columns:', error);
     // Don't throw - just warn, the app might still work
+  }
+}
+
+/**
+ * Run the trial_abuse_tracking migration (idempotent)
+ * This ensures the anti-abuse table exists with correct schema on every deploy
+ */
+async function runTrialAbuseTrackingMigration() {
+  console.log('[DB-Init] Running trial_abuse_tracking migration...');
+  
+  try {
+    // Enable pgcrypto extension for gen_random_uuid()
+    await pool.query('CREATE EXTENSION IF NOT EXISTS pgcrypto');
+    
+    // Create table if not exists with correct schema
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS public.trial_abuse_tracking (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        device_hash TEXT,
+        ip_hash TEXT NOT NULL,
+        user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+        trial_count INTEGER NOT NULL DEFAULT 0,
+        last_trial_at TIMESTAMPTZ,
+        week_start DATE NOT NULL DEFAULT date_trunc('week', now())::date,
+        blocked BOOLEAN NOT NULL DEFAULT false,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `);
+    
+    // Handle legacy NULL ip_hash rows (delete orphaned records)
+    await pool.query(`DELETE FROM trial_abuse_tracking WHERE ip_hash IS NULL`);
+    
+    // Add UNIQUE constraint for UPSERT (idempotent check)
+    const constraintExists = await pool.query(`
+      SELECT 1 FROM pg_constraint 
+      WHERE conname = 'trial_abuse_tracking_ip_week_unique'
+    `);
+    
+    if (constraintExists.rows.length === 0) {
+      await pool.query(`
+        ALTER TABLE trial_abuse_tracking 
+        ADD CONSTRAINT trial_abuse_tracking_ip_week_unique 
+        UNIQUE (ip_hash, week_start)
+      `);
+    }
+    
+    // Create indexes (IF NOT EXISTS is idempotent)
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_trial_abuse_ip_recent 
+      ON trial_abuse_tracking (ip_hash, last_trial_at DESC)
+    `);
+    
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_trial_abuse_week_start 
+      ON trial_abuse_tracking (week_start)
+    `);
+    
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_trial_abuse_user_id 
+      ON trial_abuse_tracking (user_id)
+    `);
+    
+    await pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_trial_abuse_device_week_unique 
+      ON trial_abuse_tracking (device_hash, week_start) 
+      WHERE device_hash IS NOT NULL
+    `);
+    
+    console.log('[DB-Init] ✅ trial_abuse_tracking migration completed');
+  } catch (error) {
+    console.error('[DB-Init] ❌ trial_abuse_tracking migration failed:', error);
+    throw error; // Re-throw to fail startup
+  }
+}
+
+/**
+ * CRITICAL: Verify trial_abuse_tracking table exists
+ * FAIL FAST if table is missing - prevents silent failures in production
+ */
+async function verifyTrialAbuseTrackingTable() {
+  try {
+    const result = await pool.query(`
+      SELECT COUNT(*) FROM information_schema.tables 
+      WHERE table_schema = 'public' 
+      AND table_name = 'trial_abuse_tracking'
+    `);
+    
+    const tableExists = parseInt(result.rows[0]?.count || '0', 10) > 0;
+    
+    if (!tableExists) {
+      console.error('[DB-Init] ❌ FATAL: trial_abuse_tracking table is missing!');
+      console.error('[DB-Init] ❌ Trial signup will fail without this table.');
+      console.error('[DB-Init] ❌ Run migration: drizzle/migrations/0001_trial_abuse_tracking.sql');
+      throw new Error('FATAL: trial_abuse_tracking table is missing');
+    }
+    
+    // Verify required constraint exists
+    const constraintResult = await pool.query(`
+      SELECT 1 FROM pg_constraint 
+      WHERE conname = 'trial_abuse_tracking_ip_week_unique'
+    `);
+    
+    if (constraintResult.rows.length === 0) {
+      console.error('[DB-Init] ❌ FATAL: trial_abuse_tracking_ip_week_unique constraint missing!');
+      throw new Error('FATAL: trial_abuse_tracking UNIQUE constraint missing');
+    }
+    
+    console.log('[DB-Init] ✅ trial_abuse_tracking table verified');
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('FATAL:')) {
+      throw error; // Re-throw FATAL errors
+    }
+    console.error('[DB-Init] ❌ Failed to verify trial_abuse_tracking:', error);
+    throw new Error('FATAL: Could not verify trial_abuse_tracking table');
   }
 }
