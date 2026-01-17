@@ -131,7 +131,7 @@ export const users = pgTable("users", {
   securityVerificationToken: text("security_verification_token"),
   securityVerificationExpiry: timestamp("security_verification_expiry"),
   // 30-Minute Free Trial System (account-based)
-  trialActive: boolean("trial_active").default(false),
+  trialActive: boolean("is_trial_active").default(false),
   trialMinutesTotal: integer("trial_minutes_total").default(30),
   trialMinutesUsed: integer("trial_minutes_used").default(0),
   trialStartedAt: timestamp("trial_started_at"),

@@ -22,6 +22,39 @@ export interface MinuteBalance {
   purchasedUsed: number;
 }
 
+/**
+ * Activate trial for a user - sets is_trial_active = true and trial_started_at = now()
+ * Called when user starts their first tutoring session after email verification
+ */
+export async function activateTrial(userId: string): Promise<void> {
+  console.log(`[VoiceMinutes] 🚀 Activating trial for user ${userId}`);
+  
+  await db.execute(sql`
+    UPDATE users 
+    SET 
+      is_trial_active = true,
+      trial_started_at = NOW()
+    WHERE id = ${userId}
+  `);
+  
+  console.log(`[VoiceMinutes] ✅ Trial activated successfully for user ${userId}`);
+}
+
+/**
+ * Deduct trial minutes for a trial user
+ */
+export async function deductTrialMinutes(userId: string, minutesUsed: number): Promise<void> {
+  console.log(`⏱️ [VoiceMinutes] Deducting ${minutesUsed} trial minutes for user ${userId}`);
+  
+  await db.execute(sql`
+    UPDATE users 
+    SET trial_minutes_used = trial_minutes_used + ${minutesUsed}
+    WHERE id = ${userId}
+  `);
+  
+  console.log(`✅ [VoiceMinutes] Deducted ${minutesUsed} trial minutes for user ${userId}`);
+}
+
 export async function getUserMinuteBalance(userId: string): Promise<MinuteBalance> {
   // Special handling for test user only in development
   if (userId === 'test-user-id' && process.env.NODE_ENV === 'development') {
@@ -48,7 +81,7 @@ export async function getUserMinuteBalance(userId: string): Promise<MinuteBalanc
       billing_cycle_start,
       last_reset_at,
       monthly_reset_date,
-      trial_active,
+      is_trial_active,
       trial_minutes_total,
       trial_minutes_used,
       trial_started_at,
@@ -66,7 +99,7 @@ export async function getUserMinuteBalance(userId: string): Promise<MinuteBalanc
   const now = new Date();
   
   // TRIAL USER HANDLING: Use trial minutes instead of subscription
-  if (userData.trial_active) {
+  if (userData.is_trial_active) {
     const trialTotal = userData.trial_minutes_total || 30;
     const trialUsed = userData.trial_minutes_used || 0;
     const trialRemaining = Math.max(0, trialTotal - trialUsed);
@@ -174,7 +207,10 @@ export async function deductMinutes(userId: string, minutesUsed: number): Promis
     SELECT 
       subscription_minutes_used,
       subscription_minutes_limit,
-      purchased_minutes_balance
+      purchased_minutes_balance,
+      is_trial_active,
+      trial_minutes_total,
+      trial_minutes_used
     FROM users 
     WHERE id = ${userId}
   `);
@@ -184,6 +220,20 @@ export async function deductMinutes(userId: string, minutesUsed: number): Promis
   }
 
   const userData = userResult.rows[0] as any;
+  
+  // TRIAL USER: Deduct from trial minutes
+  if (userData.is_trial_active) {
+    const trialTotal = userData.trial_minutes_total || 30;
+    const trialUsed = userData.trial_minutes_used || 0;
+    const trialRemaining = Math.max(0, trialTotal - trialUsed);
+    
+    if (trialRemaining < minutesUsed) {
+      throw new Error(`Insufficient trial minutes. You need ${minutesUsed} minutes but only have ${trialRemaining} available.`);
+    }
+    
+    await deductTrialMinutes(userId, minutesUsed);
+    return;
+  }
   
   const subscriptionRemaining = Math.max(0, (userData.subscription_minutes_limit || 60) - (userData.subscription_minutes_used || 0));
   const purchasedBalance = userData.purchased_minutes_balance || 0;

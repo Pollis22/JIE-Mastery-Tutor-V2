@@ -109,8 +109,10 @@ sessionRouter.post('/check-availability', async (req, res) => {
       });
     }
 
-    // Check if user is on active trial
-    if (user.trialActive) {
+    // Check if user is a pending trial user (subscriptionStatus = 'trialing', trialActive = false)
+    const isPendingTrial = user.subscriptionStatus === 'trialing' && !user.trialActive;
+    
+    if (isPendingTrial) {
       // GATING: Trial users must verify email before starting
       if (!user.emailVerified) {
         return res.status(403).json({ 
@@ -125,7 +127,27 @@ sessionRouter.post('/check-availability', async (req, res) => {
           requiresVerification: true
         });
       }
-
+      
+      // Email verified - activate trial on first session!
+      const { activateTrial } = await import('../services/voice-minutes');
+      await activateTrial(userId);
+      console.log(`[Session] ✅ Trial activated for user ${userId} on first session start`);
+      
+      // Return trial availability
+      return res.json({ 
+        allowed: true,
+        total: user.trialMinutesTotal || 30,
+        used: 0,
+        remaining: user.trialMinutesTotal || 30,
+        bonusMinutes: 0,
+        isTrial: true,
+        warningThreshold: false,
+        trialJustActivated: true
+      });
+    }
+    
+    // Check if user is on active trial
+    if (user.trialActive) {
       const trialMinutesRemaining = (user.trialMinutesTotal || 30) - (user.trialMinutesUsed || 0);
       
       if (trialMinutesRemaining <= 0) {

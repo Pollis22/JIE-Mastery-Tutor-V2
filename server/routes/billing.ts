@@ -37,11 +37,10 @@ router.get('/entitlements', async (req, res) => {
 
     const user = req.user as any;
     
-    // Debug: Log user trial fields to diagnose field naming
+    // Debug: Log user trial fields (Drizzle returns camelCase)
     console.log('[Billing] User trial fields:', {
       id: user.id,
       trialActive: user.trialActive,
-      trial_active: user.trial_active,
       trialMinutesTotal: user.trialMinutesTotal,
       subscriptionPlan: user.subscriptionPlan,
       subscriptionStatus: user.subscriptionStatus,
@@ -49,10 +48,10 @@ router.get('/entitlements', async (req, res) => {
     
     const balance = await getUserMinuteBalance(user.id);
 
-    // Determine plan type and label - check both camelCase and snake_case
-    const isTrialUser = user.trialActive || user.trial_active;
-    const trialStarted = user.trialStartedAt || user.trial_started_at;
-    const isEmailVerified = user.emailVerified || user.email_verified;
+    // Drizzle ORM maps is_trial_active column to trialActive property
+    const isTrialUser = user.trialActive;
+    const trialStarted = user.trialStartedAt;
+    const isEmailVerified = user.emailVerified;
     
     let planType: 'trial' | 'paid' | 'free';
     let planLabel: string;

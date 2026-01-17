@@ -721,10 +721,10 @@ export function setupAuth(app: Express) {
         subscriptionMinutesUsed: 0,
         purchasedMinutesBalance: 0,
         billingCycleStart: new Date(),
-        trialActive: true,
+        trialActive: false, // Trial activates on first session start
         trialMinutesTotal: 30,
         trialMinutesUsed: 0,
-        trialStartedAt: new Date(),
+        trialStartedAt: null, // Set when trial actually starts
         trialDeviceHash: deviceHash,
         trialIpHash: ipHash,
         emailVerified: false,
