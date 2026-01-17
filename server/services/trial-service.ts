@@ -7,6 +7,7 @@ import { EmailService } from './email-service';
 const TRIAL_DURATION_SECONDS = 300; // Base trial: 5 minutes
 const COURTESY_EXTENSION_SECONDS = 300; // One-time courtesy extension: 5 minutes
 const TRIAL_TOKEN_EXPIRY_SECONDS = 600; // 10 minutes token validity
+const VERIFICATION_LINK_EXPIRY_DAYS = 7; // Email verification link validity
 const IP_RATE_LIMIT_WINDOW_HOURS = 24;
 const IP_RATE_LIMIT_MAX_ATTEMPTS = 3;
 const DEVICE_COOLDOWN_DAYS = 30;
@@ -400,7 +401,7 @@ export class TrialService {
 
       currentStep = 'generate_token';
       const verificationToken = randomBytes(32).toString('hex');
-      const verificationExpiry = new Date(Date.now() + 30 * 60 * 1000);
+      const verificationExpiry = new Date(Date.now() + VERIFICATION_LINK_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
       const now = new Date();
       console.log(`[TrialService:${requestId}] Step: ${currentStep} OK - token: ${verificationToken.substring(0, 12)}...`);
 
@@ -955,7 +956,7 @@ export class TrialService {
 </table>
 <p style="margin:0 0 10px 0;color:#666666;font-size:14px;font-family:Arial,Helvetica,sans-serif;">If the button doesn't work, copy and paste this link into your browser:</p>
 <p style="margin:0 0 20px 0;color:#666666;font-size:14px;word-break:break-all;font-family:Arial,Helvetica,sans-serif;"><a href="${verifyUrl}" style="color:#dc2626;text-decoration:underline;">${verifyUrl}</a></p>
-<p style="margin:0 0 10px 0;color:#666666;font-size:14px;font-family:Arial,Helvetica,sans-serif;">This link expires in 30 minutes.</p>
+<p style="margin:0 0 10px 0;color:#666666;font-size:14px;font-family:Arial,Helvetica,sans-serif;">This link expires in 7 days.</p>
 <p style="margin:0;color:#666666;font-size:14px;font-family:Arial,Helvetica,sans-serif;">If you didn't request this, you can safely ignore this email.</p>
 </td>
 </tr>
@@ -974,7 +975,7 @@ Click the link below to verify your email and start your 5-minute free trial:
 
 ${verifyUrl}
 
-This link expires in 30 minutes.
+This link expires in 7 days.
 
 If you didn't request this, you can safely ignore this email.`;
 
@@ -1261,7 +1262,7 @@ View in Admin Panel: ${adminPanelLink}`;
         // Resend verification email if trial exists but not verified
         if (trial.email) {
           const verificationToken = randomBytes(32).toString('hex');
-          const verificationExpiry = new Date(Date.now() + 30 * 60 * 1000);
+          const verificationExpiry = new Date(Date.now() + VERIFICATION_LINK_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
           
           await db.update(trialSessions)
             .set({
@@ -1798,7 +1799,7 @@ If you didn't request this, you can safely ignore this email.`;
 
       // Generate a fresh verification token
       const verificationToken = crypto.randomBytes(32).toString('hex');
-      const verificationExpiry = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
+      const verificationExpiry = new Date(Date.now() + VERIFICATION_LINK_EXPIRY_DAYS * 24 * 60 * 60 * 1000); // 7 days
 
       // Update trial with new token and increment reminder count
       await db.update(trialSessions)
@@ -1907,7 +1908,7 @@ If you didn't request this, you can safely ignore this email.`;
 </table>
 <p style="margin:0 0 10px 0;color:#666666;font-size:14px;font-family:Arial,Helvetica,sans-serif;">If the button doesn't work, copy and paste this link into your browser:</p>
 <p style="margin:0 0 20px 0;color:#666666;font-size:14px;word-break:break-all;font-family:Arial,Helvetica,sans-serif;"><a href="${verifyUrl}" style="color:#dc2626;text-decoration:underline;">${verifyUrl}</a></p>
-<p style="margin:0 0 10px 0;color:#666666;font-size:14px;font-family:Arial,Helvetica,sans-serif;">This link expires in 30 minutes.</p>
+<p style="margin:0 0 10px 0;color:#666666;font-size:14px;font-family:Arial,Helvetica,sans-serif;">This link expires in 7 days.</p>
 <p style="margin:0 0 10px 0;color:#666666;font-size:14px;font-family:Arial,Helvetica,sans-serif;"><strong>Pro tip:</strong> Check your Spam/Junk folder if you don't see our emails in your inbox.</p>
 <p style="margin:0;color:#666666;font-size:14px;font-family:Arial,Helvetica,sans-serif;">If you no longer wish to receive these reminders, simply ignore this email.</p>
 </td>
@@ -1927,7 +1928,7 @@ Click the link below to verify your email and experience our AI tutor:
 
 ${verifyUrl}
 
-This link expires in 30 minutes.
+This link expires in 7 days.
 
 Pro tip: Check your Spam/Junk folder if you don't see our emails in your inbox.
 
