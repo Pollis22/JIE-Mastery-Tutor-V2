@@ -82,11 +82,28 @@ export default function StartTrialPage() {
       }, 500);
     },
     onError: (error: any) => {
-      const errorData = error.message ? JSON.parse(error.message) : {};
-      setServerError(errorData.error || "Something went wrong. Please try again.");
+      let errorMessage = "Something went wrong. Please try again.";
+      let redirect = null;
       
-      if (errorData.redirect) {
-        setTimeout(() => navigate(errorData.redirect), 2000);
+      try {
+        if (error.message) {
+          const errorData = JSON.parse(error.message);
+          errorMessage = errorData.error || errorMessage;
+          redirect = errorData.redirect;
+        }
+      } catch {
+        errorMessage = error.message || errorMessage;
+      }
+      
+      // Make the error message more user-friendly
+      if (errorMessage.includes("already registered")) {
+        errorMessage = "This email is already registered. Please log in instead, or use a different email.";
+      }
+      
+      setServerError(errorMessage);
+      
+      if (redirect) {
+        setTimeout(() => navigate(redirect), 2000);
       }
     },
   });
@@ -118,7 +135,18 @@ export default function StartTrialPage() {
           <CardContent>
             {serverError && (
               <Alert variant="destructive" className="mb-4">
-                <AlertDescription>{serverError}</AlertDescription>
+                <AlertDescription>
+                  {serverError}
+                  {serverError.includes("log in") && (
+                    <a 
+                      href="/auth" 
+                      className="ml-2 underline font-medium hover:text-red-300"
+                      data-testid="link-login-instead"
+                    >
+                      Go to login
+                    </a>
+                  )}
+                </AlertDescription>
               </Alert>
             )}
             
