@@ -12,7 +12,8 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Play, Mail, CheckCircle, ArrowRight } from 'lucide-react';
+import { Loader2, Play, Mail, CheckCircle, ArrowRight, UserPlus } from 'lucide-react';
+import { trackEvent } from '@/hooks/use-tracking';
 
 interface TrialCTAProps {
   variant?: 'primary' | 'secondary' | 'outline';
@@ -483,6 +484,26 @@ export function TrialCTA({ variant = 'primary', size = 'md', className = '', sho
               )}
             </Button>
             
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 mt-2" data-testid="notice-trial-demo">
+              <p className="text-xs text-gray-500 leading-relaxed" style={{ fontSize: '12px' }}>
+                <span className="font-medium text-gray-600">Free Trial Notice:</span> This trial runs in a lightweight demo mode for speed and reliability. To unlock the full JIE Mastery experience (profiles, more subjects, saved history, and full features), create a full account.
+              </p>
+            </div>
+            
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full mt-2 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+              onClick={() => {
+                trackEvent('create_account_from_trial');
+                setLocation('/auth');
+              }}
+              data-testid="button-create-full-account"
+            >
+              <UserPlus className="w-4 h-4 mr-2" />
+              Create Full Account
+            </Button>
+            
             <p className="text-xs text-gray-500 text-center">
               By starting your trial, you agree to our Terms of Service and Privacy Policy.
             </p>
@@ -548,6 +569,26 @@ export function TrialCTA({ variant = 'primary', size = 'md', className = '', sho
                         <ArrowRight className="w-4 h-4 ml-2" />
                       </>
                     )}
+                  </Button>
+                  
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 mt-2" data-testid="notice-trial-demo-continue">
+                    <p className="text-xs text-gray-500 leading-relaxed" style={{ fontSize: '12px' }}>
+                      <span className="font-medium text-gray-600">Free Trial Notice:</span> This trial runs in a lightweight demo mode for speed and reliability. To unlock the full JIE Mastery experience (profiles, more subjects, saved history, and full features), create a full account.
+                    </p>
+                  </div>
+                  
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full mt-2 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                    onClick={() => {
+                      trackEvent('create_account_from_trial');
+                      setLocation('/auth');
+                    }}
+                    data-testid="button-create-full-account-continue"
+                  >
+                    <UserPlus className="w-4 h-4 mr-2" />
+                    Create Full Account
                   </Button>
                 </form>
               ) : (
