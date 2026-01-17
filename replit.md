@@ -75,11 +75,34 @@ The RAG system supports various document formats (PDF, DOCX, Images via OCR, XLS
 
 The core database tables include `users`, `sessions`, `realtime_sessions`, `students`, `user_documents`, `document_chunks`, `document_embeddings`, `content_violations`, `user_suspensions`, `admin_logs`, and `minute_purchases`. The schema is defined in `shared/schema.ts`.
 
-### Trial System (Transitioning to 30-Minute Real Trial)
+### Trial System (Dual Trial Architecture)
 
-**Current State**: Legacy 5-minute demo trial system with email verification. Marketing CTAs now link to `/auth` for account creation with "Start Free Trial" buttons instead of the old `TrialCTA` component.
+**30-Minute Real Trial (NEW - Active)**:
+Full account-based trial system with 30 minutes of AI tutoring in the real app:
 
-**Planned 30-Minute Real Trial**: Full account creation with 30 minutes of tutoring in the real app. See `docs/free_30_minute_trial_spec.md` for specification.
+**Trial Flow**: Visit `/start-trial` → Create account (email, password, student info) → Auto-login → Redirect to `/tutor` with 30 minutes
+
+**Database Fields** (on `users` table):
+- `trial_active`: Boolean flag for trial status
+- `trial_minutes_total`: 30 minutes allocation
+- `trial_minutes_used`: Tracking actual usage
+- `trial_started_at`: Timestamp for trial start
+- `trial_device_hash`, `trial_ip_hash`: For abuse prevention
+
+**Abuse Prevention** (via `trial_abuse_tracking` table):
+- Max 2 trials per device (tracked via localStorage device ID, hashed server-side)
+- Max 3 trials per IP per week
+- Blocked flag enforcement for known abuse patterns
+
+**Session Access**: Trial users bypass subscription check in `/api/session/check-availability`. Returns `isTrial: true` with remaining minutes.
+
+**Trial Expiration**: When `trial_minutes_used >= trial_minutes_total`, returns `reason: 'trial_expired'` with upgrade prompt.
+
+**Technical Implementation**:
+- Signup endpoint: `/api/auth/trial-signup`
+- Frontend page: `/start-trial` (`client/src/pages/start-trial-page.tsx`)
+- StartTrialButton links to `/start-trial`
+- Documentation: `docs/free_30_min_trial.md`
 
 **Legacy 5-Minute Demo Trial** (being phased out):
 A no-account-required trial system that allows potential users to experience AI tutoring before signing up:
