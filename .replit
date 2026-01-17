@@ -46,12 +46,14 @@ externalPort = 80
 [userenv]
 
 [userenv.shared]
-AUTH_TEST_MODE = "true"
-TEST_USER_EMAIL = "test@example.com"
-TEST_USER_PASSWORD = "TestPass123!"
 STT_PROVIDER = "assemblyai"
 VITE_ELEVENLABS_CONVAI_AGENT_ID = "agent_7601k9nzfad9e3c88n3hhdc2p80d"
 ADMIN_EMAIL = "pollis@jiemastery.com"
 
 [userenv.production]
 APP_URL = "https://www.jiemastery.ai"
+
+[userenv.development]
+AUTH_TEST_MODE = "true"
+TEST_USER_EMAIL = "test@example.com"
+TEST_USER_PASSWORD = "TestPass123!"
