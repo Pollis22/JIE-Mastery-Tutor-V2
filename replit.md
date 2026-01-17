@@ -75,9 +75,14 @@ The RAG system supports various document formats (PDF, DOCX, Images via OCR, XLS
 
 The core database tables include `users`, `sessions`, `realtime_sessions`, `students`, `user_documents`, `document_chunks`, `document_embeddings`, `content_violations`, `user_suspensions`, `admin_logs`, and `minute_purchases`. The schema is defined in `shared/schema.ts`.
 
-### 5-Minute Free Trial System
+### Trial System (Transitioning to 30-Minute Real Trial)
 
-A no-account-required trial system allows potential users to experience AI tutoring before signing up:
+**Current State**: Legacy 5-minute demo trial system with email verification. Marketing CTAs now link to `/auth` for account creation with "Start Free Trial" buttons instead of the old `TrialCTA` component.
+
+**Planned 30-Minute Real Trial**: Full account creation with 30 minutes of tutoring in the real app. See `docs/free_30_minute_trial_spec.md` for specification.
+
+**Legacy 5-Minute Demo Trial** (being phased out):
+A no-account-required trial system that allows potential users to experience AI tutoring before signing up:
 
 **Trial Flow**: Email entry → Email verification (6-digit code) → 5-minute tutoring session → Trial ended page with signup CTAs
 
