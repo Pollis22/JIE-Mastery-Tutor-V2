@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useLocation } from "wouter";
 import jieLogo from "@/assets/jie-mastery-logo-new.jpg";
-import { TrialCTA } from "@/components/TrialCTA";
+import { StartTrialButton } from "@/components/StartTrialButton";
 import { 
   BookOpen, 
   Users, 
@@ -105,7 +105,7 @@ export default function BenefitsPage() {
               </p>
 
               <div className="flex flex-col gap-4 max-w-sm mx-auto lg:mx-0 pt-2">
-                <TrialCTA size="lg" className="text-lg h-14 w-full" />
+                <StartTrialButton size="lg" className="text-lg h-14 w-full" showSubtext />
                 <Button size="lg" onClick={handleCTA} className="text-lg h-14 w-full" data-testid="button-hero-cta">
                   Try JIE Mastery AI Tutor
                 </Button>

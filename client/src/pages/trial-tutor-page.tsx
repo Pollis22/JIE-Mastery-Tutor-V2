@@ -377,7 +377,7 @@ export default function TrialTutorPage() {
     
     toast({
       title: 'Trial Ended',
-      description: 'Your 5-minute free trial has ended. Create an account to continue!',
+      description: 'Your free trial has ended. Create an account to continue!',
     });
     
     setLocation('/trial/ended');

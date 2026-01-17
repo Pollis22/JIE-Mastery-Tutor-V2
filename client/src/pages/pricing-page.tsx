@@ -6,7 +6,7 @@ import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
-import { TrialCTA } from "@/components/TrialCTA";
+import { StartTrialButton } from "@/components/StartTrialButton";
 import { trackBeginCheckout } from "@/hooks/use-tracking";
 
 const plans = [
@@ -153,7 +153,7 @@ export default function PricingPage() {
               <span className="ml-3 text-xl font-bold text-foreground">AI Tutor</span>
             </div>
             <div className="flex items-center space-x-4">
-              <TrialCTA variant="outline" size="sm" />
+              <StartTrialButton variant="outline" size="sm" />
               <Button variant="ghost" onClick={() => setLocation("/auth")} data-testid="button-sign-in">
                 Sign In
               </Button>

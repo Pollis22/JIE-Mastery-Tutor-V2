@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useLocation } from "wouter";
 import jieLogo from "@/assets/jie-mastery-logo-new.jpg";
-import { TrialCTA } from "@/components/TrialCTA";
+import { StartTrialButton } from "@/components/StartTrialButton";
 import { 
   MessageCircle,
   Mic,
@@ -113,7 +113,7 @@ export default function OfferPage() {
             </div>
             
             <div className="hidden md:flex items-center space-x-3">
-              <TrialCTA size="md" />
+              <StartTrialButton size="md" />
             </div>
 
             <button 
@@ -134,7 +134,7 @@ export default function OfferPage() {
               <button onClick={() => navigateTo("/faq")} className="block w-full text-left py-2 text-muted-foreground hover:text-foreground">FAQ</button>
               <button onClick={() => navigateTo("/auth")} className="block w-full text-left py-2 text-muted-foreground hover:text-foreground">Login</button>
               <div className="mt-2">
-                <TrialCTA size="md" className="w-full" />
+                <StartTrialButton size="md" className="w-full" />
               </div>
             </div>
           )}
@@ -165,7 +165,7 @@ export default function OfferPage() {
             </div>
 
             <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
-              <TrialCTA size="lg" className="text-lg h-14 px-8" />
+              <StartTrialButton size="lg" className="text-lg h-14 px-8" showSubtext />
               <Button 
                 size="lg" 
                 variant="outline"
@@ -262,7 +262,7 @@ export default function OfferPage() {
           <p className="text-lg opacity-90">
             Use code <span className="font-bold bg-white/20 px-2 py-1 rounded">WELCOME50</span> — 50% off your first month
           </p>
-          <TrialCTA size="lg" variant="secondary" className="text-lg h-14 px-8" />
+          <StartTrialButton size="lg" variant="secondary" className="text-lg h-14 px-8" />
         </div>
       </section>
 
@@ -274,7 +274,7 @@ export default function OfferPage() {
           <div className="max-w-2xl mx-auto">
             <Accordion type="single" collapsible className="space-y-2">
               {[
-                { q: "Is there a free trial?", a: "Yes! You get 5 minutes of free AI tutoring to try it out—no credit card required. Just enter your email to start." },
+                { q: "Is there a free trial?", a: "Yes! You get 30 minutes of free AI tutoring in the real app—no credit card required. Just create an account to start." },
                 { q: "What does the family plan include?", a: "All plans include unlimited student profiles. One subscription covers your whole family—perfect for homeschool tutoring or after-school help." },
                 { q: "Does it give answers or teach?", a: "JIE Mastery uses the Socratic method to guide students through problems step-by-step. It's real homework help for students—teaching thinking, not just answers." },
                 { q: "What subjects are included?", a: "Math, English, Science, and Spanish are all included. Our AI tutor for students supports K-12 and college-level content." },
@@ -297,7 +297,7 @@ export default function OfferPage() {
       <section className="py-16 bg-gradient-to-b from-muted/30 to-background">
         <div className="container mx-auto px-4 text-center space-y-6">
           <h2 className="text-2xl md:text-3xl font-bold">Try JIE Mastery AI Tutor Risk-Free</h2>
-          <TrialCTA size="lg" className="text-lg h-14 px-8" />
+          <StartTrialButton size="lg" className="text-lg h-14 px-8" showSubtext />
           <p className="text-muted-foreground">
             Code: <span className="font-bold text-primary">WELCOME50</span> (50% off first month)
           </p>
@@ -318,7 +318,7 @@ export default function OfferPage() {
       </footer>
 
       <div className="sm:hidden fixed bottom-4 left-4 right-4 z-[60]">
-        <TrialCTA size="lg" className="w-full h-14 shadow-2xl rounded-2xl text-lg font-bold" />
+        <StartTrialButton size="lg" className="w-full h-14 shadow-2xl rounded-2xl text-lg font-bold" />
       </div>
     </div>
   );

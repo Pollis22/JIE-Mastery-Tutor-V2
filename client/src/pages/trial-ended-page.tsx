@@ -27,7 +27,7 @@ export default function TrialEndedPage() {
               Your Free Trial Has Ended
             </CardTitle>
             <CardDescription className="text-lg mt-2">
-              We hope you enjoyed your 5-minute preview of JIE Mastery AI Tutor!
+              We hope you enjoyed your free trial of JIE Mastery AI Tutor!
             </CardDescription>
           </CardHeader>
           

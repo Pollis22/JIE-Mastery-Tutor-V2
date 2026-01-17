@@ -20,7 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Footer } from "@/components/footer";
 import jieLogo from "@/assets/jie-mastery-logo-new.jpg";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { TrialCTA } from "@/components/TrialCTA";
+import { StartTrialButton } from "@/components/StartTrialButton";
 
 const loginSchema = z.object({
   email: z.string().min(1, "Email or username is required"),
@@ -450,88 +450,6 @@ export default function AuthPage() {
                             </Button>
                           </div>
 
-                          <div className="relative">
-                            <div className="absolute inset-0 flex items-center">
-                              <span className="w-full border-t" />
-                            </div>
-                            <div className="relative flex justify-center text-xs uppercase">
-                              <span className="bg-card px-2 text-muted-foreground">Or</span>
-                            </div>
-                          </div>
-
-                          <Dialog open={continueTrialOpen} onOpenChange={(open) => {
-                            setContinueTrialOpen(open);
-                            if (!open) {
-                              setContinueTrialEmail('');
-                              setContinueTrialSent(false);
-                            }
-                          }}>
-                            <DialogTrigger asChild>
-                              <Button 
-                                type="button"
-                                variant="outline" 
-                                className="w-full border-primary/50 text-primary hover:bg-primary/5"
-                                data-testid="button-continue-trial"
-                              >
-                                <Play className="h-4 w-4 mr-2" />
-                                Continue Free Trial
-                              </Button>
-                            </DialogTrigger>
-                            <DialogContent className="sm:max-w-md">
-                              <DialogHeader>
-                                <DialogTitle>Continue Your Free Trial</DialogTitle>
-                                <DialogDescription>
-                                  Enter the email you used to start your free trial. We'll send you a sign-in link.
-                                </DialogDescription>
-                              </DialogHeader>
-                              {!continueTrialSent ? (
-                                <form onSubmit={handleContinueTrial} className="space-y-4">
-                                  <div className="space-y-2">
-                                    <Label htmlFor="continue-trial-email">Email Address</Label>
-                                    <Input
-                                      id="continue-trial-email"
-                                      type="email"
-                                      placeholder="your@email.com"
-                                      value={continueTrialEmail}
-                                      onChange={(e) => setContinueTrialEmail(e.target.value)}
-                                      data-testid="input-continue-trial-email"
-                                    />
-                                  </div>
-                                  <Button 
-                                    type="submit" 
-                                    className="w-full"
-                                    disabled={continueTrialMutation.isPending}
-                                    data-testid="button-send-magic-link"
-                                  >
-                                    {continueTrialMutation.isPending ? "Sending..." : "Send Sign-in Link"}
-                                    <ArrowRight className="ml-2 h-4 w-4" />
-                                  </Button>
-                                </form>
-                              ) : (
-                                <div className="space-y-4">
-                                  <Alert className="bg-green-50 border-green-200">
-                                    <Mail className="h-4 w-4 text-green-600" />
-                                    <AlertTitle className="text-green-800">Check Your Inbox!</AlertTitle>
-                                    <AlertDescription className="text-green-700">
-                                      If a trial exists for this email, you'll receive a sign-in link shortly. 
-                                      <strong className="block mt-2">Don't forget to check your Spam/Junk folder!</strong>
-                                    </AlertDescription>
-                                  </Alert>
-                                  <Button 
-                                    variant="outline" 
-                                    className="w-full"
-                                    onClick={() => {
-                                      setContinueTrialSent(false);
-                                      setContinueTrialEmail('');
-                                    }}
-                                    data-testid="button-try-different-email"
-                                  >
-                                    Try a Different Email
-                                  </Button>
-                                </div>
-                              )}
-                            </DialogContent>
-                          </Dialog>
                         </form>
                       </Form>
                     </TabsContent>
@@ -769,7 +687,7 @@ export default function AuthPage() {
 
                 {/* CTAs */}
                 <div className="flex flex-col sm:flex-row items-center lg:items-start gap-4" data-testid="free-trial-cta-container">
-                  <TrialCTA size="lg" className="px-8 py-6 text-lg font-semibold rounded-lg shadow-lg w-full sm:w-auto h-auto" />
+                  <StartTrialButton size="lg" className="px-8 py-6 text-lg font-semibold rounded-lg shadow-lg w-full sm:w-auto h-auto" showSubtext />
                   <Button 
                     size="lg"
                     variant="outline"
@@ -782,7 +700,7 @@ export default function AuthPage() {
                 </div>
                 
                 <p className="text-sm text-muted-foreground">
-                  No credit card required &bull; Works instantly &bull; K-12 & College support
+                  No credit card required &bull; 30-minute free trial &bull; K-12 & College support
                 </p>
 
                 {/* Video */}
@@ -875,7 +793,7 @@ export default function AuthPage() {
                 </div>
                 <h3 className="font-semibold text-foreground">Start Free Trial</h3>
                 <p className="text-sm text-muted-foreground">
-                  Try 5 minutes free — no credit card needed
+                  30 minutes free — no credit card needed
                 </p>
               </div>
               
@@ -901,7 +819,7 @@ export default function AuthPage() {
             </div>
 
             <div className="mt-12">
-              <TrialCTA size="lg" className="px-8 py-6 text-lg font-semibold rounded-lg" />
+              <StartTrialButton size="lg" className="px-8 py-6 text-lg font-semibold rounded-lg" showSubtext />
             </div>
           </div>
         </div>
