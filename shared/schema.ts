@@ -130,6 +130,13 @@ export const users = pgTable("users", {
   // Security verification token (for email change, etc.)
   securityVerificationToken: text("security_verification_token"),
   securityVerificationExpiry: timestamp("security_verification_expiry"),
+  // 30-Minute Free Trial System (account-based)
+  trialActive: boolean("trial_active").default(false),
+  trialMinutesTotal: integer("trial_minutes_total").default(30),
+  trialMinutesUsed: integer("trial_minutes_used").default(0),
+  trialStartedAt: timestamp("trial_started_at"),
+  trialDeviceHash: varchar("trial_device_hash", { length: 64 }),
+  trialIpHash: varchar("trial_ip_hash", { length: 64 }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -853,6 +860,24 @@ export const trialRateLimits = pgTable("trial_rate_limits", {
 export type TrialSession = typeof trialSessions.$inferSelect;
 export type InsertTrialSession = z.infer<typeof insertTrialSessionSchema>;
 export type TrialRateLimit = typeof trialRateLimits.$inferSelect;
+
+// Account-based trial abuse tracking (for 30-minute real trials)
+export const trialAbuseTracking = pgTable("trial_abuse_tracking", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  deviceHash: varchar("device_hash", { length: 64 }),
+  ipHash: varchar("ip_hash", { length: 64 }),
+  userId: varchar("user_id").references(() => users.id, { onDelete: 'set null' }),
+  trialCount: integer("trial_count").default(1),
+  lastTrialAt: timestamp("last_trial_at").defaultNow(),
+  weekStart: timestamp("week_start").defaultNow(),
+  blocked: boolean("blocked").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_trial_abuse_device").on(table.deviceHash),
+  index("idx_trial_abuse_ip").on(table.ipHash),
+]);
+
+export type TrialAbuseTracking = typeof trialAbuseTracking.$inferSelect;
 
 // Trial Login Tokens table - for "Continue Trial" magic links (separate from verification tokens)
 export const trialLoginTokens = pgTable("trial_login_tokens", {
