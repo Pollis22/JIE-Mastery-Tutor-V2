@@ -57,6 +57,20 @@ interface VoiceBalance {
   purchasedUsed: number;
 }
 
+interface Entitlements {
+  planLabel: string;
+  planType: 'trial' | 'paid' | 'free';
+  minutesTotal: number;
+  minutesUsed: number;
+  minutesRemaining: number;
+  purchasedMinutes: number;
+  resetsAt?: string;
+  canPurchaseTopups: boolean;
+  canStartSession: boolean;
+  subscriptionStatus?: string;
+  emailVerified: boolean;
+}
+
 interface Plan {
   id: string;
   name: string;
@@ -159,9 +173,21 @@ export default function SubscriptionManager() {
   const refetch = () => {
     queryClient.invalidateQueries({ queryKey: ['/api/user'] });
     queryClient.invalidateQueries({ queryKey: ['/api/user/voice-balance'] });
+    queryClient.invalidateQueries({ queryKey: ['/api/billing/entitlements'] });
   };
 
-  // Fetch hybrid minute balance
+  // Fetch entitlements (primary source of truth for plan display)
+  const { data: entitlements } = useQuery<Entitlements>({
+    queryKey: ['/api/billing/entitlements'],
+    enabled: !!user,
+    staleTime: 0,
+    gcTime: 0,
+    refetchInterval: 30000,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
+  });
+
+  // Fetch hybrid minute balance (legacy, still used for some displays)
   const { data: voiceBalance } = useQuery<VoiceBalance>({
     queryKey: ['/api/user/voice-balance'],
     enabled: !!user,
@@ -177,6 +203,10 @@ export default function SubscriptionManager() {
     queryKey: ['/api/billing/history'],
     enabled: !!user
   });
+  
+  // Computed values from entitlements
+  const isTrial = entitlements?.planType === 'trial';
+  const isPaid = entitlements?.planType === 'paid';
 
   // Upgrade/Downgrade mutation
   const changePlanMutation = useMutation({
@@ -318,31 +348,38 @@ export default function SubscriptionManager() {
             {/* Plan Details */}
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-lg font-semibold">
-                  {currentPlan?.name || "Free"} Plan
+                <h3 className="text-lg font-semibold" data-testid="text-plan-name">
+                  {isTrial ? '30-Minute Trial' : (currentPlan?.name || entitlements?.planLabel || "Free Plan")}
                 </h3>
                 <p className="text-sm text-muted-foreground">
-                  {currentPlan ? `${currentPlan.price}/month` : "No active subscription"}
+                  {isTrial ? 'Trial in progress' : 
+                   currentPlan ? `${currentPlan.price}/month` : 
+                   "No active subscription"}
                 </p>
               </div>
               <div className="flex items-center gap-2">
                 <Badge 
                   variant={
+                    isTrial ? 'default' :
                     user?.subscriptionStatus === 'active' ? 'default' : 
                     user?.subscriptionStatus === 'canceled' ? 'secondary' :
                     user?.subscriptionStatus === 'past_due' ? 'destructive' :
                     'outline'
                   }
-                  className={user?.subscriptionStatus === 'canceled' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400' : ''}
+                  className={
+                    isTrial ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400' :
+                    user?.subscriptionStatus === 'canceled' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400' : ''
+                  }
+                  data-testid="badge-plan-status"
                 >
-                  {user?.subscriptionStatus === 'active' ? 'Active' :
+                  {isTrial ? 'Trial' :
+                   user?.subscriptionStatus === 'active' ? 'Active' :
                    user?.subscriptionStatus === 'canceled' ? 'Canceled' :
                    user?.subscriptionStatus === 'past_due' ? 'Payment Issue' :
                    user?.subscriptionStatus === 'inactive' ? 'Inactive' :
-                   user?.subscriptionStatus === 'trialing' ? 'Trial' :
                    'Inactive'}
                 </Badge>
-                {user?.subscriptionStatus === 'active' && user?.monthlyResetDate && (
+                {isPaid && user?.monthlyResetDate && (
                   <Badge variant="outline" className="flex items-center gap-1">
                     <Calendar className="h-3 w-3" />
                     Renews {format(new Date(user.monthlyResetDate), 'MMM dd')}
@@ -357,37 +394,44 @@ export default function SubscriptionManager() {
               </div>
             </div>
 
-            {/* Hybrid Minute Breakdown */}
+            {/* Minute Breakdown - Uses entitlements for trial users */}
             <div className="space-y-4">
               {/* Total Available */}
-              <div className="bg-gradient-to-r from-primary/10 to-primary/5 p-4 rounded-lg border border-primary/20">
+              <div className={`p-4 rounded-lg border ${isTrial ? 'bg-gradient-to-r from-blue-100/50 to-blue-50/50 border-blue-200 dark:from-blue-900/20 dark:to-blue-800/10 dark:border-blue-800' : 'bg-gradient-to-r from-primary/10 to-primary/5 border-primary/20'}`}>
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-muted-foreground">Total Available</p>
-                    <p className="text-3xl font-bold text-primary">
-                      {voiceBalance?.totalAvailable || 0} <span className="text-lg">minutes</span>
+                    <p className="text-sm text-muted-foreground">
+                      {isTrial ? 'Trial Minutes Remaining' : 'Total Available'}
+                    </p>
+                    <p className={`text-3xl font-bold ${isTrial ? 'text-blue-600 dark:text-blue-400' : 'text-primary'}`} data-testid="text-minutes-remaining">
+                      {entitlements?.minutesRemaining ?? voiceBalance?.totalAvailable ?? 0} <span className="text-lg">minutes</span>
                     </p>
                   </div>
-                  <Clock className="h-8 w-8 text-primary/50" />
+                  <Clock className={`h-8 w-8 ${isTrial ? 'text-blue-400' : 'text-primary/50'}`} />
                 </div>
               </div>
 
-              {/* Subscription Minutes */}
+              {/* Usage Progress */}
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
                   <span className="text-sm font-medium flex items-center gap-2">
                     <Calendar className="h-4 w-4" />
-                    This Month's Usage
+                    {isTrial ? 'Trial Usage' : "This Month's Usage"}
                   </span>
-                  <span className="text-sm font-semibold">
-                    {voiceBalance?.subscriptionUsed || 0} / {voiceBalance?.subscriptionLimit || 0} minutes
+                  <span className="text-sm font-semibold" data-testid="text-usage-ratio">
+                    {entitlements?.minutesUsed ?? voiceBalance?.subscriptionUsed ?? 0} / {entitlements?.minutesTotal ?? voiceBalance?.subscriptionLimit ?? 0} minutes
                   </span>
                 </div>
                 <Progress 
-                  value={((voiceBalance?.subscriptionUsed || 0) / (voiceBalance?.subscriptionLimit || 1)) * 100} 
-                  className="h-2" 
+                  value={((entitlements?.minutesUsed ?? voiceBalance?.subscriptionUsed ?? 0) / (entitlements?.minutesTotal ?? voiceBalance?.subscriptionLimit ?? 1)) * 100} 
+                  className={`h-2 ${isTrial ? '[&>div]:bg-blue-500' : ''}`}
                 />
-                {voiceBalance?.resetDate && (
+                {isTrial && entitlements?.resetsAt && (
+                  <p className="text-xs text-muted-foreground">
+                    Trial access until {format(new Date(entitlements.resetsAt), 'MMM dd, yyyy')}
+                  </p>
+                )}
+                {!isTrial && voiceBalance?.resetDate && (
                   <p className="text-xs text-muted-foreground">
                     Resets {format(new Date(voiceBalance.resetDate), 'MMM dd, yyyy')}
                   </p>
@@ -534,22 +578,36 @@ export default function SubscriptionManager() {
                 </Button>
               )}
               
-              <Button
-                variant="secondary"
-                onClick={() => buyMinutesMutation.mutate()}
-                disabled={buyMinutesMutation.isPending}
-                data-testid="button-buy-minutes"
-              >
-                <Zap className="mr-2 h-4 w-4" />
-                Buy 60 Minutes ($19.99)
-              </Button>
+              {/* Show Upgrade button for trial users, Buy Minutes for paid users */}
+              {isTrial ? (
+                <Button
+                  onClick={() => {
+                    const plansSection = document.querySelector('[data-testid="section-family-plans"]');
+                    plansSection?.scrollIntoView({ behavior: 'smooth' });
+                  }}
+                  data-testid="button-upgrade-trial"
+                >
+                  <ArrowUpCircle className="mr-2 h-4 w-4" />
+                  Upgrade to Full Plan
+                </Button>
+              ) : entitlements?.canPurchaseTopups && (
+                <Button
+                  variant="secondary"
+                  onClick={() => buyMinutesMutation.mutate()}
+                  disabled={buyMinutesMutation.isPending}
+                  data-testid="button-buy-minutes"
+                >
+                  <Zap className="mr-2 h-4 w-4" />
+                  Buy 60 Minutes ($19.99)
+                </Button>
+              )}
             </div>
           </div>
         </CardContent>
       </Card>
 
       {/* Available Plans */}
-      <Card>
+      <Card data-testid="section-family-plans">
         <CardHeader>
           <CardTitle>Family Plans</CardTitle>
           <CardDescription>

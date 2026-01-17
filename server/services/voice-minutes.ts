@@ -47,7 +47,12 @@ export async function getUserMinuteBalance(userId: string): Promise<MinuteBalanc
       purchased_minutes_balance,
       billing_cycle_start,
       last_reset_at,
-      monthly_reset_date
+      monthly_reset_date,
+      trial_active,
+      trial_minutes_total,
+      trial_minutes_used,
+      trial_started_at,
+      subscription_plan
     FROM users 
     WHERE id = ${userId}
   `);
@@ -59,6 +64,30 @@ export async function getUserMinuteBalance(userId: string): Promise<MinuteBalanc
   const userData = userResult.rows[0] as any;
   
   const now = new Date();
+  
+  // TRIAL USER HANDLING: Use trial minutes instead of subscription
+  if (userData.trial_active) {
+    const trialTotal = userData.trial_minutes_total || 30;
+    const trialUsed = userData.trial_minutes_used || 0;
+    const trialRemaining = Math.max(0, trialTotal - trialUsed);
+    
+    // Calculate trial expiry (30 days from start, or never if not started)
+    const trialStarted = userData.trial_started_at ? new Date(userData.trial_started_at) : now;
+    const trialExpiry = new Date(trialStarted);
+    trialExpiry.setDate(trialExpiry.getDate() + 30);
+    
+    console.log(`[VoiceMinutes] Trial user ${userId}: ${trialRemaining}/${trialTotal} minutes remaining`);
+    
+    return {
+      subscriptionMinutes: trialRemaining,
+      subscriptionLimit: trialTotal,
+      purchasedMinutes: 0, // Trial users don't have purchased minutes
+      totalAvailable: trialRemaining,
+      resetDate: trialExpiry, // When trial expires
+      subscriptionUsed: trialUsed,
+      purchasedUsed: 0
+    };
+  }
   
   // Regular subscription logic
   const lastReset = new Date(userData.last_reset_at || userData.billing_cycle_start);
