@@ -1,154 +1,116 @@
-# Trial Schema Fix Documentation
+# Trial Schema Standardization Fix
 
 ## Summary
 
-Fixed the schema mismatch between code and production database. The production database uses `is_trial_active` while the code was referencing `trial_active`.
+Standardized the codebase to use canonical column names that match the production database.
 
-## What Was Wrong
+## Canonical Column Names
 
-1. **Drizzle schema** (`shared/schema.ts`) mapped `trialActive` to DB column `trial_active`
-2. **Raw SQL queries** in `server/services/voice-minutes.ts` selected `trial_active`
-3. **Production database** uses column name `is_trial_active`
-
-This caused 500 errors on `/api/auth/trial-signup` with:
-```
-error: column "is_trial_active" does not exist
-hint: Perhaps you meant to reference the column "users.trial_active"
-```
+| Canonical (Use These) | Legacy (Replaced) |
+|----------------------|-------------------|
+| `is_trial_active` | `trial_active` |
+| `trial_minutes_limit` | `trial_minutes_total` |
+| `trial_minutes_used` | (same) |
+| `trial_started_at` | (same) |
+| `trial_ends_at` | (new) |
 
 ## What Changed
 
 ### 1. Drizzle Schema (`shared/schema.ts`)
 
-**Before:**
 ```typescript
-trialActive: boolean("trial_active").default(false),
-```
-
-**After:**
-```typescript
+// 30-Minute Free Trial System (account-based)
 trialActive: boolean("is_trial_active").default(false),
+trialMinutesLimit: integer("trial_minutes_limit").default(30),
+trialMinutesUsed: integer("trial_minutes_used").default(0),
+trialStartedAt: timestamp("trial_started_at"),
+trialEndsAt: timestamp("trial_ends_at"),
 ```
 
-### 2. Voice Minutes Service (`server/services/voice-minutes.ts`)
+### 2. Trial Signup (`server/auth.ts`)
 
-**Before (raw SQL):**
-```sql
-SELECT trial_active, trial_minutes_total, ...
-...
-if (userData.trial_active) {
-```
+Trial signup now atomically sets:
+- `is_trial_active = true`
+- `trial_minutes_limit = 30`
+- `trial_minutes_used = 0`
+- `trial_started_at = NOW()`
+- `trial_ends_at = NOW() + 30 minutes`
 
-**After:**
-```sql
-SELECT is_trial_active, trial_minutes_total, ...
-...
-if (userData.is_trial_active) {
-```
+### 3. Voice Minutes Service (`server/services/voice-minutes.ts`)
 
-### 3. Trial Activation Logic
+All raw SQL queries use `trial_minutes_limit` instead of `trial_minutes_total`.
 
-**Before:** User was created with `trialActive: true` immediately
+### 4. Session Route (`server/routes/session.ts`)
 
-**After:** 
-- User created with `trialActive: false` (pending trial)
-- `is_trial_active = true` and `trial_started_at = now()` set when first session starts
-- New function `activateTrial(userId)` in `voice-minutes.ts`
+- Email verification gate: Trial users must verify email before starting sessions
+- Uses `trialMinutesLimit` property (Drizzle camelCase mapping)
 
-### 4. Startup Health Check (`server/db-init.ts`)
+### 5. Billing Route (`server/routes/billing.ts`)
 
-Added `verifyTrialSchemaColumns()` function that runs on startup:
-- Checks if `is_trial_active` column exists (correct)
-- Warns if legacy `trial_active` column found
-- Verifies all trial columns exist
+Uses `trialMinutesLimit` for entitlement calculations.
+
+### 6. DB Init Health Check (`server/db-init.ts`)
+
+Verifies `trial_minutes_limit` column exists on startup.
 
 ## Files Edited
 
 | File | Changes |
 |------|---------|
-| `shared/schema.ts` | Line 134: `trial_active` → `is_trial_active` |
-| `server/services/voice-minutes.ts` | Lines 51, 69: `trial_active` → `is_trial_active` |
-| `server/services/voice-minutes.ts` | Added `activateTrial()` and `deductTrialMinutes()` functions |
-| `server/routes/session.ts` | Added pending trial detection and activation on first session |
-| `server/routes/billing.ts` | Simplified trial detection (Drizzle handles mapping) |
-| `server/auth.ts` | Lines 724-727: Create with `trialActive: false`, `trialStartedAt: null` |
-| `server/db-init.ts` | Added `verifyTrialSchemaColumns()` regression guard |
+| `shared/schema.ts` | `trial_minutes_total` → `trial_minutes_limit`, added `trial_ends_at` |
+| `server/auth.ts` | Trial signup sets `trialActive: true` immediately with all trial fields |
+| `server/services/voice-minutes.ts` | All SQL: `trial_minutes_total` → `trial_minutes_limit` |
+| `server/routes/session.ts` | All refs: `trialMinutesTotal` → `trialMinutesLimit`, email gate for trials |
+| `server/routes/billing.ts` | `trialMinutesTotal` → `trialMinutesLimit` |
+| `server/db-init.ts` | Health check verifies `trial_minutes_limit` |
 
-## How to Verify
+## Trial Signup Flow
 
-### Manual Test
-
-1. Create a trial account:
-```bash
-curl -X POST http://localhost:5000/api/auth/trial-signup \
-  -H "Content-Type: application/json" \
-  -d '{"email":"test@example.com","password":"TestPass123","studentName":"Test","gradeLevel":"grades-3-5"}'
-```
-
-Expected response (201):
-```json
-{
-  "success": true,
-  "requiresVerification": true,
-  "user": {
-    "trialActive": false,
-    "emailVerified": false
-  }
-}
-```
-
-2. Check database:
-```sql
-SELECT email, is_trial_active, trial_minutes_total, trial_started_at, email_verified 
-FROM users WHERE email = 'test@example.com';
-```
-
-Expected:
-- `is_trial_active = false`
-- `trial_minutes_total = 30`
-- `trial_started_at = null`
-- `email_verified = false`
-
-3. Test duplicate email (should return 409):
-```bash
-curl -X POST http://localhost:5000/api/auth/trial-signup \
-  -H "Content-Type: application/json" \
-  -d '{"email":"test@example.com","password":"TestPass123","studentName":"Test","gradeLevel":"grades-3-5"}'
-```
-
-### Startup Health Check
-
-On server startup, look for:
-```
-[DB-Init] Verifying trial schema columns...
-[DB-Init] ✅ is_trial_active column exists (correct)
-[DB-Init] ✅ All trial columns verified
-```
-
-If legacy column found:
-```
-[DB-Init] ⚠️ Found legacy trial_active column. Production uses is_trial_active.
-```
-
-## Trial Flow Summary
-
-1. **Signup** (`/api/auth/trial-signup`):
-   - Create user with `is_trial_active = false`, `trial_minutes_total = 30`
-   - Send verification email
-   - `trial_started_at` remains NULL
-
-2. **Email Verification** (`/api/auth/verify-email`):
-   - Set `email_verified = true`
-
-3. **First Session Start** (`/api/session/check-availability`):
-   - Detect pending trial (subscriptionStatus = 'trialing', is_trial_active = false)
-   - Call `activateTrial(userId)` which sets:
+1. **POST /api/auth/trial-signup**
+   - Validates input (email, password, studentName, gradeLevel)
+   - Checks for existing user (returns 409 if duplicate)
+   - Checks abuse limits (IP/device tracking)
+   - Creates user with:
      - `is_trial_active = true`
-     - `trial_started_at = now()`
+     - `trial_minutes_limit = 30`
+     - `trial_minutes_used = 0`
+     - `trial_started_at = NOW()`
+     - `trial_ends_at = NOW() + 30 minutes`
+     - `email_verified = false`
+   - Sends verification email
+   - Returns 201 with `trialActive: true`
 
-4. **During Session**:
-   - `deductMinutes()` checks `is_trial_active`
-   - If trial user, calls `deductTrialMinutes()` which increments `trial_minutes_used`
+2. **POST /api/session/check-availability**
+   - If trial user with unverified email: Returns 403 `email_not_verified`
+   - If trial expired: Returns `trial_expired`
+   - If trial active and verified: Returns `allowed: true`
+
+## Response Codes
+
+| Code | Scenario |
+|------|----------|
+| 201 | Successful trial signup |
+| 400 | Malformed input |
+| 409 | Email already registered |
+| 429 | Too many trials (rate limited) |
+
+## Testing
+
+```bash
+# Create trial user
+curl -X POST http://localhost:5000/api/auth/trial-signup \
+  -H "Content-Type: application/json" \
+  -d '{"email":"test@example.com","password":"TestPass123","studentName":"Test","gradeLevel":"grades-3-5"}'
+
+# Expected: 201 with trialActive: true
+
+# Test duplicate email
+curl -X POST http://localhost:5000/api/auth/trial-signup \
+  -H "Content-Type: application/json" \
+  -d '{"email":"test@example.com","password":"TestPass123","studentName":"Test","gradeLevel":"grades-3-5"}'
+
+# Expected: 409 "Email already registered"
+```
 
 ## Date
 

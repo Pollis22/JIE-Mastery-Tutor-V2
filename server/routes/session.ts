@@ -109,53 +109,31 @@ sessionRouter.post('/check-availability', async (req, res) => {
       });
     }
 
-    // Check if user is a pending trial user (subscriptionStatus = 'trialing', trialActive = false)
-    const isPendingTrial = user.subscriptionStatus === 'trialing' && !user.trialActive;
-    
-    if (isPendingTrial) {
-      // GATING: Trial users must verify email before starting
+    // Check if user is on active trial
+    if (user.trialActive) {
+      // GATING: Trial users must verify email before starting sessions
       if (!user.emailVerified) {
         return res.status(403).json({ 
           allowed: false, 
           reason: 'email_not_verified',
           message: 'Please verify your email to start your free trial.',
-          total: user.trialMinutesTotal || 30,
+          total: user.trialMinutesLimit || 30,
           used: 0,
-          remaining: user.trialMinutesTotal || 30,
+          remaining: user.trialMinutesLimit || 30,
           bonusMinutes: 0,
           isTrial: true,
           requiresVerification: true
         });
       }
       
-      // Email verified - activate trial on first session!
-      const { activateTrial } = await import('../services/voice-minutes');
-      await activateTrial(userId);
-      console.log(`[Session] ✅ Trial activated for user ${userId} on first session start`);
-      
-      // Return trial availability
-      return res.json({ 
-        allowed: true,
-        total: user.trialMinutesTotal || 30,
-        used: 0,
-        remaining: user.trialMinutesTotal || 30,
-        bonusMinutes: 0,
-        isTrial: true,
-        warningThreshold: false,
-        trialJustActivated: true
-      });
-    }
-    
-    // Check if user is on active trial
-    if (user.trialActive) {
-      const trialMinutesRemaining = (user.trialMinutesTotal || 30) - (user.trialMinutesUsed || 0);
+      const trialMinutesRemaining = (user.trialMinutesLimit || 30) - (user.trialMinutesUsed || 0);
       
       if (trialMinutesRemaining <= 0) {
         return res.json({ 
           allowed: false, 
           reason: 'trial_expired',
           message: 'Your free trial has ended. Subscribe to continue learning!',
-          total: user.trialMinutesTotal || 30,
+          total: user.trialMinutesLimit || 30,
           used: user.trialMinutesUsed || 0,
           remaining: 0,
           bonusMinutes: 0,
@@ -165,7 +143,7 @@ sessionRouter.post('/check-availability', async (req, res) => {
       
       return res.json({ 
         allowed: true,
-        total: user.trialMinutesTotal || 30,
+        total: user.trialMinutesLimit || 30,
         used: user.trialMinutesUsed || 0,
         remaining: trialMinutesRemaining,
         bonusMinutes: 0,

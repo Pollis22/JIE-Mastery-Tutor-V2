@@ -160,11 +160,11 @@ async function verifyTrialSchemaColumns() {
     const trialColumnsResult = await pool.query(`
       SELECT column_name FROM information_schema.columns 
       WHERE table_name = 'users' 
-      AND column_name IN ('trial_minutes_total', 'trial_minutes_used', 'trial_started_at')
+      AND column_name IN ('trial_minutes_limit', 'trial_minutes_used', 'trial_started_at')
     `);
     
     const foundColumns = trialColumnsResult.rows.map((r: any) => r.column_name);
-    const requiredColumns = ['trial_minutes_total', 'trial_minutes_used', 'trial_started_at'];
+    const requiredColumns = ['trial_minutes_limit', 'trial_minutes_used', 'trial_started_at'];
     const missingColumns = requiredColumns.filter(c => !foundColumns.includes(c));
     
     if (missingColumns.length === 0) {

@@ -162,7 +162,7 @@ export function setupAuth(app: Express) {
             securityVerificationToken: null,
             securityVerificationExpiry: null,
             trialActive: false,
-            trialMinutesTotal: 30,
+            trialMinutesLimit: 30,
             trialMinutesUsed: 0,
             trialStartedAt: null,
             trialDeviceHash: null,
@@ -283,9 +283,10 @@ export function setupAuth(app: Express) {
         securityVerificationToken: null,
         securityVerificationExpiry: null,
         trialActive: false,
-        trialMinutesTotal: 30,
+        trialMinutesLimit: 30,
         trialMinutesUsed: 0,
         trialStartedAt: null,
+        trialEndsAt: null,
         trialDeviceHash: null,
         trialIpHash: null,
         createdAt: new Date(),
@@ -721,10 +722,11 @@ export function setupAuth(app: Express) {
         subscriptionMinutesUsed: 0,
         purchasedMinutesBalance: 0,
         billingCycleStart: new Date(),
-        trialActive: false, // Trial activates on first session start
-        trialMinutesTotal: 30,
+        trialActive: true, // Trial active immediately on signup
+        trialMinutesLimit: 30,
         trialMinutesUsed: 0,
-        trialStartedAt: null, // Set when trial actually starts
+        trialStartedAt: new Date(),
+        trialEndsAt: new Date(Date.now() + 30 * 60 * 1000), // Trial ends in 30 minutes of use
         trialDeviceHash: deviceHash,
         trialIpHash: ipHash,
         emailVerified: false,

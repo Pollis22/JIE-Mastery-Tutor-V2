@@ -132,9 +132,10 @@ export const users = pgTable("users", {
   securityVerificationExpiry: timestamp("security_verification_expiry"),
   // 30-Minute Free Trial System (account-based)
   trialActive: boolean("is_trial_active").default(false),
-  trialMinutesTotal: integer("trial_minutes_total").default(30),
+  trialMinutesLimit: integer("trial_minutes_limit").default(30),
   trialMinutesUsed: integer("trial_minutes_used").default(0),
   trialStartedAt: timestamp("trial_started_at"),
+  trialEndsAt: timestamp("trial_ends_at"),
   trialDeviceHash: varchar("trial_device_hash", { length: 64 }),
   trialIpHash: varchar("trial_ip_hash", { length: 64 }),
   createdAt: timestamp("created_at").defaultNow(),

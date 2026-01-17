@@ -41,7 +41,7 @@ router.get('/entitlements', async (req, res) => {
     console.log('[Billing] User trial fields:', {
       id: user.id,
       trialActive: user.trialActive,
-      trialMinutesTotal: user.trialMinutesTotal,
+      trialMinutesLimit: user.trialMinutesLimit,
       subscriptionPlan: user.subscriptionPlan,
       subscriptionStatus: user.subscriptionStatus,
     });

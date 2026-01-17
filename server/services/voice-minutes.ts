@@ -82,7 +82,7 @@ export async function getUserMinuteBalance(userId: string): Promise<MinuteBalanc
       last_reset_at,
       monthly_reset_date,
       is_trial_active,
-      trial_minutes_total,
+      trial_minutes_limit,
       trial_minutes_used,
       trial_started_at,
       subscription_plan
@@ -100,7 +100,7 @@ export async function getUserMinuteBalance(userId: string): Promise<MinuteBalanc
   
   // TRIAL USER HANDLING: Use trial minutes instead of subscription
   if (userData.is_trial_active) {
-    const trialTotal = userData.trial_minutes_total || 30;
+    const trialTotal = userData.trial_minutes_limit || 30;
     const trialUsed = userData.trial_minutes_used || 0;
     const trialRemaining = Math.max(0, trialTotal - trialUsed);
     
@@ -209,7 +209,7 @@ export async function deductMinutes(userId: string, minutesUsed: number): Promis
       subscription_minutes_limit,
       purchased_minutes_balance,
       is_trial_active,
-      trial_minutes_total,
+      trial_minutes_limit,
       trial_minutes_used
     FROM users 
     WHERE id = ${userId}
@@ -223,7 +223,7 @@ export async function deductMinutes(userId: string, minutesUsed: number): Promis
   
   // TRIAL USER: Deduct from trial minutes
   if (userData.is_trial_active) {
-    const trialTotal = userData.trial_minutes_total || 30;
+    const trialTotal = userData.trial_minutes_limit || 30;
     const trialUsed = userData.trial_minutes_used || 0;
     const trialRemaining = Math.max(0, trialTotal - trialUsed);
     
