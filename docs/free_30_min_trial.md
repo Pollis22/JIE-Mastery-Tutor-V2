@@ -2,48 +2,27 @@
 
 ## Overview
 
-The 30-minute free trial system allows users to create an account and experience the full AI tutoring platform without payment. Users get 30 minutes of real tutoring time with all features enabled.
+The 30-minute free trial system allows users to create an account and experience the full AI tutoring platform without payment. Users must verify their email before starting, then get 30 minutes of real tutoring time with all features enabled.
 
 ## User Flow
 
 1. User clicks "Start Free Trial" button on any marketing page
 2. User is directed to `/start-trial` page
 3. User fills out form: email, password, student name, age (optional), grade level, subject (optional)
-4. On submit, account is created and user is logged in immediately
-5. User is redirected to `/tutor` to start their trial session
-6. When trial expires (30 minutes used), user sees upgrade modal
-
-## Database Schema
-
-### Users Table (trial fields)
-
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `trial_active` | boolean | false | Whether user is on active trial |
-| `trial_minutes_total` | integer | 30 | Total trial minutes allocated |
-| `trial_minutes_used` | integer | 0 | Minutes consumed in tutoring |
-| `trial_started_at` | timestamp | null | When trial was activated |
-| `trial_device_hash` | varchar(64) | null | SHA256 hash of device ID |
-| `trial_ip_hash` | varchar(64) | null | SHA256 hash of client IP |
-
-### Trial Abuse Tracking Table
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | varchar | Primary key (UUID) |
-| `device_hash` | varchar(64) | SHA256 hash of device ID |
-| `ip_hash` | varchar(64) | SHA256 hash of client IP |
-| `user_id` | varchar | Reference to users table |
-| `trial_count` | integer | Number of trials from this device/IP |
-| `last_trial_at` | timestamp | When last trial was created |
-| `week_start` | timestamp | Start of rate limit window |
-| `blocked` | boolean | Whether permanently blocked |
+4. On submit, account is created with `emailVerified = false`
+5. Verification email is sent to user
+6. Lead notification email is sent to JIE internal team
+7. User sees "Check Your Email" screen with resend button
+8. User clicks verification link in email
+9. Email is verified, user is logged in automatically
+10. User is redirected to `/tutor` to start their trial session
+11. When trial expires (30 minutes used), user sees upgrade modal
 
 ## API Endpoints
 
 ### POST /api/auth/trial-signup
 
-Creates a new trial account and logs the user in.
+Creates a new trial account and sends verification email.
 
 **Request Body:**
 ```json
@@ -62,25 +41,140 @@ Creates a new trial account and logs the user in.
 ```json
 {
   "success": true,
+  "requiresVerification": true,
   "user": {
     "id": "uuid",
     "email": "user@example.com",
     "studentName": "Alex",
     "gradeLevel": "grades-3-5",
     "trialActive": true,
-    "trialMinutesTotal": 30,
-    "trialMinutesUsed": 0
+    "emailVerified": false
   },
-  "redirect": "/tutor",
+  "message": "Please check your email to verify your account and start your trial.",
   "warning": "This is your last trial from this device/location."
 }
 ```
 
 **Error Responses:**
 
-- 400: Email already registered
+- 409: Email already registered (use this for frontend to redirect to login)
 - 429: Rate limit exceeded (too many trials)
 - 500: Server error
+
+### GET /api/auth/verify-email
+
+Verifies email and auto-logs in the user.
+
+**Query Parameters:**
+- `token`: The verification token from the email link
+
+**Success:** Redirects to `/tutor?verified=1`
+
+**Error:** Redirects to `/start-trial?error=expired_token` or `/start-trial?error=invalid_token`
+
+### POST /api/auth/resend-verification
+
+Resends verification email with rate limiting.
+
+**Request Body:**
+```json
+{
+  "email": "user@example.com"
+}
+```
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "message": "Verification email sent. Please check your inbox."
+}
+```
+
+**Error Responses:**
+- 400: Email already verified
+- 429: Rate limited (wait 2 minutes between resends)
+
+## Gating Rules
+
+### Email Verification Required
+
+Trial users **must** verify their email before starting tutoring sessions.
+
+**Check in `/api/session/check-availability`:**
+```typescript
+if (user.trialActive && !user.emailVerified) {
+  return res.status(403).json({ 
+    allowed: false, 
+    reason: 'email_not_verified',
+    message: 'Please verify your email to start your free trial.',
+    requiresVerification: true
+  });
+}
+```
+
+### Frontend Behavior
+
+- Unverified trial users are shown the "Check Your Email" screen
+- They cannot access the tutor page until verified
+- Resend button has 2-minute cooldown
+
+## Database Schema
+
+### Users Table (trial fields)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `trial_active` | boolean | false | Whether user is on active trial |
+| `trial_minutes_total` | integer | 30 | Total trial minutes allocated |
+| `trial_minutes_used` | integer | 0 | Minutes consumed in tutoring |
+| `trial_started_at` | timestamp | null | When trial was activated |
+| `trial_device_hash` | varchar(64) | null | SHA256 hash of device ID |
+| `trial_ip_hash` | varchar(64) | null | SHA256 hash of client IP |
+| `email_verified` | boolean | false | Whether email is verified |
+| `email_verification_token` | text | null | Token for email verification |
+| `email_verification_expiry` | timestamp | null | When token expires (24 hours) |
+
+### Trial Abuse Tracking Table
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | varchar | Primary key (UUID) |
+| `device_hash` | varchar(64) | SHA256 hash of device ID |
+| `ip_hash` | varchar(64) | SHA256 hash of client IP |
+| `user_id` | varchar | Reference to users table |
+| `trial_count` | integer | Number of trials from this device/IP |
+| `last_trial_at` | timestamp | When last trial was created |
+| `week_start` | timestamp | Start of rate limit window |
+| `blocked` | boolean | Whether permanently blocked |
+
+## Emails Sent
+
+### 1. Verification Email (to user)
+
+Sent immediately after trial signup.
+
+**Subject:** "Verify Your Email"
+
+**Content:**
+- Welcome message
+- Verification button/link
+- Link expires in 24 hours
+- Plain text fallback included
+
+### 2. Lead Notification (to JIE internal)
+
+Sent to `JIE_LEAD_NOTIFY_EMAIL` (or `ADMIN_EMAIL` fallback).
+
+**Subject:** "New Trial Lead"
+
+**Content:**
+- User email
+- Student name
+- Grade level
+- Subject interest
+- Source route (/start-trial)
+- Created timestamp
 
 ## Abuse Prevention
 
@@ -123,58 +217,22 @@ The system checks trial status when:
 
 When `trial_minutes_used >= trial_minutes_total`:
 1. Voice session is blocked
-2. TrialEndedPaywall modal is displayed
-3. User can view subscription plans
-4. Trial users can still log in to upgrade
+2. `/api/session/check-availability` returns `reason: 'trial_expired'`
+3. Frontend shows upgrade modal with subscription options
 
-## Frontend Components
+## Environment Variables
 
-### StartTrialButton
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `JIE_LEAD_NOTIFY_EMAIL` | Email for lead notifications | Falls back to `ADMIN_EMAIL` |
+| `ADMIN_EMAIL` | Fallback admin email | support@jiemastery.ai |
+| `RESEND_API_KEY` | Resend API key for sending emails | Required |
 
-Reusable button that links to `/start-trial`:
+## Error Codes
 
-```tsx
-<StartTrialButton 
-  variant="primary"  // primary | secondary | outline
-  size="lg"          // sm | md | lg
-  showSubtext={true} // Shows "30-minute free trial..." text
-/>
-```
-
-### StartTrialPage (`/start-trial`)
-
-Full-page form for trial account creation with:
-- Email and password inputs
-- Student name and optional age
-- Grade level selector (required)
-- Subject interest selector (optional)
-- Form validation with error messages
-- Rate limit warning display
-
-### TrialEndedPaywall
-
-Modal displayed when trial expires:
-- Shows remaining time (0:00)
-- Highlights WELCOME50 promo code (50% off)
-- Links to pricing page
-- Professional upgrade messaging
-
-## Related Files
-
-- `server/auth.ts` - Trial signup endpoint
-- `client/src/pages/start-trial-page.tsx` - Trial signup form
-- `client/src/components/StartTrialButton.tsx` - CTA button
-- `client/src/components/TrialEndedPaywall.tsx` - Expiration modal
-- `shared/schema.ts` - Database schema with trial fields
-
-## Migration from 5-Minute Demo Trial
-
-The legacy 5-minute demo trial system (email-only, no account) is being phased out. Key differences:
-
-| Feature | 5-Min Demo | 30-Min Real Trial |
-|---------|------------|-------------------|
-| Account required | No | Yes |
-| Data persisted | No | Yes |
-| Full app access | Limited | Full |
-| Progress saved | No | Yes |
-| Upgrade path | Create account | Just pay |
+| Code | Reason | Frontend Action |
+|------|--------|-----------------|
+| 409 | Email already registered | Show error + link to login |
+| 403 | Email not verified | Show verification pending screen |
+| 429 | Rate limit exceeded | Show rate limit message |
+| 400 | Validation error | Show field-specific error |

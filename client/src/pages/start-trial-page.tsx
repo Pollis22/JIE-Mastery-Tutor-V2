@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,7 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Loader2, BookOpen, Clock, Shield, CheckCircle } from "lucide-react";
+import { Loader2, BookOpen, Clock, Shield, CheckCircle, Mail, RefreshCw } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -38,9 +38,59 @@ function getDeviceId(): string {
 
 export default function StartTrialPage() {
   const [, navigate] = useLocation();
+  const searchString = useSearch();
   const { toast } = useToast();
   const [serverError, setServerError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
+  const [verificationPending, setVerificationPending] = useState(false);
+  const [pendingEmail, setPendingEmail] = useState<string>("");
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  // Check for query params
+  useEffect(() => {
+    const params = new URLSearchParams(searchString);
+    const error = params.get('error');
+    const verified = params.get('verified');
+    
+    if (error === 'invalid_token') {
+      setServerError('Invalid verification link. Please request a new one.');
+    } else if (error === 'expired_token') {
+      setServerError('Your verification link has expired. Please request a new one.');
+    } else if (error === 'verification_failed') {
+      setServerError('Verification failed. Please try again.');
+    }
+    
+    if (verified === '1') {
+      toast({
+        title: "Email Verified!",
+        description: "Your email has been verified. Enjoy your free trial!",
+      });
+    }
+  }, [searchString, toast]);
+
+  // Resend cooldown timer
+  useEffect(() => {
+    if (resendCooldown > 0) {
+      const timer = setTimeout(() => setResendCooldown(resendCooldown - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [resendCooldown]);
+
+  // Check if logged in user needs verification
+  const { data: user } = useQuery<any>({
+    queryKey: ["/api/user"],
+  });
+
+  // If user is logged in with unverified trial, show verification screen
+  useEffect(() => {
+    if (user && user.trialActive && !user.emailVerified) {
+      setVerificationPending(true);
+      setPendingEmail(user.email);
+    } else if (user && user.emailVerified && user.trialActive) {
+      // Already verified, redirect to tutor
+      navigate('/tutor');
+    }
+  }, [user, navigate]);
 
   const form = useForm<TrialSignupForm>({
     resolver: zodResolver(trialSignupSchema),
@@ -72,14 +122,21 @@ export default function StartTrialPage() {
         setWarning(data.warning);
       }
       
-      toast({
-        title: "Trial Started!",
-        description: "Welcome! You have 30 minutes of free tutoring.",
-      });
-      
-      setTimeout(() => {
-        navigate(data.redirect || "/tutor");
-      }, 500);
+      // Check if verification is required
+      if (data.requiresVerification) {
+        setVerificationPending(true);
+        setPendingEmail(data.user?.email || form.getValues('email'));
+        toast({
+          title: "Check Your Email",
+          description: data.message || "Please verify your email to start your trial.",
+        });
+      } else if (data.redirect) {
+        toast({
+          title: "Trial Started!",
+          description: "Welcome! You have 30 minutes of free tutoring.",
+        });
+        setTimeout(() => navigate(data.redirect), 500);
+      }
     },
     onError: (error: any) => {
       let errorMessage = "Something went wrong. Please try again.";
@@ -108,10 +165,121 @@ export default function StartTrialPage() {
     },
   });
 
+  const resendVerificationMutation = useMutation({
+    mutationFn: async (email: string) => {
+      const response = await apiRequest("POST", "/api/auth/resend-verification", { email });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Verification Email Sent",
+        description: data.message || "Please check your inbox.",
+      });
+      setResendCooldown(120); // 2 minute cooldown
+    },
+    onError: (error: any) => {
+      let errorMessage = "Failed to resend verification email.";
+      try {
+        if (error.message) {
+          const errorData = JSON.parse(error.message);
+          errorMessage = errorData.error || errorMessage;
+        }
+      } catch {}
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    },
+  });
+
   const onSubmit = (data: TrialSignupForm) => {
     setServerError(null);
     trialSignupMutation.mutate(data);
   };
+
+  const handleResendVerification = () => {
+    if (pendingEmail && resendCooldown === 0) {
+      resendVerificationMutation.mutate(pendingEmail);
+    }
+  };
+
+  // Show verification pending screen
+  if (verificationPending) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white dark:from-gray-900 dark:to-gray-950 flex items-center justify-center p-4">
+        <div className="w-full max-w-lg">
+          <Card className="shadow-xl border-0">
+            <CardHeader className="text-center pb-4">
+              <div className="mx-auto w-16 h-16 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center mb-4">
+                <Mail className="w-8 h-8 text-blue-600 dark:text-blue-400" />
+              </div>
+              <CardTitle className="text-2xl">Check Your Email</CardTitle>
+              <CardDescription className="text-base">
+                We sent a verification link to:
+              </CardDescription>
+              <p className="font-medium text-gray-900 dark:text-white mt-2">
+                {pendingEmail}
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                <p className="text-sm text-blue-800 dark:text-blue-200">
+                  Click the link in your email to verify your account and start your 30-minute free trial.
+                </p>
+              </div>
+              
+              <div className="text-center space-y-3">
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Didn't receive the email?
+                </p>
+                <Button
+                  variant="outline"
+                  onClick={handleResendVerification}
+                  disabled={resendCooldown > 0 || resendVerificationMutation.isPending}
+                  className="w-full"
+                  data-testid="button-resend-verification"
+                >
+                  {resendVerificationMutation.isPending ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Sending...
+                    </>
+                  ) : resendCooldown > 0 ? (
+                    <>
+                      <RefreshCw className="mr-2 h-4 w-4" />
+                      Resend in {Math.floor(resendCooldown / 60)}:{(resendCooldown % 60).toString().padStart(2, '0')}
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="mr-2 h-4 w-4" />
+                      Resend Verification Email
+                    </>
+                  )}
+                </Button>
+              </div>
+
+              <div className="text-center pt-4 border-t">
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Wrong email?{" "}
+                  <button
+                    onClick={() => {
+                      setVerificationPending(false);
+                      setPendingEmail("");
+                    }}
+                    className="text-blue-600 hover:underline font-medium"
+                    data-testid="button-use-different-email"
+                  >
+                    Use a different email
+                  </button>
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white dark:from-gray-900 dark:to-gray-950 flex items-center justify-center p-4">

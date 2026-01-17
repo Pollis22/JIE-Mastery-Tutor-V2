@@ -111,6 +111,21 @@ sessionRouter.post('/check-availability', async (req, res) => {
 
     // Check if user is on active trial
     if (user.trialActive) {
+      // GATING: Trial users must verify email before starting
+      if (!user.emailVerified) {
+        return res.status(403).json({ 
+          allowed: false, 
+          reason: 'email_not_verified',
+          message: 'Please verify your email to start your free trial.',
+          total: user.trialMinutesTotal || 30,
+          used: 0,
+          remaining: user.trialMinutesTotal || 30,
+          bonusMinutes: 0,
+          isTrial: true,
+          requiresVerification: true
+        });
+      }
+
       const trialMinutesRemaining = (user.trialMinutesTotal || 30) - (user.trialMinutesUsed || 0);
       
       if (trialMinutesRemaining <= 0) {
