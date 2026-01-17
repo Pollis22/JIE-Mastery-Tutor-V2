@@ -732,7 +732,16 @@ export function setupAuth(app: Express) {
         emailVerificationExpiry: verificationExpiry,
       });
 
-      console.log('[Trial Signup] ✅ Trial user created:', user.email);
+      console.log('[Trial Signup] ✅ Trial user created:', user.email, 'emailVerified=false');
+      console.log('[Trial Signup] 🔑 Created verification token expires:', verificationExpiry.toISOString());
+      
+      // DEV: Log verification URL for testing
+      if (process.env.NODE_ENV !== 'production' || process.env.TEST_MODE === 'true') {
+        const baseUrl = process.env.REPLIT_DEV_DOMAIN 
+          ? `https://${process.env.REPLIT_DEV_DOMAIN}` 
+          : 'http://localhost:5000';
+        console.log('[Trial Signup] 🔗 DEV VERIFICATION URL:', `${baseUrl}/api/auth/verify-email?token=${verificationToken}`);
+      }
 
       // Record abuse tracking for IP
       try {
@@ -781,21 +790,41 @@ export function setupAuth(app: Express) {
         console.error('[Trial Signup] ⚠️ Abuse tracking error (non-fatal):', trackingError);
       }
 
+      // Check if email provider is configured
+      const hasResendKey = !!process.env.RESEND_API_KEY;
+      console.log('[Trial Signup] 📧 Email provider config: RESEND_API_KEY=' + (hasResendKey ? 'SET' : 'NOT SET'));
+      
       // Send verification email (required before trial can start)
+      let emailSent = false;
+      let emailError: any = null;
+      
+      console.log('[Trial Signup] ✉️ Sending verification email to:', user.email);
       try {
         await emailService.sendEmailVerification({
           email: user.email,
           name: user.studentName || user.firstName || 'Student',
           token: verificationToken,
         });
-        console.log('[Trial Signup] ✉️ Verification email sent to:', user.email);
-      } catch (emailError) {
-        console.error('[Trial Signup] ⚠️ Failed to send verification email:', emailError);
-        // Don't fail signup, but log the error
+        emailSent = true;
+        console.log('[Trial Signup] ✅ Verification email sent successfully to:', user.email);
+      } catch (err: any) {
+        emailError = err;
+        console.error('[Trial Signup] ❌ Failed to send verification email:', err?.message || err);
+        console.error('[Trial Signup] Full error:', JSON.stringify(err, null, 2));
+        
+        // In dev, fail hard so we can debug
+        if (process.env.NODE_ENV !== 'production') {
+          return res.status(500).json({
+            error: 'Failed to send verification email. Check server logs.',
+            details: err?.message || 'Unknown email error',
+            emailConfigured: hasResendKey,
+          });
+        }
       }
 
       // Send lead notification to JIE internal (non-blocking)
       const leadEmail = process.env.JIE_LEAD_NOTIFY_EMAIL || process.env.ADMIN_EMAIL || 'leads@jiemastery.ai';
+      console.log('[Trial Signup] 📨 Sending lead notification to:', leadEmail);
       emailService.sendAdminNotification('New Trial Lead', {
         email: user.email,
         parentName: '',
@@ -812,6 +841,7 @@ export function setupAuth(app: Express) {
       const response: any = { 
         success: true,
         requiresVerification: true,
+        emailSent,
         user: {
           id: user.id,
           email: user.email,
@@ -820,7 +850,9 @@ export function setupAuth(app: Express) {
           trialActive: user.trialActive,
           emailVerified: false,
         },
-        message: 'Please check your email to verify your account and start your trial.',
+        message: emailSent 
+          ? 'Please check your email to verify your account and start your trial.'
+          : 'Account created but email delivery failed. Use the verification link in the server logs.',
       };
 
       // Add warning if approaching limits

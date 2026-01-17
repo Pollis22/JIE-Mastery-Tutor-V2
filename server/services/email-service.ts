@@ -494,7 +494,12 @@ Customer minutes have been reset for the new billing cycle.
     try {
       const resend = getResendClient();
       const fromEmail = getFromEmail();
-      const verificationUrl = `${this.getBaseUrl()}/api/verify-email?token=${user.token}`;
+      const verificationUrl = `${this.getBaseUrl()}/api/auth/verify-email?token=${user.token}`;
+      
+      // DEV: Log verification URL to console for testing
+      if (process.env.NODE_ENV !== 'production' || process.env.TEST_MODE === 'true') {
+        console.log('[EmailService] 🔗 DEV VERIFICATION URL:', verificationUrl);
+      }
       
       const html = `
         <!DOCTYPE html>
