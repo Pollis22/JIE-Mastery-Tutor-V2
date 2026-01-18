@@ -131,10 +131,19 @@ export function serveStatic(app: Express) {
 
   // fall through to index.html if the file doesn't exist
   app.use("*", (req, res) => {
+    const url = req.originalUrl;
+    
     // Skip API routes - they should be handled by API handlers
-    if (req.originalUrl.startsWith('/api/')) {
+    if (url.startsWith('/api/')) {
       return res.status(404).json({ error: 'API endpoint not found' });
     }
+    
+    // Return 404 for missing static assets (don't serve index.html for .js/.css/.map requests)
+    if (url.startsWith('/assets/') || url.match(/\.(js|css|map|json|ico|png|jpg|jpeg|gif|svg|woff|woff2|ttf|eot)$/)) {
+      console.error(`[Static 404] Missing asset: ${url}`);
+      return res.status(404).send('Asset not found');
+    }
+    
     res.sendFile(path.resolve(distPath, "index.html"));
   });
 }
