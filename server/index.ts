@@ -51,16 +51,28 @@ const app = express();
 // This ensures req.secure is true when behind HTTPS proxy
 app.set('trust proxy', 1);
 
-// Production: Canonical hostname redirect (www → apex) for session cookie consistency
-// Ensures all users are on jiemastery.ai so host-only cookies work correctly
+// Production: Canonical hostname redirect (apex → www) for session cookie consistency
+// Ensures all users are on www.jiemastery.ai so host-only cookies work correctly
+// Railway domain is NOT redirected - it must continue to work for health checks
 if (process.env.NODE_ENV === 'production') {
   app.use((req, res, next) => {
     const host = (req.headers.host || '').toLowerCase().split(':')[0]; // Normalize and remove port
-    // Redirect www to apex for canonical URL
-    if (host === 'www.jiemastery.ai') {
-      const redirectUrl = `https://jiemastery.ai${req.originalUrl}`;
-      console.log(`[Redirect] Canonical redirect: ${host} → jiemastery.ai${req.originalUrl}`);
+    // Only redirect apex to www, don't touch Railway domain
+    if (host === 'jiemastery.ai') {
+      const redirectUrl = `https://www.jiemastery.ai${req.originalUrl}`;
+      console.log(`[Redirect] Canonical redirect: ${host} → www.jiemastery.ai${req.originalUrl}`);
       return res.redirect(301, redirectUrl);
+    }
+    next();
+  });
+}
+
+// Diagnostic logging for production debugging (temporary)
+if (process.env.NODE_ENV === 'production') {
+  app.use((req, res, next) => {
+    const logPaths = ['/', '/api/health', '/api/user', '/api/auth/login', '/api/auth/logout', '/api/diag'];
+    if (logPaths.includes(req.path) || req.path.startsWith('/api/auth/')) {
+      console.log(`[REQ] ${req.method} ${req.url} host=${req.headers.host} proto=${req.headers['x-forwarded-proto']}`);
     }
     next();
   });

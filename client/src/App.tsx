@@ -8,9 +8,10 @@
  */
 
 
-// Client-side canonical domain guard (belt & suspenders for www → apex redirect)
-if (typeof window !== 'undefined' && window.location.hostname === 'www.jiemastery.ai') {
-  window.location.replace('https://jiemastery.ai' + window.location.pathname + window.location.search + window.location.hash);
+// Client-side canonical domain guard (belt & suspenders for apex → www redirect)
+// Canonical domain is www.jiemastery.ai
+if (typeof window !== 'undefined' && window.location.hostname === 'jiemastery.ai') {
+  window.location.replace('https://www.jiemastery.ai' + window.location.pathname + window.location.search + window.location.hash);
 }
 
 import { Switch, Route } from "wouter";

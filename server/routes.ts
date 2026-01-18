@@ -101,6 +101,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
+  // Diagnostic endpoint (temporary - for debugging custom domain)
+  app.get("/api/diag", (req, res) => {
+    res.status(200).json({
+      host: req.headers.host,
+      proto: req.headers['x-forwarded-proto'] || req.protocol,
+      origin: req.headers.origin || null,
+      url: req.originalUrl,
+      env: process.env.NODE_ENV,
+      timestamp: new Date().toISOString()
+    });
+  });
+
   // Database health check endpoint - verify required tables exist
   app.get("/api/health/db", async (req, res) => {
     const checks: Record<string, boolean | string> = {

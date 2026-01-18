@@ -23,10 +23,13 @@ export function setupSecurityHeaders(req: Request, res: Response, next: NextFunc
 }
 
 export function setupCORS(req: Request, res: Response, next: NextFunction) {
-  // Build allowed origins list - support both REPLIT_DEV_DOMAIN and custom domains
+  // Build allowed origins list - support Replit, Railway, and custom domains
   const allowedOrigins = [
     'http://localhost:5000',
     'http://localhost:3000',
+    'https://www.jiemastery.ai',
+    'https://jiemastery.ai',
+    'https://jie-mastery-tutor-v2-production.up.railway.app',
     process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : '',
     process.env.CUSTOM_DOMAIN || ''
   ].filter(Boolean);
