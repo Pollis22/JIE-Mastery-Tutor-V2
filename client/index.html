@@ -21,65 +21,44 @@
     <meta property="og:url" content="https://www.jiemastery.ai/" />
     <meta property="og:site_name" content="JIE Mastery" />
     
-    <!-- Critical font preload for LCP optimization -->
+    <!-- Meta Pixel Code - Global installation for Facebook/Instagram Ads attribution -->
+    <script>
+    !function(f,b,e,v,n,t,s)
+    {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+    n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+    if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+    n.queue=[];t=b.createElement(e);t.async=!0;
+    t.src=v;s=b.getElementsByTagName(e)[0];
+    s.parentNode.insertBefore(t,s)}(window,document,'script',
+    'https://connect.facebook.net/en_US/fbevents.js');
+    fbq('init', '833118612039393');
+    fbq('track', 'PageView');
+    </script>
+    <!-- End Meta Pixel Code -->
+    
+    <!-- Google tag (gtag.js) - Google Ads for jiemastery.ai -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=AW-17252974185"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'AW-17252974185');
+    </script>
+    <!-- End Google Ads Tag -->
+    
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" fetchpriority="high">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
-    <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
+    <!-- Critical fonts only (Inter for body) - loads with display=swap for fast FCP -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <!-- Non-critical fonts loaded after page paint -->
     <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap" onload="this.onload=null;this.rel='stylesheet'">
     <noscript><link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet"></noscript>
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-    
-    <!-- Analytics scripts deferred to after LCP (moved from head to body end) -->
-    <!-- Meta Pixel Code - Deferred for LCP optimization -->
-    <script>
-    (function() {
-      var loadAnalytics = function() {
-        !function(f,b,e,v,n,t,s)
-        {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
-        n.callMethod.apply(n,arguments):n.queue.push(arguments)};
-        if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
-        n.queue=[];t=b.createElement(e);t.async=!0;
-        t.src=v;s=b.getElementsByTagName(e)[0];
-        s.parentNode.insertBefore(t,s)}(window,document,'script',
-        'https://connect.facebook.net/en_US/fbevents.js');
-        fbq('init', '833118612039393');
-        fbq('track', 'PageView');
-      };
-      if (document.readyState === 'complete') {
-        setTimeout(loadAnalytics, 0);
-      } else {
-        window.addEventListener('load', loadAnalytics);
-      }
-    })();
-    </script>
+    <!-- Meta Pixel noscript fallback (must be in body, not head) -->
     <noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=833118612039393&ev=PageView&noscript=1"/></noscript>
     
-    <!-- Google tag (gtag.js) - Deferred for LCP optimization -->
-    <script>
-    (function() {
-      var loadGtag = function() {
-        var script = document.createElement('script');
-        script.async = true;
-        script.src = 'https://www.googletagmanager.com/gtag/js?id=AW-17252974185';
-        document.head.appendChild(script);
-        window.dataLayer = window.dataLayer || [];
-        function gtag(){dataLayer.push(arguments);}
-        window.gtag = gtag;
-        gtag('js', new Date());
-        gtag('config', 'AW-17252974185');
-      };
-      if (document.readyState === 'complete') {
-        setTimeout(loadGtag, 0);
-      } else {
-        window.addEventListener('load', loadGtag);
-      }
-    })();
-    </script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
