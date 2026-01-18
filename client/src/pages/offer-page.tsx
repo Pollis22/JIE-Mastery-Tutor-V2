@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useLocation } from "wouter";
-import jieLogo from "@/assets/jie-mastery-logo-new.jpg";
+import jieLogo from "@/assets/jie-mastery-logo-sm.jpg";
 import { StartTrialButton } from "@/components/StartTrialButton";
 import { 
   MessageCircle,
@@ -87,7 +87,17 @@ export default function OfferPage() {
         <div className="container mx-auto px-4">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-3 cursor-pointer" onClick={() => navigateTo("/")}>
-              <img src={jieLogo} alt="JIE Mastery" className="h-10 w-auto" />
+{/* LCP element: Logo in navbar (optimized 2KB) */}
+              <img 
+                src={jieLogo} 
+                alt="JIE Mastery" 
+                className="h-10 w-auto"
+                width={40}
+                height={40}
+                loading="eager"
+                fetchPriority="high"
+                decoding="async"
+              />
               <span className="text-xl font-bold text-foreground">JIE Mastery</span>
             </div>
             
