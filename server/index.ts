@@ -124,8 +124,8 @@ app.use((req, res, next) => {
 (async () => {
   try {
     console.log('=== Server Startup Started ===');
-    console.log(`NODE_ENV: ${process.env.NODE_ENV}`);
-    console.log(`PORT: ${process.env.PORT || '5000'}`);
+    console.log(`NODE_ENV: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`PORT: ${process.env.PORT || '8080'}`);
     console.log(`DATABASE_URL: ${process.env.DATABASE_URL ? 'Set ✓' : 'Missing ✗'}`);
     
     // Initialize database schema before anything else
@@ -256,10 +256,10 @@ app.use((req, res, next) => {
     }
 
     // ALWAYS serve the app on the port specified in the environment variable PORT
-    // Other ports are firewalled. Default to 5000 if not specified.
+    // Railway sets PORT automatically. Default to 8080 if not specified.
     // this serves both the API and the client.
-    // It is the only port that is not firewalled.
-    const port = parseInt(process.env.PORT || '5000', 10);
+    const port = parseInt(process.env.PORT || '8080', 10);
+    const env = process.env.NODE_ENV || 'development';
     
     console.log(`Attempting to listen on 0.0.0.0:${port}...`);
     server.listen({
@@ -268,8 +268,9 @@ app.use((req, res, next) => {
       reusePort: true,
     }, () => {
       console.log('=== SERVER STARTED SUCCESSFULLY ===');
-      console.log(`✓ Listening on 0.0.0.0:${port}`);
-      console.log(`✓ Environment: ${process.env.NODE_ENV}`);
+      console.log(`Listening on port: ${port}`);
+      console.log(`Environment: ${env}`);
+      console.log(`GET / → 200 (SPA served)`);
       console.log(`✓ Health check: http://0.0.0.0:${port}/api/health`);
       console.log('===================================');
       log(`serving on port ${port}`);
