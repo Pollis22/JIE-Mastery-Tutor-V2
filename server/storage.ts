@@ -1434,10 +1434,9 @@ export class DatabaseStorage implements IStorage {
         subscriptionMinutesUsed: users.subscriptionMinutesUsed,
         subscriptionMinutesLimit: users.subscriptionMinutesLimit,
         purchasedMinutesBalance: users.purchasedMinutesBalance,
-        // Trial fields
-        isTrialActive: users.isTrialActive,
+        // Trial fields (using correct column names from schema)
+        isTrialActive: users.trialActive,
         trialMinutesUsed: users.trialMinutesUsed,
-        trialMinutesTotal: users.trialMinutesTotal,
         // Other fields
         maxConcurrentLogins: users.maxConcurrentLogins,
         isAdmin: users.isAdmin,
