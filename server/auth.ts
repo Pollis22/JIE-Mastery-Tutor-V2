@@ -58,22 +58,22 @@ export function setupAuth(app: Express) {
   }
 
   // Environment-aware session cookie configuration
-  // Production (Railway HTTPS): secure=true, sameSite='lax', domain='.jiemastery.ai' for www/non-www
-  // Development (local HTTP): secure=false, sameSite='lax', no domain restriction
+  // Production: secure=true, sameSite='lax', NO domain (host-only cookies for www.jiemastery.ai)
+  // The canonical redirect ensures all users are on www.jiemastery.ai, so we don't need cross-subdomain cookies
+  // Development: secure=false, sameSite='lax'
   const isProduction = process.env.NODE_ENV === 'production';
   const cookieSecure = process.env.SESSION_COOKIE_SECURE 
     ? process.env.SESSION_COOKIE_SECURE === 'true' 
     : isProduction;
-  // Use 'lax' for same-site requests (www and non-www are same site)
   const cookieSameSite = (process.env.SESSION_COOKIE_SAMESITE || 'lax') as 'lax' | 'none' | 'strict';
-  // Set domain to .jiemastery.ai in production so cookie works on both www and non-www
-  const cookieDomain = isProduction ? '.jiemastery.ai' : undefined;
+  // Use host-only cookies (no domain) - simpler and more reliable since we redirect to www anyway
+  const cookieDomain = undefined;
 
   console.log('[Session] Cookie configuration:', {
     environment: process.env.NODE_ENV,
     secure: cookieSecure,
     sameSite: cookieSameSite,
-    domain: cookieDomain || '(not set)',
+    domain: '(host-only)',
     maxAge: '7 days'
   });
 
@@ -1162,9 +1162,9 @@ export function setupAuth(app: Express) {
           
           // Clear the session cookie with matching options
           const isProduction = process.env.NODE_ENV === 'production';
+          // Clear cookie with host-only (no domain) to match session config
           res.clearCookie('connect.sid', {
             path: '/',
-            domain: isProduction ? '.jiemastery.ai' : undefined,
             secure: isProduction,
             sameSite: 'lax'
           });
