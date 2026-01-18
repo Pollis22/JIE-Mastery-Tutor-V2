@@ -52,14 +52,14 @@ const app = express();
 app.set('trust proxy', 1);
 
 // Production: Canonical hostname redirect (non-www → www) for session cookie consistency
-// Cookie domain is set to .jiemastery.ai, but we want a single canonical URL
+// Ensures all users are on www.jiemastery.ai so host-only cookies work correctly
 if (process.env.NODE_ENV === 'production') {
   app.use((req, res, next) => {
-    const host = req.headers.host || '';
+    const host = (req.headers.host || '').toLowerCase().split(':')[0]; // Normalize and remove port
     // Redirect non-www to www for canonical URL
     if (host === 'jiemastery.ai') {
       const redirectUrl = `https://www.jiemastery.ai${req.originalUrl}`;
-      console.log(`[Redirect] ${host} → www.jiemastery.ai`);
+      console.log(`[Redirect] Canonical redirect: ${host} → www.jiemastery.ai${req.originalUrl}`);
       return res.redirect(301, redirectUrl);
     }
     next();
