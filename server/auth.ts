@@ -58,8 +58,8 @@ export function setupAuth(app: Express) {
   }
 
   // Environment-aware session cookie configuration
-  // Production: secure=true, sameSite='lax', NO domain (host-only cookies for www.jiemastery.ai)
-  // The canonical redirect ensures all users are on www.jiemastery.ai, so we don't need cross-subdomain cookies
+  // Production: secure=true, sameSite='lax', NO domain (host-only cookies for jiemastery.ai)
+  // The canonical redirect ensures all users are on jiemastery.ai, so we don't need cross-subdomain cookies
   // Development: secure=false, sameSite='lax'
   const isProduction = process.env.NODE_ENV === 'production';
   const cookieSecure = process.env.SESSION_COOKIE_SECURE 

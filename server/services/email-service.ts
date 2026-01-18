@@ -631,7 +631,7 @@ The JIE Mastery Team`;
 <p style="word-break: break-all; color: #666; font-size: 14px;"><a href="${resetUrl}" target="_blank" style="color: #dc2626;">${resetUrl}</a></p>
 <p style="color: #666; font-size: 14px; margin-top: 30px;">This password reset link will expire in 1 hour. If you didn't request a password reset, you can safely ignore this email.</p>
 <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
-<p style="color: #999; font-size: 12px;">JIE Mastery AI Tutor<br><a href="https://www.jiemastery.ai" target="_blank" style="color: #dc2626;">www.jiemastery.ai</a></p>
+<p style="color: #999; font-size: 12px;">JIE Mastery AI Tutor<br><a href="https://jiemastery.ai" target="_blank" style="color: #dc2626;">jiemastery.ai</a></p>
 </body>
 </html>`;
 
@@ -647,7 +647,7 @@ ${resetUrl}
 This password reset link will expire in 1 hour. If you didn't request a password reset, you can safely ignore this email.
 
 JIE Mastery AI Tutor
-www.jiemastery.ai
+jiemastery.ai
       `;
 
       await resend.emails.send({

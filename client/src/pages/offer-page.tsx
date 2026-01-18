@@ -43,7 +43,7 @@ export default function OfferPage() {
 
     const canonical = document.createElement('link');
     canonical.rel = 'canonical';
-    canonical.href = 'https://www.jiemastery.ai/offer';
+    canonical.href = 'https://jiemastery.ai/offer';
     document.head.appendChild(canonical);
 
     if (typeof window !== 'undefined' && window.fbq) {
