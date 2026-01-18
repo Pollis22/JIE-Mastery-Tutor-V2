@@ -139,6 +139,15 @@ export const users = pgTable("users", {
   trialEndsAt: timestamp("trial_ends_at"),
   trialDeviceHash: varchar("trial_device_hash", { length: 64 }),
   trialIpHash: varchar("trial_ip_hash", { length: 64 }),
+  // Admin Account Management Fields
+  isDisabled: boolean("is_disabled").default(false),
+  disabledAt: timestamp("disabled_at"),
+  disabledByAdminId: varchar("disabled_by_admin_id").references(() => users.id),
+  deletedAt: timestamp("deleted_at"),
+  deletedByAdminId: varchar("deleted_by_admin_id").references(() => users.id),
+  deletedReason: text("deleted_reason"),
+  canceledAt: timestamp("canceled_at"),
+  canceledByAdminId: varchar("canceled_by_admin_id").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

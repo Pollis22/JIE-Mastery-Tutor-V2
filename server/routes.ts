@@ -14,7 +14,7 @@ import { auditActions } from "./middleware/audit-log";
 import { convertUsersToCSV, generateFilename } from "./utils/csv-export";
 import { sql, desc, eq } from "drizzle-orm";
 import { db } from "./db";
-import { realtimeSessions, trialSessions, safetyIncidents } from "@shared/schema";
+import { realtimeSessions, trialSessions, safetyIncidents, users, userDocuments, documentChunks, documentEmbeddings, learningSessions } from "@shared/schema";
 import Stripe from "stripe";
 import { z } from "zod";
 import { createHmac, timingSafeEqual } from "crypto";
@@ -2359,6 +2359,350 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Error adding minutes: " + error.message });
     }
   });
+
+  // ========== ADMIN ACCOUNT MANAGEMENT ENDPOINTS ==========
+
+  // Admin: Cancel user's subscription (Admin → Stripe → DB)
+  app.post("/api/admin/users/:id/cancel-subscription", requireAdmin, async (req, res) => {
+    const adminUser = req.user as any;
+    const { id: userId } = req.params;
+    const { cancelImmediately = true } = req.body;
+
+    console.log(`[Admin] Cancel subscription request for user ${userId} by admin ${adminUser.id}, immediate: ${cancelImmediately}`);
+
+    try {
+      // Get the target user
+      const targetUser = await storage.getUser(userId);
+      if (!targetUser) {
+        return res.status(404).json({ success: false, message: "User not found" });
+      }
+
+      // Check if there's a Stripe subscription to cancel
+      const stripeKey = process.env.STRIPE_SECRET_KEY;
+      if (!stripeKey) {
+        return res.status(500).json({ success: false, message: "Stripe is not configured" });
+      }
+
+      const Stripe = await import('stripe');
+      const stripe = new Stripe.default(stripeKey, { apiVersion: "2025-08-27.basil" });
+
+      let stripeResult: any = null;
+      let subscriptionsCanceled = 0;
+
+      // Try to cancel by subscription ID first
+      if (targetUser.stripeSubscriptionId) {
+        try {
+          const subscription = await stripe.subscriptions.retrieve(targetUser.stripeSubscriptionId);
+          if (subscription.status !== 'canceled') {
+            if (cancelImmediately) {
+              stripeResult = await stripe.subscriptions.cancel(targetUser.stripeSubscriptionId);
+            } else {
+              stripeResult = await stripe.subscriptions.update(targetUser.stripeSubscriptionId, {
+                cancel_at_period_end: true,
+              });
+            }
+            subscriptionsCanceled = 1;
+            console.log(`[Admin] Stripe subscription ${targetUser.stripeSubscriptionId} canceled (immediate: ${cancelImmediately})`);
+          } else {
+            console.log(`[Admin] Subscription ${targetUser.stripeSubscriptionId} already canceled`);
+          }
+        } catch (subError: any) {
+          console.log(`[Admin] Error with subscription ID, trying customer lookup: ${subError.message}`);
+        }
+      }
+
+      // If no subscription ID or it failed, try by customer ID
+      if (subscriptionsCanceled === 0 && targetUser.stripeCustomerId) {
+        const subscriptions = await stripe.subscriptions.list({
+          customer: targetUser.stripeCustomerId,
+          status: 'active',
+        });
+
+        for (const sub of subscriptions.data) {
+          if (cancelImmediately) {
+            await stripe.subscriptions.cancel(sub.id);
+          } else {
+            await stripe.subscriptions.update(sub.id, { cancel_at_period_end: true });
+          }
+          subscriptionsCanceled++;
+          console.log(`[Admin] Canceled subscription ${sub.id}`);
+        }
+      }
+
+      if (subscriptionsCanceled === 0 && !targetUser.stripeCustomerId && !targetUser.stripeSubscriptionId) {
+        // No Stripe info at all - just update DB
+        console.log(`[Admin] No Stripe subscription found, updating DB only`);
+      }
+
+      // Update database
+      const now = new Date();
+      const newStatus = cancelImmediately ? 'canceled' : 'active'; // 'active' with cancel_at_period_end becomes 'canceling' behavior
+      const subscriptionEndsAt = stripeResult?.current_period_end 
+        ? new Date(stripeResult.current_period_end * 1000) 
+        : (cancelImmediately ? now : null);
+
+      await db.update(users)
+        .set({
+          subscriptionStatus: cancelImmediately ? 'canceled' : 'active',
+          subscriptionEndsAt: subscriptionEndsAt,
+          canceledAt: now,
+          canceledByAdminId: adminUser.id,
+          updatedAt: now,
+        })
+        .where(eq(users.id, userId));
+
+      // Create audit log
+      await storage.createAdminLog({
+        adminId: adminUser.id,
+        action: cancelImmediately ? 'cancel_subscription_immediate' : 'cancel_subscription_period_end',
+        targetType: 'subscription',
+        targetId: userId,
+        details: {
+          targetEmail: targetUser.email,
+          stripeSubscriptionId: targetUser.stripeSubscriptionId,
+          stripeCustomerId: targetUser.stripeCustomerId,
+          subscriptionsCanceled,
+          cancelImmediately,
+          previousStatus: targetUser.subscriptionStatus,
+        },
+      });
+
+      res.json({
+        success: true,
+        message: subscriptionsCanceled > 0 
+          ? `Subscription ${cancelImmediately ? 'canceled immediately' : 'set to cancel at period end'}`
+          : 'No active Stripe subscription found, database updated',
+        subscriptionsCanceled,
+        cancelImmediately,
+      });
+    } catch (error: any) {
+      console.error(`[Admin] Error canceling subscription:`, error);
+      
+      // Log failed attempt
+      await storage.createAdminLog({
+        adminId: adminUser.id,
+        action: 'cancel_subscription_failed',
+        targetType: 'subscription',
+        targetId: userId,
+        details: { error: error.message },
+      });
+
+      res.status(500).json({ success: false, message: `Failed to cancel subscription: ${error.message}` });
+    }
+  });
+
+  // Admin: Disable/Enable user account (Admin → DB only)
+  app.post("/api/admin/users/:id/disable", requireAdmin, async (req, res) => {
+    const adminUser = req.user as any;
+    const { id: userId } = req.params;
+    const { isDisabled } = req.body;
+
+    if (typeof isDisabled !== 'boolean') {
+      return res.status(400).json({ success: false, message: "isDisabled must be a boolean" });
+    }
+
+    console.log(`[Admin] ${isDisabled ? 'Disable' : 'Enable'} account request for user ${userId} by admin ${adminUser.id}`);
+
+    try {
+      const targetUser = await storage.getUser(userId);
+      if (!targetUser) {
+        return res.status(404).json({ success: false, message: "User not found" });
+      }
+
+      // Prevent disabling yourself
+      if (userId === adminUser.id) {
+        return res.status(400).json({ success: false, message: "Cannot disable your own account" });
+      }
+
+      const now = new Date();
+      await db.update(users)
+        .set({
+          isDisabled: isDisabled,
+          disabledAt: isDisabled ? now : null,
+          disabledByAdminId: isDisabled ? adminUser.id : null,
+          updatedAt: now,
+        })
+        .where(eq(users.id, userId));
+
+      // Create audit log
+      await storage.createAdminLog({
+        adminId: adminUser.id,
+        action: isDisabled ? 'disable_account' : 'enable_account',
+        targetType: 'user',
+        targetId: userId,
+        details: {
+          targetEmail: targetUser.email,
+          targetUsername: targetUser.username,
+        },
+      });
+
+      res.json({
+        success: true,
+        message: isDisabled ? 'Account disabled' : 'Account enabled',
+        isDisabled,
+      });
+    } catch (error: any) {
+      console.error(`[Admin] Error toggling account status:`, error);
+      res.status(500).json({ success: false, message: `Failed to update account: ${error.message}` });
+    }
+  });
+
+  // Admin: Delete user account (Soft Delete) (Admin → Stripe → DB)
+  app.post("/api/admin/users/:id/delete", requireAdmin, async (req, res) => {
+    const adminUser = req.user as any;
+    const { id: userId } = req.params;
+    const { confirm, purgeData = false, deleteStripeCustomer = false, reason = '' } = req.body;
+
+    if (confirm !== 'DELETE') {
+      return res.status(400).json({ success: false, message: "Must confirm with 'DELETE'" });
+    }
+
+    console.log(`[Admin] Delete account request for user ${userId} by admin ${adminUser.id}, purge: ${purgeData}, deleteStripe: ${deleteStripeCustomer}`);
+
+    try {
+      const targetUser = await storage.getUser(userId);
+      if (!targetUser) {
+        return res.status(404).json({ success: false, message: "User not found" });
+      }
+
+      // Prevent deleting yourself
+      if (userId === adminUser.id) {
+        return res.status(400).json({ success: false, message: "Cannot delete your own account" });
+      }
+
+      // Check if already deleted
+      if (targetUser.deletedAt) {
+        return res.status(400).json({ success: false, message: "Account already deleted" });
+      }
+
+      const stripeKey = process.env.STRIPE_SECRET_KEY;
+      let stripeOperations: any = { subscriptionCanceled: false, customerDeleted: false };
+
+      // Step 1: Cancel Stripe subscription if exists
+      if (stripeKey && (targetUser.stripeSubscriptionId || targetUser.stripeCustomerId)) {
+        const Stripe = await import('stripe');
+        const stripe = new Stripe.default(stripeKey, { apiVersion: "2025-08-27.basil" });
+
+        // Cancel subscription
+        if (targetUser.stripeSubscriptionId) {
+          try {
+            const subscription = await stripe.subscriptions.retrieve(targetUser.stripeSubscriptionId);
+            if (subscription.status !== 'canceled') {
+              await stripe.subscriptions.cancel(targetUser.stripeSubscriptionId);
+              stripeOperations.subscriptionCanceled = true;
+              console.log(`[Admin] Canceled subscription ${targetUser.stripeSubscriptionId}`);
+            }
+          } catch (e: any) {
+            console.log(`[Admin] Subscription cancel note: ${e.message}`);
+          }
+        }
+
+        // Also check for any active subscriptions by customer ID
+        if (targetUser.stripeCustomerId) {
+          try {
+            const subs = await stripe.subscriptions.list({ customer: targetUser.stripeCustomerId, status: 'active' });
+            for (const sub of subs.data) {
+              await stripe.subscriptions.cancel(sub.id);
+              stripeOperations.subscriptionCanceled = true;
+            }
+          } catch (e: any) {
+            console.log(`[Admin] Customer subscription check note: ${e.message}`);
+          }
+        }
+
+        // Step 2: Delete Stripe customer if requested (TEST ACCOUNTS ONLY)
+        if (deleteStripeCustomer && targetUser.stripeCustomerId) {
+          try {
+            await stripe.customers.del(targetUser.stripeCustomerId);
+            stripeOperations.customerDeleted = true;
+            console.log(`[Admin] Deleted Stripe customer ${targetUser.stripeCustomerId}`);
+          } catch (e: any) {
+            console.log(`[Admin] Customer deletion note: ${e.message}`);
+          }
+        }
+      }
+
+      // Step 3: Purge data if requested
+      let purgeResults: any = {};
+      if (purgeData) {
+        // Delete user documents
+        const deletedDocs = await db.delete(userDocuments).where(eq(userDocuments.userId, userId)).returning();
+        purgeResults.documentsDeleted = deletedDocs.length;
+
+        // Delete document chunks
+        const deletedChunks = await db.delete(documentChunks).where(eq(documentChunks.userId, userId)).returning();
+        purgeResults.chunksDeleted = deletedChunks.length;
+
+        // Delete document embeddings
+        const deletedEmbeddings = await db.delete(documentEmbeddings).where(eq(documentEmbeddings.userId, userId)).returning();
+        purgeResults.embeddingsDeleted = deletedEmbeddings.length;
+
+        // Delete sessions/transcripts
+        const deletedSessions = await db.delete(learningSessions).where(eq(learningSessions.userId, userId)).returning();
+        purgeResults.sessionsDeleted = deletedSessions.length;
+
+        console.log(`[Admin] Purged data:`, purgeResults);
+      }
+
+      // Step 4: Soft delete in database
+      const now = new Date();
+      await db.update(users)
+        .set({
+          deletedAt: now,
+          deletedByAdminId: adminUser.id,
+          deletedReason: reason || null,
+          isDisabled: true,
+          disabledAt: now,
+          disabledByAdminId: adminUser.id,
+          subscriptionStatus: 'canceled',
+          canceledAt: now,
+          canceledByAdminId: adminUser.id,
+          updatedAt: now,
+        })
+        .where(eq(users.id, userId));
+
+      // Create comprehensive audit log
+      await storage.createAdminLog({
+        adminId: adminUser.id,
+        action: 'delete_account',
+        targetType: 'user',
+        targetId: userId,
+        details: {
+          targetEmail: targetUser.email,
+          targetUsername: targetUser.username,
+          reason,
+          purgeData,
+          purgeResults,
+          deleteStripeCustomer,
+          stripeOperations,
+          stripeCustomerId: targetUser.stripeCustomerId,
+          stripeSubscriptionId: targetUser.stripeSubscriptionId,
+        },
+      });
+
+      res.json({
+        success: true,
+        message: 'Account deleted successfully',
+        stripeOperations,
+        purgeResults: purgeData ? purgeResults : null,
+      });
+    } catch (error: any) {
+      console.error(`[Admin] Error deleting account:`, error);
+      
+      // Log failed attempt
+      await storage.createAdminLog({
+        adminId: adminUser.id,
+        action: 'delete_account_failed',
+        targetType: 'user',
+        targetId: userId,
+        details: { error: error.message, reason },
+      });
+
+      res.status(500).json({ success: false, message: `Failed to delete account: ${error.message}` });
+    }
+  });
+
+  // ========== END ADMIN ACCOUNT MANAGEMENT ENDPOINTS ==========
 
   // Admin: Get subscriptions data
   app.get("/api/admin/subscriptions", requireAdmin, auditActions.viewSubscriptions, async (req, res) => {
