@@ -7,115 +7,118 @@
  * Unauthorized copying, modification, or distribution is strictly prohibited.
  */
 
-
-// Client-side canonical domain guard (belt & suspenders for apex → www redirect)
-// Canonical domain is www.jiemastery.ai
-if (typeof window !== 'undefined' && window.location.hostname === 'jiemastery.ai') {
-  window.location.replace('https://www.jiemastery.ai' + window.location.pathname + window.location.search + window.location.hash);
-}
-
+import { lazy } from "react";
 import { Switch, Route } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/hooks/use-auth";
-import { ProtectedRoute, PublicOrAuthRoute } from "./lib/protected-route";
-import NotFound from "@/pages/not-found";
-import AuthPage from "@/pages/auth-page";
-import HomePage from "@/pages/home-page";
-import DashboardPage from "@/pages/dashboard";
-import SettingsPage from "@/pages/settings-page";
-import AdminPage from "@/pages/admin-page";
-import AdminPageEnhanced from "@/pages/admin-page-enhanced";
-import PricingPage from "@/pages/pricing-page";
-import SubscribePage from "@/pages/subscribe-page";
-import TutorPage from "@/pages/tutor-page";
-import BenefitsPage from "@/pages/benefits-page";
-import UnsubscribePage from "@/pages/unsubscribe-page";
-import DemoPage from "@/pages/demo-page";
-import FAQPage from "@/pages/faq-page";
-import SupportPage from "@/pages/support-page";
-import ContactPage from "@/pages/contact-page";
-import AdminOverview from "@/pages/admin-overview";
-import AdminUsers from "@/pages/admin-users";
-import AdminSubscriptions from "@/pages/admin-subscriptions";
-import AdminDocuments from "@/pages/admin-documents";
-import AdminAnalytics from "@/pages/admin-analytics";
-import AdminLogs from "@/pages/admin-logs";
-import AdminUserDetail from "@/pages/admin-user-detail";
-import AdminContacts from "@/pages/admin/admin-contacts-page";
-import AdminAgents from "@/pages/admin/admin-agents-page";
-import TermsPage from "@/pages/terms-page";
-import PrivacyPage from "@/pages/privacy-page";
-import TrustSafetyPage from "@/pages/trust-safety-page";
-import AdminSetupPage from "@/pages/admin-setup-page";
-import SessionDetailsPage from "@/pages/session-details";
-import ForgotPasswordPage from "@/pages/forgot-password";
-import ResetPasswordPage from "@/pages/reset-password";
-import VerifyEmailPage from "@/pages/verify-email-page";
-import RegistrationSuccessPage from "@/pages/registration-success-page";
-import { PersonalityTestPage } from "@/pages/PersonalityTestPage";
-import ProfilePage from "@/pages/profile-page";
-import PracticeLessonsPage from "@/pages/practice-lessons-page";
-import TrialVerifyPage from "@/pages/trial-verify-page";
-import TrialEndedPage from "@/pages/trial-ended-page";
-import TrialTutorPage from "@/pages/trial-tutor-page";
-import MagicLinkPage from "@/pages/magic-link-page";
+import { ProtectedRoute, PublicOrAuthRoute, LazyRoute } from "./lib/protected-route";
 import OfferPage from "@/pages/offer-page";
-import StartTrialPage from "@/pages/start-trial-page";
 import { usePageTracking } from "@/hooks/use-page-tracking";
 import { useTracking } from "@/hooks/use-tracking";
 
-function Router() {
+if (typeof window !== 'undefined' && window.location.hostname === 'jiemastery.ai') {
+  window.location.replace('https://www.jiemastery.ai' + window.location.pathname + window.location.search + window.location.hash);
+}
+
+const NotFound = lazy(() => import("@/pages/not-found"));
+const AuthPage = lazy(() => import("@/pages/auth-page"));
+const DashboardPage = lazy(() => import("@/pages/dashboard"));
+const SettingsPage = lazy(() => import("@/pages/settings-page"));
+const AdminPageEnhanced = lazy(() => import("@/pages/admin-page-enhanced"));
+const PricingPage = lazy(() => import("@/pages/pricing-page"));
+const SubscribePage = lazy(() => import("@/pages/subscribe-page"));
+const TutorPage = lazy(() => import("@/pages/tutor-page"));
+const BenefitsPage = lazy(() => import("@/pages/benefits-page"));
+const UnsubscribePage = lazy(() => import("@/pages/unsubscribe-page"));
+const DemoPage = lazy(() => import("@/pages/demo-page"));
+const FAQPage = lazy(() => import("@/pages/faq-page"));
+const SupportPage = lazy(() => import("@/pages/support-page"));
+const ContactPage = lazy(() => import("@/pages/contact-page"));
+const AdminUsers = lazy(() => import("@/pages/admin-users"));
+const AdminSubscriptions = lazy(() => import("@/pages/admin-subscriptions"));
+const AdminDocuments = lazy(() => import("@/pages/admin-documents"));
+const AdminAnalytics = lazy(() => import("@/pages/admin-analytics"));
+const AdminLogs = lazy(() => import("@/pages/admin-logs"));
+const AdminUserDetail = lazy(() => import("@/pages/admin-user-detail"));
+const AdminContacts = lazy(() => import("@/pages/admin/admin-contacts-page"));
+const AdminAgents = lazy(() => import("@/pages/admin/admin-agents-page"));
+const TermsPage = lazy(() => import("@/pages/terms-page"));
+const PrivacyPage = lazy(() => import("@/pages/privacy-page"));
+const TrustSafetyPage = lazy(() => import("@/pages/trust-safety-page"));
+const AdminSetupPage = lazy(() => import("@/pages/admin-setup-page"));
+const SessionDetailsPage = lazy(() => import("@/pages/session-details"));
+const ForgotPasswordPage = lazy(() => import("@/pages/forgot-password"));
+const ResetPasswordPage = lazy(() => import("@/pages/reset-password"));
+const VerifyEmailPage = lazy(() => import("@/pages/verify-email-page"));
+const RegistrationSuccessPage = lazy(() => import("@/pages/registration-success-page"));
+const PersonalityTestPage = lazy(() => import("@/pages/PersonalityTestPage").then(m => ({ default: m.PersonalityTestPage })));
+const ProfilePage = lazy(() => import("@/pages/profile-page"));
+const PracticeLessonsPage = lazy(() => import("@/pages/practice-lessons-page"));
+const TrialVerifyPage = lazy(() => import("@/pages/trial-verify-page"));
+const TrialEndedPage = lazy(() => import("@/pages/trial-ended-page"));
+const TrialTutorPage = lazy(() => import("@/pages/trial-tutor-page"));
+const MagicLinkPage = lazy(() => import("@/pages/magic-link-page"));
+const StartTrialPage = lazy(() => import("@/pages/start-trial-page"));
+
+function PageTracking() {
   usePageTracking();
   useTracking();
+  return null;
+}
+
+function Router() {
   return (
-    <Switch>
-      <PublicOrAuthRoute path="/" publicComponent={OfferPage} authComponent={TutorPage} />
-      <ProtectedRoute path="/dashboard" component={DashboardPage} />
-      <ProtectedRoute path="/sessions/:id" component={SessionDetailsPage} />
-      <ProtectedRoute path="/tutor" component={TutorPage} />
-      <ProtectedRoute path="/practice-lessons" component={PracticeLessonsPage} />
-      <ProtectedRoute path="/settings" component={SettingsPage} />
-      <ProtectedRoute path="/profile" component={ProfilePage} />
-      <ProtectedRoute path="/admin" component={AdminPageEnhanced} />
-      <ProtectedRoute path="/admin/users" component={AdminUsers} />
-      <ProtectedRoute path="/admin/users/:userId" component={AdminUserDetail} />
-      <ProtectedRoute path="/admin/subscriptions" component={AdminSubscriptions} />
-      <ProtectedRoute path="/admin/documents" component={AdminDocuments} />
-      <ProtectedRoute path="/admin/analytics" component={AdminAnalytics} />
-      <ProtectedRoute path="/admin/agents" component={AdminAgents} />
-      <ProtectedRoute path="/admin/contacts" component={AdminContacts} />
-      <ProtectedRoute path="/admin/logs" component={AdminLogs} />
-      <ProtectedRoute path="/subscribe" component={SubscribePage} />
-      <ProtectedRoute path="/personality-test" component={PersonalityTestPage} />
-      <Route path="/auth" component={AuthPage} />
-      <Route path="/auth/registration-success" component={RegistrationSuccessPage} />
-      <Route path="/auth/magic" component={MagicLinkPage} />
-      <Route path="/login" component={AuthPage} />
-      <Route path="/forgot-password" component={ForgotPasswordPage} />
-      <Route path="/reset-password" component={ResetPasswordPage} />
-      <Route path="/verify-email" component={VerifyEmailPage} />
-      <Route path="/admin-setup" component={AdminSetupPage} />
-      <Route path="/pricing" component={PricingPage} />
-      <Route path="/benefits" component={BenefitsPage} />
-      <Route path="/demo" component={DemoPage} />
-      <Route path="/faq" component={FAQPage} />
-      <Route path="/support" component={SupportPage} />
-      <Route path="/contact" component={ContactPage} />
-      <Route path="/terms" component={TermsPage} />
-      <Route path="/privacy" component={PrivacyPage} />
-      <Route path="/trust-safety" component={TrustSafetyPage} />
-      <Route path="/unsubscribe" component={UnsubscribePage} />
-      <Route path="/trial/verify" component={TrialVerifyPage} />
-      <Route path="/trial/ended" component={TrialEndedPage} />
-      <Route path="/trial/tutor" component={TrialTutorPage} />
-      <Route path="/offer" component={OfferPage} />
-      <Route path="/welcome" component={OfferPage} />
-      <Route path="/start-trial" component={StartTrialPage} />
-      <Route component={NotFound} />
-    </Switch>
+    <>
+      <PageTracking />
+      <Switch>
+        <PublicOrAuthRoute path="/" publicComponent={OfferPage} authComponent={TutorPage} />
+        <Route path="/offer" component={OfferPage} />
+        <Route path="/welcome" component={OfferPage} />
+        <ProtectedRoute path="/dashboard" component={DashboardPage} />
+        <ProtectedRoute path="/sessions/:id" component={SessionDetailsPage} />
+        <ProtectedRoute path="/tutor" component={TutorPage} />
+        <ProtectedRoute path="/practice-lessons" component={PracticeLessonsPage} />
+        <ProtectedRoute path="/settings" component={SettingsPage} />
+        <ProtectedRoute path="/profile" component={ProfilePage} />
+        <ProtectedRoute path="/admin" component={AdminPageEnhanced} />
+        <ProtectedRoute path="/admin/users" component={AdminUsers} />
+        <ProtectedRoute path="/admin/users/:userId" component={AdminUserDetail} />
+        <ProtectedRoute path="/admin/subscriptions" component={AdminSubscriptions} />
+        <ProtectedRoute path="/admin/documents" component={AdminDocuments} />
+        <ProtectedRoute path="/admin/analytics" component={AdminAnalytics} />
+        <ProtectedRoute path="/admin/agents" component={AdminAgents} />
+        <ProtectedRoute path="/admin/contacts" component={AdminContacts} />
+        <ProtectedRoute path="/admin/logs" component={AdminLogs} />
+        <ProtectedRoute path="/subscribe" component={SubscribePage} />
+        <ProtectedRoute path="/personality-test" component={PersonalityTestPage} />
+        <LazyRoute path="/auth" component={AuthPage} />
+        <LazyRoute path="/auth/registration-success" component={RegistrationSuccessPage} />
+        <LazyRoute path="/auth/magic" component={MagicLinkPage} />
+        <LazyRoute path="/login" component={AuthPage} />
+        <LazyRoute path="/forgot-password" component={ForgotPasswordPage} />
+        <LazyRoute path="/reset-password" component={ResetPasswordPage} />
+        <LazyRoute path="/verify-email" component={VerifyEmailPage} />
+        <LazyRoute path="/admin-setup" component={AdminSetupPage} />
+        <LazyRoute path="/pricing" component={PricingPage} />
+        <LazyRoute path="/benefits" component={BenefitsPage} />
+        <LazyRoute path="/demo" component={DemoPage} />
+        <LazyRoute path="/faq" component={FAQPage} />
+        <LazyRoute path="/support" component={SupportPage} />
+        <LazyRoute path="/contact" component={ContactPage} />
+        <LazyRoute path="/terms" component={TermsPage} />
+        <LazyRoute path="/privacy" component={PrivacyPage} />
+        <LazyRoute path="/trust-safety" component={TrustSafetyPage} />
+        <LazyRoute path="/unsubscribe" component={UnsubscribePage} />
+        <LazyRoute path="/trial/verify" component={TrialVerifyPage} />
+        <LazyRoute path="/trial/ended" component={TrialEndedPage} />
+        <LazyRoute path="/trial/tutor" component={TrialTutorPage} />
+        <LazyRoute path="/start-trial" component={StartTrialPage} />
+        <LazyRoute component={NotFound} />
+      </Switch>
+    </>
   );
 }
 

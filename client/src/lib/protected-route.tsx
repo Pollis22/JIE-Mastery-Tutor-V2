@@ -1,13 +1,28 @@
+import { Suspense, ComponentType, LazyExoticComponent } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { Loader2 } from "lucide-react";
 import { Redirect, Route } from "wouter";
+
+type LazyOrRegularComponent = ComponentType<any> | LazyExoticComponent<ComponentType<any>>;
+
+function ComponentWrapper({ Component }: { Component: LazyOrRegularComponent }) {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-border" />
+      </div>
+    }>
+      <Component />
+    </Suspense>
+  );
+}
 
 export function ProtectedRoute({
   path,
   component: Component,
 }: {
   path: string;
-  component: () => React.JSX.Element | null;
+  component: LazyOrRegularComponent;
 }) {
   const { user, isLoading } = useAuth();
 
@@ -31,7 +46,7 @@ export function ProtectedRoute({
 
   return (
     <Route path={path}>
-      <Component />
+      <ComponentWrapper Component={Component} />
     </Route>
   );
 }
@@ -42,8 +57,8 @@ export function PublicOrAuthRoute({
   authComponent: AuthComponent,
 }: {
   path: string;
-  publicComponent: () => React.JSX.Element | null;
-  authComponent: () => React.JSX.Element | null;
+  publicComponent: LazyOrRegularComponent;
+  authComponent: LazyOrRegularComponent;
 }) {
   const { user, isLoading } = useAuth();
 
@@ -59,7 +74,21 @@ export function PublicOrAuthRoute({
 
   return (
     <Route path={path}>
-      {user ? <AuthComponent /> : <PublicComponent />}
+      {user ? <ComponentWrapper Component={AuthComponent} /> : <ComponentWrapper Component={PublicComponent} />}
+    </Route>
+  );
+}
+
+export function LazyRoute({
+  path,
+  component: Component,
+}: {
+  path?: string;
+  component: LazyOrRegularComponent;
+}) {
+  return (
+    <Route path={path}>
+      <ComponentWrapper Component={Component} />
     </Route>
   );
 }
