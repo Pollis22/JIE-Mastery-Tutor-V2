@@ -79,6 +79,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const stripeWebhookRoutes = await import('./routes/stripe-webhooks');
   app.use('/api/stripe', stripeWebhookRoutes.default);
   
+  // SEO static files - serve robots.txt and sitemap.xml
+  const publicPath = path.join(process.cwd(), 'public');
+  const fs = await import('fs');
+  
+  app.get('/robots.txt', (req, res) => {
+    const robotsPath = path.join(publicPath, 'robots.txt');
+    if (fs.existsSync(robotsPath)) {
+      res.type('text/plain').sendFile(robotsPath);
+    } else {
+      res.type('text/plain').send('User-agent: *\nAllow: /');
+    }
+  });
+  
+  app.get('/sitemap.xml', (req, res) => {
+    const sitemapPath = path.join(publicPath, 'sitemap.xml');
+    if (fs.existsSync(sitemapPath)) {
+      res.type('application/xml').sendFile(sitemapPath);
+    } else {
+      res.status(404).send('Sitemap not found');
+    }
+  });
+
   // Health check endpoint
   app.get("/api/health", (req, res) => {
     const testMode = process.env.VOICE_TEST_MODE !== '0';

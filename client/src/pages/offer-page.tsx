@@ -32,35 +32,48 @@ declare global {
 export default function OfferPage() {
   const [, setLocation] = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  
+  const isHomepage = typeof window !== 'undefined' && (window.location.pathname === '/' || window.location.pathname === '');
 
   useEffect(() => {
-    document.title = "Free Trial + 50% Off | JIE Mastery AI Tutor";
+    const elementsToCleanup: Element[] = [];
     
-    const meta = document.createElement('meta');
-    meta.name = 'robots';
-    meta.content = 'noindex, nofollow';
-    document.head.appendChild(meta);
+    if (isHomepage) {
+      document.title = "JIE Mastery - AI Homework Help That Teaches Kids to Think | Online Tutor for K-12";
+    } else {
+      document.title = "Free Trial + 50% Off | JIE Mastery AI Tutor";
+      
+      const meta = document.createElement('meta');
+      meta.name = 'robots';
+      meta.content = 'noindex, nofollow';
+      document.head.appendChild(meta);
+      elementsToCleanup.push(meta);
 
-    const canonical = document.createElement('link');
-    canonical.rel = 'canonical';
-    canonical.href = 'https://jiemastery.ai/offer';
-    document.head.appendChild(canonical);
+      const canonical = document.createElement('link');
+      canonical.rel = 'canonical';
+      canonical.href = 'https://www.jiemastery.ai/offer';
+      document.head.appendChild(canonical);
+      elementsToCleanup.push(canonical);
+    }
 
     if (typeof window !== 'undefined' && window.fbq) {
       window.fbq('track', 'ViewContent', {
-        content_name: 'Offer Landing Page',
+        content_name: isHomepage ? 'Homepage' : 'Offer Landing Page',
         content_category: 'Landing Page',
         value: 0,
         currency: 'USD'
       });
-      console.log('[Meta Pixel] ViewContent tracked on /offer (PageView fires globally)');
+      console.log(`[Meta Pixel] ViewContent tracked on ${isHomepage ? '/' : '/offer'} (PageView fires globally)`);
     }
 
     return () => {
-      document.head.removeChild(meta);
-      document.head.removeChild(canonical);
+      elementsToCleanup.forEach(el => {
+        if (el.parentNode) {
+          el.parentNode.removeChild(el);
+        }
+      });
     };
-  }, []);
+  }, [isHomepage]);
 
   const handleGetStarted = () => {
     const currentParams = new URLSearchParams(window.location.search);
@@ -319,7 +332,16 @@ export default function OfferPage() {
       <footer className="py-8 border-t border-border">
         <div className="container mx-auto px-4 text-center text-sm text-muted-foreground space-y-2">
           <div className="flex items-center justify-center space-x-2">
-            <img src={jieLogo} alt="JIE Mastery" className="h-5 w-auto grayscale opacity-50" />
+{/* Below-fold image: lazy load with explicit dimensions */}
+            <img 
+              src={jieLogo} 
+              alt="JIE Mastery" 
+              className="h-5 w-auto grayscale opacity-50"
+              width={20}
+              height={20}
+              loading="lazy"
+              decoding="async"
+            />
             <span>&copy; 2026 JIE Mastery AI Tutor</span>
           </div>
           <div className="flex justify-center space-x-6">

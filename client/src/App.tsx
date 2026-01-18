@@ -20,7 +20,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/hooks/use-auth";
-import { ProtectedRoute } from "./lib/protected-route";
+import { ProtectedRoute, PublicOrAuthRoute } from "./lib/protected-route";
 import NotFound from "@/pages/not-found";
 import AuthPage from "@/pages/auth-page";
 import HomePage from "@/pages/home-page";
@@ -72,7 +72,7 @@ function Router() {
   useTracking();
   return (
     <Switch>
-      <ProtectedRoute path="/" component={TutorPage} />
+      <PublicOrAuthRoute path="/" publicComponent={OfferPage} authComponent={TutorPage} />
       <ProtectedRoute path="/dashboard" component={DashboardPage} />
       <ProtectedRoute path="/sessions/:id" component={SessionDetailsPage} />
       <ProtectedRoute path="/tutor" component={TutorPage} />

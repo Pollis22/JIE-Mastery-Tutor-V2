@@ -81,6 +81,7 @@ export async function setupVite(app: Express, server: Server) {
 
 export function serveStatic(app: Express) {
   const distPath = path.resolve(import.meta.dirname, "..", "dist", "public");
+  const publicPath = path.resolve(import.meta.dirname, "..", "public");
 
   console.log(`Looking for static files at: ${distPath}`);
 
@@ -94,7 +95,39 @@ export function serveStatic(app: Express) {
   }
 
   console.log(`✓ Serving static files from: ${distPath}`);
-  app.use(express.static(distPath));
+  
+  // Serve robots.txt from public folder
+  app.get('/robots.txt', (req, res) => {
+    const robotsPath = path.join(publicPath, 'robots.txt');
+    if (fs.existsSync(robotsPath)) {
+      res.type('text/plain').sendFile(robotsPath);
+    } else {
+      res.type('text/plain').send('User-agent: *\nAllow: /');
+    }
+  });
+  
+  // Serve sitemap.xml from public folder
+  app.get('/sitemap.xml', (req, res) => {
+    const sitemapPath = path.join(publicPath, 'sitemap.xml');
+    if (fs.existsSync(sitemapPath)) {
+      res.type('application/xml').sendFile(sitemapPath);
+    } else {
+      res.status(404).send('Sitemap not found');
+    }
+  });
+  
+  // Static assets with long cache (hashed filenames in /assets/)
+  app.use('/assets', express.static(path.join(distPath, 'assets'), {
+    maxAge: '1y',
+    immutable: true,
+    etag: false,
+  }));
+  
+  // Other static files with shorter cache
+  app.use(express.static(distPath, {
+    maxAge: '1h',
+    etag: true,
+  }));
 
   // fall through to index.html if the file doesn't exist
   app.use("*", (req, res) => {

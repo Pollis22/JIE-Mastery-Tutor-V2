@@ -35,3 +35,31 @@ export function ProtectedRoute({
     </Route>
   );
 }
+
+export function PublicOrAuthRoute({
+  path,
+  publicComponent: PublicComponent,
+  authComponent: AuthComponent,
+}: {
+  path: string;
+  publicComponent: () => React.JSX.Element | null;
+  authComponent: () => React.JSX.Element | null;
+}) {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <Route path={path}>
+        <div className="flex items-center justify-center min-h-screen">
+          <Loader2 className="h-8 w-8 animate-spin text-border" />
+        </div>
+      </Route>
+    );
+  }
+
+  return (
+    <Route path={path}>
+      {user ? <AuthComponent /> : <PublicComponent />}
+    </Route>
+  );
+}

@@ -1,0 +1,15 @@
+# JIE Mastery AI Tutor - robots.txt
+User-agent: *
+Allow: /
+
+# Block admin and auth paths from crawling
+Disallow: /admin
+Disallow: /admin/*
+Disallow: /api/
+Disallow: /auth
+Disallow: /settings
+Disallow: /profile
+Disallow: /subscribe
+
+# Sitemap
+Sitemap: https://www.jiemastery.ai/sitemap.xml
