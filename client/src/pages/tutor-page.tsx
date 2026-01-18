@@ -758,17 +758,47 @@ export default function TutorPage() {
               style={{ backgroundImage: `url(${tutorHero})` }}
             />
             {/* Content - positioned relatively to appear on top */}
-            <div className="relative z-10">
-              <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">📚 How to Use JIE Mastery Tutor</h3>
-            <ol className="text-sm text-gray-700 dark:text-gray-300 space-y-1.5 list-decimal list-inside">
-              <li><strong>Create/Select a student profile</strong> - Use the profile dropdown at the top to choose your profile, or create a new one. Each family member can have their own profile with custom avatar!</li>
-              <li><strong>Select your grade level</strong> you want help with</li>
-              <li><strong>Upload your materials (optional)</strong> - Share homework, worksheets, or study guides (PDF, DOCX, or images). Select documents to use in this session, or upload new ones</li>
-              <li><strong>Wait a few seconds</strong> after uploading for documents to process completely</li>
-              <li><strong>Click "Start Session"</strong> to begin your voice conversation</li>
-              <li><strong>Start speaking</strong> - Ask questions about your homework or discuss any topic. The tutor uses your uploaded documents to give personalized guidance!</li>
-              <li><strong>View the transcript</strong> below to see your conversation in real-time</li>
-            </ol>
+            <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-4 rounded-lg border border-blue-100 dark:border-blue-900 shadow-sm">
+              <h3 className="font-bold text-blue-900 dark:text-blue-100 mb-3 flex items-center gap-2">
+                <BookOpen className="h-5 w-5 text-blue-600" />
+                How to Use JIE Mastery Tutor
+              </h3>
+              <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300">
+                <div className="flex gap-3 items-start bg-blue-50 dark:bg-blue-900/30 p-3 rounded-md border border-blue-200 dark:border-blue-800">
+                  <div className="bg-blue-600 text-white rounded-full w-5 h-5 flex items-center justify-center shrink-0 mt-0.5 font-bold text-xs">1</div>
+                  <p><strong>REQUIRED: Create/Select a student profile</strong> - Use the profile dropdown at the top to choose your profile, or create a new one. Each family member must have their own profile with a custom avatar to start!</p>
+                </div>
+                
+                <div className="flex gap-3 items-start">
+                  <div className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full w-5 h-5 flex items-center justify-center shrink-0 mt-0.5 font-bold text-xs">2</div>
+                  <p><strong>Select your grade level</strong> you want help with (this auto-updates based on your profile).</p>
+                </div>
+
+                <div className="flex gap-3 items-start">
+                  <div className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full w-5 h-5 flex items-center justify-center shrink-0 mt-0.5 font-bold text-xs">3</div>
+                  <p><strong>Upload your materials (optional)</strong> - Share homework, worksheets, or study guides (PDF, DOCX, or images). Select documents to use in this session, or upload new ones.</p>
+                </div>
+
+                <div className="flex gap-3 items-start">
+                  <div className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full w-5 h-5 flex items-center justify-center shrink-0 mt-0.5 font-bold text-xs">4</div>
+                  <p><strong>Wait a few seconds</strong> after uploading for documents to process completely.</p>
+                </div>
+
+                <div className="flex gap-3 items-start">
+                  <div className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full w-5 h-5 flex items-center justify-center shrink-0 mt-0.5 font-bold text-xs">5</div>
+                  <p>Click <strong>"Start Session"</strong> to begin your voice conversation.</p>
+                </div>
+
+                <div className="flex gap-3 items-start">
+                  <div className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full w-5 h-5 flex items-center justify-center shrink-0 mt-0.5 font-bold text-xs">6</div>
+                  <p><strong>Start speaking</strong> - Ask questions about your homework or discuss any topic. The tutor uses your uploaded documents to give personalized guidance!</p>
+                </div>
+
+                <div className="flex gap-3 items-start">
+                  <div className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full w-5 h-5 flex items-center justify-center shrink-0 mt-0.5 font-bold text-xs">7</div>
+                  <p><strong>View the transcript</strong> below to see your conversation in real-time.</p>
+                </div>
+              </div>
             </div>
           </div>
 
