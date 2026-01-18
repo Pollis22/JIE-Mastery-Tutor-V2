@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { useLocation } from "wouter";
-import jieLogo from "@/assets/jie-mastery-logo-new.jpg";
+import jieLogo from "@/assets/jie-mastery-logo-sm.jpg";
 import { Footer } from "@/components/footer";
 
 export default function TrustSafetyPage() {

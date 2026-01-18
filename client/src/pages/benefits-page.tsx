@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useLocation } from "wouter";
-import jieLogo from "@/assets/jie-mastery-logo-new.jpg";
+import jieLogo from "@/assets/jie-mastery-logo-sm.jpg";
 import { StartTrialButton } from "@/components/StartTrialButton";
 import { 
   BookOpen, 

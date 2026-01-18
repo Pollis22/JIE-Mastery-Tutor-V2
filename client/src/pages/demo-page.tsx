@@ -1,6 +1,6 @@
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import jieLogo from "@/assets/jie-mastery-logo-new.jpg";
+import jieLogo from "@/assets/jie-mastery-logo-sm.jpg";
 
 export default function DemoPage() {
   const [, setLocation] = useLocation();

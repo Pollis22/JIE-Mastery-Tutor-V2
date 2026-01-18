@@ -159,6 +159,7 @@ export default function OfferPage() {
               Free Trial + 50% Off Your First Month
             </div>
 
+{/* LCP element (mobile): Hero heading - renders immediately with system fonts while webfonts load */}
             <h1 className="text-3xl md:text-4xl lg:text-5xl font-extrabold tracking-tight text-foreground leading-tight" data-testid="heading-hero">
               AI Homework Help That Teaches Kids to Think
             </h1>

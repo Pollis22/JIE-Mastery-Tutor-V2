@@ -18,7 +18,7 @@ import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Footer } from "@/components/footer";
-import jieLogo from "@/assets/jie-mastery-logo-new.jpg";
+import jieLogo from "@/assets/jie-mastery-logo-sm.jpg";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { StartTrialButton } from "@/components/StartTrialButton";
 

@@ -5,7 +5,7 @@ import { ProgressRing } from "@/components/progress-ring";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useLocation } from "wouter";
-import jieLogo from "@/assets/jie-mastery-logo-new.jpg";
+import jieLogo from "@/assets/jie-mastery-logo-sm.jpg";
 
 export default function HomePage() {
   const { user } = useAuth();
