@@ -87,6 +87,7 @@ export function setupAuth(app: Express) {
       secure: cookieSecure,
       sameSite: cookieSameSite,
       domain: cookieDomain,
+      path: '/', // Explicit path for consistency
       maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days for better persistence
     }
   };
@@ -94,7 +95,7 @@ export function setupAuth(app: Express) {
   // Create and export session middleware for WebSocket authentication
   sessionMiddleware = session(sessionSettings);
 
-  app.set("trust proxy", 1);
+  // Note: trust proxy is set in index.ts before this runs
   app.use(sessionMiddleware);
   app.use(passport.initialize());
   app.use(passport.session());
@@ -1159,8 +1160,14 @@ export function setupAuth(app: Express) {
             console.log('[Auth] ✓ Session explicitly destroyed');
           }
           
-          // Clear the session cookie
-          res.clearCookie('connect.sid');
+          // Clear the session cookie with matching options
+          const isProduction = process.env.NODE_ENV === 'production';
+          res.clearCookie('connect.sid', {
+            path: '/',
+            domain: isProduction ? '.jiemastery.ai' : undefined,
+            secure: isProduction,
+            sameSite: 'lax'
+          });
           res.sendStatus(200);
         });
       } else {

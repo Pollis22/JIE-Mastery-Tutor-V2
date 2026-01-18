@@ -47,6 +47,10 @@ if (process.env.NODE_ENV === 'development' && !process.env.AUTH_TEST_MODE) {
 
 const app = express();
 
+// CRITICAL: Trust proxy must be set FIRST for secure cookies behind Railway/load balancer
+// This ensures req.secure is true when behind HTTPS proxy
+app.set('trust proxy', 1);
+
 // Production: Canonical hostname redirect (non-www → www) for session cookie consistency
 // Cookie domain is set to .jiemastery.ai, but we want a single canonical URL
 if (process.env.NODE_ENV === 'production') {

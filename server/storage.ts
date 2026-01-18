@@ -201,19 +201,33 @@ export class DatabaseStorage implements IStorage {
   private testUserProgress: Map<string, UserProgress> = new Map();
 
   constructor() {
-    // Use MemoryStore for development testing when database is not available
-    const isTestMode = process.env.AUTH_TEST_MODE === 'true' || process.env.NODE_ENV === 'development';
-    if (isTestMode || !process.env.DATABASE_URL || process.env.DATABASE_URL.includes('localhost')) {
-      console.log("Using in-memory session store for development");
-      const SessionMemoryStore = MemoryStore(session);
-      this.sessionStore = new SessionMemoryStore({
-        checkPeriod: 86400000 // prune expired entries every 24h
-      });
-    } else {
+    // Use PostgresSessionStore in production for session persistence across autoscale instances
+    // Use MemoryStore only in development when explicitly in test mode
+    const isProduction = process.env.NODE_ENV === 'production';
+    const hasDatabase = process.env.DATABASE_URL && !process.env.DATABASE_URL.includes('localhost');
+    
+    if (isProduction && hasDatabase) {
+      // Production: MUST use PostgresSessionStore for multi-instance deployments
+      console.log("Using PostgreSQL session store for production");
       this.sessionStore = new PostgresSessionStore({ 
         conString: process.env.DATABASE_URL,
         tableName: 'session',
         createTableIfMissing: true 
+      });
+    } else if (hasDatabase && process.env.AUTH_TEST_MODE !== 'true') {
+      // Development with real database and not in test mode
+      console.log("Using PostgreSQL session store for development with real database");
+      this.sessionStore = new PostgresSessionStore({ 
+        conString: process.env.DATABASE_URL,
+        tableName: 'session',
+        createTableIfMissing: true 
+      });
+    } else {
+      // Development test mode or no database
+      console.log("Using in-memory session store for development");
+      const SessionMemoryStore = MemoryStore(session);
+      this.sessionStore = new SessionMemoryStore({
+        checkPeriod: 86400000 // prune expired entries every 24h
       });
     }
   }
