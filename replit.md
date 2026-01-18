@@ -150,6 +150,40 @@ Stripe is integrated for subscription management and one-time purchases. A hybri
 
 A comprehensive administrative interface provides user management, subscription controls, session analytics, document management, content violation review, marketing campaign management, and audit logging.
 
+### Admin Account Management
+
+Admins can manage user accounts directly from the Admin User Detail page with the following capabilities:
+
+**Cancel Subscription (Admin → Stripe → DB)**:
+- Cancel immediately or at billing period end
+- Cancels in Stripe first, then updates database
+- Works with subscription ID or customer ID lookup
+- Creates audit log entry
+
+**Disable Account (Admin → DB only)**:
+- Toggle to prevent user login and session starts
+- Immediately blocks all access attempts
+- Reversible action with audit logging
+
+**Delete Account (Soft Delete) (Admin → Stripe → DB)**:
+- Requires typing "DELETE" to confirm (server-enforced)
+- Cancels subscription in Stripe first
+- Optional: Purge user documents, transcripts, and embeddings
+- Optional: Delete Stripe customer (test accounts only)
+- Sets soft-delete flags (deletedAt, deletedReason, etc.)
+- Creates comprehensive audit log
+
+**Database Fields** (on `users` table):
+- `is_disabled`: Boolean for login blocking
+- `disabled_at`, `disabled_by_admin_id`: Tracking
+- `deleted_at`, `deleted_by_admin_id`, `deleted_reason`: Soft delete
+- `canceled_at`, `canceled_by_admin_id`: Subscription cancellation
+
+**Access Blocking**:
+- Login: Blocked in Passport.js LocalStrategy
+- Session creation: Blocked in /api/session/check-availability and /api/session/create
+- Voice sessions: Blocked in WebSocket init handler
+
 ### Background Jobs
 
 Key background jobs include daily digest emails for parents (8:00 PM EST), document cleanup (every 24 hours), and a continuous embedding worker.

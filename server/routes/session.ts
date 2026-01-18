@@ -20,6 +20,15 @@ sessionRouter.post('/create', async (req, res) => {
   }
 
   try {
+    // Check if account is disabled or deleted
+    const user = await storage.getUser(req.user!.id);
+    if (user?.isDisabled) {
+      return res.status(403).json({ error: 'Account is disabled' });
+    }
+    if (user?.deletedAt) {
+      return res.status(403).json({ error: 'Account has been deleted' });
+    }
+
     const { studentId, studentName, gradeBand, subject, documentIds } = req.body;
     
     if (!studentName || !gradeBand || !subject) {
@@ -102,6 +111,31 @@ sessionRouter.post('/check-availability', async (req, res) => {
         reason: 'user_not_found',
         message: 'User not found',
         // Frontend expects these fields
+        total: 0,
+        used: 0,
+        remaining: 0,
+        bonusMinutes: 0
+      });
+    }
+
+    // Check if account is disabled or deleted
+    if (user.isDisabled) {
+      return res.status(403).json({ 
+        allowed: false, 
+        reason: 'account_disabled',
+        message: 'Your account has been disabled. Please contact support.',
+        total: 0,
+        used: 0,
+        remaining: 0,
+        bonusMinutes: 0
+      });
+    }
+
+    if (user.deletedAt) {
+      return res.status(403).json({ 
+        allowed: false, 
+        reason: 'account_deleted',
+        message: 'Your account has been deleted.',
         total: 0,
         used: 0,
         remaining: 0,

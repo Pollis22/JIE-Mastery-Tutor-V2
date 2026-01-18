@@ -1,21 +1,47 @@
+import { useState } from "react";
 import { useParams, Link } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { AdminLayout } from "@/components/admin-layout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { 
   ArrowLeft, 
   User, 
-  Mail, 
   CreditCard, 
   Clock, 
   FileText,
   Calendar,
-  Shield,
-  BookOpen
+  BookOpen,
+  Ban,
+  Trash2,
+  XCircle,
+  AlertTriangle,
+  Shield
 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 
 interface UserDetails {
   user: {
@@ -32,6 +58,10 @@ interface UserDetails {
     createdAt: string;
     emailVerified?: boolean;
     isAdmin?: boolean;
+    isDisabled?: boolean;
+    deletedAt?: string;
+    stripeCustomerId?: string;
+    stripeSubscriptionId?: string;
   };
   stats: {
     totalSessions: number;
@@ -59,10 +89,94 @@ interface UserDetails {
 export default function AdminUserDetail() {
   const params = useParams();
   const userId = params.userId;
+  const { toast } = useToast();
 
-  const { data, isLoading, error } = useQuery<UserDetails>({
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [cancelOption, setCancelOption] = useState<'immediate' | 'period_end'>('immediate');
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleteReason, setDeleteReason] = useState('');
+  const [purgeData, setPurgeData] = useState(false);
+  const [isTestAccount, setIsTestAccount] = useState(false);
+  const [deleteStripeCustomer, setDeleteStripeCustomer] = useState(false);
+
+  const { data, isLoading, error, refetch } = useQuery<UserDetails>({
     queryKey: ["/api/admin/users", userId],
     enabled: !!userId,
+  });
+
+  const cancelSubscriptionMutation = useMutation({
+    mutationFn: async (cancelImmediately: boolean) => {
+      const response = await apiRequest("POST", `/api/admin/users/${userId}/cancel-subscription`, {
+        cancelImmediately,
+      });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Subscription Canceled",
+        description: data.message,
+      });
+      setShowCancelModal(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users", userId] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to cancel subscription",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const disableAccountMutation = useMutation({
+    mutationFn: async (isDisabled: boolean) => {
+      const response = await apiRequest("POST", `/api/admin/users/${userId}/disable`, {
+        isDisabled,
+      });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: data.isDisabled ? "Account Disabled" : "Account Enabled",
+        description: data.message,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users", userId] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update account status",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteAccountMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", `/api/admin/users/${userId}/delete`, {
+        confirm: deleteConfirmText,
+        purgeData,
+        deleteStripeCustomer: isTestAccount && deleteStripeCustomer,
+        reason: deleteReason,
+      });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Account Deleted",
+        description: data.message,
+      });
+      setShowDeleteModal(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users", userId] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to delete account",
+        variant: "destructive",
+      });
+    },
   });
 
   if (isLoading) {
@@ -100,6 +214,8 @@ export default function AdminUserDetail() {
   }
 
   const { user, stats, recentSessions, documents } = data;
+  const hasActiveSubscription = user.subscriptionStatus === 'active';
+  const isDeleted = !!user.deletedAt;
 
   return (
     <AdminLayout>
@@ -120,6 +236,12 @@ export default function AdminUserDetail() {
           <div className="flex gap-2">
             {user.isAdmin && (
               <Badge variant="secondary">Admin</Badge>
+            )}
+            {isDeleted && (
+              <Badge variant="destructive">Deleted</Badge>
+            )}
+            {user.isDisabled && !isDeleted && (
+              <Badge variant="outline" className="text-orange-600 border-orange-600">Disabled</Badge>
             )}
             {user.emailVerified ? (
               <Badge variant="default">Email Verified</Badge>
@@ -169,6 +291,79 @@ export default function AdminUserDetail() {
             </CardContent>
           </Card>
         </div>
+
+        <Card className="border-orange-200 dark:border-orange-800">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-orange-600">
+              <Shield className="w-5 h-5" />
+              Admin Actions
+            </CardTitle>
+            <CardDescription>
+              Manage this user's account, subscription, and access
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="flex items-center justify-between p-4 rounded-lg border">
+              <div className="flex items-center gap-3">
+                <Ban className="w-5 h-5 text-muted-foreground" />
+                <div>
+                  <p className="font-medium">Disable Login</p>
+                  <p className="text-sm text-muted-foreground">
+                    Prevent user from logging in or starting sessions
+                  </p>
+                </div>
+              </div>
+              <Switch
+                checked={user.isDisabled || false}
+                onCheckedChange={(checked) => disableAccountMutation.mutate(checked)}
+                disabled={disableAccountMutation.isPending || isDeleted}
+                data-testid="switch-disable-account"
+              />
+            </div>
+
+            <div className="flex items-center justify-between p-4 rounded-lg border">
+              <div className="flex items-center gap-3">
+                <XCircle className="w-5 h-5 text-muted-foreground" />
+                <div>
+                  <p className="font-medium">Cancel Subscription</p>
+                  <p className="text-sm text-muted-foreground">
+                    {hasActiveSubscription 
+                      ? `Plan: ${user.subscriptionPlan} - Cancel in Stripe and update database`
+                      : 'No active subscription'}
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                onClick={() => setShowCancelModal(true)}
+                disabled={!hasActiveSubscription || isDeleted}
+                data-testid="button-cancel-subscription"
+              >
+                Cancel Subscription
+              </Button>
+            </div>
+
+            <div className="flex items-center justify-between p-4 rounded-lg border border-destructive/50">
+              <div className="flex items-center gap-3">
+                <Trash2 className="w-5 h-5 text-destructive" />
+                <div>
+                  <p className="font-medium text-destructive">Delete Account</p>
+                  <p className="text-sm text-muted-foreground">
+                    Soft-delete account, cancel subscription, optionally purge data
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="destructive"
+                onClick={() => setShowDeleteModal(true)}
+                disabled={isDeleted}
+                data-testid="button-delete-account"
+              >
+                Delete Account
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <Card>
@@ -241,6 +436,14 @@ export default function AdminUserDetail() {
                     {user.purchasedMinutesBalance || 0}
                   </p>
                 </div>
+                {user.stripeCustomerId && (
+                  <div className="col-span-2">
+                    <p className="text-sm text-muted-foreground">Stripe Customer ID</p>
+                    <p className="font-mono text-xs" data-testid="text-stripe-customer-id">
+                      {user.stripeCustomerId}
+                    </p>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -323,6 +526,166 @@ export default function AdminUserDetail() {
           </Card>
         )}
       </div>
+
+      <Dialog open={showCancelModal} onOpenChange={setShowCancelModal}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <XCircle className="w-5 h-5" />
+              Cancel Subscription
+            </DialogTitle>
+            <DialogDescription>
+              Cancel the subscription for {user.email}. This will update Stripe and the database.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Cancellation Type</Label>
+              <Select value={cancelOption} onValueChange={(v) => setCancelOption(v as 'immediate' | 'period_end')}>
+                <SelectTrigger data-testid="select-cancel-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="immediate">Cancel Immediately</SelectItem>
+                  <SelectItem value="period_end">Cancel at Period End</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-sm text-muted-foreground">
+                {cancelOption === 'immediate' 
+                  ? 'Subscription ends immediately. User loses access right away.'
+                  : 'User keeps access until the end of their current billing period.'}
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCancelModal(false)}>
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={() => cancelSubscriptionMutation.mutate(cancelOption === 'immediate')}
+              disabled={cancelSubscriptionMutation.isPending}
+              data-testid="button-confirm-cancel-subscription"
+            >
+              {cancelSubscriptionMutation.isPending ? 'Canceling...' : 'Confirm Cancel'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showDeleteModal} onOpenChange={setShowDeleteModal}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="w-5 h-5" />
+              Delete Account
+            </DialogTitle>
+            <DialogDescription>
+              This action will soft-delete the account for {user.email}. 
+              The subscription will be canceled and the user will be disabled.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Type DELETE to confirm</Label>
+              <Input
+                value={deleteConfirmText}
+                onChange={(e) => setDeleteConfirmText(e.target.value)}
+                placeholder="DELETE"
+                data-testid="input-delete-confirm"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Reason (optional)</Label>
+              <Textarea
+                value={deleteReason}
+                onChange={(e) => setDeleteReason(e.target.value)}
+                placeholder="Why is this account being deleted?"
+                data-testid="input-delete-reason"
+              />
+            </div>
+
+            <div className="space-y-3 p-3 rounded-lg border">
+              <div className="flex items-center space-x-2">
+                <Checkbox 
+                  id="purge-data" 
+                  checked={purgeData} 
+                  onCheckedChange={(checked) => setPurgeData(!!checked)}
+                  data-testid="checkbox-purge-data"
+                />
+                <Label htmlFor="purge-data" className="text-sm">
+                  Purge user documents and transcripts
+                </Label>
+              </div>
+              <p className="text-xs text-muted-foreground ml-6">
+                Permanently delete all documents, session transcripts, and embeddings.
+                By default, these are kept for audit purposes.
+              </p>
+            </div>
+
+            <div className="space-y-3 p-3 rounded-lg border">
+              <div className="flex items-center space-x-2">
+                <Checkbox 
+                  id="test-account" 
+                  checked={isTestAccount} 
+                  onCheckedChange={(checked) => {
+                    setIsTestAccount(!!checked);
+                    if (!checked) setDeleteStripeCustomer(false);
+                  }}
+                  data-testid="checkbox-test-account"
+                />
+                <Label htmlFor="test-account" className="text-sm">
+                  This is a test account
+                </Label>
+              </div>
+              
+              {isTestAccount && (
+                <div className="ml-6 space-y-2">
+                  <div className="flex items-center space-x-2">
+                    <Checkbox 
+                      id="delete-stripe" 
+                      checked={deleteStripeCustomer} 
+                      onCheckedChange={(checked) => setDeleteStripeCustomer(!!checked)}
+                      data-testid="checkbox-delete-stripe"
+                    />
+                    <Label htmlFor="delete-stripe" className="text-sm text-orange-600">
+                      Also delete Stripe customer
+                    </Label>
+                  </div>
+                  <p className="text-xs text-orange-600">
+                    WARNING: Only use for test accounts! This permanently removes the customer from Stripe.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setShowDeleteModal(false);
+              setDeleteConfirmText('');
+              setDeleteReason('');
+              setPurgeData(false);
+              setIsTestAccount(false);
+              setDeleteStripeCustomer(false);
+            }}>
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={() => deleteAccountMutation.mutate()}
+              disabled={deleteConfirmText !== 'DELETE' || deleteAccountMutation.isPending}
+              data-testid="button-confirm-delete-account"
+            >
+              {deleteAccountMutation.isPending ? 'Deleting...' : 'Delete Account'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AdminLayout>
   );
 }

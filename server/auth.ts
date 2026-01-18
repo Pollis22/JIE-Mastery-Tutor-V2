@@ -214,6 +214,17 @@ export function setupAuth(app: Express) {
             return done(null, false);
           }
           
+          // Check if account is disabled or deleted
+          if (user.isDisabled) {
+            console.log('[Auth] Account is disabled:', user.email);
+            return done(null, false, { message: 'Account is disabled' });
+          }
+          
+          if (user.deletedAt) {
+            console.log('[Auth] Account is deleted:', user.email);
+            return done(null, false, { message: 'Account has been deleted' });
+          }
+          
           console.log('[Auth] Login successful for:', user.email);
           return done(null, user);
         } catch (error) {

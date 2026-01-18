@@ -2049,6 +2049,27 @@ export function setupCustomVoiceWebSocket(server: Server) {
               // PAID USER PATH - Full validation required
               // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
               
+              // SECURITY: Check if account is disabled or deleted
+              const userCheck = await storage.getUser(authenticatedUserId);
+              if (userCheck?.isDisabled) {
+                console.error(`[Custom Voice] ❌ Account is disabled: ${authenticatedUserId}`);
+                ws.send(JSON.stringify({ 
+                  type: "error", 
+                  error: "Account is disabled. Please contact support." 
+                }));
+                ws.close();
+                return;
+              }
+              if (userCheck?.deletedAt) {
+                console.error(`[Custom Voice] ❌ Account is deleted: ${authenticatedUserId}`);
+                ws.send(JSON.stringify({ 
+                  type: "error", 
+                  error: "Account has been deleted." 
+                }));
+                ws.close();
+                return;
+              }
+              
               // SECURITY: Use authenticated userId from session, not client message
               if (!message.sessionId) {
                 console.error(`[Custom Voice] ❌ Missing sessionId`);

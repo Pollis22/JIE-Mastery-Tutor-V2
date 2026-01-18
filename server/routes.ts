@@ -2217,6 +2217,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           createdAt: user.createdAt,
           emailVerified: user.emailVerified,
           isAdmin: user.isAdmin,
+          isDisabled: user.isDisabled,
+          deletedAt: user.deletedAt,
+          stripeCustomerId: user.stripeCustomerId,
+          stripeSubscriptionId: user.stripeSubscriptionId,
         },
         stats: {
           totalSessions,
