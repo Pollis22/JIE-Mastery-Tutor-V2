@@ -1424,11 +1424,22 @@ export class DatabaseStorage implements IStorage {
         subscriptionPlan: users.subscriptionPlan,
         subscriptionStatus: users.subscriptionStatus,
         subscriptionEndDate: users.monthlyResetDate,
+        // Legacy minute fields
         monthlyVoiceMinutes: users.monthlyVoiceMinutes,
         monthlyVoiceMinutesUsed: users.monthlyVoiceMinutesUsed,
         bonusMinutes: users.bonusMinutes,
         voiceMinutesRemaining: users.purchasedMinutesBalance,
         weeklyVoiceMinutesUsed: users.weeklyVoiceMinutesUsed,
+        // Hybrid minute fields (new billing system)
+        subscriptionMinutesUsed: users.subscriptionMinutesUsed,
+        subscriptionMinutesLimit: users.subscriptionMinutesLimit,
+        purchasedMinutesBalance: users.purchasedMinutesBalance,
+        // Trial fields
+        isTrialActive: users.isTrialActive,
+        trialMinutesUsed: users.trialMinutesUsed,
+        trialMinutesTotal: users.trialMinutesTotal,
+        // Other fields
+        maxConcurrentLogins: users.maxConcurrentLogins,
         isAdmin: users.isAdmin,
         createdAt: users.createdAt,
       })

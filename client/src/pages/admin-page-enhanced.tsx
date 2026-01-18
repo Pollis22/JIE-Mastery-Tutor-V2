@@ -75,6 +75,10 @@ interface AdminUser {
   lastName?: string;
   studentName?: string;
   parentName?: string;
+  // Trial fields
+  isTrialActive?: boolean;
+  trialMinutesUsed?: number;
+  trialMinutesTotal?: number;
 }
 
 interface AdminUsersData {
@@ -652,12 +656,27 @@ export default function AdminPageEnhanced() {
                                 </TableCell>
                                 <TableCell>
                                   <div className="text-sm">
-                                    <div className="font-medium">
-                                      {userData.subscriptionMinutesUsed || 0} / {userData.subscriptionMinutesLimit || 60} min
-                                    </div>
-                                    <div className="text-xs text-muted-foreground">
-                                      +{userData.purchasedMinutesBalance || 0} purchased
-                                    </div>
+                                    {userData.isTrialActive ? (
+                                      <>
+                                        <div className="font-medium text-blue-600">
+                                          Trial: {userData.trialMinutesUsed || 0} / {userData.trialMinutesTotal || 30} min
+                                        </div>
+                                        {(userData.purchasedMinutesBalance || 0) > 0 && (
+                                          <div className="text-xs text-muted-foreground">
+                                            +{userData.purchasedMinutesBalance} purchased
+                                          </div>
+                                        )}
+                                      </>
+                                    ) : (
+                                      <>
+                                        <div className="font-medium">
+                                          {userData.subscriptionMinutesUsed || 0} / {userData.subscriptionMinutesLimit || 0} min
+                                        </div>
+                                        <div className="text-xs text-muted-foreground">
+                                          +{userData.purchasedMinutesBalance || 0} purchased
+                                        </div>
+                                      </>
+                                    )}
                                   </div>
                                 </TableCell>
                                 <TableCell className="text-sm">
@@ -1082,12 +1101,25 @@ export default function AdminPageEnhanced() {
                               </TableCell>
                               <TableCell>
                                 <div className="text-sm">
-                                  <div className="font-medium">
-                                    {user.subscriptionMinutesUsed || 0} / {user.subscriptionMinutesLimit || 60}
-                                  </div>
-                                  <div className="text-xs text-muted-foreground">
-                                    {Math.round(((user.subscriptionMinutesUsed || 0) / (user.subscriptionMinutesLimit || 60)) * 100)}% used
-                                  </div>
+                                  {user.isTrialActive ? (
+                                    <>
+                                      <div className="font-medium text-blue-600">
+                                        Trial: {user.trialMinutesUsed || 0} / {user.trialMinutesTotal || 30}
+                                      </div>
+                                      <div className="text-xs text-muted-foreground">
+                                        {user.trialMinutesTotal ? Math.round(((user.trialMinutesUsed || 0) / user.trialMinutesTotal) * 100) : 0}% used
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <div className="font-medium">
+                                        {user.subscriptionMinutesUsed || 0} / {user.subscriptionMinutesLimit || 0}
+                                      </div>
+                                      <div className="text-xs text-muted-foreground">
+                                        {user.subscriptionMinutesLimit ? Math.round(((user.subscriptionMinutesUsed || 0) / user.subscriptionMinutesLimit) * 100) : 0}% used
+                                      </div>
+                                    </>
+                                  )}
                                 </div>
                               </TableCell>
                               <TableCell>
