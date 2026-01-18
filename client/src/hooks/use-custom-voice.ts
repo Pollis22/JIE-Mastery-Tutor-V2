@@ -793,9 +793,27 @@ export function useCustomVoice() {
             break;
 
           case "interrupt":
-            console.log("[Custom Voice] 🛑 Interruption detected - stopping tutor");
-            stopAudio();
-            setIsTutorSpeaking(false);
+            console.log("[Custom Voice] 🛑 Interruption detected", {
+              reason: message.reason,
+              stopMic: message.stopMic,
+              stopPlayback: message.stopPlayback
+            });
+            
+            // Always stop audio playback on interrupt
+            if (message.stopPlayback !== false) {
+              stopAudio();
+              setIsTutorSpeaking(false);
+            }
+            
+            // GOODBYE HARD STOP: Stop microphone when server requests it
+            // This prevents trailing audio being sent after session termination
+            if (message.stopMic === true) {
+              console.log("[Custom Voice] 🎤 Stopping mic per server request (goodbye hard stop)");
+              stopMicrophone();
+              setMicEnabled(false);
+              // CRITICAL: Update ref immediately to prevent race conditions with recovery logic
+              micEnabledRef.current = false;
+            }
             break;
           
           case "mode_updated":
@@ -817,23 +835,44 @@ export function useCustomVoice() {
             break;
           
           case "session_ended":
-            console.log("[Custom Voice] ✅ Received session_ended ACK from server");
-            console.log("[Custom Voice] Session ID:", message.sessionId);
-            console.log("[Custom Voice] Reason:", message.reason);
-            console.log("[Custom Voice] Transcript length:", message.transcriptLength);
+            console.log("[Custom Voice] ✅ Received session_ended ACK from server", {
+              sessionId: message.sessionId,
+              reason: message.reason,
+              hardStop: message.hardStop,
+              transcriptLength: message.transcriptLength
+            });
+            
+            // DETERMINISTIC CLEANUP: Immediately stop all audio/mic on session end
+            // This ensures no trailing tutor audio or mic pickup after session terminates
+            console.log("[Custom Voice] 🧹 Performing immediate session cleanup");
+            stopAudio();
+            stopMicrophone();
+            setIsTutorSpeaking(false);
+            setMicEnabled(false);
+            
+            // CRITICAL: Update refs immediately to prevent race conditions
+            // This stops any recovery/retry logic from re-enabling after session ends
+            micEnabledRef.current = false;
+            audioEnabledRef.current = false;
+            isTutorSpeakingRef.current = false;
             
             // Show notification if session ended due to inactivity
             if (message.reason === 'inactivity_timeout') {
               console.log("[Custom Voice] 🔔 Session ended due to inactivity - will show notification");
-              // Store inactivity flag so parent component can show notification
               (window as any).__sessionEndedReason = 'inactivity_timeout';
+            }
+            
+            // Store goodbye reason so tutor page can handle appropriately
+            if (message.reason === 'user_goodbye') {
+              console.log("[Custom Voice] 👋 Session ended by user goodbye");
+              (window as any).__sessionEndedReason = 'user_goodbye';
             }
             
             // Clear thinking indicator on session end
             setIsTutorThinking(false);
             thinkingTurnIdRef.current = null;
             
-            // Cleanup is handled in ws.onclose
+            // Note: ws.onclose handles final cleanup and state reset
             break;
           
           // THINKING INDICATOR: Handle tutor thinking state events

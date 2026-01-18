@@ -721,10 +721,22 @@ async function processSafetyCheck(
 // Works for both voice and text modes
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 const GOODBYE_PHRASES = [
+  // English goodbye variants
   'goodbye', 'good bye', 'bye', 'bye bye', 'see you', 'see ya',
-  'talk later', 'gotta go', "i'm done", 'im done', 'end session',
-  'that\'s all', 'thats all', 'thanks bye', 'thank you bye',
-  'adios', 'au revoir', 'ciao', 'hasta luego', 'sayonara'
+  'talk later', 'gotta go', 'got to go', 'have to go', 'need to go',
+  "i'm done", 'im done', 'i am done', 'we are done', "we're done",
+  'end session', 'stop tutoring', 'end the session', 'stop the session',
+  'that\'s all', 'thats all', "that's it", 'thats it',
+  'thanks bye', 'thank you bye', 'thanks goodbye', 'thank you goodbye',
+  'later', 'see you later', 'talk to you later', 'catch you later',
+  'good night', 'goodnight', 'night night', 'nighty night',
+  'i have to leave', 'i need to leave', 'leaving now',
+  // Multilingual goodbye phrases (platform supports 25 languages)
+  'adios', 'adiós', 'au revoir', 'ciao', 'hasta luego', 'hasta la vista',
+  'sayonara', 'sayōnara', 'auf wiedersehen', 'tschüss', 'tchüss',
+  'arrivederci', 'tot ziens', 'dag', 'farvel', 'ha det', 'hej då',
+  'näkemiin', 'do widzenia', 'tchau', 'até logo',
+  'zài jiàn', '再见', 'annyeong', '안녕', 'สวัสดี', 'ลาก่อน'
 ];
 
 function detectGoodbye(text: string): boolean {

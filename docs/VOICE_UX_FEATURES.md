@@ -180,31 +180,78 @@ patienceScore = 0.7 * oldScore + 0.3 * signalScore
 
 ## D) Goodbye Hard Stop
 
-Cleanly ends sessions when user says goodbye.
+Cleanly ends sessions when user says goodbye. This feature implements deterministic teardown that guarantees no trailing tutor output after a user says goodbye.
 
 ### Detected Phrases
 
+**English goodbye variants:**
 ```
 goodbye, good bye, bye, bye bye, see you, see ya,
-talk later, gotta go, i'm done, im done, end session,
-that's all, thats all, thanks bye, thank you bye,
-adios, au revoir, ciao, hasta luego, sayonara
+talk later, gotta go, got to go, have to go, need to go,
+i'm done, im done, i am done, we are done, we're done,
+end session, stop tutoring, end the session, stop the session,
+that's all, thats all, that's it, thats it,
+thanks bye, thank you bye, thanks goodbye, thank you goodbye,
+later, see you later, talk to you later, catch you later,
+good night, goodnight, night night, nighty night,
+i have to leave, i need to leave, leaving now
 ```
+
+**Multilingual phrases (25 language support):**
+```
+adios, adiós, au revoir, ciao, hasta luego, hasta la vista,
+sayonara, sayōnara, auf wiedersehen, tschüss, tchüss,
+arrivederci, tot ziens, dag, farvel, ha det, hej då,
+näkemiin, do widzenia, tchau, até logo,
+zài jiàn, 再见, annyeong, 안녕, สวัสดี, ลาก่อน
+```
+
+### Pre-LLM Interception
+
+Goodbye detection happens **before** the transcript reaches the LLM. This is critical for preventing unwanted responses:
+
+1. User says "goodbye" → STT transcribes
+2. `detectGoodbye()` checks transcript **before** AI processing
+3. If matched, immediately triggers shutdown sequence
+4. LLM is never called for goodbye messages
 
 ### Hard Stop Behavior (Default: Enabled)
 
 When `SESSION_GOODBYE_HARD_STOP_ENABLED=true`:
+
+**Server-Side:**
 1. Immediately sends `interrupt` message with `stopMic: true, stopPlayback: true`
-2. Cancels any pending LLM/TTS jobs
-3. Sends goodbye transcript (text only, no audio)
-4. Ends session after 500ms delay
+2. Skips LLM and TTS generation
+3. Adds goodbye message to transcript (text only)
+4. Sends `session_ended` with `reason: 'user_goodbye'` after 500ms
+5. Closes STT stream, releases concurrency slot, persists transcript
+6. Closes WebSocket with code 1000
+
+**Client-Side Compliance:**
+1. On `interrupt` with `stopMic: true`: Immediately stops microphone capture
+2. On `interrupt` with `stopPlayback: true`: Immediately stops audio playback
+3. On `session_ended`: Performs full cleanup (stopAudio, stopMicrophone, disables mic)
+4. Client **cannot** re-arm microphone without a new explicit start action
 
 ### Soft Stop Behavior
 
 When `SESSION_GOODBYE_HARD_STOP_ENABLED=false`:
 1. Sends goodbye transcript
-2. Generates and plays goodbye audio
-3. Ends session after 4000ms delay (for audio to play)
+2. Generates and plays goodbye audio via TTS
+3. Sends `session_ended` after 4000ms delay (for audio to play)
+
+### Regression Protection
+
+Test case: User says "goodbye" → Session must end within one turn with no additional tutor output.
+
+```javascript
+// Test: Goodbye terminates immediately
+test('goodbye should end session without LLM call', () => {
+  sendTranscript('bye');
+  expect(llmCalled).toBe(false);
+  expect(sessionEnded).toBe(true);
+});
+```
 
 ## File Locations
 
