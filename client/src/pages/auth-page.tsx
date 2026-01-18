@@ -228,7 +228,7 @@ export default function AuthPage() {
         <div className="container mx-auto px-4">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-3">
-              <img src={jieLogo} alt="JIE Mastery" className="h-10 w-auto" />
+              <img src={jieLogo} alt="JIE Mastery" className="h-10 w-auto" width="40" height="40" />
               <span className="text-xl font-bold text-foreground">JIE Mastery Tutor</span>
             </div>
             <div className="flex items-center space-x-4">
@@ -337,6 +337,8 @@ export default function AuthPage() {
                       src={jieLogo} 
                       alt="JIE Mastery Logo" 
                       className="h-14 w-auto"
+                      width="56"
+                      height="56"
                     />
                   </div>
                   <CardTitle className="text-xl font-bold text-foreground">JIE Mastery Tutor</CardTitle>
@@ -717,6 +719,7 @@ export default function AuthPage() {
                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
                     referrerPolicy="strict-origin-when-cross-origin" 
                     allowFullScreen
+                    loading="lazy"
                     data-testid="video-hero-youtube"
                   />
                 </div>
