@@ -15,7 +15,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/hooks/use-auth";
 import { ProtectedRoute, PublicOrAuthRoute, LazyRoute } from "./lib/protected-route";
-import OfferPage from "@/pages/offer-page";
+import AuthPage from "@/pages/auth-page";
 import { usePageTracking } from "@/hooks/use-page-tracking";
 import { useTracking } from "@/hooks/use-tracking";
 
@@ -24,7 +24,7 @@ if (typeof window !== 'undefined' && window.location.hostname === 'jiemastery.ai
 }
 
 const NotFound = lazy(() => import("@/pages/not-found"));
-const AuthPage = lazy(() => import("@/pages/auth-page"));
+const OfferPage = lazy(() => import("@/pages/offer-page"));
 const DashboardPage = lazy(() => import("@/pages/dashboard"));
 const SettingsPage = lazy(() => import("@/pages/settings-page"));
 const AdminPageEnhanced = lazy(() => import("@/pages/admin-page-enhanced"));
@@ -74,9 +74,11 @@ function Router() {
     <>
       <PageTracking />
       <Switch>
-        <PublicOrAuthRoute path="/" publicComponent={OfferPage} authComponent={TutorPage} />
-        <Route path="/offer" component={OfferPage} />
-        <Route path="/welcome" component={OfferPage} />
+        <PublicOrAuthRoute path="/" publicComponent={AuthPage} authComponent={TutorPage} />
+        <Route path="/auth" component={AuthPage} />
+        <Route path="/login" component={AuthPage} />
+        <LazyRoute path="/offer" component={OfferPage} />
+        <LazyRoute path="/welcome" component={OfferPage} />
         <ProtectedRoute path="/dashboard" component={DashboardPage} />
         <ProtectedRoute path="/sessions/:id" component={SessionDetailsPage} />
         <ProtectedRoute path="/tutor" component={TutorPage} />
@@ -94,10 +96,8 @@ function Router() {
         <ProtectedRoute path="/admin/logs" component={AdminLogs} />
         <ProtectedRoute path="/subscribe" component={SubscribePage} />
         <ProtectedRoute path="/personality-test" component={PersonalityTestPage} />
-        <LazyRoute path="/auth" component={AuthPage} />
         <LazyRoute path="/auth/registration-success" component={RegistrationSuccessPage} />
         <LazyRoute path="/auth/magic" component={MagicLinkPage} />
-        <LazyRoute path="/login" component={AuthPage} />
         <LazyRoute path="/forgot-password" component={ForgotPasswordPage} />
         <LazyRoute path="/reset-password" component={ResetPasswordPage} />
         <LazyRoute path="/verify-email" component={VerifyEmailPage} />
