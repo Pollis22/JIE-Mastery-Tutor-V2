@@ -2557,6 +2557,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const { id: userId } = req.params;
     const { confirm, purgeData = false, deleteStripeCustomer = false, reason = '' } = req.body;
 
+    // Validate UUID format
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!userId || typeof userId !== 'string' || !uuidRegex.test(userId)) {
+      console.error(`[Admin] Invalid user ID format: ${userId}`);
+      return res.status(400).json({ success: false, message: "Invalid user ID format" });
+    }
+
     if (confirm !== 'DELETE') {
       return res.status(400).json({ success: false, message: "Must confirm with 'DELETE'" });
     }
@@ -2629,17 +2636,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Step 3: Purge data if requested
       let purgeResults: any = {};
       if (purgeData) {
-        // Delete user documents
+        // Get user's document IDs first for cascade counting
+        const userDocs = await db.select({ id: userDocuments.id }).from(userDocuments).where(eq(userDocuments.userId, userId));
+        const docIds = userDocs.map(d => d.id);
+        
+        // Count chunks and embeddings before cascade delete
+        let chunksCount = 0;
+        let embeddingsCount = 0;
+        
+        if (docIds.length > 0) {
+          // Count chunks that will be deleted
+          const chunksResult = await db.select({ id: documentChunks.id })
+            .from(documentChunks)
+            .where(sql`${documentChunks.documentId} IN (${sql.join(docIds.map(id => sql`${id}`), sql`, `)})`);
+          chunksCount = chunksResult.length;
+          
+          // Count embeddings (they cascade from chunks)
+          if (chunksCount > 0) {
+            const chunkIds = chunksResult.map(c => c.id);
+            const embeddingsResult = await db.select({ id: documentEmbeddings.id })
+              .from(documentEmbeddings)
+              .where(sql`${documentEmbeddings.chunkId} IN (${sql.join(chunkIds.map(id => sql`${id}`), sql`, `)})`);
+            embeddingsCount = embeddingsResult.length;
+          }
+        }
+        
+        // Delete user documents (cascade deletes chunks and embeddings)
         const deletedDocs = await db.delete(userDocuments).where(eq(userDocuments.userId, userId)).returning();
         purgeResults.documentsDeleted = deletedDocs.length;
-
-        // Delete document chunks
-        const deletedChunks = await db.delete(documentChunks).where(eq(documentChunks.userId, userId)).returning();
-        purgeResults.chunksDeleted = deletedChunks.length;
-
-        // Delete document embeddings
-        const deletedEmbeddings = await db.delete(documentEmbeddings).where(eq(documentEmbeddings.userId, userId)).returning();
-        purgeResults.embeddingsDeleted = deletedEmbeddings.length;
+        purgeResults.chunksDeleted = chunksCount;
+        purgeResults.embeddingsDeleted = embeddingsCount;
 
         // Delete sessions/transcripts
         const deletedSessions = await db.delete(learningSessions).where(eq(learningSessions.userId, userId)).returning();
