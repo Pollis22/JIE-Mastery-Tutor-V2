@@ -95,7 +95,8 @@ export default function OfferPage() {
                 width={40}
                 height={40}
                 loading="eager"
-                fetchPriority="high"
+                // @ts-ignore - fetchpriority is valid HTML5 attribute
+                fetchpriority="high"
                 decoding="async"
               />
               <span className="text-xl font-bold text-foreground">JIE Mastery</span>
