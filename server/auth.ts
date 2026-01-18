@@ -58,19 +58,23 @@ export function setupAuth(app: Express) {
   }
 
   // Environment-aware session cookie configuration
-  // Production (Railway HTTPS): secure=true, sameSite='none' (required for cross-site requests)
-  // Development (local HTTP): secure=false, sameSite='lax'
+  // Production (Railway HTTPS): secure=true, sameSite='lax', domain='.jiemastery.ai' for www/non-www
+  // Development (local HTTP): secure=false, sameSite='lax', no domain restriction
   const isProduction = process.env.NODE_ENV === 'production';
   const cookieSecure = process.env.SESSION_COOKIE_SECURE 
     ? process.env.SESSION_COOKIE_SECURE === 'true' 
     : isProduction;
-  const cookieSameSite = (process.env.SESSION_COOKIE_SAMESITE || (isProduction ? 'none' : 'lax')) as 'lax' | 'none' | 'strict';
+  // Use 'lax' for same-site requests (www and non-www are same site)
+  const cookieSameSite = (process.env.SESSION_COOKIE_SAMESITE || 'lax') as 'lax' | 'none' | 'strict';
+  // Set domain to .jiemastery.ai in production so cookie works on both www and non-www
+  const cookieDomain = isProduction ? '.jiemastery.ai' : undefined;
 
   console.log('[Session] Cookie configuration:', {
     environment: process.env.NODE_ENV,
     secure: cookieSecure,
     sameSite: cookieSameSite,
-    maxAge: '24 hours'
+    domain: cookieDomain || '(not set)',
+    maxAge: '7 days'
   });
 
   const sessionSettings: session.SessionOptions = {
@@ -82,7 +86,8 @@ export function setupAuth(app: Express) {
       httpOnly: true,
       secure: cookieSecure,
       sameSite: cookieSameSite,
-      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+      domain: cookieDomain,
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days for better persistence
     }
   };
 
@@ -1298,6 +1303,19 @@ export function setupAuth(app: Express) {
   });
 
   app.get("/api/user", (req, res) => {
+    // Debug logging for session persistence issues
+    const isProduction = process.env.NODE_ENV === 'production';
+    if (isProduction || process.env.DEBUG_SESSION === 'true') {
+      console.log('[/api/user] Request debug:', {
+        host: req.headers.host,
+        hasCookie: !!req.headers.cookie,
+        sessionID: req.sessionID?.substring(0, 8) + '...',
+        hasUser: !!req.session?.passport?.user,
+        userId: req.user?.id?.substring(0, 8) + '...',
+        isAuthenticated: req.isAuthenticated()
+      });
+    }
+    
     if (!req.isAuthenticated()) return res.sendStatus(401);
     // Sanitize user response to exclude sensitive fields
     const { password, ...safeUser } = req.user as any;

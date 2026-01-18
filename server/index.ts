@@ -47,6 +47,21 @@ if (process.env.NODE_ENV === 'development' && !process.env.AUTH_TEST_MODE) {
 
 const app = express();
 
+// Production: Canonical hostname redirect (non-www → www) for session cookie consistency
+// Cookie domain is set to .jiemastery.ai, but we want a single canonical URL
+if (process.env.NODE_ENV === 'production') {
+  app.use((req, res, next) => {
+    const host = req.headers.host || '';
+    // Redirect non-www to www for canonical URL
+    if (host === 'jiemastery.ai') {
+      const redirectUrl = `https://www.jiemastery.ai${req.originalUrl}`;
+      console.log(`[Redirect] ${host} → www.jiemastery.ai`);
+      return res.redirect(301, redirectUrl);
+    }
+    next();
+  });
+}
+
 // CRITICAL: Stripe webhook needs raw body for signature verification
 // Must register webhook route BEFORE JSON parser, so we conditionally parse
 app.use((req, res, next) => {
