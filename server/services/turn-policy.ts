@@ -92,18 +92,22 @@ export interface TurnPolicyEvaluation {
   stall_prompt?: string;
 }
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// NOISE ROBUSTNESS: Conservative turn-taking parameters
+// Higher confidence thresholds + longer silence = fewer false triggers
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 const K2_PRESET: TurnPolicyConfig = {
-  end_of_turn_confidence_threshold: 0.75,
-  min_end_of_turn_silence_when_confident_ms: 900,
-  max_turn_silence_ms: 4500,
-  post_eot_grace_ms: 350,
+  end_of_turn_confidence_threshold: 0.78,  // Up from 0.75 for noise robustness
+  min_end_of_turn_silence_when_confident_ms: 1000,  // Up from 900ms
+  max_turn_silence_ms: 5000,  // Up from 4500ms - more thinking time
+  post_eot_grace_ms: 450,  // Up from 350ms - more grace for continuations
 };
 
 const DEFAULT_PRESET: TurnPolicyConfig = {
-  end_of_turn_confidence_threshold: 0.65,
-  min_end_of_turn_silence_when_confident_ms: 1000,
-  max_turn_silence_ms: 5000,
-  post_eot_grace_ms: 0,
+  end_of_turn_confidence_threshold: 0.72,  // Up from 0.65 for noise robustness
+  min_end_of_turn_silence_when_confident_ms: 1200,  // Up from 1000ms
+  max_turn_silence_ms: 5500,  // Up from 5000ms
+  post_eot_grace_ms: 400,  // Added grace period for merging continuations
 };
 
 export function isK2PolicyEnabled(sessionOverride?: boolean | null): boolean {

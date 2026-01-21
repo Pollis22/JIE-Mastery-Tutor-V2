@@ -63,6 +63,25 @@ import {
   type BaselineState,
   type BargeInEvalResult,
 } from "../services/adaptive-barge-in";
+import {
+  type NoiseFloorState,
+  type SpeechDetectionResult,
+  type TranscriptValidationResult,
+  createNoiseFloorState,
+  detectSpeech,
+  calculateRMS,
+  calculatePeak,
+  getNoiseFloor,
+  getSpeechThreshold,
+  resetSpeechDetection,
+  isInGracePeriod,
+  validateTranscript,
+  validateTranscriptForBargeIn,
+  isNoiseFloorEnabled,
+  logNoiseFloorGating,
+  logBargeInDecision,
+  logGhostTurnPrevention,
+} from "../services/noise-floor";
 
 // ============================================
 // FEATURE FLAG: STT PROVIDER SELECTION
@@ -231,15 +250,20 @@ function createAssemblyAIConnection(
     // AssemblyAI v3 end-of-turn configuration for BALANCED profile
     // These settings allow students time to think (1-3+ second pauses)
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // NOISE ROBUSTNESS: Conservative AssemblyAI parameters
+    // Tuned for noisy environments (background noise, siblings, TV)
+    // Higher confidence threshold + longer silence = fewer false triggers
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     const urlParams = new URLSearchParams({
       sample_rate: '16000',
       encoding: 'pcm_s16le',
       speech_model: speechModel,
       format_turns: 'true',
-      // End-of-turn detection settings for all-ages learning
-      end_of_turn_confidence_threshold: '0.65',  // Require 65% confidence before ending turn
-      min_end_of_turn_silence_when_confident: '1000',  // Wait 1s of silence even when confident
-      max_turn_silence: '5000',  // Allow up to 5s thinking pauses
+      // End-of-turn detection: CONSERVATIVE for noisy environments
+      end_of_turn_confidence_threshold: '0.72',  // Up from 0.65 - require higher confidence
+      min_end_of_turn_silence_when_confident: '1200',  // Up from 1000ms - more silence required
+      max_turn_silence: '5500',  // Up from 5000ms - allow more thinking time
     });
     
     const wsUrl = `wss://streaming.assemblyai.com/v3/ws?${urlParams.toString()}`;
@@ -562,6 +586,12 @@ interface SessionState {
   guardedTranscript: string; // K2 TURN POLICY: Transcript being guarded during hesitation
   stallTimerStartedAt: number; // K2 TURN POLICY: When the current stall timer was started
   echoGuardState: EchoGuardState; // ECHO GUARD: State for echo/self-response prevention
+  noiseFloorState: NoiseFloorState; // NOISE FLOOR: Per-session noise baseline
+  bargeInDucking: boolean; // BARGE-IN: Whether audio is currently ducked pending confirmation
+  bargeInDuckStartTime: number; // BARGE-IN: When ducking started for timeout
+  lastConfirmedSpeechTime: number; // BARGE-IN: When last confirmed speech was detected
+  lastMeasuredRms: number; // NOISE FLOOR: Last measured RMS for logging
+  postUtteranceGraceUntil: number; // GHOST TURN: Grace period for transcript merging
   safetyStrikeCount: number; // SAFETY: Track strikes for session termination
   safetyFlags: Array<{
     type: string;
@@ -1119,6 +1149,12 @@ export function setupCustomVoiceWebSocket(server: Server) {
       guardedTranscript: '', // K2 TURN POLICY: No guarded transcript initially
       stallTimerStartedAt: 0, // K2 TURN POLICY: No stall timer initially
       echoGuardState: createEchoGuardState(), // ECHO GUARD: Initialize echo guard state
+      noiseFloorState: createNoiseFloorState(), // NOISE FLOOR: Initialize per-session baseline
+      bargeInDucking: false, // BARGE-IN: Not ducking initially
+      bargeInDuckStartTime: 0, // BARGE-IN: No duck in progress
+      lastConfirmedSpeechTime: 0, // BARGE-IN: No confirmed speech yet
+      lastMeasuredRms: 0, // NOISE FLOOR: No RMS measured yet
+      postUtteranceGraceUntil: 0, // GHOST TURN: No grace period active
       safetyStrikeCount: 0, // SAFETY: Initialize strike count
       safetyFlags: [], // SAFETY: Initialize safety flags array
       terminatedForSafety: false, // SAFETY: Not terminated initially
@@ -1924,24 +1960,48 @@ export function setupCustomVoiceWebSocket(server: Server) {
       const { getDeepgramLanguageCode } = await import("../services/deepgram-service");
       const deepgramLanguage = getDeepgramLanguageCode(state.language);
       
-      // Shared transcript handler - same logic as original connection
+      // Shared transcript handler - same logic as original connection with NOISE ROBUSTNESS
       const handleTranscript = async (transcript: string, isFinal: boolean, detectedLanguage?: string) => {
         const spokenLang = detectedLanguage || state.language;
         console.log(`[Deepgram] ${isFinal ? '✅ FINAL' : '⏳ interim'}: "${transcript}" (reconnected, lang=${spokenLang})`);
         
         if (!state.userId) return;
         
-        // BARGE-IN
-        const timeSinceLastAudio = Date.now() - state.lastAudioSentAt;
-        if (state.isTutorSpeaking && timeSinceLastAudio < 30000 && transcript.trim().length >= 2) {
-          state.wasInterrupted = true;
-          state.lastInterruptionTime = Date.now();
-          ws.send(JSON.stringify({ type: "interrupt", message: "Student is speaking" }));
-          state.isTutorSpeaking = false;
+        const now = Date.now();
+        const timeSinceLastAudio = now - state.lastAudioSentAt;
+        const noiseFloor = getNoiseFloor(state.noiseFloorState);
+        
+        // GHOST TURN PREVENTION: Validate transcript
+        const transcriptValidation = validateTranscript(transcript, 1);
+        if (!transcriptValidation.isValid && isFinal) {
+          logGhostTurnPrevention(state.sessionId || 'unknown', transcript, transcriptValidation);
+          return;
+        }
+        
+        // HARDENED BARGE-IN (reconnected handler)
+        if (state.isTutorSpeaking && timeSinceLastAudio < 30000) {
+          const bargeInValidation = validateTranscriptForBargeIn(transcript);
+          
+          if (!bargeInValidation.isValid) {
+            if (!state.bargeInDucking) {
+              state.bargeInDucking = true;
+              state.bargeInDuckStartTime = now;
+              ws.send(JSON.stringify({ type: "duck", message: "Potential speech detected" }));
+              logBargeInDecision(state.sessionId || 'unknown', 'duck', state.lastMeasuredRms, noiseFloor, bargeInValidation.wordCount, transcript, 'too_short');
+            }
+          } else {
+            state.wasInterrupted = true;
+            state.lastInterruptionTime = now;
+            state.bargeInDucking = false;
+            ws.send(JSON.stringify({ type: "interrupt", message: "Student is speaking" }));
+            state.isTutorSpeaking = false;
+            logBargeInDecision(state.sessionId || 'unknown', 'interrupt', state.lastMeasuredRms, noiseFloor, bargeInValidation.wordCount, transcript, 'lexical_validated');
+          }
         }
         
         if (state.isTutorSpeaking && timeSinceLastAudio >= 30000) {
           state.isTutorSpeaking = false;
+          state.bargeInDucking = false;
         }
         
         if (!isFinal) return;
@@ -2689,24 +2749,88 @@ CRITICAL INSTRUCTIONS:
               const { ws: assemblyWs, state: assemblyState } = createAssemblyAIConnection(
                 state.language,
                 (text, endOfTurn, confidence) => {
+                  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                  // NOISE ROBUSTNESS: Only process FinalTranscript with end_of_turn=true
+                  // Partials are hypothesis-only - no actions taken
+                  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                   console.log(`[AssemblyAI] 📝 Complete utterance (confidence: ${confidence.toFixed(2)}): "${text}"`);
                   
                   // Update last audio received time for stall detection
                   state.lastAudioReceivedAt = Date.now();
                   
-                  // Check for barge-in (tutor interruption)
-                  const timeSinceLastAudio = Date.now() - state.lastAudioSentAt;
-                  if (state.isTutorSpeaking && timeSinceLastAudio < 30000 && text.trim().length >= 2) {
-                    console.log(`[STT] 🛑 BARGE-IN detected: "${text.substring(0, 30)}..."`);
-                    state.wasInterrupted = true;
-                    state.lastInterruptionTime = Date.now();
-                    ws.send(JSON.stringify({ type: "interrupt", message: "Student is speaking" }));
-                    state.isTutorSpeaking = false;
+                  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                  // GHOST TURN PREVENTION: Validate transcript before processing
+                  // Ignore empty, ultra-short, or non-lexical transcripts
+                  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                  const transcriptValidation = validateTranscript(text, 1);
+                  if (!transcriptValidation.isValid) {
+                    logGhostTurnPrevention(state.sessionId || 'unknown', text, transcriptValidation);
+                    console.log(`[GhostTurn] 🚫 Ignored transcript: "${text}" (${transcriptValidation.reason})`);
+                    return; // Don't process ghost turns
+                  }
+                  
+                  // Check if we're in post-utterance grace period for merging
+                  const now = Date.now();
+                  if (now < state.postUtteranceGraceUntil) {
+                    console.log(`[GhostTurn] ⏳ In grace period - merging transcript`);
+                    // Grace period allows merging - don't block, but log
+                  }
+                  
+                  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                  // HARDENED BARGE-IN: Duck-then-interrupt with lexical validation
+                  // 1. First duck audio volume (via 'duck' event)
+                  // 2. Only fully interrupt if >= 3 words AND passes noise-floor
+                  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                  const timeSinceLastAudio = now - state.lastAudioSentAt;
+                  const noiseFloor = getNoiseFloor(state.noiseFloorState);
+                  
+                  if (state.isTutorSpeaking && timeSinceLastAudio < 30000) {
+                    const bargeInValidation = validateTranscriptForBargeIn(text);
+                    
+                    if (!bargeInValidation.isValid) {
+                      // Non-lexical or too short (< 3 words) - duck but don't interrupt
+                      if (!state.bargeInDucking) {
+                        state.bargeInDucking = true;
+                        state.bargeInDuckStartTime = now;
+                        ws.send(JSON.stringify({ type: "duck", message: "Potential speech detected" }));
+                        logBargeInDecision(
+                          state.sessionId || 'unknown',
+                          'duck',
+                          state.lastMeasuredRms, noiseFloor,
+                          bargeInValidation.wordCount,
+                          text,
+                          `too_short_${bargeInValidation.wordCount}_words`
+                        );
+                        console.log(`[BargeIn] 🔉 DUCK (not interrupt): "${text}" (${bargeInValidation.wordCount} words < 3)`);
+                      }
+                      // Don't block processing - continue to turn policy
+                    } else {
+                      // Valid barge-in: >= 3 words, lexical content
+                      console.log(`[BargeIn] 🛑 INTERRUPT: "${text.substring(0, 30)}..." (${bargeInValidation.wordCount} words)`);
+                      state.wasInterrupted = true;
+                      state.lastInterruptionTime = now;
+                      state.bargeInDucking = false; // Clear duck state
+                      ws.send(JSON.stringify({ type: "interrupt", message: "Student is speaking" }));
+                      state.isTutorSpeaking = false;
+                      logBargeInDecision(
+                        state.sessionId || 'unknown',
+                        'interrupt',
+                        state.lastMeasuredRms, noiseFloor,
+                        bargeInValidation.wordCount,
+                        text,
+                        'lexical_validated'
+                      );
+                    }
+                  } else if (state.bargeInDucking && !state.isTutorSpeaking) {
+                    // Tutor stopped speaking - clear duck state
+                    state.bargeInDucking = false;
+                    ws.send(JSON.stringify({ type: "unduck", message: "Tutor finished" }));
                   }
                   
                   // Reset stale tutor speaking state
                   if (state.isTutorSpeaking && timeSinceLastAudio >= 30000) {
                     state.isTutorSpeaking = false;
+                    state.bargeInDucking = false;
                   }
                   
                   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2721,7 +2845,7 @@ CRITICAL INSTRUCTIONS:
                     eotConfidence: confidence,
                     endOfTurn: endOfTurn,
                     policyState: state.turnPolicyState,
-                    currentTimestamp: Date.now(),
+                    currentTimestamp: now,
                   });
                   
                   // Log turn policy evaluation
@@ -2735,6 +2859,8 @@ CRITICAL INSTRUCTIONS:
                   }
                   
                   if (evaluation.should_fire_claude) {
+                    // Set post-utterance grace period (300-600ms) for merging late transcripts
+                    state.postUtteranceGraceUntil = now + 400; // 400ms grace
                     fireClaudeWithPolicy(text);
                   }
                 },
@@ -2925,41 +3051,77 @@ CRITICAL INSTRUCTIONS:
                 }
                 
                 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                // BARGE-IN: Check for interruption on ANY transcript (interim or final)
-                // Only trigger if tutor is currently speaking to avoid false positives
+                // NOISE ROBUSTNESS: For Deepgram, only act on final transcripts
+                // Interim transcripts are hypothesis-only
                 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                const timeSinceLastAudio = Date.now() - state.lastAudioSentAt;
-
-                // Only barge-in if tutor is actively speaking AND transcript has content
-                if (state.isTutorSpeaking && timeSinceLastAudio < 30000 && transcript.trim().length >= 2) {
-                  console.log(`[Custom Voice] 🛑 BARGE-IN on ${isFinal ? 'final' : 'interim'} transcript: "${transcript}" (audio sent ${timeSinceLastAudio}ms ago)`);
-
-                  // Mark interruption for post-interrupt buffer
-                  state.wasInterrupted = true;
-                  state.lastInterruptionTime = Date.now();
-
-                  // Send interrupt signal to frontend to stop audio playback immediately
-                  ws.send(JSON.stringify({
-                    type: "interrupt",
-                    message: "Student is speaking",
-                  }));
-
-                  // Mark tutor as not speaking
-                  state.isTutorSpeaking = false;
-
-                  console.log("[Custom Voice] ✅ Barge-in processed, ready to listen to student");
+                const now = Date.now();
+                const timeSinceLastAudio = now - state.lastAudioSentAt;
+                const noiseFloor = getNoiseFloor(state.noiseFloorState);
+                
+                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                // GHOST TURN PREVENTION: Validate transcript
+                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                const transcriptValidation = validateTranscript(transcript, 1);
+                if (!transcriptValidation.isValid && isFinal) {
+                  logGhostTurnPrevention(state.sessionId || 'unknown', transcript, transcriptValidation);
+                  console.log(`[GhostTurn] 🚫 Ignored transcript: "${transcript}" (${transcriptValidation.reason})`);
+                  return;
+                }
+                
+                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                // HARDENED BARGE-IN: Duck-then-interrupt with lexical validation
+                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                if (state.isTutorSpeaking && timeSinceLastAudio < 30000) {
+                  const bargeInValidation = validateTranscriptForBargeIn(transcript);
+                  
+                  if (!bargeInValidation.isValid) {
+                    // Non-lexical or too short (< 3 words) - duck but don't interrupt
+                    if (!state.bargeInDucking) {
+                      state.bargeInDucking = true;
+                      state.bargeInDuckStartTime = now;
+                      ws.send(JSON.stringify({ type: "duck", message: "Potential speech detected" }));
+                      logBargeInDecision(
+                        state.sessionId || 'unknown',
+                        'duck',
+                        state.lastMeasuredRms, noiseFloor,
+                        bargeInValidation.wordCount,
+                        transcript,
+                        `too_short_${bargeInValidation.wordCount}_words`
+                      );
+                      console.log(`[BargeIn] 🔉 DUCK (not interrupt): "${transcript}" (${bargeInValidation.wordCount} words < 3)`);
+                    }
+                  } else {
+                    // Valid barge-in: >= 3 words, lexical content
+                    console.log(`[BargeIn] 🛑 INTERRUPT: "${transcript.substring(0, 30)}..." (${bargeInValidation.wordCount} words)`);
+                    state.wasInterrupted = true;
+                    state.lastInterruptionTime = now;
+                    state.bargeInDucking = false;
+                    ws.send(JSON.stringify({ type: "interrupt", message: "Student is speaking" }));
+                    state.isTutorSpeaking = false;
+                    logBargeInDecision(
+                      state.sessionId || 'unknown',
+                      'interrupt',
+                      state.lastMeasuredRms, noiseFloor,
+                      bargeInValidation.wordCount,
+                      transcript,
+                      'lexical_validated'
+                    );
+                  }
+                } else if (state.bargeInDucking && !state.isTutorSpeaking) {
+                  state.bargeInDucking = false;
+                  ws.send(JSON.stringify({ type: "unduck", message: "Tutor finished" }));
                 }
 
                 // Reset stale tutor speaking state (>30s ago)
                 if (state.isTutorSpeaking && timeSinceLastAudio >= 30000) {
                   console.log("[Custom Voice] ⏸️ Resetting stale tutor speaking state...");
                   state.isTutorSpeaking = false;
+                  state.bargeInDucking = false;
                 }
-                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
                 // Only process for AI response on FINAL transcripts
                 if (!isFinal) {
-                  console.log("[Custom Voice] ⏭️ Skipping interim for AI processing (barge-in already checked)");
+                  console.log("[Custom Voice] ⏭️ Skipping interim for AI processing (hypothesis only)");
                   return;
                 }
 
@@ -3235,14 +3397,38 @@ CRITICAL INSTRUCTIONS:
                 const hasNonZero = int16View.some(sample => sample !== 0);
                 const maxAmplitude = Math.max(...Array.from(int16View).map(Math.abs));
                 
-                console.log('[Custom Voice] 🎤 Audio buffer analysis:', {
-                  totalBytes: audioBuffer.length,
-                  totalSamples: audioBuffer.length / 2,
-                  firstTenSamples: Array.from(int16View),
-                  hasNonZeroSamples: hasNonZero,
-                  maxAmplitude: maxAmplitude,
-                  isSilent: !hasNonZero || maxAmplitude < 10
-                });
+                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                // NOISE FLOOR: Update per-session rolling baseline
+                // Measures RMS during non-speech periods for speech detection
+                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                const rms = calculateRMS(audioBuffer);
+                const speechDetection = detectSpeech(state.noiseFloorState, audioBuffer);
+                
+                // Persist RMS for transcript-level barge-in logging
+                state.lastMeasuredRms = rms;
+                
+                // Update lastConfirmedSpeechTime when speech is confirmed
+                if (speechDetection.isSpeech) {
+                  state.lastConfirmedSpeechTime = Date.now();
+                }
+                
+                // Log noise floor gating when speech is ignored (potential but not confirmed)
+                if (!speechDetection.isSpeech && speechDetection.isPotentialSpeech) {
+                  logNoiseFloorGating(state.sessionId || 'unknown', speechDetection, true);
+                }
+                
+                // Only log detailed audio analysis occasionally (every ~50th chunk to reduce noise)
+                if (Math.random() < 0.02) {
+                  console.log('[Custom Voice] 🎤 Audio buffer analysis:', {
+                    totalBytes: audioBuffer.length,
+                    rms: rms.toFixed(4),
+                    noiseFloor: speechDetection.noiseFloor.toFixed(4),
+                    threshold: speechDetection.threshold.toFixed(4),
+                    isSpeech: speechDetection.isSpeech,
+                    maxAmplitude: maxAmplitude,
+                    isSilent: !hasNonZero || maxAmplitude < 10
+                  });
+                }
                 
                 if (!hasNonZero) {
                   console.warn('[Custom Voice] ⚠️ Audio buffer is COMPLETELY SILENT (all zeros)!');

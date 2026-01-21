@@ -60,6 +60,16 @@ A comprehensive voice interaction system that creates natural, patient, and inte
 
 **Reliable Goodbye Shutdown**: Hard stop immediately cancels audio, transcription, and pending responses when session ends, eliminating trailing tutor messages.
 
+**Background Noise Robustness (January 2026)**: Enhanced pipeline for noisy environments:
+- Per-session rolling noise-floor baseline with RMS measurement during non-speech periods
+- Speech validation: RMS must exceed noise_floor * 2.0 for >= 300ms to confirm speech
+- Hardened barge-in: Duck audio first, then interrupt only with >= 3 lexical words
+- Ghost turn prevention: Ignore empty, ultra-short, or non-lexical transcripts
+- Conservative AssemblyAI parameters: end_of_turn_confidence=0.72, min_silence=1200ms
+- Post-utterance grace window (400ms) for merging late continuations
+- Debug instrumentation: `[noise_floor_gated]`, `[barge_in_decision]`, `[ghost_turn_prevented]`
+- Feature flag: NOISE_FLOOR_ENABLED (default: true)
+
 See `docs/VOICE_UX_FEATURES.md` for full configuration, metrics, and feature flags.
 
 ### K-2 Turn Policy (Very Patient Turn-Taking)
