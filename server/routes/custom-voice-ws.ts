@@ -629,6 +629,46 @@ interface SessionState {
   lastSilentBufferLog: number; // Rate limit silent buffer warnings
 }
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// SERVER-AUTHORITATIVE ACTIVE SESSION MAP (Jan 2026)
+// Enforces one active voice session per user at WebSocket level
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+interface ActiveVoiceSession {
+  sessionId: string;
+  ws: WebSocket;
+  startedAt: number;
+}
+
+const activeVoiceSessionByUser = new Map<string, ActiveVoiceSession>();
+
+const VoiceErrorCodes = {
+  SERVER_SESSION_LIMIT: 'SERVER_SESSION_LIMIT',
+  SERVER_SESSION_REPLACED: 'SERVER_SESSION_REPLACED',
+  STT_PROVIDER_ERROR: 'STT_PROVIDER_ERROR',
+  SESSION_DEBOUNCE: 'SESSION_DEBOUNCE',
+  SESSION_ALREADY_ENDED: 'SESSION_ALREADY_ENDED',
+  INTERNAL_ERROR: 'INTERNAL_ERROR',
+} as const;
+
+function sendVoiceError(ws: WebSocket, code: keyof typeof VoiceErrorCodes, message: string, extra?: { provider?: string; raw?: string; closeCode?: number }) {
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ 
+      type: 'error', 
+      code: VoiceErrorCodes[code], 
+      message,
+      ...extra
+    }));
+  }
+}
+
+function cleanupActiveSession(userId: string, sessionId: string, reason: string) {
+  const existing = activeVoiceSessionByUser.get(userId);
+  if (existing && existing.sessionId === sessionId) {
+    activeVoiceSessionByUser.delete(userId);
+    console.log(`[VoiceLimit] Session cleanup: userId=${userId.slice(-8)} sessionId=${sessionId.slice(-8)} reason=${reason}`);
+  }
+}
+
 // Helper to send typed WebSocket events
 function sendWsEvent(ws: WebSocket, type: string, payload: Record<string, unknown>) {
   if (ws.readyState === WebSocket.OPEN) {
@@ -2237,6 +2277,29 @@ export function setupCustomVoiceWebSocket(server: Server) {
             console.log(`[Telemetry] ws_connected sessionId=${message.sessionId?.slice(-8)} userId=${authenticatedUserId}`);
             
             // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            // SERVER-AUTHORITATIVE SESSION REPLACEMENT (Jan 2026)
+            // If user has existing active session, close it cleanly before continuing
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            {
+              const existingSession = activeVoiceSessionByUser.get(authenticatedUserId);
+              if (existingSession && existingSession.ws.readyState === WebSocket.OPEN) {
+                console.log(`[VoiceLimit] ENFORCER=server userId=${authenticatedUserId.slice(-8)} action=replace oldSessionId=${existingSession.sessionId.slice(-8)} newSessionId=${message.sessionId?.slice(-8)}`);
+                sendVoiceError(existingSession.ws, 'SERVER_SESSION_REPLACED', 'New session started; closing previous.');
+                existingSession.ws.close(4000, 'SESSION_REPLACED');
+                activeVoiceSessionByUser.delete(authenticatedUserId);
+              } else if (existingSession) {
+                activeVoiceSessionByUser.delete(authenticatedUserId);
+              }
+              
+              activeVoiceSessionByUser.set(authenticatedUserId, {
+                sessionId: message.sessionId || `pending_${Date.now()}`,
+                ws,
+                startedAt: Date.now()
+              });
+              console.log(`[VoiceLimit] Session registered: userId=${authenticatedUserId.slice(-8)} sessionId=${message.sessionId?.slice(-8)}`);
+            }
+            
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             // TRIAL SESSION PATH - Skip realtimeSessions and suspension checks
             // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             if (isTrialSession) {
@@ -2337,10 +2400,9 @@ export function setupCustomVoiceWebSocket(server: Server) {
                 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                 if (session[0].endedAt) {
                   console.warn(`[Custom Voice] ⚠️ Session ${message.sessionId} already ended at ${session[0].endedAt}`);
-                  ws.send(JSON.stringify({ 
-                    type: "session_invalid", 
-                    error: "This session has already ended. Please start a new session." 
-                  }));
+                  console.log(`[VoiceLimit] ENFORCER=server userId=${authenticatedUserId.slice(-8)} action=reject_ended sessionId=${message.sessionId?.slice(-8)}`);
+                  sendVoiceError(ws, 'SESSION_ALREADY_ENDED', 'This session has already ended. Please start a new session.');
+                  cleanupActiveSession(authenticatedUserId, message.sessionId || '', 'already_ended');
                   ws.close(4001, 'Session already ended');
                   return;
                 }
@@ -2364,11 +2426,10 @@ export function setupCustomVoiceWebSocket(server: Server) {
                   const recentSession = recentSessionCheck[0];
                   const ageMs = recentSession.createdAt ? Date.now() - new Date(recentSession.createdAt).getTime() : 0;
                   console.warn(`[Custom Voice] ⏱️ Session debounce: active session ${recentSession.id.slice(-8)} created ${ageMs}ms ago`);
+                  console.log(`[VoiceLimit] ENFORCER=server userId=${authenticatedUserId.slice(-8)} action=debounce recentSessionId=${recentSession.id.slice(-8)} ageMs=${ageMs}`);
                   console.log(`[Telemetry] session_debounced userId=${authenticatedUserId} recentSessionId=${recentSession.id.slice(-8)} ageMs=${ageMs}`);
-                  ws.send(JSON.stringify({ 
-                    type: "error", 
-                    error: "Please wait a moment before starting a new session." 
-                  }));
+                  sendVoiceError(ws, 'SESSION_DEBOUNCE', 'Please wait a moment before starting a new session.');
+                  cleanupActiveSession(authenticatedUserId, message.sessionId || '', 'debounce');
                   ws.close(4002, 'Session debounce');
                   return;
                 }
@@ -3124,15 +3185,14 @@ CRITICAL INSTRUCTIONS:
                   // Check for 1008 "too many sessions" error - apply cooldown
                   if (closeCode === 1008) {
                     console.error('[AssemblyAI] ❌ 1008 Error: Too many concurrent sessions');
+                    console.log(`[VoiceLimit] ENFORCER=provider provider=AssemblyAI userId=${state.userId} sessionId=${state.sessionId?.slice(-8)} closeCode=1008 reason=${closeReason || 'too many sessions'}`);
                     console.log(`[Telemetry] stt_too_many_sessions sessionId=${state.sessionId?.slice(-8)} userId=${state.userId} closeCode=1008`);
                     state.sttReconnectCooldownUntil = Date.now() + STT_1008_COOLDOWN_MS;
-                    if (ws.readyState === WebSocket.OPEN) {
-                      ws.send(JSON.stringify({ 
-                        type: 'stt_status', 
-                        status: 'failed',
-                        message: 'Too many voice sessions; please refresh'
-                      }));
-                    }
+                    sendVoiceError(ws, 'STT_PROVIDER_ERROR', 'Too many voice sessions from provider; please wait and try again.', {
+                      provider: 'AssemblyAI',
+                      closeCode: 1008,
+                      raw: closeReason || 'too many concurrent sessions'
+                    });
                     state.sttReconnectInProgress = false;
                     return; // Don't auto-reconnect on 1008
                   }
@@ -4574,6 +4634,11 @@ CRITICAL INSTRUCTIONS:
       console.log(`[Custom Voice] 🔌 Connection closed - code: ${code}, reason: "${reasonStr}"`);
       console.log(`[Telemetry] ws_close sessionId=${state.sessionId?.slice(-8)} userId=${state.userId} code=${code} reason=${reasonStr}`);
       
+      // Clean up active session map (only if this is the current session for this user)
+      if (authenticatedUserId && state.sessionId) {
+        cleanupActiveSession(authenticatedUserId, state.sessionId, `ws_close_${code}`);
+      }
+      
       // Skip if session was already ended (prevents double-deduction)
       if (state.isSessionEnded) {
         console.log("[Custom Voice] ℹ️ Session already finalized, skipping close handler");
@@ -4608,6 +4673,11 @@ CRITICAL INSTRUCTIONS:
 
     ws.on("error", async (error) => {
       console.error("[Custom Voice] ❌ WebSocket error:", error);
+      
+      // Clean up active session map
+      if (authenticatedUserId && state.sessionId) {
+        cleanupActiveSession(authenticatedUserId, state.sessionId, 'ws_error');
+      }
       
       // Skip if session was already ended (prevents double-deduction)
       if (state.isSessionEnded) {

@@ -315,6 +315,10 @@ export function useCustomVoice() {
   const audioBufferQueueRef = useRef<ArrayBuffer[]>([]);
   const isReconnectingRef = useRef<boolean>(false);
   
+  // Dev-only telemetry for audio pipeline debugging (STEP 5)
+  const lastAudioTelemetryRef = useRef<number>(0);
+  const DEV_AUDIO_TELEMETRY_INTERVAL_MS = 2000; // Log once per 2 seconds
+  
   // Refs for state used in async callbacks (prevents stale closures)
   const isConnectedRef = useRef<boolean>(false);
   const isProcessingRef = useRef<boolean>(false);
@@ -808,6 +812,15 @@ export function useCustomVoice() {
     language: string = 'en'
   ) => {
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // DEV/HMR CONTAINMENT (STEP 6): Voice connect only via explicit user action
+    // Vite HMR errors (wss://localhost:undefined) are dev-only and should NOT
+    // trigger auto-restart of voice sessions. Log a note if we detect remount.
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    if (import.meta.env.DEV) {
+      console.log('[DEV] Voice connect triggered - ensure this is from explicit user action (Start Voice button)');
+    }
+    
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // STATE MACHINE GUARD: Prevent duplicate connections
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     const currentState = voiceStateRef.current;
@@ -1072,13 +1085,21 @@ export function useCustomVoice() {
             break;
 
           case "error":
-            console.error("[Custom Voice] ❌ Error:", message.error);
-            setError(message.error);
+            // Handle standardized error codes (Jan 2026)
+            const errorCode = message.code || '';
+            const errorMsg = message.message || message.error || 'Unknown error';
+            console.error("[Custom Voice] ❌ Error:", { code: errorCode, message: errorMsg, provider: message.provider, raw: message.raw });
+            setError(errorMsg);
             
-            // Check for SPECIFIC terminal errors that require user action
-            // Be conservative - only match explicit terminal conditions
-            const errorLower = (message.error || '').toLowerCase();
-            const isTerminalError = 
+            // Check for SPECIFIC terminal errors using standardized codes first, then fallback to text matching
+            const errorLower = errorMsg.toLowerCase();
+            const isTerminalByCode = 
+              errorCode === 'SERVER_SESSION_LIMIT' ||
+              errorCode === 'SERVER_SESSION_REPLACED' ||
+              errorCode === 'STT_PROVIDER_ERROR' ||
+              errorCode === 'SESSION_ALREADY_ENDED';
+            
+            const isTerminalByText = 
               errorLower.includes('too many voice sessions') ||
               errorLower.includes('too many sessions') ||
               errorLower.includes('account is disabled') ||
@@ -1086,9 +1107,10 @@ export function useCustomVoice() {
               errorLower.includes('unauthorized session') ||
               errorLower.includes('session has already ended');
             
-            if (isTerminalError) {
-              console.error("[VoiceState] 🛑 Terminal error detected:", message.error);
-              transitionVoiceState('TERMINAL_ERROR', message.error);
+            if (isTerminalByCode || isTerminalByText) {
+              const enforcer = errorCode.startsWith('SERVER_') ? 'server' : (errorCode === 'STT_PROVIDER_ERROR' ? `provider:${message.provider || 'unknown'}` : 'unknown');
+              console.error(`[VoiceState] 🛑 Terminal error detected: code=${errorCode} enforcer=${enforcer} message=${errorMsg}`);
+              transitionVoiceState('TERMINAL_ERROR', errorMsg);
               stopMicrophone();
               cleanupAllTimers();
             }
@@ -1763,6 +1785,18 @@ registerProcessor('audio-processor', AudioProcessor);
         // Handle audio data and VAD events from AudioWorklet
         processor.port.onmessage = (event) => {
           if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+          
+          // DEV-ONLY TELEMETRY: Log audio pipeline state periodically (STEP 5)
+          if (import.meta.env.DEV && event.data.type === 'audio_data') {
+            const now = Date.now();
+            if (now - lastAudioTelemetryRef.current >= DEV_AUDIO_TELEMETRY_INTERVAL_MS) {
+              lastAudioTelemetryRef.current = now;
+              const rms = event.data.rms || 0;
+              const peak = event.data.peak || 0;
+              const track = mediaStreamRef.current?.getAudioTracks()[0];
+              console.log(`[DEV Telemetry] Audio pipeline: rms=${rms.toFixed(4)}, peak=${peak.toFixed(4)}, track.muted=${track?.muted}, track.readyState=${track?.readyState}, workletActive=true`);
+            }
+          }
 
           // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
           // RESPONSIVE BARGE-IN with ECHO PROTECTION (AudioWorklet)
