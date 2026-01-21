@@ -802,6 +802,54 @@ export default function TutorPage() {
             </div>
           </div>
 
+          {/* Voice Tips Section */}
+          <div className="relative mt-4">
+            <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-4 rounded-lg border border-blue-100 dark:border-blue-900 shadow-sm">
+              <h3 className="font-bold text-blue-900 dark:text-blue-100 mb-3 flex items-center gap-2">
+                <BookOpen className="h-5 w-5 text-blue-600" />
+                How to Talk to Your Tutor (Voice Tips)
+              </h3>
+              <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300">
+                <p className="text-gray-600 dark:text-gray-400">
+                  Speaking naturally works best. You don't need special commands or perfect phrasing—just talk as you would to a real tutor.
+                </p>
+                
+                <p className="font-medium text-gray-700 dark:text-gray-300">Helpful tips for the best experience:</p>
+                
+                <ul className="space-y-2 ml-1">
+                  <li className="flex gap-2 items-start">
+                    <ChevronRight className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
+                    <span>Speak in complete thoughts, then pause briefly so the tutor knows you're finished</span>
+                  </li>
+                  <li className="flex gap-2 items-start">
+                    <ChevronRight className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
+                    <span>If you need a moment to think, that's okay—short pauses are normal</span>
+                  </li>
+                  <li className="flex gap-2 items-start">
+                    <ChevronRight className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
+                    <span>You can interrupt the tutor at any time by speaking</span>
+                  </li>
+                  <li className="flex gap-2 items-start">
+                    <ChevronRight className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
+                    <span>If you want the tutor to stop or listen again, just start talking</span>
+                  </li>
+                  <li className="flex gap-2 items-start">
+                    <ChevronRight className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
+                    <span>Reading out loud more slowly is fine—the tutor will wait</span>
+                  </li>
+                  <li className="flex gap-2 items-start">
+                    <ChevronRight className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
+                    <span>When you're done, say "Goodbye" or "End session" to finish cleanly</span>
+                  </li>
+                </ul>
+                
+                <p className="text-gray-600 dark:text-gray-400 pt-2 border-t border-gray-200 dark:border-gray-700">
+                  This tutor is designed to guide you, not rush you. Take your time—learning works best at your pace.
+                </p>
+              </div>
+            </div>
+          </div>
+
           {/* Active Lesson Context Card */}
           {activeLesson && (
             <Card className="mt-4 border-2 border-primary/30 bg-gradient-to-r from-primary/5 to-primary/10" data-testid="card-active-lesson">
