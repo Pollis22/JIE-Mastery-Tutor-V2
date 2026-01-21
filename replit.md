@@ -26,6 +26,14 @@ A custom-built voice stack provides real-time, low-latency (1-2 seconds end-to-e
 
 Session-based authentication uses Passport.js with PostgreSQL session storage. Account security features include password reset, security questions for recovery, and in-app password/email changes. WebSocket security incorporates session validation, IP-based rate limiting, and HTTP fallback. Access control involves authentication, active subscription verification, and minute balance enforcement.
 
+**iOS Safari Authentication (RESOLVED - January 2026)**: iOS Safari and WebKit-based browsers (iPhone Chrome, in-app browsers) had session cookie persistence issues. Fixed with:
+- Rolling sessions (`rolling: true`) - refreshes cookie expiry on each request
+- Extended maxAge (30 days) for better long-term persistence
+- Host-only cookies by default (compatible with Railway and custom domain)
+- Email normalization (trim/lowercase) to handle iOS autofill quirks
+- Debug endpoint `/api/debug/auth` for diagnostics (requires ADMIN_DEBUG_TOKEN in production)
+- See `docs/iOS_AUTH_TESTING.md` for full testing checklist
+
 ### Session Priority System
 
 A session-first data priority model allows per-session configuration for grade level, subject, and language, facilitating flexible family sharing.
