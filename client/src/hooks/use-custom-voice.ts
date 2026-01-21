@@ -315,6 +315,9 @@ export function useCustomVoice() {
   const audioBufferQueueRef = useRef<ArrayBuffer[]>([]);
   const isReconnectingRef = useRef<boolean>(false);
   
+  // FIX #4: Drop outgoing audio frames during disconnect
+  const isDisconnectingRef = useRef<boolean>(false);
+  
   // Dev-only telemetry for audio pipeline debugging (STEP 5)
   const lastAudioTelemetryRef = useRef<number>(0);
   const DEV_AUDIO_TELEMETRY_INTERVAL_MS = 2000; // Log once per 2 seconds
@@ -819,6 +822,9 @@ export function useCustomVoice() {
     if (import.meta.env.DEV) {
       console.log('[DEV] Voice connect triggered - ensure this is from explicit user action (Start Voice button)');
     }
+    
+    // FIX #4: Reset disconnecting flag on new connection
+    isDisconnectingRef.current = false;
     
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // STATE MACHINE GUARD: Prevent duplicate connections
@@ -1784,6 +1790,9 @@ registerProcessor('audio-processor', AudioProcessor);
         
         // Handle audio data and VAD events from AudioWorklet
         processor.port.onmessage = (event) => {
+          // FIX #4: Drop outgoing frames during disconnect
+          if (isDisconnectingRef.current) return;
+          
           if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
           
           // DEV-ONLY TELEMETRY: Log audio pipeline state periodically (STEP 5)
@@ -2727,6 +2736,9 @@ registerProcessor('audio-processor', AudioProcessor);
     }
     
     transitionVoiceState('DISCONNECTING', 'disconnect called');
+    
+    // FIX #4: Set disconnecting flag to stop outgoing audio frames immediately
+    isDisconnectingRef.current = true;
     
     // Use passed sessionId or fall back to stored ref
     const sessionId = passedSessionId || sessionIdRef.current || undefined;

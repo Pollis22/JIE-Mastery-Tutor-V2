@@ -627,6 +627,7 @@ interface SessionState {
   sttReconnectCooldownUntil: number; // STT LIFECYCLE: Cooldown timestamp after 1008 error
   lastAudioSendFailureLog: number; // STT LIFECYCLE: Rate limit audio send failure logs
   lastSilentBufferLog: number; // Rate limit silent buffer warnings
+  audioFramesAfterFinalized: number; // Count audio frames received after session ended
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -663,9 +664,11 @@ function sendVoiceError(ws: WebSocket, code: keyof typeof VoiceErrorCodes, messa
 
 function cleanupActiveSession(userId: string, sessionId: string, reason: string) {
   const existing = activeVoiceSessionByUser.get(userId);
-  if (existing && existing.sessionId === sessionId) {
+  const removed = existing && existing.sessionId === sessionId;
+  console.log(`[ActiveMap] cleanup userId=${userId.slice(-8)} sessionId=${sessionId.slice(-8)} reason=${reason} existingSessionId=${existing?.sessionId?.slice(-8) || 'none'} removed=${removed} mapSize=${activeVoiceSessionByUser.size}`);
+  if (removed) {
     activeVoiceSessionByUser.delete(userId);
-    console.log(`[VoiceLimit] Session cleanup: userId=${userId.slice(-8)} sessionId=${sessionId.slice(-8)} reason=${reason}`);
+    console.log(`[ActiveMap] after cleanup mapSize=${activeVoiceSessionByUser.size}`);
   }
 }
 
@@ -1338,6 +1341,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
       sttReconnectCooldownUntil: 0, // STT LIFECYCLE: No cooldown active
       lastAudioSendFailureLog: 0, // STT LIFECYCLE: No audio send failure logged yet
       lastSilentBufferLog: 0, // Rate limit silent buffer warnings
+      audioFramesAfterFinalized: 0, // Count audio frames received after session ended
     };
 
     // FIX #3: Auto-persist every 10 seconds
@@ -2282,6 +2286,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
             // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             {
               const existingSession = activeVoiceSessionByUser.get(authenticatedUserId);
+              console.log(`[ActiveMap] before set userId=${authenticatedUserId.slice(-8)} hasExisting=${!!existingSession} existingSessionId=${existingSession?.sessionId?.slice(-8) || 'none'} mapSize=${activeVoiceSessionByUser.size}`);
+              
               if (existingSession && existingSession.ws.readyState === WebSocket.OPEN) {
                 console.log(`[VoiceLimit] ENFORCER=server userId=${authenticatedUserId.slice(-8)} action=replace oldSessionId=${existingSession.sessionId.slice(-8)} newSessionId=${message.sessionId?.slice(-8)}`);
                 sendVoiceError(existingSession.ws, 'SERVER_SESSION_REPLACED', 'New session started; closing previous.');
@@ -2291,12 +2297,13 @@ export function setupCustomVoiceWebSocket(server: Server) {
                 activeVoiceSessionByUser.delete(authenticatedUserId);
               }
               
+              const newSessionId = message.sessionId || `pending_${Date.now()}`;
               activeVoiceSessionByUser.set(authenticatedUserId, {
-                sessionId: message.sessionId || `pending_${Date.now()}`,
+                sessionId: newSessionId,
                 ws,
                 startedAt: Date.now()
               });
-              console.log(`[VoiceLimit] Session registered: userId=${authenticatedUserId.slice(-8)} sessionId=${message.sessionId?.slice(-8)}`);
+              console.log(`[ActiveMap] after set userId=${authenticatedUserId.slice(-8)} sessionId=${newSessionId.slice(-8)} mapSize=${activeVoiceSessionByUser.size}`);
             }
             
             // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -3888,6 +3895,17 @@ CRITICAL INSTRUCTIONS:
             break;
 
           case "audio":
+            // GUARD: Drop audio frames after session ended (FIX #4)
+            if (state.isSessionEnded) {
+              state.audioFramesAfterFinalized++;
+              break; // Silently drop - don't log repeatedly
+            }
+            
+            // GUARD: Drop audio if STT not ready (no spammy warnings)
+            if (!state.sttReady) {
+              break; // Silently drop until STT is ready
+            }
+            
             // Forward audio to STT provider
             const hasConnection = USE_ASSEMBLYAI ? !!state.assemblyAIWs : !!state.deepgramConnection;
             console.log('[Custom Voice] 📥 Audio message received:', {
@@ -4632,7 +4650,7 @@ CRITICAL INSTRUCTIONS:
     ws.on("close", async (code: number, reason: Buffer) => {
       const reasonStr = reason?.toString() || 'none';
       console.log(`[Custom Voice] 🔌 Connection closed - code: ${code}, reason: "${reasonStr}"`);
-      console.log(`[Telemetry] ws_close sessionId=${state.sessionId?.slice(-8)} userId=${state.userId} code=${code} reason=${reasonStr}`);
+      console.log(`[Telemetry] ws_close sessionId=${state.sessionId?.slice(-8)} userId=${state.userId} code=${code} reason=${reasonStr} audioFramesAfterFinalized=${state.audioFramesAfterFinalized}`);
       
       // Clean up active session map (only if this is the current session for this user)
       if (authenticatedUserId && state.sessionId) {
