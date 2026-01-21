@@ -987,7 +987,7 @@ export function useCustomVoice() {
           // STT WATCHDOG STATUS (Jan 2026): Handle stall recovery
           // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
           case "stt_status":
-            console.log("[Custom Voice] 🔍 STT status:", message.status);
+            console.log("[Custom Voice] 🔍 STT status:", message.status, message.message || '');
             if (message.status === 'stalled') {
               console.warn("[Custom Voice] ⚠️ STT stalled - reconnecting...");
               updateMicStatus('reconnecting', false);
@@ -995,9 +995,11 @@ export function useCustomVoice() {
               console.log("[Custom Voice] ✅ STT reconnected");
               updateMicStatus('listening', true);
             } else if (message.status === 'failed') {
-              console.error("[Custom Voice] ❌ STT reconnect failed");
+              console.error("[Custom Voice] ❌ STT reconnect failed:", message.message);
               updateMicStatus('error', false);
-              setError("Voice recognition connection lost. Tap to reconnect.");
+              // Show specific error message if provided (e.g., 1008 "too many sessions")
+              const errorMsg = message.message || "Voice recognition connection lost. Tap to reconnect.";
+              setError(errorMsg);
             }
             break;
           

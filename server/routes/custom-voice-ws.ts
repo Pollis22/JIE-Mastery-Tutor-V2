@@ -203,7 +203,7 @@ function createAssemblyAIConnection(
   onTranscript: (text: string, endOfTurn: boolean, confidence: number) => void,
   onError: (error: string) => void,
   onSessionStart?: (sessionId: string) => void,
-  onClose?: () => void
+  onClose?: (closeCode?: number, closeReason?: string) => void
 ): { ws: WebSocket; state: AssemblyAIState } {
   console.log('████████████████████████████████████████████████████████████████');
   console.log('[AssemblyAI v3] ENTER createAssemblyAIConnection');
@@ -446,7 +446,7 @@ function createAssemblyAIConnection(
     state.closeReason = reasonStr;
     state.lastTranscript = '';
     state.lastTranscriptTime = 0;
-    if (onClose) onClose();
+    if (onClose) onClose(code, reasonStr);
   });
 
   console.log('[AssemblyAI v3] Connection setup complete, waiting for OPEN event...');
@@ -511,6 +511,13 @@ function closeAssemblyAI(ws: WebSocket | null) {
   }
   resetFirstAudioLog();
 }
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// STT RECONNECT LIFECYCLE: Constants for connection recovery
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const STT_RECONNECT_DELAY_MS = 750; // Wait before creating new connection
+const STT_1008_COOLDOWN_MS = 15000; // 15s cooldown after "too many sessions" error
+const AUDIO_SEND_FAILURE_LOG_INTERVAL_MS = 2000; // Rate limit audio send failure logs
 
 function resetAssemblyAIMergeGuard(state: AssemblyAIState) {
   state.lastTranscript = '';
@@ -614,6 +621,11 @@ interface SessionState {
   sttWatchdogTimerId: NodeJS.Timeout | null; // STT WATCHDOG: Timer for checking STT liveness
   lastWatchdogLogAt: number; // STT WATCHDOG: Rate limit watchdog logs (once per 5s)
   sttReconnectInProgress: boolean; // STT WATCHDOG: Whether STT reconnect is in progress
+  // STT CONNECTION LIFECYCLE: Unified connection state management
+  sttReady: boolean; // STT LIFECYCLE: Whether STT connection is ready to receive audio
+  lastSttReconnectAttempt: number; // STT LIFECYCLE: Timestamp of last reconnect attempt
+  sttReconnectCooldownUntil: number; // STT LIFECYCLE: Cooldown timestamp after 1008 error
+  lastAudioSendFailureLog: number; // STT LIFECYCLE: Rate limit audio send failure logs
 }
 
 // Helper to send typed WebSocket events
@@ -938,6 +950,16 @@ async function finalizeSession(
     clearInterval(state.sttWatchdogTimerId);
     state.sttWatchdogTimerId = null;
     console.log(`[Finalize] 🧹 Cleared STT watchdog timer (reason: ${reason})`);
+  }
+  
+  // STT LIFECYCLE: Close AssemblyAI connection and reset state
+  if (state.assemblyAIWs) {
+    closeAssemblyAI(state.assemblyAIWs);
+    state.assemblyAIWs = null;
+    state.assemblyAIState = null;
+    state.sttReady = false;
+    state.sttReconnectInProgress = false;
+    console.log(`[Finalize] 🧹 Closed AssemblyAI connection (reason: ${reason})`);
   }
 
   if (!state.sessionId) {
@@ -1269,6 +1291,11 @@ export function setupCustomVoiceWebSocket(server: Server) {
       sttWatchdogTimerId: null, // STT WATCHDOG: Timer not started yet
       lastWatchdogLogAt: 0, // STT WATCHDOG: No watchdog log yet
       sttReconnectInProgress: false, // STT WATCHDOG: No reconnect in progress
+      // STT LIFECYCLE: Initialize connection state
+      sttReady: false, // STT LIFECYCLE: Connection not ready yet
+      lastSttReconnectAttempt: 0, // STT LIFECYCLE: No reconnect attempted yet
+      sttReconnectCooldownUntil: 0, // STT LIFECYCLE: No cooldown active
+      lastAudioSendFailureLog: 0, // STT LIFECYCLE: No audio send failure logged yet
     };
 
     // FIX #3: Auto-persist every 10 seconds
@@ -3009,10 +3036,29 @@ CRITICAL INSTRUCTIONS:
                 (sessionId) => {
                   console.log('[AssemblyAI] 🎬 Session started:', sessionId);
                 },
-                async () => {
-                  console.log('[AssemblyAI] 🔌 Connection closed');
+                async (closeCode?: number, closeReason?: string) => {
+                  console.log('[AssemblyAI] 🔌 Connection closed', { closeCode, closeReason });
+                  
+                  // STT LIFECYCLE: Mark connection not ready
+                  state.sttReady = false;
+                  
                   if (state.sessionId && state.transcript.length > 0) {
                     await persistTranscript(state.sessionId, state.transcript);
+                  }
+                  
+                  // Check for 1008 "too many sessions" error - apply cooldown
+                  if (closeCode === 1008) {
+                    console.error('[AssemblyAI] ❌ 1008 Error: Too many concurrent sessions');
+                    state.sttReconnectCooldownUntil = Date.now() + STT_1008_COOLDOWN_MS;
+                    if (ws.readyState === WebSocket.OPEN) {
+                      ws.send(JSON.stringify({ 
+                        type: 'stt_status', 
+                        status: 'failed',
+                        message: 'Too many voice sessions; please refresh'
+                      }));
+                    }
+                    state.sttReconnectInProgress = false;
+                    return; // Don't auto-reconnect on 1008
                   }
                   
                   // Auto-reconnect if session is still active
@@ -3024,7 +3070,9 @@ CRITICAL INSTRUCTIONS:
                     if (reconnectAttempts > 3) {
                       console.error('[AssemblyAI] ❌ Max reconnect attempts reached');
                       state.isReconnecting = false;
-                      ws.send(JSON.stringify({ type: "error", error: "Voice connection lost. Please restart." }));
+                      if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: 'stt_status', status: 'failed' }));
+                      }
                       return;
                     }
                     
@@ -3162,7 +3210,8 @@ CRITICAL INSTRUCTIONS:
               console.log('[AssemblyAI] createAssemblyAIConnection returned successfully');
               state.assemblyAIWs = assemblyWs;
               state.assemblyAIState = assemblyState;
-              console.log('[AssemblyAI] AssemblyAI WS assigned to state');
+              state.sttReady = true; // STT LIFECYCLE: Mark connection ready
+              console.log('[AssemblyAI] AssemblyAI WS assigned to state, sttReady=true');
               
               // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
               // STT WATCHDOG (Jan 2026): Start watchdog timer now that
@@ -3213,22 +3262,58 @@ CRITICAL INSTRUCTIONS:
                     state.lastWatchdogLogAt = now;
                   }
                   
-                  // Send stalled status to client
-                  if (ws.readyState === WebSocket.OPEN) {
+                  // Check 1008 cooldown before attempting reconnect
+                  if (now < state.sttReconnectCooldownUntil) {
+                    console.log('[STT-Watchdog] ⏳ In 1008 cooldown, skipping reconnect');
+                    return;
+                  }
+                  
+                  // Send stalled status to client (only once per stall cycle)
+                  if (!state.sttReconnectInProgress && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({ type: 'stt_status', status: 'stalled' }));
                   }
                   
-                  // Attempt ONE safe reconnect
+                  // Attempt ONE safe reconnect (single-flight guard)
                   if (state.assemblyAIWs && !state.sttReconnectInProgress) {
                     state.sttReconnectInProgress = true;
+                    state.sttReady = false; // Mark not ready during reconnect
+                    state.lastSttReconnectAttempt = now;
                     console.log('[STT-Watchdog] 🔄 Attempting AssemblyAI reconnect...');
                     
-                    try {
-                      // Close existing connection
-                      if (state.assemblyAIWs.readyState === WebSocket.OPEN) {
-                        state.assemblyAIWs.close(1000, 'Watchdog reconnect');
+                    // Close and nullify existing connection BEFORE creating new one
+                    const oldWs = state.assemblyAIWs;
+                    state.assemblyAIWs = null;
+                    state.assemblyAIState = null;
+                    
+                    // Force close old connection regardless of state
+                    if (oldWs.readyState !== WebSocket.CLOSED) {
+                      try {
+                        oldWs.close(1000, 'Watchdog reconnect');
+                      } catch (closeErr) {
+                        console.warn('[STT-Watchdog] ⚠️ Error closing old connection:', closeErr);
+                      }
+                    }
+                    
+                    // Delay reconnect using async IIFE (watchdog runs in setInterval, can't be async)
+                    (async () => {
+                      // Wait before creating new connection to allow cleanup
+                      await new Promise(resolve => setTimeout(resolve, STT_RECONNECT_DELAY_MS));
+                      
+                      // Check session still active after delay
+                      if (state.isSessionEnded) {
+                        console.log('[STT-Watchdog] ⏹️ Session ended during reconnect delay, aborting');
+                        state.sttReconnectInProgress = false;
+                        return;
                       }
                       
+                      // Double-check cooldown after delay (may have been set during delay)
+                      if (Date.now() < state.sttReconnectCooldownUntil) {
+                        console.log('[STT-Watchdog] ⏳ Cooldown active after delay, aborting reconnect');
+                        state.sttReconnectInProgress = false;
+                        return;
+                      }
+                    
+                    try {
                       // Create new connection
                       const { ws: newWs, state: newState } = createAssemblyAIConnection(
                         state.language,
@@ -3270,9 +3355,26 @@ CRITICAL INSTRUCTIONS:
                         (sessionId) => {
                           console.log('[STT-Watchdog] ✅ Reconnected:', sessionId);
                           state.sttReconnectInProgress = false;
+                          state.sttReady = true; // STT LIFECYCLE: Mark ready on reconnect success
                           state.lastSttMessageAt = Date.now();
                           if (ws.readyState === WebSocket.OPEN) {
                             ws.send(JSON.stringify({ type: 'stt_status', status: 'reconnected' }));
+                          }
+                        },
+                        (closeCode?: number) => {
+                          // Handle close during reconnect
+                          console.log('[STT-Watchdog] 🔌 Reconnected connection closed:', closeCode);
+                          state.sttReady = false;
+                          if (closeCode === 1008) {
+                            state.sttReconnectCooldownUntil = Date.now() + STT_1008_COOLDOWN_MS;
+                            state.sttReconnectInProgress = false;
+                            if (ws.readyState === WebSocket.OPEN) {
+                              ws.send(JSON.stringify({ 
+                                type: 'stt_status', 
+                                status: 'failed',
+                                message: 'Too many voice sessions; please refresh'
+                              }));
+                            }
                           }
                         }
                       );
@@ -3283,10 +3385,15 @@ CRITICAL INSTRUCTIONS:
                     } catch (e) {
                       console.error('[STT-Watchdog] ❌ Reconnect failed:', e);
                       state.sttReconnectInProgress = false;
+                      state.sttReady = false;
                       if (ws.readyState === WebSocket.OPEN) {
                         ws.send(JSON.stringify({ type: 'stt_status', status: 'failed' }));
                       }
                     }
+                    })().catch(err => {
+                      console.error('[STT-Watchdog] ❌ Async reconnect error:', err);
+                      state.sttReconnectInProgress = false;
+                    }); // End async IIFE
                   }
                 }
               };
@@ -3738,11 +3845,30 @@ CRITICAL INSTRUCTIONS:
                 
                 // Send to appropriate STT provider
                 if (USE_ASSEMBLYAI) {
-                  const sent = sendAudioToAssemblyAI(state.assemblyAIWs, audioBuffer);
-                  if (sent) {
-                    console.log('[Custom Voice] ✅ Audio forwarded to AssemblyAI');
+                  // STT LIFECYCLE: Guard audio send with sttReady check
+                  const now = Date.now();
+                  if (!state.sttReady || !state.assemblyAIWs) {
+                    // Rate-limited failure logging (once per 2 seconds)
+                    if (now - state.lastAudioSendFailureLog >= AUDIO_SEND_FAILURE_LOG_INTERVAL_MS) {
+                      console.warn('[Custom Voice] ⚠️ STT not ready, skipping audio send', {
+                        sttReady: state.sttReady,
+                        hasWs: !!state.assemblyAIWs,
+                        reconnectInProgress: state.sttReconnectInProgress,
+                        inCooldown: now < state.sttReconnectCooldownUntil
+                      });
+                      state.lastAudioSendFailureLog = now;
+                    }
                   } else {
-                    console.warn('[Custom Voice] ⚠️ Failed to send audio to AssemblyAI');
+                    const sent = sendAudioToAssemblyAI(state.assemblyAIWs, audioBuffer, state.assemblyAIState || undefined);
+                    if (sent) {
+                      console.log('[Custom Voice] ✅ Audio forwarded to AssemblyAI');
+                    } else {
+                      // Rate-limited failure logging
+                      if (now - state.lastAudioSendFailureLog >= AUDIO_SEND_FAILURE_LOG_INTERVAL_MS) {
+                        console.warn('[Custom Voice] ⚠️ Failed to send audio to AssemblyAI');
+                        state.lastAudioSendFailureLog = now;
+                      }
+                    }
                   }
                 } else {
                   state.deepgramConnection!.send(audioBuffer);
