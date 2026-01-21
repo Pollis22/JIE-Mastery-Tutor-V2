@@ -2992,6 +2992,48 @@ registerProcessor('audio-processor', AudioProcessor);
   }, [cleanupAllTimers]);
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // C) BEFOREUNLOAD HANDLER: Clean up session on page close/refresh
+  // Ensures server-side session is properly ended even on unexpected exit
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      console.log("[Custom Voice] 🚪 beforeunload - cleaning up session");
+      
+      // Try to send end message via WebSocket if open
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && sessionIdRef.current) {
+        try {
+          wsRef.current.send(JSON.stringify({ 
+            type: 'end', 
+            sessionId: sessionIdRef.current,
+            reason: 'page_unload'
+          }));
+          wsRef.current.close(1000, 'Page unload');
+        } catch (e) {
+          // Ignore errors during unload
+        }
+      }
+      
+      // Also send via beacon for reliability (fire-and-forget)
+      if (sessionIdRef.current) {
+        try {
+          navigator.sendBeacon(
+            `/api/voice-sessions/${sessionIdRef.current}/end`,
+            JSON.stringify({ reason: 'page_unload' })
+          );
+        } catch (e) {
+          // Beacon may fail on some browsers
+        }
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, []);
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // RESET VOICE STATE: Allow user to recover from terminal error
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   const resetVoiceState = useCallback(() => {

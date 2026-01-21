@@ -2232,6 +2232,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
         switch (message.type) {
           case "init":
             console.log("[Custom Voice] 🚀 Initializing session:", message.sessionId);
+            console.log(`[Telemetry] ws_connected sessionId=${message.sessionId?.slice(-8)} userId=${authenticatedUserId}`);
             
             // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             // TRIAL SESSION PATH - Skip realtimeSessions and suspension checks
@@ -2343,6 +2344,34 @@ export function setupCustomVoiceWebSocket(server: Server) {
                 }
                 
                 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                // C) SERVER-SIDE DEBOUNCE (Jan 2026): Deny new session if active session < 10s old
+                // Prevents rapid start/stop from creating duplicate sessions
+                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                const SESSION_DEBOUNCE_MS = 10000; // 10 seconds
+                const recentSessionCheck = await db.select()
+                  .from(realtimeSessions)
+                  .where(and(
+                    eq(realtimeSessions.userId, authenticatedUserId),
+                    isNull(realtimeSessions.endedAt),
+                    sql`${realtimeSessions.id} != ${message.sessionId}`,
+                    sql`${realtimeSessions.createdAt} > NOW() - INTERVAL '10 seconds'`
+                  ))
+                  .limit(1);
+                
+                if (recentSessionCheck.length > 0) {
+                  const recentSession = recentSessionCheck[0];
+                  const ageMs = recentSession.createdAt ? Date.now() - new Date(recentSession.createdAt).getTime() : 0;
+                  console.warn(`[Custom Voice] ⏱️ Session debounce: active session ${recentSession.id.slice(-8)} created ${ageMs}ms ago`);
+                  console.log(`[Telemetry] session_debounced userId=${authenticatedUserId} recentSessionId=${recentSession.id.slice(-8)} ageMs=${ageMs}`);
+                  ws.send(JSON.stringify({ 
+                    type: "error", 
+                    error: "Please wait a moment before starting a new session." 
+                  }));
+                  ws.close(4002, 'Session debounce');
+                  return;
+                }
+                
+                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                 // IDEMPOTENT SESSION (Jan 2026): End other active sessions for user
                 // Prevents "Too many voice sessions" by enforcing one session per user
                 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2358,10 +2387,12 @@ export function setupCustomVoiceWebSocket(server: Server) {
                   
                   if (otherActiveSessions.length > 0) {
                     console.log(`[Custom Voice] 🧹 Found ${otherActiveSessions.length} other active session(s) for user, ending them`);
+                    console.log(`[Telemetry] session_cleanup_start userId=${authenticatedUserId} activeCount=${otherActiveSessions.length}`);
                     for (const oldSession of otherActiveSessions) {
                       await db.update(realtimeSessions)
                         .set({ endedAt: new Date() })
                         .where(eq(realtimeSessions.id, oldSession.id));
+                      console.log(`[Telemetry] session_ended sessionId=${oldSession.id.slice(-8)} reason=cleanup`);
                       console.log(`[Custom Voice] ✅ Ended orphaned session ${oldSession.id.slice(-8)}`);
                     }
                   }
@@ -2443,6 +2474,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
                 ageGroup: state.ageGroup,
                 language: state.language
               });
+              console.log(`[Telemetry] session_created sessionId=${state.sessionId?.slice(-8)} userId=${state.userId} ageGroup=${state.ageGroup}`);
               
               // Fetch user's speech speed preference from database using authenticated userId
               try {
@@ -3090,6 +3122,7 @@ CRITICAL INSTRUCTIONS:
                   // Check for 1008 "too many sessions" error - apply cooldown
                   if (closeCode === 1008) {
                     console.error('[AssemblyAI] ❌ 1008 Error: Too many concurrent sessions');
+                    console.log(`[Telemetry] stt_too_many_sessions sessionId=${state.sessionId?.slice(-8)} userId=${state.userId} closeCode=1008`);
                     state.sttReconnectCooldownUntil = Date.now() + STT_1008_COOLDOWN_MS;
                     if (ws.readyState === WebSocket.OPEN) {
                       ws.send(JSON.stringify({ 
@@ -3252,6 +3285,7 @@ CRITICAL INSTRUCTIONS:
               state.assemblyAIWs = assemblyWs;
               state.assemblyAIState = assemblyState;
               state.sttReady = true; // STT LIFECYCLE: Mark connection ready
+              console.log(`[Telemetry] stt_ready sessionId=${state.sessionId?.slice(-8)} userId=${state.userId}`);
               console.log('[AssemblyAI] AssemblyAI WS assigned to state, sttReady=true');
               
               // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -3397,6 +3431,7 @@ CRITICAL INSTRUCTIONS:
                           console.log('[STT-Watchdog] ✅ Reconnected:', sessionId);
                           state.sttReconnectInProgress = false;
                           state.sttReady = true; // STT LIFECYCLE: Mark ready on reconnect success
+                          console.log(`[Telemetry] stt_ready sessionId=${state.sessionId?.slice(-8)} userId=${state.userId} context=watchdog_reconnect`);
                           state.lastSttMessageAt = Date.now();
                           if (ws.readyState === WebSocket.OPEN) {
                             ws.send(JSON.stringify({ type: 'stt_status', status: 'reconnected' }));
@@ -3407,6 +3442,7 @@ CRITICAL INSTRUCTIONS:
                           console.log('[STT-Watchdog] 🔌 Reconnected connection closed:', closeCode);
                           state.sttReady = false;
                           if (closeCode === 1008) {
+                            console.log(`[Telemetry] stt_too_many_sessions sessionId=${state.sessionId?.slice(-8)} userId=${state.userId} closeCode=1008 context=watchdog_reconnect`);
                             state.sttReconnectCooldownUntil = Date.now() + STT_1008_COOLDOWN_MS;
                             state.sttReconnectInProgress = false;
                             if (ws.readyState === WebSocket.OPEN) {
@@ -3765,6 +3801,7 @@ CRITICAL INSTRUCTIONS:
 
             ws.send(JSON.stringify({ type: "ready" }));
             console.log("[Custom Voice] ✅ Session ready");
+            console.log(`[Telemetry] session_ready sessionId=${state.sessionId?.slice(-8)} userId=${state.userId} sttReady=${state.sttReady}`);
             
             // Send session_config for adaptive voice UX features
             const gradeBand = normalizeGradeBand(state.ageGroup || 'G6-8');
@@ -4521,10 +4558,12 @@ CRITICAL INSTRUCTIONS:
     ws.on("close", async (code: number, reason: Buffer) => {
       const reasonStr = reason?.toString() || 'none';
       console.log(`[Custom Voice] 🔌 Connection closed - code: ${code}, reason: "${reasonStr}"`);
+      console.log(`[Telemetry] ws_close sessionId=${state.sessionId?.slice(-8)} userId=${state.userId} code=${code} reason=${reasonStr}`);
       
       // Skip if session was already ended (prevents double-deduction)
       if (state.isSessionEnded) {
         console.log("[Custom Voice] ℹ️ Session already finalized, skipping close handler");
+        console.log(`[Telemetry] session_released sessionId=${state.sessionId?.slice(-8)} userId=${state.userId} status=already_finalized`);
         return;
       }
       
@@ -4550,6 +4589,7 @@ CRITICAL INSTRUCTIONS:
       
       // Finalize session (saves to DB, deducts minutes)
       await finalizeSession(state, 'disconnect');
+      console.log(`[Telemetry] session_released sessionId=${state.sessionId?.slice(-8)} userId=${state.userId} status=finalized_disconnect`);
     });
 
     ws.on("error", async (error) => {
@@ -4581,6 +4621,7 @@ CRITICAL INSTRUCTIONS:
       
       // Finalize session with error message (saves to DB, deducts minutes)
       await finalizeSession(state, 'error', error instanceof Error ? error.message : 'Unknown error');
+      console.log(`[Telemetry] session_released sessionId=${state.sessionId?.slice(-8)} userId=${state.userId} status=finalized_error`);
     });
   });
 
