@@ -750,33 +750,116 @@ async function processSafetyCheck(
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // GOODBYE DETECTION: Gracefully end session when user says goodbye
 // Works for both voice and text modes
+// STRICT MODE: Only explicit command phrases trigger session end
+// Ambiguous farewells like "see you later" do NOT trigger session end
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-const GOODBYE_PHRASES = [
-  // English goodbye variants
-  'goodbye', 'good bye', 'bye', 'bye bye', 'see you', 'see ya',
-  'talk later', 'gotta go', 'got to go', 'have to go', 'need to go',
-  "i'm done", 'im done', 'i am done', 'we are done', "we're done",
-  'end session', 'stop tutoring', 'end the session', 'stop the session',
-  'that\'s all', 'thats all', "that's it", 'thats it',
-  'thanks bye', 'thank you bye', 'thanks goodbye', 'thank you goodbye',
-  'later', 'see you later', 'talk to you later', 'catch you later',
-  'good night', 'goodnight', 'night night', 'nighty night',
-  'i have to leave', 'i need to leave', 'leaving now',
-  // Multilingual goodbye phrases (platform supports 25 languages)
-  'adios', 'adiós', 'au revoir', 'ciao', 'hasta luego', 'hasta la vista',
-  'sayonara', 'sayōnara', 'auf wiedersehen', 'tschüss', 'tchüss',
-  'arrivederci', 'tot ziens', 'dag', 'farvel', 'ha det', 'hej då',
-  'näkemiin', 'do widzenia', 'tchau', 'até logo',
-  'zài jiàn', '再见', 'annyeong', '안녕', 'สวัสดี', 'ลาก่อน'
+
+// STRICT explicit goodbye commands only (word-boundary matched)
+// These are unambiguous session-ending commands
+const STRICT_GOODBYE_PHRASES = [
+  // English explicit commands
+  'goodbye', 'good bye', 'bye', 'bye bye', 'bye-bye',
+  'end session', 'end the session', 'stop session', 'stop the session',
+  'quit', 'exit',
+  // Multilingual explicit goodbyes (unambiguous farewells)
+  'adios', 'adiós', 'au revoir', 'ciao', 'sayonara', 'sayōnara',
+  'auf wiedersehen', 'tschüss', 'tchüss', 'arrivederci',
+  'zài jiàn', '再见', 'annyeong', '안녕'
 ];
 
+// Ambiguous phrases that should NOT trigger session end
+// These may appear in normal conversation ("Can't wait to see you")
+const AMBIGUOUS_FAREWELL_PHRASES = [
+  'see you', 'see ya', 'later', 'see you later', 'talk to you later',
+  'catch you later', 'talk later', 'until next time', 'next time',
+  'gotta go', 'got to go', 'have to go', 'need to go',
+  'i have to leave', 'i need to leave', 'leaving now',
+  'good night', 'goodnight', 'night night'
+];
+
+// Filler words to exclude from word count
+const FILLER_WORDS = new Set([
+  'um', 'uh', 'ah', 'oh', 'hmm', 'hm', 'er', 'like', 'you know',
+  'well', 'so', 'just', 'actually', 'basically', 'literally'
+]);
+
+// Count non-filler words in text
+function countNonFillerWords(text: string): number {
+  const words = text.toLowerCase().split(/\s+/).filter(w => w.length > 0);
+  return words.filter(word => !FILLER_WORDS.has(word)).length;
+}
+
+// Create word-boundary regex for a phrase
+// Uses Unicode-aware boundaries for accented characters (adiós, tschüss, etc.)
+function createWordBoundaryRegex(phrase: string): RegExp {
+  const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // Use (^|\\s|[^\\p{L}]) for start boundary and ($|\\s|[^\\p{L}]) for end boundary
+  // This handles Unicode letters properly (\\p{L} matches any Unicode letter)
+  return new RegExp(`(?:^|\\s|[^\\p{L}])${escaped}(?:$|\\s|[^\\p{L}])`, 'iu');
+}
+
+// Simple word boundary for ASCII-only phrases (faster)
+function createSimpleWordBoundaryRegex(phrase: string): RegExp {
+  const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`\\b${escaped}\\b`, 'i');
+}
+
+// Check if phrase contains non-ASCII characters
+function hasNonAscii(text: string): boolean {
+  return /[^\x00-\x7F]/.test(text);
+}
+
+// Check if text contains an ambiguous farewell (for optional confirmation)
+function containsAmbiguousFarewell(text: string): boolean {
+  const normalized = text.toLowerCase().trim();
+  return AMBIGUOUS_FAREWELL_PHRASES.some(phrase => 
+    createWordBoundaryRegex(phrase).test(normalized)
+  );
+}
+
+// CJK phrases that don't work with word boundaries (Chinese, Korean, Japanese)
+const CJK_GOODBYE_PHRASES = ['再见', '안녕'];
+
+// STRICT goodbye detection - only explicit commands
 function detectGoodbye(text: string): boolean {
   const normalized = text.toLowerCase().trim();
-  // Check if the message is primarily a goodbye (short message with goodbye intent)
-  // This prevents false positives from sentences that just mention "bye" in passing
-  if (normalized.length > 50) return false; // Long messages are not pure goodbyes
-  return GOODBYE_PHRASES.some(phrase => normalized.includes(phrase));
+  
+  // Require at least 1 non-filler word (prevents empty/filler-only triggers)
+  if (countNonFillerWords(normalized) < 1) {
+    return false;
+  }
+  
+  // Check CJK phrases with includes (word boundaries don't work for CJK)
+  for (const phrase of CJK_GOODBYE_PHRASES) {
+    if (normalized.includes(phrase)) {
+      console.log(`[Goodbye] ✅ CJK match found: "${phrase}" in "${normalized}"`);
+      return true;
+    }
+  }
+  
+  // Check for strict goodbye phrases with word boundaries
+  // This prevents "see you" from matching in "Can't wait to see you two times"
+  for (const phrase of STRICT_GOODBYE_PHRASES) {
+    // Skip CJK phrases (handled above with includes)
+    if (CJK_GOODBYE_PHRASES.includes(phrase)) continue;
+    
+    // Use Unicode-aware regex for accented phrases (adiós, tschüss, etc.)
+    // Use simple \b for ASCII-only phrases (faster)
+    const regex = hasNonAscii(phrase) 
+      ? createWordBoundaryRegex(phrase)
+      : createSimpleWordBoundaryRegex(phrase);
+      
+    if (regex.test(normalized)) {
+      console.log(`[Goodbye] ✅ Strict match found: "${phrase}" in "${normalized}"`);
+      return true;
+    }
+  }
+  
+  return false;
 }
+
+// Export for testing
+export { detectGoodbye, containsAmbiguousFarewell, countNonFillerWords, STRICT_GOODBYE_PHRASES };
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // TIMING FIX (Nov 3, 2025): Incomplete thought detection
