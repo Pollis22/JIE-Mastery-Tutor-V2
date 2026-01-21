@@ -46,7 +46,7 @@ import {
   type InsertRealtimeSession,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc, asc, count, sum, sql, like, or, inArray } from "drizzle-orm";
+import { eq, and, desc, asc, count, sum, sql, like, or, inArray, isNull } from "drizzle-orm";
 import session from "express-session";
 import connectPg from "connect-pg-simple";
 import MemoryStore from "memorystore";
@@ -187,6 +187,8 @@ export interface IStorage {
   getUserById(id: string): Promise<User | undefined>;
   createRealtimeSession(session: InsertRealtimeSession): Promise<RealtimeSession>;
   getRealtimeSession(sessionId: string, userId: string): Promise<RealtimeSession | undefined>;
+  getActiveRealtimeSessionForUser(userId: string): Promise<RealtimeSession | undefined>;
+  endActiveSessionsForUser(userId: string): Promise<number>;
   updateRealtimeSession(sessionId: string, userId: string, updates: Partial<RealtimeSession>): Promise<RealtimeSession>;
   endRealtimeSession(sessionId: string, userId: string, transcript: any[], minutesUsed: number): Promise<void>;
 
@@ -2173,6 +2175,56 @@ export class DatabaseStorage implements IStorage {
         console.error('❌ Failed to get realtime session:', error);
       }
       return undefined;
+    }
+  }
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // IDEMPOTENT SESSION MANAGEMENT (Jan 2026)
+  // One active voice session per user - prevents "Too many sessions" errors
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  
+  async getActiveRealtimeSessionForUser(userId: string): Promise<RealtimeSession | undefined> {
+    try {
+      const [session] = await db.select().from(realtimeSessions)
+        .where(and(
+          eq(realtimeSessions.userId, userId),
+          isNull(realtimeSessions.endedAt)
+        ))
+        .orderBy(desc(realtimeSessions.createdAt))
+        .limit(1);
+      return session;
+    } catch (error: any) {
+      if (error.code === '42P01') {
+        console.warn('⚠️ realtime_sessions table missing; cannot check active sessions.');
+      } else {
+        console.error('❌ Failed to get active realtime session for user:', error);
+      }
+      return undefined;
+    }
+  }
+
+  async endActiveSessionsForUser(userId: string): Promise<number> {
+    try {
+      const result = await db.update(realtimeSessions)
+        .set({ endedAt: new Date() })
+        .where(and(
+          eq(realtimeSessions.userId, userId),
+          isNull(realtimeSessions.endedAt)
+        ))
+        .returning();
+      
+      const count = result.length;
+      if (count > 0) {
+        console.log(`[Session] 🧹 Ended ${count} active session(s) for user ${userId.slice(-8)}`);
+      }
+      return count;
+    } catch (error: any) {
+      if (error.code === '42P01') {
+        console.warn('⚠️ realtime_sessions table missing; cannot end active sessions.');
+      } else {
+        console.error('❌ Failed to end active sessions for user:', error);
+      }
+      return 0;
     }
   }
 

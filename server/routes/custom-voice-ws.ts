@@ -7,7 +7,7 @@ import { generateTutorResponse, generateTutorResponseStreaming, StreamingCallbac
 import { generateSpeech } from "../services/tts-service";
 import { db } from "../db";
 import { realtimeSessions, contentViolations, userSuspensions, documentChunks } from "@shared/schema";
-import { eq, and, or, gte } from "drizzle-orm";
+import { eq, and, or, gte, isNull, sql } from "drizzle-orm";
 import { getTutorPersonality } from "../config/tutor-personalities";
 import { moderateContent, shouldWarnUser, getModerationResponse } from "../services/content-moderation";
 import { storage } from "../storage";
@@ -2327,6 +2327,47 @@ export function setupCustomVoiceWebSocket(server: Server) {
                   }));
                   ws.close();
                   return;
+                }
+                
+                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                // SESSION VALIDITY CHECK (Jan 2026): Prevent reconnect to ended session
+                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                if (session[0].endedAt) {
+                  console.warn(`[Custom Voice] ⚠️ Session ${message.sessionId} already ended at ${session[0].endedAt}`);
+                  ws.send(JSON.stringify({ 
+                    type: "session_invalid", 
+                    error: "This session has already ended. Please start a new session." 
+                  }));
+                  ws.close(4001, 'Session already ended');
+                  return;
+                }
+                
+                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                // IDEMPOTENT SESSION (Jan 2026): End other active sessions for user
+                // Prevents "Too many voice sessions" by enforcing one session per user
+                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                try {
+                  // Find and end any OTHER active sessions for this user
+                  const otherActiveSessions = await db.select()
+                    .from(realtimeSessions)
+                    .where(and(
+                      eq(realtimeSessions.userId, authenticatedUserId),
+                      isNull(realtimeSessions.endedAt),
+                      sql`${realtimeSessions.id} != ${message.sessionId}`
+                    ));
+                  
+                  if (otherActiveSessions.length > 0) {
+                    console.log(`[Custom Voice] 🧹 Found ${otherActiveSessions.length} other active session(s) for user, ending them`);
+                    for (const oldSession of otherActiveSessions) {
+                      await db.update(realtimeSessions)
+                        .set({ endedAt: new Date() })
+                        .where(eq(realtimeSessions.id, oldSession.id));
+                      console.log(`[Custom Voice] ✅ Ended orphaned session ${oldSession.id.slice(-8)}`);
+                    }
+                  }
+                } catch (cleanupError) {
+                  console.warn('[Custom Voice] ⚠️ Could not clean up old sessions:', cleanupError);
+                  // Continue anyway - best effort cleanup
                 }
 
                 console.log(`[Custom Voice] ✅ Session validated for authenticated user ${authenticatedUserId}`);
