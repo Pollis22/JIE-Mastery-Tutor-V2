@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useCustomVoice } from '@/hooks/use-custom-voice';
 import { RealtimeVoiceTranscript } from './realtime-voice-transcript';
 import { ChatInput } from './ChatInput';
+import { MicStatusPill } from './MicStatusPill';
 import { Button } from '@/components/ui/button';
 import { Mic, MicOff, Volume2, VolumeX, AlertTriangle, FileText, Type, Headphones } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -601,6 +602,8 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
         
         {customVoice.isConnected && (
           <div className="flex items-center gap-3">
+            <MicStatusPill status={customVoice.micStatus} />
+            <div className="h-4 w-px bg-border" />
             {customVoice.isTutorThinking ? (
               <div className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400" data-testid="status-tutor-thinking">
                 <div className="flex items-center gap-1">

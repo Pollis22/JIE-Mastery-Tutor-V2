@@ -181,6 +181,25 @@ interface MicrophoneError {
   errorType: string;
 }
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// MIC STATUS INDICATOR: Track current microphone/voice state for UI
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+export type MicStatus = 
+  | 'mic_off'           // Microphone disabled by user
+  | 'listening'         // Mic on, waiting for speech
+  | 'hearing_you'       // Detected student speech
+  | 'ignoring_noise'    // Detected background noise (not speech)
+  | 'tutor_speaking'    // TTS playback in progress
+  | 'processing';       // Waiting for AI response
+
+// Hysteresis timing constants (prevents flicker)
+const MIC_STATUS_HYSTERESIS = {
+  ENTER_HEARING_YOU_MS: 300,    // 250-400ms to enter "Hearing You"
+  EXIT_HEARING_YOU_MS: 600,     // 500-800ms to exit "Hearing You"
+  ENTER_IGNORING_NOISE_MS: 800, // Sustained non-speech audio before showing
+  EXIT_IGNORING_NOISE_MS: 400,  // Quick exit when noise stops
+};
+
 export function useCustomVoice() {
   const [isConnected, setIsConnected] = useState(false);
   const [transcript, setTranscript] = useState<TranscriptMessage[]>([]);
@@ -190,6 +209,15 @@ export function useCustomVoice() {
   const [isTutorThinking, setIsTutorThinking] = useState(false);
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [micEnabled, setMicEnabled] = useState(true);
+  
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // MIC STATUS STATE: Authoritative state driven by server WebSocket events
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  const [micStatus, setMicStatus] = useState<MicStatus>('mic_off');
+  const micStatusTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const pendingMicStatusRef = useRef<MicStatus | null>(null);
+  const lastSpeechDetectedRef = useRef<number>(0);
+  const lastNoiseDetectedRef = useRef<number>(0);
   
   // THINKING INDICATOR: Track current turn for matching events
   const thinkingTurnIdRef = useRef<string | null>(null);
@@ -339,6 +367,12 @@ export function useCustomVoice() {
     timersRef.current.forEach(id => clearTimeout(id));
     timersRef.current.clear();
     intervalsRef.current.forEach(id => clearInterval(id));
+    // Also clear mic status timer
+    if (micStatusTimerRef.current) {
+      clearTimeout(micStatusTimerRef.current);
+      micStatusTimerRef.current = null;
+    }
+    pendingMicStatusRef.current = null;
     intervalsRef.current.clear();
   }, []);
 
@@ -386,6 +420,58 @@ export function useCustomVoice() {
         isPartial: true,
         timestamp: new Date().toISOString()
       }];
+    });
+  }, []);
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // MIC STATUS HELPERS: Update with hysteresis to prevent flicker
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  const updateMicStatus = useCallback((newStatus: MicStatus, immediate = false) => {
+    // Clear any pending transition
+    if (micStatusTimerRef.current) {
+      clearTimeout(micStatusTimerRef.current);
+      micStatusTimerRef.current = null;
+    }
+    
+    // Immediate updates for high-priority states
+    if (immediate || newStatus === 'mic_off' || newStatus === 'processing' || newStatus === 'tutor_speaking') {
+      pendingMicStatusRef.current = null;
+      setMicStatus(newStatus);
+      return;
+    }
+    
+    // Determine hysteresis delay based on transition type
+    setMicStatus(prev => {
+      let delay = 0;
+      
+      if (newStatus === 'hearing_you' && prev !== 'hearing_you') {
+        // Entering "Hearing You" - require sustained speech
+        delay = MIC_STATUS_HYSTERESIS.ENTER_HEARING_YOU_MS;
+      } else if (prev === 'hearing_you' && newStatus === 'listening') {
+        // Exiting "Hearing You" - longer delay to prevent flicker
+        delay = MIC_STATUS_HYSTERESIS.EXIT_HEARING_YOU_MS;
+      } else if (newStatus === 'ignoring_noise' && prev !== 'ignoring_noise') {
+        // Entering "Ignoring Noise" - require sustained non-speech audio
+        delay = MIC_STATUS_HYSTERESIS.ENTER_IGNORING_NOISE_MS;
+      } else if (prev === 'ignoring_noise' && newStatus === 'listening') {
+        // Exiting "Ignoring Noise" - quicker exit
+        delay = MIC_STATUS_HYSTERESIS.EXIT_IGNORING_NOISE_MS;
+      }
+      
+      if (delay > 0) {
+        pendingMicStatusRef.current = newStatus;
+        micStatusTimerRef.current = setTimeout(() => {
+          if (pendingMicStatusRef.current === newStatus) {
+            setMicStatus(newStatus);
+            pendingMicStatusRef.current = null;
+          }
+          micStatusTimerRef.current = null;
+        }, delay);
+        return prev; // Keep current status during hysteresis
+      }
+      
+      pendingMicStatusRef.current = null;
+      return newStatus;
     });
   }, []);
 
@@ -703,8 +789,12 @@ export function useCustomVoice() {
             if (micEnabledRef.current) {
               console.log("[Custom Voice] 🎤 Starting microphone (Voice mode)");
               await startMicrophone();
+              // MIC STATUS: Set to listening once mic starts
+              updateMicStatus('listening', true);
             } else {
               console.log("[Custom Voice] 🔇 Skipping microphone (Hybrid/Text mode)");
+              // MIC STATUS: Mic is off in hybrid/text mode
+              updateMicStatus('mic_off', true);
             }
             break;
           
@@ -786,9 +876,69 @@ export function useCustomVoice() {
               // Record when playback starts to prevent self-interrupt from echo
               lastAudioPlaybackStartRef.current = Date.now();
               setIsTutorSpeaking(true);
+              // MIC STATUS: Tutor is speaking
+              updateMicStatus('tutor_speaking', true);
               await playAudio(message.data);
             } else {
               console.log("[Custom Voice] 🔇 Audio muted, showing text only");
+            }
+            break;
+          
+          // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          // MIC STATUS EVENTS: Server-authoritative state for UI indicator
+          // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          case "speech_detected":
+            // Server confirms speech detected (from STT)
+            console.log("[Custom Voice] 🎤 Speech detected by server");
+            lastSpeechDetectedRef.current = Date.now();
+            updateMicStatus('hearing_you');
+            break;
+          
+          case "speech_ended":
+            // Server confirms speech ended (student stopped talking)
+            console.log("[Custom Voice] 🔇 Speech ended");
+            // Return to listening if mic enabled, otherwise mic_off
+            if (micEnabledRef.current) {
+              updateMicStatus('listening');
+            }
+            break;
+          
+          case "noise_ignored":
+            // Server filtered out background noise (not speech)
+            console.log("[Custom Voice] 🔊 Background noise ignored");
+            lastNoiseDetectedRef.current = Date.now();
+            updateMicStatus('ignoring_noise');
+            break;
+          
+          case "tts_playing":
+            // Server started TTS playback
+            console.log("[Custom Voice] 🔊 TTS playback started");
+            updateMicStatus('tutor_speaking', true);
+            break;
+          
+          case "tts_finished":
+            // Server finished TTS playback
+            console.log("[Custom Voice] 🔇 TTS playback finished");
+            // Return to listening if mic enabled
+            if (micEnabledRef.current) {
+              updateMicStatus('listening');
+            }
+            break;
+          
+          case "duck":
+            // Server ducked audio volume (potential speech detected)
+            console.log("[Custom Voice] 🔉 Audio ducked - potential speech");
+            updateMicStatus('hearing_you');
+            break;
+          
+          case "unduck":
+            // Server restored audio volume (speech ended or not confirmed)
+            console.log("[Custom Voice] 🔊 Audio restored");
+            // Return to listening if mic enabled, otherwise tutor_speaking
+            if (isTutorSpeakingRef.current) {
+              updateMicStatus('tutor_speaking', true);
+            } else if (micEnabledRef.current) {
+              updateMicStatus('listening');
             }
             break;
 
@@ -871,6 +1021,8 @@ export function useCustomVoice() {
             // Clear thinking indicator on session end
             setIsTutorThinking(false);
             thinkingTurnIdRef.current = null;
+            // MIC STATUS: Session ended, mic is off
+            updateMicStatus('mic_off', true);
             
             // Note: ws.onclose handles final cleanup and state reset
             break;
@@ -880,6 +1032,8 @@ export function useCustomVoice() {
             console.log("[Custom Voice] 💭 Tutor is thinking...", message.turnId);
             thinkingTurnIdRef.current = message.turnId;
             setIsTutorThinking(true);
+            // MIC STATUS: Processing (waiting for AI response)
+            updateMicStatus('processing', true);
             break;
           
           case "tutor_responding":
@@ -889,6 +1043,8 @@ export function useCustomVoice() {
               setIsTutorThinking(false);
               thinkingTurnIdRef.current = null;
             }
+            // MIC STATUS: Tutor is now speaking (will get audio event too)
+            updateMicStatus('tutor_speaking', true);
             break;
           
           case "tutor_error":
@@ -896,6 +1052,10 @@ export function useCustomVoice() {
             // Clear thinking on error (any turnId)
             setIsTutorThinking(false);
             thinkingTurnIdRef.current = null;
+            // MIC STATUS: Return to listening on error
+            if (micEnabledRef.current) {
+              updateMicStatus('listening');
+            }
             break;
         }
       };
@@ -921,6 +1081,8 @@ export function useCustomVoice() {
         // Clear thinking indicator on disconnect
         setIsTutorThinking(false);
         thinkingTurnIdRef.current = null;
+        // MIC STATUS: Disconnected, mic is off
+        updateMicStatus('mic_off', true);
         cleanup();
       };
 
@@ -2520,12 +2682,16 @@ registerProcessor('audio-processor', AudioProcessor);
       // Switching to Voice mode - start microphone
       voiceLogger.info("Enabling microphone for Voice mode");
       await startMicrophone();
+      // MIC STATUS: Mic is now listening
+      updateMicStatus('listening', true);
     } else if (isConnected && !studentMic && previousMicState) {
       // Switching to Hybrid/Text mode - stop microphone
       voiceLogger.info("Disabling microphone for Hybrid/Text mode");
       stopMicrophone();
+      // MIC STATUS: Mic is now off
+      updateMicStatus('mic_off', true);
     }
-  }, []);
+  }, [updateMicStatus]);
 
   const addSystemMessage = useCallback((message: string) => {
     voiceLogger.info("System message:", message);
@@ -2608,5 +2774,6 @@ registerProcessor('audio-processor', AudioProcessor);
     isTutorThinking,
     audioEnabled,
     micEnabled,
+    micStatus,
   };
 }

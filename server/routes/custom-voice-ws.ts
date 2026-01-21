@@ -591,6 +591,7 @@ interface SessionState {
   bargeInDuckStartTime: number; // BARGE-IN: When ducking started for timeout
   lastConfirmedSpeechTime: number; // BARGE-IN: When last confirmed speech was detected
   lastMeasuredRms: number; // NOISE FLOOR: Last measured RMS for logging
+  lastSpeechNotificationSent: boolean; // MIC STATUS: Track if speech_detected was sent (avoid spam)
   postUtteranceGraceUntil: number; // GHOST TURN: Grace period for transcript merging
   safetyStrikeCount: number; // SAFETY: Track strikes for session termination
   safetyFlags: Array<{
@@ -1154,6 +1155,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
       bargeInDuckStartTime: 0, // BARGE-IN: No duck in progress
       lastConfirmedSpeechTime: 0, // BARGE-IN: No confirmed speech yet
       lastMeasuredRms: 0, // NOISE FLOOR: No RMS measured yet
+      lastSpeechNotificationSent: false, // MIC STATUS: No speech notification sent yet
       postUtteranceGraceUntil: 0, // GHOST TURN: No grace period active
       safetyStrikeCount: 0, // SAFETY: Initialize strike count
       safetyFlags: [], // SAFETY: Initialize safety flags array
@@ -3415,6 +3417,18 @@ CRITICAL INSTRUCTIONS:
                 // Log noise floor gating when speech is ignored (potential but not confirmed)
                 if (!speechDetection.isSpeech && speechDetection.isPotentialSpeech) {
                   logNoiseFloorGating(state.sessionId || 'unknown', speechDetection, true);
+                  // MIC STATUS EVENT: Notify client that background noise is being filtered
+                  ws.send(JSON.stringify({ type: "noise_ignored" }));
+                }
+                
+                // MIC STATUS EVENT: Notify client when confirmed speech is detected
+                if (speechDetection.isSpeech && !state.lastSpeechNotificationSent) {
+                  ws.send(JSON.stringify({ type: "speech_detected" }));
+                  state.lastSpeechNotificationSent = true;
+                } else if (!speechDetection.isSpeech && state.lastSpeechNotificationSent) {
+                  // Clear the flag when speech ends (for next detection)
+                  state.lastSpeechNotificationSent = false;
+                  ws.send(JSON.stringify({ type: "speech_ended" }));
                 }
                 
                 // Only log detailed audio analysis occasionally (every ~50th chunk to reduce noise)
