@@ -58,30 +58,40 @@ export function setupAuth(app: Express) {
   }
 
   // Environment-aware session cookie configuration
-  // Production: secure=true, sameSite='lax', NO domain (host-only cookies)
-  // The canonical redirect ensures all users are on www.jiemastery.ai
+  // Production: secure=true, sameSite='lax', domain='.jiemastery.ai' for iOS Safari compatibility
   // Railway domain also works independently (no redirect)
-  // Development: secure=false, sameSite='lax'
+  // Development: secure=false, sameSite='lax', no domain (host-only)
   const isProduction = process.env.NODE_ENV === 'production';
   const cookieSecure = process.env.SESSION_COOKIE_SECURE 
     ? process.env.SESSION_COOKIE_SECURE === 'true' 
     : isProduction;
   const cookieSameSite = (process.env.SESSION_COOKIE_SAMESITE || 'lax') as 'lax' | 'none' | 'strict';
-  // Use host-only cookies (no domain) - simpler and more reliable since we redirect to www anyway
-  const cookieDomain = undefined;
+  
+  // Cookie domain configuration:
+  // - Default: host-only cookies (no domain) - works for Railway and custom domains
+  // - Override: Set SESSION_COOKIE_DOMAIN=".jiemastery.ai" if cross-subdomain cookies needed
+  // 
+  // iOS Safari Fix relies primarily on:
+  // - rolling: true (refreshes cookie on each request)
+  // - maxAge: 30 days (longer persistence)
+  // - sameSite: 'lax' (not 'strict' which breaks some iOS flows)
+  // - Canonical redirect to www.jiemastery.ai (ensures consistent host)
+  const cookieDomain = process.env.SESSION_COOKIE_DOMAIN || undefined;
 
   console.log('[Session] Cookie configuration:', {
     environment: process.env.NODE_ENV,
     secure: cookieSecure,
     sameSite: cookieSameSite,
-    domain: '(host-only)',
-    maxAge: '7 days'
+    domain: cookieDomain || '(host-only)',
+    maxAge: '30 days',
+    rolling: true
   });
 
   const sessionSettings: session.SessionOptions = {
     secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
+    rolling: true, // Extend session on each request - critical for iOS Safari cookie persistence
     store: storage.sessionStore,
     cookie: {
       httpOnly: true,
@@ -89,7 +99,7 @@ export function setupAuth(app: Express) {
       sameSite: cookieSameSite,
       domain: cookieDomain,
       path: '/', // Explicit path for consistency
-      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days for better persistence
+      maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days for better iOS Safari persistence
     }
   };
 
@@ -1020,14 +1030,38 @@ export function setupAuth(app: Express) {
   });
 
   app.post("/api/login", (req, res, next) => {
+    // iOS Safari Auth Diagnostic: Log request details
+    const userAgent = req.headers['user-agent'] || 'unknown';
+    const isIOS = /iPhone|iPad|iPod/i.test(userAgent);
+    const isSafari = /Safari/i.test(userAgent) && !/Chrome/i.test(userAgent);
+    const rawEmail = req.body?.email;
+    
+    console.log('[LOGIN_ATTEMPT]', {
+      email: rawEmail ? `${rawEmail.substring(0, 3)}...` : 'missing',
+      host: req.headers.host,
+      proto: req.headers['x-forwarded-proto'],
+      secure: req.secure,
+      hasCookie: !!req.headers.cookie,
+      userAgent: userAgent.substring(0, 80),
+      isIOS,
+      isSafari,
+      sessionID: req.sessionID?.substring(0, 8) + '...'
+    });
+    
+    // Input normalization: trim and lowercase email (iOS autofill quirk fix)
+    if (req.body?.email && typeof req.body.email === 'string') {
+      req.body.email = req.body.email.trim().toLowerCase();
+    }
+    // Do NOT trim password - may contain intentional spaces
+    
     passport.authenticate("local", (err: any, user: any, info: any) => {
       if (err) {
-        console.error('[Auth] Login error:', err);
-        // Better error handling - capture the full error
+        console.error('[LOGIN_FAIL] Error:', err);
         const errorMessage = err.message || err.toString() || 'Unknown authentication error';
         return res.status(500).json({ error: 'Authentication error', details: errorMessage });
       }
       if (!user) {
+        console.log('[LOGIN_FAIL] Invalid credentials for:', rawEmail ? `${rawEmail.substring(0, 3)}...` : 'unknown');
         return res.status(401).json({ error: 'Invalid credentials' });
       }
       
@@ -1134,6 +1168,20 @@ export function setupAuth(app: Express) {
             
             // Sanitize user response to exclude sensitive fields
             const { password, ...safeUser } = user as any;
+            
+            // iOS Safari Auth Diagnostic: Log successful login with Set-Cookie info
+            const setCookieHeader = res.getHeader('Set-Cookie');
+            console.log('[LOGIN_SUCCESS]', {
+              userId: user.id.substring(0, 8) + '...',
+              email: user.email.substring(0, 3) + '...',
+              sessionID: req.sessionID?.substring(0, 8) + '...',
+              isIOS: /iPhone|iPad|iPod/i.test(req.headers['user-agent'] || '')
+            });
+            console.log('[SET_COOKIE_SENT]', {
+              hasCookie: !!setCookieHeader,
+              cookieLength: setCookieHeader ? String(setCookieHeader).length : 0
+            });
+            
             res.status(200).json(safeUser);
           });
         });
@@ -1347,6 +1395,52 @@ export function setupAuth(app: Express) {
     // Sanitize user response to exclude sensitive fields
     const { password, ...safeUser } = req.user as any;
     res.json(safeUser);
+  });
+
+  // iOS Safari Auth Debug Endpoint
+  // Returns session/cookie diagnostic info without exposing sensitive data
+  // Access: Development mode OR with ADMIN_DEBUG_TOKEN header
+  app.get("/api/debug/auth", (req, res) => {
+    const isDevMode = process.env.NODE_ENV !== 'production';
+    const debugToken = process.env.ADMIN_DEBUG_TOKEN;
+    const providedToken = req.headers['x-admin-debug-token'];
+    
+    // Only allow in dev mode OR with valid debug token
+    if (!isDevMode && (!debugToken || providedToken !== debugToken)) {
+      return res.status(403).json({ error: 'Debug endpoint not available' });
+    }
+    
+    const cookies = req.headers.cookie || '';
+    const cookieParts = cookies.split(';').map(c => c.trim().split('=')[0]);
+    const hasConnectSid = cookies.includes('connect.sid');
+    
+    const debugInfo = {
+      timestamp: new Date().toISOString(),
+      environment: process.env.NODE_ENV,
+      host: req.headers.host,
+      proto: req.headers['x-forwarded-proto'] || 'direct',
+      secure: req.secure,
+      hasCookieHeader: !!req.headers.cookie,
+      cookieNames: cookieParts.filter(Boolean), // Only cookie names, not values
+      hasConnectSid,
+      sessionID: req.sessionID ? req.sessionID.substring(0, 6) + '...' : null,
+      hasPassportUser: !!req.session?.passport?.user,
+      isAuthenticated: req.isAuthenticated(),
+      userId: req.user?.id ? req.user.id.substring(0, 6) + '...' : null,
+      userAgent: req.headers['user-agent']?.substring(0, 100),
+      isIOS: /iPhone|iPad|iPod/i.test(req.headers['user-agent'] || ''),
+      isSafari: /Safari/i.test(req.headers['user-agent'] || '') && !/Chrome/i.test(req.headers['user-agent'] || ''),
+      sessionCookieConfig: {
+        domain: process.env.SESSION_COOKIE_DOMAIN || '(host-only)',
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        rolling: true,
+        maxAge: '30 days'
+      }
+    };
+    
+    console.log('[DEBUG_AUTH]', JSON.stringify(debugInfo));
+    res.json(debugInfo);
   });
 
   // Request password reset
