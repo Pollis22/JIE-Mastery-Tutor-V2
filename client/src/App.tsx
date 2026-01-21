@@ -70,10 +70,6 @@ function PageTracking() {
 }
 
 function Router() {
-  if (!globalThis.__HAS_WOUTER_ROUTER__) {
-    globalThis.__HAS_WOUTER_ROUTER__ = true;
-    console.log('[RUNTIME] Wouter router context initialized');
-  }
   return (
     <>
       <PageTracking />

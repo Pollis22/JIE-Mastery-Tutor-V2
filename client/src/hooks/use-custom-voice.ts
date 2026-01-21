@@ -190,42 +190,7 @@ export type MicStatus =
   | 'hearing_you'       // Detected student speech
   | 'ignoring_noise'    // Detected background noise (not speech)
   | 'tutor_speaking'    // TTS playback in progress
-  | 'processing'        // Waiting for AI response
-  | 'reconnecting'      // STT connection being re-established
-  | 'error'             // STT connection failed
-  | 'silent';           // Mic is receiving silent/empty audio
-
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// VOICE SESSION STATE MACHINE (Jan 2026)
-// Prevents multiple concurrent sessions and "Too many voice sessions" errors
-// States: IDLE → CREATING_SESSION → CONNECTING_WS → CONNECTED → DISCONNECTING
-// TERMINAL_ERROR is a failure state that requires user to restart
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-export type VoiceSessionState = 
-  | 'IDLE'              // No active session, ready to start
-  | 'CREATING_SESSION'  // API call to create session in progress
-  | 'CONNECTING_WS'     // WebSocket connection in progress
-  | 'CONNECTED'         // Fully connected and active
-  | 'DISCONNECTING'     // Teardown in progress (ignore all triggers)
-  | 'TERMINAL_ERROR';   // Fatal error, requires user action to restart
-
-// Reconnection exponential backoff configuration
-const RECONNECT_CONFIG = {
-  INITIAL_DELAY_MS: 1000,    // 1 second
-  MAX_DELAY_MS: 30000,       // 30 seconds max
-  MAX_ATTEMPTS: 5,           // Maximum reconnect attempts
-  JITTER_FACTOR: 0.3,        // ±30% jitter
-};
-
-// Calculate backoff delay with jitter
-function getBackoffDelay(attempt: number): number {
-  const baseDelay = Math.min(
-    RECONNECT_CONFIG.INITIAL_DELAY_MS * Math.pow(2, attempt),
-    RECONNECT_CONFIG.MAX_DELAY_MS
-  );
-  const jitter = baseDelay * RECONNECT_CONFIG.JITTER_FACTOR * (Math.random() * 2 - 1);
-  return Math.round(baseDelay + jitter);
-}
+  | 'processing';       // Waiting for AI response
 
 // Hysteresis timing constants (prevents flicker)
 const MIC_STATUS_HYSTERESIS = {
@@ -244,26 +209,6 @@ export function useCustomVoice() {
   const [isTutorThinking, setIsTutorThinking] = useState(false);
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [micEnabled, setMicEnabled] = useState(true);
-  
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // VOICE SESSION STATE MACHINE (Jan 2026)
-  // Single source of truth for session lifecycle - prevents concurrent sessions
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  const [voiceState, setVoiceState] = useState<VoiceSessionState>('IDLE');
-  const voiceStateRef = useRef<VoiceSessionState>('IDLE');
-  const sessionIdRef = useRef<string | null>(null);
-  const reconnectAttemptRef = useRef<number>(0);
-  const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
-  
-  // State transition function with logging
-  const transitionVoiceState = useCallback((newState: VoiceSessionState, reason?: string) => {
-    const oldState = voiceStateRef.current;
-    if (oldState === newState) return; // No change
-    
-    console.log(`[VoiceState] 🔄 ${oldState} → ${newState}${reason ? ` (${reason})` : ''}`);
-    voiceStateRef.current = newState;
-    setVoiceState(newState);
-  }, []);
   
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // MIC STATUS STATE: Authoritative state driven by server WebSocket events
@@ -314,13 +259,6 @@ export function useCustomVoice() {
   // Audio buffer queue for reconnection resilience
   const audioBufferQueueRef = useRef<ArrayBuffer[]>([]);
   const isReconnectingRef = useRef<boolean>(false);
-  
-  // FIX #4: Drop outgoing audio frames during disconnect
-  const isDisconnectingRef = useRef<boolean>(false);
-  
-  // Dev-only telemetry for audio pipeline debugging (STEP 5)
-  const lastAudioTelemetryRef = useRef<number>(0);
-  const DEV_AUDIO_TELEMETRY_INTERVAL_MS = 2000; // Log once per 2 seconds
   
   // Refs for state used in async callbacks (prevents stale closures)
   const isConnectedRef = useRef<boolean>(false);
@@ -814,71 +752,18 @@ export function useCustomVoice() {
     documents: string[] = [],
     language: string = 'en'
   ) => {
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // DEV/HMR CONTAINMENT (STEP 6): Voice connect only via explicit user action
-    // Vite HMR errors (wss://localhost:undefined) are dev-only and should NOT
-    // trigger auto-restart of voice sessions. Log a note if we detect remount.
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    if (import.meta.env.DEV) {
-      console.log('[DEV] Voice connect triggered - ensure this is from explicit user action (Start Voice button)');
-    }
-    
-    // FIX #4: Reset disconnecting flag on new connection
-    isDisconnectingRef.current = false;
-    
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // STATE MACHINE GUARD: Prevent duplicate connections
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    const currentState = voiceStateRef.current;
-    if (currentState !== 'IDLE') {
-      console.warn(`[VoiceState] ⚠️ Cannot connect: state is ${currentState}, not IDLE`);
-      
-      // If already connected/connecting with same session, just return success
-      if ((currentState === 'CONNECTED' || currentState === 'CONNECTING_WS') && 
-          sessionIdRef.current === sessionId) {
-        console.log('[VoiceState] ✅ Already connected/connecting to same session');
-        return;
-      }
-      
-      // If in terminal error, user must explicitly restart
-      if (currentState === 'TERMINAL_ERROR') {
-        setError('Voice session ended with an error. Please restart your session.');
-        return;
-      }
-      
-      return; // Block other states (CREATING_SESSION, DISCONNECTING)
-    }
-    
-    // Guard: Prevent duplicate WebSocket connections
-    if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || 
-        wsRef.current.readyState === WebSocket.CONNECTING)) {
-      console.warn('[VoiceState] ⚠️ WebSocket already exists, closing old one first');
-      try { wsRef.current.close(1000, 'New connection requested'); } catch (e) { /* ignore */ }
-      wsRef.current = null;
-    }
-    
     try {
-      transitionVoiceState('CONNECTING_WS', 'connect called');
-      sessionIdRef.current = sessionId;
-      reconnectAttemptRef.current = 0; // Reset reconnect counter
+      console.log("[Custom Voice] 🚀 Connecting...", { language });
       
-      console.log("[Custom Voice] 🚀 Connecting...", { language, sessionId: sessionId.slice(-8) });
+      // Get WebSocket URL (use wss:// in production)
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const wsUrl = `${protocol}//${window.location.host}/api/custom-voice-ws`;
       
-      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-      // CANONICAL WS URL: Always derive from window.location, never localhost
-      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-      const wsUrl = new URL('/api/custom-voice-ws', window.location.origin);
-      wsUrl.protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      
-      console.log("[Custom Voice] 🔗 WebSocket URL:", wsUrl.toString());
-      
-      const ws = new WebSocket(wsUrl.toString());
+      const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
       ws.onopen = () => {
-        console.log("[Custom Voice] ✅ WebSocket connected");
-        transitionVoiceState('CONNECTED', 'ws.onopen');
-        reconnectAttemptRef.current = 0; // Reset on successful connection
+        console.log("[Custom Voice] ✅ Connected");
         
         ws.send(JSON.stringify({
           type: "init",
@@ -1091,116 +976,8 @@ export function useCustomVoice() {
             break;
 
           case "error":
-            // Handle standardized error codes (Jan 2026)
-            const errorCode = message.code || '';
-            const errorMsg = message.message || message.error || 'Unknown error';
-            console.error("[Custom Voice] ❌ Error:", { code: errorCode, message: errorMsg, provider: message.provider, raw: message.raw });
-            setError(errorMsg);
-            
-            // Check for SPECIFIC terminal errors using standardized codes first, then fallback to text matching
-            const errorLower = errorMsg.toLowerCase();
-            const isTerminalByCode = 
-              errorCode === 'SERVER_SESSION_LIMIT' ||
-              errorCode === 'SERVER_SESSION_REPLACED' ||
-              errorCode === 'STT_PROVIDER_ERROR' ||
-              errorCode === 'PROVIDER_SESSION_LIMIT' ||
-              errorCode === 'STT_COOLDOWN' ||
-              errorCode === 'SESSION_ALREADY_ENDED';
-            
-            const isTerminalByText = 
-              errorLower.includes('too many voice sessions') ||
-              errorLower.includes('too many sessions') ||
-              errorLower.includes('account is disabled') ||
-              errorLower.includes('account has been deleted') ||
-              errorLower.includes('unauthorized session') ||
-              errorLower.includes('session has already ended');
-            
-            if (isTerminalByCode || isTerminalByText) {
-              const enforcer = errorCode.startsWith('SERVER_') ? 'server' : 
-                (errorCode === 'STT_PROVIDER_ERROR' || errorCode === 'PROVIDER_SESSION_LIMIT') ? `provider:${message.provider || 'unknown'}` : 
-                errorCode === 'STT_COOLDOWN' ? 'cooldown' : 'unknown';
-              console.error(`[VoiceState] 🛑 Terminal error detected: code=${errorCode} enforcer=${enforcer} message=${errorMsg}`);
-              transitionVoiceState('TERMINAL_ERROR', errorMsg);
-              stopMicrophone();
-              cleanupAllTimers();
-            }
-            break;
-          
-          // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          // VOICE ERROR (Jan 2026): Standardized error with retry info
-          // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          case "voice_error":
-            const voiceErrorCode = message.code || '';
-            const voiceErrorMsg = message.message || 'Voice error';
-            const retryAfterMs = message.retryAfterMs || 0;
-            console.error("[Custom Voice] ❌ Voice error:", { code: voiceErrorCode, message: voiceErrorMsg, retryAfterMs });
-            
-            // Show user-friendly message with retry time
-            if (voiceErrorCode === 'STT_COOLDOWN' || voiceErrorCode === 'PROVIDER_SESSION_LIMIT') {
-              const retrySeconds = Math.ceil(retryAfterMs / 1000);
-              const retryMinutes = Math.ceil(retrySeconds / 60);
-              const timeStr = retryMinutes >= 1 ? `${retryMinutes} minute${retryMinutes > 1 ? 's' : ''}` : `${retrySeconds} seconds`;
-              const userMessage = `Voice temporarily unavailable. Please retry in ${timeStr}.`;
-              setError(userMessage);
-              console.error(`[VoiceState] 🛑 Cooldown/Limit error: code=${voiceErrorCode} retryAfterMs=${retryAfterMs}`);
-              transitionVoiceState('TERMINAL_ERROR', voiceErrorCode);
-              stopMicrophone();
-              cleanupAllTimers();
-            } else {
-              setError(voiceErrorMsg);
-            }
-            break;
-          
-          // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          // STT WATCHDOG STATUS (Jan 2026): Handle stall recovery
-          // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-          case "stt_status":
-            console.log("[Custom Voice] 🔍 STT status:", message.status, message.message || '');
-            if (message.status === 'stalled') {
-              console.warn("[Custom Voice] ⚠️ STT stalled - server handling reconnect...");
-              updateMicStatus('reconnecting', false);
-            } else if (message.status === 'reconnected') {
-              console.log("[Custom Voice] ✅ STT reconnected");
-              updateMicStatus('listening', true);
-            } else if (message.status === 'cooldown') {
-              const cooldownRetryMs = message.retryAfterMs || 120000;
-              const cooldownMinutes = Math.ceil(cooldownRetryMs / 60000);
-              console.warn(`[Custom Voice] ⏳ STT in cooldown for ${cooldownMinutes} min (code: ${message.code || 'MAX_ATTEMPTS'})`);
-              updateMicStatus('error', false);
-              setError(`Voice temporarily unavailable. Please retry in ${cooldownMinutes} minute${cooldownMinutes > 1 ? 's' : ''}.`);
-              transitionVoiceState('TERMINAL_ERROR', message.code || 'STT_COOLDOWN');
-              stopMicrophone();
-              cleanupAllTimers();
-            } else if (message.status === 'failed') {
-              console.error("[Custom Voice] ❌ STT reconnect failed:", message.message);
-              updateMicStatus('error', false);
-              const sttErrorMsg = message.message || "Voice recognition connection lost. Tap to reconnect.";
-              setError(sttErrorMsg);
-              
-              if (sttErrorMsg.toLowerCase().includes('too many')) {
-                console.error("[VoiceState] 🛑 Too many sessions - transitioning to TERMINAL_ERROR");
-                transitionVoiceState('TERMINAL_ERROR', 'too many voice sessions');
-                stopMicrophone();
-                cleanupAllTimers();
-              }
-            }
-            break;
-          
-          // Handle session_invalid from server (session already ended)
-          case "session_invalid":
-            console.error("[VoiceState] 🛑 Session invalid - already ended on server");
-            transitionVoiceState('TERMINAL_ERROR', 'session invalid');
-            setError('This voice session has already ended. Please start a new session.');
-            stopMicrophone();
-            cleanupAllTimers();
-            break;
-          
-          case "mic_status":
-            console.log("[Custom Voice] 🎤 Mic status:", message.status);
-            if (message.status === 'silent_input') {
-              console.warn("[Custom Voice] 🔇 Mic is picking up silent audio");
-              updateMicStatus('silent', false);
-            }
+            console.error("[Custom Voice] ❌ Error:", message.error);
+            setError(message.error);
             break;
 
           case "ended":
@@ -1287,8 +1064,6 @@ export function useCustomVoice() {
         console.error("[Custom Voice] ❌ WebSocket error:", error);
         console.trace("[Custom Voice] onerror stack trace");
         setError("Connection error");
-        
-        // Don't transition state here - onclose will handle it
       };
 
       ws.onclose = (event: CloseEvent) => {
@@ -1300,43 +1075,9 @@ export function useCustomVoice() {
           code: event.code,
           reason: event.reason || "(no reason)",
           wasClean: event.wasClean,
-          currentState: voiceStateRef.current,
         });
-        
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        // STATE MACHINE: Handle close based on current state
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        const currentState = voiceStateRef.current;
-        
-        // Check for terminal "too many sessions" error in close reason
-        const reasonLower = (event.reason || '').toLowerCase();
-        if (reasonLower.includes('too many') || event.code === 4008) {
-          console.error("[VoiceState] 🛑 Too many sessions error on close");
-          transitionVoiceState('TERMINAL_ERROR', 'too many sessions');
-          setError('Too many voice sessions. Please refresh the page and try again.');
-          stopMicrophone();
-          cleanupAllTimers();
-          sessionIdRef.current = null;
-        } else if (currentState === 'DISCONNECTING') {
-          // Normal disconnect - transition to IDLE
-          console.log("[VoiceState] ✅ Clean disconnect complete");
-          transitionVoiceState('IDLE', 'clean disconnect');
-          sessionIdRef.current = null;
-          reconnectAttemptRef.current = 0;
-        } else if (currentState === 'TERMINAL_ERROR') {
-          // Already in terminal state, just log
-          console.log("[VoiceState] 🛑 Already in terminal error state");
-        } else if (currentState === 'CONNECTED' || currentState === 'CONNECTING_WS') {
-          // Unexpected disconnect - could attempt reconnect but we defer to user action
-          console.warn("[VoiceState] ⚠️ Unexpected disconnect from state:", currentState);
-          transitionVoiceState('IDLE', 'unexpected disconnect');
-          sessionIdRef.current = null;
-          setError('Connection lost. Please start a new session.');
-        }
-        
+        console.trace("[Custom Voice] onclose stack trace");
         setIsConnected(false);
-        isConnectedRef.current = false;
-        
         // Clear thinking indicator on disconnect
         setIsTutorThinking(false);
         thinkingTurnIdRef.current = null;
@@ -1825,22 +1566,7 @@ registerProcessor('audio-processor', AudioProcessor);
         
         // Handle audio data and VAD events from AudioWorklet
         processor.port.onmessage = (event) => {
-          // FIX #4: Drop outgoing frames during disconnect
-          if (isDisconnectingRef.current) return;
-          
           if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-          
-          // DEV-ONLY TELEMETRY: Log audio pipeline state periodically (STEP 5)
-          if (import.meta.env.DEV && event.data.type === 'audio_data') {
-            const now = Date.now();
-            if (now - lastAudioTelemetryRef.current >= DEV_AUDIO_TELEMETRY_INTERVAL_MS) {
-              lastAudioTelemetryRef.current = now;
-              const rms = event.data.rms || 0;
-              const peak = event.data.peak || 0;
-              const track = mediaStreamRef.current?.getAudioTracks()[0];
-              console.log(`[DEV Telemetry] Audio pipeline: rms=${rms.toFixed(4)}, peak=${peak.toFixed(4)}, track.muted=${track?.muted}, track.readyState=${track?.readyState}, workletActive=true`);
-            }
-          }
 
           // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
           // RESPONSIVE BARGE-IN with ECHO PROTECTION (AudioWorklet)
@@ -2755,29 +2481,7 @@ registerProcessor('audio-processor', AudioProcessor);
 
   const disconnectInProgress = useRef(false);
   
-  const disconnect = useCallback(async (passedSessionId?: string) => {
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // STATE MACHINE: Immediate transition to DISCONNECTING
-    // This blocks all reconnect attempts, audio processing, and VAD triggers
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    const currentState = voiceStateRef.current;
-    if (currentState === 'DISCONNECTING') {
-      console.log("[VoiceState] ⚠️ Already disconnecting, ignoring duplicate call");
-      return;
-    }
-    if (currentState === 'IDLE') {
-      console.log("[VoiceState] ℹ️ Already idle, nothing to disconnect");
-      return;
-    }
-    
-    transitionVoiceState('DISCONNECTING', 'disconnect called');
-    
-    // FIX #4: Set disconnecting flag to stop outgoing audio frames immediately
-    isDisconnectingRef.current = true;
-    
-    // Use passed sessionId or fall back to stored ref
-    const sessionId = passedSessionId || sessionIdRef.current || undefined;
-    
+  const disconnect = useCallback(async (sessionId?: string) => {
     // Prevent concurrent disconnect calls
     if (disconnectInProgress.current) {
       console.log("[Custom Voice] ⚠️ Disconnect already in progress, ignoring duplicate call");
@@ -2788,20 +2492,9 @@ registerProcessor('audio-processor', AudioProcessor);
     
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     console.log("[Custom Voice] 🛑 DISCONNECT CALLED");
-    console.log("[Custom Voice] Session ID:", sessionId?.slice(-8) || 'none');
+    console.log("[Custom Voice] Session ID:", sessionId);
     console.log("[Custom Voice] WebSocket state:", wsRef.current?.readyState);
-    console.log("[Custom Voice] Voice state:", currentState);
     console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    
-    // DETERMINISTIC CLEANUP STEP 1: Stop microphone immediately
-    stopMicrophone();
-    
-    // DETERMINISTIC CLEANUP STEP 2: Clear all reconnect timers
-    if (reconnectTimerRef.current) {
-      clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = null;
-    }
-    cleanupAllTimers();
     
     // Capture current WebSocket instance to prevent issues if wsRef changes during async ops
     const ws = wsRef.current;
@@ -2915,22 +2608,13 @@ registerProcessor('audio-processor', AudioProcessor);
       
       cleanup();
       setIsConnected(false);
-      isConnectedRef.current = false;
       disconnectInProgress.current = false;
-      
-      // STATE MACHINE: Transition to IDLE after cleanup complete
-      // (onclose handler may have already done this, but ensure it's done)
-      if (voiceStateRef.current === 'DISCONNECTING') {
-        transitionVoiceState('IDLE', 'disconnect complete');
-      }
-      sessionIdRef.current = null;
-      reconnectAttemptRef.current = 0;
       
       console.log("[Custom Voice] ✅ Disconnect complete");
       console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     }
     
-  }, [transitionVoiceState, cleanupAllTimers, stopMicrophone]);
+  }, []);
 
   const sendTextMessage = useCallback((message: string) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
@@ -3072,84 +2756,6 @@ registerProcessor('audio-processor', AudioProcessor);
     };
   }, [cleanupAllTimers]);
 
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // C) BEFOREUNLOAD HANDLER: Clean up session on page close/refresh
-  // Ensures server-side session is properly ended even on unexpected exit
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  useEffect(() => {
-    const handleBeforeUnload = () => {
-      console.log("[Custom Voice] 🚪 beforeunload - cleaning up session");
-      
-      // Try to send end message via WebSocket if open
-      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && sessionIdRef.current) {
-        try {
-          wsRef.current.send(JSON.stringify({ 
-            type: 'end', 
-            sessionId: sessionIdRef.current,
-            reason: 'page_unload'
-          }));
-          wsRef.current.close(1000, 'Page unload');
-        } catch (e) {
-          // Ignore errors during unload
-        }
-      }
-      
-      // Also send via beacon for reliability (fire-and-forget)
-      if (sessionIdRef.current) {
-        try {
-          navigator.sendBeacon(
-            `/api/voice-sessions/${sessionIdRef.current}/end`,
-            JSON.stringify({ reason: 'page_unload' })
-          );
-        } catch (e) {
-          // Beacon may fail on some browsers
-        }
-      }
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-    };
-  }, []);
-
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // RESET VOICE STATE: Allow user to recover from terminal error
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  const resetVoiceState = useCallback(() => {
-    console.log("[VoiceState] 🔄 Resetting voice state from:", voiceStateRef.current);
-    
-    // Force cleanup everything
-    cleanup();
-    stopMicrophone();
-    cleanupAllTimers();
-    
-    if (reconnectTimerRef.current) {
-      clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = null;
-    }
-    
-    // Close any existing WebSocket
-    if (wsRef.current) {
-      try { wsRef.current.close(1000, 'Reset'); } catch (e) { /* ignore */ }
-      wsRef.current = null;
-    }
-    
-    // Reset all state
-    sessionIdRef.current = null;
-    reconnectAttemptRef.current = 0;
-    disconnectInProgress.current = false;
-    setIsConnected(false);
-    isConnectedRef.current = false;
-    setError(null);
-    
-    // Transition to IDLE
-    transitionVoiceState('IDLE', 'manual reset');
-    
-    console.log("[VoiceState] ✅ Reset complete, state is now IDLE");
-  }, [cleanup, stopMicrophone, cleanupAllTimers, transitionVoiceState]);
-
   return {
     connect,
     disconnect,
@@ -3160,7 +2766,6 @@ registerProcessor('audio-processor', AudioProcessor);
     retryMicrophone,
     dismissMicrophoneError,
     unlockAudioForMobile,
-    resetVoiceState,
     isConnected,
     transcript,
     error,
@@ -3170,6 +2775,5 @@ registerProcessor('audio-processor', AudioProcessor);
     audioEnabled,
     micEnabled,
     micStatus,
-    voiceState,
   };
 }

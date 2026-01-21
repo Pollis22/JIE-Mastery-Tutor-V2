@@ -1,14 +1,14 @@
-import { useEffect, useState, useRef, useMemo } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { MicStatus } from '@/hooks/use-custom-voice';
 import { cn } from '@/lib/utils';
-import { Mic, MicOff, Volume2, Loader2, AudioLines, VolumeX, RefreshCw, AlertCircle, VolumeOff } from 'lucide-react';
+import { Mic, MicOff, Volume2, Loader2, AudioLines, VolumeX } from 'lucide-react';
 
 interface MicStatusPillProps {
   status: MicStatus;
   className?: string;
 }
 
-interface StatusConfig {
+const STATUS_CONFIG: Record<MicStatus, {
   label: string;
   ariaLabel: string;
   icon: typeof Mic;
@@ -16,17 +16,7 @@ interface StatusConfig {
   textColor: string;
   animate?: boolean;
   pulseColor?: string;
-}
-
-const DEFAULT_CONFIG: StatusConfig = {
-  label: 'Mic',
-  ariaLabel: 'Microphone status',
-  icon: Mic,
-  bgColor: 'bg-gray-100 dark:bg-gray-800',
-  textColor: 'text-gray-500 dark:text-gray-400',
-};
-
-const STATUS_CONFIG: Record<string, StatusConfig> = {
+}> = {
   mic_off: {
     label: 'Mic Off',
     ariaLabel: 'Microphone is off',
@@ -76,78 +66,11 @@ const STATUS_CONFIG: Record<string, StatusConfig> = {
     textColor: 'text-orange-600 dark:text-orange-400',
     animate: true,
   },
-  reconnecting: {
-    label: 'Reconnecting',
-    ariaLabel: 'Reconnecting to voice service',
-    icon: RefreshCw,
-    bgColor: 'bg-yellow-100 dark:bg-yellow-900/40',
-    textColor: 'text-yellow-600 dark:text-yellow-400',
-    animate: true,
-  },
-  error: {
-    label: 'Error',
-    ariaLabel: 'Voice connection error',
-    icon: AlertCircle,
-    bgColor: 'bg-red-100 dark:bg-red-900/40',
-    textColor: 'text-red-600 dark:text-red-400',
-  },
-  silent: {
-    label: 'No Audio',
-    ariaLabel: 'Microphone is receiving silent audio',
-    icon: VolumeOff,
-    bgColor: 'bg-gray-100 dark:bg-gray-800',
-    textColor: 'text-gray-500 dark:text-gray-400',
-  },
-  silent_input: {
-    label: 'No Audio',
-    ariaLabel: 'Microphone is receiving silent audio',
-    icon: VolumeOff,
-    bgColor: 'bg-gray-100 dark:bg-gray-800',
-    textColor: 'text-gray-500 dark:text-gray-400',
-  },
 };
 
-const warnedStatuses = new Set<string>();
-
-function getStatusConfig(status: MicStatus | string | null | undefined): StatusConfig {
-  if (!status) {
-    return DEFAULT_CONFIG;
-  }
-  
-  const normalizedStatus = String(status).trim().toLowerCase();
-  const config = STATUS_CONFIG[normalizedStatus];
-  
-  if (config) {
-    return config;
-  }
-  
-  if (!warnedStatuses.has(normalizedStatus)) {
-    warnedStatuses.add(normalizedStatus);
-    console.warn(`[MicStatusPill] Unknown mic status: "${status}" - using default config`);
-  }
-  
-  return DEFAULT_CONFIG;
-}
-
-if (import.meta.env.DEV) {
-  const expectedStatuses: MicStatus[] = [
-    'mic_off', 'listening', 'hearing_you', 'ignoring_noise', 
-    'tutor_speaking', 'processing', 'reconnecting', 'error', 'silent'
-  ];
-  
-  for (const status of expectedStatuses) {
-    const cfg = STATUS_CONFIG[status];
-    if (!cfg) {
-      console.error(`[MicStatusPill] Missing config for expected status: ${status}`);
-    } else if (!cfg.icon) {
-      console.error(`[MicStatusPill] Missing icon for status: ${status}`);
-    }
-  }
-}
-
 export function MicStatusPill({ status, className }: MicStatusPillProps) {
-  const config = useMemo(() => getStatusConfig(status), [status]);
-  const Icon = config.icon || Mic;
+  const config = STATUS_CONFIG[status];
+  const Icon = config.icon;
   const [showPulse, setShowPulse] = useState(false);
   const lastStatusRef = useRef<MicStatus>(status);
   
@@ -185,8 +108,7 @@ export function MicStatusPill({ status, className }: MicStatusPillProps) {
           className={cn(
             'w-3.5 h-3.5',
             status === 'processing' && 'animate-spin',
-            status === 'hearing_you' && 'animate-pulse',
-            status === 'reconnecting' && 'animate-spin'
+            status === 'hearing_you' && 'animate-pulse'
           )}
           aria-hidden="true"
         />

@@ -93,32 +93,22 @@ export interface TurnPolicyEvaluation {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// UNIFIED CONVERSATIONAL PATIENCE
-// 3–5 pacing is the global conversational baseline.
-// All grade bands use identical patience settings for consistent turn-taking.
+// NOISE ROBUSTNESS: Conservative turn-taking parameters
+// Higher confidence thresholds + longer silence = fewer false triggers
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-// Global baseline (3–5 pacing values applied to all bands)
-const UNIFIED_BASELINE: TurnPolicyConfig = {
-  end_of_turn_confidence_threshold: 0.72,  // Confidence before considering turn complete
-  min_end_of_turn_silence_when_confident_ms: 1200,  // Pause tolerance after confident EOT
-  max_turn_silence_ms: 5500,  // Stall escape / max thinking time
-  post_eot_grace_ms: 450,  // Hesitation grace / continuation window (max of old K2/default)
-};
-
-// OLD VALUES (preserved for reference):
-// K2_PRESET: confidence=0.78, min_silence=1000ms, max_silence=5000ms, grace=450ms
-// DEFAULT_PRESET: confidence=0.72, min_silence=1200ms, max_silence=5500ms, grace=400ms
-// UNIFIED: Uses 3-5 base with max grace (450ms) to never reduce hesitation tolerance
-
-// K-2 can have slightly higher confidence threshold for noise robustness with young learners
 const K2_PRESET: TurnPolicyConfig = {
-  ...UNIFIED_BASELINE,
-  end_of_turn_confidence_threshold: 0.78,  // Slightly stricter for K-2 noise robustness
+  end_of_turn_confidence_threshold: 0.78,  // Up from 0.75 for noise robustness
+  min_end_of_turn_silence_when_confident_ms: 1000,  // Up from 900ms
+  max_turn_silence_ms: 5000,  // Up from 4500ms - more thinking time
+  post_eot_grace_ms: 450,  // Up from 350ms - more grace for continuations
 };
 
-// All other bands use the unified baseline directly
-const DEFAULT_PRESET: TurnPolicyConfig = UNIFIED_BASELINE;
+const DEFAULT_PRESET: TurnPolicyConfig = {
+  end_of_turn_confidence_threshold: 0.72,  // Up from 0.65 for noise robustness
+  min_end_of_turn_silence_when_confident_ms: 1200,  // Up from 1000ms
+  max_turn_silence_ms: 5500,  // Up from 5000ms
+  post_eot_grace_ms: 400,  // Added grace period for merging continuations
+};
 
 export function isK2PolicyEnabled(sessionOverride?: boolean | null): boolean {
   if (sessionOverride !== undefined && sessionOverride !== null) {

@@ -29,12 +29,6 @@ export default defineConfig({
       "@shared": path.resolve(import.meta.dirname, "shared"),
       "@assets": path.resolve(import.meta.dirname, "attached_assets"),
     },
-    // A) REACT DEDUPE: Ensure single React instance to prevent "Invalid hook call" errors
-    dedupe: ['react', 'react-dom'],
-  },
-  optimizeDeps: {
-    // A) REACT OPTIMIZE: Pre-bundle React to ensure single instance
-    include: ['react', 'react-dom'],
   },
   root: path.resolve(import.meta.dirname, "client"),
   build: {
@@ -54,13 +48,6 @@ export default defineConfig({
     fs: {
       strict: true,
       deny: ["**/.*"],
-    },
-    // B) FIX VITE HMR: Prevent localhost:undefined fallback in Replit proxy environment
-    hmr: {
-      // Use current host for HMR connections instead of localhost fallback
-      host: undefined, // Let Vite auto-detect from client
-      clientPort: 443, // Use standard HTTPS port for Replit proxy
-      protocol: 'wss', // Use secure WebSocket
     },
   },
 });

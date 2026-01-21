@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useRef } from "react";
 import { useAuth } from "@/hooks/use-auth";
+import { useEffect, useState } from "react";
 import { TutorErrorBoundary } from "@/components/tutor-error-boundary";
 import { NetworkAwareWrapper } from "@/components/network-aware-wrapper";
 import ConvaiHost, { type ConvaiMessage } from "@/components/convai-host";
@@ -72,33 +72,11 @@ const mapLanguageToISO = (language?: string | null): 'en' | 'es' | 'hi' | 'zh' =
   }
 };
 
-function TutorPageRouterFallback() {
-  if (import.meta.env.DEV) {
-    console.error('[RUNTIME] TutorPage: __HAS_WOUTER_ROUTER__ is false - router context unavailable');
-  }
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-background">
-      <div className="text-center p-8">
-        <AlertCircle className="h-12 w-12 text-yellow-500 mx-auto mb-4" />
-        <h2 className="text-lg font-semibold mb-2">Navigation context unavailable</h2>
-        <p className="text-muted-foreground mb-4">Please refresh the page to continue.</p>
-        <button 
-          onClick={() => window.location.reload()}
-          className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
-        >
-          Refresh Page
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function TutorPageInner() {
+export default function TutorPage() {
   const { user, logoutMutation } = useAuth();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const [scriptReady, setScriptReady] = useState(false);
-  const runtimeLoggedRef = useRef(false);
 
   const memo = loadProgress();
   const [level, setLevel] = useState<AgentLevel>((memo.lastLevel as AgentLevel) || "k2");
@@ -1006,23 +984,4 @@ function TutorPageInner() {
       </TutorErrorBoundary>
     </NetworkAwareWrapper>
   );
-}
-
-export default function TutorPage() {
-  const runtimeLoggedRef = useRef(false);
-  
-  useEffect(() => {
-    if (!runtimeLoggedRef.current) {
-      runtimeLoggedRef.current = true;
-      const singletonMatch = globalThis.__REACT_SINGLETON__ === React;
-      const hasRouter = !!globalThis.__HAS_WOUTER_ROUTER__;
-      console.log(`[RUNTIME] TutorPage mounted: React.version=${React.version}, singletonMatch=${singletonMatch}, __HAS_WOUTER_ROUTER__=${hasRouter}`);
-    }
-  }, []);
-
-  if (!globalThis.__HAS_WOUTER_ROUTER__) {
-    return <TutorPageRouterFallback />;
-  }
-  
-  return <TutorPageInner />;
 }
