@@ -626,6 +626,7 @@ interface SessionState {
   lastSttReconnectAttempt: number; // STT LIFECYCLE: Timestamp of last reconnect attempt
   sttReconnectCooldownUntil: number; // STT LIFECYCLE: Cooldown timestamp after 1008 error
   lastAudioSendFailureLog: number; // STT LIFECYCLE: Rate limit audio send failure logs
+  lastSilentBufferLog: number; // Rate limit silent buffer warnings
 }
 
 // Helper to send typed WebSocket events
@@ -1296,6 +1297,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
       lastSttReconnectAttempt: 0, // STT LIFECYCLE: No reconnect attempted yet
       sttReconnectCooldownUntil: 0, // STT LIFECYCLE: No cooldown active
       lastAudioSendFailureLog: 0, // STT LIFECYCLE: No audio send failure logged yet
+      lastSilentBufferLog: 0, // Rate limit silent buffer warnings
     };
 
     // FIX #3: Auto-persist every 10 seconds
@@ -3917,8 +3919,20 @@ CRITICAL INSTRUCTIONS:
                   });
                 }
                 
+                // Rate-limited silent buffer warning (once per 5 seconds) with metadata
+                const SILENT_BUFFER_LOG_INTERVAL_MS = 5000;
                 if (!hasNonZero) {
-                  console.warn('[Custom Voice] ⚠️ Audio buffer is COMPLETELY SILENT (all zeros)!');
+                  const now = Date.now();
+                  if (now - state.lastSilentBufferLog >= SILENT_BUFFER_LOG_INTERVAL_MS) {
+                    console.warn('[Custom Voice] ⚠️ Audio buffer is COMPLETELY SILENT (all zeros)', {
+                      sessionId: state.sessionId?.slice(-8),
+                      rms: rms.toFixed(6),
+                      bufferSize: audioBuffer.length,
+                      sttReady: state.sttReady,
+                      isSessionEnded: state.isSessionEnded
+                    });
+                    state.lastSilentBufferLog = now;
+                  }
                 }
                 
                 // Send to appropriate STT provider
