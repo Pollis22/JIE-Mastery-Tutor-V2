@@ -296,7 +296,7 @@ export function isInGracePeriod(state: NoiseFloorState, graceMs: number = 600): 
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Transcript Validation (Ghost Turn Prevention)
+// Transcript Validation (Ghost Turn Prevention + Noise Robustness)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 export interface TranscriptValidationResult {
@@ -304,7 +304,56 @@ export interface TranscriptValidationResult {
   reason: string;
   wordCount: number;
   isNonLexical: boolean;
+  confidence?: number;
 }
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// NOISY ROOM MODE Configuration
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+export function isNoisyRoomModeEnabled(): boolean {
+  return process.env.NOISY_ROOM_MODE === '1' || process.env.NOISY_ROOM_MODE === 'true';
+}
+
+interface ValidationThresholds {
+  minWordCount: number;
+  minConfidence: number;
+  confidenceBypassWordCount: number;  // >= this many words bypass confidence check
+  bargeInMinWords: number;
+  bargeInMinConfidence: number;
+  bargeInConfidenceBypassWords: number;  // OR logic: >= words OR >= confidence
+  bargeInHighConfidenceThreshold: number;
+}
+
+function getValidationThresholds(): ValidationThresholds {
+  const noisyMode = isNoisyRoomModeEnabled();
+  
+  if (noisyMode) {
+    return {
+      minWordCount: 4,               // Up from 1
+      minConfidence: 0.65,           // Up from 0.55
+      confidenceBypassWordCount: 8,  // More words = trust
+      bargeInMinWords: 5,            // Up from 3
+      bargeInMinConfidence: 0.75,    // Up from 0.65
+      bargeInConfidenceBypassWords: 5,
+      bargeInHighConfidenceThreshold: 0.85,  // Very high = allow fewer words
+    };
+  }
+  
+  return {
+    minWordCount: 1,
+    minConfidence: 0.55,
+    confidenceBypassWordCount: 6,
+    bargeInMinWords: 3,
+    bargeInMinConfidence: 0.65,
+    bargeInConfidenceBypassWords: 3,
+    bargeInHighConfidenceThreshold: 0.75,
+  };
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Filler and Noise Patterns
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 const NON_LEXICAL_PATTERNS = [
   /^(um+|uh+|hmm+|hm+|ah+|oh+|er+|erm+)$/i,
@@ -312,53 +361,189 @@ const NON_LEXICAL_PATTERNS = [
   /^[\s.,!?]*$/,                 // Punctuation/whitespace only
 ];
 
+// Filler words that alone don't constitute meaningful speech
+const FILLER_ONLY_WORDS = new Set([
+  'uh', 'um', 'hmm', 'mm', 'mhm', 'uh-huh', 'uhuh',
+  'yeah', 'yep', 'nope', 'okay', 'ok', 'ah', 'oh',
+  'huh', 'eh', 'er', 'erm', 'like', 'so', 'well',
+]);
+
+// Noise-like patterns (mostly non-alphanumeric or fragments)
+// IMPORTANT: Use Unicode-aware patterns to support CJK and other non-Latin scripts
+const NOISE_PATTERNS = [
+  /^[.!?,;:\-]+$/,               // Only punctuation
+  /^(.)\1{3,}$/,                 // Repeated single char (aaaa, hhhh)
+];
+
+/**
+ * Check if text contains any letter characters (Unicode-aware)
+ * This allows CJK, Arabic, Cyrillic, etc.
+ * Uses charCodeAt to check Unicode ranges instead of regex 'u' flag
+ */
+function hasLetterCharacters(text: string): boolean {
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    // Latin letters (A-Z, a-z)
+    if ((code >= 65 && code <= 90) || (code >= 97 && code <= 122)) return true;
+    // Extended Latin (À-ÿ)
+    if (code >= 192 && code <= 255) return true;
+    // CJK Unified Ideographs (Chinese, Japanese Kanji, Korean Hanja)
+    if (code >= 0x4E00 && code <= 0x9FFF) return true;
+    // Hiragana
+    if (code >= 0x3040 && code <= 0x309F) return true;
+    // Katakana
+    if (code >= 0x30A0 && code <= 0x30FF) return true;
+    // Hangul (Korean)
+    if (code >= 0xAC00 && code <= 0xD7AF) return true;
+    // Arabic
+    if (code >= 0x0600 && code <= 0x06FF) return true;
+    // Cyrillic
+    if (code >= 0x0400 && code <= 0x04FF) return true;
+    // Hebrew
+    if (code >= 0x0590 && code <= 0x05FF) return true;
+    // Greek
+    if (code >= 0x0370 && code <= 0x03FF) return true;
+    // Thai
+    if (code >= 0x0E00 && code <= 0x0E7F) return true;
+    // Vietnamese extensions (Latin Extended Additional)
+    if (code >= 0x1E00 && code <= 0x1EFF) return true;
+  }
+  return false;
+}
+
+/**
+ * Normalize transcript for validation
+ */
+function normalizeTranscript(text: string): string {
+  return text
+    .trim()
+    .replace(/\s+/g, ' ')           // Collapse whitespace
+    .replace(/([.!?,;:])\1+/g, '$1') // Collapse repeated punctuation
+    .toLowerCase();
+}
+
+/**
+ * Check if transcript is filler-only
+ */
+function isFillerOnly(words: string[]): boolean {
+  if (words.length === 0) return true;
+  if (words.length > 3) return false;  // Multi-word unlikely to be all filler
+  
+  const nonFillerWords = words.filter(w => !FILLER_ONLY_WORDS.has(w.toLowerCase()));
+  return nonFillerWords.length === 0;
+}
+
+/**
+ * Check if transcript matches noise-like patterns
+ * Unicode-aware: Allows CJK, Arabic, Cyrillic, etc.
+ */
+function isNoiseLike(text: string): boolean {
+  const normalized = normalizeTranscript(text);
+  
+  // If text has letter characters (including CJK, Arabic, etc.), it's not noise
+  if (hasLetterCharacters(normalized)) {
+    return false;
+  }
+  
+  // Check regex patterns for pure noise (punctuation, repeated chars)
+  return NOISE_PATTERNS.some(pattern => pattern.test(normalized));
+}
+
 /**
  * Validate a transcript to prevent ghost turns
  * 
- * Rejects:
- * - Empty transcripts
- * - Ultra-short transcripts (< 3 words for barge-in)
- * - Non-lexical content (um, uh, [noise])
+ * Enhanced with:
+ * - Confidence-based gating
+ * - Filler-only rejection
+ * - Noise pattern detection
+ * - NOISY_ROOM_MODE support
  */
 export function validateTranscript(
   transcript: string,
-  minWordCount: number = 1
+  minWordCount: number = 1,
+  confidence: number = 1.0  // Default high if not provided
 ): TranscriptValidationResult {
-  const trimmed = transcript.trim();
+  const thresholds = getValidationThresholds();
+  const normalized = normalizeTranscript(transcript);
   
   // Check empty
-  if (!trimmed) {
+  if (!normalized) {
+    logTranscriptRejection('empty', 0, confidence, 0);
     return {
       isValid: false,
       reason: 'empty',
       wordCount: 0,
       isNonLexical: false,
+      confidence,
     };
   }
   
   // Check non-lexical patterns
   for (const pattern of NON_LEXICAL_PATTERNS) {
-    if (pattern.test(trimmed)) {
+    if (pattern.test(normalized)) {
+      logTranscriptRejection('non_lexical', normalized.length, confidence, 0);
       return {
         isValid: false,
         reason: 'non_lexical',
         wordCount: 0,
         isNonLexical: true,
+        confidence,
       };
     }
   }
   
+  // Check noise-like patterns
+  if (isNoiseLike(normalized)) {
+    logTranscriptRejection('noise_pattern', normalized.length, confidence, 0);
+    return {
+      isValid: false,
+      reason: 'noise_pattern',
+      wordCount: 0,
+      isNonLexical: true,
+      confidence,
+    };
+  }
+  
   // Count words (simple split on whitespace)
-  const words = trimmed.split(/\s+/).filter(w => w.length > 0);
+  const words = normalized.split(/\s+/).filter(w => w.length > 0);
   const wordCount = words.length;
   
+  // Check filler-only
+  if (isFillerOnly(words)) {
+    logTranscriptRejection('filler_only', normalized.length, confidence, wordCount);
+    return {
+      isValid: false,
+      reason: 'filler_only',
+      wordCount,
+      isNonLexical: true,
+      confidence,
+    };
+  }
+  
+  // Determine effective minimum word count
+  const effectiveMinWords = Math.max(minWordCount, thresholds.minWordCount);
+  
   // Check minimum word count
-  if (wordCount < minWordCount) {
+  if (wordCount < effectiveMinWords) {
+    logTranscriptRejection(`too_short_${wordCount}_words`, normalized.length, confidence, wordCount);
     return {
       isValid: false,
       reason: `too_short_${wordCount}_words`,
       wordCount,
       isNonLexical: false,
+      confidence,
+    };
+  }
+  
+  // Confidence gating: reject low-confidence unless many words
+  if (confidence < thresholds.minConfidence && wordCount < thresholds.confidenceBypassWordCount) {
+    logTranscriptRejection('low_confidence', normalized.length, confidence, wordCount);
+    return {
+      isValid: false,
+      reason: `low_confidence_${confidence.toFixed(2)}`,
+      wordCount,
+      isNonLexical: false,
+      confidence,
     };
   }
   
@@ -367,14 +552,118 @@ export function validateTranscript(
     reason: 'valid',
     wordCount,
     isNonLexical: false,
+    confidence,
   };
 }
 
 /**
- * Validate transcript specifically for barge-in (stricter: >= 3 words)
+ * Validate transcript specifically for barge-in (stricter requirements)
+ * 
+ * Requirements:
+ * - >= 3 words (or 5 in noisy mode) AND confidence >= 0.65 (or 0.75 in noisy mode)
+ * - OR very high confidence (>= 0.75/0.85) with fewer words
  */
-export function validateTranscriptForBargeIn(transcript: string): TranscriptValidationResult {
-  return validateTranscript(transcript, 3);
+export function validateTranscriptForBargeIn(
+  transcript: string,
+  confidence: number = 1.0
+): TranscriptValidationResult {
+  const thresholds = getValidationThresholds();
+  const normalized = normalizeTranscript(transcript);
+  
+  // Basic checks first
+  if (!normalized) {
+    logTranscriptRejection('barge_in_empty', 0, confidence, 0);
+    return {
+      isValid: false,
+      reason: 'empty',
+      wordCount: 0,
+      isNonLexical: false,
+      confidence,
+    };
+  }
+  
+  // Check noise-like patterns
+  if (isNoiseLike(normalized)) {
+    logTranscriptRejection('barge_in_noise', normalized.length, confidence, 0);
+    return {
+      isValid: false,
+      reason: 'noise_pattern',
+      wordCount: 0,
+      isNonLexical: true,
+      confidence,
+    };
+  }
+  
+  const words = normalized.split(/\s+/).filter(w => w.length > 0);
+  const wordCount = words.length;
+  
+  // Check filler-only
+  if (isFillerOnly(words)) {
+    logTranscriptRejection('barge_in_filler', normalized.length, confidence, wordCount);
+    return {
+      isValid: false,
+      reason: 'filler_only',
+      wordCount,
+      isNonLexical: true,
+      confidence,
+    };
+  }
+  
+  // Barge-in requires BOTH word count AND confidence (OR logic for very high confidence)
+  const hasEnoughWords = wordCount >= thresholds.bargeInMinWords;
+  const hasHighConfidence = confidence >= thresholds.bargeInMinConfidence;
+  const hasVeryHighConfidence = confidence >= thresholds.bargeInHighConfidenceThreshold;
+  
+  // Pass if: (enough words AND enough confidence) OR very high confidence
+  if ((hasEnoughWords && hasHighConfidence) || hasVeryHighConfidence) {
+    return {
+      isValid: true,
+      reason: 'valid',
+      wordCount,
+      isNonLexical: false,
+      confidence,
+    };
+  }
+  
+  // Rejection reason
+  let reason: string;
+  if (!hasEnoughWords && !hasHighConfidence) {
+    reason = `too_short_${wordCount}_words_low_conf_${confidence.toFixed(2)}`;
+  } else if (!hasEnoughWords) {
+    reason = `too_short_${wordCount}_words`;
+  } else {
+    reason = `low_confidence_${confidence.toFixed(2)}`;
+  }
+  
+  logTranscriptRejection(`barge_in_${reason}`, normalized.length, confidence, wordCount);
+  
+  return {
+    isValid: false,
+    reason,
+    wordCount,
+    isNonLexical: false,
+    confidence,
+  };
+}
+
+/**
+ * Instrumentation: Log transcript rejection with redacted content
+ */
+function logTranscriptRejection(
+  reason: string,
+  textLength: number,
+  confidence: number,
+  wordCount: number
+): void {
+  // Production-safe: don't log actual content
+  console.log('[transcript_rejected]', JSON.stringify({
+    reason,
+    textLength,
+    confidence: confidence.toFixed(2),
+    wordCount,
+    noisyRoomMode: isNoisyRoomModeEnabled(),
+    timestamp: Date.now(),
+  }));
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

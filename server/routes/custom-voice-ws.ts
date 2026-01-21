@@ -78,6 +78,7 @@ import {
   validateTranscript,
   validateTranscriptForBargeIn,
   isNoiseFloorEnabled,
+  isNoisyRoomModeEnabled,
   logNoiseFloorGating,
   logBargeInDecision,
   logGhostTurnPrevention,
@@ -2056,8 +2057,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
         const timeSinceLastAudio = now - state.lastAudioSentAt;
         const noiseFloor = getNoiseFloor(state.noiseFloorState);
         
-        // GHOST TURN PREVENTION: Validate transcript
-        const transcriptValidation = validateTranscript(transcript, 1);
+        // GHOST TURN PREVENTION: Validate transcript (Deepgram uses default confidence 1.0)
+        const transcriptValidation = validateTranscript(transcript, 1, 1.0);
         if (!transcriptValidation.isValid && isFinal) {
           logGhostTurnPrevention(state.sessionId || 'unknown', transcript, transcriptValidation);
           return;
@@ -2065,14 +2066,14 @@ export function setupCustomVoiceWebSocket(server: Server) {
         
         // HARDENED BARGE-IN (reconnected handler)
         if (state.isTutorSpeaking && timeSinceLastAudio < 30000) {
-          const bargeInValidation = validateTranscriptForBargeIn(transcript);
+          const bargeInValidation = validateTranscriptForBargeIn(transcript, 1.0);
           
           if (!bargeInValidation.isValid) {
             if (!state.bargeInDucking) {
               state.bargeInDucking = true;
               state.bargeInDuckStartTime = now;
               ws.send(JSON.stringify({ type: "duck", message: "Potential speech detected" }));
-              logBargeInDecision(state.sessionId || 'unknown', 'duck', state.lastMeasuredRms, noiseFloor, bargeInValidation.wordCount, transcript, 'too_short');
+              logBargeInDecision(state.sessionId || 'unknown', 'duck', state.lastMeasuredRms, noiseFloor, bargeInValidation.wordCount, transcript, bargeInValidation.reason);
             }
           } else {
             state.wasInterrupted = true;
@@ -2845,13 +2846,24 @@ CRITICAL INSTRUCTIONS:
                   
                   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                   // GHOST TURN PREVENTION: Validate transcript before processing
-                  // Ignore empty, ultra-short, or non-lexical transcripts
+                  // Ignore empty, ultra-short, non-lexical, low-confidence transcripts
+                  // NOISY_ROOM_MODE: Raises thresholds when enabled
                   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                  const transcriptValidation = validateTranscript(text, 1);
+                  const transcriptValidation = validateTranscript(text, 1, confidence);
                   if (!transcriptValidation.isValid) {
                     logGhostTurnPrevention(state.sessionId || 'unknown', text, transcriptValidation);
-                    console.log(`[GhostTurn] 🚫 Ignored transcript: "${text}" (${transcriptValidation.reason})`);
+                    console.log(`[GhostTurn] 🚫 Ignored transcript (conf=${confidence.toFixed(2)}): "${text.substring(0, 30)}..." (${transcriptValidation.reason})`);
                     return; // Don't process ghost turns
+                  }
+                  
+                  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                  // ECHO GUARD: Check if transcript is echo of recent tutor speech
+                  // Uses existing echo-guard.ts service
+                  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                  const echoCheck = checkForEcho(state.echoGuardState, text);
+                  if (echoCheck.isEcho) {
+                    console.log(`[EchoGuard] 🔇 Rejected echo (similarity=${echoCheck.similarity.toFixed(2)}): "${text.substring(0, 30)}..."`);
+                    return; // Don't process echoes
                   }
                   
                   // Check if we're in post-utterance grace period for merging
@@ -2870,10 +2882,11 @@ CRITICAL INSTRUCTIONS:
                   const noiseFloor = getNoiseFloor(state.noiseFloorState);
                   
                   if (state.isTutorSpeaking && timeSinceLastAudio < 30000) {
-                    const bargeInValidation = validateTranscriptForBargeIn(text);
+                    // ENHANCED: Pass confidence for stricter barge-in gating
+                    const bargeInValidation = validateTranscriptForBargeIn(text, confidence);
                     
                     if (!bargeInValidation.isValid) {
-                      // Non-lexical or too short (< 3 words) - duck but don't interrupt
+                      // Non-lexical, too short, or low confidence - duck but don't interrupt
                       if (!state.bargeInDucking) {
                         state.bargeInDucking = true;
                         state.bargeInDuckStartTime = now;
@@ -2884,14 +2897,14 @@ CRITICAL INSTRUCTIONS:
                           state.lastMeasuredRms, noiseFloor,
                           bargeInValidation.wordCount,
                           text,
-                          `too_short_${bargeInValidation.wordCount}_words`
+                          bargeInValidation.reason
                         );
-                        console.log(`[BargeIn] 🔉 DUCK (not interrupt): "${text}" (${bargeInValidation.wordCount} words < 3)`);
+                        console.log(`[BargeIn] 🔉 DUCK: "${text.substring(0, 25)}..." (${bargeInValidation.reason}, conf=${confidence.toFixed(2)})`);
                       }
                       // Don't block processing - continue to turn policy
                     } else {
-                      // Valid barge-in: >= 3 words, lexical content
-                      console.log(`[BargeIn] 🛑 INTERRUPT: "${text.substring(0, 30)}..." (${bargeInValidation.wordCount} words)`);
+                      // Valid barge-in: sufficient words AND confidence
+                      console.log(`[BargeIn] 🛑 INTERRUPT: "${text.substring(0, 30)}..." (${bargeInValidation.wordCount} words, conf=${confidence.toFixed(2)})`);
                       state.wasInterrupted = true;
                       state.lastInterruptionTime = now;
                       state.bargeInDucking = false; // Clear duck state
@@ -3144,12 +3157,12 @@ CRITICAL INSTRUCTIONS:
                 const noiseFloor = getNoiseFloor(state.noiseFloorState);
                 
                 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                // GHOST TURN PREVENTION: Validate transcript
+                // GHOST TURN PREVENTION: Validate transcript (Deepgram uses default confidence 1.0)
                 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                const transcriptValidation = validateTranscript(transcript, 1);
+                const transcriptValidation = validateTranscript(transcript, 1, 1.0);
                 if (!transcriptValidation.isValid && isFinal) {
                   logGhostTurnPrevention(state.sessionId || 'unknown', transcript, transcriptValidation);
-                  console.log(`[GhostTurn] 🚫 Ignored transcript: "${transcript}" (${transcriptValidation.reason})`);
+                  console.log(`[GhostTurn] 🚫 Ignored transcript: "${transcript.substring(0, 30)}..." (${transcriptValidation.reason})`);
                   return;
                 }
                 
@@ -3157,10 +3170,10 @@ CRITICAL INSTRUCTIONS:
                 // HARDENED BARGE-IN: Duck-then-interrupt with lexical validation
                 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                 if (state.isTutorSpeaking && timeSinceLastAudio < 30000) {
-                  const bargeInValidation = validateTranscriptForBargeIn(transcript);
+                  const bargeInValidation = validateTranscriptForBargeIn(transcript, 1.0);
                   
                   if (!bargeInValidation.isValid) {
-                    // Non-lexical or too short (< 3 words) - duck but don't interrupt
+                    // Non-lexical, too short, or low confidence - duck but don't interrupt
                     if (!state.bargeInDucking) {
                       state.bargeInDucking = true;
                       state.bargeInDuckStartTime = now;
@@ -3171,12 +3184,12 @@ CRITICAL INSTRUCTIONS:
                         state.lastMeasuredRms, noiseFloor,
                         bargeInValidation.wordCount,
                         transcript,
-                        `too_short_${bargeInValidation.wordCount}_words`
+                        bargeInValidation.reason
                       );
-                      console.log(`[BargeIn] 🔉 DUCK (not interrupt): "${transcript}" (${bargeInValidation.wordCount} words < 3)`);
+                      console.log(`[BargeIn] 🔉 DUCK: "${transcript.substring(0, 25)}..." (${bargeInValidation.reason})`);
                     }
                   } else {
-                    // Valid barge-in: >= 3 words, lexical content
+                    // Valid barge-in: sufficient words AND confidence
                     console.log(`[BargeIn] 🛑 INTERRUPT: "${transcript.substring(0, 30)}..." (${bargeInValidation.wordCount} words)`);
                     state.wasInterrupted = true;
                     state.lastInterruptionTime = now;
