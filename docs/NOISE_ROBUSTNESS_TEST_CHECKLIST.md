@@ -87,6 +87,17 @@ Check server logs for these rejection patterns:
 | Barge-in min confidence | 0.75 |
 | Barge-in high confidence threshold | 0.85 |
 
+## Multilingual Support (CJK, Arabic, etc.)
+The noise detection is Unicode-aware via the `hasLetterCharacters()` function, which checks for:
+- Latin letters (A-Z, a-z, extended À-ÿ)
+- CJK Unified Ideographs (Chinese, Japanese Kanji, Korean Hanja)
+- Hiragana and Katakana (Japanese)
+- Hangul (Korean)
+- Arabic, Hebrew, Cyrillic, Greek, Thai
+- Vietnamese (Latin Extended Additional)
+
+Transcripts containing any of these scripts will NOT be rejected as noise.
+
 ## Files Modified
-- `server/services/noise-floor.ts` - Enhanced validateTranscript(), validateTranscriptForBargeIn()
+- `server/services/noise-floor.ts` - Enhanced validateTranscript(), validateTranscriptForBargeIn(), hasLetterCharacters()
 - `server/routes/custom-voice-ws.ts` - Pass confidence to validation, echo guard integration
