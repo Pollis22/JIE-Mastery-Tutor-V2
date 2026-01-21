@@ -513,11 +513,260 @@ function closeAssemblyAI(ws: WebSocket | null) {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// STT RECONNECT LIFECYCLE: Constants for connection recovery
+// STT MANAGER: Serialized reconnect with backoff & cooldown (Jan 2026 FIX)
+// Guarantees only ONE active AssemblyAI STT connection per voice session
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-const STT_RECONNECT_DELAY_MS = 750; // Wait before creating new connection
-const STT_1008_COOLDOWN_MS = 15000; // 15s cooldown after "too many sessions" error
+const STT_RECONNECT_BASE_DELAY_MS = 2000; // Base delay for exponential backoff
+const STT_RECONNECT_MAX_DELAY_MS = 20000; // Max delay cap
+const STT_RECONNECT_JITTER_MS = 500; // Random jitter 0-500ms
+const STT_RECONNECT_MAX_ATTEMPTS = 4; // Max attempts in rolling window
+const STT_RECONNECT_WINDOW_MS = 60000; // Rolling window for attempt counting (60s)
+const STT_COOLDOWN_MS = 120000; // 2 min cooldown after max attempts
+const STT_1008_COOLDOWN_MS = 180000; // 3 min cooldown after provider limit (was 15s - too short!)
+const STT_CLOSE_AWAIT_TIMEOUT_MS = 1500; // Max time to wait for close event
 const AUDIO_SEND_FAILURE_LOG_INTERVAL_MS = 2000; // Rate limit audio send failure logs
+
+type SttManagerState = 'idle' | 'connecting' | 'open' | 'closing' | 'cooldown';
+
+interface STTManager {
+  sttWs: WebSocket | null;
+  state: SttManagerState;
+  reconnectInFlight: boolean;
+  reconnectAttempts: number;
+  reconnectTimestamps: number[]; // Rolling window of attempt timestamps
+  reconnectTimer: NodeJS.Timeout | null;
+  cooldownUntilMs: number;
+  lastConnectAtMs: number;
+  voiceSessionId: string;
+  userId: string;
+}
+
+function createSTTManager(voiceSessionId: string, userId: string): STTManager {
+  return {
+    sttWs: null,
+    state: 'idle',
+    reconnectInFlight: false,
+    reconnectAttempts: 0,
+    reconnectTimestamps: [],
+    reconnectTimer: null,
+    cooldownUntilMs: 0,
+    lastConnectAtMs: 0,
+    voiceSessionId,
+    userId,
+  };
+}
+
+async function closeSttAndWait(manager: STTManager, reason: string): Promise<void> {
+  const ws = manager.sttWs;
+  if (!ws || ws.readyState === WebSocket.CLOSED) {
+    manager.sttWs = null;
+    manager.state = 'idle';
+    console.log(`[STT] close voiceSessionId=${manager.voiceSessionId.slice(-8)} reason=${reason} ws=null`);
+    return;
+  }
+  
+  console.log(`[STT] close voiceSessionId=${manager.voiceSessionId.slice(-8)} reason=${reason} readyState=${ws.readyState}`);
+  manager.state = 'closing';
+  
+  return new Promise<void>((resolve) => {
+    let resolved = false;
+    const cleanup = () => {
+      if (resolved) return;
+      resolved = true;
+      manager.sttWs = null;
+      manager.state = 'idle';
+      resolve();
+    };
+    
+    const timeoutId = setTimeout(() => {
+      console.log(`[STT] close timeout voiceSessionId=${manager.voiceSessionId.slice(-8)} - force terminating`);
+      try { ws.terminate(); } catch (e) { /* ignore */ }
+      cleanup();
+    }, STT_CLOSE_AWAIT_TIMEOUT_MS);
+    
+    const closeHandler = () => {
+      clearTimeout(timeoutId);
+      cleanup();
+    };
+    
+    ws.removeAllListeners('close');
+    ws.removeAllListeners('error');
+    ws.removeAllListeners('message');
+    ws.once('close', closeHandler);
+    
+    try {
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+        ws.close(1000, 'server_reset');
+      } else {
+        clearTimeout(timeoutId);
+        cleanup();
+      }
+    } catch (e) {
+      console.warn(`[STT] close error voiceSessionId=${manager.voiceSessionId.slice(-8)}:`, e);
+      clearTimeout(timeoutId);
+      cleanup();
+    }
+  });
+}
+
+async function cleanupSTTManager(manager: STTManager, reason: string): Promise<void> {
+  if (manager.reconnectTimer) {
+    clearTimeout(manager.reconnectTimer);
+    manager.reconnectTimer = null;
+  }
+  manager.reconnectInFlight = false;
+  
+  // RACE FIX: Await proper close before state reset
+  await closeSttAndWait(manager, reason);
+  
+  console.log(`[STT] cleanup voiceSessionId=${manager.voiceSessionId.slice(-8)} reason=${reason}`);
+}
+
+type SttOpenFn = (manager: STTManager) => Promise<WebSocket>;
+
+async function requestSttReconnect(
+  manager: STTManager,
+  clientWs: WebSocket,
+  openSttFn: SttOpenFn,
+  reason: string
+): Promise<boolean> {
+  const now = Date.now();
+  const sessionSlice = manager.voiceSessionId.slice(-8);
+  
+  // RACE FIX #1: Block if in cooldown
+  if (manager.state === 'cooldown' && now < manager.cooldownUntilMs) {
+    const remainingMs = manager.cooldownUntilMs - now;
+    console.log(`[STT] reconnect_blocked voiceSessionId=${sessionSlice} reason=cooldown remainingMs=${remainingMs}`);
+    return false;
+  }
+  
+  // RACE FIX #2: Block if already connecting/open/closing (prevents storm)
+  if (manager.state === 'connecting' || manager.state === 'open' || manager.state === 'closing') {
+    console.log(`[STT] reconnect_blocked voiceSessionId=${sessionSlice} reason=state_${manager.state}`);
+    return false;
+  }
+  
+  // RACE FIX #3: Block if reconnect in flight
+  if (manager.reconnectInFlight) {
+    console.log(`[STT] reconnect_blocked voiceSessionId=${sessionSlice} reason=in_flight`);
+    return false;
+  }
+  
+  manager.reconnectInFlight = true;
+  
+  if (manager.reconnectTimer) {
+    clearTimeout(manager.reconnectTimer);
+    manager.reconnectTimer = null;
+  }
+  
+  console.log(`[STT] reconnect_start voiceSessionId=${sessionSlice} reason=${reason}`);
+  
+  await closeSttAndWait(manager, reason);
+  
+  manager.reconnectTimestamps = manager.reconnectTimestamps.filter(t => now - t < STT_RECONNECT_WINDOW_MS);
+  manager.reconnectTimestamps.push(now);
+  const attemptsInWindow = manager.reconnectTimestamps.length;
+  
+  console.log(`[STT] reconnect_attempts voiceSessionId=${sessionSlice} count=${attemptsInWindow} windowMs=${STT_RECONNECT_WINDOW_MS}`);
+  
+  if (attemptsInWindow >= STT_RECONNECT_MAX_ATTEMPTS) {
+    manager.cooldownUntilMs = now + STT_COOLDOWN_MS;
+    manager.state = 'cooldown';
+    manager.reconnectInFlight = false;
+    const retryAfterMs = manager.cooldownUntilMs - now;
+    
+    console.log(`[STT] cooldown voiceSessionId=${sessionSlice} code=MAX_ATTEMPTS until=${new Date(manager.cooldownUntilMs).toISOString()} retryAfterMs=${retryAfterMs}`);
+    
+    sendVoiceError(clientWs, 'STT_COOLDOWN', 'Voice recognition is unstable; please wait 2 minutes then retry.', {
+      retryAfterMs
+    });
+    
+    if (clientWs.readyState === WebSocket.OPEN) {
+      clientWs.send(JSON.stringify({ type: 'stt_status', status: 'cooldown', retryAfterMs }));
+    }
+    
+    return false;
+  }
+  
+  const delayMs = Math.min(
+    STT_RECONNECT_BASE_DELAY_MS * Math.pow(2, attemptsInWindow - 1),
+    STT_RECONNECT_MAX_DELAY_MS
+  ) + Math.floor(Math.random() * STT_RECONNECT_JITTER_MS);
+  
+  console.log(`[STT] reconnect_scheduled voiceSessionId=${sessionSlice} delayMs=${delayMs} attempt=${attemptsInWindow}`);
+  
+  return new Promise((resolve) => {
+    manager.reconnectTimer = setTimeout(async () => {
+      manager.reconnectTimer = null;
+      
+      if (clientWs.readyState !== WebSocket.OPEN) {
+        console.log(`[STT] reconnect_abort voiceSessionId=${sessionSlice} reason=client_ws_closed`);
+        manager.reconnectInFlight = false;
+        resolve(false);
+        return;
+      }
+      
+      try {
+        manager.state = 'connecting';
+        const newWs = await openSttFn(manager);
+        manager.sttWs = newWs;
+        manager.state = 'open';
+        manager.lastConnectAtMs = Date.now();
+        manager.reconnectInFlight = false;
+        
+        console.log(`[STT] open voiceSessionId=${sessionSlice} attempt=${attemptsInWindow}`);
+        
+        if (clientWs.readyState === WebSocket.OPEN) {
+          clientWs.send(JSON.stringify({ type: 'stt_status', status: 'reconnected' }));
+        }
+        
+        resolve(true);
+      } catch (err) {
+        console.error(`[STT] reconnect_error voiceSessionId=${sessionSlice} error=${err instanceof Error ? err.message : String(err)}`);
+        manager.state = 'idle';
+        manager.reconnectInFlight = false;
+        
+        if (clientWs.readyState === WebSocket.OPEN) {
+          clientWs.send(JSON.stringify({ type: 'stt_status', status: 'failed' }));
+        }
+        
+        resolve(false);
+      }
+    }, delayMs);
+  });
+}
+
+async function handleProviderSessionLimit(
+  manager: STTManager,
+  clientWs: WebSocket,
+  closeCode: number,
+  closeReason?: string
+): Promise<void> {
+  const sessionSlice = manager.voiceSessionId.slice(-8);
+  
+  console.log(`[STT] provider_limit voiceSessionId=${sessionSlice} closeCode=${closeCode} reason=${closeReason || 'unknown'}`);
+  console.log(`[VoiceLimit] ENFORCER=provider provider=AssemblyAI userId=${manager.userId.slice(-8)} voiceSessionId=${sessionSlice} closeCode=${closeCode}`);
+  
+  // RACE FIX: Await proper cleanup before setting cooldown
+  await cleanupSTTManager(manager, 'provider_limit');
+  
+  manager.cooldownUntilMs = Date.now() + STT_1008_COOLDOWN_MS;
+  manager.state = 'cooldown';
+  
+  const retryAfterMs = STT_1008_COOLDOWN_MS;
+  
+  console.log(`[STT] cooldown voiceSessionId=${sessionSlice} code=PROVIDER_LIMIT until=${new Date(manager.cooldownUntilMs).toISOString()} retryAfterMs=${retryAfterMs}`);
+  
+  sendVoiceError(clientWs, 'PROVIDER_SESSION_LIMIT', 'Voice provider session limit reached. Please wait a few minutes and try again.', {
+    provider: 'AssemblyAI',
+    closeCode,
+    retryAfterMs
+  });
+  
+  if (clientWs.readyState === WebSocket.OPEN) {
+    clientWs.send(JSON.stringify({ type: 'stt_status', status: 'cooldown', retryAfterMs, code: 'PROVIDER_LIMIT' }));
+  }
+}
 
 function resetAssemblyAIMergeGuard(state: AssemblyAIState) {
   state.lastTranscript = '';
@@ -628,6 +877,7 @@ interface SessionState {
   lastAudioSendFailureLog: number; // STT LIFECYCLE: Rate limit audio send failure logs
   lastSilentBufferLog: number; // Rate limit silent buffer warnings
   audioFramesAfterFinalized: number; // Count audio frames received after session ended
+  sttManager: STTManager | null; // STT MANAGER: Serialized reconnect controller (Jan 2026)
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -646,15 +896,17 @@ const VoiceErrorCodes = {
   SERVER_SESSION_LIMIT: 'SERVER_SESSION_LIMIT',
   SERVER_SESSION_REPLACED: 'SERVER_SESSION_REPLACED',
   STT_PROVIDER_ERROR: 'STT_PROVIDER_ERROR',
+  STT_COOLDOWN: 'STT_COOLDOWN',
+  PROVIDER_SESSION_LIMIT: 'PROVIDER_SESSION_LIMIT',
   SESSION_DEBOUNCE: 'SESSION_DEBOUNCE',
   SESSION_ALREADY_ENDED: 'SESSION_ALREADY_ENDED',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
 } as const;
 
-function sendVoiceError(ws: WebSocket, code: keyof typeof VoiceErrorCodes, message: string, extra?: { provider?: string; raw?: string; closeCode?: number }) {
+function sendVoiceError(ws: WebSocket, code: keyof typeof VoiceErrorCodes, message: string, extra?: { provider?: string; raw?: string; closeCode?: number; retryAfterMs?: number }) {
   if (ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ 
-      type: 'error', 
+      type: 'voice_error', 
       code: VoiceErrorCodes[code], 
       message,
       ...extra
@@ -1342,6 +1594,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
       lastAudioSendFailureLog: 0, // STT LIFECYCLE: No audio send failure logged yet
       lastSilentBufferLog: 0, // Rate limit silent buffer warnings
       audioFramesAfterFinalized: 0, // Count audio frames received after session ended
+      sttManager: null, // STT MANAGER: Will be initialized on session start
     };
 
     // FIX #3: Auto-persist every 10 seconds
@@ -3189,163 +3442,34 @@ CRITICAL INSTRUCTIONS:
                     await persistTranscript(state.sessionId, state.transcript);
                   }
                   
-                  // Check for 1008 "too many sessions" error - apply cooldown
-                  if (closeCode === 1008) {
+                  // Check for 1008 "too many sessions" error - use STT Manager for proper cooldown
+                  if (closeCode === 1008 || (closeReason && (closeReason.includes('Too many') || closeReason.includes('sessions')))) {
                     console.error('[AssemblyAI] ❌ 1008 Error: Too many concurrent sessions');
-                    console.log(`[VoiceLimit] ENFORCER=provider provider=AssemblyAI userId=${state.userId} sessionId=${state.sessionId?.slice(-8)} closeCode=1008 reason=${closeReason || 'too many sessions'}`);
-                    console.log(`[Telemetry] stt_too_many_sessions sessionId=${state.sessionId?.slice(-8)} userId=${state.userId} closeCode=1008`);
-                    state.sttReconnectCooldownUntil = Date.now() + STT_1008_COOLDOWN_MS;
-                    sendVoiceError(ws, 'STT_PROVIDER_ERROR', 'Too many voice sessions from provider; please wait and try again.', {
-                      provider: 'AssemblyAI',
-                      closeCode: 1008,
-                      raw: closeReason || 'too many concurrent sessions'
-                    });
+                    if (state.sttManager) {
+                      await handleProviderSessionLimit(state.sttManager, ws, closeCode || 1008, closeReason);
+                    } else {
+                      console.log(`[VoiceLimit] ENFORCER=provider provider=AssemblyAI userId=${state.userId} sessionId=${state.sessionId?.slice(-8)} closeCode=1008 reason=${closeReason || 'too many sessions'}`);
+                      state.sttReconnectCooldownUntil = Date.now() + STT_1008_COOLDOWN_MS;
+                      sendVoiceError(ws, 'PROVIDER_SESSION_LIMIT', 'Voice provider session limit reached. Please wait a few minutes and try again.', {
+                        provider: 'AssemblyAI',
+                        closeCode: closeCode || 1008,
+                        retryAfterMs: STT_1008_COOLDOWN_MS
+                      });
+                    }
                     state.sttReconnectInProgress = false;
-                    return; // Don't auto-reconnect on 1008
+                    state.sttReady = false;
+                    return; // Don't auto-reconnect on provider limit
                   }
                   
-                  // Auto-reconnect if session is still active
-                  if (!state.isSessionEnded && state.sessionId) {
-                    console.warn('[AssemblyAI] ⚠️ Unexpected close - attempting reconnect');
-                    state.isReconnecting = true;
-                    reconnectAttempts++;
-                    
-                    if (reconnectAttempts > 3) {
-                      console.error('[AssemblyAI] ❌ Max reconnect attempts reached');
-                      state.isReconnecting = false;
-                      if (ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: 'stt_status', status: 'failed' }));
-                      }
-                      return;
-                    }
-                    
-                    const backoffDelay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), 8000);
-                    setTimeout(() => {
-                      try {
-                        // Clear any lingering stall timer from previous connection to prevent double-fire
-                        if (state.stallEscapeTimerId) {
-                          clearTimeout(state.stallEscapeTimerId);
-                          state.stallEscapeTimerId = null;
-                          console.log('[AssemblyAI-Reconnect] 🧹 Cleared lingering stall timer');
-                        }
-                        
-                        // Preserve turn policy state across reconnect to maintain "very patient" contract
-                        const wasGuardActive = state.turnPolicyState.hesitationGuardActive;
-                        const wasAwaitingEot = state.turnPolicyState.awaitingSecondEot;
-                        const savedLastEotTimestamp = state.turnPolicyState.lastEotTimestamp;
-                        const savedGuardedTranscript = state.guardedTranscript;
-                        const savedStallTimerStartedAt = state.stallTimerStartedAt;
-                        const savedLastAudioReceivedAt = state.lastAudioReceivedAt;
-                        const config = getTurnPolicyConfig(state.ageGroup as GradeBand, state.turnPolicyK2Override);
-                        
-                        // Create fresh state with current timestamps
-                        state.turnPolicyState = createTurnPolicyState();
-                        
-                        // Restore guard state if it was active during disconnect
-                        if (wasGuardActive || wasAwaitingEot) {
-                          state.turnPolicyState.hesitationGuardActive = wasGuardActive;
-                          state.turnPolicyState.awaitingSecondEot = wasAwaitingEot;
-                          // CRITICAL: Preserve original lastEotTimestamp so checkStallEscape measures total silence
-                          state.turnPolicyState.lastEotTimestamp = savedLastEotTimestamp;
-                          state.guardedTranscript = savedGuardedTranscript;
-                          // Preserve lastAudioReceivedAt to maintain silence detection accuracy
-                          state.lastAudioReceivedAt = savedLastAudioReceivedAt;
-                          
-                          // Re-arm the stall escape timer with remaining time to maintain 4.5s guarantee
-                          if (savedStallTimerStartedAt > 0) {
-                            const elapsedMs = Date.now() - savedStallTimerStartedAt;
-                            const remainingMs = Math.max(0, config.max_turn_silence_ms - elapsedMs);
-                            
-                            // Default transcript if empty (shouldn't happen but handle gracefully)
-                            const transcriptToUse = savedGuardedTranscript || '';
-                            
-                            if (remainingMs > 0) {
-                              // Still have time left - re-arm with remaining duration
-                              startStallEscapeTimer(transcriptToUse, remainingMs);
-                              console.log(`[AssemblyAI-Reconnect] 🔄 Preserved guard + re-armed timer (${remainingMs}ms remaining)`);
-                            } else {
-                              // Time already expired - fire stall escape using checkStallEscape for proper logging/metrics
-                              console.log('[AssemblyAI-Reconnect] 🔄 Guard time expired during disconnect - firing stall escape');
-                              const stallResult = checkStallEscape({
-                                gradeBand: state.ageGroup as GradeBand,
-                                sessionK2Override: state.turnPolicyK2Override,
-                                policyState: state.turnPolicyState,
-                                currentTimestamp: Date.now(),
-                                hasAudioInput: false,
-                              });
-                              if (stallResult && stallResult.stall_prompt) {
-                                logTurnPolicyEvaluation(stallResult);
-                                fireClaudeWithPolicy(transcriptToUse, stallResult.stall_prompt);
-                              } else {
-                                // Fallback: fire with default prompt if checkStallEscape doesn't return result
-                                // This can happen due to state issues - log and fire anyway to not leave student waiting
-                                console.log('[AssemblyAI-Reconnect] ⚠️ checkStallEscape returned null - using fallback stall prompt');
-                                const fallbackPrompt = "Do you want more time to think, or would you like some help?";
-                                fireClaudeWithPolicy(transcriptToUse, fallbackPrompt);
-                              }
-                              // Reset state
-                              resetTurnPolicyState(state.turnPolicyState);
-                              state.guardedTranscript = '';
-                              state.stallTimerStartedAt = 0;
-                            }
-                          } else {
-                            // No timer was running but guard was active - shouldn't happen, reset guard
-                            console.log('[AssemblyAI-Reconnect] ⚠️ Guard active but no timer - resetting guard state');
-                            resetTurnPolicyState(state.turnPolicyState);
-                          }
-                        } else {
-                          // No guard was active - fresh start
-                          state.lastAudioReceivedAt = Date.now();
-                          console.log('[AssemblyAI-Reconnect] 🔄 Fresh turn policy state for new connection');
-                        }
-                        
-                        // CRITICAL: Reconnect callback MUST use turn policy logic (same as original)
-                        const { ws: newWs, state: newState } = createAssemblyAIConnection(
-                          state.language,
-                          (text, endOfTurn, confidence) => {
-                            console.log(`[AssemblyAI-Reconnect] 📝 Complete utterance (confidence: ${confidence.toFixed(2)}): "${text}"`);
-                            
-                            // Update last audio received time for stall detection
-                            state.lastAudioReceivedAt = Date.now();
-                            
-                            // K2 TURN POLICY: Evaluate turn before firing Claude
-                            const gradeBand = state.ageGroup as GradeBand;
-                            const evaluation = evaluateTurn({
-                              transcript: text,
-                              endOfTurn: endOfTurn,
-                              eotConfidence: confidence, // CRITICAL: Use correct parameter name
-                              gradeBand: gradeBand,
-                              sessionK2Override: state.turnPolicyK2Override,
-                              policyState: state.turnPolicyState,
-                              currentTimestamp: Date.now(),
-                            });
-                            
-                            // Log turn policy evaluation
-                            logTurnPolicyEvaluation(evaluation);
-                            
-                            if (evaluation.hesitation_guard_triggered) {
-                              // Hesitation detected - start stall escape timer instead of firing immediately
-                              console.log(`[TurnPolicy-Reconnect] 🤔 Hesitation detected - waiting for continuation or stall`);
-                              startStallEscapeTimer(text);
-                              return; // Don't process transcript yet
-                            }
-                            
-                            if (evaluation.should_fire_claude) {
-                              fireClaudeWithPolicy(text);
-                            }
-                          },
-                          (error) => console.error('[AssemblyAI] Reconnect error:', error),
-                          (sessionId) => console.log('[AssemblyAI] Reconnected:', sessionId)
-                        );
-                        state.assemblyAIWs = newWs;
-                        state.assemblyAIState = newState;
-                        state.isReconnecting = false;
-                        reconnectAttempts = 0;
-                        console.log('[AssemblyAI] ✅ Reconnected');
-                      } catch (e) {
-                        console.error('[AssemblyAI] Reconnect failed:', e);
-                      }
-                    }, backoffDelay);
+                  // REMOVED: Old independent reconnect logic
+                  // The watchdog now handles ALL reconnects via STT Manager for serialization
+                  // This prevents the race condition where both close handler and watchdog
+                  // would try to reconnect simultaneously, causing session explosion
+                  if (!state.isSessionEnded && state.sessionId && state.sttManager) {
+                    console.warn('[AssemblyAI] ⚠️ Unexpected close - will reconnect via STT Manager (watchdog)');
+                    state.sttManager.sttWs = null;
+                    state.sttManager.state = 'idle';
+                    state.sttReady = false;
                   }
                 }
               );
@@ -3356,6 +3480,13 @@ CRITICAL INSTRUCTIONS:
               state.sttReady = true; // STT LIFECYCLE: Mark connection ready
               console.log(`[Telemetry] stt_ready sessionId=${state.sessionId?.slice(-8)} userId=${state.userId}`);
               console.log('[AssemblyAI] AssemblyAI WS assigned to state, sttReady=true');
+              
+              // Initialize STT Manager for serialized reconnect (Jan 2026 FIX)
+              state.sttManager = createSTTManager(state.sessionId || 'unknown', state.userId);
+              state.sttManager.sttWs = assemblyWs;
+              state.sttManager.state = 'open';
+              state.sttManager.lastConnectAtMs = Date.now();
+              console.log(`[STT] open voiceSessionId=${state.sessionId?.slice(-8)} attempt=0 (initial)`);
               
               // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
               // STT WATCHDOG (Jan 2026): Start watchdog timer now that
@@ -3417,48 +3548,19 @@ CRITICAL INSTRUCTIONS:
                     ws.send(JSON.stringify({ type: 'stt_status', status: 'stalled' }));
                   }
                   
-                  // Attempt ONE safe reconnect (single-flight guard)
-                  if (state.assemblyAIWs && !state.sttReconnectInProgress) {
+                  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                  // JAN 2026 FIX: Use STT Manager for serialized reconnect
+                  // This prevents session explosion by ensuring:
+                  // 1. Only ONE reconnect in flight at a time
+                  // 2. Old connection is awaited-closed before new one opens
+                  // 3. Exponential backoff with rolling window counting
+                  // 4. Automatic cooldown after max attempts
+                  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                  if (state.sttManager && !state.sttReconnectInProgress) {
                     state.sttReconnectInProgress = true;
-                    state.sttReady = false; // Mark not ready during reconnect
-                    state.lastSttReconnectAttempt = now;
-                    console.log('[STT-Watchdog] 🔄 Attempting AssemblyAI reconnect...');
+                    state.sttReady = false;
                     
-                    // Close and nullify existing connection BEFORE creating new one
-                    const oldWs = state.assemblyAIWs;
-                    state.assemblyAIWs = null;
-                    state.assemblyAIState = null;
-                    
-                    // Force close old connection regardless of state
-                    if (oldWs.readyState !== WebSocket.CLOSED) {
-                      try {
-                        oldWs.close(1000, 'Watchdog reconnect');
-                      } catch (closeErr) {
-                        console.warn('[STT-Watchdog] ⚠️ Error closing old connection:', closeErr);
-                      }
-                    }
-                    
-                    // Delay reconnect using async IIFE (watchdog runs in setInterval, can't be async)
-                    (async () => {
-                      // Wait before creating new connection to allow cleanup
-                      await new Promise(resolve => setTimeout(resolve, STT_RECONNECT_DELAY_MS));
-                      
-                      // Check session still active after delay
-                      if (state.isSessionEnded) {
-                        console.log('[STT-Watchdog] ⏹️ Session ended during reconnect delay, aborting');
-                        state.sttReconnectInProgress = false;
-                        return;
-                      }
-                      
-                      // Double-check cooldown after delay (may have been set during delay)
-                      if (Date.now() < state.sttReconnectCooldownUntil) {
-                        console.log('[STT-Watchdog] ⏳ Cooldown active after delay, aborting reconnect');
-                        state.sttReconnectInProgress = false;
-                        return;
-                      }
-                    
-                    try {
-                      // Create new connection
+                    const openSttFn: SttOpenFn = async (manager) => {
                       const { ws: newWs, state: newState } = createAssemblyAIConnection(
                         state.language,
                         (text, endOfTurn, confidence) => {
@@ -3466,7 +3568,6 @@ CRITICAL INSTRUCTIONS:
                           state.lastFinalTranscriptAt = Date.now();
                           state.lastAudioReceivedAt = Date.now();
                           
-                          // Use same turn policy logic as main connection
                           const watchdogGradeBand = state.ageGroup as GradeBand;
                           const watchdogEval = evaluateTurn({
                             transcript: text,
@@ -3491,35 +3592,24 @@ CRITICAL INSTRUCTIONS:
                         },
                         (error) => {
                           console.error('[STT-Watchdog] ❌ Reconnect error:', error);
-                          state.sttReconnectInProgress = false;
-                          if (ws.readyState === WebSocket.OPEN) {
-                            ws.send(JSON.stringify({ type: 'stt_status', status: 'failed' }));
-                          }
                         },
                         (sessionId) => {
-                          console.log('[STT-Watchdog] ✅ Reconnected:', sessionId);
-                          state.sttReconnectInProgress = false;
-                          state.sttReady = true; // STT LIFECYCLE: Mark ready on reconnect success
-                          console.log(`[Telemetry] stt_ready sessionId=${state.sessionId?.slice(-8)} userId=${state.userId} context=watchdog_reconnect`);
+                          console.log('[STT-Watchdog] ✅ Session started:', sessionId);
+                          state.sttReady = true;
                           state.lastSttMessageAt = Date.now();
-                          if (ws.readyState === WebSocket.OPEN) {
-                            ws.send(JSON.stringify({ type: 'stt_status', status: 'reconnected' }));
-                          }
                         },
-                        (closeCode?: number) => {
-                          // Handle close during reconnect
-                          console.log('[STT-Watchdog] 🔌 Reconnected connection closed:', closeCode);
+                        (closeCode?: number, closeReason?: string) => {
+                          console.log('[STT-Watchdog] 🔌 Connection closed:', closeCode);
                           state.sttReady = false;
-                          if (closeCode === 1008) {
-                            console.log(`[Telemetry] stt_too_many_sessions sessionId=${state.sessionId?.slice(-8)} userId=${state.userId} closeCode=1008 context=watchdog_reconnect`);
-                            state.sttReconnectCooldownUntil = Date.now() + STT_1008_COOLDOWN_MS;
-                            state.sttReconnectInProgress = false;
-                            if (ws.readyState === WebSocket.OPEN) {
-                              ws.send(JSON.stringify({ 
-                                type: 'stt_status', 
-                                status: 'failed',
-                                message: 'Too many voice sessions; please refresh'
-                              }));
+                          if (manager) {
+                            manager.sttWs = null;
+                            manager.state = 'idle';
+                          }
+                          if (closeCode === 1008 || (closeReason && closeReason.includes('Too many'))) {
+                            if (state.sttManager) {
+                              handleProviderSessionLimit(state.sttManager, ws, closeCode || 1008, closeReason).catch(err => {
+                                console.error('[STT-Watchdog] Error in handleProviderSessionLimit:', err);
+                              });
                             }
                           }
                         }
@@ -3527,19 +3617,20 @@ CRITICAL INSTRUCTIONS:
                       
                       state.assemblyAIWs = newWs;
                       state.assemblyAIState = newState;
-                      
-                    } catch (e) {
-                      console.error('[STT-Watchdog] ❌ Reconnect failed:', e);
-                      state.sttReconnectInProgress = false;
-                      state.sttReady = false;
-                      if (ws.readyState === WebSocket.OPEN) {
-                        ws.send(JSON.stringify({ type: 'stt_status', status: 'failed' }));
-                      }
-                    }
-                    })().catch(err => {
-                      console.error('[STT-Watchdog] ❌ Async reconnect error:', err);
-                      state.sttReconnectInProgress = false;
-                    }); // End async IIFE
+                      return newWs;
+                    };
+                    
+                    requestSttReconnect(state.sttManager, ws, openSttFn, 'watchdog_stall')
+                      .then((success) => {
+                        state.sttReconnectInProgress = false;
+                        if (success) {
+                          state.sttReady = true;
+                        }
+                      })
+                      .catch((err) => {
+                        console.error('[STT-Watchdog] ❌ requestSttReconnect error:', err);
+                        state.sttReconnectInProgress = false;
+                      });
                   }
                 }
               };
@@ -4670,7 +4761,13 @@ CRITICAL INSTRUCTIONS:
         responseTimer = null;
       }
       
-      // Close STT connection first
+      // Clean up STT Manager (Jan 2026 FIX) - await to ensure proper cleanup
+      if (state.sttManager) {
+        await cleanupSTTManager(state.sttManager, `ws_close_${code}`);
+        state.sttManager = null;
+      }
+      
+      // Close STT connection
       if (USE_ASSEMBLYAI && state.assemblyAIWs) {
         closeAssemblyAI(state.assemblyAIWs);
         if (state.assemblyAIState) resetAssemblyAIMergeGuard(state.assemblyAIState);

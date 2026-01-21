@@ -1103,6 +1103,8 @@ export function useCustomVoice() {
               errorCode === 'SERVER_SESSION_LIMIT' ||
               errorCode === 'SERVER_SESSION_REPLACED' ||
               errorCode === 'STT_PROVIDER_ERROR' ||
+              errorCode === 'PROVIDER_SESSION_LIMIT' ||
+              errorCode === 'STT_COOLDOWN' ||
               errorCode === 'SESSION_ALREADY_ENDED';
             
             const isTerminalByText = 
@@ -1114,11 +1116,38 @@ export function useCustomVoice() {
               errorLower.includes('session has already ended');
             
             if (isTerminalByCode || isTerminalByText) {
-              const enforcer = errorCode.startsWith('SERVER_') ? 'server' : (errorCode === 'STT_PROVIDER_ERROR' ? `provider:${message.provider || 'unknown'}` : 'unknown');
+              const enforcer = errorCode.startsWith('SERVER_') ? 'server' : 
+                (errorCode === 'STT_PROVIDER_ERROR' || errorCode === 'PROVIDER_SESSION_LIMIT') ? `provider:${message.provider || 'unknown'}` : 
+                errorCode === 'STT_COOLDOWN' ? 'cooldown' : 'unknown';
               console.error(`[VoiceState] 🛑 Terminal error detected: code=${errorCode} enforcer=${enforcer} message=${errorMsg}`);
               transitionVoiceState('TERMINAL_ERROR', errorMsg);
               stopMicrophone();
               cleanupAllTimers();
+            }
+            break;
+          
+          // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          // VOICE ERROR (Jan 2026): Standardized error with retry info
+          // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          case "voice_error":
+            const voiceErrorCode = message.code || '';
+            const voiceErrorMsg = message.message || 'Voice error';
+            const retryAfterMs = message.retryAfterMs || 0;
+            console.error("[Custom Voice] ❌ Voice error:", { code: voiceErrorCode, message: voiceErrorMsg, retryAfterMs });
+            
+            // Show user-friendly message with retry time
+            if (voiceErrorCode === 'STT_COOLDOWN' || voiceErrorCode === 'PROVIDER_SESSION_LIMIT') {
+              const retrySeconds = Math.ceil(retryAfterMs / 1000);
+              const retryMinutes = Math.ceil(retrySeconds / 60);
+              const timeStr = retryMinutes >= 1 ? `${retryMinutes} minute${retryMinutes > 1 ? 's' : ''}` : `${retrySeconds} seconds`;
+              const userMessage = `Voice temporarily unavailable. Please retry in ${timeStr}.`;
+              setError(userMessage);
+              console.error(`[VoiceState] 🛑 Cooldown/Limit error: code=${voiceErrorCode} retryAfterMs=${retryAfterMs}`);
+              transitionVoiceState('TERMINAL_ERROR', voiceErrorCode);
+              stopMicrophone();
+              cleanupAllTimers();
+            } else {
+              setError(voiceErrorMsg);
             }
             break;
           
@@ -1130,19 +1159,25 @@ export function useCustomVoice() {
             if (message.status === 'stalled') {
               console.warn("[Custom Voice] ⚠️ STT stalled - server handling reconnect...");
               updateMicStatus('reconnecting', false);
-              // Note: STT reconnection is handled by server, not client
-              // Client just shows status - no new session creation
             } else if (message.status === 'reconnected') {
               console.log("[Custom Voice] ✅ STT reconnected");
               updateMicStatus('listening', true);
+            } else if (message.status === 'cooldown') {
+              const cooldownRetryMs = message.retryAfterMs || 120000;
+              const cooldownMinutes = Math.ceil(cooldownRetryMs / 60000);
+              console.warn(`[Custom Voice] ⏳ STT in cooldown for ${cooldownMinutes} min (code: ${message.code || 'MAX_ATTEMPTS'})`);
+              updateMicStatus('error', false);
+              setError(`Voice temporarily unavailable. Please retry in ${cooldownMinutes} minute${cooldownMinutes > 1 ? 's' : ''}.`);
+              transitionVoiceState('TERMINAL_ERROR', message.code || 'STT_COOLDOWN');
+              stopMicrophone();
+              cleanupAllTimers();
             } else if (message.status === 'failed') {
               console.error("[Custom Voice] ❌ STT reconnect failed:", message.message);
               updateMicStatus('error', false);
-              const errorMsg = message.message || "Voice recognition connection lost. Tap to reconnect.";
-              setError(errorMsg);
+              const sttErrorMsg = message.message || "Voice recognition connection lost. Tap to reconnect.";
+              setError(sttErrorMsg);
               
-              // Check for terminal "too many sessions" error
-              if (errorMsg.toLowerCase().includes('too many')) {
+              if (sttErrorMsg.toLowerCase().includes('too many')) {
                 console.error("[VoiceState] 🛑 Too many sessions - transitioning to TERMINAL_ERROR");
                 transitionVoiceState('TERMINAL_ERROR', 'too many voice sessions');
                 stopMicrophone();
