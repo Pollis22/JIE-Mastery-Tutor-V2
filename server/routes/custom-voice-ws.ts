@@ -606,6 +606,14 @@ interface SessionState {
   terminatedForSafety: boolean; // SAFETY: Whether session was ended due to safety violations
   parentEmail?: string; // SAFETY: Parent email for alerts
   studentId?: string; // SAFETY: Student ID for incident tracking
+  // STT LIVENESS: Track STT health for watchdog
+  lastAudioFrameAt: number; // STT WATCHDOG: When audio was last received from client
+  lastSttMessageAt: number; // STT WATCHDOG: When AssemblyAI last sent any message
+  lastFinalTranscriptAt: number; // STT WATCHDOG: When last final transcript was received
+  silentBufferCount: number; // STT WATCHDOG: Consecutive silent audio buffers
+  sttWatchdogTimerId: NodeJS.Timeout | null; // STT WATCHDOG: Timer for checking STT liveness
+  lastWatchdogLogAt: number; // STT WATCHDOG: Rate limit watchdog logs (once per 5s)
+  sttReconnectInProgress: boolean; // STT WATCHDOG: Whether STT reconnect is in progress
 }
 
 // Helper to send typed WebSocket events
@@ -923,6 +931,13 @@ async function finalizeSession(
     clearTimeout(state.stallEscapeTimerId);
     state.stallEscapeTimerId = null;
     console.log(`[Finalize] 🧹 Cleared stall escape timer (reason: ${reason})`);
+  }
+  
+  // STT WATCHDOG: Clear watchdog timer
+  if (state.sttWatchdogTimerId) {
+    clearInterval(state.sttWatchdogTimerId);
+    state.sttWatchdogTimerId = null;
+    console.log(`[Finalize] 🧹 Cleared STT watchdog timer (reason: ${reason})`);
   }
 
   if (!state.sessionId) {
@@ -1246,6 +1261,14 @@ export function setupCustomVoiceWebSocket(server: Server) {
       terminatedForSafety: false, // SAFETY: Not terminated initially
       parentEmail: undefined, // SAFETY: Will be set from user data
       studentId: undefined, // SAFETY: Will be set from session data
+      // STT WATCHDOG: Initialize liveness tracking
+      lastAudioFrameAt: 0, // STT WATCHDOG: No audio received yet
+      lastSttMessageAt: 0, // STT WATCHDOG: No STT message received yet
+      lastFinalTranscriptAt: 0, // STT WATCHDOG: No final transcript yet
+      silentBufferCount: 0, // STT WATCHDOG: No silent buffers yet
+      sttWatchdogTimerId: null, // STT WATCHDOG: Timer not started yet
+      lastWatchdogLogAt: 0, // STT WATCHDOG: No watchdog log yet
+      sttReconnectInProgress: false, // STT WATCHDOG: No reconnect in progress
     };
 
     // FIX #3: Auto-persist every 10 seconds
@@ -1387,6 +1410,19 @@ export function setupCustomVoiceWebSocket(server: Server) {
     }, 30000); // Check every 30 seconds
 
     console.log('[Inactivity] ✅ Checker started (checks every 30 seconds)');
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // STT WATCHDOG CONSTANTS (Jan 2026)
+    // Timer is started later after fireClaudeWithPolicy is defined
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    const STT_WATCHDOG_INTERVAL_MS = 2000; // Check every 2 seconds
+    const STT_STALL_THRESHOLD_MS = 6000; // 6 seconds without transcript = stalled
+    const AUDIO_RECENT_THRESHOLD_MS = 2000; // Audio received within 2s = user was/is speaking
+    const WATCHDOG_LOG_INTERVAL_MS = 5000; // Rate limit logs to once per 5s
+    const SILENT_BUFFER_THRESHOLD = 25; // ~0.5-1.0s of consecutive silent buffers
+    
+    // Watchdog function reference - will be set after fireClaudeWithPolicy is defined
+    let sttWatchdogFn: (() => void) | null = null;
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // SAFETY TIMEOUT (Dec 10, 2025): Reset stuck isProcessing flag
@@ -2841,6 +2877,10 @@ CRITICAL INSTRUCTIONS:
                   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                   console.log(`[AssemblyAI] 📝 Complete utterance (confidence: ${confidence.toFixed(2)}): "${text}"`);
                   
+                  // STT WATCHDOG: Update liveness timestamps
+                  state.lastSttMessageAt = Date.now();
+                  state.lastFinalTranscriptAt = Date.now();
+                  
                   // Update last audio received time for stall detection
                   state.lastAudioReceivedAt = Date.now();
                   
@@ -3123,6 +3163,137 @@ CRITICAL INSTRUCTIONS:
               state.assemblyAIWs = assemblyWs;
               state.assemblyAIState = assemblyState;
               console.log('[AssemblyAI] AssemblyAI WS assigned to state');
+              
+              // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+              // STT WATCHDOG (Jan 2026): Start watchdog timer now that
+              // fireClaudeWithPolicy and startStallEscapeTimer are in scope
+              // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+              sttWatchdogFn = () => {
+                const now = Date.now();
+                
+                // Skip if session ended, tutor speaking, or processing
+                if (state.isSessionEnded || state.isTutorSpeaking || state.isProcessing) {
+                  return;
+                }
+                
+                // Skip if STT reconnect already in progress
+                if (state.sttReconnectInProgress) {
+                  return;
+                }
+                
+                // Skip if no audio frame received yet (session just started)
+                if (state.lastAudioFrameAt === 0) {
+                  return;
+                }
+                
+                // Skip if no final transcript has ever been received
+                // This prevents false positives when student pauses before first utterance
+                if (state.lastFinalTranscriptAt === 0) {
+                  return;
+                }
+                
+                const timeSinceAudioFrame = now - state.lastAudioFrameAt;
+                const timeSinceFinalTranscript = now - state.lastFinalTranscriptAt;
+                
+                // STALL CONDITION:
+                // User was/is sending audio (within 2s) AND no final transcript for 6s+ AND tutor not speaking
+                // Only applies AFTER first transcript - prevents false positives on initial session
+                const userRecentlySpeaking = timeSinceAudioFrame < AUDIO_RECENT_THRESHOLD_MS;
+                const noTranscriptForTooLong = timeSinceFinalTranscript > STT_STALL_THRESHOLD_MS;
+                
+                if (userRecentlySpeaking && noTranscriptForTooLong) {
+                  // Rate-limited logging
+                  if (now - state.lastWatchdogLogAt >= WATCHDOG_LOG_INTERVAL_MS) {
+                    console.log('[STT-Watchdog] ⚠️ Stall detected', {
+                      sessionId: state.sessionId?.substring(0, 8) || 'unknown',
+                      timeSinceAudioMs: timeSinceAudioFrame,
+                      timeSinceFinalTranscriptMs: timeSinceFinalTranscript,
+                      silentBufferCount: state.silentBufferCount,
+                    });
+                    state.lastWatchdogLogAt = now;
+                  }
+                  
+                  // Send stalled status to client
+                  if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ type: 'stt_status', status: 'stalled' }));
+                  }
+                  
+                  // Attempt ONE safe reconnect
+                  if (state.assemblyAIWs && !state.sttReconnectInProgress) {
+                    state.sttReconnectInProgress = true;
+                    console.log('[STT-Watchdog] 🔄 Attempting AssemblyAI reconnect...');
+                    
+                    try {
+                      // Close existing connection
+                      if (state.assemblyAIWs.readyState === WebSocket.OPEN) {
+                        state.assemblyAIWs.close(1000, 'Watchdog reconnect');
+                      }
+                      
+                      // Create new connection
+                      const { ws: newWs, state: newState } = createAssemblyAIConnection(
+                        state.language,
+                        (text, endOfTurn, confidence) => {
+                          state.lastSttMessageAt = Date.now();
+                          state.lastFinalTranscriptAt = Date.now();
+                          state.lastAudioReceivedAt = Date.now();
+                          
+                          // Use same turn policy logic as main connection
+                          const watchdogGradeBand = state.ageGroup as GradeBand;
+                          const watchdogEval = evaluateTurn({
+                            transcript: text,
+                            endOfTurn: endOfTurn,
+                            eotConfidence: confidence,
+                            gradeBand: watchdogGradeBand,
+                            sessionK2Override: state.turnPolicyK2Override,
+                            policyState: state.turnPolicyState,
+                            currentTimestamp: Date.now(),
+                          });
+                          
+                          logTurnPolicyEvaluation(watchdogEval);
+                          
+                          if (watchdogEval.hesitation_guard_triggered) {
+                            startStallEscapeTimer(text);
+                            return;
+                          }
+                          
+                          if (watchdogEval.should_fire_claude) {
+                            fireClaudeWithPolicy(text);
+                          }
+                        },
+                        (error) => {
+                          console.error('[STT-Watchdog] ❌ Reconnect error:', error);
+                          state.sttReconnectInProgress = false;
+                          if (ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({ type: 'stt_status', status: 'failed' }));
+                          }
+                        },
+                        (sessionId) => {
+                          console.log('[STT-Watchdog] ✅ Reconnected:', sessionId);
+                          state.sttReconnectInProgress = false;
+                          state.lastSttMessageAt = Date.now();
+                          if (ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({ type: 'stt_status', status: 'reconnected' }));
+                          }
+                        }
+                      );
+                      
+                      state.assemblyAIWs = newWs;
+                      state.assemblyAIState = newState;
+                      
+                    } catch (e) {
+                      console.error('[STT-Watchdog] ❌ Reconnect failed:', e);
+                      state.sttReconnectInProgress = false;
+                      if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: 'stt_status', status: 'failed' }));
+                      }
+                    }
+                  }
+                }
+              };
+              
+              // Start the watchdog timer
+              state.sttWatchdogTimerId = setInterval(sttWatchdogFn, STT_WATCHDOG_INTERVAL_MS);
+              console.log('[STT-Watchdog] ✅ Watchdog started (checks every 2 seconds)');
               
             } else {
               // ============================================
@@ -3480,6 +3651,9 @@ CRITICAL INSTRUCTIONS:
               isReconnecting: state.isReconnecting
             });
             
+            // STT WATCHDOG: Update lastAudioFrameAt timestamp
+            state.lastAudioFrameAt = Date.now();
+            
             // RECONNECT FIX: Drop audio during reconnection to prevent sending to dead socket
             if (state.isReconnecting) {
               console.warn('[Custom Voice] ⏸️ Audio dropped - reconnection in progress');
@@ -3494,6 +3668,24 @@ CRITICAL INSTRUCTIONS:
                 const int16View = new Int16Array(audioBuffer.buffer, audioBuffer.byteOffset, Math.min(10, audioBuffer.length / 2));
                 const hasNonZero = int16View.some(sample => sample !== 0);
                 const maxAmplitude = Math.max(...Array.from(int16View).map(Math.abs));
+                
+                // STT WATCHDOG: Track consecutive silent buffers
+                const isSilentBuffer = !hasNonZero || maxAmplitude < 10;
+                if (isSilentBuffer) {
+                  state.silentBufferCount++;
+                  // Send mic_status=silent_input after threshold (25 buffers ≈ 0.5-1.0s)
+                  if (state.silentBufferCount === SILENT_BUFFER_THRESHOLD) {
+                    console.log('[STT-Watchdog] 🔇 Silent input detected (consecutive silent buffers:', state.silentBufferCount, ')');
+                    if (ws.readyState === WebSocket.OPEN) {
+                      ws.send(JSON.stringify({ type: 'mic_status', status: 'silent_input' }));
+                    }
+                  }
+                } else {
+                  // Reset silent buffer count when non-silent audio arrives
+                  if (state.silentBufferCount > 0) {
+                    state.silentBufferCount = 0;
+                  }
+                }
                 
                 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                 // NOISE FLOOR: Update per-session rolling baseline

@@ -190,7 +190,10 @@ export type MicStatus =
   | 'hearing_you'       // Detected student speech
   | 'ignoring_noise'    // Detected background noise (not speech)
   | 'tutor_speaking'    // TTS playback in progress
-  | 'processing';       // Waiting for AI response
+  | 'processing'        // Waiting for AI response
+  | 'reconnecting'      // STT connection being re-established
+  | 'error'             // STT connection failed
+  | 'silent';           // Mic is receiving silent/empty audio
 
 // Hysteresis timing constants (prevents flicker)
 const MIC_STATUS_HYSTERESIS = {
@@ -978,6 +981,32 @@ export function useCustomVoice() {
           case "error":
             console.error("[Custom Voice] ❌ Error:", message.error);
             setError(message.error);
+            break;
+          
+          // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          // STT WATCHDOG STATUS (Jan 2026): Handle stall recovery
+          // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          case "stt_status":
+            console.log("[Custom Voice] 🔍 STT status:", message.status);
+            if (message.status === 'stalled') {
+              console.warn("[Custom Voice] ⚠️ STT stalled - reconnecting...");
+              updateMicStatus('reconnecting', false);
+            } else if (message.status === 'reconnected') {
+              console.log("[Custom Voice] ✅ STT reconnected");
+              updateMicStatus('listening', true);
+            } else if (message.status === 'failed') {
+              console.error("[Custom Voice] ❌ STT reconnect failed");
+              updateMicStatus('error', false);
+              setError("Voice recognition connection lost. Tap to reconnect.");
+            }
+            break;
+          
+          case "mic_status":
+            console.log("[Custom Voice] 🎤 Mic status:", message.status);
+            if (message.status === 'silent_input') {
+              console.warn("[Custom Voice] 🔇 Mic is picking up silent audio");
+              updateMicStatus('silent', false);
+            }
             break;
 
           case "ended":
