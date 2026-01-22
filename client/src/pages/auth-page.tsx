@@ -21,6 +21,7 @@ import { Footer } from "@/components/footer";
 import jieLogo from "@/assets/jie-mastery-logo-sm.jpg";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { StartTrialButton } from "@/components/StartTrialButton";
+import { DidAgentEmbed } from "@/components/DidAgentEmbed";
 
 const loginSchema = z.object({
   email: z.string().min(1, "Email or username is required"),
@@ -702,6 +703,9 @@ export default function AuthPage() {
                 <p className="text-sm text-muted-foreground">
                   No credit card required &bull; 30-minute free trial &bull; K-12 & College support
                 </p>
+
+                {/* D-ID Agent Embed - DEV ONLY */}
+                <DidAgentEmbed />
 
                 {/* Video */}
                 <div 
