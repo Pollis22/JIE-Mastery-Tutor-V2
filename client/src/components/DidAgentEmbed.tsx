@@ -11,6 +11,8 @@ import { useEffect } from "react";
 const SCRIPT_ID = "did-agent-script";
 const SCRIPT_SRC = "https://agent.d-id.com/v2/index.js";
 
+let dynamicImportAttempted = false;
+
 export function DidAgentEmbed() {
   useEffect(() => {
     const clientKey = import.meta.env.VITE_DID_CLIENT_KEY;
@@ -33,27 +35,51 @@ export function DidAgentEmbed() {
       return;
     }
 
-    console.log("[D-ID] Injecting script...");
+    const injectModuleScript = () => {
+      console.log("[D-ID] Injecting module script...");
 
-    const script = document.createElement("script");
-    script.id = SCRIPT_ID;
-    script.src = SCRIPT_SRC;
-    script.async = true;
-    script.setAttribute("data-mode", "full");
-    script.setAttribute("data-agent-id", "v2_agt_0KyN0XA6");
-    script.setAttribute("data-client-key", clientKey);
-    script.setAttribute("data-monitor", "true");
-    script.setAttribute("data-target-id", "did-agent-container");
+      const script = document.createElement("script");
+      script.id = SCRIPT_ID;
+      script.src = SCRIPT_SRC;
+      script.type = "module";
+      script.setAttribute("type", "module");
+      script.setAttribute("crossorigin", "anonymous");
+      script.async = true;
+      script.setAttribute("data-mode", "full");
+      script.setAttribute("data-agent-id", "v2_agt_0KyN0XA6");
+      script.setAttribute("data-client-key", clientKey);
+      script.setAttribute("data-monitor", "true");
+      script.setAttribute("data-target-id", "did-agent-container");
 
-    script.onload = () => {
-      console.log("[D-ID] Script loaded");
+      script.onload = () => {
+        console.log("[D-ID] Module script loaded ✓");
+      };
+
+      script.onerror = async (err) => {
+        console.error("[D-ID] Module script error", err);
+        
+        // Try dynamic import fallback
+        if (!dynamicImportAttempted) {
+          dynamicImportAttempted = true;
+          console.log("[D-ID] Trying dynamic import fallback...");
+          try {
+            await import(/* @vite-ignore */ SCRIPT_SRC);
+            console.log("[D-ID] Dynamic import loaded ✓");
+          } catch (importErr) {
+            console.error("[D-ID] Dynamic import failed", importErr);
+          }
+        }
+      };
+
+      // Append to head (not body) to avoid Replit iframe quirks
+      document.head.appendChild(script);
     };
 
-    script.onerror = () => {
-      console.error("[D-ID] Script failed to load");
-    };
-
-    document.body.appendChild(script);
+    try {
+      injectModuleScript();
+    } catch (err) {
+      console.error("[D-ID] Script injection error", err);
+    }
 
     // DO NOT remove the script on unmount to avoid breaking HMR re-init loops
   }, []);
