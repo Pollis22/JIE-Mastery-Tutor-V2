@@ -6,85 +6,25 @@
 // 
 // Add this URL (with https://) to your D-ID agent's allowed domains list.
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
-const SCRIPT_ID = "did-agent-script";
-const SCRIPT_SRC = "https://agent.d-id.com/v2/index.js";
-
-let dynamicImportAttempted = false;
+const AGENT_ID = "v2_agt_0KyN0XA6";
 
 export function DidAgentEmbed() {
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
+  const clientKey = import.meta.env.VITE_DID_CLIENT_KEY;
+
   useEffect(() => {
-    const clientKey = import.meta.env.VITE_DID_CLIENT_KEY;
-    
     if (!clientKey) {
       console.error("[D-ID] Missing VITE_DID_CLIENT_KEY");
+      setError("Missing D-ID client key");
+      setIsLoading(false);
       return;
     }
-
-    // Check if script already exists (React StrictMode runs effects twice)
-    if (document.getElementById(SCRIPT_ID)) {
-      console.log("[D-ID] Script already injected, skipping");
-      return;
-    }
-
-    // Verify target div exists
-    const targetDiv = document.getElementById("did-agent-container");
-    if (!targetDiv) {
-      console.error("[D-ID] Target div #did-agent-container not found");
-      return;
-    }
-
-    const injectModuleScript = () => {
-      console.log("[D-ID] Injecting module script...");
-
-      const script = document.createElement("script");
-      script.id = SCRIPT_ID;
-      script.src = SCRIPT_SRC;
-      script.type = "module";
-      script.setAttribute("type", "module");
-      script.setAttribute("crossorigin", "anonymous");
-      script.async = true;
-      script.setAttribute("data-mode", "full");
-      script.setAttribute("data-agent-id", "v2_agt_0KyN0XA6");
-      script.setAttribute("data-client-key", clientKey);
-      script.setAttribute("data-monitor", "true");
-      script.setAttribute("data-target-id", "did-agent-container");
-
-      script.onload = () => {
-        console.log("[D-ID] Module script loaded ✓");
-      };
-
-      script.onerror = async (err) => {
-        console.error("[D-ID] Module script error", err);
-        
-        // Try dynamic import fallback
-        if (!dynamicImportAttempted) {
-          dynamicImportAttempted = true;
-          console.log("[D-ID] Trying dynamic import fallback...");
-          try {
-            await import(/* @vite-ignore */ SCRIPT_SRC);
-            console.log("[D-ID] Dynamic import loaded ✓");
-          } catch (importErr) {
-            console.error("[D-ID] Dynamic import failed", importErr);
-          }
-        }
-      };
-
-      // Append to head (not body) to avoid Replit iframe quirks
-      document.head.appendChild(script);
-    };
-
-    try {
-      injectModuleScript();
-    } catch (err) {
-      console.error("[D-ID] Script injection error", err);
-    }
-
-    // DO NOT remove the script on unmount to avoid breaking HMR re-init loops
-  }, []);
-
-  const clientKey = import.meta.env.VITE_DID_CLIENT_KEY;
+    console.log("[D-ID] Iframe embed initialized with agent:", AGENT_ID);
+  }, [clientKey]);
   
   if (!clientKey) {
     return (
@@ -94,16 +34,46 @@ export function DidAgentEmbed() {
     );
   }
 
+  if (error) {
+    return (
+      <div className="w-full max-w-lg mx-auto lg:mx-0 mt-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-sm text-red-800 dark:text-red-200">
+        D-ID Agent Error: {error}
+      </div>
+    );
+  }
+
+  const iframeSrc = `https://agents.d-id.com/${AGENT_ID}?clientKey=${encodeURIComponent(clientKey)}`;
+
   return (
     <div className="w-full max-w-lg mx-auto lg:mx-0 mt-6" data-testid="did-agent-embed">
       <p className="text-sm font-semibold text-muted-foreground mb-3 text-center lg:text-left">
         Talk to our Live Enrollment Specialist
       </p>
       <div 
-        id="did-agent-container" 
-        className="w-full rounded-2xl overflow-hidden border border-border shadow-lg bg-muted/20"
+        className="w-full rounded-2xl overflow-hidden border border-border shadow-lg bg-muted/20 relative"
         style={{ height: "520px" }}
-      />
+      >
+        {isLoading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-muted/50">
+            <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full" />
+          </div>
+        )}
+        <iframe
+          src={iframeSrc}
+          title="D-ID AI Agent"
+          className="w-full h-full border-0"
+          allow="camera; microphone; autoplay; encrypted-media"
+          onLoad={() => {
+            console.log("[D-ID] Iframe loaded ✓");
+            setIsLoading(false);
+          }}
+          onError={() => {
+            console.error("[D-ID] Iframe failed to load");
+            setError("Failed to load agent");
+            setIsLoading(false);
+          }}
+        />
+      </div>
     </div>
   );
 }
