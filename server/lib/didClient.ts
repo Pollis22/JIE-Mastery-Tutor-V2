@@ -30,7 +30,7 @@ interface DidApiSuccess<T> {
 type DidApiResponse<T> = DidApiSuccess<T> | DidApiError;
 
 function getConfig(): DidClientConfig | null {
-  const apiKey = process.env.DID_API_KEY || process.env.DID_CLIENT_KEY;
+  const apiKey = process.env.DID_API_KEY;
   const agentId = process.env.DID_AGENT_ID || 'v2_agt_0KyN0XA6';
   
   if (!apiKey) {

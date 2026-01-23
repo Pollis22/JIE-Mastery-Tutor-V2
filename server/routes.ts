@@ -79,13 +79,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const stripeWebhookRoutes = await import('./routes/stripe-webhooks');
   app.use('/api/stripe', stripeWebhookRoutes.default);
   
-  // D-ID Agent routes - public endpoints for avatar embed
-  // Must be registered before auth middleware to allow unauthenticated access
-  const didRoutes = await import('./routes/did-routes');
-  app.use('/api/did', didRoutes.default);
-  
-  // D-ID API routes - WebRTC stream flow (API-first approach)
-  // Uses the official D-ID API instead of iframe embed
+  // D-ID API routes - WebRTC stream flow (API-only mode)
+  // Uses the official D-ID Realtime Agents Streams API (api.d-id.com)
+  // Registered before auth middleware to allow unauthenticated access on landing page
   const didApiRoutes = await import('./routes/did-api-routes');
   app.use('/api/did-api', didApiRoutes.default);
   

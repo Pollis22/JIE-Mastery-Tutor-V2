@@ -36,7 +36,7 @@ interface StreamSession {
 interface ApiStatus {
   ok: boolean;
   configured: boolean;
-  mode: string;
+  didApiKeyPresent: boolean;
   canResolveApiDomain: boolean;
   outboundHttpOk: boolean;
   error?: string;
@@ -335,9 +335,6 @@ export function DidAgentWebRTC() {
                   <XCircle className="w-3 h-3 text-red-500" />
                 )}
                 <span>D-ID API: {apiStatus.outboundHttpOk ? 'Reachable' : 'Unreachable'}</span>
-              </div>
-              <div className="text-muted-foreground mt-1">
-                Mode: {apiStatus.mode}
               </div>
             </div>
           )}

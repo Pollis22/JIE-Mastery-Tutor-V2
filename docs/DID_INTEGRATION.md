@@ -1,114 +1,91 @@
-# D-ID Avatar Integration
+# D-ID Avatar Integration (API-Only Mode)
 
 ## Overview
-The D-ID avatar supports two integration modes:
-- **Embed mode** (default): Uses iframe embed from agents.d-id.com
-- **API mode**: Uses the official D-ID Realtime Agents Streams API with WebRTC
-
-## Feature Flag
-Set `DID_MODE` environment variable to switch modes:
-```
-DID_MODE=embed   # (default) Uses iframe embed
-DID_MODE=api     # Uses WebRTC streaming via D-ID API
-```
-
-## How to Revert Instantly
-If the API integration causes issues:
-```bash
-DID_MODE=embed   # Revert to iframe embed mode
-```
-Then restart the application.
+The D-ID avatar uses the official D-ID Realtime Agents Streams API with WebRTC.
+This is the only supported integration mode - iframe embed has been permanently removed.
 
 ## Environment Variables Required
+
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `DID_API_KEY` | For API mode | D-ID API key (Basic auth) |
-| `DID_CLIENT_KEY` | For embed mode | D-ID client key for iframe embed |
-| `DID_AGENT_ID` | Optional | Agent ID (default: v2_agt_0KyN0XA6) |
-| `DID_MODE` | Optional | Integration mode: `api` or `embed` (default: embed) |
+| `DID_API_KEY` | Yes | D-ID API key (Basic auth format) |
+| `DID_AGENT_ID` | No | Agent ID (default: v2_agt_0KyN0XA6) |
 
-## Files Added/Modified
+## Files
+
 | File | Purpose |
 |------|---------|
 | `server/lib/didClient.ts` | D-ID API client helper |
 | `server/routes/did-api-routes.ts` | WebRTC stream endpoints |
-| `server/routes/did-routes.ts` | Embed mode session endpoints |
-| `client/src/components/DidAgentWebRTC.tsx` | WebRTC React component |
-| `client/src/components/DidAgentSwitch.tsx` | Mode switcher component |
-| `client/src/components/DidAgentEmbed.tsx` | Iframe embed component |
+| `client/src/components/DidAgentWebRTC.tsx` | WebRTC React component with video |
 
 ## API Endpoints
 
-### Embed Mode (agents.d-id.com)
-- `GET /api/did/session` - Returns embed URL with client key
-- `GET /api/did/health` - DNS/HTTP diagnostics for agents.d-id.com
+All endpoints are PUBLIC (registered before auth middleware):
 
-### API Mode (api.d-id.com)
-- `GET /api/did-api/status` - Configuration and connectivity status
+- `GET /api/did-api/status` - Configuration and connectivity diagnostics
 - `POST /api/did-api/stream/create` - Create WebRTC stream
 - `POST /api/did-api/stream/:streamId/sdp` - Send SDP answer
 - `POST /api/did-api/stream/:streamId/ice` - Send ICE candidate
 - `POST /api/did-api/stream/:streamId/speak` - Make avatar speak
 
+## WebRTC Flow
+
+1. User clicks "Start Avatar" button (required for autoplay policies)
+2. Client calls `POST /api/did-api/stream/create`
+3. Server creates stream via D-ID API, returns streamId, sessionId, offerSdp, iceServers
+4. Client creates RTCPeerConnection with provided iceServers
+5. Client sets remote description with offerSdp
+6. Client creates answer, sets local description
+7. Client sends answer via `POST /api/did-api/stream/:streamId/sdp`
+8. Client sends ICE candidates via `POST /api/did-api/stream/:streamId/ice`
+9. When video track arrives, attach to `<video>` element
+10. Call `POST /api/did-api/stream/:streamId/speak` to make avatar speak
+
 ## Manual Verification Checklist
-
-### Desktop Preview
-1. Set `DID_MODE=api` and restart
-2. Navigate to `/auth`
-3. Open browser DevTools (F12)
-4. Check Console for:
-   - `[D-ID WebRTC] Starting WebRTC connection...`
-   - `[D-ID WebRTC] Stream created: ...`
-   - `[D-ID WebRTC] Track received: video`
-   - `[D-ID WebRTC] Video stream attached ✓`
-5. Confirm NO calls to agents.d-id.com
-
-### iPhone Safari
-1. Open site on iPhone Safari
-2. Click "Start Avatar" button (required for autoplay policy)
-3. Avatar should connect and display video
-4. Test "Speak test" button
 
 ### API Status Check
 ```bash
-# Check API connectivity
-curl http://localhost:5000/api/did-api/status
+curl http://localhost:5000/api/did-api/status | jq .
 
 # Expected response:
 {
   "ok": true,
   "configured": true,
-  "mode": "api",
+  "didApiKeyPresent": true,
+  "agentIdUsed": "v2_agt_0KyN0XA6",
+  "integrationMode": "api",
   "canResolveApiDomain": true,
   "outboundHttpOk": true
 }
 ```
 
-## WebRTC Flow (API Mode)
-1. Client clicks "Start Avatar" button
-2. Server calls `POST /agents/{agentId}/streams` to create stream
-3. Server returns streamId, sessionId, offerSdp, iceServers
-4. Client creates RTCPeerConnection with iceServers
-5. Client sets remote description with offerSdp
-6. Client creates answer, sets local description
-7. Client sends answer via `POST /stream/:streamId/sdp`
-8. Client sends ICE candidates via `POST /stream/:streamId/ice`
-9. When video track arrives, attach to video element
-10. Call `POST /stream/:streamId/speak` to make avatar speak
+### Desktop Test
+1. Navigate to `/auth`
+2. Click "Start Avatar" button
+3. Check console for `[D-ID WebRTC] Video stream attached ✓`
+4. Avatar video should display (not blank)
+5. Click "Test Speak" button
 
-## Troubleshooting
-
-### API Mode Issues
-- Check `DID_API_KEY` is set correctly
-- Verify api.d-id.com is reachable: `curl -I https://api.d-id.com`
-- Check `/api/did-api/status` for diagnostics
-
-### Embed Mode Issues
-- Check `DID_CLIENT_KEY` is set correctly
-- The domain agents.d-id.com may be blocked by some networks
-- Use API mode as fallback
+### Mobile/Safari Test
+1. Open site on iPhone Safari
+2. Click "Start Avatar" button (required for autoplay policy)
+3. Avatar should connect and display video
+4. Test speak button should work
 
 ## Security Notes
-- All D-ID API keys are kept server-side
+
+- All D-ID API keys are kept server-side only
 - Client never sees secrets
-- WebRTC streams use secure ICE servers
+- WebRTC streams use secure ICE servers from D-ID
+- No iframe/embed mode - no client keys exposed
+
+## Removed (Not Supported)
+
+The following have been permanently removed:
+- Iframe embed mode (agents.d-id.com)
+- DID_CLIENT_KEY environment variable dependency
+- DID_MODE feature flag
+- DidAgentEmbed component
+- DidAgentSwitch component
+- /api/did/* embed session endpoints
