@@ -5,18 +5,20 @@
  * Does NOT depend on the iframe embed domain (agents.d-id.com).
  * 
  * Features:
- * - WebRTC connection to D-ID API
- * - Video element for avatar stream (always mounted to avoid Safari issues)
- * - Status display and retry functionality
- * - Speak test button
+ * - Strict connection state machine (idle → starting → connected → stopping → error)
+ * - Deterministic cleanup with full reset
+ * - Video element always mounted to avoid Safari issues
+ * - Connection watchdog with timeout handling
+ * - Mutex to prevent overlapping connections
  * - Proper ICE candidate exchange
  */
 
 import { useEffect, useState, useRef, useCallback } from "react";
-import { RefreshCw, AlertTriangle, CheckCircle, XCircle, Volume2, Square } from "lucide-react";
+import { RefreshCw, AlertTriangle, CheckCircle, XCircle, Volume2, Square, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-const CONNECTION_TIMEOUT_MS = 15000;
+const CONNECTION_TIMEOUT_MS = 12000;
+const DISCONNECT_GRACE_MS = 2000;
 const DEBUG = true;
 
 function log(...args: unknown[]) {
@@ -27,7 +29,7 @@ function logError(...args: unknown[]) {
   console.error("[D-ID WebRTC]", ...args);
 }
 
-type ConnectionStatus = 'idle' | 'creating' | 'connecting' | 'connected' | 'error' | 'timeout' | 'stopped';
+type ConnectionState = 'idle' | 'starting' | 'connected' | 'stopping' | 'error';
 
 interface StreamSession {
   streamId: string;
@@ -43,40 +45,121 @@ interface ApiStatus {
   error?: string;
 }
 
+function waitAnimationFrame(): Promise<void> {
+  return new Promise(resolve => requestAnimationFrame(() => resolve()));
+}
+
 export function DidAgentWebRTC() {
-  const [status, setStatus] = useState<ConnectionStatus>('idle');
+  const [state, setState] = useState<ConnectionState>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [apiStatus, setApiStatus] = useState<ApiStatus | null>(null);
   const [session, setSession] = useState<StreamSession | null>(null);
   const [hasUserGesture, setHasUserGesture] = useState(false);
   const [iceCandidatesSent, setIceCandidatesSent] = useState(0);
+  const [needsPlayGesture, setNeedsPlayGesture] = useState(false);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+  const remoteStreamRef = useRef<MediaStream | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const disconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
-  const isConnectingRef = useRef(false);
+  const startMutexRef = useRef(false);
+  const speakAbortRef = useRef<AbortController | null>(null);
+  const stateRef = useRef<ConnectionState>('idle');
+  
+  const setStateWithRef = useCallback((newState: ConnectionState) => {
+    stateRef.current = newState;
+    setState(newState);
+  }, []);
 
-  const cleanup = useCallback((reason: string = 'unknown') => {
-    log("Cleaning up, reason:", reason);
+  const cleanup = useCallback(async (reason: string = 'unknown'): Promise<void> => {
+    log("Cleanup started, reason:", reason);
     
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
     }
     
-    if (peerConnectionRef.current) {
-      peerConnectionRef.current.close();
+    if (disconnectTimeoutRef.current) {
+      clearTimeout(disconnectTimeoutRef.current);
+      disconnectTimeoutRef.current = null;
+    }
+    
+    if (speakAbortRef.current) {
+      speakAbortRef.current.abort();
+      speakAbortRef.current = null;
+    }
+    
+    const pc = peerConnectionRef.current;
+    if (pc) {
+      pc.ontrack = null;
+      pc.onicecandidate = null;
+      pc.oniceconnectionstatechange = null;
+      pc.onicegatheringstatechange = null;
+      pc.onconnectionstatechange = null;
+      
+      try {
+        pc.getSenders().forEach(sender => {
+          if (sender.track) {
+            sender.track.stop();
+          }
+        });
+      } catch (e) {
+        log("Error stopping senders:", e);
+      }
+      
+      try {
+        pc.getReceivers().forEach(receiver => {
+          if (receiver.track) {
+            receiver.track.stop();
+          }
+        });
+      } catch (e) {
+        log("Error stopping receivers:", e);
+      }
+      
+      try {
+        pc.close();
+      } catch (e) {
+        log("Error closing peer connection:", e);
+      }
+      
       peerConnectionRef.current = null;
     }
     
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
+    const remoteStream = remoteStreamRef.current;
+    if (remoteStream) {
+      remoteStream.getTracks().forEach(track => {
+        try {
+          track.stop();
+        } catch (e) {
+          log("Error stopping remote track:", e);
+        }
+      });
+      remoteStreamRef.current = null;
+    }
+    
+    const video = videoRef.current;
+    if (video) {
+      try {
+        video.pause();
+        video.srcObject = null;
+        video.removeAttribute('src');
+        video.load();
+      } catch (e) {
+        log("Error resetting video element:", e);
+      }
     }
     
     setSession(null);
     setIceCandidatesSent(0);
-    isConnectingRef.current = false;
+    setNeedsPlayGesture(false);
+    startMutexRef.current = false;
+    
+    await waitAnimationFrame();
+    
+    log("Cleanup complete");
   }, []);
 
   const fetchApiStatus = useCallback(async () => {
@@ -92,27 +175,45 @@ export function DidAgentWebRTC() {
     }
   }, []);
 
-  const connect = useCallback(async () => {
-    if (!mountedRef.current) return;
-    if (isConnectingRef.current) {
-      log("Already connecting, ignoring duplicate request");
+  const startConnection = useCallback(async () => {
+    if (!mountedRef.current) {
+      log("Component unmounted, aborting start");
+      startMutexRef.current = false;
       return;
     }
     
-    isConnectingRef.current = true;
-    cleanup('new connection');
-    setStatus('creating');
+    if (startMutexRef.current) {
+      log("Start already in flight, ignoring duplicate request");
+      return;
+    }
+    
+    if (stateRef.current === 'starting' || stateRef.current === 'stopping') {
+      log("Invalid state for starting:", stateRef.current);
+      return;
+    }
+    
+    startMutexRef.current = true;
+    
+    if (peerConnectionRef.current) {
+      setStateWithRef('stopping');
+      await cleanup('new connection requested');
+    }
+    
+    setStateWithRef('starting');
     setErrorMessage(null);
     
     log("Starting WebRTC connection...");
     
-    timeoutRef.current = setTimeout(() => {
-      if (mountedRef.current && peerConnectionRef.current?.connectionState !== 'connected') {
+    timeoutRef.current = setTimeout(async () => {
+      const pc = peerConnectionRef.current;
+      const isConnected = pc?.connectionState === 'connected';
+      
+      if (mountedRef.current && !isConnected && stateRef.current === 'starting') {
         logError("Connection timeout after", CONNECTION_TIMEOUT_MS, "ms");
-        setStatus('timeout');
+        await cleanup('timeout');
+        setStateWithRef('error');
         setErrorMessage("Connection timed out. The D-ID service may be unavailable.");
         fetchApiStatus();
-        isConnectingRef.current = false;
       }
     }, CONNECTION_TIMEOUT_MS);
     
@@ -131,8 +232,13 @@ export function DidAgentWebRTC() {
       const { streamId, sessionId, offerSdp, iceServers } = await createResponse.json();
       log("Stream created:", streamId, "sessionId:", sessionId);
       
+      if (!mountedRef.current) {
+        log("Component unmounted during stream creation");
+        startMutexRef.current = false;
+        return;
+      }
+      
       setSession({ streamId, sessionId });
-      setStatus('connecting');
       
       const pcConfig: RTCConfiguration = {
         iceServers: iceServers && iceServers.length > 0 
@@ -149,35 +255,53 @@ export function DidAgentWebRTC() {
       pc.ontrack = (event) => {
         log("Track received:", event.track.kind, "readyState:", event.track.readyState);
         
-        if (event.track.kind === 'video' && videoRef.current) {
+        const video = videoRef.current;
+        if (!video) {
+          logError("Video element not available");
+          return;
+        }
+        
+        if (event.track.kind === 'video') {
           log("Attaching video track to video element...");
           
-          const stream = new MediaStream([event.track]);
-          videoRef.current.srcObject = stream;
+          let stream = remoteStreamRef.current;
+          if (!stream) {
+            stream = new MediaStream();
+            remoteStreamRef.current = stream;
+          }
           
-          const playPromise = videoRef.current.play();
-          if (playPromise !== undefined) {
-            playPromise.then(() => {
-              log("Video playback started ✓");
-            }).catch((e) => {
-              log("Video play() needs user gesture:", e.message);
+          stream.addTrack(event.track);
+          
+          video.playsInline = true;
+          video.muted = true;
+          video.autoplay = true;
+          video.srcObject = stream;
+          
+          video.play()
+            .then(() => {
+              log("Video playback started ✓ (muted for autoplay)");
+              video.muted = false;
+              log("Video unmuted ✓");
+            })
+            .catch((e) => {
+              log("Video play() failed, needs user gesture:", e.message);
+              setNeedsPlayGesture(true);
             });
-          }
           
-          if (timeoutRef.current) {
-            clearTimeout(timeoutRef.current);
-            timeoutRef.current = null;
-          }
-          
-          setStatus('connected');
           log("Video stream attached ✓");
         }
         
-        if (event.track.kind === 'audio' && videoRef.current) {
+        if (event.track.kind === 'audio') {
           log("Audio track received, adding to stream");
-          const existingStream = videoRef.current.srcObject as MediaStream;
-          if (existingStream) {
-            existingStream.addTrack(event.track);
+          let stream = remoteStreamRef.current;
+          if (!stream) {
+            stream = new MediaStream();
+            remoteStreamRef.current = stream;
+          }
+          stream.addTrack(event.track);
+          
+          if (video.srcObject !== stream) {
+            video.srcObject = stream;
           }
         }
       };
@@ -227,22 +351,46 @@ export function DidAgentWebRTC() {
       pc.onconnectionstatechange = () => {
         log("Connection state:", pc.connectionState);
         
+        if (!mountedRef.current) return;
+        
         if (pc.connectionState === 'connected') {
           log("WebRTC connection established ✓");
-          setStatus('connected');
-          isConnectingRef.current = false;
           
           if (timeoutRef.current) {
             clearTimeout(timeoutRef.current);
             timeoutRef.current = null;
           }
+          
+          if (disconnectTimeoutRef.current) {
+            clearTimeout(disconnectTimeoutRef.current);
+            disconnectTimeoutRef.current = null;
+          }
+          
+          setStateWithRef('connected');
+          startMutexRef.current = false;
+          
         } else if (pc.connectionState === 'failed') {
           logError("WebRTC connection failed");
-          setStatus('error');
-          setErrorMessage("WebRTC connection failed. ICE candidates: " + localIceCount);
-          isConnectingRef.current = false;
+          cleanup('connection failed').then(() => {
+            setStateWithRef('error');
+            setErrorMessage("WebRTC connection failed. ICE candidates: " + localIceCount);
+          });
+          
         } else if (pc.connectionState === 'disconnected') {
-          log("WebRTC connection disconnected (may reconnect)");
+          log("WebRTC connection disconnected, waiting", DISCONNECT_GRACE_MS, "ms before cleanup...");
+          
+          if (disconnectTimeoutRef.current) {
+            clearTimeout(disconnectTimeoutRef.current);
+          }
+          
+          disconnectTimeoutRef.current = setTimeout(async () => {
+            if (mountedRef.current && pc.connectionState === 'disconnected') {
+              logError("Connection still disconnected after grace period");
+              await cleanup('disconnected timeout');
+              setStateWithRef('error');
+              setErrorMessage("Connection lost and could not recover.");
+            }
+          }, DISCONNECT_GRACE_MS);
         }
       };
       
@@ -278,25 +426,22 @@ export function DidAgentWebRTC() {
     } catch (error) {
       logError("Connection error:", error);
       
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-        timeoutRef.current = null;
-      }
-      
-      setStatus('error');
+      await cleanup('connection error');
+      setStateWithRef('error');
       setErrorMessage(error instanceof Error ? error.message : 'Connection failed');
       fetchApiStatus();
-      isConnectingRef.current = false;
     }
-  }, [cleanup, fetchApiStatus]);
+  }, [cleanup, fetchApiStatus, setStateWithRef]);
 
   const handleSpeak = useCallback(async () => {
-    if (!session) {
-      log("No session, cannot speak");
+    if (state !== 'connected' || !session) {
+      log("Cannot speak: state=" + state + ", session=" + !!session);
       return;
     }
     
     log("Speaking test text...");
+    
+    speakAbortRef.current = new AbortController();
     
     try {
       const response = await fetch(`/api/did-api/stream/${session.streamId}/speak`, {
@@ -305,7 +450,8 @@ export function DidAgentWebRTC() {
         body: JSON.stringify({
           sessionId: session.sessionId,
           text: "Hello! I'm your AI enrollment specialist. How can I help you today?"
-        })
+        }),
+        signal: speakAbortRef.current.signal
       });
       
       if (!response.ok) {
@@ -315,26 +461,58 @@ export function DidAgentWebRTC() {
         log("Speak request sent ✓");
       }
     } catch (error) {
-      logError("Speak error:", error);
+      if (error instanceof Error && error.name === 'AbortError') {
+        log("Speak request aborted");
+      } else {
+        logError("Speak error:", error);
+      }
+    } finally {
+      speakAbortRef.current = null;
     }
-  }, [session]);
+  }, [session, state]);
+
+  const handlePlayVideo = useCallback(() => {
+    const video = videoRef.current;
+    if (video) {
+      video.muted = true;
+      video.play()
+        .then(() => {
+          log("Manual video play succeeded ✓");
+          video.muted = false;
+          setNeedsPlayGesture(false);
+        })
+        .catch((e) => {
+          logError("Manual video play failed:", e);
+        });
+    }
+  }, []);
 
   const handleStart = useCallback(() => {
     log("User clicked Start Avatar");
     setHasUserGesture(true);
-    connect();
-  }, [connect]);
+    startConnection();
+  }, [startConnection]);
 
-  const handleStop = useCallback(() => {
+  const handleStop = useCallback(async () => {
+    if (stateRef.current === 'stopping') {
+      log("Already stopping, ignoring");
+      return;
+    }
+    
     log("User clicked Stop");
-    cleanup('user stopped');
-    setStatus('stopped');
-  }, [cleanup]);
+    setStateWithRef('stopping');
+    await cleanup('user stopped');
+    setStateWithRef('idle');
+  }, [cleanup, setStateWithRef]);
 
   const handleRetry = useCallback(() => {
+    if (stateRef.current === 'starting' || stateRef.current === 'stopping') {
+      log("Cannot retry in state:", stateRef.current);
+      return;
+    }
     log("User clicked Retry");
-    connect();
-  }, [connect]);
+    startConnection();
+  }, [startConnection]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -348,10 +526,12 @@ export function DidAgentWebRTC() {
 
   const showStartButton = !hasUserGesture;
   const showVideo = hasUserGesture;
-  const isLoading = status === 'creating' || status === 'connecting';
-  const isError = status === 'error' || status === 'timeout';
-  const isStopped = status === 'stopped';
-  const isConnected = status === 'connected';
+  const isStarting = state === 'starting';
+  const isStopping = state === 'stopping';
+  const isError = state === 'error';
+  const isIdle = state === 'idle';
+  const isConnected = state === 'connected';
+  const isButtonDisabled = isStarting || isStopping;
 
   return (
     <div className="w-full max-w-lg mx-auto lg:mx-0 mt-6" data-testid="did-agent-webrtc">
@@ -369,7 +549,7 @@ export function DidAgentWebRTC() {
             ref={videoRef}
             autoPlay
             playsInline
-            muted={false}
+            muted
             className="w-full h-full object-cover"
             style={{ minHeight: "520px" }}
             data-testid="did-video"
@@ -397,13 +577,11 @@ export function DidAgentWebRTC() {
           </div>
         )}
         
-        {/* Loading overlay */}
-        {showVideo && isLoading && (
+        {/* Loading/Starting overlay */}
+        {showVideo && isStarting && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 z-10">
             <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full mb-3" />
-            <p className="text-sm text-white">
-              {status === 'creating' ? 'Creating stream...' : 'Connecting...'}
-            </p>
+            <p className="text-sm text-white">Connecting...</p>
             {iceCandidatesSent > 0 && (
               <p className="text-xs text-white/70 mt-2">
                 ICE candidates sent: {iceCandidatesSent}
@@ -412,12 +590,37 @@ export function DidAgentWebRTC() {
           </div>
         )}
         
+        {/* Stopping overlay */}
+        {showVideo && isStopping && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 z-10">
+            <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full mb-3" />
+            <p className="text-sm text-white">Stopping...</p>
+          </div>
+        )}
+        
+        {/* Needs play gesture overlay */}
+        {showVideo && isConnected && needsPlayGesture && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 z-10">
+            <p className="text-base font-medium text-white mb-4">
+              Tap to enable playback
+            </p>
+            <Button 
+              onClick={handlePlayVideo}
+              size="lg"
+              className="gap-2"
+            >
+              <Play className="w-5 h-5" />
+              Start Playback
+            </Button>
+          </div>
+        )}
+        
         {/* Error overlay - shown OVER the video, not replacing it */}
         {showVideo && isError && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 z-10 p-6">
             <AlertTriangle className="w-10 h-10 text-amber-500 mb-4" />
             <p className="text-base font-medium text-white mb-2">
-              {status === 'timeout' ? 'Connection Timeout' : 'Connection Failed'}
+              Connection Failed
             </p>
             <p className="text-sm text-white/70 mb-4 max-w-sm text-center">
               {errorMessage || "Unable to connect to the avatar service."}
@@ -457,6 +660,7 @@ export function DidAgentWebRTC() {
               variant="secondary" 
               size="sm"
               onClick={handleRetry}
+              disabled={isButtonDisabled}
               className="gap-2"
               data-testid="did-retry-button"
             >
@@ -466,14 +670,15 @@ export function DidAgentWebRTC() {
           </div>
         )}
         
-        {/* Stopped overlay */}
-        {showVideo && isStopped && (
+        {/* Idle/Stopped overlay (after stop) */}
+        {showVideo && isIdle && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 z-10">
             <p className="text-base font-medium text-white mb-4">
               Avatar stopped
             </p>
             <Button 
               onClick={handleRetry}
+              disabled={isButtonDisabled}
               size="lg"
               className="gap-2"
             >
@@ -485,13 +690,14 @@ export function DidAgentWebRTC() {
       </div>
       
       {/* Controls */}
-      {showVideo && (isConnected || isLoading) && (
+      {showVideo && (isConnected || isStarting) && !needsPlayGesture && (
         <div className="mt-3 flex justify-center gap-2">
           {isConnected && session && (
             <Button 
               variant="secondary" 
               size="sm"
               onClick={handleSpeak}
+              disabled={isButtonDisabled}
               className="gap-2"
               data-testid="did-speak-button"
             >
@@ -503,6 +709,7 @@ export function DidAgentWebRTC() {
             variant="outline" 
             size="sm"
             onClick={handleStop}
+            disabled={isButtonDisabled}
             className="gap-2"
             data-testid="did-stop-button"
           >
@@ -515,7 +722,7 @@ export function DidAgentWebRTC() {
       {/* Status line */}
       {showVideo && (
         <p className="text-xs text-center text-muted-foreground mt-2">
-          Status: {status}{iceCandidatesSent > 0 ? ` | ICE: ${iceCandidatesSent}` : ''}
+          State: {state}{iceCandidatesSent > 0 ? ` | ICE: ${iceCandidatesSent}` : ''}
         </p>
       )}
     </div>
