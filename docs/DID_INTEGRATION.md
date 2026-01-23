@@ -1,97 +1,114 @@
 # D-ID Avatar Integration
 
 ## Overview
-The D-ID avatar embed uses server-side session management via `/api/did/*` endpoints. This keeps the DID_CLIENT_KEY secret on the server and provides proper error handling.
+The D-ID avatar supports two integration modes:
+- **Embed mode** (default): Uses iframe embed from agents.d-id.com
+- **API mode**: Uses the official D-ID Realtime Agents Streams API with WebRTC
 
 ## Feature Flag
-Set `DID_INTEGRATION_MODE` environment variable:
-- `api` (default): Server-side session management
-- `embed`: Legacy client-side URL construction (for quick revert if needed)
+Set `DID_MODE` environment variable to switch modes:
+```
+DID_MODE=embed   # (default) Uses iframe embed
+DID_MODE=api     # Uses WebRTC streaming via D-ID API
+```
 
 ## How to Revert Instantly
-If the API integration causes issues, set:
-```
-DID_INTEGRATION_MODE=embed
+If the API integration causes issues:
+```bash
+DID_MODE=embed   # Revert to iframe embed mode
 ```
 Then restart the application.
 
-## Files Modified
-- `server/routes/did-routes.ts` - Session and health endpoints
-- `server/routes.ts` - Route registration (before auth middleware)
-- `client/src/components/DidAgentEmbed.tsx` - Frontend component
-- `client/src/lib/ws-url.ts` - WebSocket URL builder utility
+## Environment Variables Required
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DID_API_KEY` | For API mode | D-ID API key (Basic auth) |
+| `DID_CLIENT_KEY` | For embed mode | D-ID client key for iframe embed |
+| `DID_AGENT_ID` | Optional | Agent ID (default: v2_agt_0KyN0XA6) |
+| `DID_MODE` | Optional | Integration mode: `api` or `embed` (default: embed) |
 
-## Verification Checklist
+## Files Added/Modified
+| File | Purpose |
+|------|---------|
+| `server/lib/didClient.ts` | D-ID API client helper |
+| `server/routes/did-api-routes.ts` | WebRTC stream endpoints |
+| `server/routes/did-routes.ts` | Embed mode session endpoints |
+| `client/src/components/DidAgentWebRTC.tsx` | WebRTC React component |
+| `client/src/components/DidAgentSwitch.tsx` | Mode switcher component |
+| `client/src/components/DidAgentEmbed.tsx` | Iframe embed component |
+
+## API Endpoints
+
+### Embed Mode (agents.d-id.com)
+- `GET /api/did/session` - Returns embed URL with client key
+- `GET /api/did/health` - DNS/HTTP diagnostics for agents.d-id.com
+
+### API Mode (api.d-id.com)
+- `GET /api/did-api/status` - Configuration and connectivity status
+- `POST /api/did-api/stream/create` - Create WebRTC stream
+- `POST /api/did-api/stream/:streamId/sdp` - Send SDP answer
+- `POST /api/did-api/stream/:streamId/ice` - Send ICE candidate
+- `POST /api/did-api/stream/:streamId/speak` - Make avatar speak
+
+## Manual Verification Checklist
 
 ### Desktop Preview
-1. Navigate to `/auth` (landing page)
-2. Open browser DevTools (F12)
-3. Check Console for:
-   - `[D-ID] Fetching session from server...` (session request)
-   - `[D-ID] Session received: v2_agt_...` (successful response)
-   - `[D-ID] Iframe load event fired ✓` (iframe loaded)
-   - NO `401 Unauthorized` errors for `/api/did/*` endpoints
-   - The `wss://localhost:undefined` errors are from Vite HMR (not our app code)
-4. The D-ID avatar embed should appear in the left column
+1. Set `DID_MODE=api` and restart
+2. Navigate to `/auth`
+3. Open browser DevTools (F12)
+4. Check Console for:
+   - `[D-ID WebRTC] Starting WebRTC connection...`
+   - `[D-ID WebRTC] Stream created: ...`
+   - `[D-ID WebRTC] Track received: video`
+   - `[D-ID WebRTC] Video stream attached ✓`
+5. Confirm NO calls to agents.d-id.com
 
 ### iPhone Safari
-1. Open the site on iPhone Safari
-2. Navigate to the landing page
-3. The D-ID avatar should load (may take 5-8 seconds on mobile)
-4. If timeout occurs, "Retry" and "Open in new tab" buttons appear
+1. Open site on iPhone Safari
+2. Click "Start Avatar" button (required for autoplay policy)
+3. Avatar should connect and display video
+4. Test "Speak test" button
 
-### Logged Out State (Public Landing Page)
-1. Clear cookies / use incognito mode
-2. Navigate to `/auth`
-3. The D-ID avatar should load WITHOUT requiring login
-4. No 401 errors for D-ID endpoints
-
-### API Endpoint Testing
+### API Status Check
 ```bash
-# Session endpoint (should return ok:true)
-curl http://localhost:5000/api/did/session
+# Check API connectivity
+curl http://localhost:5000/api/did-api/status
 
-# Health endpoint (shows DNS/HTTP/config status)
-curl http://localhost:5000/api/did/health
-
-# Debug endpoint (dev only)
-curl http://localhost:5000/api/did/debug
-```
-
-### Expected Console Output
-```
-[D-ID] Integration mode: api
-[D-ID] Session request received
-[D-ID] Session generated for agent: v2_agt_0KyN0XA6
-```
-
-### Expected Health Response
-```json
+# Expected response:
 {
   "ok": true,
-  "dnsOk": true,
-  "httpOk": true,
   "configured": true,
-  "agentId": "v2_agt_0KyN0XA6",
-  "integrationMode": "api",
-  "timestamp": "..."
+  "mode": "api",
+  "canResolveApiDomain": true,
+  "outboundHttpOk": true
 }
 ```
 
-## Known Issues
+## WebRTC Flow (API Mode)
+1. Client clicks "Start Avatar" button
+2. Server calls `POST /agents/{agentId}/streams` to create stream
+3. Server returns streamId, sessionId, offerSdp, iceServers
+4. Client creates RTCPeerConnection with iceServers
+5. Client sets remote description with offerSdp
+6. Client creates answer, sets local description
+7. Client sends answer via `POST /stream/:streamId/sdp`
+8. Client sends ICE candidates via `POST /stream/:streamId/ice`
+9. When video track arrives, attach to video element
+10. Call `POST /stream/:streamId/speak` to make avatar speak
 
-### wss://localhost:undefined Error
-This error appears in the browser console:
-```
-SyntaxError: Failed to construct 'WebSocket': The URL 'wss://localhost:undefined/?token=...' is invalid.
-```
-This is from **Vite HMR client** (`@vite/client:536`), NOT from our application code. It occurs in the Replit proxy environment and does not affect functionality.
+## Troubleshooting
 
-### D-ID Service Unreachable
-If you see `dnsOk: false` and `httpOk: false` in health checks, this means the D-ID service is unreachable from the server's network. This is an external network issue, not a code problem.
+### API Mode Issues
+- Check `DID_API_KEY` is set correctly
+- Verify api.d-id.com is reachable: `curl -I https://api.d-id.com`
+- Check `/api/did-api/status` for diagnostics
+
+### Embed Mode Issues
+- Check `DID_CLIENT_KEY` is set correctly
+- The domain agents.d-id.com may be blocked by some networks
+- Use API mode as fallback
 
 ## Security Notes
-- DID_CLIENT_KEY is never exposed to the browser
-- The `/api/did/session` endpoint is public (no auth required)
-- Consider adding rate limiting in production to prevent abuse
-- The `/api/did/debug` endpoint is disabled in production
+- All D-ID API keys are kept server-side
+- Client never sees secrets
+- WebRTC streams use secure ICE servers

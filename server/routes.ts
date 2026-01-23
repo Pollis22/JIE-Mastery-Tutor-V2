@@ -84,6 +84,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const didRoutes = await import('./routes/did-routes');
   app.use('/api/did', didRoutes.default);
   
+  // D-ID API routes - WebRTC stream flow (API-first approach)
+  // Uses the official D-ID API instead of iframe embed
+  const didApiRoutes = await import('./routes/did-api-routes');
+  app.use('/api/did-api', didApiRoutes.default);
+  
   // SEO static files - serve robots.txt and sitemap.xml
   const publicPath = path.join(process.cwd(), 'public');
   const fs = await import('fs');
