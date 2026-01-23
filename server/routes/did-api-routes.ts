@@ -21,8 +21,9 @@ const router = Router();
 router.get('/status', async (req: Request, res: Response) => {
   console.log('[D-ID API Route] Status check');
   
-  const configured = didClient.isConfigured();
-  const agentId = didClient.getAgentId();
+  const didApiKeyPresent = !!(process.env.DID_API_KEY || process.env.DID_CLIENT_KEY);
+  const agentIdUsed = process.env.DID_AGENT_ID || 'v2_agt_0KyN0XA6';
+  const configured = didApiKeyPresent;
   const mode = process.env.DID_MODE || 'embed';
   
   let connectivity: { dnsOk: boolean; httpOk: boolean; httpStatus?: number; error?: string } = { dnsOk: false, httpOk: false };
@@ -34,8 +35,9 @@ router.get('/status', async (req: Request, res: Response) => {
   return res.json({
     ok: configured && connectivity.dnsOk && connectivity.httpOk,
     configured,
+    didApiKeyPresent,
+    agentIdUsed,
     mode,
-    agentId: agentId ? `${agentId.slice(0, 10)}...` : null,
     canResolveApiDomain: connectivity.dnsOk,
     outboundHttpOk: connectivity.httpOk,
     httpStatus: connectivity.httpStatus,
