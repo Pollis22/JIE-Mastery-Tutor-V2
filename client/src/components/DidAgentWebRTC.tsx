@@ -134,6 +134,12 @@ export function DidAgentWebRTC() {
           const stream = new MediaStream([event.track]);
           videoRef.current.srcObject = stream;
           
+          videoRef.current.play().then(() => {
+            log("Video playback started ✓");
+          }).catch((e) => {
+            log("Video play() failed (may retry on gesture):", e.message);
+          });
+          
           if (timeoutRef.current) {
             clearTimeout(timeoutRef.current);
             timeoutRef.current = null;
