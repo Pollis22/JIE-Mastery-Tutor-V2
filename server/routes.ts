@@ -79,6 +79,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const stripeWebhookRoutes = await import('./routes/stripe-webhooks');
   app.use('/api/stripe', stripeWebhookRoutes.default);
   
+  // D-ID Agent routes - public endpoints for avatar embed
+  // Must be registered before auth middleware to allow unauthenticated access
+  const didRoutes = await import('./routes/did-routes');
+  app.use('/api/did', didRoutes.default);
+  
   // SEO static files - serve robots.txt and sitemap.xml
   const publicPath = path.join(process.cwd(), 'public');
   const fs = await import('fs');
