@@ -25,32 +25,24 @@ function logError(...args: unknown[]) {
 export function DidAgentEmbed() {
   const [status, setStatus] = useState<'loading' | 'loaded' | 'timeout' | 'error'>('loading');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasLoadedRef = useRef(false);
+  const initCountRef = useRef(0);
   
   const clientKey = import.meta.env.VITE_DID_CLIENT_KEY;
 
-  // Build and validate iframe src URL
-  const buildIframeSrc = useCallback((): string | null => {
-    if (!clientKey) {
-      logError("Missing VITE_DID_CLIENT_KEY environment variable");
-      return null;
-    }
-    
-    if (!AGENT_ID || AGENT_ID.length < 5) {
-      logError("Invalid AGENT_ID configuration");
-      return null;
-    }
-    
-    const url = `https://agents.d-id.com/${AGENT_ID}?clientKey=${encodeURIComponent(clientKey)}`;
-    log("Built iframe src:", url.replace(clientKey, "CLIENT_KEY_HIDDEN"));
-    return url;
-  }, [clientKey]);
-
-  const iframeSrc = buildIframeSrc();
+  // Build iframe src URL (memoized)
+  const iframeSrc = clientKey && AGENT_ID?.length >= 5
+    ? `https://agents.d-id.com/${AGENT_ID}?clientKey=${encodeURIComponent(clientKey)}`
+    : null;
 
   // Handle successful load
   const handleLoad = useCallback(() => {
+    if (hasLoadedRef.current) return; // Prevent duplicate handling
+    hasLoadedRef.current = true;
+    
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
@@ -73,14 +65,11 @@ export function DidAgentEmbed() {
   // Retry loading
   const handleRetry = useCallback(() => {
     log("Retrying iframe load...");
+    hasLoadedRef.current = false;
     setStatus('loading');
     setErrorMessage(null);
-    
-    // Force iframe reload by updating key
-    if (iframeRef.current && iframeSrc) {
-      iframeRef.current.src = iframeSrc;
-    }
-  }, [iframeSrc]);
+    setRetryCount(c => c + 1);
+  }, []);
 
   // Open in new tab for diagnostics
   const handleOpenInNewTab = useCallback(() => {
@@ -90,16 +79,20 @@ export function DidAgentEmbed() {
     }
   }, [iframeSrc]);
 
-  // Set up load timeout
+  // Set up load timeout - only runs once per mount or retry
   useEffect(() => {
     if (!iframeSrc) return;
+    if (status !== 'loading') return; // Only set timeout when loading
     
-    log("Initializing embed with agent:", AGENT_ID);
-    log("Timeout set for", LOAD_TIMEOUT_MS, "ms");
+    initCountRef.current += 1;
+    const initId = initCountRef.current;
+    
+    log(`[init#${initId}] Setting up timeout for ${LOAD_TIMEOUT_MS}ms`);
+    log(`[init#${initId}] Iframe src: ${iframeSrc.replace(clientKey || '', 'KEY_HIDDEN')}`);
     
     timeoutRef.current = setTimeout(() => {
-      if (status === 'loading') {
-        logError("Iframe load timeout after", LOAD_TIMEOUT_MS, "ms");
+      if (!hasLoadedRef.current) {
+        logError(`[init#${initId}] Iframe load timeout after ${LOAD_TIMEOUT_MS}ms`);
         setStatus('timeout');
         setErrorMessage(
           "Avatar took too long to load. This could be due to network issues, " +
@@ -111,9 +104,10 @@ export function DidAgentEmbed() {
     return () => {
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
       }
     };
-  }, [iframeSrc, status]);
+  }, [iframeSrc, retryCount]); // Only depend on src and retry count, not status
 
   // Missing client key - show config error
   if (!clientKey) {
@@ -223,13 +217,15 @@ export function DidAgentEmbed() {
           </div>
         )}
         
-        {/* D-ID iframe */}
+        {/* D-ID iframe - use key to force remount on retry */}
         <iframe
+          key={`did-iframe-${retryCount}`}
           ref={iframeRef}
           src={iframeSrc}
           title="D-ID AI Enrollment Specialist"
           className="w-full h-full border-0"
           allow="camera; microphone; autoplay; encrypted-media"
+          sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
           onLoad={handleLoad}
           onError={handleError}
           data-testid="did-iframe"
