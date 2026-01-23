@@ -6,13 +6,14 @@
  * 
  * Features:
  * - WebRTC connection to D-ID API
- * - Video element for avatar stream
+ * - Video element for avatar stream (always mounted to avoid Safari issues)
  * - Status display and retry functionality
  * - Speak test button
+ * - Proper ICE candidate exchange
  */
 
 import { useEffect, useState, useRef, useCallback } from "react";
-import { RefreshCw, AlertTriangle, CheckCircle, XCircle, Volume2 } from "lucide-react";
+import { RefreshCw, AlertTriangle, CheckCircle, XCircle, Volume2, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const CONNECTION_TIMEOUT_MS = 15000;
@@ -26,7 +27,7 @@ function logError(...args: unknown[]) {
   console.error("[D-ID WebRTC]", ...args);
 }
 
-type ConnectionStatus = 'idle' | 'creating' | 'connecting' | 'connected' | 'error' | 'timeout';
+type ConnectionStatus = 'idle' | 'creating' | 'connecting' | 'connected' | 'error' | 'timeout' | 'stopped';
 
 interface StreamSession {
   streamId: string;
@@ -48,14 +49,16 @@ export function DidAgentWebRTC() {
   const [apiStatus, setApiStatus] = useState<ApiStatus | null>(null);
   const [session, setSession] = useState<StreamSession | null>(null);
   const [hasUserGesture, setHasUserGesture] = useState(false);
+  const [iceCandidatesSent, setIceCandidatesSent] = useState(0);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
+  const isConnectingRef = useRef(false);
 
-  const cleanup = useCallback(() => {
-    log("Cleaning up...");
+  const cleanup = useCallback((reason: string = 'unknown') => {
+    log("Cleaning up, reason:", reason);
     
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
@@ -72,6 +75,8 @@ export function DidAgentWebRTC() {
     }
     
     setSession(null);
+    setIceCandidatesSent(0);
+    isConnectingRef.current = false;
   }, []);
 
   const fetchApiStatus = useCallback(async () => {
@@ -89,19 +94,25 @@ export function DidAgentWebRTC() {
 
   const connect = useCallback(async () => {
     if (!mountedRef.current) return;
+    if (isConnectingRef.current) {
+      log("Already connecting, ignoring duplicate request");
+      return;
+    }
     
-    cleanup();
+    isConnectingRef.current = true;
+    cleanup('new connection');
     setStatus('creating');
     setErrorMessage(null);
     
     log("Starting WebRTC connection...");
     
     timeoutRef.current = setTimeout(() => {
-      if (mountedRef.current && status !== 'connected') {
-        logError("Connection timeout");
+      if (mountedRef.current && peerConnectionRef.current?.connectionState !== 'connected') {
+        logError("Connection timeout after", CONNECTION_TIMEOUT_MS, "ms");
         setStatus('timeout');
         setErrorMessage("Connection timed out. The D-ID service may be unavailable.");
         fetchApiStatus();
+        isConnectingRef.current = false;
       }
     }, CONNECTION_TIMEOUT_MS);
     
@@ -118,27 +129,40 @@ export function DidAgentWebRTC() {
       }
       
       const { streamId, sessionId, offerSdp, iceServers } = await createResponse.json();
-      log("Stream created:", streamId);
+      log("Stream created:", streamId, "sessionId:", sessionId);
       
       setSession({ streamId, sessionId });
       setStatus('connecting');
       
-      const pc = new RTCPeerConnection({
-        iceServers: iceServers || [{ urls: 'stun:stun.l.google.com:19302' }]
-      });
+      const pcConfig: RTCConfiguration = {
+        iceServers: iceServers && iceServers.length > 0 
+          ? iceServers 
+          : [{ urls: 'stun:stun.l.google.com:19302' }]
+      };
+      log("RTCPeerConnection config:", JSON.stringify(pcConfig));
+      
+      const pc = new RTCPeerConnection(pcConfig);
       peerConnectionRef.current = pc;
       
+      let localIceCount = 0;
+      
       pc.ontrack = (event) => {
-        log("Track received:", event.track.kind);
+        log("Track received:", event.track.kind, "readyState:", event.track.readyState);
+        
         if (event.track.kind === 'video' && videoRef.current) {
+          log("Attaching video track to video element...");
+          
           const stream = new MediaStream([event.track]);
           videoRef.current.srcObject = stream;
           
-          videoRef.current.play().then(() => {
-            log("Video playback started ✓");
-          }).catch((e) => {
-            log("Video play() failed (may retry on gesture):", e.message);
-          });
+          const playPromise = videoRef.current.play();
+          if (playPromise !== undefined) {
+            playPromise.then(() => {
+              log("Video playback started ✓");
+            }).catch((e) => {
+              log("Video play() needs user gesture:", e.message);
+            });
+          }
           
           if (timeoutRef.current) {
             clearTimeout(timeoutRef.current);
@@ -148,17 +172,27 @@ export function DidAgentWebRTC() {
           setStatus('connected');
           log("Video stream attached ✓");
         }
+        
+        if (event.track.kind === 'audio' && videoRef.current) {
+          log("Audio track received, adding to stream");
+          const existingStream = videoRef.current.srcObject as MediaStream;
+          if (existingStream) {
+            existingStream.addTrack(event.track);
+          }
+        }
       };
       
       pc.onicecandidate = async (event) => {
-        if (event.candidate && session) {
-          log("Sending ICE candidate...");
+        if (event.candidate) {
+          localIceCount++;
+          log("Local ICE candidate #" + localIceCount + ":", event.candidate.candidate?.slice(0, 50) + "...");
+          
           try {
-            await fetch(`/api/did-api/stream/${streamId}/ice`, {
+            const iceResponse = await fetch(`/api/did-api/stream/${streamId}/ice`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                sessionId,
+                sessionId: sessionId,
                 candidate: {
                   candidate: event.candidate.candidate,
                   sdpMid: event.candidate.sdpMid,
@@ -166,35 +200,70 @@ export function DidAgentWebRTC() {
                 }
               })
             });
+            
+            if (iceResponse.ok) {
+              setIceCandidatesSent(prev => prev + 1);
+              log("ICE candidate #" + localIceCount + " sent successfully");
+            } else {
+              const err = await iceResponse.json();
+              logError("Failed to send ICE candidate:", err);
+            }
           } catch (e) {
-            logError("Failed to send ICE candidate:", e);
+            logError("ICE candidate send error:", e);
           }
+        } else {
+          log("ICE gathering complete, total candidates sent:", localIceCount);
         }
+      };
+      
+      pc.oniceconnectionstatechange = () => {
+        log("ICE connection state:", pc.iceConnectionState);
+      };
+      
+      pc.onicegatheringstatechange = () => {
+        log("ICE gathering state:", pc.iceGatheringState);
       };
       
       pc.onconnectionstatechange = () => {
         log("Connection state:", pc.connectionState);
-        if (pc.connectionState === 'failed') {
+        
+        if (pc.connectionState === 'connected') {
+          log("WebRTC connection established ✓");
+          setStatus('connected');
+          isConnectingRef.current = false;
+          
+          if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current);
+            timeoutRef.current = null;
+          }
+        } else if (pc.connectionState === 'failed') {
+          logError("WebRTC connection failed");
           setStatus('error');
-          setErrorMessage("WebRTC connection failed");
+          setErrorMessage("WebRTC connection failed. ICE candidates: " + localIceCount);
+          isConnectingRef.current = false;
+        } else if (pc.connectionState === 'disconnected') {
+          log("WebRTC connection disconnected (may reconnect)");
         }
       };
       
+      log("Setting remote description (offer)...");
       await pc.setRemoteDescription({
         type: 'offer',
         sdp: offerSdp
       });
-      log("Remote description set");
+      log("Remote description set ✓");
       
+      log("Creating answer...");
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
-      log("Local description set, sending answer...");
+      log("Local description set ✓");
       
+      log("Sending SDP answer to server...");
       const sdpResponse = await fetch(`/api/did-api/stream/${streamId}/sdp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sessionId,
+          sessionId: sessionId,
           answerSdp: answer.sdp
         })
       });
@@ -217,11 +286,15 @@ export function DidAgentWebRTC() {
       setStatus('error');
       setErrorMessage(error instanceof Error ? error.message : 'Connection failed');
       fetchApiStatus();
+      isConnectingRef.current = false;
     }
-  }, [cleanup, fetchApiStatus, session, status]);
+  }, [cleanup, fetchApiStatus]);
 
   const handleSpeak = useCallback(async () => {
-    if (!session) return;
+    if (!session) {
+      log("No session, cannot speak");
+      return;
+    }
     
     log("Speaking test text...");
     
@@ -247,11 +320,19 @@ export function DidAgentWebRTC() {
   }, [session]);
 
   const handleStart = useCallback(() => {
+    log("User clicked Start Avatar");
     setHasUserGesture(true);
     connect();
   }, [connect]);
 
+  const handleStop = useCallback(() => {
+    log("User clicked Stop");
+    cleanup('user stopped');
+    setStatus('stopped');
+  }, [cleanup]);
+
   const handleRetry = useCallback(() => {
+    log("User clicked Retry");
     connect();
   }, [connect]);
 
@@ -261,21 +342,43 @@ export function DidAgentWebRTC() {
     
     return () => {
       mountedRef.current = false;
-      cleanup();
+      cleanup('component unmount');
     };
   }, [cleanup, fetchApiStatus]);
 
-  if (!hasUserGesture) {
-    return (
-      <div className="w-full max-w-lg mx-auto lg:mx-0 mt-6" data-testid="did-agent-webrtc">
-        <p className="text-sm font-semibold text-muted-foreground mb-3 text-center lg:text-left">
-          Talk to our Live Enrollment Specialist
-        </p>
-        <div 
-          className="w-full rounded-2xl border border-border bg-muted/30 p-8 text-center"
-          style={{ minHeight: "300px" }}
-        >
-          <div className="flex flex-col items-center justify-center h-full">
+  const showStartButton = !hasUserGesture;
+  const showVideo = hasUserGesture;
+  const isLoading = status === 'creating' || status === 'connecting';
+  const isError = status === 'error' || status === 'timeout';
+  const isStopped = status === 'stopped';
+  const isConnected = status === 'connected';
+
+  return (
+    <div className="w-full max-w-lg mx-auto lg:mx-0 mt-6" data-testid="did-agent-webrtc">
+      <p className="text-sm font-semibold text-muted-foreground mb-3 text-center lg:text-left">
+        Talk to our Live Enrollment Specialist
+      </p>
+      
+      <div 
+        className="w-full rounded-2xl overflow-hidden border border-border shadow-lg bg-black relative"
+        style={{ minHeight: showStartButton ? "300px" : "520px" }}
+      >
+        {/* Video element - always mounted once user clicks start to avoid Safari issues */}
+        {showVideo && (
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted={false}
+            className="w-full h-full object-cover"
+            style={{ minHeight: "520px" }}
+            data-testid="did-video"
+          />
+        )}
+        
+        {/* Start button overlay */}
+        {showStartButton && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-muted/30">
             <p className="text-base font-medium text-foreground mb-4">
               Click to start the AI avatar
             </p>
@@ -288,124 +391,133 @@ export function DidAgentWebRTC() {
               <Volume2 className="w-5 h-5" />
               Start Avatar
             </Button>
-            <p className="text-xs text-muted-foreground mt-4 max-w-sm">
+            <p className="text-xs text-muted-foreground mt-4 max-w-sm text-center px-4">
               This will connect to our AI enrollment specialist via video.
             </p>
           </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (status === 'error' || status === 'timeout') {
-    return (
-      <div className="w-full max-w-lg mx-auto lg:mx-0 mt-6" data-testid="did-agent-webrtc">
-        <p className="text-sm font-semibold text-muted-foreground mb-3 text-center lg:text-left">
-          Talk to our Live Enrollment Specialist
-        </p>
-        <div 
-          className="w-full rounded-2xl border border-border bg-muted/30 p-6 text-center"
-          style={{ minHeight: "300px" }}
-        >
-          <AlertTriangle className="w-10 h-10 text-amber-500 mx-auto mb-4" />
-          <p className="text-base font-medium text-foreground mb-2">
-            {status === 'timeout' ? 'Connection Timeout' : 'Connection Failed'}
-          </p>
-          <p className="text-sm text-muted-foreground mb-4 max-w-sm mx-auto">
-            {errorMessage || "Unable to connect to the avatar service."}
-          </p>
-          
-          {apiStatus && (
-            <div className="mb-4 p-3 bg-muted/50 rounded-lg text-left text-xs space-y-1">
-              <p className="font-medium text-foreground mb-2">Diagnostics:</p>
-              <div className="flex items-center gap-2">
-                {apiStatus.configured ? (
-                  <CheckCircle className="w-3 h-3 text-green-500" />
-                ) : (
-                  <XCircle className="w-3 h-3 text-red-500" />
-                )}
-                <span>API Key: {apiStatus.configured ? 'Configured' : 'Missing'}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                {apiStatus.canResolveApiDomain ? (
-                  <CheckCircle className="w-3 h-3 text-green-500" />
-                ) : (
-                  <XCircle className="w-3 h-3 text-red-500" />
-                )}
-                <span>DNS: {apiStatus.canResolveApiDomain ? 'OK' : 'Failed'}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                {apiStatus.outboundHttpOk ? (
-                  <CheckCircle className="w-3 h-3 text-green-500" />
-                ) : (
-                  <XCircle className="w-3 h-3 text-red-500" />
-                )}
-                <span>D-ID API: {apiStatus.outboundHttpOk ? 'Reachable' : 'Unreachable'}</span>
-              </div>
-            </div>
-          )}
-          
-          <Button 
-            variant="outline" 
-            size="sm"
-            onClick={handleRetry}
-            className="gap-2"
-            data-testid="did-retry-button"
-          >
-            <RefreshCw className="w-4 h-4" />
-            Retry
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="w-full max-w-lg mx-auto lg:mx-0 mt-6" data-testid="did-agent-webrtc">
-      <p className="text-sm font-semibold text-muted-foreground mb-3 text-center lg:text-left">
-        Talk to our Live Enrollment Specialist
-      </p>
-      <div 
-        className="w-full rounded-2xl overflow-hidden border border-border shadow-lg bg-black relative"
-        style={{ height: "520px" }}
-      >
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted={false}
-          className="w-full h-full object-cover"
-          data-testid="did-video"
-        />
+        )}
         
-        {(status === 'creating' || status === 'connecting') && (
+        {/* Loading overlay */}
+        {showVideo && isLoading && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 z-10">
             <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full mb-3" />
             <p className="text-sm text-white">
               {status === 'creating' ? 'Creating stream...' : 'Connecting...'}
             </p>
+            {iceCandidatesSent > 0 && (
+              <p className="text-xs text-white/70 mt-2">
+                ICE candidates sent: {iceCandidatesSent}
+              </p>
+            )}
+          </div>
+        )}
+        
+        {/* Error overlay - shown OVER the video, not replacing it */}
+        {showVideo && isError && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 z-10 p-6">
+            <AlertTriangle className="w-10 h-10 text-amber-500 mb-4" />
+            <p className="text-base font-medium text-white mb-2">
+              {status === 'timeout' ? 'Connection Timeout' : 'Connection Failed'}
+            </p>
+            <p className="text-sm text-white/70 mb-4 max-w-sm text-center">
+              {errorMessage || "Unable to connect to the avatar service."}
+            </p>
+            
+            {apiStatus && (
+              <div className="mb-4 p-3 bg-white/10 rounded-lg text-left text-xs space-y-1 w-full max-w-sm">
+                <p className="font-medium text-white mb-2">Diagnostics:</p>
+                <div className="flex items-center gap-2 text-white/80">
+                  {apiStatus.configured ? (
+                    <CheckCircle className="w-3 h-3 text-green-400" />
+                  ) : (
+                    <XCircle className="w-3 h-3 text-red-400" />
+                  )}
+                  <span>API Key: {apiStatus.configured ? 'Configured' : 'Missing'}</span>
+                </div>
+                <div className="flex items-center gap-2 text-white/80">
+                  {apiStatus.canResolveApiDomain ? (
+                    <CheckCircle className="w-3 h-3 text-green-400" />
+                  ) : (
+                    <XCircle className="w-3 h-3 text-red-400" />
+                  )}
+                  <span>DNS: {apiStatus.canResolveApiDomain ? 'OK' : 'Failed'}</span>
+                </div>
+                <div className="flex items-center gap-2 text-white/80">
+                  {apiStatus.outboundHttpOk ? (
+                    <CheckCircle className="w-3 h-3 text-green-400" />
+                  ) : (
+                    <XCircle className="w-3 h-3 text-red-400" />
+                  )}
+                  <span>D-ID API: {apiStatus.outboundHttpOk ? 'Reachable' : 'Unreachable'}</span>
+                </div>
+              </div>
+            )}
+            
+            <Button 
+              variant="secondary" 
+              size="sm"
+              onClick={handleRetry}
+              className="gap-2"
+              data-testid="did-retry-button"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Retry
+            </Button>
+          </div>
+        )}
+        
+        {/* Stopped overlay */}
+        {showVideo && isStopped && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 z-10">
+            <p className="text-base font-medium text-white mb-4">
+              Avatar stopped
+            </p>
+            <Button 
+              onClick={handleRetry}
+              size="lg"
+              className="gap-2"
+            >
+              <Volume2 className="w-5 h-5" />
+              Restart Avatar
+            </Button>
           </div>
         )}
       </div>
       
-      {status === 'connected' && session && (
+      {/* Controls */}
+      {showVideo && (isConnected || isLoading) && (
         <div className="mt-3 flex justify-center gap-2">
+          {isConnected && session && (
+            <Button 
+              variant="secondary" 
+              size="sm"
+              onClick={handleSpeak}
+              className="gap-2"
+              data-testid="did-speak-button"
+            >
+              <Volume2 className="w-4 h-4" />
+              Test Speak
+            </Button>
+          )}
           <Button 
-            variant="secondary" 
+            variant="outline" 
             size="sm"
-            onClick={handleSpeak}
+            onClick={handleStop}
             className="gap-2"
-            data-testid="did-speak-button"
+            data-testid="did-stop-button"
           >
-            <Volume2 className="w-4 h-4" />
-            Test Speak
+            <Square className="w-4 h-4" />
+            Stop
           </Button>
         </div>
       )}
       
-      <p className="text-xs text-center text-muted-foreground mt-2">
-        Status: {status === 'connected' ? 'Connected' : status}
-      </p>
+      {/* Status line */}
+      {showVideo && (
+        <p className="text-xs text-center text-muted-foreground mt-2">
+          Status: {status}{iceCandidatesSent > 0 ? ` | ICE: ${iceCandidatesSent}` : ''}
+        </p>
+      )}
     </div>
   );
 }
