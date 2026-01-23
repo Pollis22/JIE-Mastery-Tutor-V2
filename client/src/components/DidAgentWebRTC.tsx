@@ -6,11 +6,13 @@
  * 
  * Features:
  * - Strict connection state machine (idle → starting → connected → stopping → error)
+ * - Stable video element (always mounted after first gesture, never re-keyed)
  * - Deterministic cleanup with full reset
- * - Video element always mounted to avoid Safari issues
+ * - Frame watchdog to detect black screen issues
+ * - ICE candidate deduplication
  * - Connection watchdog with timeout handling
  * - Mutex to prevent overlapping connections
- * - Proper ICE candidate exchange
+ * - Auto-speak on connect to wake up idle avatars
  */
 
 import { useEffect, useState, useRef, useCallback } from "react";
@@ -19,6 +21,8 @@ import { Button } from "@/components/ui/button";
 
 const CONNECTION_TIMEOUT_MS = 12000;
 const DISCONNECT_GRACE_MS = 2000;
+const FRAME_WATCHDOG_INTERVAL_MS = 500;
+const FRAME_WATCHDOG_TIMEOUT_MS = 5000;
 const DEBUG = true;
 
 function log(...args: unknown[]) {
@@ -57,20 +61,34 @@ export function DidAgentWebRTC() {
   const [hasUserGesture, setHasUserGesture] = useState(false);
   const [iceCandidatesSent, setIceCandidatesSent] = useState(0);
   const [needsPlayGesture, setNeedsPlayGesture] = useState(false);
+  const [firstFrameReceived, setFirstFrameReceived] = useState(false);
+  const [videoDebugInfo, setVideoDebugInfo] = useState<string>('');
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const remoteStreamRef = useRef<MediaStream | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const disconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const frameWatchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const frameWatchdogStartRef = useRef<number>(0);
+  const lastCurrentTimeRef = useRef<number>(0);
   const mountedRef = useRef(true);
   const startMutexRef = useRef(false);
   const speakAbortRef = useRef<AbortController | null>(null);
   const stateRef = useRef<ConnectionState>('idle');
+  const sentIceCandidatesRef = useRef<Set<string>>(new Set());
+  const hasAutoSpokenRef = useRef(false);
   
   const setStateWithRef = useCallback((newState: ConnectionState) => {
     stateRef.current = newState;
     setState(newState);
+  }, []);
+
+  const stopFrameWatchdog = useCallback(() => {
+    if (frameWatchdogRef.current) {
+      clearInterval(frameWatchdogRef.current);
+      frameWatchdogRef.current = null;
+    }
   }, []);
 
   const cleanup = useCallback(async (reason: string = 'unknown'): Promise<void> => {
@@ -85,6 +103,8 @@ export function DidAgentWebRTC() {
       clearTimeout(disconnectTimeoutRef.current);
       disconnectTimeoutRef.current = null;
     }
+    
+    stopFrameWatchdog();
     
     if (speakAbortRef.current) {
       speakAbortRef.current.abort();
@@ -112,6 +132,7 @@ export function DidAgentWebRTC() {
       try {
         pc.getReceivers().forEach(receiver => {
           if (receiver.track) {
+            receiver.track.enabled = false;
             receiver.track.stop();
           }
         });
@@ -155,12 +176,17 @@ export function DidAgentWebRTC() {
     setSession(null);
     setIceCandidatesSent(0);
     setNeedsPlayGesture(false);
+    setFirstFrameReceived(false);
+    setVideoDebugInfo('');
+    sentIceCandidatesRef.current.clear();
+    hasAutoSpokenRef.current = false;
     startMutexRef.current = false;
+    lastCurrentTimeRef.current = 0;
     
     await waitAnimationFrame();
     
     log("Cleanup complete");
-  }, []);
+  }, [stopFrameWatchdog]);
 
   const fetchApiStatus = useCallback(async () => {
     try {
@@ -174,6 +200,83 @@ export function DidAgentWebRTC() {
       return null;
     }
   }, []);
+
+  const speakText = useCallback(async (text: string, sessionData: StreamSession) => {
+    log("Speaking:", text.slice(0, 50) + "...");
+    
+    const abortController = new AbortController();
+    speakAbortRef.current = abortController;
+    
+    try {
+      const response = await fetch(`/api/did-api/stream/${sessionData.streamId}/speak`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: sessionData.sessionId,
+          text: text
+        }),
+        signal: abortController.signal
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        logError("Speak failed:", error);
+        return false;
+      } else {
+        log("Speak request sent ✓");
+        return true;
+      }
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        log("Speak request aborted");
+      } else {
+        logError("Speak error:", error);
+      }
+      return false;
+    } finally {
+      speakAbortRef.current = null;
+    }
+  }, []);
+
+  const startFrameWatchdog = useCallback((sessionData: StreamSession) => {
+    stopFrameWatchdog();
+    
+    frameWatchdogStartRef.current = Date.now();
+    lastCurrentTimeRef.current = 0;
+    
+    log("Starting frame watchdog...");
+    
+    frameWatchdogRef.current = setInterval(() => {
+      const video = videoRef.current;
+      if (!video) return;
+      
+      const elapsed = Date.now() - frameWatchdogStartRef.current;
+      const currentTime = video.currentTime;
+      const readyState = video.readyState;
+      const paused = video.paused;
+      
+      const debugInfo = `readyState=${readyState}, currentTime=${currentTime.toFixed(2)}, paused=${paused}`;
+      setVideoDebugInfo(debugInfo);
+      
+      if (currentTime > lastCurrentTimeRef.current) {
+        if (!firstFrameReceived) {
+          log("✓ First video frame received!", debugInfo);
+          setFirstFrameReceived(true);
+        }
+        lastCurrentTimeRef.current = currentTime;
+      }
+      
+      if (elapsed > FRAME_WATCHDOG_TIMEOUT_MS && !firstFrameReceived) {
+        log("Frame watchdog: No frames after", elapsed, "ms.", debugInfo);
+        
+        if (!hasAutoSpokenRef.current && stateRef.current === 'connected') {
+          hasAutoSpokenRef.current = true;
+          log("Sending auto-speak to wake up avatar...");
+          speakText("Hello! I'm your AI enrollment specialist. How can I help you today?", sessionData);
+        }
+      }
+    }, FRAME_WATCHDOG_INTERVAL_MS);
+  }, [stopFrameWatchdog, speakText, firstFrameReceived]);
 
   const startConnection = useCallback(async () => {
     if (!mountedRef.current) {
@@ -201,6 +304,9 @@ export function DidAgentWebRTC() {
     
     setStateWithRef('starting');
     setErrorMessage(null);
+    setFirstFrameReceived(false);
+    sentIceCandidatesRef.current.clear();
+    hasAutoSpokenRef.current = false;
     
     log("Starting WebRTC connection...");
     
@@ -238,7 +344,8 @@ export function DidAgentWebRTC() {
         return;
       }
       
-      setSession({ streamId, sessionId });
+      const currentSession = { streamId, sessionId };
+      setSession(currentSession);
       
       const pcConfig: RTCConfiguration = {
         iceServers: iceServers && iceServers.length > 0 
@@ -251,6 +358,7 @@ export function DidAgentWebRTC() {
       peerConnectionRef.current = pc;
       
       let localIceCount = 0;
+      let iceGatheringComplete = false;
       
       pc.ontrack = (event) => {
         log("Track received:", event.track.kind, "readyState:", event.track.readyState);
@@ -263,6 +371,7 @@ export function DidAgentWebRTC() {
         
         if (event.track.kind === 'video') {
           log("Attaching video track to video element...");
+          log("Video track state - muted:", event.track.muted, "enabled:", event.track.enabled, "readyState:", event.track.readyState);
           
           let stream = remoteStreamRef.current;
           if (!stream) {
@@ -277,11 +386,22 @@ export function DidAgentWebRTC() {
           video.autoplay = true;
           video.srcObject = stream;
           
+          video.onloadedmetadata = () => {
+            log("Video loadedmetadata - readyState:", video.readyState, "videoWidth:", video.videoWidth, "videoHeight:", video.videoHeight);
+            video.play()
+              .then(() => log("Video play() in loadedmetadata succeeded"))
+              .catch(e => log("Video play() in loadedmetadata failed:", e.message));
+          };
+          
           video.play()
             .then(() => {
               log("Video playback started ✓ (muted for autoplay)");
-              video.muted = false;
-              log("Video unmuted ✓");
+              setTimeout(() => {
+                if (videoRef.current) {
+                  videoRef.current.muted = false;
+                  log("Video unmuted ✓");
+                }
+              }, 500);
             })
             .catch((e) => {
               log("Video play() failed, needs user gesture:", e.message);
@@ -307,9 +427,22 @@ export function DidAgentWebRTC() {
       };
       
       pc.onicecandidate = async (event) => {
+        if (iceGatheringComplete) {
+          log("ICE gathering already complete, ignoring candidate");
+          return;
+        }
+        
         if (event.candidate) {
+          const candidateStr = event.candidate.candidate;
+          
+          if (sentIceCandidatesRef.current.has(candidateStr)) {
+            log("Duplicate ICE candidate, skipping");
+            return;
+          }
+          
+          sentIceCandidatesRef.current.add(candidateStr);
           localIceCount++;
-          log("Local ICE candidate #" + localIceCount + ":", event.candidate.candidate?.slice(0, 50) + "...");
+          log("Local ICE candidate #" + localIceCount + ":", candidateStr?.slice(0, 50) + "...");
           
           try {
             const iceResponse = await fetch(`/api/did-api/stream/${streamId}/ice`, {
@@ -327,7 +460,6 @@ export function DidAgentWebRTC() {
             
             if (iceResponse.ok) {
               setIceCandidatesSent(prev => prev + 1);
-              log("ICE candidate #" + localIceCount + " sent successfully");
             } else {
               const err = await iceResponse.json();
               logError("Failed to send ICE candidate:", err);
@@ -336,7 +468,8 @@ export function DidAgentWebRTC() {
             logError("ICE candidate send error:", e);
           }
         } else {
-          log("ICE gathering complete, total candidates sent:", localIceCount);
+          iceGatheringComplete = true;
+          log("ICE gathering complete, total unique candidates sent:", localIceCount);
         }
       };
       
@@ -346,6 +479,9 @@ export function DidAgentWebRTC() {
       
       pc.onicegatheringstatechange = () => {
         log("ICE gathering state:", pc.iceGatheringState);
+        if (pc.iceGatheringState === 'complete') {
+          iceGatheringComplete = true;
+        }
       };
       
       pc.onconnectionstatechange = () => {
@@ -368,6 +504,8 @@ export function DidAgentWebRTC() {
           
           setStateWithRef('connected');
           startMutexRef.current = false;
+          
+          startFrameWatchdog(currentSession);
           
         } else if (pc.connectionState === 'failed') {
           logError("WebRTC connection failed");
@@ -431,7 +569,7 @@ export function DidAgentWebRTC() {
       setErrorMessage(error instanceof Error ? error.message : 'Connection failed');
       fetchApiStatus();
     }
-  }, [cleanup, fetchApiStatus, setStateWithRef]);
+  }, [cleanup, fetchApiStatus, setStateWithRef, startFrameWatchdog]);
 
   const handleSpeak = useCallback(async () => {
     if (state !== 'connected' || !session) {
@@ -439,37 +577,8 @@ export function DidAgentWebRTC() {
       return;
     }
     
-    log("Speaking test text...");
-    
-    speakAbortRef.current = new AbortController();
-    
-    try {
-      const response = await fetch(`/api/did-api/stream/${session.streamId}/speak`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionId: session.sessionId,
-          text: "Hello! I'm your AI enrollment specialist. How can I help you today?"
-        }),
-        signal: speakAbortRef.current.signal
-      });
-      
-      if (!response.ok) {
-        const error = await response.json();
-        logError("Speak failed:", error);
-      } else {
-        log("Speak request sent ✓");
-      }
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        log("Speak request aborted");
-      } else {
-        logError("Speak error:", error);
-      }
-    } finally {
-      speakAbortRef.current = null;
-    }
-  }, [session, state]);
+    await speakText("Hello! I'm your AI enrollment specialist. How can I help you today?", session);
+  }, [session, state, speakText]);
 
   const handlePlayVideo = useCallback(() => {
     const video = videoRef.current;
@@ -478,7 +587,11 @@ export function DidAgentWebRTC() {
       video.play()
         .then(() => {
           log("Manual video play succeeded ✓");
-          video.muted = false;
+          setTimeout(() => {
+            if (videoRef.current) {
+              videoRef.current.muted = false;
+            }
+          }, 500);
           setNeedsPlayGesture(false);
         })
         .catch((e) => {
@@ -543,7 +656,7 @@ export function DidAgentWebRTC() {
         className="w-full rounded-2xl overflow-hidden border border-border shadow-lg bg-black relative"
         style={{ minHeight: showStartButton ? "300px" : "520px" }}
       >
-        {/* Video element - always mounted once user clicks start to avoid Safari issues */}
+        {/* Video element - STABLE: always mounted once user clicks start, never re-keyed */}
         {showVideo && (
           <video
             ref={videoRef}
@@ -551,7 +664,7 @@ export function DidAgentWebRTC() {
             playsInline
             muted
             className="w-full h-full object-cover"
-            style={{ minHeight: "520px" }}
+            style={{ minHeight: "520px", backgroundColor: "#000" }}
             data-testid="did-video"
           />
         )}
@@ -679,50 +792,60 @@ export function DidAgentWebRTC() {
             <Button 
               onClick={handleRetry}
               disabled={isButtonDisabled}
-              size="lg"
               className="gap-2"
             >
-              <Volume2 className="w-5 h-5" />
-              Restart Avatar
+              <RefreshCw className="w-4 h-4" />
+              Restart
             </Button>
+          </div>
+        )}
+        
+        {/* Connected controls overlay - at bottom */}
+        {showVideo && isConnected && !needsPlayGesture && (
+          <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent z-10">
+            <div className="flex items-center justify-center gap-3">
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={handleSpeak}
+                className="gap-2 bg-white/10 border-white/20 text-white hover:bg-white/20"
+                data-testid="did-speak-button"
+              >
+                <Volume2 className="w-4 h-4" />
+                Test Speak
+              </Button>
+              <Button 
+                variant="destructive" 
+                size="sm"
+                onClick={handleStop}
+                disabled={isButtonDisabled}
+                className="gap-2"
+                data-testid="did-stop-button"
+              >
+                <Square className="w-4 h-4" />
+                Stop
+              </Button>
+            </div>
+            
+            {/* Debug info */}
+            {DEBUG && (
+              <div className="mt-2 text-center">
+                <p className="text-xs text-white/50">
+                  {firstFrameReceived ? '✓ Frames received' : '⏳ Waiting for frames...'}
+                  {videoDebugInfo && ` | ${videoDebugInfo}`}
+                </p>
+              </div>
+            )}
           </div>
         )}
       </div>
       
-      {/* Controls */}
-      {showVideo && (isConnected || isStarting) && !needsPlayGesture && (
-        <div className="mt-3 flex justify-center gap-2">
-          {isConnected && session && (
-            <Button 
-              variant="secondary" 
-              size="sm"
-              onClick={handleSpeak}
-              disabled={isButtonDisabled}
-              className="gap-2"
-              data-testid="did-speak-button"
-            >
-              <Volume2 className="w-4 h-4" />
-              Test Speak
-            </Button>
-          )}
-          <Button 
-            variant="outline" 
-            size="sm"
-            onClick={handleStop}
-            disabled={isButtonDisabled}
-            className="gap-2"
-            data-testid="did-stop-button"
-          >
-            <Square className="w-4 h-4" />
-            Stop
-          </Button>
-        </div>
-      )}
-      
-      {/* Status line */}
+      {/* Status indicator below the video */}
       {showVideo && (
         <p className="text-xs text-center text-muted-foreground mt-2">
-          State: {state}{iceCandidatesSent > 0 ? ` | ICE: ${iceCandidatesSent}` : ''}
+          Status: {state}
+          {isConnected && ` | ICE: ${iceCandidatesSent}`}
+          {isConnected && firstFrameReceived && ' | ✓ Video active'}
         </p>
       )}
     </div>
