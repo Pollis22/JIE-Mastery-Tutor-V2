@@ -45,6 +45,14 @@ export default defineConfig({
     },
   },
   server: {
+    // Completely disable HMR to prevent interference with WebRTC video element lifecycle
+    // This is necessary in Replit because Vite's HMR WebSocket interferes with media elements
+    hmr: false,
+    watch: {
+      // Also disable file watching to prevent any HMR-related activity
+      usePolling: false,
+      ignored: ['**/*'],
+    },
     fs: {
       strict: true,
       deny: ["**/.*"],
