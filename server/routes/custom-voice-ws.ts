@@ -2077,7 +2077,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
             callbacks,
             state.systemInstruction,
             "voice",
-            responseLanguage
+            responseLanguage,
+            state.ageGroup  // Step 5: College response-depth tweak
           ).catch(reject); // Ensure errors are properly propagated
         });
 
@@ -4010,7 +4011,8 @@ CRITICAL INSTRUCTIONS:
                   textCallbacks,
                   state.systemInstruction,
                   "text", // Student typed via chat
-                  textResponseLanguage
+                  textResponseLanguage,
+                  state.ageGroup  // Step 5: College response-depth tweak
                 ).catch(textReject); // Ensure errors are properly propagated
               });
               

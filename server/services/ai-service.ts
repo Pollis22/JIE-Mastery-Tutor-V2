@@ -10,6 +10,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { withRetry, withRetryStream } from "../utils/retry";
+import { getMaxTokensForGrade, LLM_CONFIG } from "../llm/systemPrompt";
 
 /*
 <important_code_snippet_instructions>
@@ -188,15 +189,21 @@ export async function generateTutorResponseStreaming(
   callbacks: StreamingCallbacks,
   systemInstruction?: string,
   inputModality?: "voice" | "text",
-  language?: string
+  language?: string,
+  gradeLevel?: string  // Step 5: College response-depth tweak
 ): Promise<void> {
   
   console.log("[AI Service] 📝 Generating STREAMING response");
   console.log("[AI Service] 🎤 Input modality:", inputModality || "unknown");
   console.log("[AI Service] 📚 Documents available:", uploadedDocuments.length);
+  console.log("[AI Service] 🎓 Grade level:", gradeLevel || "unknown");
 
   const systemPrompt = buildSystemPrompt(uploadedDocuments, systemInstruction, inputModality, language);
   console.log("[AI Service] 📄 System prompt length:", systemPrompt.length, "chars");
+
+  // Step 5: College response-depth tweak - use grade-based max_tokens
+  const maxTokens = getMaxTokensForGrade(gradeLevel);
+  console.log(`[AI Service] 📏 Using max_tokens: ${maxTokens} for grade: ${gradeLevel || 'default'}`);
 
   try {
     const anthropicClient = getAnthropicClient();
@@ -208,7 +215,7 @@ export async function generateTutorResponseStreaming(
     const stream = await withRetryStream(async () => {
       return anthropicClient.messages.stream({
         model: DEFAULT_MODEL_STR,
-        max_tokens: 300,
+        max_tokens: maxTokens,  // Grade-based tokens (Step 5)
         system: systemPrompt,
         messages: [
           ...conversationHistory,
@@ -334,15 +341,21 @@ export async function generateTutorResponse(
   uploadedDocuments: string[],
   systemInstruction?: string,
   inputModality?: "voice" | "text",
-  language?: string
+  language?: string,
+  gradeLevel?: string  // Step 5: College response-depth tweak
 ): Promise<string> {
   
   console.log("[AI Service] 📝 Generating response (non-streaming)");
   console.log("[AI Service] 🎤 Input modality:", inputModality || "unknown");
   console.log("[AI Service] 📚 Documents available:", uploadedDocuments.length);
+  console.log("[AI Service] 🎓 Grade level:", gradeLevel || "unknown");
   
   const systemPrompt = buildSystemPrompt(uploadedDocuments, systemInstruction, inputModality, language);
   console.log("[AI Service] 📄 System prompt length:", systemPrompt.length, "chars");
+
+  // Step 5: College response-depth tweak - use grade-based max_tokens
+  const maxTokens = getMaxTokensForGrade(gradeLevel);
+  console.log(`[AI Service] 📏 Using max_tokens: ${maxTokens} for grade: ${gradeLevel || 'default'}`);
 
   try {
     const anthropicClient = getAnthropicClient();
@@ -355,7 +368,7 @@ export async function generateTutorResponse(
     const response = await withRetry(async () => {
       return anthropicClient.messages.create({
         model: DEFAULT_MODEL_STR, // "claude-sonnet-4-20250514"
-        max_tokens: 300, // Keep voice responses concise
+        max_tokens: maxTokens,  // Grade-based tokens (Step 5)
         system: systemPrompt,
         messages: [
           ...conversationHistory,

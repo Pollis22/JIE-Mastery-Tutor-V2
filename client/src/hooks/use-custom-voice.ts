@@ -265,6 +265,11 @@ export function useCustomVoice() {
   const selectedMicrophoneIdRef = useRef<string | null>(null);  // Store original device ID
   const selectedMicrophoneLabelRef = useRef<string | null>(null);  // Store device label as backup
   
+  // MIC_WATCHDOG: Proactive track health monitoring
+  // Feature flag: VITE_MIC_WATCHDOG_ENABLED (default: false)
+  const micWatchdogIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const MIC_WATCHDOG_ENABLED = import.meta.env.VITE_MIC_WATCHDOG_ENABLED === 'true';
+  
   // Timer tracking for proper cleanup
   const timersRef = useRef<Set<NodeJS.Timeout>>(new Set());
   const intervalsRef = useRef<Set<NodeJS.Timeout>>(new Set());
@@ -1164,6 +1169,58 @@ export function useCustomVoice() {
         attemptMicRecovery(); // Async recovery with multi-stage retry
       };
       console.log('[Custom Voice] 📡 Added track.onended listener for track:', audioTrack.label);
+      
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      // MIC_WATCHDOG: Proactive track health monitoring (Step 5)
+      // Feature flag: VITE_MIC_WATCHDOG_ENABLED (default: false)
+      // Catches track degradation before onended fires
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      if (MIC_WATCHDOG_ENABLED) {
+        // Clear existing watchdog if any
+        if (micWatchdogIntervalRef.current) {
+          clearInterval(micWatchdogIntervalRef.current);
+        }
+        
+        console.log(`[MicWatchdog] 🔍 Starting proactive track health monitor (every ${VOICE_TIMING.MIC_WATCHDOG_INTERVAL_MS}ms)`);
+        
+        micWatchdogIntervalRef.current = setInterval(() => {
+          // Skip if intentional cleanup
+          if (streamCleanupTriggeredRef.current) {
+            return;
+          }
+          
+          const track = mediaStreamRef.current?.getAudioTracks()[0];
+          if (!track) {
+            console.warn('[MicWatchdog] ⚠️ No audio track found - triggering recovery');
+            attemptMicRecovery();
+            return;
+          }
+          
+          // Check track health: readyState should be 'live', enabled should be true
+          const isLive = track.readyState === 'live';
+          const isEnabled = track.enabled === true;
+          const isMuted = track.muted === true;
+          
+          // Log periodic health check (only on issues or every 30 seconds for heartbeat)
+          if (!isLive || !isEnabled) {
+            console.log(JSON.stringify({
+              event: 'mic_watchdog_check',
+              track_state: track.readyState,
+              track_enabled: isEnabled,
+              track_muted: isMuted,
+              track_label: track.label || 'unknown',
+              action: 'recovery_triggered',
+              timestamp: new Date().toISOString(),
+            }));
+            
+            console.warn(`[MicWatchdog] ⚠️ Track degraded: readyState=${track.readyState}, enabled=${isEnabled}`);
+            attemptMicRecovery();
+          }
+        }, VOICE_TIMING.MIC_WATCHDOG_INTERVAL_MS);
+        
+        // Track interval for cleanup
+        intervalsRef.current.add(micWatchdogIntervalRef.current);
+      }
     }
   };
 

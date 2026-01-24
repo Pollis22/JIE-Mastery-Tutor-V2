@@ -20,6 +20,10 @@ export const VOICE_TIMING = {
   MIC_RECOVERY_STAGE3_DELAY_MS: 1500,
   MIC_RECOVERY_MAX_ATTEMPTS: 3,
   
+  // Mic track watchdog - proactive health monitoring
+  // Feature flag: VITE_MIC_WATCHDOG_ENABLED (default: false)
+  MIC_WATCHDOG_INTERVAL_MS: 5000,  // Check track health every 5 seconds
+  
   INACTIVITY_WARNING_MS: 240000,
   INACTIVITY_TIMEOUT_MS: 300000,
   

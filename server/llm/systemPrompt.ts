@@ -30,8 +30,52 @@ export const LLM_CONFIG: TutorPromptConfig = {
   temperature: 0.75,
   topP: 0.92,
   presencePenalty: 0.3,
-  maxTokens: 150, // Limit to ~2 sentences + question
+  maxTokens: 150, // Limit to ~2 sentences + question (default for younger learners)
 };
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// COLLEGE RESPONSE-DEPTH TWEAK (Step 5)
+// Feature flag: COLLEGE_RESPONSE_DEPTH_ENABLED (default: false)
+// Allows longer, more detailed responses for adult learners
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+export const GRADE_MAX_TOKENS: Record<string, number> = {
+  'k-2': 120,      // Very short for young learners
+  '3-5': 150,      // Standard short
+  '6-8': 175,      // Slightly longer for middle school
+  '9-12': 200,     // More detail for high school
+  'college': 300,  // Fuller explanations for adults (COLLEGE DEPTH TWEAK)
+};
+
+// Get maxTokens based on grade level (falls back to LLM_CONFIG default)
+export function getMaxTokensForGrade(gradeLevel?: string): number {
+  if (!gradeLevel) return LLM_CONFIG.maxTokens;
+  
+  const normalized = gradeLevel.toLowerCase().replace(/[^a-z0-9-]/g, '');
+  
+  // Direct match
+  if (GRADE_MAX_TOKENS[normalized]) {
+    return GRADE_MAX_TOKENS[normalized];
+  }
+  
+  // Map common variants to grade bands
+  if (['k', 'kindergarten', '1', '2', 'first', 'second'].includes(normalized)) {
+    return GRADE_MAX_TOKENS['k-2'];
+  }
+  if (['3', '4', '5', 'third', 'fourth', 'fifth'].includes(normalized)) {
+    return GRADE_MAX_TOKENS['3-5'];
+  }
+  if (['6', '7', '8', 'sixth', 'seventh', 'eighth', 'middle'].includes(normalized)) {
+    return GRADE_MAX_TOKENS['6-8'];
+  }
+  if (['9', '10', '11', '12', 'ninth', 'tenth', 'eleventh', 'twelfth', 'high', 'highschool'].includes(normalized)) {
+    return GRADE_MAX_TOKENS['9-12'];
+  }
+  if (['college', 'university', 'adult', 'professional'].includes(normalized)) {
+    return GRADE_MAX_TOKENS['college'];
+  }
+  
+  return LLM_CONFIG.maxTokens;
+}
 
 // Default system prompt (used when no grade level is specified)
 export const DEFAULT_TUTOR_PROMPT = `You are "TutorMind," a warm, upbeat coach. Stay strictly on the active lesson's subject and objectives.
