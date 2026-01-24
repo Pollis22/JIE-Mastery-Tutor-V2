@@ -248,15 +248,22 @@ export function setupDidSttWebSocket(httpServer: HttpServer): void {
   
   const wss = new WebSocketServer({ noServer: true });
   
+  // Set up connection handler
+  wss.on('connection', (ws: WebSocket, request: IncomingMessage) => {
+    console.log('[D-ID STT] ws connected');
+    handleSttConnection(ws, request);
+  });
+  
   httpServer.on('upgrade', (request: IncomingMessage, socket: Socket, head: Buffer) => {
     const url = request.url || '';
     
     if (url.startsWith('/api/did-api/stt/ws')) {
-      console.log('[D-ID STT] WebSocket upgrade request');
+      console.log('[D-ID STT] upgrade matched', url);
       
       wss.handleUpgrade(request, socket, head, (ws) => {
-        handleSttConnection(ws, request);
+        wss.emit('connection', ws, request);
       });
+      return; // Prevent other upgrade handlers from running
     }
   });
   
@@ -266,9 +273,17 @@ export function setupDidSttWebSocket(httpServer: HttpServer): void {
 function handleSttConnection(clientWs: WebSocket, request: IncomingMessage): void {
   const clientIp = request.headers['x-forwarded-for'] || request.socket.remoteAddress || 'unknown';
   const userAgent = request.headers['user-agent'] || 'unknown';
-  console.log('[D-ID STT] ✓ STT WS client connected');
   console.log('[D-ID STT] Client IP:', clientIp);
   console.log('[D-ID STT] User-Agent:', userAgent.slice(0, 80));
+  
+  // Client WebSocket close/error handlers for definitive logging
+  clientWs.on('close', (code, reason) => {
+    console.log('[D-ID STT] ws closed', code, reason?.toString() || '');
+  });
+  
+  clientWs.on('error', (err) => {
+    console.error('[D-ID STT] ws error', err);
+  });
   
   let assemblyWs: WebSocket | null = null;
   let isOpen = false;
