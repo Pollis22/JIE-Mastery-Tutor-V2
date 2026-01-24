@@ -493,12 +493,20 @@ export function useAvatarVoice(options: UseAvatarVoiceOptions = {}) {
     
     await stopCapture();
     
+    const isInIframe = window.self !== window.top;
+    if (isInIframe) {
+      log('Running inside iframe - microphone permissions may be restricted');
+      log('Ensure iframe has allow="microphone" attribute');
+    }
+    
     try {
       const permissionResult = await navigator.permissions?.query?.({ name: 'microphone' as PermissionName });
+      const permState = permissionResult?.state as 'granted' | 'denied' | 'prompt' | undefined;
       setDiagnostics(prev => ({
         ...prev,
-        micPermission: (permissionResult?.state as any) || 'unknown'
+        micPermission: permState || 'unknown'
       }));
+      log('Mic permission state:', permState);
     } catch (e) {
       log('Permission query not supported');
     }
@@ -516,15 +524,31 @@ export function useAvatarVoice(options: UseAvatarVoiceOptions = {}) {
       
       captureRef.current.mediaStream = stream;
       log('Microphone access granted');
+      log('Audio tracks:', stream.getAudioTracks().map(t => ({ label: t.label, enabled: t.enabled })));
       
       setDiagnostics(prev => ({ ...prev, micPermission: 'granted' }));
       
     } catch (e: any) {
-      logError('Microphone access denied:', e);
+      const errorName = e?.name || 'Unknown';
+      const errorMessage = e?.message || 'Unknown error';
+      logError('Microphone access failed:', errorName, errorMessage);
       
       setDiagnostics(prev => ({ ...prev, micPermission: 'denied' }));
       updateStatus('error');
-      onError?.('Microphone access denied. Please allow microphone access and try again.');
+      
+      if (errorName === 'NotAllowedError') {
+        if (isInIframe) {
+          onError?.('Microphone blocked. The page iframe needs allow="microphone" permission.');
+        } else {
+          onError?.('Microphone permission denied. Please allow microphone access in your browser settings.');
+        }
+      } else if (errorName === 'NotFoundError') {
+        onError?.('No microphone found. Please connect a microphone and try again.');
+      } else if (errorName === 'NotReadableError') {
+        onError?.('Microphone is in use by another application. Please close other apps using the mic.');
+      } else {
+        onError?.(`Microphone error: ${errorMessage}`);
+      }
       return;
     }
     
