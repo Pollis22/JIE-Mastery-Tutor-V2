@@ -259,11 +259,17 @@ export function setupDidSttWebSocket(httpServer: HttpServer): void {
     
     if (url.startsWith('/api/did-api/stt/ws')) {
       console.log('[D-ID STT] upgrade matched', url);
+      console.log('[D-ID STT] handleUpgrade starting...');
+      
+      socket.on('error', (err) => {
+        console.error('[D-ID STT] Socket error during upgrade:', err);
+      });
       
       wss.handleUpgrade(request, socket, head, (ws) => {
+        console.log('[D-ID STT] handleUpgrade callback fired');
         wss.emit('connection', ws, request);
       });
-      return; // Prevent other upgrade handlers from running
+      return;
     }
   });
   

@@ -22,8 +22,8 @@ import { useAvatarVoice } from "@/hooks/useAvatarVoice";
 
 const CONNECTION_TIMEOUT_MS = 12000;
 const DISCONNECT_GRACE_MS = 2000;
-const FRAME_WATCHDOG_INTERVAL_MS = 500;
-const FRAME_WATCHDOG_TIMEOUT_MS = 5000;
+const FRAME_WATCHDOG_INTERVAL_MS = 1000; // Check every 1 second, not 500ms
+const FRAME_WATCHDOG_STALL_THRESHOLD_MS = 6000; // Log warning only after 6s stall
 const DEBUG = true;
 
 function log(...args: unknown[]) {
@@ -68,6 +68,9 @@ export function DidAgentWebRTC() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   
   const sessionRef = useRef<StreamSession | null>(null);
+  const firstFrameReceivedRef = useRef(false);
+  const lastFrameTimeRef = useRef(0);
+  const watchdogStallLoggedRef = useRef(false);
   
   const handleTranscript = useCallback(async (text: string, isFinal: boolean) => {
     log("Transcript received:", text.slice(0, 50), "isFinal:", isFinal);
@@ -246,11 +249,13 @@ export function DidAgentWebRTC() {
     setIceCandidatesSent(0);
     setNeedsPlayGesture(false);
     setFirstFrameReceived(false);
+    firstFrameReceivedRef.current = false;
     setVideoDebugInfo('');
     sentIceCandidatesRef.current.clear();
     hasAutoSpokenRef.current = false;
     startMutexRef.current = false;
     lastCurrentTimeRef.current = 0;
+    watchdogStallLoggedRef.current = false;
     
     await waitAnimationFrame();
     
@@ -308,10 +313,18 @@ export function DidAgentWebRTC() {
   }, []);
 
   const startFrameWatchdog = useCallback((sessionData: StreamSession) => {
+    if (frameWatchdogRef.current) {
+      log("Watchdog already running, skipping duplicate start");
+      return;
+    }
+    
     stopFrameWatchdog();
     
     frameWatchdogStartRef.current = Date.now();
     lastCurrentTimeRef.current = 0;
+    firstFrameReceivedRef.current = false;
+    lastFrameTimeRef.current = Date.now();
+    watchdogStallLoggedRef.current = false;
     
     log("Starting frame watchdog...");
     
@@ -319,7 +332,7 @@ export function DidAgentWebRTC() {
       const video = videoRef.current;
       if (!video) return;
       
-      const elapsed = Date.now() - frameWatchdogStartRef.current;
+      const now = Date.now();
       const currentTime = video.currentTime;
       const readyState = video.readyState;
       const paused = video.paused;
@@ -328,15 +341,24 @@ export function DidAgentWebRTC() {
       setVideoDebugInfo(debugInfo);
       
       if (currentTime > lastCurrentTimeRef.current) {
-        if (!firstFrameReceived) {
+        if (!firstFrameReceivedRef.current) {
           log("✓ First video frame received!", debugInfo);
+          firstFrameReceivedRef.current = true;
           setFirstFrameReceived(true);
         }
         lastCurrentTimeRef.current = currentTime;
+        lastFrameTimeRef.current = now;
+        watchdogStallLoggedRef.current = false;
       }
       
-      if (elapsed > FRAME_WATCHDOG_TIMEOUT_MS && !firstFrameReceived) {
-        console.warn('[D-ID WebRTC] watchdog fired - video check ONLY (voice unaffected)', elapsed, 'ms');
+      const timeSinceLastFrame = now - lastFrameTimeRef.current;
+      const hasReceivedFirstFrame = firstFrameReceivedRef.current;
+      
+      if (!hasReceivedFirstFrame && timeSinceLastFrame > FRAME_WATCHDOG_STALL_THRESHOLD_MS) {
+        if (!watchdogStallLoggedRef.current) {
+          console.warn('[D-ID WebRTC] No frames received after', timeSinceLastFrame, 'ms');
+          watchdogStallLoggedRef.current = true;
+        }
         
         if (!hasAutoSpokenRef.current && stateRef.current === 'connected') {
           hasAutoSpokenRef.current = true;
@@ -345,7 +367,7 @@ export function DidAgentWebRTC() {
         }
       }
     }, FRAME_WATCHDOG_INTERVAL_MS);
-  }, [stopFrameWatchdog, speakText, firstFrameReceived]);
+  }, [stopFrameWatchdog, speakText]);
 
   const startConnection = useCallback(async () => {
     if (!mountedRef.current) {

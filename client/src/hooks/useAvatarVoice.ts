@@ -230,7 +230,7 @@ export function useAvatarVoice(options: UseAvatarVoiceOptions = {}) {
       }, 10000);
       
       ws.onopen = () => {
-        log('STT WebSocket connected, waiting for ready...');
+        console.log('[Avatar Voice] STT WS OPEN');
       };
       
       ws.onmessage = (event) => {
@@ -344,7 +344,7 @@ export function useAvatarVoice(options: UseAvatarVoiceOptions = {}) {
           framesSentRef.current += 1;
           
           if (framesSentRef.current === 1) {
-            log('Sent first audio frame, bytes:', pcm16.buffer.byteLength);
+            console.log('[Avatar Voice] Sent FIRST audio frame', pcm16.buffer.byteLength, 'bytes');
           }
         }
       };
