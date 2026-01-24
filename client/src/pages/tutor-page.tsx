@@ -841,13 +841,13 @@ export default function TutorPage() {
                     <ChevronRight className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
                     <span>When you're done, say "Goodbye" or "End session" to finish cleanly</span>
                   </li>
-                  <li className="flex gap-2 items-start">
-                    <ChevronRight className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
-                    <span>For best results, try to use your tutor in a quiet space. Background sounds like TVs, radios, or other people talking can interfere with listening.</span>
+                  <li className="flex gap-2 items-start bg-amber-50 dark:bg-amber-900/30 p-2 rounded-md border border-amber-200 dark:border-amber-700 -mx-1">
+                    <ChevronRight className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                    <span className="text-amber-800 dark:text-amber-200">For best results, try to use your tutor in a quiet space. Background sounds like TVs, radios, or other people talking can interfere with listening.</span>
                   </li>
-                  <li className="flex gap-2 items-start">
-                    <ChevronRight className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
-                    <span>If you can't be in a quiet room, switch to Text Only mode. This turns off your microphone and lets you continue without interruptions.</span>
+                  <li className="flex gap-2 items-start bg-amber-50 dark:bg-amber-900/30 p-2 rounded-md border border-amber-200 dark:border-amber-700 -mx-1">
+                    <ChevronRight className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                    <span className="text-amber-800 dark:text-amber-200">If you can't be in a quiet room, switch to <strong>Text Only</strong> mode. This turns off your microphone and lets you continue without interruptions.</span>
                   </li>
                 </ul>
                 
