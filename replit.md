@@ -17,6 +17,15 @@ Requests from the client (browser) are processed via HTTPS/WSS to an Express.js 
 ### Custom Voice Stack
 A custom-built voice stack provides real-time, low-latency (1-2 seconds end-to-end) conversations using PCM16 audio (16-bit Linear PCM, 16kHz, Mono) encoded in Base64 over WebSockets. It integrates an STT provider (Deepgram Nova-2 or AssemblyAI), Claude Sonnet 4 for AI response generation, and ElevenLabs TTS (Turbo v2.5) with age-specific voices. The system includes adaptive barge-in detection, bounded patience logic, reading mode patience, adaptive session-level patience, and robust handling of background noise.
 
+### Voice Pipeline Hardening (Steps 1-5)
+Production-hardening features with feature flags (all default OFF for safety):
+- **Step 1**: Fixed misleading ACK/WS-close logging for cleaner diagnostics
+- **Step 2** (`VOICE_BG_NOISE_COACHING`): Background-noise coaching with 25s rolling window, 6-event threshold, 2min cooldown
+- **Step 3** (`VOICE_AMBIENT_SUPPRESS`): Ambient speech suppression rejecting <2 word utterances and vowel-less fragments
+- **Step 4** (`LEXICAL_GRACE_ENABLED`): 300ms lexical grace period preventing mid-word turn finalization
+- **Step 5a** (`VITE_MIC_WATCHDOG_ENABLED`): Proactive 5s mic health monitoring with auto-recovery
+- **Step 5b**: Grade-based max_tokens (K-2: 120, 3-5: 150, 6-8: 175, 9-12: 200, College: 300)
+
 ### Authentication & Authorization
 Session-based authentication uses Passport.js with PostgreSQL session storage, including features for password reset and account recovery. WebSocket security incorporates session validation and IP-based rate limiting. Access control verifies authentication, active subscription, and minute balance.
 
