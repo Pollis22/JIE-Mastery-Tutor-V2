@@ -254,22 +254,43 @@ export function setupDidSttWebSocket(httpServer: HttpServer): void {
     handleSttConnection(ws, request);
   });
   
-  httpServer.on('upgrade', (request: IncomingMessage, socket: Socket, head: Buffer) => {
+  // Track which sockets we're handling to prevent double-processing
+  const handledSockets = new WeakSet<Socket>();
+  
+  // Use prependListener to ensure we handle our paths BEFORE Vite's HMR handler
+  httpServer.prependListener('upgrade', (request: IncomingMessage, socket: Socket, head: Buffer) => {
     const url = request.url || '';
     
-    if (url.startsWith('/api/did-api/stt/ws')) {
-      console.log('[D-ID STT] upgrade matched', url);
-      console.log('[D-ID STT] handleUpgrade starting...');
-      
-      socket.on('error', (err) => {
-        console.error('[D-ID STT] Socket error during upgrade:', err);
-      });
-      
+    // Only handle our STT WebSocket path
+    if (!url.startsWith('/api/did-api/stt/ws')) {
+      return;
+    }
+    
+    // Prevent double-handling
+    if (handledSockets.has(socket)) {
+      console.log('[D-ID STT] Socket already handled, skipping');
+      return;
+    }
+    handledSockets.add(socket);
+    
+    console.log('[D-ID STT] upgrade matched', url);
+    
+    // Mark socket as handled to prevent other handlers from consuming it
+    (socket as any).__sttHandled = true;
+    
+    socket.on('error', (err) => {
+      console.error('[D-ID STT] Socket error during upgrade:', err);
+    });
+    
+    // Handle the upgrade immediately
+    try {
       wss.handleUpgrade(request, socket, head, (ws) => {
         console.log('[D-ID STT] handleUpgrade callback fired');
         wss.emit('connection', ws, request);
       });
-      return;
+    } catch (err) {
+      console.error('[D-ID STT] handleUpgrade exception:', err);
+      socket.destroy();
     }
   });
   
