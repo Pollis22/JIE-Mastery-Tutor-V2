@@ -16,8 +16,9 @@
  */
 
 import { useEffect, useState, useRef, useCallback } from "react";
-import { RefreshCw, AlertTriangle, CheckCircle, XCircle, Volume2, Square, Play } from "lucide-react";
+import { RefreshCw, AlertTriangle, CheckCircle, XCircle, Volume2, Square, Play, Mic, MicOff, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useAvatarVoice } from "@/hooks/useAvatarVoice";
 
 const CONNECTION_TIMEOUT_MS = 12000;
 const DISCONNECT_GRACE_MS = 2000;
@@ -63,6 +64,65 @@ export function DidAgentWebRTC() {
   const [needsPlayGesture, setNeedsPlayGesture] = useState(false);
   const [firstFrameReceived, setFirstFrameReceived] = useState(false);
   const [videoDebugInfo, setVideoDebugInfo] = useState<string>('');
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  
+  const sessionRef = useRef<StreamSession | null>(null);
+  
+  const handleTranscript = useCallback(async (text: string, isFinal: boolean) => {
+    log("Transcript received:", text.slice(0, 50), "isFinal:", isFinal);
+    
+    if (!isFinal || !text.trim() || text.trim().length < 2) {
+      return;
+    }
+    
+    const currentSession = sessionRef.current;
+    if (!currentSession || stateRef.current !== 'connected') {
+      log("Cannot speak: no active session");
+      return;
+    }
+    
+    log("Sending transcript to avatar:", text.slice(0, 50));
+    setIsSpeaking(true);
+    
+    const estimatedSpeakDuration = Math.min(text.length * 60, 15000) + 1500;
+    
+    try {
+      const response = await fetch(`/api/did-api/stream/${currentSession.streamId}/speak`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: currentSession.sessionId,
+          text: text.trim()
+        })
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        logError("Speak failed:", error);
+        setIsSpeaking(false);
+      } else {
+        log("Speak request sent for user transcript ✓");
+        log("Estimated speak duration:", estimatedSpeakDuration, "ms");
+        
+        setTimeout(() => {
+          setIsSpeaking(false);
+          log("Speaking complete, ready for next turn");
+        }, estimatedSpeakDuration);
+      }
+    } catch (e) {
+      logError("Speak error:", e);
+      setIsSpeaking(false);
+    }
+  }, []);
+  
+  const voiceHook = useAvatarVoice({
+    onTranscript: handleTranscript,
+    onError: (msg) => logError("Voice error:", msg),
+    onStatusChange: (status) => log("Voice status:", status)
+  });
+  
+  const { status: voiceStatus, transcript, diagnostics: voiceDiagnostics, isListening, startListening, stopListening } = voiceHook;
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
@@ -93,6 +153,12 @@ export function DidAgentWebRTC() {
 
   const cleanup = useCallback(async (reason: string = 'unknown'): Promise<void> => {
     log("Cleanup started, reason:", reason);
+    
+    try {
+      await stopListening();
+    } catch (e) {
+      log("Error stopping voice capture:", e);
+    }
     
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
@@ -174,6 +240,7 @@ export function DidAgentWebRTC() {
     }
     
     setSession(null);
+    sessionRef.current = null;
     setIceCandidatesSent(0);
     setNeedsPlayGesture(false);
     setFirstFrameReceived(false);
@@ -346,6 +413,7 @@ export function DidAgentWebRTC() {
       
       const currentSession = { streamId, sessionId };
       setSession(currentSession);
+      sessionRef.current = currentSession;
       
       const pcConfig: RTCConfiguration = {
         iceServers: iceServers && iceServers.length > 0 
@@ -803,17 +871,63 @@ export function DidAgentWebRTC() {
         {/* Connected controls overlay - at bottom */}
         {showVideo && isConnected && !needsPlayGesture && (
           <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent z-10">
+            {/* Voice status and transcript */}
+            {(isListening || transcript) && (
+              <div className="mb-3 text-center">
+                {isListening && (
+                  <div className="flex items-center justify-center gap-2 mb-2">
+                    <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                    <span className="text-sm text-white">
+                      {isSpeaking ? 'Speaking...' : voiceStatus === 'transcribing' ? 'Transcribing...' : 'Listening...'}
+                    </span>
+                  </div>
+                )}
+                {transcript && (
+                  <p className="text-sm text-white/80 italic max-w-sm mx-auto truncate">
+                    "{transcript}"
+                  </p>
+                )}
+              </div>
+            )}
+            
             <div className="flex items-center justify-center gap-3">
+              {/* Voice control button */}
+              <Button 
+                variant={isListening ? "default" : "outline"}
+                size="sm"
+                onClick={isListening ? stopListening : startListening}
+                disabled={isSpeaking}
+                className={`gap-2 ${isListening 
+                  ? 'bg-red-600 hover:bg-red-700 text-white border-red-600' 
+                  : 'bg-white/10 border-white/20 text-white hover:bg-white/20'}`}
+                data-testid="did-voice-button"
+              >
+                {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                {isListening ? 'Stop Listening' : 'Start Listening'}
+              </Button>
+              
               <Button 
                 variant="outline" 
                 size="sm"
                 onClick={handleSpeak}
+                disabled={isListening || isSpeaking}
                 className="gap-2 bg-white/10 border-white/20 text-white hover:bg-white/20"
                 data-testid="did-speak-button"
               >
                 <Volume2 className="w-4 h-4" />
-                Test Speak
+                Test
               </Button>
+              
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => setShowDiagnostics(!showDiagnostics)}
+                className="gap-2 bg-white/10 border-white/20 text-white hover:bg-white/20"
+                data-testid="did-diagnostics-button"
+              >
+                <Info className="w-4 h-4" />
+              </Button>
+              
               <Button 
                 variant="destructive" 
                 size="sm"
@@ -827,8 +941,23 @@ export function DidAgentWebRTC() {
               </Button>
             </div>
             
+            {/* Diagnostics panel */}
+            {showDiagnostics && (
+              <div className="mt-3 p-3 bg-black/60 rounded-lg text-xs text-white/80 max-w-md mx-auto">
+                <p className="font-semibold text-white mb-2">Diagnostics</p>
+                <div className="grid grid-cols-2 gap-1">
+                  <span>Browser:</span><span>{voiceDiagnostics.browser}</span>
+                  <span>Capture:</span><span>{voiceDiagnostics.captureMethod || 'none'}</span>
+                  <span>Sample Rate:</span><span>{voiceDiagnostics.sampleRate || '-'}</span>
+                  <span>STT Provider:</span><span>{voiceDiagnostics.sttProvider}</span>
+                  <span>STT Mode:</span><span>{voiceDiagnostics.sttMode}</span>
+                  <span>Mic Permission:</span><span>{voiceDiagnostics.micPermission}</span>
+                </div>
+              </div>
+            )}
+            
             {/* Debug info */}
-            {DEBUG && (
+            {DEBUG && !showDiagnostics && (
               <div className="mt-2 text-center">
                 <p className="text-xs text-white/50">
                   {firstFrameReceived ? '✓ Frames received' : '⏳ Waiting for frames...'}
