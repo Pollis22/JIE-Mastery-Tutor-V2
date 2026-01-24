@@ -207,9 +207,7 @@ export function useAvatarVoice(options: UseAvatarVoiceOptions = {}) {
     return new Promise((resolve, reject) => {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = `${protocol}//${window.location.host}/api/did-api/stt/ws`;
-      const isDev = import.meta.env.DEV;
-      log('Connecting STT WebSocket:', wsUrl);
-      log('Environment:', isDev ? 'DEV' : 'PROD', '| Host:', window.location.host);
+      console.log('[Avatar Voice] STT wsUrl:', wsUrl);
       
       let ws: WebSocket;
       try {
@@ -336,8 +334,8 @@ export function useAvatarVoice(options: UseAvatarVoiceOptions = {}) {
       framesSentRef.current = 0;
       
       statsIntervalRef.current = window.setInterval(() => {
-        log('Audio stats: bytesSent:', bytesSentRef.current, 'framesSent:', framesSentRef.current);
-      }, 3000);
+        log('Audio stats: bytesSentTotal:', bytesSentRef.current, 'framesSent:', framesSentRef.current);
+      }, 1000);
       
       const sendPcmFrame = (pcm16: Int16Array) => {
         if (ws.readyState === WebSocket.OPEN) {
