@@ -264,12 +264,17 @@ export function setupDidSttWebSocket(httpServer: HttpServer): void {
 }
 
 function handleSttConnection(clientWs: WebSocket, request: IncomingMessage): void {
-  console.log('[D-ID STT] New WebSocket connection');
+  const clientIp = request.headers['x-forwarded-for'] || request.socket.remoteAddress || 'unknown';
+  const userAgent = request.headers['user-agent'] || 'unknown';
+  console.log('[D-ID STT] ✓ STT WS client connected');
+  console.log('[D-ID STT] Client IP:', clientIp);
+  console.log('[D-ID STT] User-Agent:', userAgent.slice(0, 80));
   
   let assemblyWs: WebSocket | null = null;
   let isOpen = false;
   let audioBuffer: Buffer[] = [];
   let totalBytesSent = 0;
+  let totalFramesReceived = 0;
   
   const language = 'en';
   const speechModel = 'universal-streaming-english';
@@ -408,6 +413,11 @@ function handleSttConnection(clientWs: WebSocket, request: IncomingMessage): voi
       }
     } else {
       const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer);
+      totalFramesReceived++;
+      
+      if (totalFramesReceived === 1) {
+        console.log('[D-ID STT] Received first audio frame from client, bytes:', buffer.length);
+      }
       
       if (isOpen && assemblyWs && assemblyWs.readyState === WebSocket.OPEN) {
         assemblyWs.send(buffer);
@@ -422,7 +432,8 @@ function handleSttConnection(clientWs: WebSocket, request: IncomingMessage): voi
   });
   
   clientWs.on('close', () => {
-    console.log('[D-ID STT] Client WebSocket closed, total bytes sent:', totalBytesSent);
+    console.log('[D-ID STT] Client WebSocket closed');
+    console.log('[D-ID STT] Session stats - frames received:', totalFramesReceived, 'bytes sent to AssemblyAI:', totalBytesSent);
     
     if (assemblyWs) {
       if (isOpen && assemblyWs.readyState === WebSocket.OPEN) {

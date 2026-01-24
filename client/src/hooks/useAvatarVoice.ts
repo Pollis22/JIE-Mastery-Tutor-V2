@@ -127,6 +127,9 @@ export function useAvatarVoice(options: UseAvatarVoiceOptions = {}) {
   
   const recordedChunksRef = useRef<Blob[]>([]);
   const isStoppingRef = useRef(false);
+  const bytesSentRef = useRef(0);
+  const framesSentRef = useRef(0);
+  const statsIntervalRef = useRef<number | null>(null);
   
   const updateStatus = useCallback((newStatus: VoiceStatus) => {
     log('Status:', newStatus);
@@ -139,7 +142,16 @@ export function useAvatarVoice(options: UseAvatarVoiceOptions = {}) {
     isStoppingRef.current = true;
     
     log('Stopping capture...');
+    log('Final stats: bytes sent:', bytesSentRef.current, 'frames:', framesSentRef.current);
     setIsListening(false);
+    
+    if (statsIntervalRef.current) {
+      clearInterval(statsIntervalRef.current);
+      statsIntervalRef.current = null;
+    }
+    
+    bytesSentRef.current = 0;
+    framesSentRef.current = 0;
     
     const state = captureRef.current;
     
@@ -193,7 +205,9 @@ export function useAvatarVoice(options: UseAvatarVoiceOptions = {}) {
     return new Promise((resolve, reject) => {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = `${protocol}//${window.location.host}/api/did-api/stt/ws`;
+      const isDev = import.meta.env.DEV;
       log('Connecting STT WebSocket:', wsUrl);
+      log('Environment:', isDev ? 'DEV' : 'PROD', '| Host:', window.location.host);
       
       let ws: WebSocket;
       try {
@@ -286,8 +300,14 @@ export function useAvatarVoice(options: UseAvatarVoiceOptions = {}) {
       const audioContext = new AudioContext({ sampleRate: 16000 });
       captureRef.current.audioContext = audioContext;
       
+      if (audioContext.state === 'suspended') {
+        log('AudioContext suspended, resuming...');
+        await audioContext.resume();
+      }
+      log('AudioContext state:', audioContext.state, 'sampleRate:', audioContext.sampleRate);
+      
       if (audioContext.sampleRate !== 16000) {
-        log('AudioContext sample rate:', audioContext.sampleRate, '- will resample');
+        log('AudioContext sample rate:', audioContext.sampleRate, '- will resample to 16kHz');
       }
       
       setDiagnostics(prev => ({
@@ -303,68 +323,95 @@ export function useAvatarVoice(options: UseAvatarVoiceOptions = {}) {
       try {
         ws = await connectSttWebSocket();
         captureRef.current.sttWebSocket = ws;
+        log('STT WS opened successfully');
       } catch (e) {
         logError('Failed to connect STT WebSocket:', e);
         onError?.('Failed to connect to speech recognition');
         return false;
       }
       
-      if (supportsAudioWorklet()) {
-        log('Using AudioWorklet for capture');
+      bytesSentRef.current = 0;
+      framesSentRef.current = 0;
+      
+      statsIntervalRef.current = window.setInterval(() => {
+        log('Audio stats: bytesSent:', bytesSentRef.current, 'framesSent:', framesSentRef.current);
+      }, 3000);
+      
+      const sendPcmFrame = (pcm16: Int16Array) => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(pcm16.buffer);
+          bytesSentRef.current += pcm16.buffer.byteLength;
+          framesSentRef.current += 1;
+          
+          if (framesSentRef.current === 1) {
+            log('Sent first audio frame, bytes:', pcm16.buffer.byteLength);
+          }
+        }
+      };
+      
+      let useWorklet = supportsAudioWorklet();
+      
+      if (useWorklet) {
+        log('Attempting AudioWorklet capture...');
         
-        const processorCode = `
-          class PCMProcessor extends AudioWorkletProcessor {
-            constructor() {
-              super();
-              this.bufferSize = 4096;
-              this.buffer = new Float32Array(this.bufferSize);
-              this.bufferIndex = 0;
-            }
-            
-            process(inputs, outputs, parameters) {
-              const input = inputs[0];
-              if (!input || !input[0]) return true;
-              
-              const channelData = input[0];
-              
-              for (let i = 0; i < channelData.length; i++) {
-                this.buffer[this.bufferIndex++] = channelData[i];
-                
-                if (this.bufferIndex >= this.bufferSize) {
-                  this.port.postMessage({ samples: this.buffer.slice() });
-                  this.bufferIndex = 0;
-                }
+        try {
+          const processorCode = `
+            class PCMProcessor extends AudioWorkletProcessor {
+              constructor() {
+                super();
+                this.bufferSize = 4096;
+                this.buffer = new Float32Array(this.bufferSize);
+                this.bufferIndex = 0;
               }
               
-              return true;
+              process(inputs, outputs, parameters) {
+                const input = inputs[0];
+                if (!input || !input[0]) return true;
+                
+                const channelData = input[0];
+                
+                for (let i = 0; i < channelData.length; i++) {
+                  this.buffer[this.bufferIndex++] = channelData[i];
+                  
+                  if (this.bufferIndex >= this.bufferSize) {
+                    this.port.postMessage({ samples: this.buffer.slice() });
+                    this.bufferIndex = 0;
+                  }
+                }
+                
+                return true;
+              }
             }
-          }
-          registerProcessor('pcm-processor', PCMProcessor);
-        `;
-        
-        const blob = new Blob([processorCode], { type: 'application/javascript' });
-        const url = URL.createObjectURL(blob);
-        
-        await audioContext.audioWorklet.addModule(url);
-        URL.revokeObjectURL(url);
-        
-        const workletNode = new AudioWorkletNode(audioContext, 'pcm-processor');
-        captureRef.current.workletNode = workletNode;
-        
-        workletNode.port.onmessage = (event) => {
-          const samples = event.data.samples as Float32Array;
-          const resampled = downsampleTo16k(samples, audioContext.sampleRate);
-          const pcm16 = float32ToPcm16(resampled);
+            registerProcessor('pcm-processor', PCMProcessor);
+          `;
           
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(pcm16.buffer);
-          }
-        };
-        
-        source.connect(workletNode);
-        
-      } else {
-        log('AudioWorklet not supported, using ScriptProcessor');
+          const blob = new Blob([processorCode], { type: 'application/javascript' });
+          const url = URL.createObjectURL(blob);
+          
+          await audioContext.audioWorklet.addModule(url);
+          URL.revokeObjectURL(url);
+          
+          const workletNode = new AudioWorkletNode(audioContext, 'pcm-processor');
+          captureRef.current.workletNode = workletNode;
+          
+          workletNode.port.onmessage = (event) => {
+            const samples = event.data.samples as Float32Array;
+            const resampled = downsampleTo16k(samples, audioContext.sampleRate);
+            const pcm16 = float32ToPcm16(resampled);
+            sendPcmFrame(pcm16);
+          };
+          
+          source.connect(workletNode);
+          log('Audio pipeline started: AudioWorklet');
+          
+        } catch (workletError) {
+          logError('AudioWorklet failed, falling back to ScriptProcessor:', workletError);
+          useWorklet = false;
+        }
+      }
+      
+      if (!useWorklet) {
+        log('Using ScriptProcessor capture (fallback)');
         
         const bufferSize = 4096;
         const scriptNode = audioContext.createScriptProcessor(bufferSize, 1, 1);
@@ -374,17 +421,15 @@ export function useAvatarVoice(options: UseAvatarVoiceOptions = {}) {
           const inputData = event.inputBuffer.getChannelData(0);
           const resampled = downsampleTo16k(inputData, audioContext.sampleRate);
           const pcm16 = float32ToPcm16(resampled);
-          
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(pcm16.buffer);
-          }
+          sendPcmFrame(pcm16);
         };
         
         source.connect(scriptNode);
         scriptNode.connect(audioContext.destination);
+        log('Audio pipeline started: ScriptProcessor');
       }
       
-      log('WebAudio capture started');
+      log('WebAudio capture started successfully');
       return true;
       
     } catch (e) {
@@ -555,21 +600,21 @@ export function useAvatarVoice(options: UseAvatarVoiceOptions = {}) {
     updateStatus('listening');
     setIsListening(true);
     
-    let success = await startWebAudioCapture(stream);
+    const success = await startWebAudioCapture(stream);
     
     if (!success) {
-      log('WebAudio capture failed, trying MediaRecorder fallback...');
-      success = await startMediaRecorderCapture(stream);
-    }
-    
-    if (!success) {
-      logError('All capture methods failed');
+      logError('WebAudio capture failed');
       updateStatus('error');
-      onError?.('Audio capture not supported on this device');
+      
+      if (isInIframe) {
+        onError?.('Audio capture failed. Preview iframe may block audio - open in top-level domain.');
+      } else {
+        onError?.('Audio capture failed. Your browser may not support WebAudio.');
+      }
       await stopCapture();
     }
     
-  }, [isListening, stopCapture, startWebAudioCapture, startMediaRecorderCapture, updateStatus, onError]);
+  }, [isListening, stopCapture, startWebAudioCapture, updateStatus, onError]);
   
   const stopListening = useCallback(async () => {
     log('Stop listening requested');
