@@ -623,7 +623,7 @@ export function useAvatarVoice(options: UseAvatarVoiceOptions = {}) {
       log('stopListening ignored; already stopped');
       return;
     }
-    log('stopListening:', reason);
+    console.warn('[Avatar Voice] stopListening called by:', reason);
     await stopCapture(reason);
   }, [stopCapture]);
   

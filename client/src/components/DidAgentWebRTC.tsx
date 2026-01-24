@@ -336,7 +336,7 @@ export function DidAgentWebRTC() {
       }
       
       if (elapsed > FRAME_WATCHDOG_TIMEOUT_MS && !firstFrameReceived) {
-        log("Frame watchdog: No frames after", elapsed, "ms.", debugInfo);
+        console.warn('[D-ID WebRTC] watchdog fired - video check ONLY (voice unaffected)', elapsed, 'ms');
         
         if (!hasAutoSpokenRef.current && stateRef.current === 'connected') {
           hasAutoSpokenRef.current = true;
