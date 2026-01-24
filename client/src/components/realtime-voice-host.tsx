@@ -636,10 +636,11 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
       {/* Communication Mode Controls - Only shown during active session */}
       {customVoice.isConnected && (
         <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-col gap-3">
+            {/* Row 1: Mode selection buttons */}
+            <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm font-semibold text-blue-900 dark:text-blue-100">Communication Mode:</span>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 {Object.entries(MODES).map(([key, config]) => {
                   const ModeIcon = config.icon;
                   return (
@@ -660,7 +661,9 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
               </div>
             </div>
             
-            <div className="flex items-center gap-3">
+            {/* Row 2: Audio controls (Tutor Audio & Your Mic) */}
+            <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-blue-200 dark:border-blue-700">
+              <span className="text-sm font-medium text-blue-800 dark:text-blue-200">Audio Controls:</span>
               <Button
                 onClick={toggleTutorAudio}
                 variant="ghost"
@@ -682,7 +685,7 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
                 )}
               </Button>
               
-              <div className="h-4 w-px bg-border" />
+              <div className="h-4 w-px bg-blue-200 dark:bg-blue-700" />
               
               <Button
                 onClick={toggleStudentMic}
