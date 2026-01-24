@@ -126,6 +126,8 @@ interface AssemblyAIState {
   lastError: string | null;
   closeCode: number | null;
   closeReason: string | null;
+  pendingFragment?: string; // LEXICAL_GRACE: Pending transcript fragment awaiting merge
+  pendingFragmentTime?: number; // LEXICAL_GRACE: When the pending fragment was created
 }
 
 const ASSEMBLYAI_CONFIG = {
@@ -411,6 +413,70 @@ function createAssemblyAIConnection(
           
           console.log('[AssemblyAI v3] ✅ End of turn (formatted) - sending to Claude:', confirmedTranscript);
           
+          // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          // LEXICAL_GRACE: Word fragmentation hardening (Step 4)
+          // Feature flag: LEXICAL_GRACE_ENABLED (default: false)
+          // Adds a short grace window when the last token looks like a fragment
+          // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          const lexicalGraceEnabled = process.env.LEXICAL_GRACE_ENABLED === 'true';
+          const lexicalGraceMs = parseInt(process.env.LEXICAL_GRACE_MS || '300', 10);
+          
+          if (lexicalGraceEnabled) {
+            const words = confirmedTranscript.trim().split(/\s+/).filter(w => w.length > 0);
+            const lastToken = words[words.length - 1] || '';
+            const hasVowel = /[aeiou]/i.test(lastToken);
+            const hasTrailingPunctuation = /[.!?;]$/.test(confirmedTranscript.trim());
+            const isLikelyFragment = (lastToken.length <= 3 && !hasVowel) || 
+                                     (lastToken.length <= 2 && !hasTrailingPunctuation);
+            
+            if (isLikelyFragment && words.length <= 2) {
+              console.log(`[LexicalGrace] ⏳ Possible fragment detected: "${lastToken}" - waiting ${lexicalGraceMs}ms for continuation`);
+              
+              // Store current transcript in state for potential merge
+              state.pendingFragment = confirmedTranscript;
+              state.pendingFragmentTime = Date.now();
+              
+              // Log telemetry
+              console.log(JSON.stringify({
+                event: 'lexical_grace_applied',
+                session_id: state.sessionId || 'unknown',
+                grace_ms: lexicalGraceMs,
+                trailing_token: lastToken,
+                final_text_len: confirmedTranscript.length,
+                timestamp: new Date().toISOString(),
+              }));
+              
+              // Wait for potential continuation
+              setTimeout(() => {
+                // Check if we're still waiting on this fragment
+                if (state.pendingFragment && state.pendingFragmentTime) {
+                  const elapsed = Date.now() - state.pendingFragmentTime;
+                  if (elapsed >= lexicalGraceMs - 50) { // Allow 50ms tolerance
+                    console.log(`[LexicalGrace] ✅ Grace period ended - proceeding with: "${state.pendingFragment}"`);
+                    onTranscript(state.pendingFragment, true, confidence);
+                    state.pendingFragment = undefined;
+                    state.pendingFragmentTime = undefined;
+                  }
+                }
+              }, lexicalGraceMs);
+              
+              // Reset for next turn (but keep pendingFragment for merge)
+              confirmedTranscript = '';
+              return;
+            }
+          }
+          
+          // Check if we have a pending fragment to merge with
+          if (state.pendingFragment && state.pendingFragmentTime) {
+            const elapsed = Date.now() - state.pendingFragmentTime;
+            if (elapsed < 500) { // Within merge window
+              console.log(`[LexicalGrace] 🔗 Merging fragment: "${state.pendingFragment}" + "${confirmedTranscript}"`);
+              confirmedTranscript = state.pendingFragment + ' ' + confirmedTranscript;
+            }
+            state.pendingFragment = undefined;
+            state.pendingFragmentTime = undefined;
+          }
+          
           // Fire callback with the confirmed, formatted transcript
           onTranscript(confirmedTranscript, true, confidence);
           
@@ -612,6 +678,8 @@ interface SessionState {
   terminatedForSafety: boolean; // SAFETY: Whether session was ended due to safety violations
   parentEmail?: string; // SAFETY: Parent email for alerts
   studentId?: string; // SAFETY: Student ID for incident tracking
+  pendingFragment?: string; // LEXICAL_GRACE: Pending transcript fragment awaiting merge
+  pendingFragmentTime?: number; // LEXICAL_GRACE: When the pending fragment was created
 }
 
 // Helper to send typed WebSocket events
@@ -1357,6 +1425,74 @@ export function setupCustomVoiceWebSocket(server: Server) {
             state.isProcessing = false;
             processingStartTime = null;
             // Process next item in queue if any
+            if (state.transcriptQueue.length > 0 && !state.isSessionEnded) {
+              setImmediate(() => processTranscriptQueue());
+            }
+            return;
+          }
+        }
+        
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        // VOICE_AMBIENT_SUPPRESS: Fast ambient speech rejection
+        // Feature flag: VOICE_AMBIENT_SUPPRESS (default: false)
+        // Rejects transcripts that are too short/low-signal before semantic analysis
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        const ambientSuppressEnabled = process.env.VOICE_AMBIENT_SUPPRESS === 'true';
+        if (ambientSuppressEnabled) {
+          const words = transcript.trim().split(/\s+/).filter(w => w.length > 0);
+          const wordCount = words.length;
+          
+          // Reject too short and low-signal transcripts (< 2 words)
+          if (wordCount < 2) {
+            console.log(JSON.stringify({
+              event: 'ambient_rejected',
+              session_id: state.sessionId || 'unknown',
+              transcript_len: transcript.length,
+              word_count: wordCount,
+              reason: 'too_short',
+              rejected_text: transcript.substring(0, 50),
+              timestamp: new Date().toISOString(),
+            }));
+            console.log(`[AmbientSuppress] 🚫 Rejected short transcript: "${transcript}" (${wordCount} words)`);
+            
+            // Notify client of ambient rejection
+            ws.send(JSON.stringify({
+              type: 'ambient_rejected',
+              reason: 'too_short',
+              wordCount,
+            }));
+            
+            state.isProcessing = false;
+            processingStartTime = null;
+            if (state.transcriptQueue.length > 0 && !state.isSessionEnded) {
+              setImmediate(() => processTranscriptQueue());
+            }
+            return;
+          }
+          
+          // Reject fragments that look like partial words (single consonant cluster, < 3 chars, no vowel)
+          const lastWord = words[words.length - 1].toLowerCase();
+          const hasVowel = /[aeiou]/i.test(lastWord);
+          if (lastWord.length <= 2 && !hasVowel && wordCount === 1) {
+            console.log(JSON.stringify({
+              event: 'ambient_rejected',
+              session_id: state.sessionId || 'unknown',
+              transcript_len: transcript.length,
+              word_count: wordCount,
+              reason: 'fragment',
+              rejected_text: transcript.substring(0, 50),
+              timestamp: new Date().toISOString(),
+            }));
+            console.log(`[AmbientSuppress] 🚫 Rejected fragment: "${transcript}" (no vowel, ${lastWord.length} chars)`);
+            
+            ws.send(JSON.stringify({
+              type: 'ambient_rejected',
+              reason: 'fragment',
+              wordCount,
+            }));
+            
+            state.isProcessing = false;
+            processingStartTime = null;
             if (state.transcriptQueue.length > 0 && !state.isSessionEnded) {
               setImmediate(() => processTranscriptQueue());
             }

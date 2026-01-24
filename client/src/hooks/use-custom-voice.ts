@@ -219,6 +219,19 @@ export function useCustomVoice() {
   const lastSpeechDetectedRef = useRef<number>(0);
   const lastNoiseDetectedRef = useRef<number>(0);
   
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // VOICE_BG_NOISE_COACHING: Background noise coaching prompt
+  // Track noise events in a rolling window and show coaching when threshold exceeded
+  // Feature flag: VOICE_BG_NOISE_COACHING (default OFF)
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  const NOISE_COACHING_ENABLED = import.meta.env.VITE_VOICE_BG_NOISE_COACHING === 'true';
+  const NOISE_COACHING_WINDOW_MS = 25000;  // 25 second rolling window
+  const NOISE_COACHING_THRESHOLD = 6;      // N noise events to trigger coaching
+  const NOISE_COACHING_COOLDOWN_MS = 120000; // 2 minutes between coaching prompts
+  const noiseEventsRef = useRef<number[]>([]); // Timestamps of noise_ignored events
+  const lastNoiseCoachingRef = useRef<number>(0); // Last time coaching was shown
+  const [showNoiseCoachingHint, setShowNoiseCoachingHint] = useState(false);
+  
   // THINKING INDICATOR: Track current turn for matching events
   const thinkingTurnIdRef = useRef<string | null>(null);
   
@@ -908,6 +921,41 @@ export function useCustomVoice() {
             console.log("[Custom Voice] 🔊 Background noise ignored");
             lastNoiseDetectedRef.current = Date.now();
             updateMicStatus('ignoring_noise');
+            
+            // VOICE_BG_NOISE_COACHING: Track noise events for coaching prompt
+            if (NOISE_COACHING_ENABLED) {
+              const now = Date.now();
+              // Add current event timestamp
+              noiseEventsRef.current.push(now);
+              // Remove events outside the rolling window
+              noiseEventsRef.current = noiseEventsRef.current.filter(
+                ts => (now - ts) < NOISE_COACHING_WINDOW_MS
+              );
+              
+              const recentNoiseCount = noiseEventsRef.current.length;
+              const timeSinceLastCoaching = now - lastNoiseCoachingRef.current;
+              
+              console.log(`[NoiseCoaching] Events in window: ${recentNoiseCount}/${NOISE_COACHING_THRESHOLD}, cooldown: ${Math.max(0, NOISE_COACHING_COOLDOWN_MS - timeSinceLastCoaching)}ms`);
+              
+              // Check if we should trigger coaching
+              if (recentNoiseCount >= NOISE_COACHING_THRESHOLD && 
+                  timeSinceLastCoaching >= NOISE_COACHING_COOLDOWN_MS) {
+                console.log("[NoiseCoaching] 📢 Triggering background noise coaching prompt");
+                lastNoiseCoachingRef.current = now;
+                noiseEventsRef.current = []; // Reset counter after coaching
+                setShowNoiseCoachingHint(true);
+                
+                // Auto-hide after 8 seconds
+                setTimeout(() => setShowNoiseCoachingHint(false), 8000);
+                
+                // Inject a system message to transcript (operational guidance, not educational content)
+                addTranscriptMessage({
+                  speaker: "system",
+                  text: "I'm hearing background audio. If you can, please turn down any TV/radio or move to a quieter spot so I can hear you clearly.",
+                  timestamp: new Date().toISOString(),
+                });
+              }
+            }
             break;
           
           case "tts_playing":
@@ -2533,19 +2581,27 @@ registerProcessor('audio-processor', AudioProcessor);
           
           // Also listen for close event to resolve early if WebSocket closes
           const closeHandler = () => {
-            console.log("[Custom Voice] 🔌 WebSocket closed before ACK");
+            // VOICE_FIX_ACK_LOGS: Only log as warning if ACK wasn't received
             if (!sessionEndedAckReceived) {
+              console.log("[Custom Voice] 🔌 WebSocket closed before ACK received");
               resolve(false);
+            } else {
+              // ACK was already received, this is expected - don't log as warning
+              console.log("[Custom Voice] 🔌 WebSocket closed (ACK already received)");
             }
           };
           ws.addEventListener('close', closeHandler, { once: true });
           
           // Timeout after 3 seconds
           setTimeout(() => {
-            console.log("[Custom Voice] ⏱️ ACK timeout fired. ACK received?", sessionEndedAckReceived);
+            // VOICE_FIX_ACK_LOGS: Only log timeout warning if ACK wasn't received
             if (!sessionEndedAckReceived) {
+              console.log("[Custom Voice] ⏱️ ACK timeout fired. ACK received?", sessionEndedAckReceived);
               console.log("[Custom Voice] ⚠️ No ACK received within timeout - will use HTTP fallback");
               resolve(false);
+            } else {
+              // ACK was already received, timeout is expected - log only for debugging
+              console.log("[Custom Voice] ⏱️ ACK timeout fired. ACK received?", sessionEndedAckReceived);
             }
           }, HTTP_FALLBACK_TIMEOUT);
         });
@@ -2609,6 +2665,16 @@ registerProcessor('audio-processor', AudioProcessor);
       cleanup();
       setIsConnected(false);
       disconnectInProgress.current = false;
+      
+      // VOICE_FIX_ACK_LOGS: Structured summary log at end of disconnect
+      console.log("[Custom Voice] 📊 Disconnect summary:", JSON.stringify({
+        ackReceived,
+        wsReadyStateAtClose: ws?.readyState ?? 'no-ws',
+        closeCode: 1000,
+        closeReason: 'User ended session',
+        sessionId: sessionId || 'none',
+        timestamp: new Date().toISOString(),
+      }));
       
       console.log("[Custom Voice] ✅ Disconnect complete");
       console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
@@ -2775,5 +2841,6 @@ registerProcessor('audio-processor', AudioProcessor);
     audioEnabled,
     micEnabled,
     micStatus,
+    showNoiseCoachingHint,  // VOICE_BG_NOISE_COACHING: UI hint for background noise
   };
 }
