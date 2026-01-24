@@ -79,17 +79,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const stripeWebhookRoutes = await import('./routes/stripe-webhooks');
   app.use('/api/stripe', stripeWebhookRoutes.default);
   
-  // D-ID API routes - WebRTC stream flow (API-only mode)
-  // Uses the official D-ID Realtime Agents Streams API (api.d-id.com)
-  // Registered before auth middleware to allow unauthenticated access on landing page
-  const didApiRoutes = await import('./routes/did-api-routes');
-  app.use('/api/did-api', didApiRoutes.default);
-  
-  // D-ID STT routes - Speech-to-text for avatar conversation
-  // Supports both blob upload and streaming modes
-  const didSttRoutes = await import('./routes/did-stt-routes');
-  app.use('/api/did-api/stt', express.raw({ type: ['application/octet-stream', 'audio/*'], limit: '10mb' }), didSttRoutes.default);
-  
   // SEO static files - serve robots.txt and sitemap.xml
   const publicPath = path.join(process.cwd(), 'public');
   const fs = await import('fs');

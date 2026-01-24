@@ -215,11 +215,6 @@ app.use((req, res, next) => {
     const { setupCustomVoiceWebSocket } = await import('./routes/custom-voice-ws');
     setupCustomVoiceWebSocket(server);
     console.log('✓ Custom Voice WebSocket ready at /api/custom-voice-ws');
-    
-    // Setup D-ID STT WebSocket (for avatar conversation)
-    const { setupDidSttWebSocket } = await import('./routes/did-stt-routes');
-    setupDidSttWebSocket(server);
-    console.log('✓ D-ID STT WebSocket ready at /api/did-api/stt/ws');
 
     // Start embedding worker ONLY in development (requires vector DB configuration)
     // In production (Railway), disable to prevent startup failures

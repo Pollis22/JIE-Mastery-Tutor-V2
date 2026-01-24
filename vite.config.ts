@@ -45,23 +45,6 @@ export default defineConfig({
     },
   },
   server: {
-    host: '0.0.0.0',
-    port: 5000,
-    strictPort: true,
-    // Configure HMR with explicit Replit domain to prevent wss://localhost:undefined errors
-    hmr: (() => {
-      const replitDomain = process.env.REPLIT_DOMAINS?.split(',')[0];
-      if (replitDomain) {
-        console.log('[Vite] HMR configured for Replit domain:', replitDomain);
-        return {
-          protocol: 'wss',
-          host: replitDomain,
-          clientPort: 443,
-        };
-      }
-      console.log('[Vite] HMR using default config (not in Replit)');
-      return true;
-    })(),
     fs: {
       strict: true,
       deny: ["**/.*"],
