@@ -126,7 +126,7 @@ export function useAvatarVoice(options: UseAvatarVoiceOptions = {}) {
   });
   
   const recordedChunksRef = useRef<Blob[]>([]);
-  const isStoppingRef = useRef(false);
+  const isListeningRef = useRef(false);
   const bytesSentRef = useRef(0);
   const framesSentRef = useRef(0);
   const statsIntervalRef = useRef<number | null>(null);
@@ -137,11 +137,14 @@ export function useAvatarVoice(options: UseAvatarVoiceOptions = {}) {
     onStatusChange?.(newStatus);
   }, [onStatusChange]);
   
-  const stopCapture = useCallback(async () => {
-    if (isStoppingRef.current) return;
-    isStoppingRef.current = true;
+  const stopCapture = useCallback(async (reason: string = 'unknown') => {
+    if (!isListeningRef.current) {
+      log('stopCapture ignored; already stopped');
+      return;
+    }
+    isListeningRef.current = false;
     
-    log('Stopping capture...');
+    log('Stopping capture, reason:', reason);
     log('Final stats: bytes sent:', bytesSentRef.current, 'frames:', framesSentRef.current);
     setIsListening(false);
     
@@ -195,7 +198,6 @@ export function useAvatarVoice(options: UseAvatarVoiceOptions = {}) {
     state.audioContext = null;
     
     recordedChunksRef.current = [];
-    isStoppingRef.current = false;
     
     updateStatus('idle');
     log('Capture stopped');
@@ -528,15 +530,14 @@ export function useAvatarVoice(options: UseAvatarVoiceOptions = {}) {
   }, [onTranscript, onError, updateStatus]);
   
   const startListening = useCallback(async () => {
-    if (isListening) {
-      log('Already listening, ignoring');
+    if (isListeningRef.current) {
+      log('startListening: already listening, NO-OP');
       return;
     }
     
-    log('Starting listening...');
+    isListeningRef.current = true;
+    log('startListening: entering listening state');
     updateStatus('requesting_mic');
-    
-    await stopCapture();
     
     const isInIframe = window.self !== window.top;
     if (isInIframe) {
@@ -578,6 +579,7 @@ export function useAvatarVoice(options: UseAvatarVoiceOptions = {}) {
       const errorMessage = e?.message || 'Unknown error';
       logError('Microphone access failed:', errorName, errorMessage);
       
+      isListeningRef.current = false;
       setDiagnostics(prev => ({ ...prev, micPermission: 'denied' }));
       updateStatus('error');
       
@@ -611,19 +613,26 @@ export function useAvatarVoice(options: UseAvatarVoiceOptions = {}) {
       } else {
         onError?.('Audio capture failed. Your browser may not support WebAudio.');
       }
-      await stopCapture();
+      await stopCapture('webaudio failed');
     }
     
-  }, [isListening, stopCapture, startWebAudioCapture, updateStatus, onError]);
+  }, [stopCapture, startWebAudioCapture, updateStatus, onError]);
   
-  const stopListening = useCallback(async () => {
-    log('Stop listening requested');
-    await stopCapture();
+  const stopListening = useCallback(async (reason: string = 'user request') => {
+    if (!isListeningRef.current) {
+      log('stopListening ignored; already stopped');
+      return;
+    }
+    log('stopListening:', reason);
+    await stopCapture(reason);
   }, [stopCapture]);
   
   useEffect(() => {
     return () => {
-      stopCapture();
+      if (isListeningRef.current) {
+        isListeningRef.current = false;
+        stopCapture('component unmount');
+      }
     };
   }, [stopCapture]);
   

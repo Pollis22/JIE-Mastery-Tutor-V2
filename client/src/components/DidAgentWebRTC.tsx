@@ -151,13 +151,15 @@ export function DidAgentWebRTC() {
     }
   }, []);
 
-  const cleanup = useCallback(async (reason: string = 'unknown'): Promise<void> => {
-    log("Cleanup started, reason:", reason);
+  const cleanup = useCallback(async (reason: string = 'unknown', stopVoice: boolean = false): Promise<void> => {
+    log("Cleanup started, reason:", reason, "stopVoice:", stopVoice);
     
-    try {
-      await stopListening();
-    } catch (e) {
-      log("Error stopping voice capture:", e);
+    if (stopVoice) {
+      try {
+        await stopListening(reason);
+      } catch (e) {
+        log("Error stopping voice capture:", e);
+      }
     }
     
     if (timeoutRef.current) {
@@ -366,7 +368,7 @@ export function DidAgentWebRTC() {
     
     if (peerConnectionRef.current) {
       setStateWithRef('stopping');
-      await cleanup('new connection requested');
+      await cleanup('new connection requested', false);
     }
     
     setStateWithRef('starting');
@@ -383,7 +385,7 @@ export function DidAgentWebRTC() {
       
       if (mountedRef.current && !isConnected && stateRef.current === 'starting') {
         logError("Connection timeout after", CONNECTION_TIMEOUT_MS, "ms");
-        await cleanup('timeout');
+        await cleanup('timeout', true);
         setStateWithRef('error');
         setErrorMessage("Connection timed out. The D-ID service may be unavailable.");
         fetchApiStatus();
@@ -577,7 +579,7 @@ export function DidAgentWebRTC() {
           
         } else if (pc.connectionState === 'failed') {
           logError("WebRTC connection failed");
-          cleanup('connection failed').then(() => {
+          cleanup('connection failed', true).then(() => {
             setStateWithRef('error');
             setErrorMessage("WebRTC connection failed. ICE candidates: " + localIceCount);
           });
@@ -592,7 +594,7 @@ export function DidAgentWebRTC() {
           disconnectTimeoutRef.current = setTimeout(async () => {
             if (mountedRef.current && pc.connectionState === 'disconnected') {
               logError("Connection still disconnected after grace period");
-              await cleanup('disconnected timeout');
+              await cleanup('disconnected timeout', true);
               setStateWithRef('error');
               setErrorMessage("Connection lost and could not recover.");
             }
@@ -632,7 +634,7 @@ export function DidAgentWebRTC() {
     } catch (error) {
       logError("Connection error:", error);
       
-      await cleanup('connection error');
+      await cleanup('connection error', true);
       setStateWithRef('error');
       setErrorMessage(error instanceof Error ? error.message : 'Connection failed');
       fetchApiStatus();
@@ -682,7 +684,7 @@ export function DidAgentWebRTC() {
     
     log("User clicked Stop");
     setStateWithRef('stopping');
-    await cleanup('user stopped');
+    await cleanup('user stopped', true);
     setStateWithRef('idle');
   }, [cleanup, setStateWithRef]);
 
@@ -701,7 +703,7 @@ export function DidAgentWebRTC() {
     
     return () => {
       mountedRef.current = false;
-      cleanup('component unmount');
+      cleanup('component unmount', true);
     };
   }, [cleanup, fetchApiStatus]);
 
@@ -895,7 +897,7 @@ export function DidAgentWebRTC() {
               <Button 
                 variant={isListening ? "default" : "outline"}
                 size="sm"
-                onClick={isListening ? stopListening : startListening}
+                onClick={isListening ? () => stopListening('user button') : startListening}
                 disabled={isSpeaking}
                 className={`gap-2 ${isListening 
                   ? 'bg-red-600 hover:bg-red-700 text-white border-red-600' 
