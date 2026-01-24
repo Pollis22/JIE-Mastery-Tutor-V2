@@ -128,6 +128,7 @@ interface AssemblyAIState {
   closeReason: string | null;
   pendingFragment?: string; // LEXICAL_GRACE: Pending transcript fragment awaiting merge
   pendingFragmentTime?: number; // LEXICAL_GRACE: When the pending fragment was created
+  pendingFragmentTimeout?: NodeJS.Timeout; // LEXICAL_GRACE: Timeout ID to cancel on merge
 }
 
 const ASSEMBLYAI_CONFIG = {
@@ -446,9 +447,9 @@ function createAssemblyAIConnection(
                 timestamp: new Date().toISOString(),
               }));
               
-              // Wait for potential continuation
-              setTimeout(() => {
-                // Check if we're still waiting on this fragment
+              // Wait for potential continuation - store timeout ID for cancellation
+              state.pendingFragmentTimeout = setTimeout(() => {
+                // Check if we're still waiting on this fragment (not merged)
                 if (state.pendingFragment && state.pendingFragmentTime) {
                   const elapsed = Date.now() - state.pendingFragmentTime;
                   if (elapsed >= lexicalGraceMs - 50) { // Allow 50ms tolerance
@@ -456,6 +457,7 @@ function createAssemblyAIConnection(
                     onTranscript(state.pendingFragment, true, confidence);
                     state.pendingFragment = undefined;
                     state.pendingFragmentTime = undefined;
+                    state.pendingFragmentTimeout = undefined;
                   }
                 }
               }, lexicalGraceMs);
@@ -472,9 +474,16 @@ function createAssemblyAIConnection(
             if (elapsed < 500) { // Within merge window
               console.log(`[LexicalGrace] 🔗 Merging fragment: "${state.pendingFragment}" + "${confirmedTranscript}"`);
               confirmedTranscript = state.pendingFragment + ' ' + confirmedTranscript;
+              
+              // Cancel the pending grace timeout to prevent double-fire
+              if (state.pendingFragmentTimeout) {
+                clearTimeout(state.pendingFragmentTimeout);
+                console.log(`[LexicalGrace] ⏹️ Cancelled grace timeout after merge`);
+              }
             }
             state.pendingFragment = undefined;
             state.pendingFragmentTime = undefined;
+            state.pendingFragmentTimeout = undefined;
           }
           
           // Fire callback with the confirmed, formatted transcript

@@ -945,8 +945,8 @@ export function useCustomVoice() {
                 noiseEventsRef.current = []; // Reset counter after coaching
                 setShowNoiseCoachingHint(true);
                 
-                // Auto-hide after 8 seconds
-                setTimeout(() => setShowNoiseCoachingHint(false), 8000);
+                // Auto-hide after 8 seconds (using safeSetTimeout for cleanup on unmount)
+                safeSetTimeout(() => setShowNoiseCoachingHint(false), 8000);
                 
                 // Inject a system message to transcript (operational guidance, not educational content)
                 addTranscriptMessage({
