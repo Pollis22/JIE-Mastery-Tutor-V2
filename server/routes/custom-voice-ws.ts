@@ -50,6 +50,13 @@ import {
   logEchoGuardStateTransition,
 } from "../services/echo-guard";
 import {
+  getCoherenceGateConfig,
+  checkCoherence,
+  extractConversationContext,
+  logCoherenceGateReject,
+  getCoherenceClarifyMessage,
+} from "../services/coherence-gate";
+import {
   type ActivityMode,
   isAdaptiveBargeInEnabled,
   isReadingModeEnabled,
@@ -1347,6 +1354,70 @@ export function setupCustomVoiceWebSocket(server: Server) {
           const echoCheck = checkForEcho(state.echoGuardState, transcript, echoGuardConfig);
           if (echoCheck.isEcho) {
             console.log(`[EchoGuard] 🚫 Discarding echo transcript: "${transcript.substring(0, 50)}..." (similarity=${echoCheck.similarity.toFixed(3)}, deltaMs=${echoCheck.deltaMs})`);
+            state.isProcessing = false;
+            processingStartTime = null;
+            // Process next item in queue if any
+            if (state.transcriptQueue.length > 0 && !state.isSessionEnded) {
+              setImmediate(() => processTranscriptQueue());
+            }
+            return;
+          }
+        }
+        
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        // COHERENCE GATE: Filter out background speech (TV, family conversations)
+        // Feature flag: COHERENCE_GATE_ENABLED (default: false)
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        const coherenceConfig = getCoherenceGateConfig();
+        if (coherenceConfig.enabled) {
+          const conversationContext = extractConversationContext(
+            state.conversationHistory,
+            state.subject,
+            coherenceConfig
+          );
+          
+          const coherenceResult = checkCoherence(transcript, conversationContext, coherenceConfig);
+          
+          if (!coherenceResult.isCoherent) {
+            // Log the rejection for telemetry
+            logCoherenceGateReject(state.sessionId || 'unknown', coherenceResult, coherenceConfig.threshold);
+            console.log(`[CoherenceGate] 🚫 Rejected off-topic transcript: "${transcript.substring(0, 50)}..." (similarity=${coherenceResult.similarityScore.toFixed(3)}, reason=${coherenceResult.rejectedReason})`);
+            
+            // Send clarification message via TTS
+            const clarifyMessage = getCoherenceClarifyMessage();
+            
+            // Add to transcript log
+            const clarifyEntry: TranscriptEntry = {
+              speaker: "tutor",
+              text: clarifyMessage,
+              timestamp: new Date().toISOString(),
+              messageId: crypto.randomUUID(),
+            };
+            state.transcript.push(clarifyEntry);
+            
+            // Send to frontend
+            ws.send(JSON.stringify({
+              type: "transcript",
+              speaker: "tutor",
+              text: clarifyMessage,
+            }));
+            
+            // Generate and send TTS audio (if audio is enabled)
+            if (state.tutorAudioEnabled) {
+              try {
+                const clarifyAudio = await generateSpeech(clarifyMessage, state.ageGroup, state.speechSpeed);
+                if (clarifyAudio && clarifyAudio.length > 0) {
+                  ws.send(JSON.stringify({
+                    type: "audio",
+                    data: clarifyAudio.toString("base64"),
+                    mimeType: "audio/pcm;rate=16000"
+                  }));
+                }
+              } catch (audioError) {
+                console.error('[CoherenceGate] ❌ Error generating clarify audio:', audioError);
+              }
+            }
+            
             state.isProcessing = false;
             processingStartTime = null;
             // Process next item in queue if any
