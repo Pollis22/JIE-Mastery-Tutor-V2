@@ -901,15 +901,19 @@ async function finalizeSession(
   state: SessionState,
   reason: 'normal' | 'disconnect' | 'error' | 'violation' | 'inactivity_timeout' | 'safety',
   errorMessage?: string
-) {
+): Promise<{ success: boolean; minuteDeductionFailed?: boolean; dbWriteFailed?: boolean }> {
   // Idempotent: skip if already finalized
   if (state.isSessionEnded) {
     console.log(`[Custom Voice] ℹ️ Session already finalized, skipping (reason: ${reason})`);
-    return;
+    return { success: true };
   }
 
   // Mark as ended FIRST to prevent race conditions
   state.isSessionEnded = true;
+  
+  // Track failures for reconciliation
+  let minuteDeductionFailed = false;
+  let dbWriteFailed = false;
   
   // CRITICAL: Clear inactivity timer to prevent duplicate finalization
   if (state.inactivityTimerId) {
@@ -927,7 +931,7 @@ async function finalizeSession(
 
   if (!state.sessionId) {
     console.warn('[Custom Voice] ⚠️ No sessionId, skipping finalization');
-    return;
+    return { success: true };
   }
   
   // Check if this is a trial session (skip database operations for trial users)
@@ -938,15 +942,15 @@ async function finalizeSession(
     console.log(`[Custom Voice] 🎫 Trial session finalized (${reason}) - ${durationSeconds}s, ${state.transcript.length} messages`);
     console.log(`[Custom Voice] 🎫 Trial session closed - reason: ${reason}`);
     // Trial sessions don't update realtimeSessions or deduct minutes
-    return;
+    return { success: true };
   }
 
-  try {
-    // Calculate session duration
-    const durationSeconds = Math.floor((Date.now() - state.sessionStartTime) / 1000);
-    const durationMinutes = Math.max(1, Math.ceil(durationSeconds / 60));
+  // Calculate session duration (used by multiple sections)
+  const durationSeconds = Math.floor((Date.now() - state.sessionStartTime) / 1000);
+  const durationMinutes = Math.max(1, Math.ceil(durationSeconds / 60));
 
-    // Update database with complete session data
+  // SAFETY HARDENING: Wrap DB write in separate try/catch - never block cleanup
+  try {
     const updateData: any = {
       transcript: state.transcript,
       endedAt: new Date(),
@@ -964,83 +968,100 @@ async function finalizeSession(
       .where(eq(realtimeSessions.id, state.sessionId));
 
     console.log(`[Custom Voice] 💾 Session finalized (${reason}) - ${durationMinutes} minutes, ${state.transcript.length} messages`);
+  } catch (dbError) {
+    dbWriteFailed = true;
+    console.warn(`[Custom Voice] ⚠️ DB write failed during finalization (reason: ${reason}):`, dbError);
+    console.warn(`[Custom Voice] 🔄 RECONCILIATION NEEDED: sessionId=${state.sessionId}, userId=${state.userId}, minutes=${durationMinutes}`);
+    // Continue with cleanup - don't block shutdown
+  }
 
-    // Deduct minutes from user balance (skip for trial users)
-    if (state.userId && durationMinutes > 0 && !state.userId.startsWith('trial_')) {
+  // SAFETY HARDENING: Wrap minute deduction in separate try/catch - never block cleanup
+  if (state.userId && durationMinutes > 0 && !state.userId.startsWith('trial_')) {
+    try {
       const { deductMinutes } = await import('../services/voice-minutes');
       await deductMinutes(state.userId, durationMinutes);
       console.log(`[Custom Voice] ✅ Deducted ${durationMinutes} minutes from user ${state.userId}`);
+    } catch (deductError) {
+      minuteDeductionFailed = true;
+      console.warn(`[Custom Voice] ⚠️ Minute deduction failed (reason: ${reason}):`, deductError);
+      console.warn(`[Custom Voice] 🔄 RECONCILIATION NEEDED: userId=${state.userId}, minutes=${durationMinutes}, sessionId=${state.sessionId}`);
+      // Continue with cleanup - don't block shutdown
     }
-    
-    // ============================================
-    // PARENT SESSION SUMMARY EMAIL
-    // Send email after session with constraints:
-    // - Session > 30 seconds
-    // - Transcript has >= 3 messages
-    // ============================================
-    if (durationSeconds >= 30 && state.transcript.length >= 3 && state.userId) {
-      try {
-        // Get parent info and email preferences from database
-        const parentResult = await db.select({
-          email: users.email,
-          parentName: users.parentName,
-          emailSummaryFrequency: users.emailSummaryFrequency,
-        })
-        .from(users)
-        .where(eq(users.id, state.userId))
-        .limit(1);
-        
-        const parent = parentResult[0];
-        
-        if (parent?.email) {
-          // Check user's email preference before sending
-          const emailFrequency = parent.emailSummaryFrequency || 'daily';
-          
-          if (emailFrequency === 'off') {
-            console.log(`[Custom Voice] ℹ️ Email summaries disabled for ${parent.email}`);
-          } else if (emailFrequency === 'per_session') {
-            // Send immediately only for 'per_session' preference
-            const emailService = new EmailService();
-            
-            // Use subject from session state
-            const sessionSubject = state.subject || 'General';
-            
-            // Filter and sanitize transcript: remove empty texts and map roles
-            const sanitizedTranscript = state.transcript
-              .filter(t => t.text && t.text.trim().length > 0)
-              .map(t => ({
-                role: t.speaker === 'student' ? 'user' : 'assistant',
-                text: t.text.trim()
-              }));
-            
-            await emailService.sendSessionSummary({
-              parentEmail: parent.email,
-              parentName: parent.parentName || '',
-              studentName: state.studentName || 'Your child',
-              subject: sessionSubject,
-              gradeLevel: state.ageGroup || 'K-12',
-              duration: durationMinutes,
-              messageCount: sanitizedTranscript.length,
-              transcript: sanitizedTranscript,
-              sessionDate: new Date()
-            });
-            
-            console.log(`[Custom Voice] ✉️ Parent summary email sent to ${parent.email}`);
-          } else {
-            // 'daily' or 'weekly' - let cron job handle it
-            console.log(`[Custom Voice] ℹ️ Email will be sent via ${emailFrequency} digest for ${parent.email}`);
-          }
-        }
-      } catch (emailError) {
-        // Don't fail the session if email fails
-        console.error('[Custom Voice] ⚠️ Failed to send parent email:', emailError);
-      }
-    } else {
-      console.log(`[Custom Voice] ℹ️ Skipping parent email (duration: ${durationSeconds}s, messages: ${state.transcript.length})`);
-    }
-  } catch (error) {
-    console.error(`[Custom Voice] ❌ Error finalizing session (${reason}):`, error);
   }
+
+  // ============================================
+  // PARENT SESSION SUMMARY EMAIL (already wrapped in try/catch)
+  // Send email after session with constraints:
+  // - Session > 30 seconds
+  // - Transcript has >= 3 messages
+  // ============================================
+  if (durationSeconds >= 30 && state.transcript.length >= 3 && state.userId) {
+    try {
+      // Get parent info and email preferences from database
+      const parentResult = await db.select({
+        email: users.email,
+        parentName: users.parentName,
+        emailSummaryFrequency: users.emailSummaryFrequency,
+      })
+      .from(users)
+      .where(eq(users.id, state.userId))
+      .limit(1);
+      
+      const parent = parentResult[0];
+      
+      if (parent?.email) {
+        // Check user's email preference before sending
+        const emailFrequency = parent.emailSummaryFrequency || 'daily';
+        
+        if (emailFrequency === 'off') {
+          console.log(`[Custom Voice] ℹ️ Email summaries disabled for ${parent.email}`);
+        } else if (emailFrequency === 'per_session') {
+          // Send immediately only for 'per_session' preference
+          const emailService = new EmailService();
+          
+          // Use subject from session state
+          const sessionSubject = state.subject || 'General';
+          
+          // Filter and sanitize transcript: remove empty texts and map roles
+          const sanitizedTranscript = state.transcript
+            .filter(t => t.text && t.text.trim().length > 0)
+            .map(t => ({
+              role: t.speaker === 'student' ? 'user' : 'assistant',
+              text: t.text.trim()
+            }));
+          
+          await emailService.sendSessionSummary({
+            parentEmail: parent.email,
+            parentName: parent.parentName || '',
+            studentName: state.studentName || 'Your child',
+            subject: sessionSubject,
+            gradeLevel: state.ageGroup || 'K-12',
+            duration: durationMinutes,
+            messageCount: sanitizedTranscript.length,
+            transcript: sanitizedTranscript,
+            sessionDate: new Date()
+          });
+          
+          console.log(`[Custom Voice] ✉️ Parent summary email sent to ${parent.email}`);
+        } else {
+          // 'daily' or 'weekly' - let cron job handle it
+          console.log(`[Custom Voice] ℹ️ Email will be sent via ${emailFrequency} digest for ${parent.email}`);
+        }
+      }
+    } catch (emailError) {
+      // Don't fail the session if email fails
+      console.error('[Custom Voice] ⚠️ Failed to send parent email:', emailError);
+    }
+  } else {
+    console.log(`[Custom Voice] ℹ️ Skipping parent email (duration: ${durationSeconds}s, messages: ${state.transcript.length})`);
+  }
+
+  // Return status for caller awareness (session_ended will always be sent)
+  return { 
+    success: !dbWriteFailed && !minuteDeductionFailed,
+    minuteDeductionFailed,
+    dbWriteFailed
+  };
 }
 
 export function setupCustomVoiceWebSocket(server: Server) {
