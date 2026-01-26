@@ -95,13 +95,19 @@ export function RealtimeVoiceHost({
     return `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   };
 
-  // Load saved communication mode preference on mount
+  // Always start with voice mode (mic ON) - don't restore saved preferences
+  // This ensures users always start with mic enabled for the best experience
   useEffect(() => {
+    // Clear any saved mode that might turn mic off
     const savedMode = localStorage.getItem('preferred-communication-mode') as CommunicationMode;
-    if (savedMode && MODES[savedMode]) {
-      console.log('[Mode] Loading saved preference:', savedMode);
-      switchMode(savedMode, false);
+    if (savedMode && savedMode !== 'voice') {
+      console.log('[Mode] Resetting to voice mode (mic on) - was:', savedMode);
+      localStorage.setItem('preferred-communication-mode', 'voice');
     }
+    // Ensure we start with mic on
+    setCommunicationMode('voice');
+    setTutorAudioEnabled(true);
+    setStudentMicEnabled(true);
   }, []);
   
   // Switch between preset modes
