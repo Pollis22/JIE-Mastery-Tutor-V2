@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
+import { VoiceStatusIndicator } from "./VoiceStatusIndicator";
 
 interface RealtimeMessage {
   role: 'user' | 'assistant' | 'system';
@@ -17,16 +18,34 @@ interface Props {
   language?: string;
   voice?: string;
   isTutorThinking?: boolean;
+  isTutorSpeaking?: boolean;
+  communicationMode?: 'voice' | 'hybrid' | 'text';
+  studentMicEnabled?: boolean;
+  isHearingStudent?: boolean;
 }
 
-export function RealtimeVoiceTranscript({ messages, isConnected, status, language, voice }: Props) {
+export function RealtimeVoiceTranscript({ 
+  messages, 
+  isConnected, 
+  status, 
+  language, 
+  voice,
+  isTutorThinking = false,
+  isTutorSpeaking = false,
+  communicationMode = 'voice',
+  studentMicEnabled = true,
+  isHearingStudent = false
+}: Props) {
   const lastMessageRef = useRef<HTMLDivElement>(null);
+  const statusIndicatorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (lastMessageRef.current) {
+    if (statusIndicatorRef.current) {
+      statusIndicatorRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    } else if (lastMessageRef.current) {
       lastMessageRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
-  }, [messages]);
+  }, [messages, isTutorThinking, isTutorSpeaking, isHearingStudent]);
 
   const getStatusBadge = () => {
     if (!isConnected) return <Badge variant="secondary">Disconnected</Badge>;
@@ -85,51 +104,47 @@ export function RealtimeVoiceTranscript({ messages, isConnected, status, languag
                     : "Connecting to voice service..."}
                 </div>
               ) : (
-                messages.map((message, index) => (
+                messages.filter(m => !m.isThinking).map((message, index, arr) => (
                   <div
                     key={index}
-                    ref={index === messages.length - 1 ? lastMessageRef : null}
+                    ref={index === arr.length - 1 ? lastMessageRef : null}
                     className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                    data-testid={message.isThinking ? 'message-thinking' : `message-${message.role}-${index}`}
+                    data-testid={`message-${message.role}-${index}`}
                   >
-                    {message.isThinking ? (
-                      // THINKING INDICATOR: Special styling for thinking message
-                      <div className="max-w-[80%] rounded-lg px-3 py-2 text-sm bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 mr-4">
-                        <div className="flex items-center gap-2">
-                          <div className="flex items-center gap-1">
-                            <span className="inline-block w-1.5 h-1.5 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                            <span className="inline-block w-1.5 h-1.5 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                            <span className="inline-block w-1.5 h-1.5 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                          </div>
-                          <span className="text-amber-700 dark:text-amber-400 italic text-sm">
-                            JIE is thinking...
-                          </span>
-                        </div>
+                    <div
+                      className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
+                        message.role === 'user'
+                          ? 'bg-primary text-primary-foreground ml-4'
+                          : 'bg-muted text-foreground mr-4'
+                      }`}
+                    >
+                      <div className="flex items-center space-x-2 mb-1">
+                        <span className="font-medium text-xs">
+                          {message.role === 'user' ? '👤 You' : '🤖 AI Tutor'}
+                        </span>
+                        <span className="text-[10px] opacity-70">
+                          {formatTime(message.timestamp)}
+                        </span>
                       </div>
-                    ) : (
-                      <div
-                        className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
-                          message.role === 'user'
-                            ? 'bg-primary text-primary-foreground ml-4'
-                            : 'bg-muted text-foreground mr-4'
-                        }`}
-                      >
-                        <div className="flex items-center space-x-2 mb-1">
-                          <span className="font-medium text-xs">
-                            {message.role === 'user' ? '👤 You' : '🤖 AI Tutor'}
-                          </span>
-                          <span className="text-[10px] opacity-70">
-                            {formatTime(message.timestamp)}
-                          </span>
-                        </div>
-                        <div className="whitespace-pre-wrap break-words">
-                          {message.content}
-                        </div>
+                      <div className="whitespace-pre-wrap break-words">
+                        {message.content}
                       </div>
-                    )}
+                    </div>
                   </div>
                 ))
               )}
+              
+              {/* Voice Status Indicator - ephemeral, updates in-place, always visible */}
+              <div ref={statusIndicatorRef}>
+                <VoiceStatusIndicator
+                  isConnected={isConnected}
+                  communicationMode={communicationMode}
+                  studentMicEnabled={studentMicEnabled}
+                  isTutorThinking={isTutorThinking}
+                  isTutorSpeaking={isTutorSpeaking}
+                  isHearingStudent={isHearingStudent}
+                />
+              </div>
             </div>
           </ScrollArea>
         </CardContent>

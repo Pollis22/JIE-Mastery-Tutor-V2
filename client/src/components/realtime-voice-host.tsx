@@ -780,25 +780,20 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
       
       {/* Transcript Display */}
       <RealtimeVoiceTranscript
-        messages={[
-          ...customVoice.transcript.map(t => ({
-            role: t.speaker === 'student' ? 'user' as const : 'assistant' as const,
-            content: t.text,
-            timestamp: t.timestamp ? new Date(t.timestamp) : new Date()
-          })),
-          // THINKING INDICATOR: Add pseudo-message when tutor is thinking
-          ...(customVoice.isTutorThinking ? [{
-            role: 'assistant' as const,
-            content: '💭 *thinking...*',
-            timestamp: new Date(),
-            isThinking: true,
-          }] : [])
-        ]}
+        messages={customVoice.transcript.map(t => ({
+          role: t.speaker === 'student' ? 'user' as const : 'assistant' as const,
+          content: t.text,
+          timestamp: t.timestamp ? new Date(t.timestamp) : new Date()
+        }))}
         isConnected={customVoice.isConnected}
         status={customVoice.isConnected ? 'active' : sessionId ? 'ended' : 'idle'}
         language={language}
         voice={`${ageGroup} Tutor`}
         isTutorThinking={customVoice.isTutorThinking}
+        isTutorSpeaking={customVoice.isTutorSpeaking}
+        communicationMode={communicationMode}
+        studentMicEnabled={studentMicEnabled}
+        isHearingStudent={customVoice.micStatus === 'hearing_you'}
       />
       
       {/* Chat Input - Only shown during active session */}
