@@ -1,5 +1,7 @@
 # JIE Mastery AI Tutor - Web Application
 
+**Last Updated:** January 27, 2026
+
 ## Overview
 The JIE Mastery AI Tutor is a production-ready conversational AI tutoring web platform for Math, English, and Spanish. It supports 25 languages and is designed for global accessibility, offering interactive voice conversations, personalized quizzes, and adaptive learning paths. The platform features a multi-agent AI system with five age-specific tutors (K-2, Grades 3-5, 6-8, 9-12, College/Adult) that utilize an Adaptive Socratic Method. It includes a hybrid minute tracking policy (subscription and rollover minutes) and prioritizes per-session configuration for flexible family sharing, ensuring high reliability and a streamlined user experience. The project's ambition is to make personalized, adaptive AI tutoring accessible worldwide, significantly improving educational outcomes across various subjects and age groups.
 
@@ -25,6 +27,22 @@ Production-hardening features with feature flags (all default OFF for safety):
 - **Step 4** (`LEXICAL_GRACE_ENABLED`): 300ms lexical grace period preventing mid-word turn finalization
 - **Step 5a** (`VITE_MIC_WATCHDOG_ENABLED`): Proactive 5s mic health monitoring with auto-recovery
 - **Step 5b**: Grade-based max_tokens (K-2: 120, 3-5: 150, 6-8: 175, 9-12: 200, College: 300)
+
+### Session Teardown Safety
+The `finalizeSession()` function is hardened to never throw and always complete:
+- Separate try/catch blocks for DB write, minute deduction, and email sending
+- `session_ended` event always emitted to client, even if billing fails
+- Failed operations logged with `RECONCILIATION NEEDED` markers for manual review
+- Returns status object: `{ success, dbWriteFailed?, minuteDeductionFailed? }`
+
+### Minutes & Billing Priority
+Minute enforcement follows this authoritative order (no hard-coded defaults):
+1. Trial status (`is_trial_active`) - 30-minute trial if active
+2. Subscription limit (`subscription_minutes_limit`) - Stripe tier-based
+3. Monthly allocation (`monthly_voice_minutes`) - Fallback allocation
+4. Bonus/purchased minutes - Additive pools from one-time purchases
+
+For comprehensive voice system documentation, see: **docs/VOICE_SYSTEM.md**
 
 ### Authentication & Authorization
 Session-based authentication uses Passport.js with PostgreSQL session storage, including features for password reset and account recovery. WebSocket security incorporates session validation and IP-based rate limiting. Access control verifies authentication, active subscription, and minute balance.
