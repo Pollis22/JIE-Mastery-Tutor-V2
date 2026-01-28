@@ -65,6 +65,11 @@ The RAG system supports various document formats (PDF, DOCX, Images via OCR, XLS
 ### Database Schema
 The core database tables include `users`, `sessions`, `realtime_sessions`, `students`, `user_documents`, `document_chunks`, `document_embeddings`, `content_violations`, `user_suspensions`, `admin_logs`, and `minute_purchases`.
 
+**Production-Safe Migration Guards** (`server/db-init.ts`):
+- `ensureRealtimeSessionsColumns()`: Adds telemetry columns (`close_reason`, `close_details`, `reconnect_count`, `last_heartbeat_at`) using `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`
+- `ensureUsersTranscriptEmailColumn()`: Adds `transcript_email` column for separate transcript delivery address
+- All guards are idempotent and log which columns are added at startup
+
 ### Trial System
 The platform features a 30-minute account-based trial system (`/start-trial`) that provides full access to the AI tutor. It includes abuse prevention mechanisms (device/IP hashing). A legacy 5-minute demo trial system, without account requirements, is being phased out.
 
