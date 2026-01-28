@@ -79,6 +79,8 @@ interface AdminUser {
   isTrialActive?: boolean;
   trialMinutesUsed?: number;
   trialMinutesTotal?: number;
+  // Activity tracking
+  lastActiveAt?: string | null;
 }
 
 interface AdminUsersData {
@@ -608,13 +610,14 @@ export default function AdminPageEnhanced() {
                             <TableHead>Usage</TableHead>
                             <TableHead>Devices</TableHead>
                             <TableHead>Status</TableHead>
+                            <TableHead>Last Active</TableHead>
                             <TableHead>Actions</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {usersData?.users?.length === 0 ? (
                             <TableRow>
-                              <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                              <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                                 No users found
                               </TableCell>
                             </TableRow>
@@ -686,6 +689,20 @@ export default function AdminPageEnhanced() {
                                   <Badge variant={userData.subscriptionStatus === 'active' ? 'default' : 'secondary'}>
                                     {userData.subscriptionStatus || 'Active'}
                                   </Badge>
+                                </TableCell>
+                                <TableCell>
+                                  <span className="text-sm text-muted-foreground" data-testid={`text-last-active-${index}`}>
+                                    {userData.lastActiveAt 
+                                      ? new Date(userData.lastActiveAt).toLocaleString('en-US', {
+                                          month: 'short',
+                                          day: 'numeric',
+                                          hour: 'numeric',
+                                          minute: '2-digit',
+                                          hour12: true
+                                        })
+                                      : 'Never'
+                                    }
+                                  </span>
                                 </TableCell>
                                 <TableCell>
                                   <Button 
