@@ -378,30 +378,48 @@ export default function AuthPage() {
                 </div>
               )}
               
-              <div className="text-center space-y-2">
-                <Button 
+              <div className="text-center space-y-3">
+                <button 
                   type="button"
-                  variant="link" 
                   onClick={() => {
                     setLoginModalOpen(false);
                     setLocation("/forgot-password");
                   }}
-                  className="text-sm text-muted-foreground hover:text-foreground"
+                  className="text-sm text-muted-foreground hover:text-foreground hover:underline"
+                  data-testid="link-modal-forgot-password"
                 >
                   Forgot your password?
-                </Button>
-                <div className="text-sm text-muted-foreground">
-                  Started a trial?{' '}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setLoginModalOpen(false);
-                      setContinueTrialOpen(true);
-                    }}
-                    className="text-primary hover:underline font-medium"
-                  >
-                    Continue your trial
-                  </button>
+                </button>
+                
+                <div className="border-t border-border pt-3 space-y-2">
+                  <div className="text-sm text-muted-foreground">
+                    New to JIE Mastery?{' '}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLoginModalOpen(false);
+                        setLocation("/pricing");
+                      }}
+                      className="text-primary hover:underline font-medium"
+                      data-testid="link-modal-create-account"
+                    >
+                      Create your account
+                    </button>
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    Started a trial?{' '}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLoginModalOpen(false);
+                        setContinueTrialOpen(true);
+                      }}
+                      className="text-primary hover:underline font-medium"
+                      data-testid="link-modal-continue-trial"
+                    >
+                      Continue your trial
+                    </button>
+                  </div>
                 </div>
               </div>
             </form>
