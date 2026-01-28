@@ -66,6 +66,12 @@ export async function initializeDatabase() {
     // REGRESSION GUARD: Verify critical trial column exists with correct name
     await verifyTrialSchemaColumns();
     
+    // PRODUCTION-SAFE: Ensure realtime_sessions columns exist for telemetry
+    await ensureRealtimeSessionsColumns();
+    
+    // PRODUCTION-SAFE: Ensure users.transcript_email column exists
+    await ensureUsersTranscriptEmailColumn();
+    
     return true;
   } catch (error) {
     console.error('[DB-Init] ❌ Database initialization error:', error);
@@ -297,5 +303,84 @@ async function verifyTrialAbuseTrackingTable() {
     }
     console.error('[DB-Init] ❌ Failed to verify trial_abuse_tracking:', error);
     throw new Error('FATAL: Could not verify trial_abuse_tracking table');
+  }
+}
+
+/**
+ * PRODUCTION-SAFE: Ensure realtime_sessions table has all telemetry columns
+ * Uses ALTER TABLE ... ADD COLUMN IF NOT EXISTS for idempotent execution
+ */
+async function ensureRealtimeSessionsColumns() {
+  console.log('[DB-Init] Checking realtime_sessions telemetry columns...');
+  
+  const columnsToAdd = [
+    { name: 'close_reason', type: 'text', defaultValue: null },
+    { name: 'close_details', type: 'jsonb', defaultValue: null },
+    { name: 'reconnect_count', type: 'integer', defaultValue: '0' },
+    { name: 'last_heartbeat_at', type: 'timestamp', defaultValue: null }
+  ];
+  
+  const addedColumns: string[] = [];
+  
+  for (const col of columnsToAdd) {
+    try {
+      // Check if column exists
+      const checkResult = await pool.query(`
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_schema = 'public' 
+        AND table_name = 'realtime_sessions' 
+        AND column_name = $1
+      `, [col.name]);
+      
+      if (checkResult.rows.length === 0) {
+        // Column doesn't exist - add it
+        let alterSql = `ALTER TABLE realtime_sessions ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}`;
+        if (col.defaultValue !== null) {
+          alterSql += ` DEFAULT ${col.defaultValue}`;
+        }
+        
+        await pool.query(alterSql);
+        addedColumns.push(col.name);
+        console.log(`[DB-Init] ✅ Added column: realtime_sessions.${col.name}`);
+      }
+    } catch (error) {
+      console.error(`[DB-Init] ⚠️ Failed to add column ${col.name}:`, error);
+      // Don't throw - continue with other columns
+    }
+  }
+  
+  if (addedColumns.length > 0) {
+    console.log(`[DB-Init] ✅ Added ${addedColumns.length} columns to realtime_sessions: ${addedColumns.join(', ')}`);
+  } else {
+    console.log('[DB-Init] ✅ All realtime_sessions telemetry columns already exist');
+  }
+}
+
+/**
+ * PRODUCTION-SAFE: Ensure users table has transcript_email column
+ * Uses ALTER TABLE ... ADD COLUMN IF NOT EXISTS for idempotent execution
+ */
+async function ensureUsersTranscriptEmailColumn() {
+  console.log('[DB-Init] Checking users.transcript_email column...');
+  
+  try {
+    // Check if column exists
+    const checkResult = await pool.query(`
+      SELECT 1 FROM information_schema.columns 
+      WHERE table_schema = 'public' 
+      AND table_name = 'users' 
+      AND column_name = 'transcript_email'
+    `);
+    
+    if (checkResult.rows.length === 0) {
+      // Column doesn't exist - add it
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS transcript_email text`);
+      console.log('[DB-Init] ✅ Added column: users.transcript_email');
+    } else {
+      console.log('[DB-Init] ✅ users.transcript_email column already exists');
+    }
+  } catch (error) {
+    console.error('[DB-Init] ⚠️ Failed to add users.transcript_email column:', error);
+    // Don't throw - this is non-critical, fallback to login email will work
   }
 }
