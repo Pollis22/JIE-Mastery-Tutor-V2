@@ -12,7 +12,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { useEffect, useState } from "react";
-import { Eye, EyeOff, Mail, FileText, Upload, Scan, Users, TrendingUp, ChevronDown, Bot, BookOpen, Sparkles, CheckCircle, AlertCircle, Info, Play, Mic, FileImage, GraduationCap, ArrowRight } from "lucide-react";
+import { Eye, EyeOff, Mail, FileText, Upload, Scan, Users, TrendingUp, ChevronDown, Bot, BookOpen, Sparkles, CheckCircle, AlertCircle, Info, Play, Mic, FileImage, GraduationCap, ArrowRight, X, Shield, Brain, MessageCircle, Heart, Clock, DollarSign, HelpCircle, ChevronUp } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -21,6 +21,12 @@ import { Footer } from "@/components/footer";
 import jieLogo from "@/assets/jie-mastery-logo-sm.jpg";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { StartTrialButton } from "@/components/StartTrialButton";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 
 const loginSchema = z.object({
   email: z.string().min(1, "Email or username is required"),
@@ -59,6 +65,7 @@ export default function AuthPage() {
   const [continueTrialOpen, setContinueTrialOpen] = useState(false);
   const [continueTrialEmail, setContinueTrialEmail] = useState('');
   const [continueTrialSent, setContinueTrialSent] = useState(false);
+  const [loginModalOpen, setLoginModalOpen] = useState(false);
   
   const searchParams = new URLSearchParams(searchString);
   const verificationStatus = searchParams.get('verified');
@@ -160,12 +167,10 @@ export default function AuthPage() {
   }, [user, setLocation]);
 
   const handleLogin = async (data: LoginForm) => {
-    console.log('[FORM] handleLogin called with:', { email: data.email, hasPassword: !!data.password });
     try {
-      console.log('[FORM] Calling mutateAsync...');
       setUnverifiedEmail(null);
       await loginMutation.mutateAsync(data);
-      console.log('[FORM] mutateAsync completed successfully');
+      setLoginModalOpen(false);
     } catch (error: any) {
       if (error.requiresVerification && error.email) {
         setUnverifiedEmail(error.email);
@@ -175,7 +180,6 @@ export default function AuthPage() {
           setUnverifiedEmail(data.email);
         }
       }
-      console.error('[FORM] Login error:', error);
     }
   };
 
@@ -202,7 +206,6 @@ export default function AuthPage() {
       }
     },
     onError: (error: any) => {
-      console.error('[Registration] Checkout error:', error);
       toast({
         title: "Registration failed",
         description: error.message || "Failed to create checkout session. Please try again.",
@@ -212,8 +215,6 @@ export default function AuthPage() {
   });
 
   const handleRegister = async (data: RegisterForm) => {
-    console.log('[FORM] handleRegister called with:', data);
-    console.log('[FORM] form.formState.errors:', registerForm.formState.errors);
     try {
       await createCheckoutSessionMutation.mutateAsync(data);
     } catch (error) {
@@ -224,552 +225,601 @@ export default function AuthPage() {
   return (
     <div className="min-h-screen bg-background">
       {/* Navigation Bar */}
-      <nav className="border-b border-border bg-card">
+      <nav className="border-b border-border bg-card sticky top-0 z-50">
         <div className="container mx-auto px-4">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center space-x-3">
               <img src={jieLogo} alt="JIE Mastery" className="h-10 w-auto" />
               <span className="text-xl font-bold text-foreground">JIE Mastery Tutor</span>
             </div>
-            <div className="flex items-center space-x-4">
+            <div className="hidden md:flex items-center space-x-2">
               <Button 
                 variant="ghost" 
+                size="sm"
                 onClick={() => setLocation("/benefits")} 
                 data-testid="button-nav-benefits"
               >
-                Why JIE Mastery AI Tutors
+                Why JIE Mastery
               </Button>
               <Button 
                 variant="ghost" 
+                size="sm"
                 onClick={() => setLocation("/demo")} 
                 data-testid="button-nav-demo"
               >
-                Tutor Demo
+                Demo
               </Button>
               <Button 
                 variant="ghost" 
+                size="sm"
+                onClick={() => setLocation("/pricing")} 
+                data-testid="button-nav-pricing"
+              >
+                Pricing
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="sm"
                 onClick={() => setLocation("/faq")} 
                 data-testid="button-nav-faq"
               >
                 FAQ
               </Button>
+              <div className="w-px h-6 bg-border mx-2" />
               <Button 
-                variant="ghost" 
-                onClick={() => setLocation("/support")} 
-                data-testid="button-nav-support"
+                variant="outline" 
+                size="sm"
+                onClick={() => setLoginModalOpen(true)}
+                data-testid="button-nav-login"
               >
-                Live Support
-              </Button>
-              <Button 
-                variant="ghost" 
-                onClick={() => setLocation("/contact")} 
-                data-testid="button-nav-contact"
-              >
-                Contact
-              </Button>
-              <Button 
-                variant="ghost" 
-                onClick={() => setLocation("/offer")} 
-                data-testid="button-nav-offers"
-              >
-                Offers
-              </Button>
-              <Button 
-                variant="ghost" 
-                onClick={() => setLocation("/pricing")} 
-                data-testid="button-nav-pricing"
-              >
-                Pricing
+                Sign In
               </Button>
             </div>
           </div>
         </div>
       </nav>
 
-      {/* Hero Section */}
-      <section className="py-16 lg:py-20">
-        <div className="container mx-auto px-4">
-          {/* Verification Status Messages */}
-          {verificationStatus && (
-            <div className="max-w-md mx-auto mb-8">
-              {verificationStatus === 'success' && (
-                <Alert className="bg-green-50 border-green-200" data-testid="alert-verification-success">
-                  <CheckCircle className="h-4 w-4 text-green-600" />
-                  <AlertTitle className="text-green-800">Email Verified Successfully!</AlertTitle>
-                  <AlertDescription className="text-green-700">
-                    Your email has been verified. You can now log in and start learning.
-                  </AlertDescription>
-                </Alert>
-              )}
-              {verificationStatus === 'already' && (
-                <Alert className="bg-blue-50 border-blue-200" data-testid="alert-verification-already">
-                  <Info className="h-4 w-4 text-blue-600" />
-                  <AlertTitle className="text-blue-800">Email Already Verified</AlertTitle>
-                  <AlertDescription className="text-blue-700">
-                    Your email is already verified. Please log in to continue.
-                  </AlertDescription>
-                </Alert>
-              )}
-              {verificationStatus === 'error' && (
-                <Alert variant="destructive" data-testid="alert-verification-error">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertTitle>Verification Failed</AlertTitle>
-                  <AlertDescription>
-                    {verificationReason === 'invalid_token' 
-                      ? 'This verification link is invalid. Please request a new verification email.' 
-                      : verificationReason === 'missing_token'
-                      ? 'No verification token found. Please use the link from your email.'
-                      : 'An error occurred during verification. Please try again or request a new verification email.'}
-                  </AlertDescription>
-                </Alert>
-              )}
-            </div>
-          )}
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16 max-w-6xl mx-auto items-center">
-            
-            {/* Left Column: Auth Form Only */}
-            <div className="flex justify-center lg:justify-start order-2 lg:order-1">
-              <Card className="w-full max-w-md shadow-lg">
-                <CardHeader className="text-center pb-4">
-                  <div className="flex items-center justify-center mb-3">
-                    <img 
-                      src={jieLogo} 
-                      alt="JIE Mastery Logo" 
-                      className="h-14 w-auto"
-                    />
+      {/* Login Modal */}
+      <Dialog open={loginModalOpen} onOpenChange={setLoginModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <img src={jieLogo} alt="JIE Mastery" className="h-8 w-auto" />
+              Sign In
+            </DialogTitle>
+            <DialogDescription>
+              Welcome back! Sign in to continue your learning journey.
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...loginForm}>
+            <form onSubmit={loginForm.handleSubmit(handleLogin)} className="space-y-4">
+              <FormField
+                control={loginForm.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Email or Username</FormLabel>
+                    <FormControl>
+                      <Input {...field} placeholder="your@email.com" data-testid="input-modal-email" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <FormField
+                control={loginForm.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Password</FormLabel>
+                    <FormControl>
+                      <div className="relative">
+                        <Input 
+                          type={showLoginPassword ? "text" : "password"} 
+                          {...field} 
+                          className="pr-10"
+                          data-testid="input-modal-password" 
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowLoginPassword(!showLoginPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                          aria-label={showLoginPassword ? "Hide password" : "Show password"}
+                        >
+                          {showLoginPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <Button 
+                type="submit" 
+                className="w-full" 
+                disabled={loginMutation.isPending}
+                data-testid="button-modal-login"
+              >
+                {loginMutation.isPending ? "Signing in..." : "Sign In"}
+              </Button>
+              
+              {unverifiedEmail && (
+                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <Mail className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5" />
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-amber-900 dark:text-amber-100">Email Not Verified</h4>
+                      <p className="text-sm text-amber-800 dark:text-amber-200 mt-1">
+                        Please check your inbox and click the verification link we sent to <strong>{unverifiedEmail}</strong>
+                      </p>
+                    </div>
                   </div>
-                  <CardTitle className="text-xl font-bold text-foreground">JIE Mastery Tutor</CardTitle>
-                  <span className="text-xs font-semibold text-primary bg-primary/10 px-3 py-1 rounded-full inline-block mt-2">
-                    Patent Pending System
-                  </span>
-                  <p className="text-sm text-muted-foreground mt-2">Sign in to continue your learning journey</p>
-                </CardHeader>
-                
-                <CardContent>
-                  <Tabs defaultValue="login" className="w-full">
-                    <TabsList className="grid w-full grid-cols-2">
-                      <TabsTrigger value="login" data-testid="tab-login">Sign In</TabsTrigger>
-                      <TabsTrigger value="register" data-testid="tab-register">Create Account</TabsTrigger>
-                    </TabsList>
-                    
-                    <TabsContent value="login" className="space-y-4">
-                      <Form {...loginForm}>
-                        <form onSubmit={loginForm.handleSubmit(handleLogin)} className="space-y-4">
-                          <FormField
-                            control={loginForm.control}
-                            name="email"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Email or Username</FormLabel>
-                                <FormControl>
-                                  <Input {...field} placeholder="test@example.com" data-testid="input-email" />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          
-                          <FormField
-                            control={loginForm.control}
-                            name="password"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Password</FormLabel>
-                                <FormControl>
-                                  <div className="relative">
-                                    <Input 
-                                      type={showLoginPassword ? "text" : "password"} 
-                                      {...field} 
-                                      className="pr-10"
-                                      data-testid="input-password" 
-                                    />
-                                    <button
-                                      type="button"
-                                      onClick={() => setShowLoginPassword(!showLoginPassword)}
-                                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                                      aria-label={showLoginPassword ? "Hide password" : "Show password"}
-                                      data-testid="button-toggle-login-password"
-                                    >
-                                      {showLoginPassword ? (
-                                        <EyeOff className="h-4 w-4" />
-                                      ) : (
-                                        <Eye className="h-4 w-4" />
-                                      )}
-                                    </button>
-                                  </div>
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          
-                          <Button 
-                            type="submit" 
-                            className="w-full" 
-                            disabled={loginMutation.isPending}
-                            data-testid="button-login"
-                          >
-                            {loginMutation.isPending ? "Signing in..." : "Sign In"}
-                          </Button>
-                          
-                          {unverifiedEmail && (
-                            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4 space-y-3" data-testid="alert-email-verification">
-                              <div className="flex items-start gap-3">
-                                <Mail className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5" />
-                                <div className="flex-1">
-                                  <h4 className="font-semibold text-amber-900 dark:text-amber-100">Email Not Verified</h4>
-                                  <p className="text-sm text-amber-800 dark:text-amber-200 mt-1">
-                                    Please check your inbox and click the verification link we sent to <strong>{unverifiedEmail}</strong>
-                                  </p>
-                                </div>
-                              </div>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={() => resendVerificationMutation.mutate(unverifiedEmail)}
-                                disabled={resendVerificationMutation.isPending}
-                                className="w-full border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/30"
-                                data-testid="button-resend-verification"
-                              >
-                                {resendVerificationMutation.isPending ? "Sending..." : "Resend Verification Email"}
-                              </Button>
-                            </div>
-                          )}
-                          
-                          <div className="text-center">
-                            <Button 
-                              type="button"
-                              variant="link" 
-                              onClick={() => setLocation("/forgot-password")}
-                              className="text-sm text-muted-foreground hover:text-foreground"
-                              data-testid="link-forgot-password"
-                            >
-                              Forgot your password?
-                            </Button>
-                          </div>
-
-                        </form>
-                      </Form>
-                    </TabsContent>
-                    
-                    <TabsContent value="register" className="space-y-4">
-                      <Form {...registerForm}>
-                        <form onSubmit={registerForm.handleSubmit(handleRegister)} className="space-y-4">
-                          <FormField
-                            control={registerForm.control}
-                            name="plan"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Subscription Plan</FormLabel>
-                                <Select onValueChange={field.onChange} defaultValue={field.value}>
-                                  <FormControl>
-                                    <SelectTrigger data-testid="select-plan">
-                                      <SelectValue placeholder="Select a plan" />
-                                    </SelectTrigger>
-                                  </FormControl>
-                                  <SelectContent>
-                                    <SelectItem value="starter">Starter Family - $19.99/mo (60 min)</SelectItem>
-                                    <SelectItem value="standard">Standard Family - $59.99/mo (240 min)</SelectItem>
-                                    <SelectItem value="pro">Pro Family - $99.99/mo (600 min) - Most Popular</SelectItem>
-                                    <SelectItem value="elite">Elite Family - $199.99/mo (1,800 min) - Best Value</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                                <FormDescription className="text-xs">
-                                  Choose your tutoring plan. You'll be redirected to Stripe to complete payment.
-                                </FormDescription>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-
-                          <FormField
-                            control={registerForm.control}
-                            name="accountName"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Account Name</FormLabel>
-                                <FormControl>
-                                  <Input {...field} placeholder="Your full name" data-testid="input-account-name" />
-                                </FormControl>
-                                <FormDescription className="text-xs">
-                                  For parents: your name. For adult learners: your name.
-                                </FormDescription>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          
-                          <FormField
-                            control={registerForm.control}
-                            name="studentName"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Student Name</FormLabel>
-                                <FormControl>
-                                  <Input {...field} placeholder="Student's full name" data-testid="input-student-name" />
-                                </FormControl>
-                                <FormDescription className="text-xs">
-                                  For parents: your child's name. For adult learners: your name.
-                                </FormDescription>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          
-                          <div className="grid grid-cols-2 gap-4">
-                            <FormField
-                              control={registerForm.control}
-                              name="studentAge"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>Student Age</FormLabel>
-                                  <FormControl>
-                                    <Input type="number" min={5} max={99} {...field} data-testid="input-student-age" />
-                                  </FormControl>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-                            
-                            <FormField
-                              control={registerForm.control}
-                              name="gradeLevel"
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormLabel>Grade Level</FormLabel>
-                                  <Select onValueChange={field.onChange} defaultValue={field.value}>
-                                    <FormControl>
-                                      <SelectTrigger data-testid="select-grade-level">
-                                        <SelectValue placeholder="Select grade" />
-                                      </SelectTrigger>
-                                    </FormControl>
-                                    <SelectContent>
-                                      <SelectItem value="kindergarten-2">K-2</SelectItem>
-                                      <SelectItem value="grades-3-5">Grades 3-5</SelectItem>
-                                      <SelectItem value="grades-6-8">Grades 6-8</SelectItem>
-                                      <SelectItem value="grades-9-12">Grades 9-12</SelectItem>
-                                      <SelectItem value="college-adult">College/Adult</SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-                          </div>
-                          
-                          <FormField
-                            control={registerForm.control}
-                            name="primarySubject"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Primary Subject Interest</FormLabel>
-                                <Select onValueChange={field.onChange} defaultValue={field.value}>
-                                  <FormControl>
-                                    <SelectTrigger data-testid="select-primary-subject">
-                                      <SelectValue placeholder="Select a subject" />
-                                    </SelectTrigger>
-                                  </FormControl>
-                                  <SelectContent>
-                                    <SelectItem value="math">Math</SelectItem>
-                                    <SelectItem value="english">English</SelectItem>
-                                    <SelectItem value="science">Science</SelectItem>
-                                    <SelectItem value="spanish">Spanish</SelectItem>
-                                    <SelectItem value="general">General (Multiple Subjects)</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          
-                          <FormField
-                            control={registerForm.control}
-                            name="email"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Email</FormLabel>
-                                <FormControl>
-                                  <Input type="email" {...field} data-testid="input-email" />
-                                </FormControl>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          
-                          <FormField
-                            control={registerForm.control}
-                            name="password"
-                            render={({ field }) => (
-                              <FormItem>
-                                <FormLabel>Password</FormLabel>
-                                <FormControl>
-                                  <div className="relative">
-                                    <Input 
-                                      type={showRegisterPassword ? "text" : "password"} 
-                                      {...field} 
-                                      className="pr-10"
-                                      data-testid="input-register-password" 
-                                    />
-                                    <button
-                                      type="button"
-                                      onClick={() => setShowRegisterPassword(!showRegisterPassword)}
-                                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                                      aria-label={showRegisterPassword ? "Hide password" : "Show password"}
-                                      data-testid="button-toggle-register-password"
-                                    >
-                                      {showRegisterPassword ? (
-                                        <EyeOff className="h-4 w-4" />
-                                      ) : (
-                                        <Eye className="h-4 w-4" />
-                                      )}
-                                    </button>
-                                  </div>
-                                </FormControl>
-                                <FormDescription>Must be at least 8 characters</FormDescription>
-                                <FormMessage />
-                              </FormItem>
-                            )}
-                          />
-                          
-                          <FormField
-                            control={registerForm.control}
-                            name="marketingOptIn"
-                            render={({ field }) => (
-                              <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                                <FormControl>
-                                  <Checkbox 
-                                    checked={field.value}
-                                    onCheckedChange={field.onChange}
-                                    data-testid="checkbox-marketing-opt-in"
-                                  />
-                                </FormControl>
-                                <div className="space-y-1 leading-none">
-                                  <FormLabel className="text-sm font-normal">
-                                    Send me updates, tips, and promotional emails
-                                  </FormLabel>
-                                </div>
-                              </FormItem>
-                            )}
-                          />
-                          
-                          <Button 
-                            type="submit" 
-                            className="w-full" 
-                            disabled={createCheckoutSessionMutation.isPending}
-                            data-testid="button-register"
-                          >
-                            {createCheckoutSessionMutation.isPending ? "Redirecting to payment..." : "Continue to Payment"}
-                          </Button>
-                        </form>
-                      </Form>
-                    </TabsContent>
-                  </Tabs>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Right Column: Clean Hero */}
-            <div className="order-1 lg:order-2 text-center lg:text-left">
-              <div className="space-y-6 max-w-xl">
-                <span className="inline-block text-sm font-semibold text-primary uppercase tracking-wide bg-primary/10 px-4 py-2 rounded-full">
-                  AI Homework Help for K-12 & College
-                </span>
-                
-                <h1 className="text-4xl lg:text-5xl font-bold text-foreground leading-tight">
-                  AI Homework Help & <span className="text-primary">Voice-Based Tutoring</span> for Students
-                </h1>
-                
-                <p className="text-lg text-muted-foreground leading-relaxed">
-                  Get instant math homework help, English support, and personalized tutoring through real voice conversations. Perfect for homeschool families and busy parents. One subscription covers your whole family.
-                </p>
-
-                {/* CTAs */}
-                <div className="flex flex-col sm:flex-row items-center lg:items-start gap-4" data-testid="free-trial-cta-container">
-                  <StartTrialButton size="lg" className="px-8 py-6 text-lg font-semibold rounded-lg shadow-lg w-full sm:w-auto h-auto" showSubtext />
-                  <Button 
-                    size="lg"
+                  <Button
+                    type="button"
                     variant="outline"
-                    className="px-8 py-6 text-lg font-semibold rounded-lg w-full sm:w-auto"
-                    onClick={() => setLocation("/pricing")}
-                    data-testid="button-get-started-hero"
+                    size="sm"
+                    onClick={() => resendVerificationMutation.mutate(unverifiedEmail)}
+                    disabled={resendVerificationMutation.isPending}
+                    className="w-full border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/30"
                   >
-                    Get Started
+                    {resendVerificationMutation.isPending ? "Sending..." : "Resend Verification Email"}
                   </Button>
                 </div>
-                
-                <p className="text-sm text-muted-foreground">
-                  No credit card required &bull; 30-minute free trial &bull; K-12 & College support
-                </p>
-
-                {/* Video */}
-                <div 
-                  className="relative w-full max-w-lg mx-auto lg:mx-0 mt-8"
-                  style={{ aspectRatio: '16/9' }}
-                  data-testid="video-hero-container"
+              )}
+              
+              <div className="text-center space-y-2">
+                <Button 
+                  type="button"
+                  variant="link" 
+                  onClick={() => {
+                    setLoginModalOpen(false);
+                    setLocation("/forgot-password");
+                  }}
+                  className="text-sm text-muted-foreground hover:text-foreground"
                 >
-                  <iframe 
-                    className="absolute top-0 left-0 w-full h-full rounded-xl shadow-xl border border-border"
-                    src="https://www.youtube.com/embed/UN7vOUoGGmA" 
-                    title="JIE Mastery Tutor Demo" 
-                    frameBorder="0" 
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
-                    referrerPolicy="strict-origin-when-cross-origin" 
-                    allowFullScreen
-                    data-testid="video-hero-youtube"
-                  />
+                  Forgot your password?
+                </Button>
+                <div className="text-sm text-muted-foreground">
+                  Started a trial?{' '}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLoginModalOpen(false);
+                      setContinueTrialOpen(true);
+                    }}
+                    className="text-primary hover:underline font-medium"
+                  >
+                    Continue your trial
+                  </button>
                 </div>
               </div>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Continue Trial Dialog */}
+      <Dialog open={continueTrialOpen} onOpenChange={setContinueTrialOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Play className="h-5 w-5 text-primary" />
+              Continue Your Trial
+            </DialogTitle>
+            <DialogDescription>
+              Enter the email you used to start your trial, and we'll send you a magic link to continue.
+            </DialogDescription>
+          </DialogHeader>
+          {!continueTrialSent ? (
+            <form onSubmit={handleContinueTrial} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="continue-trial-email">Email Address</Label>
+                <Input
+                  id="continue-trial-email"
+                  type="email"
+                  placeholder="your@email.com"
+                  value={continueTrialEmail}
+                  onChange={(e) => setContinueTrialEmail(e.target.value)}
+                  data-testid="input-continue-trial-email"
+                />
+              </div>
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={continueTrialMutation.isPending}
+                data-testid="button-continue-trial-submit"
+              >
+                {continueTrialMutation.isPending ? "Sending..." : "Send Magic Link"}
+              </Button>
+            </form>
+          ) : (
+            <div className="text-center py-4 space-y-4">
+              <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto">
+                <Mail className="w-8 h-8 text-green-600 dark:text-green-400" />
+              </div>
+              <div>
+                <h4 className="font-semibold text-foreground">Check Your Email!</h4>
+                <p className="text-sm text-muted-foreground mt-1">
+                  We've sent a magic link to <strong>{continueTrialEmail}</strong>. 
+                  Click the link to continue your trial.
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setContinueTrialOpen(false);
+                  setContinueTrialSent(false);
+                  setContinueTrialEmail('');
+                }}
+              >
+                Close
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Verification Status Messages */}
+      {verificationStatus && (
+        <div className="container mx-auto px-4 pt-4">
+          <div className="max-w-2xl mx-auto">
+            {verificationStatus === 'success' && (
+              <Alert className="bg-green-50 border-green-200" data-testid="alert-verification-success">
+                <CheckCircle className="h-4 w-4 text-green-600" />
+                <AlertTitle className="text-green-800">Email Verified Successfully!</AlertTitle>
+                <AlertDescription className="text-green-700">
+                  Your email has been verified. You can now{' '}
+                  <button 
+                    onClick={() => setLoginModalOpen(true)} 
+                    className="underline font-medium hover:text-green-900"
+                  >
+                    sign in
+                  </button>{' '}
+                  and start learning.
+                </AlertDescription>
+              </Alert>
+            )}
+            {verificationStatus === 'already' && (
+              <Alert className="bg-blue-50 border-blue-200" data-testid="alert-verification-already">
+                <Info className="h-4 w-4 text-blue-600" />
+                <AlertTitle className="text-blue-800">Email Already Verified</AlertTitle>
+                <AlertDescription className="text-blue-700">
+                  Your email is already verified. Please{' '}
+                  <button 
+                    onClick={() => setLoginModalOpen(true)} 
+                    className="underline font-medium hover:text-blue-900"
+                  >
+                    sign in
+                  </button>{' '}
+                  to continue.
+                </AlertDescription>
+              </Alert>
+            )}
+            {verificationStatus === 'error' && (
+              <Alert variant="destructive" data-testid="alert-verification-error">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Verification Failed</AlertTitle>
+                <AlertDescription>
+                  {verificationReason === 'invalid_token' 
+                    ? 'This verification link is invalid. Please request a new verification email.' 
+                    : verificationReason === 'missing_token'
+                    ? 'No verification token found. Please use the link from your email.'
+                    : 'An error occurred during verification. Please try again or request a new verification email.'}
+                </AlertDescription>
+              </Alert>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* HERO SECTION - Conversion Focused */}
+      <section className="py-16 lg:py-24 bg-gradient-to-b from-background to-muted/20">
+        <div className="container mx-auto px-4">
+          <div className="max-w-4xl mx-auto text-center space-y-8">
+            {/* Emotional Headline */}
+            <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-foreground leading-tight">
+              End Homework Stress.{' '}
+              <span className="text-primary">Real Learning Starts Here.</span>
+            </h1>
+            
+            {/* Clarifying Subheadline */}
+            <p className="text-xl md:text-2xl text-muted-foreground max-w-3xl mx-auto leading-relaxed">
+              A patient, voice-based AI tutor that <strong>guides</strong> your child through problems — 
+              never gives away answers. One subscription covers your whole family.
+            </p>
+
+            {/* Primary CTA */}
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4" data-testid="hero-cta-container">
+              <StartTrialButton 
+                size="lg" 
+                className="px-10 py-7 text-xl font-bold rounded-xl shadow-xl hover:shadow-2xl transition-all w-full sm:w-auto h-auto" 
+                showSubtext 
+              />
+            </div>
+            
+            {/* Trust Signals */}
+            <p className="text-sm text-muted-foreground">
+              No credit card required &bull; 30 minutes free &bull; Works on any device
+            </p>
+
+            {/* Secondary Action */}
+            <p className="text-sm text-muted-foreground pt-2">
+              Already have an account?{' '}
+              <button 
+                onClick={() => setLoginModalOpen(true)}
+                className="text-primary hover:underline font-medium"
+                data-testid="link-hero-signin"
+              >
+                Sign in
+              </button>
+            </p>
+
+            {/* Video Preview */}
+            <div 
+              className="relative w-full max-w-3xl mx-auto mt-12 rounded-2xl overflow-hidden shadow-2xl border border-border"
+              style={{ aspectRatio: '16/9' }}
+              data-testid="video-hero-container"
+            >
+              <iframe 
+                className="absolute top-0 left-0 w-full h-full"
+                src="https://www.youtube.com/embed/UN7vOUoGGmA" 
+                title="See How JIE Mastery Tutoring Works" 
+                frameBorder="0" 
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+                referrerPolicy="strict-origin-when-cross-origin" 
+                allowFullScreen
+                data-testid="video-hero-youtube"
+              />
             </div>
           </div>
         </div>
       </section>
 
-      {/* Benefits Section - Below the Fold */}
-      <section className="py-16 bg-muted/30">
+      {/* SOCIAL PROOF SECTION */}
+      <section className="py-16 bg-card border-y border-border">
         <div className="container mx-auto px-4">
           <div className="max-w-5xl mx-auto">
-            <h2 className="text-2xl lg:text-3xl font-bold text-foreground text-center mb-12">
-              Why Parents Choose JIE Mastery Tutor
+            <h2 className="text-2xl lg:text-3xl font-bold text-foreground text-center mb-4">
+              What Parents Are Saying
             </h2>
+            <p className="text-center text-muted-foreground mb-12">
+              Join families who've found a better way to support their kids' learning
+            </p>
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              {/* Card 1: Voice-Based Tutoring */}
-              <Card className="bg-card border-border shadow-sm hover:shadow-md transition-shadow">
-                <CardContent className="pt-8 pb-6 px-6 text-center">
+              {/* Testimonial 1 */}
+              <Card className="bg-background border-border shadow-md">
+                <CardContent className="pt-6 pb-6 px-6">
+                  <div className="flex items-center gap-1 mb-4">
+                    {[...Array(5)].map((_, i) => (
+                      <svg key={i} className="w-5 h-5 text-yellow-400 fill-current" viewBox="0 0 20 20">
+                        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                      </svg>
+                    ))}
+                  </div>
+                  <p className="text-muted-foreground mb-4 italic">
+                    "My daughter went from crying over math homework to actually <strong>enjoying</strong> problem-solving. 
+                    The tutor is so patient — it never makes her feel stupid for not understanding."
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
+                      <span className="text-primary font-semibold">S</span>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-foreground text-sm">Sarah M.</p>
+                      <p className="text-xs text-muted-foreground">Mom of 3rd grader</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Testimonial 2 */}
+              <Card className="bg-background border-border shadow-md">
+                <CardContent className="pt-6 pb-6 px-6">
+                  <div className="flex items-center gap-1 mb-4">
+                    {[...Array(5)].map((_, i) => (
+                      <svg key={i} className="w-5 h-5 text-yellow-400 fill-current" viewBox="0 0 20 20">
+                        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                      </svg>
+                    ))}
+                  </div>
+                  <p className="text-muted-foreground mb-4 italic">
+                    "As a homeschool mom, I was drowning trying to teach everything myself. 
+                    Now my kids get real tutoring help and I finally have time to breathe."
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-blue-500/10 rounded-full flex items-center justify-center">
+                      <span className="text-blue-500 font-semibold">J</span>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-foreground text-sm">Jennifer R.</p>
+                      <p className="text-xs text-muted-foreground">Homeschool parent, 2 kids</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Testimonial 3 */}
+              <Card className="bg-background border-border shadow-md">
+                <CardContent className="pt-6 pb-6 px-6">
+                  <div className="flex items-center gap-1 mb-4">
+                    {[...Array(5)].map((_, i) => (
+                      <svg key={i} className="w-5 h-5 text-yellow-400 fill-current" viewBox="0 0 20 20">
+                        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                      </svg>
+                    ))}
+                  </div>
+                  <p className="text-muted-foreground mb-4 italic">
+                    "I was worried it would just give answers like ChatGPT. But it actually makes my son 
+                    <strong> think through the problem</strong>. His confidence has skyrocketed."
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-green-500/10 rounded-full flex items-center justify-center">
+                      <span className="text-green-500 font-semibold">M</span>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-foreground text-sm">Michael T.</p>
+                      <p className="text-xs text-muted-foreground">Dad of 7th grader</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* THIS IS NOT CHATGPT SECTION */}
+      <section className="py-20 bg-muted/30">
+        <div className="container mx-auto px-4">
+          <div className="max-w-4xl mx-auto">
+            <div className="text-center mb-12">
+              <span className="inline-block text-sm font-semibold text-primary uppercase tracking-wide bg-primary/10 px-4 py-2 rounded-full mb-4">
+                Built for Real Learning
+              </span>
+              <h2 className="text-3xl lg:text-4xl font-bold text-foreground mb-4">
+                This is <span className="text-primary">NOT</span> ChatGPT
+              </h2>
+              <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+                We built JIE Mastery specifically for students who need to <strong>learn</strong>, 
+                not just get answers. Here's how we're different:
+              </p>
+            </div>
+
+            {/* Comparison Table */}
+            <div className="bg-card rounded-2xl border border-border shadow-lg overflow-hidden">
+              <div className="grid grid-cols-4 text-center font-semibold bg-muted/50 border-b border-border">
+                <div className="p-4"></div>
+                <div className="p-4 text-muted-foreground">ChatGPT</div>
+                <div className="p-4 text-muted-foreground">YouTube</div>
+                <div className="p-4 text-primary">JIE Mastery</div>
+              </div>
+              
+              {/* Row 1 */}
+              <div className="grid grid-cols-4 text-center border-b border-border">
+                <div className="p-4 text-left font-medium text-foreground bg-muted/20">Gives instant answers?</div>
+                <div className="p-4"><CheckCircle className="w-5 h-5 text-red-500 mx-auto" /></div>
+                <div className="p-4"><X className="w-5 h-5 text-muted-foreground mx-auto" /></div>
+                <div className="p-4"><X className="w-5 h-5 text-green-500 mx-auto" /></div>
+              </div>
+              
+              {/* Row 2 */}
+              <div className="grid grid-cols-4 text-center border-b border-border">
+                <div className="p-4 text-left font-medium text-foreground bg-muted/20">Guides with questions?</div>
+                <div className="p-4"><X className="w-5 h-5 text-muted-foreground mx-auto" /></div>
+                <div className="p-4"><X className="w-5 h-5 text-muted-foreground mx-auto" /></div>
+                <div className="p-4"><CheckCircle className="w-5 h-5 text-green-500 mx-auto" /></div>
+              </div>
+              
+              {/* Row 3 */}
+              <div className="grid grid-cols-4 text-center border-b border-border">
+                <div className="p-4 text-left font-medium text-foreground bg-muted/20">Voice conversations?</div>
+                <div className="p-4"><X className="w-5 h-5 text-muted-foreground mx-auto" /></div>
+                <div className="p-4"><X className="w-5 h-5 text-muted-foreground mx-auto" /></div>
+                <div className="p-4"><CheckCircle className="w-5 h-5 text-green-500 mx-auto" /></div>
+              </div>
+              
+              {/* Row 4 */}
+              <div className="grid grid-cols-4 text-center border-b border-border">
+                <div className="p-4 text-left font-medium text-foreground bg-muted/20">Age-appropriate tutoring?</div>
+                <div className="p-4"><X className="w-5 h-5 text-muted-foreground mx-auto" /></div>
+                <div className="p-4"><X className="w-5 h-5 text-muted-foreground mx-auto" /></div>
+                <div className="p-4"><CheckCircle className="w-5 h-5 text-green-500 mx-auto" /></div>
+              </div>
+              
+              {/* Row 5 */}
+              <div className="grid grid-cols-4 text-center">
+                <div className="p-4 text-left font-medium text-foreground bg-muted/20">Designed for learning?</div>
+                <div className="p-4"><X className="w-5 h-5 text-muted-foreground mx-auto" /></div>
+                <div className="p-4"><X className="w-5 h-5 text-muted-foreground mx-auto" /></div>
+                <div className="p-4"><CheckCircle className="w-5 h-5 text-green-500 mx-auto" /></div>
+              </div>
+            </div>
+
+            {/* Safety Callout */}
+            <div className="mt-8 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-6">
+              <div className="flex items-start gap-4">
+                <Shield className="w-8 h-8 text-green-600 dark:text-green-400 flex-shrink-0 mt-1" />
+                <div>
+                  <h3 className="font-semibold text-green-900 dark:text-green-100 text-lg mb-2">
+                    Safe for Kids, Built for Learning
+                  </h3>
+                  <p className="text-green-800 dark:text-green-200">
+                    JIE Mastery uses the Socratic method — asking guiding questions instead of giving answers. 
+                    Your child learns <strong>how to think</strong>, not just what to write down. 
+                    No shortcuts. No cheating. Just real understanding.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* WHY VOICE-BASED TUTORING WORKS */}
+      <section className="py-20 bg-background">
+        <div className="container mx-auto px-4">
+          <div className="max-w-5xl mx-auto">
+            <div className="text-center mb-12">
+              <h2 className="text-3xl lg:text-4xl font-bold text-foreground mb-4">
+                Why Talking Through Problems <span className="text-primary">Works Better</span>
+              </h2>
+              <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+                Learning science shows that verbal reasoning strengthens understanding and builds lasting confidence.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {/* Benefit 1 */}
+              <Card className="bg-card border-border shadow-sm hover:shadow-md transition-all text-center">
+                <CardContent className="pt-8 pb-6 px-6">
                   <div className="w-14 h-14 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <Mic className="w-7 h-7 text-primary" />
+                    <Brain className="w-7 h-7 text-primary" />
                   </div>
-                  <h3 className="font-semibold text-foreground text-lg mb-2">Voice-Based Tutoring</h3>
-                  <p className="text-sm text-muted-foreground leading-relaxed">
-                    Real conversations that explain concepts, not just give answers. Students learn by talking through problems.
+                  <h3 className="font-semibold text-foreground text-lg mb-2">Deeper Understanding</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Speaking activates more parts of the brain than typing, leading to better retention.
                   </p>
                 </CardContent>
               </Card>
 
-              {/* Card 2: Homework Upload + OCR */}
-              <Card className="bg-card border-border shadow-sm hover:shadow-md transition-shadow">
-                <CardContent className="pt-8 pb-6 px-6 text-center">
+              {/* Benefit 2 */}
+              <Card className="bg-card border-border shadow-sm hover:shadow-md transition-all text-center">
+                <CardContent className="pt-8 pb-6 px-6">
                   <div className="w-14 h-14 bg-blue-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <FileImage className="w-7 h-7 text-blue-500" />
+                    <Heart className="w-7 h-7 text-blue-500" />
                   </div>
-                  <h3 className="font-semibold text-foreground text-lg mb-2">Homework Upload & OCR</h3>
-                  <p className="text-sm text-muted-foreground leading-relaxed">
-                    Upload worksheets, textbook pages, or photos. Smart OCR reads and understands any document format.
+                  <h3 className="font-semibold text-foreground text-lg mb-2">Less Anxiety</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Talking feels more natural than staring at a blank screen. Kids open up more.
                   </p>
                 </CardContent>
               </Card>
 
-              {/* Card 3: Family Sharing */}
-              <Card className="bg-card border-border shadow-sm hover:shadow-md transition-shadow">
-                <CardContent className="pt-8 pb-6 px-6 text-center">
+              {/* Benefit 3 */}
+              <Card className="bg-card border-border shadow-sm hover:shadow-md transition-all text-center">
+                <CardContent className="pt-8 pb-6 px-6">
                   <div className="w-14 h-14 bg-green-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <Users className="w-7 h-7 text-green-500" />
+                    <MessageCircle className="w-7 h-7 text-green-500" />
                   </div>
-                  <h3 className="font-semibold text-foreground text-lg mb-2">Perfect for Families</h3>
-                  <p className="text-sm text-muted-foreground leading-relaxed">
-                    One subscription, unlimited student profiles. Siblings share minutes with personalized grade levels.
+                  <h3 className="font-semibold text-foreground text-lg mb-2">Real-Time Feedback</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Instant clarification when they're confused. No waiting, no frustration.
+                  </p>
+                </CardContent>
+              </Card>
+
+              {/* Benefit 4 */}
+              <Card className="bg-card border-border shadow-sm hover:shadow-md transition-all text-center">
+                <CardContent className="pt-8 pb-6 px-6">
+                  <div className="w-14 h-14 bg-purple-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <TrendingUp className="w-7 h-7 text-purple-500" />
+                  </div>
+                  <h3 className="font-semibold text-foreground text-lg mb-2">Builds Confidence</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Explaining their thinking helps kids realize they know more than they thought.
                   </p>
                 </CardContent>
               </Card>
@@ -778,49 +828,216 @@ export default function AuthPage() {
         </div>
       </section>
 
-      {/* How It Works Section */}
-      <section className="py-16">
+      {/* HOW IT WORKS */}
+      <section className="py-20 bg-muted/30">
         <div className="container mx-auto px-4">
-          <div className="max-w-3xl mx-auto text-center">
-            <h2 className="text-2xl lg:text-3xl font-bold text-foreground mb-8">
-              How JIE Mastery Tutor Works
-            </h2>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-              <div className="space-y-3">
-                <div className="w-10 h-10 bg-primary text-white rounded-full flex items-center justify-center mx-auto font-bold text-lg">
+          <div className="max-w-4xl mx-auto">
+            <div className="text-center mb-12">
+              <h2 className="text-3xl lg:text-4xl font-bold text-foreground mb-4">
+                How It Works
+              </h2>
+              <p className="text-lg text-muted-foreground">
+                Get started in under 2 minutes — no credit card needed
+              </p>
+            </div>
+
+            <div className="space-y-8">
+              {/* Step 1 */}
+              <div className="flex items-start gap-6 bg-card rounded-xl p-6 border border-border shadow-sm">
+                <div className="w-12 h-12 bg-primary text-white rounded-full flex items-center justify-center flex-shrink-0 font-bold text-xl">
                   1
                 </div>
-                <h3 className="font-semibold text-foreground">Start Free Trial</h3>
-                <p className="text-sm text-muted-foreground">
-                  30 minutes free — no credit card needed
-                </p>
+                <div className="flex-1">
+                  <h3 className="font-semibold text-foreground text-xl mb-2">Upload Homework</h3>
+                  <p className="text-muted-foreground">
+                    Take a photo of a worksheet, upload a PDF, or just describe the problem. 
+                    Our smart OCR reads handwriting, textbooks, and printed materials in 25 languages.
+                  </p>
+                </div>
+                <div className="hidden md:flex items-center justify-center w-20 h-20 bg-muted rounded-xl">
+                  <FileImage className="w-10 h-10 text-muted-foreground" />
+                </div>
               </div>
-              
-              <div className="space-y-3">
-                <div className="w-10 h-10 bg-primary text-white rounded-full flex items-center justify-center mx-auto font-bold text-lg">
+
+              {/* Step 2 */}
+              <div className="flex items-start gap-6 bg-card rounded-xl p-6 border border-border shadow-sm">
+                <div className="w-12 h-12 bg-primary text-white rounded-full flex items-center justify-center flex-shrink-0 font-bold text-xl">
                   2
                 </div>
-                <h3 className="font-semibold text-foreground">Ask Questions</h3>
-                <p className="text-sm text-muted-foreground">
-                  Talk or type for instant homework support
-                </p>
+                <div className="flex-1">
+                  <h3 className="font-semibold text-foreground text-xl mb-2">Talk Through the Problem</h3>
+                  <p className="text-muted-foreground">
+                    Your child has a real voice conversation with their AI tutor. 
+                    The tutor asks guiding questions to help them discover the solution themselves.
+                  </p>
+                </div>
+                <div className="hidden md:flex items-center justify-center w-20 h-20 bg-muted rounded-xl">
+                  <Mic className="w-10 h-10 text-muted-foreground" />
+                </div>
               </div>
-              
-              <div className="space-y-3">
-                <div className="w-10 h-10 bg-primary text-white rounded-full flex items-center justify-center mx-auto font-bold text-lg">
+
+              {/* Step 3 */}
+              <div className="flex items-start gap-6 bg-card rounded-xl p-6 border border-border shadow-sm">
+                <div className="w-12 h-12 bg-primary text-white rounded-full flex items-center justify-center flex-shrink-0 font-bold text-xl">
                   3
                 </div>
-                <h3 className="font-semibold text-foreground">Learn & Grow</h3>
-                <p className="text-sm text-muted-foreground">
-                  Get step-by-step tutoring in Math, English, Science, and Spanish
-                </p>
+                <div className="flex-1">
+                  <h3 className="font-semibold text-foreground text-xl mb-2">Learn the Concept — Not Just the Answer</h3>
+                  <p className="text-muted-foreground">
+                    By the end of the session, your child understands <strong>how</strong> to solve the problem, 
+                    not just what the answer is. That understanding sticks.
+                  </p>
+                </div>
+                <div className="hidden md:flex items-center justify-center w-20 h-20 bg-muted rounded-xl">
+                  <GraduationCap className="w-10 h-10 text-muted-foreground" />
+                </div>
               </div>
             </div>
 
-            <div className="mt-12">
-              <StartTrialButton size="lg" className="px-8 py-6 text-lg font-semibold rounded-lg" showSubtext />
+            {/* CTA */}
+            <div className="text-center mt-12">
+              <StartTrialButton 
+                size="lg" 
+                className="px-10 py-6 text-lg font-bold rounded-xl shadow-lg" 
+                showSubtext 
+              />
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* FAQ SECTION */}
+      <section className="py-20 bg-background">
+        <div className="container mx-auto px-4">
+          <div className="max-w-3xl mx-auto">
+            <div className="text-center mb-12">
+              <h2 className="text-3xl lg:text-4xl font-bold text-foreground mb-4">
+                Frequently Asked Questions
+              </h2>
+              <p className="text-lg text-muted-foreground">
+                Everything parents need to know
+              </p>
+            </div>
+
+            <Accordion type="single" collapsible className="space-y-4">
+              <AccordionItem value="safe" className="bg-card border border-border rounded-xl px-6">
+                <AccordionTrigger className="text-left font-semibold text-foreground hover:no-underline py-5">
+                  Is this safe for my child?
+                </AccordionTrigger>
+                <AccordionContent className="text-muted-foreground pb-5">
+                  Absolutely. JIE Mastery is built specifically for students. We use content moderation, 
+                  age-appropriate responses, and never give direct answers that could enable cheating. 
+                  Parents receive email summaries of every session so you always know what your child is learning.
+                </AccordionContent>
+              </AccordionItem>
+
+              <AccordionItem value="chatgpt" className="bg-card border border-border rounded-xl px-6">
+                <AccordionTrigger className="text-left font-semibold text-foreground hover:no-underline py-5">
+                  How is this different from ChatGPT?
+                </AccordionTrigger>
+                <AccordionContent className="text-muted-foreground pb-5">
+                  ChatGPT gives instant answers — which is great for adults, but teaches kids nothing. 
+                  JIE Mastery uses the Socratic method: it asks guiding questions to help your child 
+                  think through problems step by step. Plus, our voice-based approach is more engaging 
+                  and natural for kids than typing.
+                </AccordionContent>
+              </AccordionItem>
+
+              <AccordionItem value="subjects" className="bg-card border border-border rounded-xl px-6">
+                <AccordionTrigger className="text-left font-semibold text-foreground hover:no-underline py-5">
+                  What subjects are supported?
+                </AccordionTrigger>
+                <AccordionContent className="text-muted-foreground pb-5">
+                  JIE Mastery supports Math, English, Science, and Spanish for grades K-12 and college level. 
+                  The tutor adapts its teaching style and vocabulary based on your child's grade level — 
+                  a 1st grader gets a very different experience than a high schooler.
+                </AccordionContent>
+              </AccordionItem>
+
+              <AccordionItem value="answers" className="bg-card border border-border rounded-xl px-6">
+                <AccordionTrigger className="text-left font-semibold text-foreground hover:no-underline py-5">
+                  Does it just give my child the answers?
+                </AccordionTrigger>
+                <AccordionContent className="text-muted-foreground pb-5">
+                  No — and that's the whole point. JIE Mastery guides your child to discover answers themselves 
+                  through questions like "What do you think should happen next?" or "Can you tell me what you 
+                  know about this?" If a student is truly stuck, the tutor provides hints and explanations, 
+                  but always focuses on teaching the concept, not just solving the problem.
+                </AccordionContent>
+              </AccordionItem>
+
+              <AccordionItem value="family" className="bg-card border border-border rounded-xl px-6">
+                <AccordionTrigger className="text-left font-semibold text-foreground hover:no-underline py-5">
+                  Can multiple kids use one subscription?
+                </AccordionTrigger>
+                <AccordionContent className="text-muted-foreground pb-5">
+                  Yes! One subscription covers your entire family. You can create separate student profiles 
+                  for each child with their own grade level and preferences. All students share your monthly 
+                  voice minutes, making it cost-effective for families with multiple kids.
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+          </div>
+        </div>
+      </section>
+
+      {/* PRICING PREVIEW */}
+      <section className="py-16 bg-primary/5 border-y border-border">
+        <div className="container mx-auto px-4">
+          <div className="max-w-3xl mx-auto text-center">
+            <h2 className="text-2xl lg:text-3xl font-bold text-foreground mb-4">
+              Real Tutoring. One Simple Price.
+            </h2>
+            <p className="text-xl text-muted-foreground mb-6">
+              Plans start at <strong className="text-foreground">$19.99/month</strong> for your whole family — 
+              <br className="hidden sm:block" />
+              less than the cost of one private tutoring session.
+            </p>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+              <StartTrialButton 
+                size="lg" 
+                className="px-8 py-6 text-lg font-bold rounded-xl shadow-lg" 
+                showSubtext 
+              />
+              <Button 
+                size="lg"
+                variant="outline"
+                className="px-8 py-6 text-lg font-semibold rounded-xl"
+                onClick={() => setLocation("/pricing")}
+                data-testid="button-view-pricing"
+              >
+                View All Plans
+              </Button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* FINAL CTA */}
+      <section className="py-20 bg-background">
+        <div className="container mx-auto px-4">
+          <div className="max-w-2xl mx-auto text-center space-y-6">
+            <h2 className="text-3xl lg:text-4xl font-bold text-foreground">
+              Ready to End Homework Stress?
+            </h2>
+            <p className="text-lg text-muted-foreground">
+              Join thousands of families who've found a better way to support their kids' learning. 
+              Start your free 30-minute trial today — no credit card required.
+            </p>
+            <StartTrialButton 
+              size="lg" 
+              className="px-12 py-7 text-xl font-bold rounded-xl shadow-xl" 
+              showSubtext 
+            />
+            <p className="text-sm text-muted-foreground pt-4">
+              Already have an account?{' '}
+              <button 
+                onClick={() => setLoginModalOpen(true)}
+                className="text-primary hover:underline font-medium"
+              >
+                Sign in
+              </button>
+            </p>
           </div>
         </div>
       </section>
