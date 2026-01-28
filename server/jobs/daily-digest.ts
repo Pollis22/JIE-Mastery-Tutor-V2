@@ -197,8 +197,8 @@ async function sendDailyDigests(targetDate?: Date): Promise<DigestStats> {
     SELECT DISTINCT 
       u.id as user_id,
       u.email,
-      u."parentName" as parent_name,
-      u."firstName" as first_name
+      u.parent_name,
+      u.first_name
     FROM users u
     INNER JOIN realtime_sessions rs ON rs.user_id = u.id
     WHERE DATE(rs.started_at AT TIME ZONE 'America/New_York') = $1::date
@@ -383,8 +383,8 @@ async function sendWeeklyDigests(): Promise<DigestStats> {
     SELECT DISTINCT 
       u.id as user_id,
       u.email,
-      u."parentName" as parent_name,
-      u."firstName" as first_name
+      u.parent_name,
+      u.first_name
     FROM users u
     INNER JOIN realtime_sessions rs ON rs.user_id = u.id
     WHERE DATE(rs.started_at AT TIME ZONE 'America/New_York') >= $1::date
@@ -515,8 +515,8 @@ export async function sendDigestForSingleUser(
     SELECT 
       id as user_id,
       email,
-      "parentName" as parent_name,
-      "firstName" as first_name
+      parent_name,
+      first_name
     FROM users
     WHERE id = $1
   `, [userId]);
