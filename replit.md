@@ -1,6 +1,6 @@
 # JIE Mastery AI Tutor - Web Application
 
-**Last Updated:** January 27, 2026
+**Last Updated:** January 28, 2026
 
 ## Overview
 The JIE Mastery AI Tutor is a production-ready conversational AI tutoring web platform for Math, English, and Spanish. It supports 25 languages and is designed for global accessibility, offering interactive voice conversations, personalized quizzes, and adaptive learning paths. The platform features a multi-agent AI system with five age-specific tutors (K-2, Grades 3-5, 6-8, 9-12, College/Adult) that utilize an Adaptive Socratic Method. It includes a hybrid minute tracking policy (subscription and rollover minutes) and prioritizes per-session configuration for flexible family sharing, ensuring high reliability and a streamlined user experience. The project's ambition is to make personalized, adaptive AI tutoring accessible worldwide, significantly improving educational outcomes across various subjects and age groups.
@@ -76,6 +76,35 @@ A comprehensive administrative interface provides user management, subscription 
 
 ### Background Jobs
 Key background jobs include daily digest emails for parents, document cleanup, and a continuous embedding worker.
+
+### Email Digest System (Daily/Weekly)
+
+**Overview**: Parents can receive session summary emails via three frequencies: per-session, daily digest (8 PM ET), or weekly digest (Sundays 8 PM ET).
+
+**Production Trigger Mechanism**:
+Since autoscale deployments may not be running at scheduled times, use external cron services to trigger digest endpoints:
+
+| Digest Type | Endpoint | Schedule | Timezone |
+|-------------|----------|----------|----------|
+| Daily | `POST /api/cron/daily-digest` | 8:00 PM daily | America/New_York |
+| Weekly | `POST /api/cron/weekly-digest` | 8:00 PM Sundays | America/New_York |
+
+**Required Environment Variables**:
+- `CRON_SECRET`: Secret token for authenticating external cron requests. Add as header: `X-Cron-Secret: <value>`
+
+**Endpoint Security**: 
+- Returns `401 Unauthorized` if secret is missing/invalid
+- Returns `503 Service Unavailable` if `CRON_SECRET` is not configured
+
+**Idempotency**: 
+- The `digest_tracking` table prevents double-sends by recording `(user_id, digest_type, digest_date)` for each sent digest
+- If triggered twice on the same day, subsequent calls skip already-sent users
+
+**Admin Testing**:
+- `POST /api/admin/test-daily-digest` - Trigger digest for all eligible users (admin only)
+- `POST /api/admin/test-digest-user` - Test digest for single user with body: `{ userId, digestType, date?, force? }`
+
+**User Preference Field**: `users.email_summary_frequency` values: `'off'`, `'per_session'`, `'daily'`, `'weekly'` (default: `'daily'`)
 
 ### Production Deployment
 The platform is designed for Replit Autoscale Deployment, supporting WebSockets, horizontal scaling, and managed PostgreSQL.

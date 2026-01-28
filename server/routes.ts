@@ -2015,15 +2015,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     
     if (providedSecret !== cronSecret) {
       console.warn('[Cron] Invalid secret provided for daily-digest');
-      return res.status(401).json({ error: 'Invalid secret' });
+      return res.status(401).json({ error: 'Unauthorized' });
     }
     
     try {
       console.log('[Cron] External trigger for daily digest received');
       const { sendDailyDigests } = await import('./jobs/daily-digest');
-      await sendDailyDigests();
+      const stats = await sendDailyDigests();
       
-      res.json({ success: true, message: 'Daily digest triggered', timestamp: new Date().toISOString() });
+      res.json({ 
+        success: true, 
+        message: 'Daily digest completed',
+        timestamp: new Date().toISOString(),
+        stats
+      });
     } catch (error: any) {
       console.error('[Cron] Daily digest error:', error);
       res.status(500).json({ error: error.message });
@@ -2042,17 +2047,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
     
     if (providedSecret !== cronSecret) {
       console.warn('[Cron] Invalid secret provided for weekly-digest');
-      return res.status(401).json({ error: 'Invalid secret' });
+      return res.status(401).json({ error: 'Unauthorized' });
     }
     
     try {
       console.log('[Cron] External trigger for weekly digest received');
       const { sendWeeklyDigests } = await import('./jobs/daily-digest');
-      await sendWeeklyDigests();
+      const stats = await sendWeeklyDigests();
       
-      res.json({ success: true, message: 'Weekly digest triggered', timestamp: new Date().toISOString() });
+      res.json({ 
+        success: true, 
+        message: 'Weekly digest completed',
+        timestamp: new Date().toISOString(),
+        stats
+      });
     } catch (error: any) {
       console.error('[Cron] Weekly digest error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Admin endpoint to test digest for a single user
+  app.post("/api/admin/test-digest-user", requireAdmin, async (req, res) => {
+    try {
+      const { userId, digestType = 'daily', date, force = false } = req.body;
+      
+      if (!userId) {
+        return res.status(400).json({ error: 'userId is required' });
+      }
+      
+      console.log(`[Admin] Testing ${digestType} digest for user ${userId}`);
+      
+      const { sendDigestForSingleUser } = await import('./jobs/daily-digest');
+      const targetDate = date ? new Date(date) : undefined;
+      const result = await sendDigestForSingleUser(userId, digestType, targetDate, force);
+      
+      if (result.success) {
+        res.json(result);
+      } else {
+        res.status(400).json(result);
+      }
+    } catch (error: any) {
+      console.error('[Admin] Test digest user error:', error);
       res.status(500).json({ error: error.message });
     }
   });

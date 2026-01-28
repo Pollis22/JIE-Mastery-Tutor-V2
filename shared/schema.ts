@@ -970,3 +970,26 @@ export const insertPageViewSchema = createInsertSchema(pageViews).omit({
 // Page View types
 export type PageView = typeof pageViews.$inferSelect;
 export type InsertPageView = z.infer<typeof insertPageViewSchema>;
+
+// Digest tracking table - prevents double-sending of daily/weekly digests
+export const digestTracking = pgTable("digest_tracking", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  digestType: varchar("digest_type", { length: 20 }).notNull().$type<'daily' | 'weekly'>(),
+  digestDate: date("digest_date").notNull(),
+  sessionCount: integer("session_count").notNull(),
+  emailSentAt: timestamp("email_sent_at").defaultNow(),
+}, (table) => [
+  index("idx_digest_tracking_user").on(table.userId),
+  index("idx_digest_tracking_date").on(table.digestDate),
+  uniqueIndex("idx_digest_tracking_unique").on(table.userId, table.digestType, table.digestDate),
+]);
+
+export const insertDigestTrackingSchema = createInsertSchema(digestTracking).omit({
+  id: true,
+  emailSentAt: true,
+});
+
+// Digest Tracking types
+export type DigestTracking = typeof digestTracking.$inferSelect;
+export type InsertDigestTracking = z.infer<typeof insertDigestTrackingSchema>;
