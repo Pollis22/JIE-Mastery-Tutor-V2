@@ -689,6 +689,8 @@ interface SessionState {
   studentId?: string; // SAFETY: Student ID for incident tracking
   pendingFragment?: string; // LEXICAL_GRACE: Pending transcript fragment awaiting merge
   pendingFragmentTime?: number; // LEXICAL_GRACE: When the pending fragment was created
+  lastHeartbeatAt?: Date; // TELEMETRY: Last client heartbeat for close reason tracking
+  clientEndIntent?: string; // TELEMETRY: Client-provided end intent (user_end, page_unload, etc.)
 }
 
 // Helper to send typed WebSocket events
@@ -897,10 +899,22 @@ function isLikelyIncompleteThought(transcript: string): boolean {
 }
 
 // Centralized session finalization helper (prevents double-processing and ensures consistency)
+// Close reason types for telemetry
+type CloseReason = 'user_clicked_end' | 'inactivity_timeout' | 'minutes_exhausted' | 'websocket_disconnect' | 'server_finalize' | 'client_unload' | 'safety_violation' | 'error';
+type CloseDetails = {
+  wsCloseCode?: number;
+  wsCloseReason?: string;
+  triggeredBy?: 'client' | 'server';
+  lastHeartbeatAt?: string;
+  minutesAtClose?: number;
+  clientIntent?: string;
+};
+
 async function finalizeSession(
   state: SessionState,
   reason: 'normal' | 'disconnect' | 'error' | 'violation' | 'inactivity_timeout' | 'safety',
-  errorMessage?: string
+  errorMessage?: string,
+  closeDetails?: CloseDetails
 ): Promise<{ success: boolean; minuteDeductionFailed?: boolean; dbWriteFailed?: boolean }> {
   // Idempotent: skip if already finalized
   if (state.isSessionEnded) {
@@ -949,6 +963,27 @@ async function finalizeSession(
   const durationSeconds = Math.floor((Date.now() - state.sessionStartTime) / 1000);
   const durationMinutes = Math.max(1, Math.ceil(durationSeconds / 60));
 
+  // Map internal reason to close reason enum
+  const closeReasonMap: Record<string, CloseReason> = {
+    'normal': 'user_clicked_end',
+    'disconnect': 'websocket_disconnect',
+    'error': 'error',
+    'violation': 'safety_violation',
+    'inactivity_timeout': 'inactivity_timeout',
+    'safety': 'safety_violation',
+  };
+  const mappedCloseReason = closeReasonMap[reason] || 'server_finalize';
+  
+  // Merge close details with computed fields
+  const finalCloseDetails: CloseDetails = {
+    ...closeDetails,
+    minutesAtClose: durationMinutes,
+    lastHeartbeatAt: state.lastHeartbeatAt?.toISOString() || new Date().toISOString(),
+  };
+  
+  // Authoritative finalization log line
+  console.log(`[Finalize] reason=${mappedCloseReason} wsCloseCode=${closeDetails?.wsCloseCode || 'n/a'} lastHeartbeat=${finalCloseDetails.lastHeartbeatAt} minutesUsed=${durationMinutes}`);
+
   // SAFETY HARDENING: Wrap DB write in separate try/catch - never block cleanup
   try {
     const updateData: any = {
@@ -957,6 +992,8 @@ async function finalizeSession(
       status: 'ended',
       minutesUsed: durationMinutes,
       totalMessages: state.transcript.length,
+      closeReason: mappedCloseReason,
+      closeDetails: finalCloseDetails,
     };
 
     if (errorMessage) {
@@ -4234,6 +4271,13 @@ CRITICAL INSTRUCTIONS:
             }
             break;
           
+          case "client_end_intent":
+            // Client announces end intent before WS closes (used for telemetry)
+            const intent = message.intent || 'user_end';
+            state.clientEndIntent = intent;
+            console.log(`[Custom Voice] 📝 Client end intent received: ${intent}`);
+            break;
+
           case "end":
             console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
             console.log("[Session End] 🛑 RECEIVED SESSION END REQUEST");
@@ -4242,6 +4286,9 @@ CRITICAL INSTRUCTIONS:
             console.log("[Session End] Transcript length:", state.transcript.length);
             console.log("[Session End] Session already ended?", state.isSessionEnded);
             console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+            // Mark client intent for telemetry
+            state.clientEndIntent = 'user_clicked_end';
 
             // Close STT connection first
             if (USE_ASSEMBLYAI && state.assemblyAIWs) {
@@ -4263,10 +4310,14 @@ CRITICAL INSTRUCTIONS:
             clearInterval(persistInterval);
             console.log("[Session End] ✅ Persistence interval cleared");
 
-            // Finalize session (saves to DB, deducts minutes)
+            // Finalize session with user_clicked_end reason
             console.log("[Session End] 💾 Calling finalizeSession...");
             try {
-              await finalizeSession(state, 'normal');
+              const endCloseDetails: CloseDetails = {
+                triggeredBy: 'client',
+                clientIntent: 'user_clicked_end',
+              };
+              await finalizeSession(state, 'normal', undefined, endCloseDetails);
               console.log("[Session End] ✅ finalizeSession completed successfully");
             } catch (error) {
               console.error("[Session End] ❌ finalizeSession FAILED:", error);
@@ -4332,8 +4383,23 @@ CRITICAL INSTRUCTIONS:
       // Clear persistence interval (inactivity timer cleared in finalizeSession)
       clearInterval(persistInterval);
       
-      // Finalize session (saves to DB, deducts minutes)
-      await finalizeSession(state, 'disconnect');
+      // Determine close reason based on WS code and client intent
+      // WS close codes: 1000=normal, 1001=going away, 1006=abnormal (network drop)
+      let closeReason: 'normal' | 'disconnect' = 'disconnect';
+      if (code === 1000 || state.clientEndIntent) {
+        closeReason = 'normal';
+      }
+      
+      // Pass close details for telemetry
+      const closeDetails: CloseDetails = {
+        wsCloseCode: code,
+        wsCloseReason: reasonStr,
+        triggeredBy: state.clientEndIntent ? 'client' : 'server',
+        clientIntent: state.clientEndIntent,
+      };
+      
+      // Finalize session with close details (saves to DB, deducts minutes)
+      await finalizeSession(state, closeReason, undefined, closeDetails);
     });
 
     ws.on("error", async (error) => {

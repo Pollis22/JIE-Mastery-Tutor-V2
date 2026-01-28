@@ -814,6 +814,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // HTTP fallback endpoint to end voice session (for Railway proxy issues)
   // This provides a reliable way to end sessions when WebSocket close frames are dropped
+  // Also serves as client end intent beacon for telemetry (sendBeacon on page unload)
   app.post("/api/voice-sessions/:sessionId/end", async (req, res) => {
     if (!req.isAuthenticated()) {
       return res.status(401).json({ message: "Unauthorized" });
@@ -822,11 +823,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = req.user as any;
       const { sessionId } = req.params;
-
+      
+      // Extract close reason from request body (for telemetry)
+      const { reason, clientIntent } = req.body || {};
+      const closeReason = reason || 'user_clicked_end';
+      
       console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
       console.log("[HTTP Session End] 🛑 RECEIVED HTTP END REQUEST");
       console.log("[HTTP Session End] Session ID:", sessionId);
       console.log("[HTTP Session End] User ID:", user.id);
+      console.log("[HTTP Session End] Close reason:", closeReason);
+      console.log("[HTTP Session End] Client intent:", clientIntent || 'none');
       console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
       // Get session from database
@@ -867,13 +874,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log("[HTTP Session End] ⏱️ Duration:", durationSeconds, "seconds (", durationMinutes, "minutes)");
 
-      // Update session in database
+      // Update session in database with close reason telemetry
       console.log("[HTTP Session End] 💾 Updating database...");
+      
+      const closeDetails = {
+        triggeredBy: 'client' as const,
+        clientIntent: clientIntent || closeReason,
+        minutesAtClose: durationMinutes,
+      };
+      
+      // Authoritative finalization log line
+      console.log(`[Finalize] reason=${closeReason} wsCloseCode=n/a lastHeartbeat=${endTime.toISOString()} minutesUsed=${durationMinutes}`);
+      
       await db.update(realtimeSessions)
         .set({
           endedAt: endTime,
           status: 'ended',
           minutesUsed: durationMinutes,
+          closeReason: closeReason,
+          closeDetails: closeDetails,
         })
         .where(eq(realtimeSessions.id, sessionId));
 
@@ -2943,7 +2962,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const { realtimeSessions } = await import('@shared/schema');
         const { desc, sql } = await import('drizzle-orm');
         
-        // Fetch recent sessions (last 50)
+        // Fetch recent sessions (last 50) with close reason telemetry
         const sessions = await db.select({
           id: realtimeSessions.id,
           studentName: realtimeSessions.studentName,
@@ -2953,6 +2972,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           startedAt: realtimeSessions.startedAt,
           endedAt: realtimeSessions.endedAt,
           status: realtimeSessions.status,
+          closeReason: realtimeSessions.closeReason,
+          closeDetails: realtimeSessions.closeDetails,
         })
         .from(realtimeSessions)
         .orderBy(desc(realtimeSessions.startedAt))

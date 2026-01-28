@@ -775,6 +775,7 @@ export default function AdminPageEnhanced() {
                             <TableHead>Minutes Used</TableHead>
                             <TableHead>Date</TableHead>
                             <TableHead>Status</TableHead>
+                            <TableHead>Close Reason</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -798,6 +799,22 @@ export default function AdminPageEnhanced() {
                                 <Badge variant={session.status === 'ended' ? 'default' : 'secondary'}>
                                   {session.status || 'unknown'}
                                 </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <span className="text-xs" data-testid={`text-close-reason-${index}`}>
+                                  {session.closeReason ? (
+                                    <span className="flex flex-col">
+                                      <span>{session.closeReason}</span>
+                                      {session.closeDetails?.wsCloseCode && (
+                                        <span className="text-muted-foreground">
+                                          WS: {session.closeDetails.wsCloseCode}
+                                        </span>
+                                      )}
+                                    </span>
+                                  ) : (
+                                    <span className="text-muted-foreground">-</span>
+                                  )}
+                                </span>
                               </TableCell>
                             </TableRow>
                           ))}

@@ -274,6 +274,9 @@ export function useCustomVoice() {
   const timersRef = useRef<Set<NodeJS.Timeout>>(new Set());
   const intervalsRef = useRef<Set<NodeJS.Timeout>>(new Set());
   
+  // TELEMETRY: Track current session ID for page unload beacon
+  const currentSessionIdRef = useRef<string | null>(null);
+  
   // Audio buffer queue for reconnection resilience
   const audioBufferQueueRef = useRef<ArrayBuffer[]>([]);
   const isReconnectingRef = useRef<boolean>(false);
@@ -772,6 +775,9 @@ export function useCustomVoice() {
   ) => {
     try {
       console.log("[Custom Voice] 🚀 Connecting...", { language });
+      
+      // TELEMETRY: Store session ID for page unload beacon
+      currentSessionIdRef.current = sessionId;
       
       // Get WebSocket URL (use wss:// in production)
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -2878,6 +2884,59 @@ registerProcessor('audio-processor', AudioProcessor);
       cleanupAllTimers();
     };
   }, [cleanupAllTimers]);
+
+  // TELEMETRY: Send end intent beacon on page unload/visibility change
+  // This helps distinguish user_end vs page_unload vs unexpected_disconnect
+  useEffect(() => {
+    const sendEndIntentBeacon = (intent: string) => {
+      const sessionId = currentSessionIdRef.current;
+      if (!sessionId || !isConnected) return;
+      
+      console.log(`[Custom Voice] 📡 Sending end intent beacon: ${intent} for session ${sessionId}`);
+      
+      // Try sending via WS first (faster, more reliable if still open)
+      const ws = wsRef.current;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        try {
+          ws.send(JSON.stringify({ type: 'client_end_intent', intent }));
+        } catch {
+          // WS send failed, fall through to beacon
+        }
+      }
+      
+      // Also send HTTP beacon as backup (works even after WS closes)
+      const beaconData = JSON.stringify({ reason: intent, clientIntent: intent });
+      navigator.sendBeacon(
+        `/api/voice-sessions/${sessionId}/end`,
+        new Blob([beaconData], { type: 'application/json' })
+      );
+    };
+
+    const handleBeforeUnload = () => {
+      sendEndIntentBeacon('page_unload');
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        sendEndIntentBeacon('visibility_hidden');
+      }
+    };
+
+    const handlePageHide = () => {
+      sendEndIntentBeacon('page_hide');
+    };
+
+    // Register handlers
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('pagehide', handlePageHide);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('pagehide', handlePageHide);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isConnected]);
 
   return {
     connect,
