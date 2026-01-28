@@ -1441,9 +1441,19 @@ export class DatabaseStorage implements IStorage {
         maxConcurrentLogins: users.maxConcurrentLogins,
         isAdmin: users.isAdmin,
         createdAt: users.createdAt,
+        // Last active: most recent ended session timestamp
+        lastActiveAt: sql<Date | null>`MAX(${realtimeSessions.endedAt})`.as('last_active_at'),
       })
       .from(users)
+      .leftJoin(
+        realtimeSessions,
+        and(
+          eq(realtimeSessions.userId, users.id),
+          eq(realtimeSessions.status, 'ended')
+        )
+      )
       .where(whereClause)
+      .groupBy(users.id)
       .orderBy(desc(users.createdAt))
       .limit(limit)
       .offset(offset);

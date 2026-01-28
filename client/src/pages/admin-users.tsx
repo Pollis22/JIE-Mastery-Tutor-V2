@@ -24,6 +24,7 @@ interface AdminUser {
   username: string;
   email: string;
   createdAt: string;
+  lastActiveAt?: string | null;
   isAdmin: boolean;
   subscriptionStatus?: string;
   subscriptionPlan?: string;
@@ -132,6 +133,7 @@ export default function AdminUsers() {
                       <th className="text-left p-3 font-semibold">Subscription</th>
                       <th className="text-left p-3 font-semibold">Minutes</th>
                       <th className="text-left p-3 font-semibold">Created</th>
+                      <th className="text-left p-3 font-semibold">Last Active</th>
                       <th className="text-left p-3 font-semibold">Actions</th>
                     </tr>
                   </thead>
@@ -169,6 +171,21 @@ export default function AdminUsers() {
                         <td className="p-3">
                           <span className="text-sm text-muted-foreground">
                             {new Date(user.createdAt).toLocaleDateString()}
+                          </span>
+                        </td>
+                        <td className="p-3">
+                          <span className="text-sm text-muted-foreground" data-testid={`text-last-active-${user.id}`}>
+                            {user.lastActiveAt 
+                              ? new Date(user.lastActiveAt).toLocaleString('en-US', {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  year: 'numeric',
+                                  hour: 'numeric',
+                                  minute: '2-digit',
+                                  hour12: true
+                                })
+                              : 'Never'
+                            }
                           </span>
                         </td>
                         <td className="p-3">
