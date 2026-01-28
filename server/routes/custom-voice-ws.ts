@@ -691,6 +691,15 @@ interface SessionState {
   pendingFragmentTime?: number; // LEXICAL_GRACE: When the pending fragment was created
   lastHeartbeatAt?: Date; // TELEMETRY: Last client heartbeat for close reason tracking
   clientEndIntent?: string; // TELEMETRY: Client-provided end intent (user_end, page_unload, etc.)
+  // RECONNECT GRACE WINDOW: Fields for handling abnormal WS closes
+  isPendingReconnect: boolean; // RECONNECT: Session is waiting for client to reconnect
+  graceTimerId?: NodeJS.Timeout; // RECONNECT: Timer for grace window expiry
+  reconnectCount: number; // RECONNECT: Number of successful reconnects in this session
+  lastWsCloseCode?: number; // RECONNECT: Last WS close code for telemetry
+  resumeToken?: string; // RECONNECT: Signed token for secure session reattach
+  lastClientVisibility?: 'visible' | 'hidden'; // RECONNECT: Last visibility state from client
+  lastPongAt?: Date; // HEARTBEAT: Last pong received from client
+  missedPongCount: number; // HEARTBEAT: Consecutive missed pongs
 }
 
 // Helper to send typed WebSocket events
@@ -899,8 +908,8 @@ function isLikelyIncompleteThought(transcript: string): boolean {
 }
 
 // Centralized session finalization helper (prevents double-processing and ensures consistency)
-// Close reason types for telemetry
-type CloseReason = 'user_clicked_end' | 'inactivity_timeout' | 'minutes_exhausted' | 'websocket_disconnect' | 'server_finalize' | 'client_unload' | 'safety_violation' | 'error';
+// Close reason types for telemetry (updated enum per spec)
+type CloseReason = 'user_end' | 'minutes_exhausted' | 'inactivity_timeout' | 'websocket_disconnect' | 'disconnect_timeout' | 'client_unload' | 'server_shutdown' | 'server_error';
 type CloseDetails = {
   wsCloseCode?: number;
   wsCloseReason?: string;
@@ -908,6 +917,8 @@ type CloseDetails = {
   lastHeartbeatAt?: string;
   minutesAtClose?: number;
   clientIntent?: string;
+  reconnectCount?: number;
+  lastClientVisibility?: 'visible' | 'hidden';
 };
 
 async function finalizeSession(
@@ -963,26 +974,32 @@ async function finalizeSession(
   const durationSeconds = Math.floor((Date.now() - state.sessionStartTime) / 1000);
   const durationMinutes = Math.max(1, Math.ceil(durationSeconds / 60));
 
-  // Map internal reason to close reason enum
+  // Map internal reason to close reason enum (updated per spec)
   const closeReasonMap: Record<string, CloseReason> = {
-    'normal': 'user_clicked_end',
+    'normal': 'user_end',
     'disconnect': 'websocket_disconnect',
-    'error': 'error',
-    'violation': 'safety_violation',
+    'disconnect_timeout': 'disconnect_timeout',
+    'error': 'server_error',
+    'violation': 'server_error', // Safety violations map to server_error
     'inactivity_timeout': 'inactivity_timeout',
-    'safety': 'safety_violation',
+    'safety': 'server_error',
+    'client_unload': 'client_unload',
+    'minutes_exhausted': 'minutes_exhausted',
+    'server_shutdown': 'server_shutdown',
   };
-  const mappedCloseReason = closeReasonMap[reason] || 'server_finalize';
+  const mappedCloseReason = closeReasonMap[reason] || 'server_error';
   
-  // Merge close details with computed fields
+  // Merge close details with computed fields (include reconnect tracking)
   const finalCloseDetails: CloseDetails = {
     ...closeDetails,
     minutesAtClose: durationMinutes,
     lastHeartbeatAt: state.lastHeartbeatAt?.toISOString() || new Date().toISOString(),
+    reconnectCount: state.reconnectCount || 0,
+    lastClientVisibility: state.lastClientVisibility,
   };
   
-  // Authoritative finalization log line
-  console.log(`[Finalize] reason=${mappedCloseReason} wsCloseCode=${closeDetails?.wsCloseCode || 'n/a'} lastHeartbeat=${finalCloseDetails.lastHeartbeatAt} minutesUsed=${durationMinutes}`);
+  // Authoritative finalization log line (ONE structured line per spec)
+  console.log(`[Finalize] sessionId=${state.sessionId} reason=${mappedCloseReason} wsCode=${closeDetails?.wsCloseCode || 'n/a'} reconnects=${state.reconnectCount || 0} lastHeartbeat=${finalCloseDetails.lastHeartbeatAt} minutesUsed=${durationMinutes}`);
 
   // SAFETY HARDENING: Wrap DB write in separate try/catch - never block cleanup
   try {
@@ -994,6 +1011,9 @@ async function finalizeSession(
       totalMessages: state.transcript.length,
       closeReason: mappedCloseReason,
       closeDetails: finalCloseDetails,
+      // Reconnect tracking columns
+      reconnectCount: state.reconnectCount || 0,
+      lastHeartbeatAt: state.lastHeartbeatAt || new Date(),
     };
 
     if (errorMessage) {
@@ -1099,6 +1119,112 @@ async function finalizeSession(
     minuteDeductionFailed,
     dbWriteFailed
   };
+}
+
+// ============================================
+// RECONNECT GRACE WINDOW: Store for pending reconnect sessions
+// Allows sessions to survive abnormal WS closes (1006/1001) for a grace period
+// ============================================
+interface PendingReconnectSession {
+  state: SessionState;
+  graceTimerId: NodeJS.Timeout;
+  wsCloseCode: number;
+  graceStartedAt: number;
+  persistInterval: NodeJS.Timeout;
+}
+
+// Map of sessionId -> pending reconnect data
+const pendingReconnectSessions = new Map<string, PendingReconnectSession>();
+
+// Grace window durations (per spec)
+const GRACE_WINDOW_1006 = 60000; // 60 seconds for abnormal close (network drop)
+const GRACE_WINDOW_1001 = 30000; // 30 seconds for going away
+
+// Check if WS close code qualifies for grace window
+function isAbnormalClose(code: number): boolean {
+  return code === 1006 || code === 1001;
+}
+
+// Get grace window duration based on close code
+function getGraceWindowDuration(code: number): number {
+  if (code === 1006) return GRACE_WINDOW_1006;
+  if (code === 1001) return GRACE_WINDOW_1001;
+  return 0; // No grace window for other codes
+}
+
+// Create pending reconnect session
+function createPendingReconnect(
+  sessionId: string,
+  state: SessionState,
+  wsCloseCode: number,
+  persistInterval: NodeJS.Timeout
+): void {
+  const graceMs = getGraceWindowDuration(wsCloseCode);
+  
+  console.log(`[Reconnect Grace] 🕐 Starting grace window for session ${sessionId} (code: ${wsCloseCode}, grace: ${graceMs/1000}s)`);
+  
+  // Start grace timer - finalize with disconnect_timeout when it expires
+  const graceTimerId = setTimeout(async () => {
+    const pending = pendingReconnectSessions.get(sessionId);
+    if (pending) {
+      console.log(`[Reconnect Grace] ⏰ Grace window expired for session ${sessionId} - finalizing with disconnect_timeout`);
+      
+      pendingReconnectSessions.delete(sessionId);
+      clearInterval(pending.persistInterval);
+      
+      // Finalize with disconnect_timeout reason
+      await finalizeSession(pending.state, 'disconnect_timeout' as any, undefined, {
+        wsCloseCode: pending.wsCloseCode,
+        triggeredBy: 'server',
+      });
+    }
+  }, graceMs);
+  
+  // Mark state as pending reconnect
+  state.isPendingReconnect = true;
+  state.lastWsCloseCode = wsCloseCode;
+  
+  pendingReconnectSessions.set(sessionId, {
+    state,
+    graceTimerId,
+    wsCloseCode,
+    graceStartedAt: Date.now(),
+    persistInterval,
+  });
+}
+
+// Attempt to restore session for reconnecting client
+function tryRestoreSession(sessionId: string): SessionState | null {
+  const pending = pendingReconnectSessions.get(sessionId);
+  if (!pending) {
+    return null;
+  }
+  
+  const graceElapsed = Date.now() - pending.graceStartedAt;
+  console.log(`[Reconnect Grace] ✅ Restoring session ${sessionId} (reconnected after ${Math.round(graceElapsed/1000)}s)`);
+  
+  // Cancel grace timer
+  clearTimeout(pending.graceTimerId);
+  
+  // Mark state as no longer pending reconnect
+  pending.state.isPendingReconnect = false;
+  pending.state.reconnectCount = (pending.state.reconnectCount || 0) + 1;
+  
+  // Remove from pending map
+  pendingReconnectSessions.delete(sessionId);
+  
+  return pending.state;
+}
+
+// Cancel pending reconnect (for explicit user end or cleanup)
+function cancelPendingReconnect(sessionId: string): void {
+  const pending = pendingReconnectSessions.get(sessionId);
+  if (pending) {
+    clearTimeout(pending.graceTimerId);
+    clearInterval(pending.persistInterval);
+    pendingReconnectSessions.delete(sessionId);
+    console.log(`[Reconnect Grace] 🧹 Cancelled pending reconnect for session ${sessionId}`);
+  }
 }
 
 export function setupCustomVoiceWebSocket(server: Server) {
@@ -1304,6 +1430,15 @@ export function setupCustomVoiceWebSocket(server: Server) {
       terminatedForSafety: false, // SAFETY: Not terminated initially
       parentEmail: undefined, // SAFETY: Will be set from user data
       studentId: undefined, // SAFETY: Will be set from session data
+      // RECONNECT GRACE WINDOW: Initialize reconnect tracking
+      isPendingReconnect: false,
+      graceTimerId: undefined,
+      reconnectCount: 0,
+      lastWsCloseCode: undefined,
+      resumeToken: undefined,
+      lastClientVisibility: undefined,
+      lastPongAt: new Date(),
+      missedPongCount: 0,
     };
 
     // FIX #3: Auto-persist every 10 seconds
@@ -1313,6 +1448,49 @@ export function setupCustomVoiceWebSocket(server: Server) {
         state.lastPersisted = Date.now();
       }
     }, 10000);
+
+    // ============================================
+    // HEARTBEAT PING/PONG SYSTEM (per spec)
+    // Server sends ping every 20s, considers connection unhealthy after 3 missed pongs (90s)
+    // ============================================
+    const HEARTBEAT_INTERVAL = 20000; // 20 seconds
+    const MAX_MISSED_PONGS = 3;
+    
+    const heartbeatInterval = setInterval(() => {
+      // Skip if session already ended or pending reconnect
+      if (state.isSessionEnded || state.isPendingReconnect) {
+        return;
+      }
+      
+      // Check for missed pongs
+      const timeSinceLastPong = Date.now() - (state.lastPongAt?.getTime() || state.sessionStartTime);
+      const expectedPongs = Math.floor(timeSinceLastPong / HEARTBEAT_INTERVAL);
+      
+      if (expectedPongs >= MAX_MISSED_PONGS) {
+        state.missedPongCount = expectedPongs;
+        console.log(`[Heartbeat] ⚠️ ${expectedPongs} missed pongs (${Math.round(timeSinceLastPong/1000)}s) - closing WS with code 1006 to enter grace window`);
+        
+        // ENFORCEMENT: Proactively close the WS to trigger grace window
+        // Use code 1006 (abnormal close) to enter the grace window flow
+        // The 'close' event handler will then call createPendingReconnect
+        try {
+          ws.close(1006, 'Heartbeat timeout - no pong received');
+        } catch (e) {
+          // WS might already be closing, ignore
+        }
+        clearInterval(heartbeatInterval);
+        return; // Stop further pings
+      }
+      
+      // Send ping to client
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ 
+          type: 'ping', 
+          timestamp: Date.now(),
+          sessionId: state.sessionId 
+        }));
+      }
+    }, HEARTBEAT_INTERVAL);
 
     // INACTIVITY: Check for user inactivity every 30 seconds
     state.inactivityTimerId = setInterval(async () => {
@@ -4271,6 +4449,23 @@ CRITICAL INSTRUCTIONS:
             }
             break;
           
+          case "pong":
+            // Client responds to ping - update heartbeat tracking
+            state.lastPongAt = new Date();
+            state.missedPongCount = 0;
+            state.lastHeartbeatAt = new Date();
+            // Don't log every pong to avoid spam
+            break;
+          
+          case "client_visibility":
+            // Client reports visibility state (hidden/visible) for reconnect handling
+            const visibility = message.visibility as 'visible' | 'hidden';
+            state.lastClientVisibility = visibility;
+            console.log(`[Custom Voice] 👁️ Client visibility changed: ${visibility}`);
+            // Update heartbeat tracking on visibility change
+            state.lastHeartbeatAt = new Date();
+            break;
+          
           case "client_end_intent":
             // Client announces end intent before WS closes (used for telemetry)
             const intent = message.intent || 'user_end';
@@ -4369,7 +4564,7 @@ CRITICAL INSTRUCTIONS:
         responseTimer = null;
       }
       
-      // Close STT connection first
+      // Close STT connection (pause audio pipeline, but don't destroy session state yet)
       if (USE_ASSEMBLYAI && state.assemblyAIWs) {
         closeAssemblyAI(state.assemblyAIWs);
         if (state.assemblyAIState) resetAssemblyAIMergeGuard(state.assemblyAIState);
@@ -4380,13 +4575,32 @@ CRITICAL INSTRUCTIONS:
         state.deepgramConnection = null;
       }
       
-      // Clear persistence interval (inactivity timer cleared in finalizeSession)
+      // ============================================
+      // RECONNECT GRACE WINDOW LOGIC
+      // For abnormal closes (1006/1001) without explicit user end intent,
+      // enter grace window instead of immediate finalization
+      // ============================================
+      const hasExplicitUserEnd = state.clientEndIntent === 'user_end' || state.clientEndIntent === 'user_clicked_end';
+      const isNormalClose = code === 1000;
+      const qualifiesForGrace = isAbnormalClose(code) && !hasExplicitUserEnd && state.sessionId;
+      
+      if (qualifiesForGrace) {
+        // DON'T clear persistence interval - keep transcript safe
+        // DON'T finalize - enter grace window
+        // BUT DO clear heartbeat interval - no need to ping during grace
+        clearInterval(heartbeatInterval);
+        console.log(`[Custom Voice] 🕐 Abnormal close (code: ${code}) - entering grace window for session ${state.sessionId}`);
+        createPendingReconnect(state.sessionId, state, code, persistInterval);
+        return; // Exit without finalizing
+      }
+      
+      // Normal close or explicit user end - finalize immediately
       clearInterval(persistInterval);
+      clearInterval(heartbeatInterval);
       
       // Determine close reason based on WS code and client intent
-      // WS close codes: 1000=normal, 1001=going away, 1006=abnormal (network drop)
       let closeReason: 'normal' | 'disconnect' = 'disconnect';
-      if (code === 1000 || state.clientEndIntent) {
+      if (isNormalClose || hasExplicitUserEnd) {
         closeReason = 'normal';
       }
       
@@ -4397,6 +4611,11 @@ CRITICAL INSTRUCTIONS:
         triggeredBy: state.clientEndIntent ? 'client' : 'server',
         clientIntent: state.clientEndIntent,
       };
+      
+      // Cancel any pending reconnect for this session (in case of race condition)
+      if (state.sessionId) {
+        cancelPendingReconnect(state.sessionId);
+      }
       
       // Finalize session with close details (saves to DB, deducts minutes)
       await finalizeSession(state, closeReason, undefined, closeDetails);

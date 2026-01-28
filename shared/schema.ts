@@ -711,8 +711,8 @@ export const realtimeSessions = pgTable("realtime_sessions", {
   strikeCount: integer("strike_count").default(0),
   terminatedForSafety: boolean("terminated_for_safety").default(false),
   createdAt: timestamp("created_at").defaultNow(),
-  // Session close reason telemetry
-  closeReason: text("close_reason").$type<'user_clicked_end' | 'inactivity_timeout' | 'minutes_exhausted' | 'websocket_disconnect' | 'server_finalize' | 'client_unload' | 'safety_violation' | 'error' | null>(),
+  // Session close reason telemetry (updated enum per spec)
+  closeReason: text("close_reason").$type<'user_end' | 'minutes_exhausted' | 'inactivity_timeout' | 'websocket_disconnect' | 'disconnect_timeout' | 'client_unload' | 'server_shutdown' | 'server_error' | null>(),
   closeDetails: jsonb("close_details").$type<{
     wsCloseCode?: number;
     wsCloseReason?: string;
@@ -720,7 +720,12 @@ export const realtimeSessions = pgTable("realtime_sessions", {
     lastHeartbeatAt?: string;
     minutesAtClose?: number;
     clientIntent?: string;
+    reconnectCount?: number;
+    lastClientVisibility?: 'visible' | 'hidden';
   } | null>(),
+  // Reconnect tracking columns
+  reconnectCount: integer("reconnect_count").default(0),
+  lastHeartbeatAt: timestamp("last_heartbeat_at"),
 }, (table) => [
   index("idx_realtime_sessions_user").on(table.userId),
   index("idx_realtime_sessions_student").on(table.studentId),

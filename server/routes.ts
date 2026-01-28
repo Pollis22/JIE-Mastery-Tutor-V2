@@ -2962,7 +2962,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const { realtimeSessions } = await import('@shared/schema');
         const { desc, sql } = await import('drizzle-orm');
         
-        // Fetch recent sessions (last 50) with close reason telemetry
+        // Fetch recent sessions (last 50) with close reason telemetry and reconnect tracking
         const sessions = await db.select({
           id: realtimeSessions.id,
           studentName: realtimeSessions.studentName,
@@ -2974,6 +2974,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           status: realtimeSessions.status,
           closeReason: realtimeSessions.closeReason,
           closeDetails: realtimeSessions.closeDetails,
+          reconnectCount: realtimeSessions.reconnectCount,
+          lastHeartbeatAt: realtimeSessions.lastHeartbeatAt,
         })
         .from(realtimeSessions)
         .orderBy(desc(realtimeSessions.startedAt))

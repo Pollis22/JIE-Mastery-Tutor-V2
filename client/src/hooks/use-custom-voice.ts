@@ -805,6 +805,17 @@ export function useCustomVoice() {
         const message = JSON.parse(event.data);
 
         switch (message.type) {
+          case "ping":
+            // Server heartbeat ping - respond with pong immediately
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ 
+                type: 'pong', 
+                timestamp: Date.now(),
+                originalTimestamp: message.timestamp 
+              }));
+            }
+            break;
+          
           case "ready":
             console.log("[Custom Voice] ✅ Session ready");
             setIsConnected(true);
@@ -2913,17 +2924,30 @@ registerProcessor('audio-processor', AudioProcessor);
     };
 
     const handleBeforeUnload = () => {
-      sendEndIntentBeacon('page_unload');
+      sendEndIntentBeacon('client_unload');
     };
 
     const handleVisibilityChange = () => {
+      const ws = wsRef.current;
+      const visibility = document.visibilityState === 'hidden' ? 'hidden' : 'visible';
+      
+      // Always send visibility state to server for reconnect handling
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        try {
+          ws.send(JSON.stringify({ type: 'client_visibility', visibility }));
+        } catch {
+          // WS send failed, ignore
+        }
+      }
+      
+      // Only send end intent beacon when going hidden (as backup for WS close)
       if (document.visibilityState === 'hidden') {
         sendEndIntentBeacon('visibility_hidden');
       }
     };
 
     const handlePageHide = () => {
-      sendEndIntentBeacon('page_hide');
+      sendEndIntentBeacon('client_unload');
     };
 
     // Register handlers

@@ -776,6 +776,7 @@ export default function AdminPageEnhanced() {
                             <TableHead>Date</TableHead>
                             <TableHead>Status</TableHead>
                             <TableHead>Close Reason</TableHead>
+                            <TableHead>Reconnects</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -802,17 +803,26 @@ export default function AdminPageEnhanced() {
                               </TableCell>
                               <TableCell>
                                 <span className="text-xs" data-testid={`text-close-reason-${index}`}>
-                                  {session.closeReason ? (
+                                  {(session as any).closeReason ? (
                                     <span className="flex flex-col">
-                                      <span>{session.closeReason}</span>
-                                      {session.closeDetails?.wsCloseCode && (
+                                      <span>{(session as any).closeReason}</span>
+                                      {(session as any).closeDetails?.wsCloseCode && (
                                         <span className="text-muted-foreground">
-                                          WS: {session.closeDetails.wsCloseCode}
+                                          WS: {(session as any).closeDetails.wsCloseCode}
                                         </span>
                                       )}
                                     </span>
                                   ) : (
                                     <span className="text-muted-foreground">-</span>
+                                  )}
+                                </span>
+                              </TableCell>
+                              <TableCell>
+                                <span className="text-xs" data-testid={`text-reconnects-${index}`}>
+                                  {(session as any).reconnectCount !== undefined && (session as any).reconnectCount > 0 ? (
+                                    <Badge variant="outline">{(session as any).reconnectCount}</Badge>
+                                  ) : (
+                                    <span className="text-muted-foreground">0</span>
                                   )}
                                 </span>
                               </TableCell>
