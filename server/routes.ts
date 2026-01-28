@@ -1976,6 +1976,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Daily digest test - run now for a specific date (admin only)
+  app.post("/api/admin/test-daily-digest", requireAdmin, async (req, res) => {
+    try {
+      const { date, userId } = req.body;
+      console.log('[Admin] Testing daily digest...', { date, userId });
+      
+      const { sendDailyDigests } = await import('./jobs/daily-digest');
+      
+      // If a specific date is provided, use it
+      const targetDate = date ? new Date(date) : new Date();
+      
+      await sendDailyDigests(targetDate);
+      
+      console.log('[Admin] Daily digest test complete');
+      res.json({
+        success: true,
+        message: `Daily digest sent for ${targetDate.toISOString().split('T')[0]}`,
+        targetDate: targetDate.toISOString()
+      });
+    } catch (error: any) {
+      console.error('[Admin] Daily digest test error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Stripe customer cleanup endpoint (admin only)
   app.post("/api/admin/cleanup-stripe", requireAdmin, async (req, res) => {
     try {

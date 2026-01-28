@@ -75,6 +75,8 @@ async function sendDailyDigests(targetDate?: Date) {
   });
   const digestDateString = formatter.format(digestDate); // e.g. "2025-12-21"
 
+  console.log(`[DailyDigest] ========================================`);
+  console.log(`[DailyDigest] Running at ${new Date().toISOString()}`);
   console.log(`[DailyDigest] Looking for sessions on ${digestDateString} (America/New_York)`);
 
   // Use parameterized date for correct backfill/rerun support
@@ -95,6 +97,16 @@ async function sendDailyDigests(targetDate?: Date) {
   `, [digestDateString]);
 
   console.log(`[DailyDigest] Found ${usersWithSessions.rows.length} users with sessions on ${digestDateString}`);
+  
+  if (usersWithSessions.rows.length === 0) {
+    console.log(`[DailyDigest] No users found with daily preference and sessions today. Check:`);
+    console.log(`[DailyDigest]   - Sessions exist with status='ended' and minutes_used >= 1`);
+    console.log(`[DailyDigest]   - User has email_summary_frequency='daily' or NULL`);
+    console.log(`[DailyDigest] ========================================`);
+    return;
+  }
+  
+  console.log(`[DailyDigest] Users to process: ${usersWithSessions.rows.map(u => u.email).join(', ')}`);
 
   for (const user of usersWithSessions.rows) {
     try {
@@ -105,6 +117,7 @@ async function sendDailyDigests(targetDate?: Date) {
   }
 
   console.log('[DailyDigest] Job complete');
+  console.log(`[DailyDigest] ========================================`);
 }
 
 async function sendDigestForUser(
