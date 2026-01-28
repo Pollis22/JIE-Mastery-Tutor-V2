@@ -19,6 +19,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Footer } from "@/components/footer";
 import jieLogo from "@/assets/jie-mastery-logo-sm.jpg";
+import studentUsingJie from "@/assets/student-using-jie.png";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { StartTrialButton } from "@/components/StartTrialButton";
 import {
@@ -515,50 +516,70 @@ export default function AuthPage() {
       )}
 
       {/* HERO SECTION - Conversion Focused */}
-      <section className="py-16 lg:py-24 bg-gradient-to-b from-background to-muted/20">
+      <section className="py-12 lg:py-20 bg-gradient-to-b from-background to-muted/20">
         <div className="container mx-auto px-4">
-          <div className="max-w-4xl mx-auto text-center space-y-8">
-            {/* Emotional Headline */}
-            <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-foreground leading-tight">
-              End Homework Stress.{' '}
-              <span className="text-primary">Real Learning Starts Here.</span>
-            </h1>
-            
-            {/* Clarifying Subheadline */}
-            <p className="text-xl md:text-2xl text-muted-foreground max-w-3xl mx-auto leading-relaxed">
-              A patient, voice-based AI tutor that <strong>guides</strong> your child through problems — 
-              never gives away answers. One subscription covers your whole family.
-            </p>
+          <div className="grid lg:grid-cols-2 gap-8 lg:gap-12 items-center max-w-7xl mx-auto">
+            {/* Left Column - Copy */}
+            <div className="space-y-6 text-center lg:text-left order-2 lg:order-1">
+              {/* Emotional Headline */}
+              <h1 className="text-4xl md:text-5xl lg:text-5xl xl:text-6xl font-bold text-foreground leading-tight">
+                End Homework Stress.{' '}
+                <span className="text-primary">Real Learning Starts Here.</span>
+              </h1>
+              
+              {/* Clarifying Subheadline */}
+              <p className="text-lg md:text-xl text-muted-foreground leading-relaxed">
+                A patient, voice-based AI tutor that <strong>guides</strong> your child through problems — 
+                never gives away answers. One subscription covers your whole family.
+              </p>
 
-            {/* Primary CTA */}
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4" data-testid="hero-cta-container">
-              <StartTrialButton 
-                size="lg" 
-                className="px-10 py-7 text-xl font-bold rounded-xl shadow-xl hover:shadow-2xl transition-all w-full sm:w-auto h-auto" 
-                showSubtext 
-              />
+              {/* Primary CTA */}
+              <div className="flex flex-col sm:flex-row items-center lg:items-start justify-center lg:justify-start gap-4 pt-2" data-testid="hero-cta-container">
+                <StartTrialButton 
+                  size="lg" 
+                  className="px-10 py-7 text-xl font-bold rounded-xl shadow-xl hover:shadow-2xl transition-all w-full sm:w-auto h-auto" 
+                  showSubtext 
+                />
+              </div>
+              
+              {/* Trust Signals */}
+              <p className="text-sm text-muted-foreground">
+                No credit card required &bull; 30 minutes free &bull; Works on any device
+              </p>
+
+              {/* Secondary Action */}
+              <p className="text-sm text-muted-foreground">
+                Already have an account?{' '}
+                <button 
+                  onClick={() => setLoginModalOpen(true)}
+                  className="text-primary hover:underline font-medium"
+                  data-testid="link-hero-signin"
+                >
+                  Sign in
+                </button>
+              </p>
             </div>
             
-            {/* Trust Signals */}
-            <p className="text-sm text-muted-foreground">
-              No credit card required &bull; 30 minutes free &bull; Works on any device
-            </p>
-
-            {/* Secondary Action */}
-            <p className="text-sm text-muted-foreground pt-2">
-              Already have an account?{' '}
-              <button 
-                onClick={() => setLoginModalOpen(true)}
-                className="text-primary hover:underline font-medium"
-                data-testid="link-hero-signin"
-              >
-                Sign in
-              </button>
-            </p>
-
-            {/* Video Preview */}
+            {/* Right Column - Student Image */}
+            <div className="order-1 lg:order-2">
+              <div className="relative">
+                <img 
+                  src={studentUsingJie} 
+                  alt="Student using JIE Mastery on laptop for homework help" 
+                  className="w-full max-h-[400px] object-cover object-top rounded-2xl shadow-2xl"
+                  data-testid="img-hero-student"
+                />
+                <p className="text-xs text-muted-foreground text-center mt-3 italic">
+                  Real students. Real homework. Real learning.
+                </p>
+              </div>
+            </div>
+          </div>
+          
+          {/* Video Preview - Below hero content */}
+          <div className="max-w-4xl mx-auto mt-16">
             <div 
-              className="relative w-full max-w-3xl mx-auto mt-12 rounded-2xl overflow-hidden shadow-2xl border border-border"
+              className="relative w-full rounded-2xl overflow-hidden shadow-2xl border border-border"
               style={{ aspectRatio: '16/9' }}
               data-testid="video-hero-container"
             >
