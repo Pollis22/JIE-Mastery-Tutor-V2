@@ -1057,6 +1057,7 @@ async function finalizeSession(
       // Get parent info and email preferences from database
       const parentResult = await db.select({
         email: users.email,
+        transcriptEmail: users.transcriptEmail,
         parentName: users.parentName,
         emailSummaryFrequency: users.emailSummaryFrequency,
       })
@@ -1067,6 +1068,10 @@ async function finalizeSession(
       const parent = parentResult[0];
       
       if (parent?.email) {
+        // Resolve transcript email destination (transcript_email ?? login email)
+        const destinationEmail = parent.transcriptEmail || parent.email;
+        const emailSource = parent.transcriptEmail ? 'transcript_email' : 'fallback_email';
+        
         // Check user's email preference before sending
         const emailFrequency = parent.emailSummaryFrequency || 'daily';
         
@@ -1087,8 +1092,10 @@ async function finalizeSession(
               text: t.text.trim()
             }));
           
+          console.log(`[Custom Voice] Email destination: user_id=${state.userId}, to=${destinationEmail}, reason=${emailSource}`);
+          
           await emailService.sendSessionSummary({
-            parentEmail: parent.email,
+            parentEmail: destinationEmail,
             parentName: parent.parentName || '',
             studentName: state.studentName || 'Your child',
             subject: sessionSubject,
@@ -1099,10 +1106,10 @@ async function finalizeSession(
             sessionDate: new Date()
           });
           
-          console.log(`[Custom Voice] ✉️ Parent summary email sent to ${parent.email}`);
+          console.log(`[Custom Voice] ✉️ Parent summary email sent to ${destinationEmail}`);
         } else {
           // 'daily' or 'weekly' - let cron job handle it
-          console.log(`[Custom Voice] ℹ️ Email will be sent via ${emailFrequency} digest for ${parent.email}`);
+          console.log(`[Custom Voice] ℹ️ Email will be sent via ${emailFrequency} digest for ${destinationEmail} (${emailSource})`);
         }
       }
     } catch (emailError) {

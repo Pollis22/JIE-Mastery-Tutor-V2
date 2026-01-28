@@ -30,6 +30,7 @@ interface SessionRow {
 interface UserRow {
   user_id: string;
   email: string;
+  transcript_email: string | null;
   parent_name: string | null;
   first_name: string | null;
 }
@@ -197,6 +198,7 @@ async function sendDailyDigests(targetDate?: Date): Promise<DigestStats> {
     SELECT DISTINCT 
       u.id as user_id,
       u.email,
+      u.transcript_email,
       u.parent_name,
       u.first_name
     FROM users u
@@ -300,9 +302,14 @@ async function sendDigestForUser(
     }))
   );
 
+  // Resolve transcript email destination (transcript_email ?? login email)
+  const destinationEmail = user.transcript_email || user.email;
+  const emailSource = user.transcript_email ? 'transcript_email' : 'fallback_email';
+  console.log(`[DailyDigest] Email destination: user_id=${user.user_id}, to=${destinationEmail}, reason=${emailSource}`);
+
   // Send the digest
   await emailService.sendDailyDigest({
-    parentEmail: user.email,
+    parentEmail: destinationEmail,
     parentName: user.parent_name || user.first_name || '',
     sessions,
     date: digestDate
@@ -383,6 +390,7 @@ async function sendWeeklyDigests(): Promise<DigestStats> {
     SELECT DISTINCT 
       u.id as user_id,
       u.email,
+      u.transcript_email,
       u.parent_name,
       u.first_name
     FROM users u
@@ -484,8 +492,13 @@ async function sendWeeklyDigestForUser(
     }))
   );
 
+  // Resolve transcript email destination (transcript_email ?? login email)
+  const destinationEmail = user.transcript_email || user.email;
+  const emailSource = user.transcript_email ? 'transcript_email' : 'fallback_email';
+  console.log(`[WeeklyDigest] Email destination: user_id=${user.user_id}, to=${destinationEmail}, reason=${emailSource}`);
+
   await emailService.sendDailyDigest({
-    parentEmail: user.email,
+    parentEmail: destinationEmail,
     parentName: user.parent_name || user.first_name || '',
     sessions,
     date: digestDate,

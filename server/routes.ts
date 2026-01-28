@@ -1040,22 +1040,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       const user = req.user as any;
-      const { emailSummaryFrequency } = req.body;
+      const { emailSummaryFrequency, transcriptEmail } = req.body;
       
-      // Validate the frequency value
-      const validFrequencies = ['off', 'per_session', 'daily', 'weekly'];
-      if (!validFrequencies.includes(emailSummaryFrequency)) {
-        return res.status(400).json({ 
-          message: "Invalid email summary frequency. Must be one of: off, per_session, daily, weekly" 
-        });
+      const updates: Record<string, any> = {};
+      
+      // Validate the frequency value if provided
+      if (emailSummaryFrequency !== undefined) {
+        const validFrequencies = ['off', 'per_session', 'daily', 'weekly'];
+        if (!validFrequencies.includes(emailSummaryFrequency)) {
+          return res.status(400).json({ 
+            message: "Invalid email summary frequency. Must be one of: off, per_session, daily, weekly" 
+          });
+        }
+        updates.emailSummaryFrequency = emailSummaryFrequency;
       }
       
-      // Update user's email summary frequency
-      await storage.updateUserSettings(user.id, { emailSummaryFrequency });
+      // Validate and update transcript email if provided
+      if (transcriptEmail !== undefined) {
+        // Empty string or null means clear the transcript email (use login email)
+        if (transcriptEmail === '' || transcriptEmail === null) {
+          updates.transcriptEmail = null;
+        } else {
+          // Validate email format
+          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+          if (!emailRegex.test(transcriptEmail)) {
+            return res.status(400).json({ 
+              message: "Invalid email format for transcript email" 
+            });
+          }
+          updates.transcriptEmail = transcriptEmail;
+        }
+      }
+      
+      // Update user's email preferences
+      if (Object.keys(updates).length > 0) {
+        await storage.updateUserSettings(user.id, updates);
+      }
       
       res.json({ 
         success: true, 
-        preferences: { emailSummaryFrequency } 
+        preferences: updates 
       });
     } catch (error: any) {
       console.error('[EmailSummaryPreferences] Error updating preferences:', error);
@@ -1074,7 +1098,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userData = await storage.getUser(user.id);
       
       res.json({
-        emailSummaryFrequency: userData?.emailSummaryFrequency || 'daily'
+        emailSummaryFrequency: userData?.emailSummaryFrequency || 'daily',
+        transcriptEmail: userData?.transcriptEmail || null,
+        loginEmail: userData?.email || null
       });
     } catch (error: any) {
       console.error('[EmailSummaryPreferences] Error fetching preferences:', error);

@@ -51,14 +51,20 @@ export default function SettingsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [emailFrequency, setEmailFrequency] = useState<EmailFrequency>('daily');
+  const [transcriptEmail, setTranscriptEmail] = useState<string>('');
   const [savingEmailPrefs, setSavingEmailPrefs] = useState(false);
+  const [savingTranscriptEmail, setSavingTranscriptEmail] = useState(false);
 
   const { data: dashboard, isLoading: isDashboardLoading } = useQuery<DashboardData>({
     queryKey: ["/api/dashboard"],
     enabled: !!user,
   });
 
-  const { data: emailPrefs, isLoading: isEmailPrefsLoading } = useQuery<{ emailSummaryFrequency: EmailFrequency }>({
+  const { data: emailPrefs, isLoading: isEmailPrefsLoading } = useQuery<{ 
+    emailSummaryFrequency: EmailFrequency;
+    transcriptEmail: string | null;
+    loginEmail: string | null;
+  }>({
     queryKey: ["/api/user/email-summary-preferences"],
     enabled: !!user,
   });
@@ -67,6 +73,8 @@ export default function SettingsPage() {
     if (emailPrefs?.emailSummaryFrequency) {
       setEmailFrequency(emailPrefs.emailSummaryFrequency);
     }
+    // Initialize transcript email: use saved value, or fallback to empty (will show login email as placeholder)
+    setTranscriptEmail(emailPrefs?.transcriptEmail || '');
   }, [emailPrefs]);
 
   const form = useForm<SettingsForm>({
@@ -178,10 +186,55 @@ export default function SettingsPage() {
       toast({ 
         title: "Error saving preferences", 
         description: error.message || "Something went wrong",
-        variant: "destructive" 
+        variant: "destructive"
       });
     } finally {
       setSavingEmailPrefs(false);
+    }
+  };
+
+  const handleSaveTranscriptEmail = async () => {
+    setSavingTranscriptEmail(true);
+    try {
+      // Validate email format if not empty
+      if (transcriptEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(transcriptEmail)) {
+        toast({ 
+          title: "Invalid email format", 
+          description: "Please enter a valid email address.",
+          variant: "destructive" 
+        });
+        setSavingTranscriptEmail(false);
+        return;
+      }
+
+      const res = await apiRequest("PATCH", "/api/user/email-summary-preferences", {
+        transcriptEmail: transcriptEmail || null,  // Empty string becomes null (use login email)
+      });
+      
+      if (res.ok) {
+        queryClient.invalidateQueries({ queryKey: ["/api/user/email-summary-preferences"] });
+        toast({ 
+          title: "Transcript email saved",
+          description: transcriptEmail 
+            ? `Session summaries will be sent to ${transcriptEmail}`
+            : "Session summaries will be sent to your login email.",
+        });
+      } else {
+        const data = await res.json();
+        toast({ 
+          title: "Error saving transcript email", 
+          description: data.message || "Something went wrong",
+          variant: "destructive" 
+        });
+      }
+    } catch (error: any) {
+      toast({ 
+        title: "Error saving transcript email", 
+        description: error.message || "Something went wrong",
+        variant: "destructive" 
+      });
+    } finally {
+      setSavingTranscriptEmail(false);
     }
   };
 
@@ -444,7 +497,9 @@ export default function SettingsPage() {
                     
                     <div className="flex items-center justify-between pt-2">
                       <p className="text-sm text-muted-foreground">
-                        Summaries are sent to: <span className="font-medium text-foreground">{user?.email}</span>
+                        Summaries are sent to: <span className="font-medium text-foreground">
+                          {emailPrefs?.transcriptEmail || user?.email}
+                        </span>
                       </p>
                       <Button 
                         type="button"
@@ -453,6 +508,40 @@ export default function SettingsPage() {
                         data-testid="button-save-email-preferences"
                       >
                         {savingEmailPrefs ? "Saving..." : "Save Preferences"}
+                      </Button>
+                    </div>
+                  </div>
+                  
+                  {/* Transcript Email - separate delivery address */}
+                  <div className="border-t pt-4 space-y-4">
+                    <div>
+                      <h4 className="text-base font-medium">Send Transcripts To</h4>
+                      <p className="text-sm text-muted-foreground">
+                        Optionally send session summaries to a different email. Does not affect login email.
+                      </p>
+                    </div>
+                    
+                    <div className="flex gap-3 items-start">
+                      <div className="flex-1">
+                        <Input
+                          type="email"
+                          placeholder={user?.email || "Enter email address"}
+                          value={transcriptEmail}
+                          onChange={(e) => setTranscriptEmail(e.target.value)}
+                          disabled={isEmailPrefsLoading}
+                          data-testid="input-transcript-email"
+                        />
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Leave empty to use your login email ({user?.email})
+                        </p>
+                      </div>
+                      <Button 
+                        type="button"
+                        onClick={handleSaveTranscriptEmail}
+                        disabled={savingTranscriptEmail || isEmailPrefsLoading}
+                        data-testid="button-save-transcript-email"
+                      >
+                        {savingTranscriptEmail ? "Saving..." : "Save"}
                       </Button>
                     </div>
                   </div>
