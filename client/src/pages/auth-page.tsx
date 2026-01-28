@@ -266,6 +266,14 @@ export default function AuthPage() {
               >
                 FAQ
               </Button>
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={() => setLocation("/schools")} 
+                data-testid="button-nav-schools"
+              >
+                AI Tutoring for Schools
+              </Button>
               <div className="w-px h-6 bg-border mx-2" />
               <Button 
                 variant="outline" 
