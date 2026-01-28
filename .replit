@@ -52,6 +52,7 @@ externalPort = 80
 STT_PROVIDER = "assemblyai"
 VITE_ELEVENLABS_CONVAI_AGENT_ID = "agent_7601k9nzfad9e3c88n3hhdc2p80d"
 ADMIN_EMAIL = "pollis@jiemastery.com"
+TZ = "America/Chicago"
 
 [userenv.production]
 APP_URL = "https://www.jiemastery.ai"
