@@ -2001,6 +2001,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // External cron endpoint for daily digest - secured by CRON_SECRET
+  // This allows external schedulers (cron-job.org, Upstash, etc.) to trigger the digest
+  // when autoscale deployment doesn't keep the server running 24/7
+  app.post("/api/cron/daily-digest", async (req, res) => {
+    const cronSecret = process.env.CRON_SECRET;
+    const providedSecret = req.headers['x-cron-secret'] || req.query.secret;
+    
+    if (!cronSecret) {
+      console.error('[Cron] CRON_SECRET not configured - endpoint disabled');
+      return res.status(503).json({ error: 'Cron endpoint not configured' });
+    }
+    
+    if (providedSecret !== cronSecret) {
+      console.warn('[Cron] Invalid secret provided for daily-digest');
+      return res.status(401).json({ error: 'Invalid secret' });
+    }
+    
+    try {
+      console.log('[Cron] External trigger for daily digest received');
+      const { sendDailyDigests } = await import('./jobs/daily-digest');
+      await sendDailyDigests();
+      
+      res.json({ success: true, message: 'Daily digest triggered', timestamp: new Date().toISOString() });
+    } catch (error: any) {
+      console.error('[Cron] Daily digest error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // External cron endpoint for weekly digest
+  app.post("/api/cron/weekly-digest", async (req, res) => {
+    const cronSecret = process.env.CRON_SECRET;
+    const providedSecret = req.headers['x-cron-secret'] || req.query.secret;
+    
+    if (!cronSecret) {
+      console.error('[Cron] CRON_SECRET not configured - endpoint disabled');
+      return res.status(503).json({ error: 'Cron endpoint not configured' });
+    }
+    
+    if (providedSecret !== cronSecret) {
+      console.warn('[Cron] Invalid secret provided for weekly-digest');
+      return res.status(401).json({ error: 'Invalid secret' });
+    }
+    
+    try {
+      console.log('[Cron] External trigger for weekly digest received');
+      const { sendWeeklyDigests } = await import('./jobs/daily-digest');
+      await sendWeeklyDigests();
+      
+      res.json({ success: true, message: 'Weekly digest triggered', timestamp: new Date().toISOString() });
+    } catch (error: any) {
+      console.error('[Cron] Weekly digest error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Stripe customer cleanup endpoint (admin only)
   app.post("/api/admin/cleanup-stripe", requireAdmin, async (req, res) => {
     try {
