@@ -42,6 +42,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { formatChicagoDate } from "@/lib/date-utils";
 
 interface UserDetails {
   user: {
@@ -286,7 +287,7 @@ export default function AdminUserDetail() {
                 <span className="text-sm">Member Since</span>
               </div>
               <p className="text-lg font-medium" data-testid="text-created-at">
-                {new Date(user.createdAt).toLocaleDateString()}
+                {formatChicagoDate(user.createdAt)}
               </p>
             </CardContent>
           </Card>
@@ -480,7 +481,7 @@ export default function AdminUserDetail() {
                         <td className="p-3">{session.ageGroup || "N/A"}</td>
                         <td className="p-3">{session.minutesUsed || 0}</td>
                         <td className="p-3">
-                          {new Date(session.startedAt).toLocaleDateString()}
+                          {formatChicagoDate(session.startedAt)}
                         </td>
                         <td className="p-3">
                           <Badge variant={session.status === "ended" ? "default" : "secondary"}>
@@ -517,7 +518,7 @@ export default function AdminUserDetail() {
                       <span>{doc.fileName}</span>
                     </div>
                     <span className="text-sm text-muted-foreground">
-                      {new Date(doc.createdAt).toLocaleDateString()}
+                      {formatChicagoDate(doc.createdAt)}
                     </span>
                   </div>
                 ))}

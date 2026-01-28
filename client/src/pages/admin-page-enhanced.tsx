@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { formatChicagoDateTime, formatChicagoDate } from "@/lib/date-utils";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { Download, Users, Clock, Activity, TrendingUp, FileText, DollarSign, Mail, Shield, AlertTriangle, Eye, BarChart3, Calendar } from "lucide-react";
@@ -692,17 +693,7 @@ export default function AdminPageEnhanced() {
                                 </TableCell>
                                 <TableCell>
                                   <span className="text-sm text-muted-foreground" data-testid={`text-last-active-${index}`}>
-                                    {userData.lastActiveAt 
-                                      ? new Date(userData.lastActiveAt).toLocaleString('en-US', {
-                                          month: 'short',
-                                          day: 'numeric',
-                                          year: 'numeric',
-                                          hour: 'numeric',
-                                          minute: '2-digit',
-                                          hour12: true
-                                        })
-                                      : 'Never'
-                                    }
+                                    {formatChicagoDateTime(userData.lastActiveAt)}
                                   </span>
                                 </TableCell>
                                 <TableCell>
@@ -794,7 +785,7 @@ export default function AdminPageEnhanced() {
                               </TableCell>
                               <TableCell>{session.minutesUsed || 0} min</TableCell>
                               <TableCell className="text-sm text-muted-foreground">
-                                {session.startedAt ? new Date(session.startedAt).toLocaleDateString() : 'N/A'}
+                                {formatChicagoDate(session.startedAt)}
                               </TableCell>
                               <TableCell>
                                 <Badge variant={session.status === 'ended' ? 'default' : 'secondary'}>
@@ -898,13 +889,13 @@ export default function AdminPageEnhanced() {
                                 </Badge>
                               </TableCell>
                               <TableCell>
-                                {lead.verifiedAt ? new Date(lead.verifiedAt).toLocaleDateString() : '-'}
+                                {formatChicagoDate(lead.verifiedAt)}
                               </TableCell>
                               <TableCell>
                                 {lead.consumedSeconds ? `${Math.floor(lead.consumedSeconds / 60)}m ${lead.consumedSeconds % 60}s` : '0s'}
                               </TableCell>
                               <TableCell>
-                                {lead.createdAt ? new Date(lead.createdAt).toLocaleString() : '-'}
+                                {formatChicagoDateTime(lead.createdAt)}
                               </TableCell>
                             </TableRow>
                           ))}
@@ -1016,7 +1007,7 @@ export default function AdminPageEnhanced() {
                                 </div>
                               </TableCell>
                               <TableCell>
-                                {incident.createdAt ? new Date(incident.createdAt).toLocaleString() : '-'}
+                                {formatChicagoDateTime(incident.createdAt)}
                               </TableCell>
                             </TableRow>
                           ))}

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { format } from "date-fns";
+import { formatChicagoDateTime, formatChicagoTime } from "@/lib/date-utils";
 import {
   ArrowLeft,
   Calendar,
@@ -63,7 +63,7 @@ export default function SessionDetailsPage() {
     if (!session?.transcript) return;
     
     const transcriptText = session.transcript.map((msg: any) => 
-      `[${format(new Date(msg.timestamp), 'HH:mm:ss')}] ${msg.speaker === 'tutor' ? 'Tutor' : 'Student'}: ${msg.text}`
+      `[${formatChicagoTime(msg.timestamp)}] ${msg.speaker === 'tutor' ? 'Tutor' : 'Student'}: ${msg.text}`
     ).join('\n\n');
     
     const blob = new Blob([transcriptText], { type: 'text/plain' });
@@ -156,7 +156,7 @@ export default function SessionDetailsPage() {
                 Date
               </div>
               <p className="font-medium">
-                {format(new Date(session.startedAt), 'MMM dd, yyyy h:mm a')}
+                {formatChicagoDateTime(session.startedAt)}
               </p>
             </div>
             
@@ -248,7 +248,7 @@ export default function SessionDetailsPage() {
                           <p className="text-sm">{message.text}</p>
                         </div>
                         <p className="text-xs text-muted-foreground">
-                          {format(new Date(message.timestamp), 'h:mm:ss a')}
+                          {formatChicagoTime(message.timestamp)}
                         </p>
                       </div>
                     </div>

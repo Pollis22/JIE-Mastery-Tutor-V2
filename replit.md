@@ -7,6 +7,7 @@ The JIE Mastery AI Tutor is a production-ready conversational AI tutoring web pl
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
+Timezone display: All timestamps display in America/Chicago (Central Time) using `Intl.DateTimeFormat`.
 
 ## System Architecture
 

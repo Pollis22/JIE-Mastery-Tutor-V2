@@ -3,6 +3,7 @@ import { Upload, FileText, Trash2, Edit2, Check, X, Clock, CheckCircle, AlertCir
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
+import { formatChicagoDate } from '@/lib/date-utils';
 
 interface Document {
   id: string;
@@ -380,7 +381,7 @@ export function AssignmentsPanel({
                         )}
                       </td>
                       <td className="p-3 text-sm text-gray-500 dark:text-gray-400">
-                        {document.expiresAt ? new Date(document.expiresAt).toLocaleDateString() : 'Never'}
+                        {document.expiresAt ? formatChicagoDate(document.expiresAt) : 'Never'}
                       </td>
                       <td className="p-3">
                         <div className="actions flex gap-2">

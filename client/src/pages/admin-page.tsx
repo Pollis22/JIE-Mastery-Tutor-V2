@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { formatChicagoDate } from "@/lib/date-utils";
 import { useState } from "react";
 import { useLocation } from "wouter";
 
@@ -258,7 +259,7 @@ export default function AdminPage() {
                             </Badge>
                           </TableCell>
                           <TableCell className="text-sm text-muted-foreground">
-                            {userData.createdAt ? new Date(userData.createdAt).toLocaleDateString() : 'N/A'}
+                            {formatChicagoDate(userData.createdAt)}
                           </TableCell>
                           <TableCell className="text-sm text-foreground">
                             {userData.weeklyVoiceMinutesUsed || 0}/

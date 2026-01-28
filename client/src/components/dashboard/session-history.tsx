@@ -14,7 +14,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useQuery } from "@tanstack/react-query";
-import { format, formatDistanceToNow } from "date-fns";
+import { formatDistanceToNow } from "date-fns";
+import { formatChicagoDateTime, formatChicagoTime } from "@/lib/date-utils";
 import { 
   Clock, 
   Calendar,
@@ -183,7 +184,7 @@ export default function SessionHistory({ limit }: SessionHistoryProps) {
                       )}
                       <div className="flex items-center gap-2">
                         <Calendar className="h-3 w-3" />
-                        {format(new Date(session.startedAt), 'MMM dd, yyyy h:mm a')}
+                        {formatChicagoDateTime(session.startedAt)}
                       </div>
                       <div className="flex items-center gap-2">
                         <Clock className="h-3 w-3" />
@@ -232,7 +233,7 @@ export default function SessionHistory({ limit }: SessionHistoryProps) {
                                       </span>
                                       {entry.timestamp && (
                                         <span className="text-xs text-muted-foreground">
-                                          {format(new Date(entry.timestamp), 'h:mm:ss a')}
+                                          {formatChicagoTime(entry.timestamp)}
                                         </span>
                                       )}
                                     </div>

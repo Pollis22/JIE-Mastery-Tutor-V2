@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { formatChicagoDateTime, formatChicagoDate } from "@/lib/date-utils";
 import { Search, UserPlus, Edit, Trash2, CreditCard, Eye } from "lucide-react";
 import { Link } from "wouter";
 import {
@@ -170,22 +171,12 @@ export default function AdminUsers() {
                         </td>
                         <td className="p-3">
                           <span className="text-sm text-muted-foreground">
-                            {new Date(user.createdAt).toLocaleDateString()}
+                            {formatChicagoDate(user.createdAt)}
                           </span>
                         </td>
                         <td className="p-3">
                           <span className="text-sm text-muted-foreground" data-testid={`text-last-active-${user.id}`}>
-                            {user.lastActiveAt 
-                              ? new Date(user.lastActiveAt).toLocaleString('en-US', {
-                                  month: 'short',
-                                  day: 'numeric',
-                                  year: 'numeric',
-                                  hour: 'numeric',
-                                  minute: '2-digit',
-                                  hour12: true
-                                })
-                              : 'Never'
-                            }
+                            {formatChicagoDateTime(user.lastActiveAt)}
                           </span>
                         </td>
                         <td className="p-3">

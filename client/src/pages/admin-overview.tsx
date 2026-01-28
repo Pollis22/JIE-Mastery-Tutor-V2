@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { AdminLayout } from "@/components/admin-layout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { formatChicagoDate } from "@/lib/date-utils";
 import { Users, CreditCard, FileText, Activity, Download } from "lucide-react";
 
 interface AdminStats {
@@ -151,7 +152,7 @@ export default function AdminOverview() {
                       <p className="text-sm text-muted-foreground">{user.email}</p>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      {new Date(user.createdAt).toLocaleDateString()}
+                      {formatChicagoDate(user.createdAt)}
                     </p>
                   </div>
                 )) || <p className="text-muted-foreground">No recent users</p>}

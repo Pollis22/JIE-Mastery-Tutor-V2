@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { formatChicagoDate } from "@/lib/date-utils";
 import { useState, useEffect } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { User, Mail, Calendar, Shield, CreditCard, Clock } from "lucide-react";
@@ -117,11 +118,7 @@ export default function ProfilePage() {
     user?.username || 
     'User';
   const initials = getInitials(user?.firstName, user?.lastName, user?.username);
-  const memberSince = user?.createdAt ? new Date(user.createdAt).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric'
-  }) : 'N/A';
+  const memberSince = formatChicagoDate(user?.createdAt);
 
   return (
     <div className="min-h-screen bg-background">

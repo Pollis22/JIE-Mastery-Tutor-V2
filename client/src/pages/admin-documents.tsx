@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { AdminLayout } from "@/components/admin-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { formatChicagoDate } from "@/lib/date-utils";
 import { FileText, HardDrive } from "lucide-react";
 
 interface DocumentAnalytics {
@@ -128,7 +129,7 @@ export default function AdminDocuments() {
                         </td>
                         <td className="p-3">
                           <span className="text-sm text-muted-foreground">
-                            {new Date(doc.createdAt).toLocaleDateString()}
+                            {formatChicagoDate(doc.createdAt)}
                           </span>
                         </td>
                       </tr>

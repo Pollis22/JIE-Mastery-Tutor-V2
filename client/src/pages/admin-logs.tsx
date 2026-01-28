@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { AdminLayout } from "@/components/admin-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { formatChicagoDateTime } from "@/lib/date-utils";
 import { ScrollText } from "lucide-react";
 
 export default function AdminLogs() {
@@ -81,7 +82,7 @@ export default function AdminLogs() {
                         <tr key={log.id} className="border-b hover:bg-muted/50">
                           <td className="p-3">
                             <span className="text-sm text-muted-foreground">
-                              {new Date(log.timestamp).toLocaleString()}
+                              {formatChicagoDateTime(log.timestamp)}
                             </span>
                           </td>
                           <td className="p-3">

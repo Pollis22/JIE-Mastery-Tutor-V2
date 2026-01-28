@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { AdminLayout } from "@/components/admin-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { formatChicagoDate } from "@/lib/date-utils";
 import { DollarSign, TrendingUp, Users as UsersIcon, Calendar } from "lucide-react";
 
 interface SubscriptionAnalytics {
@@ -145,7 +146,7 @@ export default function AdminSubscriptions() {
                         </td>
                         <td className="p-3">
                           <span className="text-sm text-muted-foreground">
-                            {user.createdAt ? new Date(user.createdAt).toLocaleDateString() : "N/A"}
+                            {formatChicagoDate(user.createdAt)}
                           </span>
                         </td>
                         <td className="p-3">
