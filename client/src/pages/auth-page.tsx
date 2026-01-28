@@ -67,10 +67,13 @@ export default function AuthPage() {
   const [continueTrialEmail, setContinueTrialEmail] = useState('');
   const [continueTrialSent, setContinueTrialSent] = useState(false);
   const [loginModalOpen, setLoginModalOpen] = useState(false);
+  const [registerModalOpen, setRegisterModalOpen] = useState(false);
   
   const searchParams = new URLSearchParams(searchString);
   const verificationStatus = searchParams.get('verified');
   const verificationReason = searchParams.get('reason');
+  const preselectedPlan = searchParams.get('plan');
+  const actionParam = searchParams.get('action');
 
   const resendVerificationMutation = useMutation({
     mutationFn: async (email: string) => {
@@ -166,6 +169,15 @@ export default function AuthPage() {
       setLocation("/");
     }
   }, [user, setLocation]);
+
+  useEffect(() => {
+    if (actionParam === 'register') {
+      setRegisterModalOpen(true);
+      if (preselectedPlan && ['starter', 'standard', 'pro', 'elite'].includes(preselectedPlan)) {
+        registerForm.setValue('plan', preselectedPlan as 'starter' | 'standard' | 'pro' | 'elite');
+      }
+    }
+  }, [actionParam, preselectedPlan, registerForm]);
 
   const handleLogin = async (data: LoginForm) => {
     try {
@@ -273,6 +285,14 @@ export default function AuthPage() {
                 data-testid="button-nav-schools"
               >
                 AI Tutoring for Schools
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={() => setLocation("/contact")} 
+                data-testid="button-nav-contact"
+              >
+                Contact
               </Button>
               <div className="w-px h-6 bg-border mx-2" />
               <Button 
@@ -398,7 +418,7 @@ export default function AuthPage() {
                       type="button"
                       onClick={() => {
                         setLoginModalOpen(false);
-                        setLocation("/pricing");
+                        setRegisterModalOpen(true);
                       }}
                       className="text-primary hover:underline font-medium"
                       data-testid="link-modal-create-account"
@@ -485,6 +505,183 @@ export default function AuthPage() {
               </Button>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Registration Modal */}
+      <Dialog open={registerModalOpen} onOpenChange={setRegisterModalOpen}>
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <img src={jieLogo} alt="JIE Mastery" className="h-8 w-auto" />
+              Create Your Account
+            </DialogTitle>
+            <DialogDescription>
+              Complete your registration to start your learning journey.
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...registerForm}>
+            <form onSubmit={registerForm.handleSubmit(handleRegister)} className="space-y-4">
+              <FormField
+                control={registerForm.control}
+                name="plan"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Subscription Plan</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-modal-plan">
+                          <SelectValue placeholder="Select a plan" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="starter">Starter - $29/month (300 min)</SelectItem>
+                        <SelectItem value="standard">Standard - $69/month (800 min)</SelectItem>
+                        <SelectItem value="pro">Pro - $119/month (1500 min)</SelectItem>
+                        <SelectItem value="elite">Elite - $199/month (3000 min)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={registerForm.control}
+                  name="accountName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Your Name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Your full name" {...field} data-testid="input-modal-account-name" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={registerForm.control}
+                  name="studentName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Student Name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Student's name" {...field} data-testid="input-modal-student-name" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={registerForm.control}
+                  name="studentAge"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Student Age</FormLabel>
+                      <FormControl>
+                        <Input type="number" min={5} max={99} {...field} data-testid="input-modal-student-age" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={registerForm.control}
+                  name="gradeLevel"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Grade Level</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-modal-grade">
+                            <SelectValue placeholder="Select grade" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="kindergarten-2">K-2nd Grade</SelectItem>
+                          <SelectItem value="grades-3-5">3rd-5th Grade</SelectItem>
+                          <SelectItem value="grades-6-8">6th-8th Grade</SelectItem>
+                          <SelectItem value="grades-9-12">9th-12th Grade</SelectItem>
+                          <SelectItem value="college-adult">College/Adult</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <FormField
+                control={registerForm.control}
+                name="primarySubject"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Primary Subject</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-modal-subject">
+                          <SelectValue placeholder="Select subject" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="math">Math</SelectItem>
+                        <SelectItem value="english">English</SelectItem>
+                        <SelectItem value="science">Science</SelectItem>
+                        <SelectItem value="spanish">Spanish</SelectItem>
+                        <SelectItem value="general">General (All Subjects)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={registerForm.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Email</FormLabel>
+                    <FormControl>
+                      <Input type="email" placeholder="your@email.com" {...field} data-testid="input-modal-email" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={registerForm.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Password</FormLabel>
+                    <FormControl>
+                      <Input type="password" placeholder="Min 8 characters" {...field} data-testid="input-modal-password" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <Button 
+                type="submit" 
+                className="w-full" 
+                disabled={createCheckoutSessionMutation.isPending}
+                data-testid="button-modal-register"
+              >
+                {createCheckoutSessionMutation.isPending ? "Processing..." : "Continue to Payment"}
+              </Button>
+              
+              <p className="text-xs text-muted-foreground text-center">
+                You'll be redirected to Stripe to complete payment securely.
+              </p>
+            </form>
+          </Form>
         </DialogContent>
       </Dialog>
 

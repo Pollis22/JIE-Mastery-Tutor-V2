@@ -62,6 +62,14 @@ export default function SchoolsPage() {
               >
                 For Schools
               </Button>
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={() => setLocation("/contact")} 
+                data-testid="button-nav-contact"
+              >
+                Contact
+              </Button>
               <div className="w-px h-6 bg-border mx-2" />
               <Button 
                 variant="default" 

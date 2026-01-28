@@ -103,9 +103,9 @@ export default function PricingPage() {
   const [loading, setLoading] = useState<string | null>(null);
 
   const handleSelectPlan = async (planId: string) => {
-    // If user is not logged in, redirect to auth page
+    // If user is not logged in, redirect to auth page with plan pre-selected
     if (!user) {
-      setLocation("/auth");
+      setLocation(`/auth?plan=${planId}&action=register`);
       return;
     }
 
@@ -154,10 +154,13 @@ export default function PricingPage() {
             </div>
             <div className="flex items-center space-x-4">
               <StartTrialButton variant="outline" size="sm" />
+              <Button variant="ghost" onClick={() => setLocation("/contact")} data-testid="button-nav-contact">
+                Contact
+              </Button>
               <Button variant="ghost" onClick={() => setLocation("/auth")} data-testid="button-sign-in">
                 Sign In
               </Button>
-              <Button onClick={() => setLocation("/auth")} data-testid="button-get-started">
+              <Button onClick={() => setLocation("/auth?action=register")} data-testid="button-get-started">
                 Get Started
               </Button>
             </div>
