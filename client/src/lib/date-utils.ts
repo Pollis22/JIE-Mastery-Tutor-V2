@@ -1,4 +1,4 @@
-const CHICAGO_TIMEZONE = 'America/Chicago';
+export const APP_TZ = import.meta.env.VITE_APP_TZ || 'America/Chicago';
 
 type DateInput = string | Date | null | undefined;
 
@@ -14,7 +14,7 @@ export function formatChicagoDateTime(input: DateInput): string {
   
   try {
     return new Intl.DateTimeFormat('en-US', {
-      timeZone: CHICAGO_TIMEZONE,
+      timeZone: APP_TZ,
       year: 'numeric',
       month: 'short',
       day: '2-digit',
@@ -33,7 +33,7 @@ export function formatChicagoDate(input: DateInput): string {
   
   try {
     return new Intl.DateTimeFormat('en-US', {
-      timeZone: CHICAGO_TIMEZONE,
+      timeZone: APP_TZ,
       year: 'numeric',
       month: 'short',
       day: '2-digit',
@@ -49,7 +49,7 @@ export function formatChicagoTime(input: DateInput): string {
   
   try {
     return new Intl.DateTimeFormat('en-US', {
-      timeZone: CHICAGO_TIMEZONE,
+      timeZone: APP_TZ,
       hour: 'numeric',
       minute: '2-digit',
       hour12: true,
