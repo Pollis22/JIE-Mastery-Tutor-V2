@@ -810,7 +810,7 @@ export default function AuthPage() {
             >
               <iframe 
                 className="absolute top-0 left-0 w-full h-full"
-                src="https://www.youtube.com/embed/UN7vOUoGGmA" 
+                src="https://www.youtube.com/embed/e8WgxSMhnGY" 
                 title="See How JIE Mastery Tutoring Works" 
                 frameBorder="0" 
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
