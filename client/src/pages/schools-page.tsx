@@ -6,7 +6,7 @@ import jieLogo from "@/assets/jie-mastery-logo-sm.jpg";
 import schoolClassroom from "@/assets/school-classroom.png";
 import familyHomework from "@/assets/family-homework.png";
 import { 
-  FileText, 
+  FileText,
   ShieldCheck, 
   Brain, 
   Lock, 
@@ -74,7 +74,7 @@ export default function SchoolsPage() {
               <Button 
                 variant="default" 
                 size="sm"
-                onClick={() => window.location.href = "mailto:partnerships@jiemastery.ai?subject=School Demo Request"}
+                onClick={() => setLocation("/contact")}
                 data-testid="button-nav-demo-request"
               >
                 Request Demo
@@ -114,21 +114,11 @@ export default function SchoolsPage() {
                 <Button 
                   size="lg" 
                   className="px-8 py-6 text-lg font-bold rounded-xl shadow-lg"
-                  onClick={() => window.location.href = "mailto:partnerships@jiemastery.ai?subject=School Demo Request"}
+                  onClick={() => setLocation("/contact")}
                   data-testid="button-hero-demo"
                 >
                   Request a School Demo
                   <ChevronRight className="w-5 h-5 ml-2" />
-                </Button>
-                <Button 
-                  variant="outline" 
-                  size="lg"
-                  className="px-8 py-6 text-lg rounded-xl"
-                  onClick={() => window.open("/JIE_Schools_Sellsheet.pdf", "_blank")}
-                  data-testid="button-hero-sellsheet"
-                >
-                  <FileText className="w-5 h-5 mr-2" />
-                  Download Sell Sheet
                 </Button>
               </div>
               
@@ -382,7 +372,7 @@ export default function SchoolsPage() {
 
                 <Button 
                   className="w-full mt-6 py-6 text-lg font-semibold"
-                  onClick={() => window.location.href = "mailto:partnerships@jiemastery.ai?subject=District Pricing Inquiry"}
+                  onClick={() => setLocation("/contact")}
                   data-testid="button-district-pricing"
                 >
                   Request District Pricing
@@ -518,7 +508,7 @@ export default function SchoolsPage() {
               <Button 
                 size="lg" 
                 className="px-10 py-6 text-lg font-bold rounded-xl shadow-lg"
-                onClick={() => window.location.href = "mailto:partnerships@jiemastery.ai?subject=School Demo Request"}
+                onClick={() => setLocation("/contact")}
                 data-testid="button-footer-demo"
               >
                 Request a Demo
@@ -527,7 +517,7 @@ export default function SchoolsPage() {
                 variant="outline" 
                 size="lg"
                 className="px-10 py-6 text-lg rounded-xl"
-                onClick={() => window.location.href = "mailto:sales@jiemastery.ai?subject=District Inquiry"}
+                onClick={() => setLocation("/contact")}
                 data-testid="button-footer-sales"
               >
                 Contact Sales
@@ -538,15 +528,15 @@ export default function SchoolsPage() {
               <div className="flex flex-col sm:flex-row items-center justify-center gap-8 text-muted-foreground">
                 <a href="https://jiemastery.ai" className="flex items-center gap-2 hover:text-foreground transition-colors">
                   <Globe className="w-5 h-5" />
-                  JieMastery.ai
+                  jiemastery.ai
                 </a>
-                <a href="tel:+18005551234" className="flex items-center gap-2 hover:text-foreground transition-colors">
+                <a href="tel:+18008640367" className="flex items-center gap-2 hover:text-foreground transition-colors">
                   <Phone className="w-5 h-5" />
-                  (800) 555-1234
+                  1-800-864-0367
                 </a>
-                <a href="mailto:partnerships@jiemastery.ai" className="flex items-center gap-2 hover:text-foreground transition-colors">
+                <a href="mailto:sales@jiemastery.ai" className="flex items-center gap-2 hover:text-foreground transition-colors">
                   <Mail className="w-5 h-5" />
-                  partnerships@jiemastery.ai
+                  sales@jiemastery.ai
                 </a>
               </div>
             </div>
