@@ -84,19 +84,29 @@ const SubscribeForm = ({ plan }: { plan: string }) => {
         disabled={!stripe || isProcessing}
         data-testid="button-complete-subscription"
       >
-        {isProcessing ? "Processing..." : `Subscribe to ${plan === 'all' ? 'All Subjects' : 'Single Subject'} Plan`}
+        {isProcessing ? "Processing..." : `Subscribe to ${plan.charAt(0).toUpperCase() + plan.slice(1)} Plan`}
       </Button>
     </form>
   );
 };
+
+// Valid plan IDs that map to Stripe prices
+const VALID_PLANS = ['starter', 'standard', 'pro', 'elite'] as const;
+type ValidPlan = typeof VALID_PLANS[number];
 
 export default function SubscribePage() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const search = useSearch();
   const params = new URLSearchParams(search);
-  const plan = params.get('plan') || 'all';
+  const rawPlan = params.get('plan') || 'starter';
+  // Normalize plan - map old plan names to new ones
+  const plan: ValidPlan = VALID_PLANS.includes(rawPlan.toLowerCase() as ValidPlan) 
+    ? rawPlan.toLowerCase() as ValidPlan 
+    : 'starter';
   const [clientSecret, setClientSecret] = useState("");
+  const [setupError, setSetupError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -105,26 +115,33 @@ export default function SubscribePage() {
       return;
     }
 
-    // Create subscription as soon as the page loads
+    setIsLoading(true);
+    setSetupError(null);
+
+    // Create subscription with valid plan name
     apiRequest("POST", "/api/get-or-create-subscription", { plan })
-      .then((res) => res.json())
-      .then((data) => {
+      .then(async (res) => {
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.message || data.error || 'Subscription setup failed');
+        }
         if (data.clientSecret) {
           setClientSecret(data.clientSecret);
         } else {
-          toast({
-            title: "Setup Error",
-            description: "Unable to set up payment. Please try again.",
-            variant: "destructive",
-          });
+          throw new Error('No payment session created. Please try again.');
         }
       })
       .catch((error) => {
+        console.error('Subscription setup error:', error);
+        setSetupError(error.message || 'Something went wrong starting your subscription.');
         toast({
           title: "Setup Error",
-          description: error.message,
+          description: error.message || 'Something went wrong. Please try again or contact support.',
           variant: "destructive",
         });
+      })
+      .finally(() => {
+        setIsLoading(false);
       });
   }, [user, plan, setLocation, toast]);
 
@@ -132,35 +149,88 @@ export default function SubscribePage() {
     return null;
   }
 
-  const planDetails = {
-    single: {
-      name: 'Single Subject',
-      price: '$99.99',
+  const planDetails: Record<ValidPlan, { name: string; price: string; features: string[] }> = {
+    starter: {
+      name: 'Starter Family',
+      price: '$19.99',
       features: [
-        'Choose Math, English, Science, Spanish & More',
-        '60 minutes of voice learning per week',
+        '60 minutes of voice tutoring per month',
+        'All subjects: Math, English, Science, Spanish & more',
         'Interactive quizzes & progress tracking',
-        'Session transcripts & resume feature',
+        'Session transcripts',
         'Email support'
       ]
     },
-    all: {
-      name: 'All Subjects',
-      price: '$199.00',
+    standard: {
+      name: 'Standard Family',
+      price: '$59.99',
       features: [
-        'Math, English, Science, Spanish & More',
-        '90 minutes of voice learning per week',
-        'Cross-subject learning insights',
+        '240 minutes of voice tutoring per month',
+        'All subjects: Math, English, Science, Spanish & more',
+        'Interactive quizzes & progress tracking',
+        'Session transcripts & resume feature',
+        'Priority email support'
+      ]
+    },
+    pro: {
+      name: 'Pro Family',
+      price: '$99.99',
+      features: [
+        '600 minutes of voice tutoring per month',
+        'All subjects: Math, English, Science, Spanish & more',
         'Advanced progress analytics',
-        'Priority support',
-        'Early access to new subjects'
+        'Session transcripts & resume feature',
+        'Priority support'
+      ]
+    },
+    elite: {
+      name: 'Elite Family',
+      price: '$199.99',
+      features: [
+        '1800 minutes of voice tutoring per month',
+        'All subjects: Math, English, Science, Spanish & more',
+        '3 concurrent devices - multiple kids learn simultaneously',
+        'Advanced analytics & insights',
+        'Priority support with phone access'
       ]
     }
   };
 
-  const currentPlan = planDetails[plan as keyof typeof planDetails];
+  const currentPlan = planDetails[plan];
 
-  if (!clientSecret) {
+  // Show error state - no infinite spinner
+  if (setupError) {
+    return (
+      <div className="min-h-screen bg-background">
+        <NavigationHeader />
+        <div className="flex items-center justify-center min-h-[50vh]">
+          <div className="text-center max-w-md mx-auto p-6">
+            <div className="w-16 h-16 bg-destructive/10 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-destructive" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </div>
+            <h2 className="text-xl font-semibold text-foreground mb-2">Subscription Setup Failed</h2>
+            <p className="text-muted-foreground mb-6">{setupError}</p>
+            <div className="flex flex-col gap-3">
+              <Button onClick={() => window.location.reload()} data-testid="button-retry-subscription">
+                Try Again
+              </Button>
+              <Button variant="outline" onClick={() => setLocation("/pricing")} data-testid="button-back-to-pricing">
+                Back to Pricing
+              </Button>
+              <a href="mailto:support@jiemastery.ai" className="text-sm text-muted-foreground hover:text-primary">
+                Contact Support
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show loading state
+  if (isLoading || !clientSecret) {
     return (
       <div className="min-h-screen bg-background">
         <NavigationHeader />
@@ -196,7 +266,8 @@ export default function SubscribePage() {
               <CardHeader>
                 <CardTitle className="flex items-center justify-between">
                   {currentPlan.name}
-                  {plan === 'all' && <Badge className="bg-secondary text-secondary-foreground">Most Popular</Badge>}
+                  {plan === 'pro' && <Badge className="bg-secondary text-secondary-foreground">Most Popular</Badge>}
+                  {plan === 'elite' && <Badge className="bg-amber-500 text-white">Best Value</Badge>}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
@@ -205,12 +276,6 @@ export default function SubscribePage() {
                     {currentPlan.price}
                     <span className="text-lg text-muted-foreground font-normal">/month</span>
                   </div>
-                  {plan === 'all' && (
-                    <p className="text-sm text-muted-foreground">
-                      <span className="line-through">$299.97 if purchased separately</span>{' '}
-                      <Badge variant="secondary" className="ml-2">Save $100</Badge>
-                    </p>
-                  )}
                 </div>
 
                 <div className="space-y-3">
