@@ -219,7 +219,7 @@ export default function SubscribePage() {
               <Button variant="outline" onClick={() => setLocation("/pricing")} data-testid="button-back-to-pricing">
                 Back to Pricing
               </Button>
-              <a href="mailto:support@jiemastery.ai" className="text-sm text-muted-foreground hover:text-primary">
+              <a href="mailto:support@jiemastery.ai" className="text-sm text-muted-foreground hover:text-primary" data-testid="link-contact-support">
                 Contact Support
               </a>
             </div>
@@ -281,7 +281,7 @@ export default function SubscribePage() {
                 <div className="space-y-3">
                   <h4 className="font-semibold text-foreground">What's included:</h4>
                   {currentPlan.features.map((feature, index) => (
-                    <div key={index} className="flex items-center space-x-3">
+                    <div key={index} className="flex items-center space-x-3" data-testid={`text-feature-${index}`}>
                       <svg className="w-5 h-5 text-secondary flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                         <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
                       </svg>
@@ -324,7 +324,7 @@ export default function SubscribePage() {
           <div className="text-center mt-8">
             <p className="text-sm text-muted-foreground">
               By subscribing, you agree to our Terms of Service and Privacy Policy.{' '}
-              <Button variant="link" className="p-0 h-auto text-sm" onClick={() => setLocation("/pricing")}>
+              <Button variant="link" className="p-0 h-auto text-sm" onClick={() => setLocation("/pricing")} data-testid="link-change-plan">
                 Change plan
               </Button>
             </p>
