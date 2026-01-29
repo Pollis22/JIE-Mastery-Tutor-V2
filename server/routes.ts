@@ -1668,26 +1668,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
 
     let user = req.user as any;
-    const { plan = 'all' } = req.body; // 'single' or 'all'
+    const { plan, stripePriceId } = req.body;
+
+    // Validate: require either stripePriceId or a valid plan name
+    const validPlans = ['starter', 'standard', 'pro', 'elite'];
+    const normalizedPlan = plan?.toLowerCase();
+    
+    // Price ID mapping - use environment variables
+    const priceIds: Record<string, string> = {
+      starter: process.env.STRIPE_PRICE_STARTER || '',
+      standard: process.env.STRIPE_PRICE_STANDARD || '',
+      pro: process.env.STRIPE_PRICE_PRO || '',
+      elite: process.env.STRIPE_PRICE_ELITE || '',
+    };
+
+    // Determine the price ID to use
+    let priceId = stripePriceId;
+    if (!priceId && normalizedPlan && validPlans.includes(normalizedPlan)) {
+      priceId = priceIds[normalizedPlan];
+    }
+
+    // FAIL FAST: Validate price ID before any Stripe operations
+    if (!priceId) {
+      console.error(`❌ [Subscription] Missing Stripe price ID. Plan: ${plan}, stripePriceId: ${stripePriceId}`);
+      return res.status(400).json({ 
+        error: 'Stripe price ID is required',
+        message: `Please select a valid subscription plan. Valid plans: ${validPlans.join(', ')}`
+      });
+    }
+
+    if (!priceId.startsWith('price_')) {
+      console.error(`❌ [Subscription] Invalid price ID format: ${priceId}`);
+      return res.status(400).json({ 
+        error: 'Invalid price ID format',
+        message: 'Price ID must start with "price_". Please contact support.'
+      });
+    }
+
+    console.log(`💳 [Subscription] Using price ID: ${priceId} for plan: ${normalizedPlan || 'direct'}`);
 
     if (user.stripeSubscriptionId) {
-      const subscription = await stripe!.subscriptions.retrieve(user.stripeSubscriptionId);
-      
-      const latestInvoice = subscription.latest_invoice;
-      const clientSecret = latestInvoice && typeof latestInvoice === 'object' 
-        ? (latestInvoice as any).payment_intent?.client_secret 
-        : undefined;
+      try {
+        const subscription = await stripe!.subscriptions.retrieve(user.stripeSubscriptionId);
+        
+        const latestInvoice = subscription.latest_invoice;
+        const clientSecret = latestInvoice && typeof latestInvoice === 'object' 
+          ? (latestInvoice as any).payment_intent?.client_secret 
+          : undefined;
 
-      res.send({
-        subscriptionId: subscription.id,
-        clientSecret,
-      });
+        res.send({
+          subscriptionId: subscription.id,
+          clientSecret,
+        });
 
-      return;
+        return;
+      } catch (subError: any) {
+        console.warn('⚠️ [Subscription] Existing subscription retrieval failed, creating new:', subError.message);
+      }
     }
     
     if (!user.email) {
-      throw new Error('No user email on file');
+      return res.status(400).json({ error: 'No user email on file' });
     }
 
     try {
@@ -1698,15 +1739,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       user = await storage.updateUserStripeInfo(user.id, customer.id, null);
 
-      // Get price ID based on plan
-      const priceId = plan === 'single' 
-        ? process.env.STRIPE_SINGLE_PRICE_ID 
-        : process.env.STRIPE_ALL_PRICE_ID;
-
-      if (!priceId) {
-        throw new Error(`Missing Stripe price ID for ${plan} plan`);
-      }
-
       const subscription = await stripe!.subscriptions.create({
         customer: customer.id,
         items: [{ price: priceId }],
@@ -1715,7 +1747,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       await storage.updateUserStripeInfo(user.id, customer.id, subscription.id);
-      await storage.updateUserSubscription(user.id, plan, 'active');
+      await storage.updateUserSubscription(user.id, normalizedPlan || 'starter', 'active');
 
       const latestInvoice = subscription.latest_invoice;
       const clientSecret = latestInvoice && typeof latestInvoice === 'object' 
