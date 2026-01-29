@@ -127,7 +127,7 @@ export default function BenefitsPage() {
                 <CardContent className="p-0">
                   <div className="aspect-video w-full">
                     <iframe
-                      src="https://www.youtube.com/embed/Dzi3rJmnRg0"
+                      src="https://www.youtube.com/embed/e8WgxSMhnGY"
                       title="JIE Mastery AI Tutor"
                       className="w-full h-full"
                       frameBorder="0"
