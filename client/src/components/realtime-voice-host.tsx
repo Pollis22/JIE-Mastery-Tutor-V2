@@ -4,9 +4,95 @@ import { RealtimeVoiceTranscript } from './realtime-voice-transcript';
 import { ChatInput } from './ChatInput';
 import { MicStatusPill } from './MicStatusPill';
 import { Button } from '@/components/ui/button';
-import { Mic, MicOff, Volume2, VolumeX, AlertTriangle, FileText, Type, Headphones } from 'lucide-react';
+import { Mic, MicOff, Volume2, VolumeX, AlertTriangle, FileText, Type, Headphones, Timer } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
+
+// Session Timer Component - UI only, no billing logic
+function SessionTimer({ isActive }: { isActive: boolean }) {
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const isActiveRef = useRef(isActive);
+
+  // Keep ref in sync to avoid stale closures
+  isActiveRef.current = isActive;
+
+  useEffect(() => {
+    if (isActive) {
+      // Reset and start timer
+      setElapsedSeconds(0);
+      
+      // Guard against double-start
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+      
+      intervalRef.current = setInterval(() => {
+        if (isActiveRef.current) {
+          setElapsedSeconds(prev => prev + 1);
+        }
+      }, 1000);
+    } else {
+      // Stop timer (keep final value displayed)
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    }
+
+    // Cleanup on unmount
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [isActive]);
+
+  // Format seconds as mm:ss
+  const formatTime = (totalSeconds: number): string => {
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <div 
+      className="flex items-center gap-1.5 px-2.5 py-1 bg-muted/50 rounded-full text-sm font-medium"
+      data-testid="session-timer"
+    >
+      <Timer className="h-3.5 w-3.5 text-muted-foreground" />
+      <span className={isActive ? "text-foreground" : "text-muted-foreground"}>
+        {formatTime(elapsedSeconds)}
+      </span>
+    </div>
+  );
+}
+
+// Minutes Remaining Badge - shows remaining voice minutes from user data
+function MinutesRemainingBadge() {
+  const { user } = useAuth();
+  
+  if (!user) return null;
+  
+  // Calculate remaining minutes from user data
+  const monthlyMinutes = (user as any).monthlyVoiceMinutes || 0;
+  const usedMinutes = (user as any).monthlyVoiceMinutesUsed || 0;
+  const bonusMinutes = (user as any).bonusVoiceMinutes || 0;
+  const remaining = Math.max(0, monthlyMinutes - usedMinutes + bonusMinutes);
+  
+  // Don't show if no data available
+  if (monthlyMinutes === 0 && bonusMinutes === 0) return null;
+  
+  return (
+    <div 
+      className="flex items-center gap-1 px-2 py-1 bg-blue-50 dark:bg-blue-950/30 rounded-full text-xs text-blue-600 dark:text-blue-400"
+      data-testid="minutes-remaining"
+    >
+      <span>{remaining} min left</span>
+    </div>
+  );
+}
 
 interface ActiveLesson {
   id: string;
@@ -545,20 +631,23 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
 
   return (
     <div className="w-full space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {!customVoice.isConnected ? (
-            <Button
-              onClick={startSession}
-              variant="default"
-              size="sm"
-              className="gap-2"
-              disabled={!user}
-              data-testid="button-start-session"
-            >
-              <Mic className="h-4 w-4" />
-              Talk to your tutor
-            </Button>
+            <>
+              <Button
+                onClick={startSession}
+                variant="default"
+                size="sm"
+                className="gap-2"
+                disabled={!user}
+                data-testid="button-start-session"
+              >
+                <Mic className="h-4 w-4" />
+                Talk to your tutor
+              </Button>
+              <MinutesRemainingBadge />
+            </>
           ) : (
             <>
               <Button
@@ -590,6 +679,9 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
                   </>
                 )}
               </Button>
+              
+              <SessionTimer isActive={customVoice.isConnected} />
+              <MinutesRemainingBadge />
             </>
           )}
           
