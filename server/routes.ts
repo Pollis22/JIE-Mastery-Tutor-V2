@@ -31,6 +31,53 @@ const stripe = isStripeEnabled ? new Stripe(stripeKey, {
   apiVersion: "2025-08-27.basil",
 }) : null;
 
+// Helper to validate Stripe customer exists, recreate if needed
+async function ensureValidStripeCustomer(user: any): Promise<{ customerId: string; wasRecreated: boolean }> {
+  if (!stripe) {
+    throw new Error('Stripe not configured');
+  }
+  
+  let customerId = user.stripeCustomerId;
+  let wasRecreated = false;
+  
+  if (customerId) {
+    try {
+      // Try to retrieve the customer to verify it exists
+      await stripe.customers.retrieve(customerId);
+      return { customerId, wasRecreated: false };
+    } catch (error: any) {
+      if (error.code === 'resource_missing') {
+        console.log(`⚠️ [Stripe] Customer ${customerId} not found in Stripe, will recreate`);
+        customerId = null; // Force recreation
+      } else {
+        throw error;
+      }
+    }
+  }
+  
+  // Create new customer if needed
+  if (!customerId) {
+    const customer = await stripe.customers.create({
+      email: user.email,
+      name: user.firstName && user.lastName 
+        ? `${user.firstName} ${user.lastName}`.trim()
+        : user.username || user.email,
+      metadata: {
+        userId: user.id,
+        recreated: 'true'
+      }
+    });
+    customerId = customer.id;
+    wasRecreated = true;
+    
+    // Update user record with new customer ID
+    await storage.updateUserStripeInfo(user.id, customerId, user.stripeSubscriptionId || null);
+    console.log(`✅ [Stripe] Recreated customer for user ${user.id}: ${customerId}`);
+  }
+  
+  return { customerId, wasRecreated };
+}
+
 // Generate unsubscribe token using HMAC
 // Exported for use in email service
 export function generateUnsubscribeToken(email: string): string {
@@ -1980,13 +2027,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     const user = req.user as any;
     
-    if (!user.stripeCustomerId) {
-      return res.status(400).json({ message: "No Stripe customer found" });
+    if (!user.stripeCustomerId && !user.email) {
+      return res.status(400).json({ message: "No Stripe customer found and no email to create one" });
     }
 
     try {
+      // Ensure we have a valid Stripe customer (recreate if needed)
+      const { customerId } = await ensureValidStripeCustomer(user);
+      
       const session = await stripe!.billingPortal.sessions.create({
-        customer: user.stripeCustomerId,
+        customer: customerId,
         return_url: `${req.protocol}://${req.get('host')}/dashboard?tab=subscription`,
       });
 
@@ -1997,6 +2047,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.json({ url: session.url });
       }
     } catch (error: any) {
+      console.error('[Stripe Portal] Error:', error.message);
       res.status(500).json({ message: "Error creating portal session: " + error.message });
     }
   };

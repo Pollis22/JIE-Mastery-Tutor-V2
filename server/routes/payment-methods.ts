@@ -19,6 +19,54 @@ const stripe = stripeKey ? new Stripe(stripeKey, {
   apiVersion: "2025-08-27.basil",
 }) : null;
 
+// Helper to validate Stripe customer exists, recreate if needed
+async function ensureValidStripeCustomer(user: any): Promise<{ customerId: string; wasRecreated: boolean }> {
+  if (!stripe) {
+    throw new Error('Stripe not configured');
+  }
+  
+  const { storage } = await import('../storage');
+  let customerId = user.stripeCustomerId;
+  let wasRecreated = false;
+  
+  if (customerId) {
+    try {
+      // Try to retrieve the customer to verify it exists
+      await stripe.customers.retrieve(customerId);
+      return { customerId, wasRecreated: false };
+    } catch (error: any) {
+      if (error.code === 'resource_missing') {
+        console.log(`⚠️ [Stripe] Customer ${customerId} not found in Stripe, will recreate`);
+        customerId = null; // Force recreation
+      } else {
+        throw error;
+      }
+    }
+  }
+  
+  // Create new customer if needed
+  if (!customerId) {
+    const customer = await stripe.customers.create({
+      email: user.email,
+      name: user.firstName && user.lastName 
+        ? `${user.firstName} ${user.lastName}`.trim()
+        : user.username || user.email,
+      metadata: {
+        userId: user.id,
+        recreated: 'true'
+      }
+    });
+    customerId = customer.id;
+    wasRecreated = true;
+    
+    // Update user record with new customer ID
+    await storage.updateUserStripeInfo(user.id, customerId, user.stripeSubscriptionId || null);
+    console.log(`✅ [Stripe] Recreated customer for user ${user.id}: ${customerId}`);
+  }
+  
+  return { customerId, wasRecreated };
+}
+
 // GET /api/payment-methods - List user's payment methods
 router.get('/', async (req, res) => {
   try {
@@ -32,27 +80,40 @@ router.get('/', async (req, res) => {
       return res.json([]); // Return empty array if Stripe not configured
     }
 
-    if (!user.stripeCustomerId) {
-      return res.json([]); // No payment methods if no customer
+    if (!user.stripeCustomerId && !user.email) {
+      return res.json([]); // No payment methods if no customer and no email to create one
     }
 
-    // Fetch payment methods from Stripe
-    const paymentMethods = await stripe.paymentMethods.list({
-      customer: user.stripeCustomerId,
-      type: 'card',
-    });
+    try {
+      // Ensure we have a valid Stripe customer
+      const { customerId, wasRecreated } = await ensureValidStripeCustomer(user);
+      
+      // If customer was recreated, they won't have any payment methods yet
+      if (wasRecreated) {
+        return res.json([]);
+      }
+      
+      // Fetch payment methods from Stripe
+      const paymentMethods = await stripe.paymentMethods.list({
+        customer: customerId,
+        type: 'card',
+      });
 
-    // Format for frontend
-    const formatted = paymentMethods.data.map(pm => ({
-      id: pm.id,
-      brand: pm.card?.brand || 'card',
-      last4: pm.card?.last4 || '****',
-      expMonth: pm.card?.exp_month,
-      expYear: pm.card?.exp_year,
-      isDefault: pm.id === user.defaultPaymentMethodId,
-    }));
+      // Format for frontend
+      const formatted = paymentMethods.data.map(pm => ({
+        id: pm.id,
+        brand: pm.card?.brand || 'card',
+        last4: pm.card?.last4 || '****',
+        expMonth: pm.card?.exp_month,
+        expYear: pm.card?.exp_year,
+        isDefault: pm.id === user.defaultPaymentMethodId,
+      }));
 
-    res.json(formatted);
+      res.json(formatted);
+    } catch (innerError: any) {
+      console.error('❌ [PaymentMethods] Error fetching methods:', innerError.message);
+      return res.json([]); // Return empty array on error
+    }
 
   } catch (error: any) {
     console.error('❌ [PaymentMethods] List error:', error);
@@ -78,23 +139,9 @@ router.post('/add', async (req, res) => {
     }
 
     const user = req.user as any;
-    let customerId = user.stripeCustomerId;
-
-    // Create customer if doesn't exist
-    if (!customerId) {
-      const customer = await stripe.customers.create({
-        email: user.email,
-        name: user.parentName || user.studentName || user.firstName || 'User',
-        metadata: {
-          userId: user.id,
-        },
-      });
-      customerId = customer.id;
-
-      // Save customer ID to database
-      const { storage } = await import('../storage');
-      await storage.updateUserStripeInfo(user.id, customerId, null);
-    }
+    
+    // Ensure we have a valid Stripe customer (recreate if needed)
+    const { customerId } = await ensureValidStripeCustomer(user);
 
     // Create setup session for adding payment method
     const baseUrl = `${req.protocol}://${req.get('host')}`;
