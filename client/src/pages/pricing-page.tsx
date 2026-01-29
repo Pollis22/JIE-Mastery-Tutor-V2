@@ -157,7 +157,7 @@ export default function PricingPage() {
               <Button variant="ghost" onClick={() => setLocation("/contact")} data-testid="button-nav-contact">
                 Contact
               </Button>
-              <Button variant="ghost" onClick={() => setLocation("/auth")} data-testid="button-sign-in">
+              <Button variant="ghost" onClick={() => setLocation("/auth?action=login")} data-testid="button-sign-in">
                 Sign In
               </Button>
               <Button onClick={() => setLocation("/auth?action=register")} data-testid="button-get-started">

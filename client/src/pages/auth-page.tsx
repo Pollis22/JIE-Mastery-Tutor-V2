@@ -176,6 +176,8 @@ export default function AuthPage() {
       if (preselectedPlan && ['starter', 'standard', 'pro', 'elite'].includes(preselectedPlan)) {
         registerForm.setValue('plan', preselectedPlan as 'starter' | 'standard' | 'pro' | 'elite');
       }
+    } else if (actionParam === 'login') {
+      setLoginModalOpen(true);
     }
   }, [actionParam, preselectedPlan, registerForm]);
 

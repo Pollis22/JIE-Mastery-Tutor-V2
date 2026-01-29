@@ -124,7 +124,7 @@ export default function DemoPage() {
               <Button 
                 size="lg"
                 variant="outline"
-                onClick={() => setLocation("/auth")}
+                onClick={() => setLocation("/auth?action=register")}
                 data-testid="button-get-started"
               >
                 Get Started

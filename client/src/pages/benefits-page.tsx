@@ -31,7 +31,7 @@ export default function BenefitsPage() {
     window.scrollTo(0, 0);
   }, []);
 
-  const handleCTA = () => setLocation("/auth");
+  const handleCTA = () => setLocation("/auth?action=register");
   const handlePricing = () => setLocation("/pricing");
 
   return (

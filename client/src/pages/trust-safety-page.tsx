@@ -19,7 +19,7 @@ export default function TrustSafetyPage() {
               <Button variant="ghost" onClick={() => setLocation("/pricing")} data-testid="button-nav-pricing">
                 Pricing
               </Button>
-              <Button variant="default" onClick={() => setLocation("/auth")} data-testid="button-nav-signup">
+              <Button variant="default" onClick={() => setLocation("/auth?action=register")} data-testid="button-nav-signup">
                 Get Started
               </Button>
             </div>
