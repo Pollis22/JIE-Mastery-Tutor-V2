@@ -92,7 +92,7 @@ export default function DemoPage() {
             <div className="w-full max-w-4xl">
               <div className="relative w-full" style={{ paddingBottom: '56.25%' }}>
                 <iframe 
-                  src="https://www.youtube.com/embed/mSZO5Ofit64?si=Y_jlm8UOH4JRg3yE" 
+                  src="https://www.youtube.com/embed/eZoNpF0F8AI" 
                   title="JIE Mastery AI Tutor Demo" 
                   frameBorder="0" 
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
