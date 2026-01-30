@@ -50,15 +50,47 @@ const INAPPROPRIATE_PATTERNS = [
   /\boral\s+sex/i,
 ];
 
-// Harmful/dangerous patterns
-const HARMFUL_PATTERNS = [
-  /\bkill\s+(?:myself|yourself)/i,
-  /\bsuicide/i,
-  /\bself\s*harm/i,
-  /\bcut(?:ting)?\s+myself/i,
-  /\bdrug\s+dealer/i,
-  /\bhow\s+to\s+make\s+(?:meth|cocaine|bomb)/i,
-  /\bshoot\s+up\s+(?:school|people)/i,
+// Self-harm patterns - immediate session termination required
+const SELF_HARM_PATTERNS: { pattern: RegExp; term: string }[] = [
+  { pattern: /\bkill\s+myself\b/i, term: 'kill myself' },
+  { pattern: /\bsuicid(?:e|al)\b/i, term: 'suicide' },
+  { pattern: /\bself\s*harm(?:ing)?\b/i, term: 'self-harm' },
+  { pattern: /\bcut(?:ting)?\s+myself\b/i, term: 'cutting myself' },
+  { pattern: /\bhurt(?:ing)?\s+myself\b/i, term: 'hurt myself' },
+  { pattern: /\bwant\s+to\s+die\b/i, term: 'want to die' },
+  { pattern: /\bdon'?t\s+want\s+to\s+(?:live|be\s+alive)\b/i, term: 'dont want to live' },
+  { pattern: /\bend\s+(?:my\s+life|it\s+all)\b/i, term: 'end my life' },
+  { pattern: /\bjump\s+off\s+(?:a\s+)?(?:bridge|building|roof)\b/i, term: 'jump off' },
+  { pattern: /\btake\s+my\s+(?:own\s+)?life\b/i, term: 'take my life' },
+];
+
+// Violent threat patterns - immediate session termination required
+const VIOLENT_THREAT_PATTERNS: { pattern: RegExp; term: string }[] = [
+  { pattern: /\bkill\s+(?:you|him|her|them|everyone|somebody|someone)\b/i, term: 'kill threat' },
+  { pattern: /\bshoot\s+(?:up|you|him|her|them|the\s+school|people)\b/i, term: 'shooting threat' },
+  { pattern: /\bbomb\s+(?:the\s+)?(?:school|building|place)\b/i, term: 'bomb threat' },
+  { pattern: /\bbring\s+(?:a\s+)?gun\b/i, term: 'bring gun' },
+  { pattern: /\bhow\s+to\s+make\s+(?:a\s+)?bomb\b/i, term: 'make bomb' },
+  { pattern: /\bgoing\s+to\s+hurt\s+(?:you|him|her|them|people)\b/i, term: 'hurt threat' },
+  { pattern: /\bstab\s+(?:you|him|her|them|someone)\b/i, term: 'stab threat' },
+  { pattern: /\battack\s+(?:the\s+)?(?:school|teacher|students?)\b/i, term: 'attack threat' },
+];
+
+// Harm to others patterns - immediate session termination required
+const HARM_TO_OTHERS_PATTERNS: { pattern: RegExp; term: string }[] = [
+  { pattern: /\bhurt\s+(?:my\s+)?(?:teacher|parent|mom|dad|brother|sister|friend)\b/i, term: 'hurt family/teacher' },
+  { pattern: /\bbeat\s+(?:up\s+)?(?:my\s+)?(?:teacher|parent|mom|dad|brother|sister)\b/i, term: 'beat up' },
+  { pattern: /\bpunch\s+(?:my\s+)?(?:teacher|parent|mom|dad)\b/i, term: 'punch' },
+  { pattern: /\bhate\s+(?:my\s+)?(?:teacher|parent|mom|dad)\b.*\b(?:kill|hurt|hit)\b/i, term: 'hate + violence' },
+  { pattern: /\bwish\s+(?:they|he|she)\s+(?:was|were)\s+dead\b/i, term: 'wish dead' },
+];
+
+// Other harmful/dangerous patterns
+const HARMFUL_PATTERNS: { pattern: RegExp; term: string }[] = [
+  { pattern: /\bdrug\s+dealer\b/i, term: 'drug dealer' },
+  { pattern: /\bhow\s+to\s+make\s+(?:meth|cocaine|heroin)\b/i, term: 'drug synthesis' },
+  { pattern: /\bbuy\s+(?:drugs|cocaine|meth|heroin)\b/i, term: 'buy drugs' },
+  { pattern: /\bhow\s+to\s+(?:get|obtain)\s+(?:a\s+)?(?:gun|weapon)\b/i, term: 'obtain weapon' },
 ];
 
 // Educational keywords that indicate legitimate learning activity
@@ -75,11 +107,12 @@ const EDUCATIONAL_KEYWORDS = [
 
 export interface ModerationResult {
   isAppropriate: boolean;
-  violationType?: 'profanity' | 'sexual' | 'harmful' | 'hate' | 'other';
+  violationType?: 'profanity' | 'sexual' | 'harmful' | 'hate' | 'other' | 'self_harm' | 'violent_threat' | 'harm_to_others';
   severity: 'low' | 'medium' | 'high';
   reason?: string;
   confidence?: number;
   matchedTerms?: string[]; // Track what triggered the match for auditing
+  requiresImmediateTermination?: boolean; // Flag for safety incidents requiring immediate session end
 }
 
 export interface ModerationContext {
@@ -124,6 +157,71 @@ export async function moderateContent(
   // Quick pattern matching first (fast) - track what matched
   const matchedTerms: string[] = [];
   
+  // ⚠️ SAFETY CRITICAL: Check self-harm patterns FIRST (highest priority)
+  for (const { pattern, term } of SELF_HARM_PATTERNS) {
+    if (pattern.test(text)) {
+      console.log(`[Moderation] 🚨 SELF-HARM detected: matched_term="${term}", confidence=0.98`);
+      return {
+        isAppropriate: false,
+        violationType: 'self_harm',
+        severity: 'high',
+        reason: `Self-harm ideation detected`,
+        confidence: 0.98,
+        matchedTerms: [term],
+        requiresImmediateTermination: true
+      };
+    }
+  }
+  
+  // ⚠️ SAFETY CRITICAL: Check violent threat patterns (second priority)
+  for (const { pattern, term } of VIOLENT_THREAT_PATTERNS) {
+    if (pattern.test(text)) {
+      console.log(`[Moderation] 🚨 VIOLENT THREAT detected: matched_term="${term}", confidence=0.98`);
+      return {
+        isAppropriate: false,
+        violationType: 'violent_threat',
+        severity: 'high',
+        reason: `Violent threat detected`,
+        confidence: 0.98,
+        matchedTerms: [term],
+        requiresImmediateTermination: true
+      };
+    }
+  }
+  
+  // ⚠️ SAFETY CRITICAL: Check harm to others patterns (third priority)
+  for (const { pattern, term } of HARM_TO_OTHERS_PATTERNS) {
+    if (pattern.test(text)) {
+      console.log(`[Moderation] 🚨 HARM TO OTHERS detected: matched_term="${term}", confidence=0.98`);
+      return {
+        isAppropriate: false,
+        violationType: 'harm_to_others',
+        severity: 'high',
+        reason: `Intent to harm others detected`,
+        confidence: 0.98,
+        matchedTerms: [term],
+        requiresImmediateTermination: true
+      };
+    }
+  }
+  
+  // Check other harmful patterns
+  for (const { pattern, term } of HARMFUL_PATTERNS) {
+    if (pattern.test(text)) {
+      console.log(`[Moderation] ❌ Harmful content detected: matched_term="${term}", confidence=0.95`);
+      return {
+        isAppropriate: false,
+        violationType: 'harmful',
+        severity: 'high',
+        reason: 'Harmful or dangerous content',
+        confidence: 0.95,
+        matchedTerms: [term],
+        requiresImmediateTermination: true
+      };
+    }
+  }
+  
+  // Check profanity patterns (lower priority than safety)
   for (const { pattern, term } of PROFANITY_PATTERNS) {
     if (pattern.test(text)) {
       // In educational context, allow mild profanity
@@ -164,19 +262,6 @@ export async function moderateContent(
         violationType: 'sexual',
         severity: 'high',
         reason: 'Inappropriate content detected',
-        confidence: 0.95
-      };
-    }
-  }
-  
-  for (const pattern of HARMFUL_PATTERNS) {
-    if (pattern.test(text)) {
-      console.log("[Moderation] ❌ Harmful content detected");
-      return {
-        isAppropriate: false,
-        violationType: 'harmful',
-        severity: 'high',
-        reason: 'Harmful or dangerous content',
         confidence: 0.95
       };
     }

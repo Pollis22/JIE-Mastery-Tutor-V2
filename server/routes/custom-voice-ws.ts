@@ -17,7 +17,7 @@ import { EmailService } from '../services/email-service';
 import { users, students } from "@shared/schema";
 import { trialService } from '../services/trial-service';
 import { detectSafetyIssues, getStrikeMessage, shouldTerminateSession, SafetyDetectionResult } from '../services/safety-detection-service';
-import { sendAdminSafetyAlert, logSafetyIncident, SafetyAlertData } from '../services/safety-alert-service';
+import { sendAdminSafetyAlert, logSafetyIncident, SafetyAlertData, handleSafetyIncident, SafetyIncidentNotification, SafetyIncidentType } from '../services/safety-alert-service';
 import { safetyIncidents } from '@shared/schema';
 import {
   type GradeBand,
@@ -2106,9 +2106,19 @@ export function setupCustomVoiceWebSocket(server: Server) {
           if (moderation.confidence && moderation.confidence > 0.85) {
             console.log("[Custom Voice] ❌ High confidence violation - taking action");
             
-            // Increment violation count
-            state.violationCount++;
-            const warningLevel = shouldWarnUser(state.violationCount - 1);
+            // CRITICAL SAFETY: Check for immediate termination (self-harm, violent threats, harm to others)
+            const isImmediateTermination = moderation.requiresImmediateTermination === true;
+            
+            // For immediate termination incidents, skip warning system entirely
+            let warningLevel: 'first' | 'second' | 'final' | 'none';
+            if (isImmediateTermination) {
+              console.log(`[Custom Voice] 🚨 CRITICAL SAFETY: ${moderation.violationType} requires immediate termination`);
+              warningLevel = 'final'; // Force immediate termination
+            } else {
+              // Increment violation count for non-critical violations
+              state.violationCount++;
+              warningLevel = shouldWarnUser(state.violationCount - 1);
+            }
             
             // Get appropriate response based on warning level (should never be 'none' here)
             if (warningLevel === 'none') {
@@ -2117,7 +2127,10 @@ export function setupCustomVoiceWebSocket(server: Server) {
               return; // Skip if somehow 'none' is returned
             }
             
-            const moderationResponse = getModerationResponse(warningLevel);
+            // For critical safety incidents, use a specific termination message
+            const moderationResponse = isImmediateTermination
+              ? "I need to end our session now. If you're feeling upset or having difficult thoughts, please talk to a trusted adult or call 988 for support. Take care."
+              : getModerationResponse(warningLevel);
           
           // Log violation to database with FULL context (user message + AI warning response)
           // CRITICAL: Wrap in try/catch to prevent DB errors from killing the turn
@@ -2157,6 +2170,29 @@ export function setupCustomVoiceWebSocket(server: Server) {
               });
             } catch (suspendError) {
               console.error('[Custom Voice] ⚠️ Failed to create suspension record (non-fatal):', suspendError);
+            }
+            
+            // SAFETY NOTIFICATION: Send JIE Support + Parent notification (non-fatal)
+            try {
+              const safetyNotification: SafetyIncidentNotification = {
+                incidentType: (moderation.violationType || 'other') as SafetyIncidentType,
+                severity: moderation.severity,
+                sessionId: state.sessionId,
+                userId: state.userId,
+                studentName: state.studentName,
+                parentEmail: state.parentEmail,
+                triggerText: transcript.substring(0, 500),
+                matchedTerms: moderation.matchedTerms,
+                actionTaken: isImmediateTermination 
+                  ? `Critical safety incident - Immediate session termination (${moderation.violationType})`
+                  : 'Session terminated - User suspended for 24 hours',
+                timestamp: new Date()
+              };
+              handleSafetyIncident(safetyNotification).catch(err => {
+                console.error('[Custom Voice] ⚠️ Safety notification failed (non-fatal):', err);
+              });
+            } catch (notifyError) {
+              console.error('[Custom Voice] ⚠️ Safety notification setup failed (non-fatal):', notifyError);
             }
             
             // Send moderation response

@@ -31,6 +31,32 @@ const ADMIN_ALERT_TRIGGERS = [
   'SEVERE_CONDUCT'
 ];
 
+// Safety incident types that require immediate JIE Support notification
+const SAFETY_INCIDENT_TYPES = [
+  'profanity',
+  'self_harm',
+  'violent_threat',
+  'harm_to_others',
+  'harmful',
+  'sexual',
+  'hate'
+];
+
+export type SafetyIncidentType = 'profanity' | 'self_harm' | 'violent_threat' | 'harm_to_others' | 'harmful' | 'sexual' | 'hate' | 'other';
+
+export interface SafetyIncidentNotification {
+  incidentType: SafetyIncidentType;
+  severity: 'low' | 'medium' | 'high';
+  sessionId: string;
+  userId: string;
+  studentName?: string;
+  parentEmail?: string;
+  triggerText: string;
+  matchedTerms?: string[];
+  actionTaken: string;
+  timestamp: Date;
+}
+
 export async function logSafetyIncident(data: SafetyAlertData): Promise<void> {
   try {
     await db.insert(safetyIncidents).values({
@@ -210,4 +236,168 @@ function getParentFriendlyDescription(flagType: string): string {
   };
   
   return descriptions[flagType] || 'An alert was generated during the tutoring session.';
+}
+
+/**
+ * Send JIE Support notification for safety incidents
+ * This sends an internal notification for all safety-related session terminations
+ */
+export async function sendJIESupportNotification(data: SafetyIncidentNotification): Promise<boolean> {
+  const jieSuportEmail = process.env.JIE_SUPPORT_EMAIL || process.env.ADMIN_EMAIL || 'pollis@jiemastery.com';
+  
+  // Only notify for actual safety incidents
+  if (!SAFETY_INCIDENT_TYPES.includes(data.incidentType)) {
+    console.log(`[SafetyAlert] Skipping JIE support notification for non-safety incident: ${data.incidentType}`);
+    return false;
+  }
+  
+  const incidentLabels: Record<string, string> = {
+    'profanity': 'Profanity',
+    'self_harm': 'Self-Harm Ideation',
+    'violent_threat': 'Violent Threat',
+    'harm_to_others': 'Intent to Harm Others',
+    'harmful': 'Harmful Content',
+    'sexual': 'Sexual Content',
+    'hate': 'Hate Speech',
+    'other': 'Other Violation'
+  };
+  
+  const incidentLabel = incidentLabels[data.incidentType] || data.incidentType;
+  const isCritical = ['self_harm', 'violent_threat', 'harm_to_others'].includes(data.incidentType);
+  
+  const subject = isCritical 
+    ? `[JIE Mastery CRITICAL] ${incidentLabel} - Immediate Review Required`
+    : `[JIE Mastery SAFETY] ${incidentLabel} - Session ${data.sessionId.slice(0, 8)}`;
+  
+  const timestamp = data.timestamp.toLocaleString('en-US', { 
+    timeZone: 'America/Chicago',
+    dateStyle: 'medium',
+    timeStyle: 'long'
+  });
+  
+  const body = `
+${'='.repeat(60)}
+JIE MASTERY SAFETY INCIDENT REPORT
+${'='.repeat(60)}
+
+INCIDENT TYPE: ${incidentLabel}
+SEVERITY: ${data.severity.toUpperCase()}
+TIMESTAMP: ${timestamp}
+${isCritical ? '\n⚠️ CRITICAL: This incident requires immediate review.\n' : ''}
+─────────────────────────────────────────────────────────────
+STUDENT INFORMATION
+─────────────────────────────────────────────────────────────
+Student Name: ${data.studentName || 'N/A'}
+Parent Email: ${data.parentEmail || 'N/A'}
+User ID: ${data.userId}
+Session ID: ${data.sessionId}
+
+─────────────────────────────────────────────────────────────
+INCIDENT DETAILS
+─────────────────────────────────────────────────────────────
+Trigger Text (sanitized):
+"${redactSensitiveContent(data.triggerText.substring(0, 500))}"
+
+Matched Terms: ${data.matchedTerms?.join(', ') || 'N/A'}
+
+Action Taken: ${data.actionTaken}
+
+─────────────────────────────────────────────────────────────
+NEXT STEPS
+─────────────────────────────────────────────────────────────
+1. Review full transcript in Admin Dashboard → Safety tab
+2. Assess if follow-up contact with parent is needed
+3. Document any additional actions taken
+
+${'='.repeat(60)}
+This is an automated alert from JIE Mastery Safety System.
+Generated at: ${new Date().toISOString()}
+${'='.repeat(60)}
+  `.trim();
+  
+  console.log(`[SafetyAlert] Sending JIE Support notification: ${incidentLabel} for session ${data.sessionId}`);
+  
+  if (resend) {
+    try {
+      await resend.emails.send({
+        from: 'JIE Mastery Safety <safety@jiemastery.com>',
+        to: jieSuportEmail,
+        subject,
+        text: body,
+      });
+      
+      console.log(`[SafetyAlert] ✅ JIE Support notified via email: ${incidentLabel}`);
+      return true;
+    } catch (error) {
+      console.error('[SafetyAlert] ⚠️ Failed to send JIE Support email (non-fatal):', error);
+      return false;
+    }
+  } else {
+    console.log(`[SafetyAlert] Email not configured, logging incident only:`);
+    console.log(`[SafetyAlert] Subject: ${subject}`);
+    console.log(`[SafetyAlert] Body:\n${body}`);
+    return true;
+  }
+}
+
+/**
+ * Unified safety incident handler - call this for ALL safety terminations
+ * Handles: logging, parent notification, and JIE support notification
+ */
+export async function handleSafetyIncident(data: SafetyIncidentNotification): Promise<void> {
+  console.log(`[SafetyAlert] 🚨 Handling safety incident: ${data.incidentType} (severity: ${data.severity})`);
+  
+  // All operations are non-fatal - wrap in try/catch
+  
+  // 1. Send JIE Support notification (always for safety incidents)
+  try {
+    await sendJIESupportNotification(data);
+  } catch (error) {
+    console.error('[SafetyAlert] ⚠️ JIE Support notification failed (non-fatal):', error);
+  }
+  
+  // 2. Send parent notification (if email available and not abuse-related)
+  if (data.parentEmail) {
+    try {
+      const parentData: SafetyAlertData = {
+        flagType: mapIncidentTypeToFlag(data.incidentType),
+        severity: mapSeverityToAlert(data.severity),
+        sessionId: data.sessionId,
+        studentName: data.studentName,
+        parentEmail: data.parentEmail,
+        userId: data.userId,
+        triggerText: data.triggerText,
+        tutorResponse: 'Session was terminated for safety reasons.',
+        actionTaken: data.actionTaken
+      };
+      await sendParentAlert(parentData);
+    } catch (error) {
+      console.error('[SafetyAlert] ⚠️ Parent notification failed (non-fatal):', error);
+    }
+  }
+  
+  console.log(`[SafetyAlert] ✅ Safety incident handling complete for session ${data.sessionId}`);
+}
+
+function mapIncidentTypeToFlag(incidentType: SafetyIncidentType): string {
+  const mapping: Record<string, string> = {
+    'self_harm': 'SELF_HARM_CONCERN',
+    'violent_threat': 'VIOLENCE_CONCERN',
+    'harm_to_others': 'VIOLENCE_CONCERN',
+    'profanity': 'SEVERE_LANGUAGE',
+    'harmful': 'SEVERE_CONDUCT',
+    'sexual': 'SEVERE_CONDUCT',
+    'hate': 'SEVERE_CONDUCT',
+    'other': 'SESSION_TERMINATED_CONDUCT'
+  };
+  return mapping[incidentType] || 'SESSION_TERMINATED_CONDUCT';
+}
+
+function mapSeverityToAlert(severity: 'low' | 'medium' | 'high'): 'info' | 'warning' | 'alert' | 'critical' {
+  const mapping: Record<string, 'info' | 'warning' | 'alert' | 'critical'> = {
+    'low': 'warning',
+    'medium': 'alert',
+    'high': 'critical'
+  };
+  return mapping[severity] || 'alert';
 }

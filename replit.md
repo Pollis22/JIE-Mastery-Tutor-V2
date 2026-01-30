@@ -38,6 +38,18 @@ Moderation and violation logging are non-fatal to prevent voice session freezes:
 - Profanity patterns use proper word boundaries to prevent false positives
 - Matched terms are tracked for audit logging (`matchedTerms` field in moderation results)
 
+### Safety Enforcement (Expanded)
+Critical safety incidents trigger immediate session termination (bypassing warning system):
+- **Self-harm patterns**: Suicide ideation, self-harm statements, expressions of wanting to die
+- **Violent threats**: Threats to kill, shoot, bomb, or attack others
+- **Harm to others**: Intent to hurt family members, teachers, or other students
+- All safety incidents send dual notifications:
+  1. **Parent notification** - Alert to parent's email (existing system)
+  2. **JIE Support notification** - Internal alert to `JIE_SUPPORT_EMAIL` (configurable env var, defaults to `ADMIN_EMAIL`)
+- Safety incidents logged to `content_violations` table with new types: `self_harm`, `violent_threat`, `harm_to_others`
+- Termination message includes 988 crisis line reference for mental health concerns
+- All notification operations are non-fatal (wrapped in try/catch) to prevent session freezes
+
 ### Session Teardown Safety
 The `finalizeSession()` function is hardened to never throw and always complete:
 - Separate try/catch blocks for DB write, minute deduction, and email sending

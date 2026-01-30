@@ -280,7 +280,7 @@ export const contentViolations = pgTable("content_violations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id),
   sessionId: varchar("session_id"),
-  violationType: text("violation_type").$type<'profanity' | 'sexual' | 'harmful' | 'hate' | 'other'>().notNull(),
+  violationType: text("violation_type").$type<'profanity' | 'sexual' | 'harmful' | 'hate' | 'other' | 'self_harm' | 'violent_threat' | 'harm_to_others'>().notNull(),
   severity: text("severity").$type<'low' | 'medium' | 'high'>().notNull(),
   userMessage: text("user_message").notNull(),
   aiResponse: text("ai_response"),
