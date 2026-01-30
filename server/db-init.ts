@@ -72,6 +72,9 @@ export async function initializeDatabase() {
     // PRODUCTION-SAFE: Ensure users.transcript_email column exists
     await ensureUsersTranscriptEmailColumn();
     
+    // PRODUCTION-SAFE: Ensure content_violations and user_suspensions tables exist
+    await ensureContentModerationTables();
+    
     return true;
   } catch (error) {
     console.error('[DB-Init] ❌ Database initialization error:', error);
@@ -382,5 +385,94 @@ async function ensureUsersTranscriptEmailColumn() {
   } catch (error) {
     console.error('[DB-Init] ⚠️ Failed to add users.transcript_email column:', error);
     // Don't throw - this is non-critical, fallback to login email will work
+  }
+}
+
+/**
+ * PRODUCTION-SAFE: Ensure content_violations and user_suspensions tables exist
+ * Uses CREATE TABLE IF NOT EXISTS for idempotent execution
+ */
+async function ensureContentModerationTables() {
+  console.log('[DB-Init] Checking content moderation tables...');
+  
+  try {
+    // Check if content_violations table exists
+    const cvResult = await pool.query(`
+      SELECT 1 FROM information_schema.tables 
+      WHERE table_schema = 'public' 
+      AND table_name = 'content_violations'
+    `);
+    
+    if (cvResult.rows.length === 0) {
+      console.log('[DB-Init] Creating content_violations table...');
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS content_violations (
+          id varchar PRIMARY KEY DEFAULT gen_random_uuid()::text,
+          user_id varchar NOT NULL,
+          session_id varchar,
+          violation_type text NOT NULL,
+          severity text NOT NULL,
+          user_message text NOT NULL,
+          ai_response text,
+          confidence decimal(3,2),
+          matched_terms text[],
+          review_status text DEFAULT 'pending',
+          action_taken text,
+          reviewed_by varchar,
+          reviewed_at timestamp,
+          review_notes text,
+          created_at timestamp DEFAULT now()
+        )
+      `);
+      
+      // Add indexes
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_violations_user ON content_violations(user_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_violations_status ON content_violations(review_status)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_violations_created ON content_violations(created_at)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_violations_user_created ON content_violations(user_id, created_at)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_violations_session ON content_violations(session_id)`);
+      
+      console.log('[DB-Init] ✅ Created content_violations table with indexes');
+    } else {
+      console.log('[DB-Init] ✅ content_violations table already exists');
+    }
+    
+    // Check if user_suspensions table exists
+    const usResult = await pool.query(`
+      SELECT 1 FROM information_schema.tables 
+      WHERE table_schema = 'public' 
+      AND table_name = 'user_suspensions'
+    `);
+    
+    if (usResult.rows.length === 0) {
+      console.log('[DB-Init] Creating user_suspensions table...');
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS user_suspensions (
+          id varchar PRIMARY KEY DEFAULT gen_random_uuid()::text,
+          user_id varchar NOT NULL,
+          reason text NOT NULL,
+          violation_ids text[],
+          suspended_until timestamp,
+          is_permanent boolean DEFAULT false,
+          suspended_by varchar,
+          is_active boolean DEFAULT true,
+          lifted_at timestamp,
+          lifted_by varchar,
+          lift_reason text,
+          created_at timestamp DEFAULT now()
+        )
+      `);
+      
+      // Add indexes
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_suspensions_user ON user_suspensions(user_id)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_suspensions_active ON user_suspensions(is_active)`);
+      
+      console.log('[DB-Init] ✅ Created user_suspensions table with indexes');
+    } else {
+      console.log('[DB-Init] ✅ user_suspensions table already exists');
+    }
+  } catch (error) {
+    console.error('[DB-Init] ⚠️ Failed to ensure content moderation tables:', error);
+    // Don't throw - moderation logging is non-critical, voice sessions should continue
   }
 }

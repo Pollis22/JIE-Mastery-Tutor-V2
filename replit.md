@@ -29,6 +29,14 @@ Production-hardening features with feature flags:
 - **Step 5a** (`VITE_MIC_WATCHDOG_ENABLED`): Proactive 5s mic health monitoring with auto-recovery
 - **Step 5b**: Grade-based max_tokens (K-2: 120, 3-5: 150, 6-8: 175, 9-12: 200, College: 300)
 - **Step 6** (`LLM_WATCHDOG_ENABLED`): LLM trigger watchdog (default ON) - 3s failsafe timer after end_of_turn that forces LLM invocation if missed. Prevents session freeze in long sessions where STT delivers final transcript but LLM is never triggered. Also prevents recovery phrases ("I'm finished", "I'm done", "hello?") from ending session during stall.
+- **Step 7** (`TURN_FALLBACK_ENABLED`): Turn fallback timer (default ON) - 15s failsafe that sends "I didn't quite catch that. Can you repeat your last sentence?" if no AI response is produced. Prevents silent hangs from moderation errors or pipeline failures.
+
+### Content Moderation Safety
+Moderation and violation logging are non-fatal to prevent voice session freezes:
+- All `db.insert(contentViolations)` and `db.insert(userSuspensions)` calls are wrapped in try/catch
+- Missing tables are created automatically via idempotent migration guard (`ensureContentModerationTables`)
+- Profanity patterns use proper word boundaries to prevent false positives
+- Matched terms are tracked for audit logging (`matchedTerms` field in moderation results)
 
 ### Session Teardown Safety
 The `finalizeSession()` function is hardened to never throw and always complete:

@@ -13,22 +13,23 @@ import { withRetry } from "../utils/retry";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-// Profanity word list (comprehensive patterns)
-const PROFANITY_PATTERNS = [
-  /\bf[u*\-_]ck/i,
-  /\bsh[i*\-_]t/i,
-  /\bass(?:hole)?/i,
-  /\bb[i*\-_]tch/i,
-  /\bdamn/i,
-  /\bhell\b/i,
-  /\bcrap/i,
-  /\bp[i*\-_]ss/i,
-  /\bd[i*\-_]ck/i,
-  /\bc[o*\-_]ck/i,
-  /\bp[u*\-_]ssy/i,
-  /\bslut/i,
-  /\bwhore/i,
-  /\bretard/i,
+// Profanity word list (comprehensive patterns with proper word boundaries)
+// IMPORTANT: All patterns MUST use \b on BOTH sides to prevent substring matches
+const PROFANITY_PATTERNS: { pattern: RegExp; term: string }[] = [
+  { pattern: /\bf[u*\-_]ck(?:ing|ed|er|s)?\b/i, term: 'f-word' },
+  { pattern: /\bsh[i*\-_]t(?:ty|s)?\b/i, term: 'sh-word' },
+  { pattern: /\bass(?:hole|es)?\b/i, term: 'a-word' },
+  { pattern: /\bb[i*\-_]tch(?:es|ing)?\b/i, term: 'b-word' },
+  { pattern: /\bdamn(?:ed|it)?\b/i, term: 'damn' },
+  { pattern: /\bhell\b/i, term: 'hell' },
+  { pattern: /\bcrap(?:py|s)?\b/i, term: 'crap' },
+  { pattern: /\bp[i*\-_]ss(?:ed|ing)?\b/i, term: 'p-word' },
+  { pattern: /\bd[i*\-_]ck(?:s|head)?\b/i, term: 'd-word' },
+  { pattern: /\bc[o*\-_]ck(?:s|sucker)?\b/i, term: 'c-word' },
+  { pattern: /\bp[u*\-_]ss(?:y|ies)?\b/i, term: 'p-word-2' },
+  { pattern: /\bslut(?:s|ty)?\b/i, term: 'slut' },
+  { pattern: /\bwhore(?:s)?\b/i, term: 'whore' },
+  { pattern: /\bretard(?:ed|s)?\b/i, term: 'r-word' },
 ];
 
 // Sexual/inappropriate patterns
@@ -78,6 +79,7 @@ export interface ModerationResult {
   severity: 'low' | 'medium' | 'high';
   reason?: string;
   confidence?: number;
+  matchedTerms?: string[]; // Track what triggered the match for auditing
 }
 
 export interface ModerationContext {
@@ -119,22 +121,26 @@ export async function moderateContent(
     };
   }
   
-  // Quick pattern matching first (fast)
-  for (const pattern of PROFANITY_PATTERNS) {
+  // Quick pattern matching first (fast) - track what matched
+  const matchedTerms: string[] = [];
+  
+  for (const { pattern, term } of PROFANITY_PATTERNS) {
     if (pattern.test(text)) {
-      // In educational context, some words might be legitimate (e.g., "damn statistics")
-      if (hasEducationalContext && pattern.toString().includes('damn|hell|crap')) {
-        console.log("[Moderation] ⚠️ Mild profanity in educational context - allowing");
+      // In educational context, allow mild profanity
+      if (hasEducationalContext && ['damn', 'hell', 'crap'].includes(term)) {
+        console.log(`[Moderation] ⚠️ Mild profanity "${term}" in educational context - allowing`);
         continue;
       }
       
-      console.log("[Moderation] ❌ Profanity detected");
+      matchedTerms.push(term);
+      console.log(`[Moderation] ❌ Profanity detected: matched_term="${term}"`);
       return {
         isAppropriate: false,
         violationType: 'profanity',
         severity: 'medium',
-        reason: 'Profanity detected',
-        confidence: 0.95
+        reason: `Profanity detected: ${term}`,
+        confidence: 0.95,
+        matchedTerms: [term]
       };
     }
   }

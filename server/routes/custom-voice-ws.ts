@@ -151,6 +151,16 @@ const LLM_WATCHDOG_CONFIG = {
   MIN_TOKENS: 2, // Only trigger for transcripts with >= 2 tokens (per spec)
 };
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// TURN FALLBACK: Controlled fallback if no response produced within timeout
+// Feature flag: TURN_FALLBACK_ENABLED (default: true)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const TURN_FALLBACK_CONFIG = {
+  ENABLED: process.env.TURN_FALLBACK_ENABLED !== 'false', // Default ON
+  TIMEOUT_MS: parseInt(process.env.TURN_FALLBACK_TIMEOUT_MS || '15000', 10), // 15 seconds
+  MESSAGE: "I didn't quite catch that. Can you repeat your last sentence?",
+};
+
 // Recovery phrases that should NOT end a session (Step 2)
 // These are common phrases users say when waiting for a response
 const RECOVERY_PHRASES = [
@@ -734,6 +744,9 @@ interface SessionState {
   llmWatchdogTranscript?: string; // WATCHDOG: Transcript to use if watchdog fires
   lastEndOfTurnTime?: number; // WATCHDOG: When end_of_turn was received
   lastLlmRequestTime?: number; // WATCHDOG: When LLM request was last started
+  // TURN FALLBACK: Sends recovery message if no response produced
+  turnFallbackTimerId?: NodeJS.Timeout;
+  turnResponseProduced: boolean;
 }
 
 // Helper to send typed WebSocket events
@@ -1480,6 +1493,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
       lastClientVisibility: undefined,
       lastPongAt: new Date(),
       missedPongCount: 0,
+      turnResponseProduced: false,
     };
 
     // FIX #3: Auto-persist every 10 seconds
@@ -1707,6 +1721,59 @@ export function setupCustomVoiceWebSocket(server: Server) {
         state.llmWatchdogTranscript = undefined;
       }
       state.lastLlmRequestTime = Date.now();
+      
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      // TURN FALLBACK: Start timer to send recovery message if no response
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      state.turnResponseProduced = false;
+      if (TURN_FALLBACK_CONFIG.ENABLED) {
+        // Clear any existing fallback timer
+        if (state.turnFallbackTimerId) {
+          clearTimeout(state.turnFallbackTimerId);
+        }
+        
+        state.turnFallbackTimerId = setTimeout(async () => {
+          // Only fire if no response was produced and session is still active
+          if (!state.turnResponseProduced && !state.isSessionEnded && state.isProcessing) {
+            console.log(`[VOICE] turn_fallback_fired session=${state.sessionId || 'unknown'} no_response_for=${TURN_FALLBACK_CONFIG.TIMEOUT_MS}ms`);
+            
+            try {
+              // Send fallback message to client
+              ws.send(JSON.stringify({
+                type: "transcript",
+                speaker: "tutor",
+                text: TURN_FALLBACK_CONFIG.MESSAGE,
+              }));
+              
+              // Generate TTS for fallback message
+              if (state.tutorAudioEnabled) {
+                const audioBuffer = await generateSpeech(TURN_FALLBACK_CONFIG.MESSAGE, state.ageGroup, state.speechSpeed);
+                ws.send(JSON.stringify({
+                  type: "audio",
+                  data: audioBuffer.toString("base64"),
+                  mimeType: "audio/pcm;rate=16000"
+                }));
+              }
+              
+              // Mark response as produced and reset processing state
+              state.turnResponseProduced = true;
+              state.isProcessing = false;
+              processingStartTime = null;
+              state.isTutorSpeaking = false;
+              
+              // Process next item in queue if any
+              if (state.transcriptQueue.length > 0 && !state.isSessionEnded) {
+                setImmediate(() => processTranscriptQueue());
+              }
+            } catch (fallbackError) {
+              console.error('[VOICE] turn_fallback_error:', fallbackError);
+              state.isProcessing = false;
+              processingStartTime = null;
+            }
+          }
+          state.turnFallbackTimerId = undefined;
+        }, TURN_FALLBACK_CONFIG.TIMEOUT_MS);
+      }
       
       console.log(`[Pipeline] 2. Starting to process transcript, queue size: ${state.transcriptQueue.length + 1}`);
       const transcript = state.transcriptQueue.shift()!;
@@ -2053,17 +2120,23 @@ export function setupCustomVoiceWebSocket(server: Server) {
             const moderationResponse = getModerationResponse(warningLevel);
           
           // Log violation to database with FULL context (user message + AI warning response)
-          await db.insert(contentViolations).values({
-            userId: state.userId,
-            sessionId: state.sessionId,
-            violationType: moderation.violationType!,
-            severity: moderation.severity,
-            userMessage: transcript,
-            aiResponse: moderationResponse, // Store the warning message for admin review
-            confidence: moderation.confidence?.toString(),
-            reviewStatus: 'pending',
-            actionTaken: warningLevel === 'final' ? 'suspension' : 'warning',
-          });
+          // CRITICAL: Wrap in try/catch to prevent DB errors from killing the turn
+          try {
+            await db.insert(contentViolations).values({
+              userId: state.userId,
+              sessionId: state.sessionId,
+              violationType: moderation.violationType!,
+              severity: moderation.severity,
+              userMessage: transcript,
+              aiResponse: moderationResponse,
+              confidence: moderation.confidence?.toString(),
+              reviewStatus: 'pending',
+              actionTaken: warningLevel === 'final' ? 'suspension' : 'warning',
+            });
+          } catch (dbError) {
+            console.error('[Custom Voice] ⚠️ Failed to log content violation (non-fatal):', dbError);
+            // Continue processing - don't let DB errors kill the turn
+          }
           
           // If final warning, suspend user and end session
           if (warningLevel === 'final') {
@@ -2073,16 +2146,26 @@ export function setupCustomVoiceWebSocket(server: Server) {
             const suspendedUntil = new Date();
             suspendedUntil.setHours(suspendedUntil.getHours() + 24);
             
-            await db.insert(userSuspensions).values({
-              userId: state.userId,
-              reason: `Repeated inappropriate content violations (${moderation.violationType})`,
-              violationIds: [], // Could track specific violation IDs
-              suspendedUntil: suspendedUntil,
-              isPermanent: false,
-              isActive: true,
-            });
+            try {
+              await db.insert(userSuspensions).values({
+                userId: state.userId,
+                reason: `Repeated inappropriate content violations (${moderation.violationType})`,
+                violationIds: [],
+                suspendedUntil: suspendedUntil,
+                isPermanent: false,
+                isActive: true,
+              });
+            } catch (suspendError) {
+              console.error('[Custom Voice] ⚠️ Failed to create suspension record (non-fatal):', suspendError);
+            }
             
             // Send moderation response
+            // TURN FALLBACK: Cancel since we're sending a response
+            state.turnResponseProduced = true;
+            if (state.turnFallbackTimerId) {
+              clearTimeout(state.turnFallbackTimerId);
+              state.turnFallbackTimerId = undefined;
+            }
             const aiResponse = moderationResponse;
             
             // Add to conversation history
@@ -2277,6 +2360,13 @@ export function setupCustomVoiceWebSocket(server: Server) {
               if (sentenceCount === 1) {
                 firstSentenceMs = sentenceStart - claudeStart;
                 console.log(`[Custom Voice] ⏱️ First sentence in ${firstSentenceMs}ms`);
+                
+                // TURN FALLBACK: Cancel fallback timer since we're producing a response
+                state.turnResponseProduced = true;
+                if (state.turnFallbackTimerId) {
+                  clearTimeout(state.turnFallbackTimerId);
+                  state.turnFallbackTimerId = undefined;
+                }
                 
                 // THINKING INDICATOR: Emit tutor_responding on first sentence
                 if (!state.hasEmittedResponding && state.currentTurnId) {
@@ -4277,15 +4367,19 @@ CRITICAL INSTRUCTIONS:
                   data: warningAudio.toString("base64")
                 }));
                 
-                // Record violation
+                // Record violation (non-fatal - wrap in try/catch)
                 if (moderation.violationType && state.sessionId) {
-                  await db.insert(contentViolations).values({
-                    userId: state.userId,
-                    sessionId: state.sessionId,
-                    violationType: moderation.violationType,
-                    severity: moderation.severity,
-                    userMessage: message.message
-                  });
+                  try {
+                    await db.insert(contentViolations).values({
+                      userId: state.userId,
+                      sessionId: state.sessionId,
+                      violationType: moderation.violationType,
+                      severity: moderation.severity,
+                      userMessage: message.message
+                    });
+                  } catch (dbError) {
+                    console.error('[Custom Voice] ⚠️ Failed to log text violation (non-fatal):', dbError);
+                  }
                 }
                 
                 break; // Don't process further
