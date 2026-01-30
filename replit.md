@@ -1,6 +1,6 @@
 # JIE Mastery AI Tutor - Web Application
 
-**Last Updated:** January 28, 2026
+**Last Updated:** January 30, 2026
 
 ## Overview
 The JIE Mastery AI Tutor is a production-ready conversational AI tutoring web platform for Math, English, and Spanish. It supports 25 languages and is designed for global accessibility, offering interactive voice conversations, personalized quizzes, and adaptive learning paths. The platform features a multi-agent AI system with five age-specific tutors (K-2, Grades 3-5, 6-8, 9-12, College/Adult) that utilize an Adaptive Socratic Method. It includes a hybrid minute tracking policy (subscription and rollover minutes) and prioritizes per-session configuration for flexible family sharing, ensuring high reliability and a streamlined user experience. The project's ambition is to make personalized, adaptive AI tutoring accessible worldwide, significantly improving educational outcomes across various subjects and age groups.
@@ -20,14 +20,15 @@ Requests from the client (browser) are processed via HTTPS/WSS to an Express.js 
 ### Custom Voice Stack
 A custom-built voice stack provides real-time, low-latency (1-2 seconds end-to-end) conversations using PCM16 audio (16-bit Linear PCM, 16kHz, Mono) encoded in Base64 over WebSockets. It integrates an STT provider (Deepgram Nova-2 or AssemblyAI), Claude Sonnet 4 for AI response generation, and ElevenLabs TTS (Turbo v2.5) with age-specific voices. The system includes adaptive barge-in detection, bounded patience logic, reading mode patience, adaptive session-level patience, and robust handling of background noise.
 
-### Voice Pipeline Hardening (Steps 1-5)
-Production-hardening features with feature flags (all default OFF for safety):
+### Voice Pipeline Hardening (Steps 1-6)
+Production-hardening features with feature flags:
 - **Step 1**: Fixed misleading ACK/WS-close logging for cleaner diagnostics
 - **Step 2** (`VOICE_BG_NOISE_COACHING`): Background-noise coaching with 25s rolling window, 6-event threshold, 2min cooldown
 - **Step 3** (`VOICE_AMBIENT_SUPPRESS`): Ambient speech suppression rejecting <2 word utterances and vowel-less fragments
 - **Step 4** (`LEXICAL_GRACE_ENABLED`): 300ms lexical grace period preventing mid-word turn finalization
 - **Step 5a** (`VITE_MIC_WATCHDOG_ENABLED`): Proactive 5s mic health monitoring with auto-recovery
 - **Step 5b**: Grade-based max_tokens (K-2: 120, 3-5: 150, 6-8: 175, 9-12: 200, College: 300)
+- **Step 6** (`LLM_WATCHDOG_ENABLED`): LLM trigger watchdog (default ON) - 3s failsafe timer after end_of_turn that forces LLM invocation if missed. Prevents session freeze in long sessions where STT delivers final transcript but LLM is never triggered. Also prevents recovery phrases ("I'm finished", "I'm done", "hello?") from ending session during stall.
 
 ### Session Teardown Safety
 The `finalizeSession()` function is hardened to never throw and always complete:

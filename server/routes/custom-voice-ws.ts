@@ -140,6 +140,35 @@ const ASSEMBLYAI_CONFIG = {
   MIN_TOKENS_FOR_STANDALONE: 6,
 };
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// LLM WATCHDOG: Failsafe for missed LLM invocations (Step 1)
+// Feature flag: LLM_WATCHDOG_ENABLED (default: true)
+// Triggers if no LLM request starts within WATCHDOG_DELAY_MS after end_of_turn
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const LLM_WATCHDOG_CONFIG = {
+  ENABLED: process.env.LLM_WATCHDOG_ENABLED !== 'false', // Default ON for reliability
+  DELAY_MS: parseInt(process.env.LLM_WATCHDOG_DELAY_MS || '3000', 10), // 3 seconds
+  MIN_TOKENS: 2, // Only trigger for transcripts with >= 2 tokens (per spec)
+};
+
+// Recovery phrases that should NOT end a session (Step 2)
+// These are common phrases users say when waiting for a response
+const RECOVERY_PHRASES = [
+  "i'm finished", "im finished", "i am finished",
+  "i'm done", "im done", "i am done",
+  "hello", "hello?", "hi", "hey",
+  "are you there", "are you there?", "you there?",
+  "can you hear me", "can you hear me?",
+  "tutor", "tutor?", "hey tutor",
+];
+
+function isRecoveryPhrase(text: string): boolean {
+  const normalized = text.toLowerCase().trim();
+  // Must be a short message to qualify as recovery phrase
+  if (normalized.length > 30) return false;
+  return RECOVERY_PHRASES.some(phrase => normalized === phrase || normalized === phrase.replace('?', ''));
+}
+
 function shouldMergeWithPrevious(
   lastTranscript: string,
   lastTranscriptTime: number,
@@ -700,6 +729,11 @@ interface SessionState {
   lastClientVisibility?: 'visible' | 'hidden'; // RECONNECT: Last visibility state from client
   lastPongAt?: Date; // HEARTBEAT: Last pong received from client
   missedPongCount: number; // HEARTBEAT: Consecutive missed pongs
+  // LLM WATCHDOG: Failsafe for missed LLM invocations after end_of_turn
+  llmWatchdogTimerId?: NodeJS.Timeout; // WATCHDOG: Timer for forcing LLM invocation
+  llmWatchdogTranscript?: string; // WATCHDOG: Transcript to use if watchdog fires
+  lastEndOfTurnTime?: number; // WATCHDOG: When end_of_turn was received
+  lastLlmRequestTime?: number; // WATCHDOG: When LLM request was last started
 }
 
 // Helper to send typed WebSocket events
@@ -1662,6 +1696,18 @@ export function setupCustomVoiceWebSocket(server: Server) {
 
       state.isProcessing = true;
       processingStartTime = Date.now();
+      
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      // LLM WATCHDOG: Cancel watchdog since we're now processing (Step 3)
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      if (state.llmWatchdogTimerId) {
+        clearTimeout(state.llmWatchdogTimerId);
+        console.log(`[VOICE] watchdog_cancelled session=${state.sessionId || 'unknown'} reason=llm_started`);
+        state.llmWatchdogTimerId = undefined;
+        state.llmWatchdogTranscript = undefined;
+      }
+      state.lastLlmRequestTime = Date.now();
+      
       console.log(`[Pipeline] 2. Starting to process transcript, queue size: ${state.transcriptQueue.length + 1}`);
       const transcript = state.transcriptQueue.shift()!;
 
@@ -1855,11 +1901,26 @@ export function setupCustomVoiceWebSocket(server: Server) {
         // 👋 GOODBYE DETECTION - End session on user goodbye
         // Feature flag: SESSION_GOODBYE_HARD_STOP_ENABLED (default: true)
         // Hard stop: Immediately stops playback, mic, and pending jobs
+        // Step 2: Do NOT treat recovery phrases as end-session intents
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         // Track if this is a goodbye so we can prevent additional processing
         let isGoodbyeInProgress = false;
         
-        if (detectGoodbye(transcript)) {
+        // Step 2: Check if this is a recovery phrase during a stall
+        // Stall = user hasn't received LLM response in > 5 seconds
+        const timeSinceLastLlmRequest = state.lastLlmRequestTime 
+          ? Date.now() - state.lastLlmRequestTime 
+          : Infinity;
+        const isStalled = timeSinceLastLlmRequest > 5000 && state.lastEndOfTurnTime && 
+          (Date.now() - state.lastEndOfTurnTime > 5000);
+        
+        // Skip goodbye detection for recovery phrases during a stall
+        const isRecovery = isRecoveryPhrase(transcript);
+        if (isRecovery && isStalled) {
+          console.log(`[VOICE] 🔄 Recovery phrase detected during stall: "${transcript}" - treating as normal input`);
+        }
+        
+        if (detectGoodbye(transcript) && !(isRecovery && isStalled)) {
           const hardStopEnabled = isGoodbyeHardStopEnabled();
           console.log(`[Goodbye] 👋 User said goodbye (voice), hard_stop=${hardStopEnabled}`);
           isGoodbyeInProgress = true;
@@ -2513,6 +2574,26 @@ export function setupCustomVoiceWebSocket(server: Server) {
             pendingTranscript = '';
             // Always push to queue - queue handles serialization
             state.transcriptQueue.push(completeUtterance);
+            
+            // LLM WATCHDOG: Start timer (reconnected handler)
+            state.lastEndOfTurnTime = Date.now();
+            if (LLM_WATCHDOG_CONFIG.ENABLED && !state.isProcessing) {
+              const tokenCount = completeUtterance.trim().split(/\s+/).length;
+              if (tokenCount >= LLM_WATCHDOG_CONFIG.MIN_TOKENS) {
+                if (state.llmWatchdogTimerId) clearTimeout(state.llmWatchdogTimerId);
+                state.llmWatchdogTranscript = completeUtterance;
+                console.log(`[VOICE] watchdog_started session=${state.sessionId || 'unknown'} (reconnected)`);
+                state.llmWatchdogTimerId = setTimeout(() => {
+                  if (!state.isProcessing && state.transcriptQueue.length > 0 && !state.isSessionEnded) {
+                    console.log(`[VOICE] watchdog_fired forcing_llm session=${state.sessionId || 'unknown'}`);
+                    processTranscriptQueue();
+                  }
+                  state.llmWatchdogTimerId = undefined;
+                  state.llmWatchdogTranscript = undefined;
+                }, LLM_WATCHDOG_CONFIG.DELAY_MS);
+              }
+            }
+            
             if (!state.isProcessing) {
               processTranscriptQueue();
             }
@@ -3098,6 +3179,35 @@ CRITICAL INSTRUCTIONS:
                   console.log(`[STT] ✅ Utterance complete: "${completeUtterance}"`);
                   pendingTranscript = '';
                   state.transcriptQueue.push(completeUtterance);
+                  
+                  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                  // LLM WATCHDOG: Start timer to force LLM invocation (Step 1)
+                  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                  state.lastEndOfTurnTime = Date.now();
+                  if (LLM_WATCHDOG_CONFIG.ENABLED && !state.isProcessing) {
+                    const tokenCount = completeUtterance.trim().split(/\s+/).length;
+                    if (tokenCount >= LLM_WATCHDOG_CONFIG.MIN_TOKENS) {
+                      // Clear any existing watchdog
+                      if (state.llmWatchdogTimerId) {
+                        clearTimeout(state.llmWatchdogTimerId);
+                      }
+                      state.llmWatchdogTranscript = completeUtterance;
+                      console.log(`[VOICE] watchdog_started session=${state.sessionId || 'unknown'} transcript_tokens=${tokenCount}`);
+                      
+                      state.llmWatchdogTimerId = setTimeout(() => {
+                        // Check if LLM started since watchdog was set
+                        if (!state.isProcessing && state.transcriptQueue.length > 0 && !state.isSessionEnded) {
+                          console.log(`[VOICE] watchdog_fired forcing_llm session=${state.sessionId || 'unknown'}`);
+                          processTranscriptQueue();
+                        } else {
+                          console.log(`[VOICE] watchdog_expired_no_action session=${state.sessionId || 'unknown'} isProcessing=${state.isProcessing} queueLen=${state.transcriptQueue.length}`);
+                        }
+                        state.llmWatchdogTimerId = undefined;
+                        state.llmWatchdogTranscript = undefined;
+                      }, LLM_WATCHDOG_CONFIG.DELAY_MS);
+                    }
+                  }
+                  
                   if (!state.isProcessing) {
                     processTranscriptQueue();
                   }
@@ -3660,6 +3770,25 @@ CRITICAL INSTRUCTIONS:
                     // Don't gate on isProcessing or we lose transcripts during tutor speech
                     state.transcriptQueue.push(completeUtterance);
                     
+                    // LLM WATCHDOG: Start timer (Deepgram handler)
+                    state.lastEndOfTurnTime = Date.now();
+                    if (LLM_WATCHDOG_CONFIG.ENABLED && !state.isProcessing) {
+                      const tokenCount = completeUtterance.trim().split(/\s+/).length;
+                      if (tokenCount >= LLM_WATCHDOG_CONFIG.MIN_TOKENS) {
+                        if (state.llmWatchdogTimerId) clearTimeout(state.llmWatchdogTimerId);
+                        state.llmWatchdogTranscript = completeUtterance;
+                        console.log(`[VOICE] watchdog_started session=${state.sessionId || 'unknown'} (deepgram)`);
+                        state.llmWatchdogTimerId = setTimeout(() => {
+                          if (!state.isProcessing && state.transcriptQueue.length > 0 && !state.isSessionEnded) {
+                            console.log(`[VOICE] watchdog_fired forcing_llm session=${state.sessionId || 'unknown'}`);
+                            processTranscriptQueue();
+                          }
+                          state.llmWatchdogTimerId = undefined;
+                          state.llmWatchdogTranscript = undefined;
+                        }, LLM_WATCHDOG_CONFIG.DELAY_MS);
+                      }
+                    }
+                    
                     // Start processing if not already processing (otherwise queue will be processed after current response)
                     if (!state.isProcessing) {
                       processTranscriptQueue();
@@ -3963,8 +4092,20 @@ CRITICAL INSTRUCTIONS:
             
             // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             // 👋 GOODBYE DETECTION (Text Mode) - Gracefully end session
+            // Step 2: Do NOT treat recovery phrases as end-session intents
             // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            if (detectGoodbye(message.message)) {
+            const textTimeSinceLastLlm = state.lastLlmRequestTime 
+              ? Date.now() - state.lastLlmRequestTime 
+              : Infinity;
+            const textIsStalled = textTimeSinceLastLlm > 5000 && state.lastEndOfTurnTime && 
+              (Date.now() - state.lastEndOfTurnTime > 5000);
+            const textIsRecovery = isRecoveryPhrase(message.message);
+            
+            if (textIsRecovery && textIsStalled) {
+              console.log(`[VOICE] 🔄 Recovery phrase detected during stall (text): "${message.message}" - treating as normal input`);
+            }
+            
+            if (detectGoodbye(message.message) && !(textIsRecovery && textIsStalled)) {
               console.log('[Goodbye] 👋 User said goodbye (text), ending session gracefully');
               
               const goodbyeMessage = "Goodbye! Great learning with you today. Come back anytime you want to continue learning!";
