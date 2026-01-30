@@ -2221,6 +2221,85 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Moderation smoke test endpoint (admin/dev only)
+  app.post("/api/admin/test-moderation", requireAdmin, async (req, res) => {
+    try {
+      const { testPhrase = "pyramids and Pi 3.14" } = req.body;
+      
+      console.log(`[Admin] 🧪 Running moderation smoke test with phrase: "${testPhrase}"`);
+      
+      const { moderateContent } = await import('./services/content-moderation');
+      
+      const result = await moderateContent(testPhrase, {
+        gradeLevel: 'grades-6-8'
+      });
+      
+      const isAllowed = result.isAppropriate;
+      
+      console.log('[Admin] Moderation result:', {
+        isAppropriate: result.isAppropriate,
+        reason: result.reason,
+        violationType: result.violationType,
+        severity: result.severity,
+        confidence: result.confidence,
+        matchedTerms: result.matchedTerms
+      });
+      
+      let dbWriteResult = 'skipped';
+      let dbError = null;
+      
+      if (!isAllowed && result.violationType) {
+        try {
+          const { pool } = await import('./db');
+          
+          await pool.query(`
+            INSERT INTO content_violations (id, user_id, session_id, violation_type, severity, user_message, confidence, matched_terms)
+            VALUES (gen_random_uuid()::text, $1, $2, $3, $4, $5, $6, $7)
+          `, ['smoke-test', 'smoke-test-session', result.violationType, result.severity || 'low', testPhrase, result.confidence?.toString() || null, result.matchedTerms || []]);
+          
+          dbWriteResult = 'success';
+          console.log('[Admin] ✅ DB write succeeded');
+        } catch (dbErr: any) {
+          dbWriteResult = 'failed';
+          dbError = dbErr.message;
+          console.error('[Admin] ⚠️ DB write failed (non-fatal):', dbErr.message);
+        }
+      }
+      
+      res.json({
+        success: true,
+        testPhrase,
+        moderation: {
+          isAppropriate: result.isAppropriate,
+          reason: result.reason,
+          violationType: result.violationType,
+          severity: result.severity,
+          confidence: result.confidence,
+          matchedTerms: result.matchedTerms
+        },
+        dbWrite: {
+          attempted: !isAllowed && !!result.violationType,
+          result: dbWriteResult,
+          error: dbError
+        },
+        conclusion: isAllowed 
+          ? 'Content allowed - no moderation triggered (expected for safe phrases)'
+          : dbWriteResult === 'success' 
+            ? 'Moderation triggered + DB write succeeded'
+            : dbWriteResult === 'failed'
+              ? 'Moderation triggered but DB write failed (non-fatal - session would continue)'
+              : 'Moderation triggered but no DB write attempted'
+      });
+    } catch (error: any) {
+      console.error('[Admin] Moderation smoke test error:', error);
+      res.status(500).json({ 
+        success: false,
+        error: error.message,
+        conclusion: 'Smoke test threw an error - but in production, this would be caught and session would continue'
+      });
+    }
+  });
+
   // Stripe customer cleanup endpoint (admin only)
   app.post("/api/admin/cleanup-stripe", requireAdmin, async (req, res) => {
     try {
