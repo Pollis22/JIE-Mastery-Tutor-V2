@@ -435,6 +435,23 @@ async function ensureContentModerationTables() {
       console.log('[DB-Init] ✅ Created content_violations table with indexes');
     } else {
       console.log('[DB-Init] ✅ content_violations table already exists');
+      
+      // Add new notification tracking columns if missing
+      const colCheck = await pool.query(`
+        SELECT column_name FROM information_schema.columns 
+        WHERE table_name = 'content_violations' 
+        AND column_name IN ('notified_parent', 'notified_support')
+      `);
+      const existingCols = colCheck.rows.map((r: any) => r.column_name);
+      
+      if (!existingCols.includes('notified_parent')) {
+        await pool.query(`ALTER TABLE content_violations ADD COLUMN notified_parent boolean DEFAULT false`);
+        console.log('[DB-Init] Added notified_parent column to content_violations');
+      }
+      if (!existingCols.includes('notified_support')) {
+        await pool.query(`ALTER TABLE content_violations ADD COLUMN notified_support boolean DEFAULT false`);
+        console.log('[DB-Init] Added notified_support column to content_violations');
+      }
     }
     
     // Check if user_suspensions table exists

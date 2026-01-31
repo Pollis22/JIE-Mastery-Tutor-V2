@@ -348,10 +348,13 @@ export async function handleSafetyIncident(data: SafetyIncidentNotification): Pr
   console.log(`[SafetyAlert] 🚨 Handling safety incident: ${data.incidentType} (severity: ${data.severity})`);
   
   // All operations are non-fatal - wrap in try/catch
+  let parentNotified = false;
+  let supportNotified = false;
   
   // 1. Send JIE Support notification (always for safety incidents)
   try {
     await sendJIESupportNotification(data);
+    supportNotified = true;
   } catch (error) {
     console.error('[SafetyAlert] ⚠️ JIE Support notification failed (non-fatal):', error);
   }
@@ -371,9 +374,28 @@ export async function handleSafetyIncident(data: SafetyIncidentNotification): Pr
         actionTaken: data.actionTaken
       };
       await sendParentAlert(parentData);
+      parentNotified = true;
     } catch (error) {
       console.error('[SafetyAlert] ⚠️ Parent notification failed (non-fatal):', error);
     }
+  }
+  
+  // 3. Log to safetyIncidents table for Admin → Safety visibility
+  try {
+    await db.insert(safetyIncidents).values({
+      sessionId: data.sessionId,
+      userId: data.userId,
+      flagType: mapIncidentTypeToFlag(data.incidentType),
+      severity: 'critical', // All safety incidents from handleSafetyIncident are critical
+      triggerText: data.triggerText,
+      tutorResponse: 'Session was terminated for safety reasons.',
+      actionTaken: data.actionTaken,
+      adminNotified: supportNotified,
+      parentNotified: parentNotified,
+    });
+    console.log(`[SafetyAlert] ✅ Incident logged to safety_incidents table`);
+  } catch (dbError) {
+    console.error('[SafetyAlert] ⚠️ Failed to log incident to safety_incidents (non-fatal):', dbError);
   }
   
   console.log(`[SafetyAlert] ✅ Safety incident handling complete for session ${data.sessionId}`);

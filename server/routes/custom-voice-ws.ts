@@ -2134,17 +2134,23 @@ export function setupCustomVoiceWebSocket(server: Server) {
           
           // Log violation to database with FULL context (user message + AI warning response)
           // CRITICAL: Wrap in try/catch to prevent DB errors from killing the turn
+          // Track notification status for audit trail
+          let notifiedParent = false;
+          let notifiedSupport = false;
+          
           try {
             await db.insert(contentViolations).values({
               userId: state.userId,
               sessionId: state.sessionId,
               violationType: moderation.violationType!,
-              severity: moderation.severity,
+              severity: isImmediateTermination ? 'critical' : moderation.severity,
               userMessage: transcript,
               aiResponse: moderationResponse,
               confidence: moderation.confidence?.toString(),
               reviewStatus: 'pending',
-              actionTaken: warningLevel === 'final' ? 'suspension' : 'warning',
+              actionTaken: isImmediateTermination ? 'session_terminated' : (warningLevel === 'final' ? 'suspension' : 'warning'),
+              notifiedParent: warningLevel === 'final', // Will be updated after notification
+              notifiedSupport: warningLevel === 'final', // Will be updated after notification
             });
           } catch (dbError) {
             console.error('[Custom Voice] ⚠️ Failed to log content violation (non-fatal):', dbError);
