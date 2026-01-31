@@ -3130,6 +3130,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Admin: Get paginated sessions
+  app.get("/api/admin/sessions", requireAdmin, auditActions.viewAnalytics, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 20;
+      const offset = (page - 1) * limit;
+
+      const sessions = await db.select({
+        id: realtimeSessions.id,
+        studentName: realtimeSessions.studentName,
+        subject: realtimeSessions.subject,
+        ageGroup: realtimeSessions.ageGroup,
+        minutesUsed: realtimeSessions.minutesUsed,
+        startedAt: realtimeSessions.startedAt,
+        endedAt: realtimeSessions.endedAt,
+        status: realtimeSessions.status,
+        closeReason: realtimeSessions.closeReason,
+        closeDetails: realtimeSessions.closeDetails,
+        reconnectCount: realtimeSessions.reconnectCount,
+        lastHeartbeatAt: realtimeSessions.lastHeartbeatAt,
+      })
+        .from(realtimeSessions)
+        .orderBy(desc(realtimeSessions.startedAt))
+        .limit(limit)
+        .offset(offset);
+
+      const formattedSessions = sessions.map(s => ({
+        ...s,
+        duration: s.startedAt && s.endedAt 
+          ? `${Math.round((new Date(s.endedAt).getTime() - new Date(s.startedAt).getTime()) / 60000)} min`
+          : 'N/A'
+      }));
+
+      const countResult = await db.select({ count: sql<number>`count(*)` })
+        .from(realtimeSessions);
+      const total = Number(countResult[0]?.count || 0);
+
+      res.json({
+        sessions: formattedSessions,
+        total,
+        page,
+        pageSize: limit,
+        totalPages: Math.ceil(total / limit),
+      });
+    } catch (error: any) {
+      console.error('[Admin] Sessions error:', error);
+      res.status(500).json({ message: "Error fetching sessions: " + error.message });
+    }
+  });
+
   // Admin: Get enhanced analytics data
   app.get("/api/admin/analytics", requireAdmin, auditActions.viewAnalytics, async (req, res) => {
     try {

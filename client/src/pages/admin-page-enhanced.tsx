@@ -133,6 +133,30 @@ interface SafetyIncidentsData {
   totalPages: number;
 }
 
+interface SessionData {
+  id: string;
+  studentName: string;
+  subject: string;
+  ageGroup?: string;
+  duration?: string;
+  startedAt: string;
+  endedAt?: string;
+  minutesUsed: number;
+  status?: string;
+  closeReason?: string;
+  closeDetails?: { wsCloseCode?: number };
+  reconnectCount?: number;
+  lastHeartbeatAt?: string;
+}
+
+interface SessionsData {
+  sessions: SessionData[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
 export default function AdminPageEnhanced() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -141,6 +165,7 @@ export default function AdminPageEnhanced() {
   const [currentPage, setCurrentPage] = useState(1);
   const [trialLeadsPage, setTrialLeadsPage] = useState(1);
   const [safetyIncidentsPage, setSafetyIncidentsPage] = useState(1);
+  const [sessionsPage, setSessionsPage] = useState(1);
   const [activeTab, setActiveTab] = useState("overview");
 
   // Check admin access
@@ -217,6 +242,24 @@ export default function AdminPageEnhanced() {
       return response.json();
     },
     enabled: !!user?.isAdmin && activeTab === 'safety-incidents',
+  });
+
+  const { data: sessionsData, isLoading: sessionsLoading } = useQuery<SessionsData>({
+    queryKey: ["/api/admin/sessions", sessionsPage],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        page: sessionsPage.toString(),
+        limit: '20',
+      });
+      const response = await fetch(`/api/admin/sessions?${params}`, {
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to fetch sessions: ${response.status}`);
+      }
+      return response.json();
+    },
+    enabled: !!user?.isAdmin && activeTab === 'sessions',
   });
 
   // Direct link export - more reliable for file downloads with session auth
@@ -754,7 +797,11 @@ export default function AdminPageEnhanced() {
                   <CardDescription>All voice tutoring sessions across the platform</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {analytics?.recentSessions && analytics.recentSessions.length > 0 ? (
+                  {sessionsLoading ? (
+                    <div className="flex justify-center py-8">
+                      <div className="animate-spin w-6 h-6 border-4 border-primary border-t-transparent rounded-full" />
+                    </div>
+                  ) : sessionsData?.sessions && sessionsData.sessions.length > 0 ? (
                     <div className="space-y-4">
                       <Table>
                         <TableHeader>
@@ -771,8 +818,8 @@ export default function AdminPageEnhanced() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {analytics.recentSessions.slice(0, 20).map((session, index: number) => (
-                            <TableRow key={session.id || index}>
+                          {sessionsData.sessions.map((session, index: number) => (
+                            <TableRow key={session.id || index} data-testid={`session-row-${session.id}`}>
                               <TableCell className="font-medium">
                                 {session.studentName || 'Unknown'}
                               </TableCell>
@@ -794,12 +841,12 @@ export default function AdminPageEnhanced() {
                               </TableCell>
                               <TableCell>
                                 <span className="text-xs" data-testid={`text-close-reason-${index}`}>
-                                  {(session as any).closeReason ? (
+                                  {session.closeReason ? (
                                     <span className="flex flex-col">
-                                      <span>{(session as any).closeReason}</span>
-                                      {(session as any).closeDetails?.wsCloseCode && (
+                                      <span>{session.closeReason}</span>
+                                      {session.closeDetails?.wsCloseCode && (
                                         <span className="text-muted-foreground">
-                                          WS: {(session as any).closeDetails.wsCloseCode}
+                                          WS: {session.closeDetails.wsCloseCode}
                                         </span>
                                       )}
                                     </span>
@@ -810,8 +857,8 @@ export default function AdminPageEnhanced() {
                               </TableCell>
                               <TableCell>
                                 <span className="text-xs" data-testid={`text-reconnects-${index}`}>
-                                  {(session as any).reconnectCount !== undefined && (session as any).reconnectCount > 0 ? (
-                                    <Badge variant="outline">{(session as any).reconnectCount}</Badge>
+                                  {session.reconnectCount !== undefined && session.reconnectCount > 0 ? (
+                                    <Badge variant="outline">{session.reconnectCount}</Badge>
                                   ) : (
                                     <span className="text-muted-foreground">0</span>
                                   )}
@@ -821,8 +868,37 @@ export default function AdminPageEnhanced() {
                           ))}
                         </TableBody>
                       </Table>
-                      <div className="text-sm text-muted-foreground text-center pt-4">
-                        Showing {Math.min(20, analytics.recentSessions.length)} of {analytics.recentSessions.length} total sessions
+                      
+                      {/* Pagination */}
+                      <div className="flex justify-between items-center mt-4">
+                        <p className="text-sm text-muted-foreground">
+                          Showing {((sessionsPage - 1) * 20) + 1} - {Math.min(sessionsPage * 20, sessionsData.total)} of {sessionsData.total} total sessions
+                        </p>
+                        {sessionsData.totalPages > 1 && (
+                          <div className="flex gap-2 items-center">
+                            <span className="text-sm text-muted-foreground">
+                              Page {sessionsData.page} of {sessionsData.totalPages}
+                            </span>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setSessionsPage(p => Math.max(1, p - 1))}
+                              disabled={sessionsPage === 1}
+                              data-testid="button-sessions-prev"
+                            >
+                              Previous
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setSessionsPage(p => Math.min(sessionsData.totalPages, p + 1))}
+                              disabled={sessionsPage >= sessionsData.totalPages}
+                              data-testid="button-sessions-next"
+                            >
+                              Next
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   ) : (
