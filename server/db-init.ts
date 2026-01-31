@@ -418,6 +418,8 @@ async function ensureContentModerationTables() {
           matched_terms text[],
           review_status text DEFAULT 'pending',
           action_taken text,
+          notified_parent boolean DEFAULT false,
+          notified_support boolean DEFAULT false,
           reviewed_by varchar,
           reviewed_at timestamp,
           review_notes text,
