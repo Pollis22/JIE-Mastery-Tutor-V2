@@ -157,6 +157,32 @@ interface SessionsData {
   totalPages: number;
 }
 
+interface TopUsageUser {
+  id: string;
+  email: string;
+  firstName?: string;
+  lastName?: string;
+  parentName?: string;
+  studentName?: string;
+  subscriptionPlan?: string;
+  subscriptionStatus?: string;
+  subscriptionMinutesUsed?: number;
+  subscriptionMinutesLimit?: number;
+  purchasedMinutesBalance?: number;
+  isTrialActive?: boolean;
+  trialMinutesUsed?: number;
+  trialMinutesTotal?: number;
+  createdAt?: string;
+}
+
+interface TopUsageData {
+  users: TopUsageUser[];
+  totalUsers: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
 export default function AdminPageEnhanced() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -166,6 +192,7 @@ export default function AdminPageEnhanced() {
   const [trialLeadsPage, setTrialLeadsPage] = useState(1);
   const [safetyIncidentsPage, setSafetyIncidentsPage] = useState(1);
   const [sessionsPage, setSessionsPage] = useState(1);
+  const [usagePage, setUsagePage] = useState(1);
   const [activeTab, setActiveTab] = useState("overview");
 
   // Check admin access
@@ -260,6 +287,24 @@ export default function AdminPageEnhanced() {
       return response.json();
     },
     enabled: !!user?.isAdmin && activeTab === 'sessions',
+  });
+
+  const { data: topUsageData, isLoading: topUsageLoading } = useQuery<TopUsageData>({
+    queryKey: ["/api/admin/usage/top-users", usagePage],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        page: usagePage.toString(),
+        limit: '10',
+      });
+      const response = await fetch(`/api/admin/usage/top-users?${params}`, {
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to fetch top usage users: ${response.status}`);
+      }
+      return response.json();
+    },
+    enabled: !!user?.isAdmin && activeTab === 'usage',
   });
 
   // Direct link export - more reliable for file downloads with session auth
@@ -1180,35 +1225,35 @@ export default function AdminPageEnhanced() {
               <Card>
                 <CardHeader>
                   <CardTitle>Top Users by Minutes</CardTitle>
-                  <CardDescription>Highest minute consumers on the platform</CardDescription>
+                  <CardDescription>Highest minute consumers on the platform ({topUsageData?.totalUsers || 0} total users)</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {usersData?.users && usersData.users.length > 0 ? (
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>User</TableHead>
-                          <TableHead>Email</TableHead>
-                          <TableHead>Plan</TableHead>
-                          <TableHead>Minutes Used</TableHead>
-                          <TableHead>Purchased Minutes</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {usersData.users
-                          .sort((a, b) => 
-                            (b.subscriptionMinutesUsed || 0) - (a.subscriptionMinutesUsed || 0)
-                          )
-                          .slice(0, 10)
-                          .map((user, index: number) => (
-                            <TableRow key={user.id || index}>
+                  {topUsageLoading ? (
+                    <div className="flex justify-center py-8">
+                      <div className="animate-spin w-6 h-6 border-4 border-primary border-t-transparent rounded-full" />
+                    </div>
+                  ) : topUsageData?.users && topUsageData.users.length > 0 ? (
+                    <div className="space-y-4">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>User</TableHead>
+                            <TableHead>Email</TableHead>
+                            <TableHead>Plan</TableHead>
+                            <TableHead>Minutes Used</TableHead>
+                            <TableHead>Purchased Minutes</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {topUsageData.users.map((user, index: number) => (
+                            <TableRow key={user.id || index} data-testid={`usage-user-row-${user.id}`}>
                               <TableCell className="font-medium">
                                 {user.parentName || user.studentName || user.firstName || 'Unknown'}
                               </TableCell>
                               <TableCell className="text-sm text-muted-foreground">{user.email}</TableCell>
                               <TableCell>
                                 <Badge variant={user.subscriptionPlan === 'elite' ? 'default' : 'secondary'}>
-                                  {user.subscriptionPlan?.toUpperCase() || 'Starter'}
+                                  {user.subscriptionPlan?.toUpperCase() || 'FREE'}
                                 </Badge>
                               </TableCell>
                               <TableCell>
@@ -1239,8 +1284,41 @@ export default function AdminPageEnhanced() {
                               </TableCell>
                             </TableRow>
                           ))}
-                      </TableBody>
-                    </Table>
+                        </TableBody>
+                      </Table>
+                      
+                      {/* Pagination */}
+                      <div className="flex justify-between items-center mt-4">
+                        <p className="text-sm text-muted-foreground">
+                          Showing {((usagePage - 1) * 10) + 1} - {Math.min(usagePage * 10, topUsageData.totalUsers)} of {topUsageData.totalUsers} users
+                        </p>
+                        {topUsageData.totalPages > 1 && (
+                          <div className="flex gap-2 items-center">
+                            <span className="text-sm text-muted-foreground">
+                              Page {topUsageData.page} of {topUsageData.totalPages}
+                            </span>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setUsagePage(p => Math.max(1, p - 1))}
+                              disabled={usagePage === 1}
+                              data-testid="button-usage-prev"
+                            >
+                              Previous
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setUsagePage(p => Math.min(topUsageData.totalPages, p + 1))}
+                              disabled={usagePage >= topUsageData.totalPages}
+                              data-testid="button-usage-next"
+                            >
+                              Next
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   ) : (
                     <div className="text-center py-8 text-muted-foreground">
                       No user data available

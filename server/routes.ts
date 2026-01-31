@@ -3180,6 +3180,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Admin: Get paginated top users by minutes for Usage tab
+  app.get("/api/admin/usage/top-users", requireAdmin, auditActions.viewAnalytics, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 10;
+      const offset = (page - 1) * limit;
+
+      // Get total count of all users (excluding soft-deleted if applicable)
+      const countResult = await db.select({ count: sql<number>`count(*)` })
+        .from(users);
+      const totalUsers = Number(countResult[0]?.count || 0);
+
+      // Get users sorted by minutes used (subscription + trial), with deterministic tie-breaker
+      const topUsers = await db.select({
+        id: users.id,
+        email: users.email,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        parentName: users.parentName,
+        studentName: users.studentName,
+        subscriptionPlan: users.subscriptionPlan,
+        subscriptionStatus: users.subscriptionStatus,
+        subscriptionMinutesUsed: users.subscriptionMinutesUsed,
+        subscriptionMinutesLimit: users.subscriptionMinutesLimit,
+        purchasedMinutesBalance: users.purchasedMinutesBalance,
+        isTrialActive: users.isTrialActive,
+        trialMinutesUsed: users.trialMinutesUsed,
+        trialMinutesTotal: users.trialMinutesTotal,
+        createdAt: users.createdAt,
+      })
+        .from(users)
+        .orderBy(
+          desc(sql`COALESCE(${users.subscriptionMinutesUsed}, 0) + COALESCE(${users.trialMinutesUsed}, 0)`),
+          desc(users.createdAt),
+          users.email
+        )
+        .limit(limit)
+        .offset(offset);
+
+      res.json({
+        users: topUsers,
+        totalUsers,
+        page,
+        pageSize: limit,
+        totalPages: Math.ceil(totalUsers / limit),
+      });
+    } catch (error: any) {
+      console.error('[Admin] Top users by minutes error:', error);
+      res.status(500).json({ message: "Error fetching top users: " + error.message });
+    }
+  });
+
   // Admin: Get enhanced analytics data
   app.get("/api/admin/analytics", requireAdmin, auditActions.viewAnalytics, async (req, res) => {
     try {
