@@ -3181,19 +3181,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Admin: Get paginated top users by minutes for Usage tab
+  // Source of truth: aggregate from realtimeSessions table (actual session usage)
   app.get("/api/admin/usage/top-users", requireAdmin, auditActions.viewAnalytics, async (req, res) => {
     try {
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 10;
       const offset = (page - 1) * limit;
 
-      // Get total count of all users (excluding soft-deleted if applicable)
-      const countResult = await db.select({ count: sql<number>`count(*)` })
-        .from(users);
+      // Count total distinct users with sessions (users who have actually used the platform)
+      const countResult = await db.select({ 
+        count: sql<number>`count(DISTINCT ${realtimeSessions.userId})` 
+      }).from(realtimeSessions);
       const totalUsers = Number(countResult[0]?.count || 0);
 
-      // Get users sorted by minutes used (subscription + trial), with deterministic tie-breaker
-      const topUsers = await db.select({
+      // Count total sessions for sanity check
+      const sessionCountResult = await db.select({ 
+        count: sql<number>`count(*)` 
+      }).from(realtimeSessions);
+      const totalSessions = Number(sessionCountResult[0]?.count || 0);
+
+      // Defensive logging: if sessions exist but no users found, log an error
+      if (totalSessions > 0 && totalUsers === 0) {
+        console.error('[Admin] USAGE AGGREGATION ERROR: Sessions exist but no users found!', {
+          table: 'realtime_sessions',
+          minutesColumn: 'minutes_used',
+          totalSessions,
+          totalUsers,
+        });
+      }
+
+      // Aggregate minutes from realtime_sessions, then LEFT JOIN to users for profile info
+      const topUsersQuery = await db.select({
         id: users.id,
         email: users.email,
         firstName: users.firstName,
@@ -3202,22 +3220,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
         studentName: users.studentName,
         subscriptionPlan: users.subscriptionPlan,
         subscriptionStatus: users.subscriptionStatus,
-        subscriptionMinutesUsed: users.subscriptionMinutesUsed,
         subscriptionMinutesLimit: users.subscriptionMinutesLimit,
         purchasedMinutesBalance: users.purchasedMinutesBalance,
         isTrialActive: users.isTrialActive,
-        trialMinutesUsed: users.trialMinutesUsed,
         trialMinutesTotal: users.trialMinutesTotal,
         createdAt: users.createdAt,
+        totalMinutesUsed: sql<number>`COALESCE(SUM(${realtimeSessions.minutesUsed}), 0)`.as('total_minutes_used'),
+        sessionCount: sql<number>`COUNT(${realtimeSessions.id})`.as('session_count'),
+        lastSessionAt: sql<string>`MAX(${realtimeSessions.endedAt})`.as('last_session_at'),
       })
-        .from(users)
+        .from(realtimeSessions)
+        .leftJoin(users, eq(realtimeSessions.userId, users.id))
+        .groupBy(users.id)
         .orderBy(
-          desc(sql`COALESCE(${users.subscriptionMinutesUsed}, 0) + COALESCE(${users.trialMinutesUsed}, 0)`),
-          desc(users.createdAt),
+          desc(sql`COALESCE(SUM(${realtimeSessions.minutesUsed}), 0)`),
+          desc(sql`MAX(${realtimeSessions.endedAt})`),
           users.email
         )
         .limit(limit)
         .offset(offset);
+
+      // Map to expected response format
+      const topUsers = topUsersQuery.map(u => ({
+        id: u.id,
+        email: u.email,
+        firstName: u.firstName,
+        lastName: u.lastName,
+        parentName: u.parentName,
+        studentName: u.studentName,
+        subscriptionPlan: u.subscriptionPlan,
+        subscriptionStatus: u.subscriptionStatus,
+        subscriptionMinutesUsed: Number(u.totalMinutesUsed) || 0,
+        subscriptionMinutesLimit: u.subscriptionMinutesLimit,
+        purchasedMinutesBalance: u.purchasedMinutesBalance,
+        isTrialActive: u.isTrialActive,
+        trialMinutesUsed: u.isTrialActive ? Number(u.totalMinutesUsed) : 0,
+        trialMinutesTotal: u.trialMinutesTotal,
+        createdAt: u.createdAt,
+        sessionCount: Number(u.sessionCount) || 0,
+        lastSessionAt: u.lastSessionAt,
+      }));
+
+      console.log(`[Admin] Top users query: page=${page}, returned=${topUsers.length}, totalUsers=${totalUsers}, totalSessions=${totalSessions}`);
 
       res.json({
         users: topUsers,
