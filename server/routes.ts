@@ -3188,19 +3188,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const limit = parseInt(req.query.limit as string) || 10;
       const offset = (page - 1) * limit;
 
-      // Count total distinct users with sessions (users who have actually used the platform)
-      const countResult = await db.select({ 
-        count: sql<number>`count(DISTINCT ${realtimeSessions.userId})` 
-      }).from(realtimeSessions);
-      const totalUsers = Number(countResult[0]?.count || 0);
+      // Use raw SQL to avoid Drizzle groupBy issues
+      // This aggregates from realtime_sessions and joins to users for profile data
+      const topUsersResult = await db.execute(sql`
+        WITH session_stats AS (
+          SELECT 
+            user_id,
+            COALESCE(SUM(minutes_used), 0) as total_minutes,
+            COUNT(*) as session_count,
+            MAX(ended_at) as last_session
+          FROM realtime_sessions
+          GROUP BY user_id
+        )
+        SELECT 
+          u.id,
+          u.email,
+          u.first_name,
+          u.last_name,
+          u.parent_name,
+          u.student_name,
+          u.subscription_plan,
+          u.subscription_status,
+          u.subscription_minutes_limit,
+          u.purchased_minutes_balance,
+          u.is_trial_active,
+          u.trial_minutes_total,
+          u.created_at,
+          ss.total_minutes,
+          ss.session_count,
+          ss.last_session
+        FROM session_stats ss
+        LEFT JOIN users u ON ss.user_id = u.id
+        ORDER BY ss.total_minutes DESC, ss.last_session DESC NULLS LAST, u.email ASC
+        LIMIT ${limit} OFFSET ${offset}
+      `);
 
-      // Count total sessions for sanity check
-      const sessionCountResult = await db.select({ 
-        count: sql<number>`count(*)` 
-      }).from(realtimeSessions);
-      const totalSessions = Number(sessionCountResult[0]?.count || 0);
+      // Count total distinct users with sessions
+      const countResult = await db.execute(sql`
+        SELECT COUNT(DISTINCT user_id) as count FROM realtime_sessions
+      `);
+      const totalUsers = Number((countResult.rows[0] as any)?.count || 0);
 
-      // Defensive logging: if sessions exist but no users found, log an error
+      // Count total sessions for sanity check logging
+      const sessionCountResult = await db.execute(sql`
+        SELECT COUNT(*) as count FROM realtime_sessions
+      `);
+      const totalSessions = Number((sessionCountResult.rows[0] as any)?.count || 0);
+
+      // Defensive logging
       if (totalSessions > 0 && totalUsers === 0) {
         console.error('[Admin] USAGE AGGREGATION ERROR: Sessions exist but no users found!', {
           table: 'realtime_sessions',
@@ -3210,55 +3245,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Aggregate minutes from realtime_sessions, then LEFT JOIN to users for profile info
-      const topUsersQuery = await db.select({
-        id: users.id,
-        email: users.email,
-        firstName: users.firstName,
-        lastName: users.lastName,
-        parentName: users.parentName,
-        studentName: users.studentName,
-        subscriptionPlan: users.subscriptionPlan,
-        subscriptionStatus: users.subscriptionStatus,
-        subscriptionMinutesLimit: users.subscriptionMinutesLimit,
-        purchasedMinutesBalance: users.purchasedMinutesBalance,
-        isTrialActive: users.isTrialActive,
-        trialMinutesTotal: users.trialMinutesTotal,
-        createdAt: users.createdAt,
-        totalMinutesUsed: sql<number>`COALESCE(SUM(${realtimeSessions.minutesUsed}), 0)`.as('total_minutes_used'),
-        sessionCount: sql<number>`COUNT(${realtimeSessions.id})`.as('session_count'),
-        lastSessionAt: sql<string>`MAX(${realtimeSessions.endedAt})`.as('last_session_at'),
-      })
-        .from(realtimeSessions)
-        .leftJoin(users, eq(realtimeSessions.userId, users.id))
-        .groupBy(users.id)
-        .orderBy(
-          desc(sql`COALESCE(SUM(${realtimeSessions.minutesUsed}), 0)`),
-          desc(sql`MAX(${realtimeSessions.endedAt})`),
-          users.email
-        )
-        .limit(limit)
-        .offset(offset);
-
       // Map to expected response format
-      const topUsers = topUsersQuery.map(u => ({
+      const topUsers = (topUsersResult.rows as any[]).map(u => ({
         id: u.id,
         email: u.email,
-        firstName: u.firstName,
-        lastName: u.lastName,
-        parentName: u.parentName,
-        studentName: u.studentName,
-        subscriptionPlan: u.subscriptionPlan,
-        subscriptionStatus: u.subscriptionStatus,
-        subscriptionMinutesUsed: Number(u.totalMinutesUsed) || 0,
-        subscriptionMinutesLimit: u.subscriptionMinutesLimit,
-        purchasedMinutesBalance: u.purchasedMinutesBalance,
-        isTrialActive: u.isTrialActive,
-        trialMinutesUsed: u.isTrialActive ? Number(u.totalMinutesUsed) : 0,
-        trialMinutesTotal: u.trialMinutesTotal,
-        createdAt: u.createdAt,
-        sessionCount: Number(u.sessionCount) || 0,
-        lastSessionAt: u.lastSessionAt,
+        firstName: u.first_name,
+        lastName: u.last_name,
+        parentName: u.parent_name,
+        studentName: u.student_name,
+        subscriptionPlan: u.subscription_plan,
+        subscriptionStatus: u.subscription_status,
+        subscriptionMinutesUsed: Number(u.total_minutes) || 0,
+        subscriptionMinutesLimit: u.subscription_minutes_limit,
+        purchasedMinutesBalance: u.purchased_minutes_balance,
+        isTrialActive: u.is_trial_active,
+        trialMinutesUsed: u.is_trial_active ? Number(u.total_minutes) : 0,
+        trialMinutesTotal: u.trial_minutes_total,
+        createdAt: u.created_at,
+        sessionCount: Number(u.session_count) || 0,
+        lastSessionAt: u.last_session,
       }));
 
       console.log(`[Admin] Top users query: page=${page}, returned=${topUsers.length}, totalUsers=${totalUsers}, totalSessions=${totalSessions}`);
