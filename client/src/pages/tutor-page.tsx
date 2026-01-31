@@ -771,31 +771,36 @@ export default function TutorPage() {
                 
                 <div className="flex gap-3 items-start">
                   <div className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full w-5 h-5 flex items-center justify-center shrink-0 mt-0.5 font-bold text-xs">2</div>
-                  <p><strong>Select your grade level</strong> you want help with (this auto-updates based on your profile).</p>
+                  <p><strong>Set up your audio devices</strong> - Go to Settings (gear icon) to select and test your microphone and speakers. This is especially important for first-time users to ensure clear voice communication.</p>
                 </div>
 
                 <div className="flex gap-3 items-start">
                   <div className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full w-5 h-5 flex items-center justify-center shrink-0 mt-0.5 font-bold text-xs">3</div>
-                  <p><strong>Upload your materials (optional)</strong> - Share homework, worksheets, or study guides (PDF, DOCX, or images). Select documents to use in this session, or upload new ones.</p>
+                  <p><strong>Select your grade level</strong> you want help with (this auto-updates based on your profile).</p>
                 </div>
 
                 <div className="flex gap-3 items-start">
                   <div className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full w-5 h-5 flex items-center justify-center shrink-0 mt-0.5 font-bold text-xs">4</div>
-                  <p><strong>Wait a few seconds</strong> after uploading for documents to process completely.</p>
+                  <p><strong>Upload your materials (optional)</strong> - Share homework, worksheets, or study guides (PDF, DOCX, or images). Select documents to use in this session, or upload new ones.</p>
                 </div>
 
                 <div className="flex gap-3 items-start">
                   <div className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full w-5 h-5 flex items-center justify-center shrink-0 mt-0.5 font-bold text-xs">5</div>
-                  <p>Click <strong>"Start Session"</strong> to begin your voice conversation.</p>
+                  <p><strong>Wait a few seconds</strong> after uploading for documents to process completely.</p>
                 </div>
 
                 <div className="flex gap-3 items-start">
                   <div className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full w-5 h-5 flex items-center justify-center shrink-0 mt-0.5 font-bold text-xs">6</div>
-                  <p><strong>Start speaking</strong> - Ask questions about your homework or discuss any topic. The tutor uses your uploaded documents to give personalized guidance!</p>
+                  <p>Click <strong>"Start Session"</strong> to begin your voice conversation.</p>
                 </div>
 
                 <div className="flex gap-3 items-start">
                   <div className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full w-5 h-5 flex items-center justify-center shrink-0 mt-0.5 font-bold text-xs">7</div>
+                  <p><strong>Start speaking</strong> - Ask questions about your homework or discuss any topic. The tutor uses your uploaded documents to give personalized guidance!</p>
+                </div>
+
+                <div className="flex gap-3 items-start">
+                  <div className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full w-5 h-5 flex items-center justify-center shrink-0 mt-0.5 font-bold text-xs">8</div>
                   <p><strong>View the transcript</strong> below to see your conversation in real-time.</p>
                 </div>
               </div>
