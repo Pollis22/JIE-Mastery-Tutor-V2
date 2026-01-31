@@ -69,20 +69,40 @@ function SessionTimer({ isActive }: { isActive: boolean }) {
   );
 }
 
-// Minutes Remaining Badge - shows remaining voice minutes from user data
+// Minutes Remaining Badge - shows remaining voice minutes from the same API as main widget
 function MinutesRemainingBadge() {
   const { user } = useAuth();
+  const [remaining, setRemaining] = useState<number | null>(null);
   
-  if (!user) return null;
+  // Fetch from the same endpoint as the main minutes widget
+  useEffect(() => {
+    if (!user) return;
+    
+    const fetchMinutes = async () => {
+      try {
+        const response = await fetch('/api/session/check-availability', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({})
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setRemaining(data.remainingMinutes ?? data.remaining ?? null);
+        }
+      } catch (error) {
+        console.error('[MinutesRemainingBadge] Failed to fetch minutes:', error);
+      }
+    };
+    
+    fetchMinutes();
+    
+    // Refresh every 30 seconds to stay in sync with main widget
+    const interval = setInterval(fetchMinutes, 30000);
+    return () => clearInterval(interval);
+  }, [user]);
   
-  // Calculate remaining minutes from user data
-  const monthlyMinutes = (user as any).monthlyVoiceMinutes || 0;
-  const usedMinutes = (user as any).monthlyVoiceMinutesUsed || 0;
-  const bonusMinutes = (user as any).bonusVoiceMinutes || 0;
-  const remaining = Math.max(0, monthlyMinutes - usedMinutes + bonusMinutes);
-  
-  // Don't show if no data available
-  if (monthlyMinutes === 0 && bonusMinutes === 0) return null;
+  if (!user || remaining === null) return null;
   
   return (
     <div 
