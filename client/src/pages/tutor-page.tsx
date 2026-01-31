@@ -766,7 +766,7 @@ export default function TutorPage() {
               <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300">
                 <div className="flex gap-3 items-start">
                   <div className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full w-5 h-5 flex items-center justify-center shrink-0 mt-0.5 font-bold text-xs">1</div>
-                  <p><strong>Set up your audio devices</strong> - Go to Settings (gear icon) to select and test your microphone and speakers. This is especially important for first-time users to ensure clear voice communication.</p>
+                  <p><strong>Set up your audio devices</strong> - Go to Settings (menu button) to select and test your microphone and speakers. This is especially important for first-time users to ensure clear voice communication.</p>
                 </div>
                 
                 <div className="flex gap-3 items-start bg-blue-50 dark:bg-blue-900/30 p-3 rounded-md border border-blue-200 dark:border-blue-800">
