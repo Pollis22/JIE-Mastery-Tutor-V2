@@ -413,8 +413,8 @@ export default function AuthPage() {
                   Forgot your password?
                 </button>
                 
-                <div className="border-t border-border pt-3 space-y-2">
-                  <div className="text-sm text-muted-foreground">
+                <div className="border-t border-border pt-3">
+                  <div className="text-sm text-muted-foreground text-center">
                     New to JIE Mastery?{' '}
                     <button
                       type="button"
@@ -426,20 +426,6 @@ export default function AuthPage() {
                       data-testid="link-modal-create-account"
                     >
                       Create your account
-                    </button>
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    Started a trial?{' '}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setLoginModalOpen(false);
-                        setContinueTrialOpen(true);
-                      }}
-                      className="text-primary hover:underline font-medium"
-                      data-testid="link-modal-continue-trial"
-                    >
-                      Continue your trial
                     </button>
                   </div>
                 </div>
