@@ -59,6 +59,8 @@ import {
 import {
   DOCS_FALLBACK_TO_ALL_IF_NONE_ACTIVE,
   logRagRetrieval,
+  logRagError,
+  logRagRetrievalDocsSelected,
 } from "../services/session-docs-service";
 import {
   type ActivityMode,
@@ -2979,6 +2981,14 @@ export function setupCustomVoiceWebSocket(server: Server) {
                     console.log(`[Custom Voice] 📄 Fallback: no docs selected, using all ${documentIds.length} ready docs`);
                   }
                   
+                  // Log preLLM docs selection for voice session
+                  logRagRetrievalDocsSelected({
+                    sessionId: sessionId,
+                    numDocs: documentIds.length,
+                    fallbackUsed,
+                    requestedDocIds: documentIds,
+                  });
+                  
                   if (documentIds.length === 0) {
                     console.log(`[Custom Voice] ℹ️ No documents available - proceeding without documents`);
                     state.uploadedDocuments = [];
@@ -3007,6 +3017,11 @@ export function setupCustomVoiceWebSocket(server: Server) {
                 }
               } catch (error) {
                 console.error('[Custom Voice] ❌ Error loading documents:', error);
+                logRagError({
+                  sessionId: sessionId,
+                  error: error instanceof Error ? error.message : String(error),
+                  stage: 'document_load',
+                });
                 state.uploadedDocuments = [];
               }
             } else {

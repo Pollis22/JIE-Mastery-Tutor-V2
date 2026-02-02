@@ -294,8 +294,9 @@ export function logRagRetrieval(params: {
  */
 export function logRagError(params: {
   sessionId: string;
-  userId: string;
+  userId?: string;
   error: string;
+  stage?: string;
 }): void {
   console.error('[RAG] error:', JSON.stringify({
     timestamp: new Date().toISOString(),
