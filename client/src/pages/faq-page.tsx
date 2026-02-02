@@ -16,7 +16,8 @@ export default function FAQPage() {
               <img src={jieLogo} alt="JIE Mastery" className="h-10 w-auto" />
               <span className="text-xl font-bold text-foreground">JIE Mastery Tutor</span>
             </div>
-            <div className="flex items-center space-x-4">
+            {/* Desktop navigation - hidden on mobile */}
+            <div className="hidden lg:flex items-center space-x-4">
               <Button 
                 variant="ghost" 
                 onClick={() => setLocation("/benefits")} 
@@ -66,7 +67,21 @@ export default function FAQPage() {
               >
                 Pricing
               </Button>
+              <Button 
+                onClick={() => setLocation("/auth?action=login")} 
+                data-testid="button-sign-in"
+              >
+                Sign In
+              </Button>
             </div>
+            {/* Mobile Sign In button - always visible */}
+            <Button 
+              className="lg:hidden"
+              onClick={() => setLocation("/auth?action=login")} 
+              data-testid="button-sign-in-mobile"
+            >
+              Sign In
+            </Button>
           </div>
         </div>
       </nav>

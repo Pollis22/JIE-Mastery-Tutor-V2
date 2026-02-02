@@ -306,6 +306,15 @@ export default function AuthPage() {
                 Sign In
               </Button>
             </div>
+            {/* Mobile Sign In button - always visible */}
+            <Button 
+              className="md:hidden"
+              size="sm"
+              onClick={() => setLoginModalOpen(true)}
+              data-testid="button-sign-in-mobile"
+            >
+              Sign In
+            </Button>
           </div>
         </div>
       </nav>
