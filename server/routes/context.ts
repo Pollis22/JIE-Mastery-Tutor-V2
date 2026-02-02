@@ -14,6 +14,7 @@ import { storage } from '../storage';
 import { DocumentProcessor } from '../services/document-processor';
 import {
   DOCS_REQUIRE_EXPLICIT_ACTIVATION,
+  DOCS_FALLBACK_TO_ALL_IF_NONE_ACTIVE,
   initSessionDocs,
   getActiveDocIds,
   activateDocForSession,
@@ -21,6 +22,8 @@ import {
   setActiveDocsForSession,
   isDocActiveForSession,
   logRagRetrievalDocsSelected,
+  logRagRetrieval,
+  logRagError,
 } from '../services/session-docs-service';
 
 const router = Router();
@@ -81,11 +84,23 @@ router.post('/session-start', async (req, res) => {
     
     // Get user documents for context
     let documentsToUse: string[] = [];
+    let fallbackUsed = false;
     
     // RETRIEVAL GATING: When feature flag is ON, use session-scoped active docs
     if (DOCS_REQUIRE_EXPLICIT_ACTIVATION && request.sessionId) {
       // Use only explicitly activated documents for this session
       documentsToUse = getActiveDocIds(request.sessionId);
+      
+      // FALLBACK: If no active docs and fallback enabled, use all user's ready docs
+      if (documentsToUse.length === 0 && DOCS_FALLBACK_TO_ALL_IF_NONE_ACTIVE) {
+        const userDocs = await storage.getUserDocuments(userId);
+        documentsToUse = userDocs
+          .filter(doc => doc.processingStatus === 'ready')
+          .map(doc => doc.id);
+        fallbackUsed = true;
+        
+        console.log(`[RAG] Fallback activated: no active docs, using all ${documentsToUse.length} ready docs for user ${userId}`);
+      }
       
       // Log retrieval decision
       logRagRetrievalDocsSelected({
@@ -93,7 +108,8 @@ router.post('/session-start', async (req, res) => {
         userId,
         activeDocCount: documentsToUse.length,
         docIds: documentsToUse,
-        reason: documentsToUse.length > 0 ? 'active_docs_only' : 'no_active_docs',
+        reason: fallbackUsed ? 'fallback_all_docs' : (documentsToUse.length > 0 ? 'active_docs_only' : 'no_active_docs'),
+        fallbackUsed,
       });
     } else {
       // LEGACY MODE: Use includeDocIds from request (backward compatibility)
@@ -106,12 +122,13 @@ router.post('/session-start', async (req, res) => {
           .map(doc => doc.id);
       }
       
-      // If no specific documents selected, get "keep for future sessions" docs
+      // If no specific documents selected, get all ready docs (legacy fallback)
       if (documentsToUse.length === 0) {
         const userDocs = await storage.getUserDocuments(userId);
         documentsToUse = userDocs
-          .filter(doc => doc.keepForFutureSessions && doc.processingStatus === 'ready')
+          .filter(doc => doc.processingStatus === 'ready')
           .map(doc => doc.id);
+        fallbackUsed = documentsToUse.length > 0;
       }
       
       // Log legacy mode usage
@@ -121,7 +138,8 @@ router.post('/session-start', async (req, res) => {
           userId,
           activeDocCount: documentsToUse.length,
           docIds: documentsToUse,
-          reason: 'feature_flag_off',
+          reason: fallbackUsed ? 'fallback_all_docs' : 'legacy_mode',
+          fallbackUsed,
         });
       }
     }

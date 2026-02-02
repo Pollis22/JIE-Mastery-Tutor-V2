@@ -57,6 +57,10 @@ import {
   getCoherenceClarifyMessage,
 } from "../services/coherence-gate";
 import {
+  DOCS_FALLBACK_TO_ALL_IF_NONE_ACTIVE,
+  logRagRetrieval,
+} from "../services/session-docs-service";
+import {
   type ActivityMode,
   isAdaptiveBargeInEnabled,
   isReadingModeEnabled,
@@ -2962,12 +2966,21 @@ export function setupCustomVoiceWebSocket(server: Server) {
                 } 
                 // Otherwise, treat them as document IDs to load from database
                 else {
-                  const documentIds = messageDocuments;
+                  let documentIds = messageDocuments as string[];
+                  let fallbackUsed = false;
                   
-                  // Only load documents that were explicitly selected by the user
-                  // Do NOT fall back to loading all user documents - respect user's selection
+                  // FALLBACK: If no docs selected and fallback enabled, use all user's ready docs
+                  if (documentIds.length === 0 && DOCS_FALLBACK_TO_ALL_IF_NONE_ACTIVE) {
+                    const userDocs = await storage.getUserDocuments(authenticatedUserId);
+                    documentIds = userDocs
+                      .filter(doc => doc.processingStatus === 'ready')
+                      .map(doc => doc.id);
+                    fallbackUsed = true;
+                    console.log(`[Custom Voice] 📄 Fallback: no docs selected, using all ${documentIds.length} ready docs`);
+                  }
+                  
                   if (documentIds.length === 0) {
-                    console.log(`[Custom Voice] ℹ️ No documents selected by user - proceeding without documents`);
+                    console.log(`[Custom Voice] ℹ️ No documents available - proceeding without documents`);
                     state.uploadedDocuments = [];
                   } else if (documentIds.length > 0) {
                     console.log(`[Custom Voice] 📄 Loading ${documentIds.length} documents from database...`);

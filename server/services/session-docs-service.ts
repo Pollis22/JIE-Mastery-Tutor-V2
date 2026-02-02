@@ -4,13 +4,21 @@
  * Manages which documents are "active" (eligible for RAG retrieval) per voice session.
  * Documents are stored as "uploaded" by default and must be explicitly activated.
  * 
- * Feature flag: DOCS_REQUIRE_EXPLICIT_ACTIVATION (default: true)
+ * Feature flags:
+ * - DOCS_REQUIRE_EXPLICIT_ACTIVATION (default: true) - require explicit activation
+ * - DOCS_FALLBACK_TO_ALL_IF_NONE_ACTIVE (default: true) - fall back to all docs if none active
  */
 
 // Feature flag - when true, documents must be explicitly activated for retrieval
 // When false, preserves legacy behavior where selected documents are automatically used
 export const DOCS_REQUIRE_EXPLICIT_ACTIVATION = 
   process.env.DOCS_REQUIRE_EXPLICIT_ACTIVATION !== 'false';
+
+// Feature flag - when true, if no docs are active, fall back to all user's ready documents
+// This ensures the system remains functional even if activation wiring is broken
+// Default: true for immediate restore of document functionality
+export const DOCS_FALLBACK_TO_ALL_IF_NONE_ACTIVE = 
+  process.env.DOCS_FALLBACK_TO_ALL_IF_NONE_ACTIVE !== 'false';
 
 // In-memory store for session-scoped active document IDs
 // Key: sessionId, Value: Set of active document IDs
@@ -198,14 +206,99 @@ export function logRagRetrievalDocsSelected(params: {
   userId: string;
   activeDocCount: number;
   docIds: string[];
-  reason: 'active_docs_only' | 'feature_flag_off' | 'no_active_docs' | 'legacy_mode';
+  reason: 'active_docs_only' | 'feature_flag_off' | 'no_active_docs' | 'legacy_mode' | 'fallback_all_docs';
+  fallbackUsed?: boolean;
 }): void {
-  console.log('[RAG] Retrieval docs selected:', JSON.stringify({
+  console.log('[RAG] preLLM:', JSON.stringify({
     timestamp: new Date().toISOString(),
     sessionId: params.sessionId,
     userId: params.userId,
     activeDocCount: params.activeDocCount,
     docIdHashes: params.docIds.map(id => id.substring(0, 8) + '...'),
     reason: params.reason,
+    fallbackUsed: params.fallbackUsed ?? false,
+  }));
+}
+
+/**
+ * Log document upload event
+ */
+export function logDocUpload(params: {
+  userId: string;
+  sessionId?: string;
+  docId: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+}): void {
+  console.log('[DOCS] uploaded:', JSON.stringify({
+    timestamp: new Date().toISOString(),
+    ...params,
+  }));
+}
+
+/**
+ * Log document extraction event
+ */
+export function logDocExtracted(params: {
+  docId: string;
+  mimeType: string;
+  extractedChars: number;
+  extractionMethod: string;
+  pages?: number;
+  sheets?: number;
+  ocrUsed?: boolean;
+}): void {
+  console.log('[DOCS] extracted:', JSON.stringify({
+    timestamp: new Date().toISOString(),
+    ...params,
+  }));
+}
+
+/**
+ * Log document embedding event
+ */
+export function logDocEmbedded(params: {
+  docId: string;
+  chunkCount: number;
+  embeddingModel: string;
+}): void {
+  console.log('[DOCS] embedded:', JSON.stringify({
+    timestamp: new Date().toISOString(),
+    ...params,
+  }));
+}
+
+/**
+ * Log RAG retrieval result (after embedding search)
+ */
+export function logRagRetrieval(params: {
+  sessionId: string;
+  userId: string;
+  retrievedChunkCount: number;
+  ragChars: number;
+  docIdsQueried: string[];
+}): void {
+  console.log('[RAG] retrieval:', JSON.stringify({
+    timestamp: new Date().toISOString(),
+    sessionId: params.sessionId,
+    userId: params.userId,
+    retrievedChunkCount: params.retrievedChunkCount,
+    ragChars: params.ragChars,
+    docIdHashes: params.docIdsQueried.map(id => id.substring(0, 8) + '...'),
+  }));
+}
+
+/**
+ * Log RAG error
+ */
+export function logRagError(params: {
+  sessionId: string;
+  userId: string;
+  error: string;
+}): void {
+  console.error('[RAG] error:', JSON.stringify({
+    timestamp: new Date().toISOString(),
+    ...params,
   }));
 }
