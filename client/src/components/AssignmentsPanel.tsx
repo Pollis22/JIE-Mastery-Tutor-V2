@@ -111,8 +111,8 @@ export function AssignmentsPanel({
         fileInputRef.current.value = '';
       }
       toast({
-        title: 'Document uploaded successfully',
-        description: 'Your document is being processed and will be available shortly.',
+        title: 'Document uploaded',
+        description: 'Toggle "Active in Session" to use this document with your tutor.',
       });
     },
     onError: (error: Error) => {
@@ -329,7 +329,7 @@ export function AssignmentsPanel({
                 <thead>
                   <tr className="bg-gray-50 dark:bg-gray-700">
                     {onDocumentSelectionChange && (
-                      <th className="text-center p-3 font-medium text-gray-900 dark:text-white w-16">Use</th>
+                      <th className="text-center p-3 font-medium text-gray-900 dark:text-white w-24" title="Toggle to activate document for this tutoring session">Active</th>
                     )}
                     <th className="text-left p-3 font-medium text-gray-900 dark:text-white">Document</th>
                     <th className="text-left p-3 font-medium text-gray-900 dark:text-white">Size</th>
@@ -401,25 +401,26 @@ export function AssignmentsPanel({
               </table>
             </div>
 
-            {/* Info message about automatic document availability */}
+            {/* Info message about document activation */}
             {documents.length > 0 && (
-              <div className="info-message mt-4 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
-                <div className="flex items-center gap-2 text-green-700 dark:text-green-300">
-                  <CheckCircle className="w-4 h-4" />
-                  <span className="text-sm">
-                    Please select one of your previously uploaded documents if you want to use it in this session. You may also upload a document during the session once the text box becomes visible.
-                  </span>
+              <div className="info-message mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                <div className="flex items-start gap-2 text-blue-700 dark:text-blue-300">
+                  <CheckCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  <div className="text-sm space-y-1">
+                    <p><strong>Documents require activation:</strong> Toggle "Active" to use a document in this session.</p>
+                    <p className="text-blue-600 dark:text-blue-400">Your tutor will only see activated documents. Documents stay uploaded but inactive until you toggle them on.</p>
+                  </div>
                 </div>
               </div>
             )}
             
-            {/* Selection summary */}
+            {/* Active documents summary */}
             {onDocumentSelectionChange && selectedDocumentIds.length > 0 && (
-              <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg" data-testid="document-selection-summary">
-                <div className="flex items-center gap-2 text-blue-800 dark:text-blue-200">
+              <div className="mt-3 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg" data-testid="document-selection-summary">
+                <div className="flex items-center gap-2 text-green-800 dark:text-green-200">
                   <CheckCircle className="w-4 h-4" />
                   <span className="font-medium text-sm">
-                    ✅ {selectedDocumentIds.length} document{selectedDocumentIds.length !== 1 ? 's' : ''} selected for this tutoring session
+                    {selectedDocumentIds.length} document{selectedDocumentIds.length !== 1 ? 's' : ''} active for this session
                   </span>
                 </div>
               </div>

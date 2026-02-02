@@ -12,9 +12,30 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { storage } from '../storage';
 import { DocumentProcessor } from '../services/document-processor';
+import {
+  DOCS_REQUIRE_EXPLICIT_ACTIVATION,
+  initSessionDocs,
+  getActiveDocIds,
+  activateDocForSession,
+  deactivateDocForSession,
+  setActiveDocsForSession,
+  isDocActiveForSession,
+  logRagRetrievalDocsSelected,
+} from '../services/session-docs-service';
 
 const router = Router();
 const processor = new DocumentProcessor();
+
+// Document activation schemas
+const activateDocSchema = z.object({
+  sessionId: z.string(),
+  docId: z.string(),
+});
+
+const setActiveDocsSchema = z.object({
+  sessionId: z.string(),
+  docIds: z.array(z.string()),
+});
 
 // Request schemas
 const sessionStartSchema = z.object({
@@ -59,21 +80,50 @@ router.post('/session-start', async (req, res) => {
     }
     
     // Get user documents for context
-    let documentsToUse = request.includeDocIds;
+    let documentsToUse: string[] = [];
     
-    // If student has pinned docs, use those
-    if (documentsToUse.length === 0 && pinnedDocs.length > 0) {
-      documentsToUse = pinnedDocs
-        .filter(doc => doc.processingStatus === 'ready')
-        .map(doc => doc.id);
-    }
-    
-    // If no specific documents selected, get "keep for future sessions" docs
-    if (documentsToUse.length === 0) {
-      const userDocs = await storage.getUserDocuments(userId);
-      documentsToUse = userDocs
-        .filter(doc => doc.keepForFutureSessions && doc.processingStatus === 'ready')
-        .map(doc => doc.id);
+    // RETRIEVAL GATING: When feature flag is ON, use session-scoped active docs
+    if (DOCS_REQUIRE_EXPLICIT_ACTIVATION && request.sessionId) {
+      // Use only explicitly activated documents for this session
+      documentsToUse = getActiveDocIds(request.sessionId);
+      
+      // Log retrieval decision
+      logRagRetrievalDocsSelected({
+        sessionId: request.sessionId,
+        userId,
+        activeDocCount: documentsToUse.length,
+        docIds: documentsToUse,
+        reason: documentsToUse.length > 0 ? 'active_docs_only' : 'no_active_docs',
+      });
+    } else {
+      // LEGACY MODE: Use includeDocIds from request (backward compatibility)
+      documentsToUse = request.includeDocIds;
+      
+      // If student has pinned docs, use those
+      if (documentsToUse.length === 0 && pinnedDocs.length > 0) {
+        documentsToUse = pinnedDocs
+          .filter(doc => doc.processingStatus === 'ready')
+          .map(doc => doc.id);
+      }
+      
+      // If no specific documents selected, get "keep for future sessions" docs
+      if (documentsToUse.length === 0) {
+        const userDocs = await storage.getUserDocuments(userId);
+        documentsToUse = userDocs
+          .filter(doc => doc.keepForFutureSessions && doc.processingStatus === 'ready')
+          .map(doc => doc.id);
+      }
+      
+      // Log legacy mode usage
+      if (request.sessionId) {
+        logRagRetrievalDocsSelected({
+          sessionId: request.sessionId,
+          userId,
+          activeDocCount: documentsToUse.length,
+          docIds: documentsToUse,
+          reason: 'feature_flag_off',
+        });
+      }
     }
 
     // Early return only if no documents, no student, AND no student name
@@ -213,6 +263,203 @@ router.post('/query', async (req, res) => {
 });
 
 /**
+ * Initialize document tracking for a session
+ * Called when a voice session starts
+ */
+router.post('/session-docs/init', async (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  
+  try {
+    const { sessionId } = z.object({ sessionId: z.string() }).parse(req.body);
+    const userId = (req.user as any).id;
+    
+    initSessionDocs(sessionId, userId);
+    
+    res.json({
+      success: true,
+      sessionId,
+      featureFlag: DOCS_REQUIRE_EXPLICIT_ACTIVATION,
+      message: DOCS_REQUIRE_EXPLICIT_ACTIVATION 
+        ? 'Documents require explicit activation for this session'
+        : 'Legacy mode: documents will be used automatically when selected',
+    });
+  } catch (error) {
+    console.error('Session docs init error:', error);
+    res.status(500).json({ error: 'Failed to initialize session docs' });
+  }
+});
+
+/**
+ * Activate a document for the current session (makes it eligible for RAG retrieval)
+ */
+router.post('/session-docs/activate', async (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  
+  try {
+    const { sessionId, docId } = activateDocSchema.parse(req.body);
+    const userId = (req.user as any).id;
+    
+    // Verify document belongs to user
+    const doc = await storage.getDocument(docId, userId);
+    if (!doc) {
+      return res.status(404).json({ error: 'Document not found' });
+    }
+    
+    const result = activateDocForSession(sessionId, docId, userId);
+    
+    res.json({
+      success: result.success,
+      docId,
+      sessionId,
+      activeCount: result.activeCount,
+      message: `Document "${doc.title}" activated for this session`,
+    });
+  } catch (error) {
+    console.error('Document activation error:', error);
+    res.status(500).json({ error: 'Failed to activate document' });
+  }
+});
+
+/**
+ * Deactivate a document for the current session (removes it from RAG retrieval)
+ */
+router.post('/session-docs/deactivate', async (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  
+  try {
+    const { sessionId, docId } = activateDocSchema.parse(req.body);
+    const userId = (req.user as any).id;
+    
+    const result = deactivateDocForSession(sessionId, docId, userId);
+    
+    res.json({
+      success: result.success,
+      docId,
+      sessionId,
+      activeCount: result.activeCount,
+      message: result.reason || 'Document deactivated for this session',
+    });
+  } catch (error) {
+    console.error('Document deactivation error:', error);
+    res.status(500).json({ error: 'Failed to deactivate document' });
+  }
+});
+
+/**
+ * Set all active documents for a session at once
+ */
+router.post('/session-docs/set-active', async (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  
+  try {
+    const { sessionId, docIds } = setActiveDocsSchema.parse(req.body);
+    const userId = (req.user as any).id;
+    
+    // Verify all documents belong to user
+    for (const docId of docIds) {
+      const doc = await storage.getDocument(docId, userId);
+      if (!doc) {
+        return res.status(404).json({ error: `Document ${docId} not found` });
+      }
+    }
+    
+    const result = setActiveDocsForSession(sessionId, docIds, userId);
+    
+    res.json({
+      success: result.success,
+      sessionId,
+      activeDocIds: docIds,
+      activeCount: result.activeCount,
+    });
+  } catch (error) {
+    console.error('Set active docs error:', error);
+    res.status(500).json({ error: 'Failed to set active documents' });
+  }
+});
+
+/**
+ * Get active documents for a session
+ */
+router.get('/session-docs/:sessionId', async (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  
+  try {
+    const { sessionId } = req.params;
+    const userId = (req.user as any).id;
+    
+    const activeDocIds = getActiveDocIds(sessionId);
+    
+    // Get document details for active docs
+    const documents = [];
+    for (const docId of activeDocIds) {
+      const doc = await storage.getDocument(docId, userId);
+      if (doc) {
+        documents.push({
+          id: doc.id,
+          title: doc.title,
+          originalName: doc.originalName,
+          fileType: doc.fileType,
+          processingStatus: doc.processingStatus,
+        });
+      }
+    }
+    
+    logRagRetrievalDocsSelected({
+      sessionId,
+      userId,
+      activeDocCount: documents.length,
+      docIds: activeDocIds,
+      reason: DOCS_REQUIRE_EXPLICIT_ACTIVATION ? 'active_docs_only' : 'legacy_mode',
+    });
+    
+    res.json({
+      sessionId,
+      activeDocIds,
+      documents,
+      featureFlag: DOCS_REQUIRE_EXPLICIT_ACTIVATION,
+    });
+  } catch (error) {
+    console.error('Get session docs error:', error);
+    res.status(500).json({ error: 'Failed to get session documents' });
+  }
+});
+
+/**
+ * Check if a document is active for a session
+ */
+router.get('/session-docs/:sessionId/check/:docId', async (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  
+  try {
+    const { sessionId, docId } = req.params;
+    
+    const isActive = isDocActiveForSession(sessionId, docId);
+    
+    res.json({
+      sessionId,
+      docId,
+      isActive,
+      featureFlag: DOCS_REQUIRE_EXPLICIT_ACTIVATION,
+    });
+  } catch (error) {
+    console.error('Check doc active error:', error);
+    res.status(500).json({ error: 'Failed to check document status' });
+  }
+});
+
+/**
  * Build system prompt with document context and student memory
  */
 function buildSystemPrompt(
@@ -284,6 +531,14 @@ function buildSystemPrompt(
     prompt += `4. Help the student understand and apply the concepts from their materials\n`;
     prompt += `5. Ask follow-up questions to check understanding\n\n`;
   }
+  
+  // DOCUMENT ACKNOWLEDGMENT POLICY (Critical)
+  prompt += `DOCUMENT ACKNOWLEDGMENT POLICY:\n`;
+  prompt += `- Do NOT mention, list, or acknowledge uploaded documents unless the student EXPLICITLY asks.\n`;
+  prompt += `- NEVER say "I see you uploaded...", "You have the following documents...", or similar unprompted.\n`;
+  prompt += `- ONLY mention documents if student asks: "what documents do you have?", "use my documents", "search the uploaded file", "which documents are active?"\n`;
+  prompt += `- When asked about documents, ONLY list ACTIVE documents by filename, not all uploaded documents.\n`;
+  prompt += `- If no documents are active and student asks, say "I don't have any documents activated for this session. You can toggle documents on in the documents panel."\n\n`;
   
   return prompt;
 }
@@ -363,33 +618,33 @@ function buildFirstMessage(
     message += '4. Help the student understand their materials deeply\n\n';
   }
   
+  // DOCUMENT ACKNOWLEDGMENT POLICY (Critical - applies to greeting too!)
+  message += 'DOCUMENT ACKNOWLEDGMENT POLICY:\n';
+  message += '- Do NOT mention, list, or acknowledge uploaded documents unless the student EXPLICITLY asks.\n';
+  message += '- NEVER say "I see you uploaded...", "You have the following documents...", or similar unprompted.\n';
+  message += '- In your greeting, do NOT mention documents. Just greet warmly and ask what they want to work on.\n';
+  message += '- ONLY mention documents if student asks directly about them.\n\n';
+  
   message += '[END CONTEXT]\n\n';
   
   // PART 2: Conversational greeting (what the tutor actually says)
+  // IMPORTANT: Never mention documents in the greeting - follow acknowledgment policy
   const name = student?.name || studentName || 'there';
   const greeting = `Hi ${name}!`;
   
-  // Reference last session if available
+  // Reference last session if available (but NOT documents)
   if (lastSession && lastSession.nextSteps) {
-    message += `${greeting} Welcome back! Last time we worked on ${lastSession.subject || 'your studies'}. ${documents.length > 0 ? `I can see you've brought your materials today - ready to continue?` : 'Ready to pick up where we left off?'}`;
+    message += `${greeting} Welcome back! Last time we worked on ${lastSession.subject || 'your studies'}. Ready to pick up where we left off?`;
     return message;
   }
   
-  // Document-based greeting
-  if (documents.length === 1) {
-    const doc = documents[0];
-    const subjectHint = doc.subject || subject;
-    message += `${greeting} I can see you've brought "${doc.title}" to work on today${subjectHint ? ` for ${subjectHint}` : ''}. I've reviewed your material and I'm ready to help you understand it. What specific part would you like to start with?`;
-  } else if (documents.length > 1) {
-    const titles = documents.slice(0, 2).map(d => `"${d.title}"`).join(' and ');
-    const remaining = documents.length > 2 ? ` plus ${documents.length - 2} more` : '';
-    message += `${greeting} I can see you've brought several materials: ${titles}${remaining}. I've reviewed everything and I'm ready to help. What would you like to focus on first?`;
-  } else if (student) {
-    // Student profile but no documents
+  // Generic warm greeting - NEVER mention documents unprompted
+  if (student) {
+    // Student profile
     const goalHint = student.goals && student.goals.length > 0 ? ` We're working towards: ${student.goals[0]}.` : '';
     message += `${greeting} Ready to learn today?${goalHint} What would you like to work on?`;
   } else {
-    // Fallback - just name provided (no profile, no documents)
+    // Fallback - just name provided (no profile)
     message += `${greeting} I'm ready to help you learn today. What would you like to work on?`;
   }
   
