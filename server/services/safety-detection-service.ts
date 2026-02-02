@@ -113,9 +113,130 @@ function normalizeText(text: string): string {
   return text.toLowerCase().replace(/[^a-z0-9\s]/g, '');
 }
 
-function containsAny(text: string, keywords: string[]): boolean {
+// Allowlist for common educational/aviation terms that contain profanity substrings
+// These will never trigger profanity detection
+const EDUCATIONAL_ALLOWLIST = [
+  'class a', 'class b', 'class c', 'class d', 'class e', 'class g',
+  'classa', 'classb', 'classc', 'classd', 'classe', 'classg',
+  'class-a', 'class-b', 'class-c', 'class-d', 'class-e', 'class-g',
+  'assignment', 'assignments', 'class', 'classes', 'classroom',
+  'pass', 'passed', 'passing', 'compass', 'bypass', 'overpass',
+  'mass', 'massachusetts', 'amass', 'biomass',
+  'assess', 'assessment', 'assessments', 'reassess',
+  'bass', 'bassoon', // musical terms
+  'ambassador', 'embassy',
+  'cassette', 'casserole', 'classic', 'classical', 'classification',
+  'sassafras', 'trespass', 'harass', 'harassment', // Note: harass is a real word
+  'grasshopper', 'grass', 'brass', 'molasses',
+  'assist', 'assistant', 'assistance',
+  'assume', 'assumed', 'assumption',
+  'assure', 'assured', 'assurance',
+  'associate', 'associated', 'association',
+  'assemble', 'assembled', 'assembly',
+  'asset', 'assets',
+  'assert', 'assertion', 'assertive',
+];
+
+// Convert allowlist to Set for O(1) lookup
+const ALLOWLIST_SET = new Set(EDUCATIONAL_ALLOWLIST.map(term => term.toLowerCase()));
+
+/**
+ * Check if text contains an allowlisted educational term that would cause false positive
+ * e.g., "class b" should not trigger on "ass" substring
+ */
+function containsAllowlistedTerm(text: string, keyword: string): boolean {
   const normalized = normalizeText(text);
-  return keywords.some(keyword => normalized.includes(keyword.toLowerCase()));
+  const tokens = normalized.split(/\s+/);
+  
+  // Check if any token is in the allowlist
+  for (const token of tokens) {
+    if (ALLOWLIST_SET.has(token) && token.includes(keyword.toLowerCase())) {
+      return true;
+    }
+  }
+  
+  // Check for multi-word allowlist patterns like "class b"
+  for (const allowedPhrase of EDUCATIONAL_ALLOWLIST) {
+    if (normalized.includes(allowedPhrase) && allowedPhrase.includes(keyword.toLowerCase())) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+/**
+ * Check if text contains a banned word using WHOLE-WORD matching (not substring)
+ * This prevents false positives like "class" triggering on "ass"
+ */
+function containsBannedWord(text: string, keyword: string): { matched: boolean; matchedToken?: string } {
+  const normalized = normalizeText(text);
+  
+  // First check if this is an allowlisted educational term
+  if (containsAllowlistedTerm(text, keyword)) {
+    return { matched: false };
+  }
+  
+  // Use word boundary regex for whole-word matching
+  const wordBoundaryPattern = new RegExp(`\\b${keyword.toLowerCase()}\\b`, 'i');
+  const match = wordBoundaryPattern.test(normalized);
+  
+  return { matched: match, matchedToken: match ? keyword : undefined };
+}
+
+/**
+ * Legacy substring-based check for phrases that need partial matching
+ * (e.g., "kill myself" should match in "I want to kill myself today")
+ */
+function containsPhrase(text: string, phrase: string): boolean {
+  const normalized = normalizeText(text);
+  return normalized.includes(phrase.toLowerCase());
+}
+
+/**
+ * Check if text contains any of the given keywords
+ * Uses word-boundary matching for single words, phrase matching for multi-word keywords
+ */
+function containsAny(text: string, keywords: string[]): boolean {
+  for (const keyword of keywords) {
+    // Multi-word phrases use substring matching (e.g., "kill myself", "want to die")
+    if (keyword.includes(' ')) {
+      if (containsPhrase(text, keyword)) {
+        return true;
+      }
+    } else {
+      // Single words use word-boundary matching to prevent substring false positives
+      const result = containsBannedWord(text, keyword);
+      if (result.matched) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Enhanced logging for guardrail triggers
+ */
+function logGuardrailTrigger(
+  ruleId: string,
+  matchedToken: string | null,
+  originalText: string,
+  normalizedText: string,
+  decision: 'block' | 'warn' | 'allow',
+  sessionContext?: { sessionId?: string; userId?: string; ageGroup?: string }
+): void {
+  console.log('[SafetyGuardrail]', JSON.stringify({
+    timestamp: new Date().toISOString(),
+    ruleId,
+    matchedToken,
+    originalText: originalText.substring(0, 100) + (originalText.length > 100 ? '...' : ''),
+    normalizedText: normalizedText.substring(0, 100) + (normalizedText.length > 100 ? '...' : ''),
+    decision,
+    sessionId: sessionContext?.sessionId || 'unknown',
+    userId: sessionContext?.userId || 'unknown',
+    ageGroup: sessionContext?.ageGroup || 'unknown',
+  }));
 }
 
 function getAgeGroupKey(ageGroup: string): keyof typeof REDIRECT_RESPONSES {
