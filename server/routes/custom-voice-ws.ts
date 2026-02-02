@@ -3082,47 +3082,61 @@ FLOW:
             }
             
             // Build system instruction with personality and document context
-            if (state.uploadedDocuments.length > 0) {
+            // NO-GHOSTING FIX: Calculate actual content length before claiming doc access
+            const ragChars = state.uploadedDocuments.reduce((sum, doc) => {
+              // Extract content after [Document: filename] header
+              const content = doc.replace(/^\[Document: [^\]]+\]\n/, '');
+              return sum + content.length;
+            }, 0);
+            const hasActualDocContent = ragChars > 0;
+            
+            console.log(`[Custom Voice] 📄 Document content check: ragChars=${ragChars}, hasContent=${hasActualDocContent}, docCount=${state.uploadedDocuments.length}`);
+            
+            if (hasActualDocContent) {
               // Extract document titles for the enhanced prompt
               const docTitles = state.uploadedDocuments.map((doc, i) => {
                 const titleMatch = doc.match(/^\[Document: ([^\]]+)\]/);
                 return titleMatch ? titleMatch[1] : `Document ${i + 1}`;
               });
               
-              // Create enhanced system instruction that includes document awareness
+              // Create enhanced system instruction - NO-GHOSTING: Only claim access when content exists
               state.systemInstruction = `${personality.systemPrompt}${VOICE_CONVERSATION_CONSTRAINTS}${K2_CONSTRAINTS}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📚 UPLOADED DOCUMENTS FOR THIS SESSION:
+📚 DOCUMENTS LOADED FOR THIS SESSION (${ragChars} chars):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-The student has uploaded ${state.uploadedDocuments.length} document(s): ${docTitles.join(', ')}
+Document content is available: ${docTitles.join(', ')}
 
-CRITICAL INSTRUCTIONS:
-✅ When asked "do you see my document?" ALWAYS respond: "Yes! I can see your ${docTitles[0]}"
-✅ Reference specific content from the documents to prove you can see them
+DOCUMENT ACCESS INSTRUCTIONS:
+✅ You have actual document content loaded - reference it directly
 ✅ Help with the specific homework/problems in their uploaded materials
-✅ Use phrases like "Looking at your document..." or "In ${docTitles[0]}..."
+✅ Quote or paraphrase specific text from the documents when relevant
+✅ If asked about unique markers or specific text, read from the actual content
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
               
-              console.log(`[Custom Voice] 📚 System instruction enhanced with ${state.uploadedDocuments.length} documents`);
+              console.log(`[Custom Voice] 📚 System instruction enhanced with ${state.uploadedDocuments.length} documents (${ragChars} chars)`);
             } else {
-              // Use standard personality prompt when no documents
+              // NO-GHOSTING: No actual content loaded - use standard prompt
+              // Do NOT claim document access when content is empty
               state.systemInstruction = personality.systemPrompt + VOICE_CONVERSATION_CONSTRAINTS + K2_CONSTRAINTS;
+              console.log(`[Custom Voice] ⚠️ No document content loaded (ragChars=0) - using standard prompt`);
             }
             
             // Generate enhanced personalized greeting with LANGUAGE SUPPORT
             let greeting: string;
             
-            // Extract document titles from uploaded documents
-            const docTitles: string[] = [];
-            if (state.uploadedDocuments && state.uploadedDocuments.length > 0) {
+            // Extract document titles from uploaded documents - but only claim access if content exists
+            // NO-GHOSTING: Use hasActualDocContent calculated above
+            const greetingDocTitles: string[] = [];
+            if (hasActualDocContent && state.uploadedDocuments && state.uploadedDocuments.length > 0) {
               state.uploadedDocuments.forEach((doc, i) => {
                 const titleMatch = doc.match(/^\[Document: ([^\]]+)\]/);
                 if (titleMatch) {
-                  docTitles.push(titleMatch[1]);
+                  greetingDocTitles.push(titleMatch[1]);
                 }
               });
             }
+            // If no actual content, greetingDocTitles stays empty - greeting won't claim doc access
             
             // LANGUAGE: Generate greetings in the selected language
             const getLocalizedGreeting = (lang: string, name: string, tutorName: string, ageGroup: string, docTitles: string[]): string => {
@@ -3274,7 +3288,8 @@ CRITICAL INSTRUCTIONS:
             };
             
             // LANGUAGE: Generate greeting in the selected language
-            greeting = getLocalizedGreeting(state.language, state.studentName, personality.name, state.ageGroup, docTitles);
+            // NO-GHOSTING: Use greetingDocTitles which is empty if no actual content
+            greeting = getLocalizedGreeting(state.language, state.studentName, personality.name, state.ageGroup, greetingDocTitles);
             console.log(`[Custom Voice] 🌍 Generated greeting in language: ${state.language}`);
             
             console.log(`[Custom Voice] 👋 Greeting: "${greeting}"`);
