@@ -551,28 +551,23 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
       return;
     }
 
-    // Check if it's an image - use Claude Vision for analysis
     const isImage = file.type.startsWith('image/');
-    const endpoint = isImage ? '/api/documents/analyze-image' : '/api/documents/upload';
-    
     console.log(`[Chat] 📤 Uploading ${isImage ? 'image' : 'file'} from chat:`, file.name);
 
-    // Upload file
+    // Use the same upload endpoint for ALL files (images use OCR on server)
     const formData = new FormData();
     formData.append('file', file);
-    if (!isImage) {
-      formData.append('studentId', studentId || '');
-    }
+    formData.append('studentId', studentId || '');
 
     try {
       toast({
-        title: isImage ? "Analyzing Image..." : "Uploading...",
+        title: "Uploading...",
         description: isImage 
-          ? `Using AI to analyze ${file.name}...` 
+          ? `Processing ${file.name} with OCR...` 
           : `Uploading ${file.name}...`,
       });
 
-      const response = await fetch(endpoint, {
+      const response = await fetch('/api/documents/upload', {
         method: 'POST',
         body: formData,
         credentials: 'include'
@@ -584,44 +579,37 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
       }
 
       const data = await response.json();
-      console.log(`[Chat] ✅ ${isImage ? 'Image analyzed' : 'File uploaded'}:`, data.id);
+      console.log(`[Chat] ✅ File uploaded:`, data.id, `(${data.characters || 0} chars, ${data.chunks || 0} chunks)`);
 
-      if (isImage) {
-        if (data.description) {
-          console.log(`[Chat] 📝 Image description (${data.contentLength} chars):`, data.description.substring(0, 100) + '...');
-        } else {
-          console.log(`[Chat] ⚠️ Image analysis returned no content`);
-        }
-      }
-
-      // Check for extraction warnings (NO-GHOSTING: image couldn't be analyzed)
-      if (data.extractionWarning) {
+      // NO-GHOSTING: If extraction failed, warn user and do NOT notify WebSocket
+      if (data.extractionWarning || data.chunks === 0) {
         toast({
-          title: "Image Uploaded",
-          description: data.extractionWarning,
+          title: "File Uploaded",
+          description: data.extractionWarning || 
+            (isImage 
+              ? "OCR could not read text from this image. Try a clearer photo or paste the text directly."
+              : "No text could be extracted. The AI tutor cannot read this file's contents."),
           variant: "default",
         });
-        // Don't notify WebSocket if there's no actual content
-        console.log(`[Chat] ⚠️ Not notifying WebSocket - no content to share`);
-        return;
+        console.log(`[Chat] ⚠️ NO-GHOSTING: Not notifying WebSocket - no extractable content`);
+        return; // Early exit - do not notify WebSocket
       }
 
       toast({
-        title: isImage ? "Image Ready" : "Upload Complete",
+        title: "Upload Complete",
         description: isImage 
-          ? `AI can now see "${file.name}". Ask about it!`
+          ? `AI can now read "${file.name}". Ask about it!`
           : `${file.name} uploaded successfully`,
       });
 
-      // Notify WebSocket about new document (works for both images and documents)
-      // For images, the description is already stored as document chunks
+      // Notify WebSocket about new document (only reached if we have actual content)
       customVoice.sendDocumentUploaded(data.id, file.name);
 
     } catch (error: any) {
       console.error('[Chat] Upload error:', error);
       toast({
-        title: isImage ? "Image Analysis Failed" : "Upload Failed",
-        description: error.message || `Failed to process ${file.name}`,
+        title: "Upload Failed",
+        description: error.message || `Failed to upload ${file.name}`,
         variant: "destructive",
       });
     }
