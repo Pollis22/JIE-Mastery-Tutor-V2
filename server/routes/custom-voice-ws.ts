@@ -3173,7 +3173,7 @@ HONESTY INSTRUCTIONS:
               const greetings: Record<string, { intro: string; docAck: (count: number, titles: string) => string; closing: Record<string, string> }> = {
                 en: {
                   intro: `Hi ${name}! I'm ${tutorName}, your AI tutor.`,
-                  docAck: (count, titles) => count === 1 ? ` I can see you've uploaded "${titles}" - excellent!` : ` I can see you've uploaded ${count} documents: ${titles}. Great!`,
+                  docAck: (count, titles) => count === 1 ? ` I can see you've uploaded "${titles}" - excellent!` : ` I've loaded ${count} documents for our session. Great!`,
                   closing: {
                     'K-2': docTitles.length > 0 ? " Let's look at it together! What do you want to learn about?" : " I'm so excited to learn with you today! What would you like to explore?",
                     '3-5': docTitles.length > 0 ? " I'm here to help you understand it! What part should we start with?" : " I'm here to help you learn something new! What subject interests you today?",
@@ -3184,7 +3184,7 @@ HONESTY INSTRUCTIONS:
                 },
                 fr: {
                   intro: `Bonjour ${name}! Je suis ${tutorName}, ton tuteur IA.`,
-                  docAck: (count, titles) => count === 1 ? ` Je vois que tu as téléchargé "${titles}" - excellent!` : ` Je vois que tu as téléchargé ${count} documents: ${titles}. Super!`,
+                  docAck: (count, titles) => count === 1 ? ` Je vois que tu as téléchargé "${titles}" - excellent!` : ` J'ai chargé ${count} documents pour notre session. Super!`,
                   closing: {
                     'K-2': docTitles.length > 0 ? " Regardons ça ensemble! Qu'est-ce que tu veux apprendre?" : " Je suis tellement content d'apprendre avec toi! Qu'est-ce qui t'intéresse?",
                     '3-5': docTitles.length > 0 ? " Je suis là pour t'aider à comprendre! Par quoi veux-tu commencer?" : " Je suis là pour t'aider à apprendre! Quel sujet t'intéresse?",
@@ -3195,7 +3195,7 @@ HONESTY INSTRUCTIONS:
                 },
                 es: {
                   intro: `¡Hola ${name}! Soy ${tutorName}, tu tutor de IA.`,
-                  docAck: (count, titles) => count === 1 ? ` Veo que has subido "${titles}" - ¡excelente!` : ` Veo que has subido ${count} documentos: ${titles}. ¡Genial!`,
+                  docAck: (count, titles) => count === 1 ? ` Veo que has subido "${titles}" - ¡excelente!` : ` He cargado ${count} documentos para nuestra sesión. ¡Genial!`,
                   closing: {
                     'K-2': docTitles.length > 0 ? " ¡Veámoslo juntos! ¿Qué quieres aprender?" : " ¡Estoy muy emocionado de aprender contigo! ¿Qué te gustaría explorar?",
                     '3-5': docTitles.length > 0 ? " ¡Estoy aquí para ayudarte a entender! ¿Por dónde empezamos?" : " ¡Estoy aquí para ayudarte a aprender! ¿Qué tema te interesa?",
@@ -3206,7 +3206,7 @@ HONESTY INSTRUCTIONS:
                 },
                 sw: {
                   intro: `Habari ${name}! Mimi ni ${tutorName}, mwalimu wako wa AI.`,
-                  docAck: (count, titles) => count === 1 ? ` Naona umepakia "${titles}" - bora!` : ` Naona umepakia nyaraka ${count}: ${titles}. Vizuri!`,
+                  docAck: (count, titles) => count === 1 ? ` Naona umepakia "${titles}" - bora!` : ` Nimepakia nyaraka ${count} kwa kipindi chetu. Vizuri!`,
                   closing: {
                     'K-2': docTitles.length > 0 ? " Tuangalie pamoja! Unataka kujifunza nini?" : " Ninafuraha sana kujifunza nawe! Unataka kuchunguza nini?",
                     '3-5': docTitles.length > 0 ? " Niko hapa kukusaidia kuelewa! Tuanze wapi?" : " Niko hapa kukusaidia kujifunza! Somo gani linakuvutia?",
@@ -4651,21 +4651,38 @@ HONESTY INSTRUCTIONS:
                     return titleMatch ? titleMatch[1] : `Document ${i + 1}`;
                   });
                   
-                  // Update system instruction with document awareness
-                  state.systemInstruction = `${personality.systemPrompt}
+                  // NO-GHOSTING FIX: Calculate actual content for mid-session upload
+                  const midSessionRagChars = state.uploadedDocuments.reduce((sum, doc) => {
+                    const content = doc.replace(/^\[Document: [^\]]+\]\n/, '');
+                    return sum + content.length;
+                  }, 0);
+                  const hasMidSessionContent = midSessionRagChars > 0;
+                  
+                  console.log(`[Custom Voice] 📄 Mid-session doc check: ragChars=${midSessionRagChars}, hasContent=${hasMidSessionContent}`);
+                  
+                  // Update system instruction with document awareness - only if content exists
+                  if (hasMidSessionContent) {
+                    state.systemInstruction = `${personality.systemPrompt}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📚 UPLOADED DOCUMENTS FOR THIS SESSION:
+📚 DOCUMENTS LOADED FOR THIS SESSION (${midSessionRagChars} chars):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-The student has uploaded ${state.uploadedDocuments.length} document(s): ${docTitles.join(', ')}
+Document content is available: ${docTitles.join(', ')}
 
-CRITICAL INSTRUCTIONS:
-✅ When asked "do you see my document?" ALWAYS respond: "Yes! I can see your ${docTitles[docTitles.length - 1]}"
-✅ Reference specific content from the documents to prove you can see them
+DOCUMENT ACCESS INSTRUCTIONS:
+✅ You have actual document content loaded - reference it directly
 ✅ Help with the specific homework/problems in their uploaded materials
-✅ Use phrases like "Looking at your document..." or "In ${docTitles[docTitles.length - 1]}..."
-✅ The document content is available in the conversation context
+✅ Quote or paraphrase specific text from the documents when relevant
+✅ If asked about unique markers or specific text, read from the actual content
+
+PROOF REQUIREMENT:
+When the student asks if you can see their document or asks you to prove access:
+- You MUST quote or paraphrase a specific line, sentence, or phrase from the document
+- NEVER make up or guess content - only reference what is actually in the loaded text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+                  } else {
+                    console.log(`[Custom Voice] ⚠️ Mid-session upload has no content - not claiming access`);
+                  }
                   
                   console.log(`[Custom Voice] 📚 System instruction updated with ${state.uploadedDocuments.length} documents`);
                   

@@ -481,36 +481,52 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       console.error('[Upload] ❌ Text extraction failed:', extractError);
       
       // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-      // FIX (Nov 3, 2025): DELETE failed uploads instead of marking as failed
-      // This prevents duplicate/failed entries cluttering the UI
+      // FIX (Feb 2, 2026): Graceful fallback - file is stored but not indexed for RAG
+      // User can still see the file in UI and paste content manually
+      // NO-GHOSTING: We do NOT create chunks or embeddings for failed extractions
       // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-      console.log('[Upload] 🧹 Cleaning up failed document:', documentId);
+      console.log('[Upload] ⚠️ Extraction failed - file stored but NOT indexed');
       
-      // Delete document from database
+      // Update document status to indicate extraction failure
       try {
-        await storage.deleteDocument(documentId, userId);
-        console.log('[Upload] ✅ Failed document deleted from database');
-      } catch (deleteError) {
-        console.error('[Upload] ❌ Failed to delete document:', deleteError);
+        await storage.updateDocument(documentId, userId, { processingStatus: 'failed' });
+        console.log('[Upload] ✅ Document stored with extraction_failed status');
+      } catch (updateError) {
+        console.error('[Upload] ⚠️ Could not update status:', updateError);
       }
       
-      // Delete physical file
-      if (req.file && fs.existsSync(req.file.path)) {
-        try {
-          fs.unlinkSync(req.file.path);
-          console.log('[Upload] ✅ Failed file deleted from disk');
-        } catch (fileDeleteError) {
-          console.error('[Upload] ❌ Failed to delete file:', fileDeleteError);
-        }
-      }
+      // Log extraction failure per spec
+      console.error(`[DOCS] extraction_failed: ${JSON.stringify({
+        docId: documentId,
+        mimeType: req.file.mimetype,
+        error: extractError.message,
+      })}`);
+      logDocExtracted({
+        docId: documentId,
+        mimeType: req.file.mimetype,
+        extractedChars: 0,
+        extractionMethod: 'failed',
+        ocrUsed: false,
+      });
       
-      return res.status(500).json({
-        error: 'Failed to extract text from document',
-        details: extractError.message,
+      // Return success with warning - file visible in UI but NOT indexed for RAG
+      // This prevents placeholder text from being chunked/embedded
+      console.log('[Upload] ⚠️ Returning success with extraction_failed warning');
+      return res.json({
+        id: document.id,
+        title: document.title,
+        originalName: document.originalName,
+        fileType: fileExtension,
+        fileSize: req.file.size,
+        processingStatus: 'failed',
+        createdAt: document.createdAt,
+        chunks: 0,
+        characters: 0,
+        warning: 'Text extraction failed. The file is saved but content is not available for the AI tutor. Try pasting the text directly instead.'
       });
     }
     
-    // 3. Chunk the text
+    // 3. Chunk the text (only reached if extraction succeeded)
     console.log('[Upload] ✂️ Chunking text...');
     const chunks = chunkText(extractedText, 1000);
     console.log(`[Upload] ✅ Created ${chunks.length} chunks`);
