@@ -12,10 +12,14 @@ import { Router } from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import { z } from 'zod';
 import { storage } from '../storage';
+import { db } from '../db';
+import { documentChunks } from '@shared/schema';
 import { DocumentProcessor } from '../services/document-processor';
 import { PdfJsTextExtractor } from '../services/pdf-extractor';
+import Anthropic from '@anthropic-ai/sdk';
 import { createRequire } from 'module';
 import { 
   logDocUpload, 
@@ -587,6 +591,187 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     res.status(500).json({
       error: 'Failed to process document',
       details: error.message,
+    });
+  }
+});
+
+/**
+ * Analyze image using Claude Vision
+ * Used during live voice sessions to let the tutor "see" uploaded images
+ */
+
+// Lazy init for Anthropic client
+let anthropicVision: Anthropic | null = null;
+function getAnthropicVisionClient(): Anthropic {
+  if (!anthropicVision) {
+    anthropicVision = new Anthropic();
+  }
+  return anthropicVision;
+}
+
+// Supported image types for Claude Vision (BMP not supported - requires conversion)
+const CLAUDE_VISION_TYPES: Record<string, 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'> = {
+  'image/jpeg': 'image/jpeg',
+  'image/jpg': 'image/jpeg',
+  'image/png': 'image/png',
+  'image/gif': 'image/gif',
+  'image/webp': 'image/webp',
+};
+
+// Configure multer for memory storage (for base64 encoding)
+const uploadMemory = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are supported for vision analysis'));
+    }
+  }
+});
+
+router.post('/analyze-image', uploadMemory.single('file'), async (req, res) => {
+  try {
+    const file = req.file;
+    const userId = req.user?.id;
+    
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+    
+    if (!file) {
+      return res.status(400).json({ error: 'No image file provided' });
+    }
+    
+    // Check if it's a supported image type
+    const mediaType = CLAUDE_VISION_TYPES[file.mimetype];
+    if (!mediaType) {
+      return res.status(400).json({ 
+        error: 'Unsupported image format',
+        supported: Object.keys(CLAUDE_VISION_TYPES)
+      });
+    }
+    
+    console.log(`[Image Vision] 📸 Analyzing image: ${file.originalname} (${file.size} bytes, ${file.mimetype})`);
+    
+    // Convert to base64
+    const base64Image = file.buffer.toString('base64');
+    
+    // Use Claude Vision to analyze the image
+    const client = getAnthropicVisionClient();
+    
+    const response = await client.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1024,
+      messages: [{
+        role: 'user',
+        content: [
+          {
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: mediaType,
+              data: base64Image,
+            }
+          },
+          {
+            type: 'text',
+            text: `You are helping an AI tutor understand what a student has uploaded. Analyze this image and provide a detailed description that will help the tutor assist the student.
+
+If this is a homework problem, math equation, diagram, chart, or educational content:
+- Transcribe any text, equations, or numbers exactly as they appear
+- Describe the structure and components clearly
+- Note what subject/topic it relates to (Math, Science, English, etc.)
+
+If this is handwritten work:
+- Transcribe the handwriting as accurately as possible
+- Note if any parts are unclear or illegible
+
+If this is a general image:
+- Describe what you see
+- Note any text visible
+- Identify the educational context if applicable
+
+Provide your analysis in a clear format that the tutor can reference during the conversation.`
+          }
+        ]
+      }]
+    });
+    
+    // Extract the text response - NO-GHOSTING: only accept actual text content
+    const rawDescription = response.content[0].type === 'text' 
+      ? response.content[0].text.trim()
+      : '';
+    
+    // NO-GHOSTING: Validate that we have meaningful content
+    const hasActualContent = rawDescription.length > 20; // More than a trivial response
+    
+    if (!hasActualContent) {
+      console.log(`[Image Vision] ⚠️ No meaningful content extracted (${rawDescription.length} chars)`);
+    } else {
+      console.log(`[Image Vision] ✅ Analysis complete: ${rawDescription.substring(0, 100)}...`);
+    }
+    
+    // Calculate expiration date (6 months from now)
+    const expiresAt = new Date();
+    expiresAt.setMonth(expiresAt.getMonth() + 6);
+    
+    // Store the image record with the vision description as "extracted text"
+    const fileExtension = path.extname(file.originalname).toLowerCase().slice(1) || 'png';
+    const document = await storage.uploadDocument(userId, {
+      originalName: file.originalname,
+      fileName: `vision_${Date.now()}_${file.originalname}`,
+      filePath: '', // No disk storage for vision-analyzed images
+      fileType: fileExtension,
+      fileSize: file.size,
+      title: file.originalname.replace(/\.[^/.]+$/, ''),
+      description: hasActualContent ? 'Image analyzed with Claude Vision' : 'Image uploaded (analysis unavailable)',
+      expiresAt,
+      processingStatus: 'ready',
+      retryCount: 0
+    });
+    
+    // NO-GHOSTING: Only create chunks if we have actual content
+    let chunksCreated = 0;
+    if (hasActualContent) {
+      const chunks = chunkText(rawDescription, 500);
+      for (let i = 0; i < chunks.length; i++) {
+        await db.insert(documentChunks).values({
+          id: crypto.randomUUID(),
+          documentId: document.id,
+          chunkIndex: i,
+          content: chunks[i],
+          metadata: JSON.stringify({ 
+            type: 'image_vision',
+            originalName: file.originalname
+          }),
+        });
+      }
+      chunksCreated = chunks.length;
+      console.log(`[Image Vision] 📝 Created ${chunksCreated} chunks for image description`);
+    } else {
+      console.log(`[Image Vision] ⚠️ No chunks created - NO-GHOSTING preserved`);
+    }
+    
+    res.json({
+      success: true,
+      id: document.id,
+      filename: file.originalname,
+      description: hasActualContent ? rawDescription : null,
+      contentLength: rawDescription.length,
+      chunks: chunksCreated,
+      processingStatus: 'ready',
+      extractionWarning: hasActualContent ? undefined : 'Image could not be analyzed. The tutor cannot see its contents.'
+    });
+    
+  } catch (error: any) {
+    console.error(`[Image Vision] ❌ Analysis failed:`, error);
+    res.status(500).json({ 
+      error: 'Image analysis failed',
+      details: error.message 
     });
   }
 });

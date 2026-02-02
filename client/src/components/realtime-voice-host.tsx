@@ -551,20 +551,28 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
       return;
     }
 
-    console.log('[Chat] 📤 Uploading file from chat:', file.name);
+    // Check if it's an image - use Claude Vision for analysis
+    const isImage = file.type.startsWith('image/');
+    const endpoint = isImage ? '/api/documents/analyze-image' : '/api/documents/upload';
+    
+    console.log(`[Chat] 📤 Uploading ${isImage ? 'image' : 'file'} from chat:`, file.name);
 
     // Upload file
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('studentId', studentId || '');
+    if (!isImage) {
+      formData.append('studentId', studentId || '');
+    }
 
     try {
       toast({
-        title: "Uploading...",
-        description: `Uploading ${file.name}...`,
+        title: isImage ? "Analyzing Image..." : "Uploading...",
+        description: isImage 
+          ? `Using AI to analyze ${file.name}...` 
+          : `Uploading ${file.name}...`,
       });
 
-      const response = await fetch('/api/documents/upload', {
+      const response = await fetch(endpoint, {
         method: 'POST',
         body: formData,
         credentials: 'include'
@@ -576,21 +584,44 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
       }
 
       const data = await response.json();
-      console.log('[Chat] ✅ File uploaded:', data.id);
+      console.log(`[Chat] ✅ ${isImage ? 'Image analyzed' : 'File uploaded'}:`, data.id);
+
+      if (isImage) {
+        if (data.description) {
+          console.log(`[Chat] 📝 Image description (${data.contentLength} chars):`, data.description.substring(0, 100) + '...');
+        } else {
+          console.log(`[Chat] ⚠️ Image analysis returned no content`);
+        }
+      }
+
+      // Check for extraction warnings (NO-GHOSTING: image couldn't be analyzed)
+      if (data.extractionWarning) {
+        toast({
+          title: "Image Uploaded",
+          description: data.extractionWarning,
+          variant: "default",
+        });
+        // Don't notify WebSocket if there's no actual content
+        console.log(`[Chat] ⚠️ Not notifying WebSocket - no content to share`);
+        return;
+      }
 
       toast({
-        title: "Upload Complete",
-        description: `${file.name} uploaded successfully`,
+        title: isImage ? "Image Ready" : "Upload Complete",
+        description: isImage 
+          ? `AI can now see "${file.name}". Ask about it!`
+          : `${file.name} uploaded successfully`,
       });
 
-      // Notify WebSocket about new document
+      // Notify WebSocket about new document (works for both images and documents)
+      // For images, the description is already stored as document chunks
       customVoice.sendDocumentUploaded(data.id, file.name);
 
     } catch (error: any) {
       console.error('[Chat] Upload error:', error);
       toast({
-        title: "Upload Failed",
-        description: error.message || `Failed to upload ${file.name}`,
+        title: isImage ? "Image Analysis Failed" : "Upload Failed",
+        description: error.message || `Failed to process ${file.name}`,
         variant: "destructive",
       });
     }
