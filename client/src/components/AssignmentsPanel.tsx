@@ -174,6 +174,8 @@ export function AssignmentsPanel({
       'application/pdf',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
       'application/msword', // .doc
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .pptx
+      'application/vnd.ms-powerpoint', // .ppt
       'text/plain', // .txt
       'text/csv', // .csv
       'application/vnd.ms-excel', // .xls
@@ -185,10 +187,10 @@ export function AssignmentsPanel({
       'image/bmp'
     ];
     
-    if (!allowedTypes.includes(file.type) && !file.name.match(/\.(pdf|docx?|txt|csv|xlsx?|png|jpe?g|gif|bmp)$/i)) {
+    if (!allowedTypes.includes(file.type) && !file.name.match(/\.(pdf|docx?|pptx?|txt|csv|xlsx?|png|jpe?g|gif|bmp)$/i)) {
       toast({
         title: 'Invalid file type',
-        description: 'Please choose a PDF, Word document, Excel spreadsheet, text file, or image (PNG, JPG, GIF).',
+        description: 'Please choose a PDF, Word, PowerPoint, Excel, text file, or image (PNG, JPG, GIF).',
         variant: 'destructive',
       });
       if (fileInputRef.current) {

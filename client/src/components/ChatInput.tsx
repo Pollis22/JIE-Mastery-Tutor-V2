@@ -110,7 +110,7 @@ export const ChatInput = ({
         <input
           ref={fileInputRef}
           type="file"
-          accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.gif,.webp,.bmp,.xlsx,.xls,.csv,.pptx"
+          accept=".pdf,.doc,.docx,.ppt,.pptx,.txt,.jpg,.jpeg,.png,.gif,.webp,.bmp,.xlsx,.xls,.csv"
           onChange={handleFileSelect}
           className="hidden"
           data-testid="file-input"
