@@ -54,12 +54,13 @@ const upload = multer({
     fileSize: 10 * 1024 * 1024, // 10MB
   },
   fileFilter: (req, file, cb) => {
-    // Allow PDF, Word, PowerPoint (PPTX only), text, images, Excel, and CSV files
+    // Allow PDF, Word, PowerPoint, text, images, Excel, and CSV files
     const allowedTypes = [
       'application/pdf',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
       'application/msword', // .doc
       'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .pptx
+      'application/vnd.ms-powerpoint', // .ppt (legacy)
       'text/plain', // .txt
       'text/csv', // .csv
       'application/vnd.ms-excel', // .xls
@@ -74,7 +75,7 @@ const upload = multer({
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Supported file types: PDF, Word (DOCX/DOC), PowerPoint (PPTX), text (TXT), images (PNG/JPG/GIF/BMP), Excel (XLSX/XLS), and CSV'));
+      cb(new Error('Supported file types: PDF, Word (DOCX/DOC), PowerPoint (PPTX/PPT), text (TXT), images (PNG/JPG/GIF/BMP), Excel (XLSX/XLS), and CSV'));
     }
   }
 });
@@ -352,14 +353,14 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     const expiresAt = new Date();
     expiresAt.setMonth(expiresAt.getMonth() + 6);
 
-    // Determine file type - support all document types (PPTX only, not legacy PPT)
+    // Determine file type - support all document types including legacy PPT
     const fileExtension = path.extname(req.file.originalname).toLowerCase().slice(1);
-    const supportedTypes = ['pdf', 'docx', 'doc', 'pptx', 'txt', 'csv', 'xlsx', 'xls', 'png', 'jpg', 'jpeg', 'gif', 'bmp'];
+    const supportedTypes = ['pdf', 'docx', 'doc', 'ppt', 'pptx', 'txt', 'csv', 'xlsx', 'xls', 'png', 'jpg', 'jpeg', 'gif', 'bmp'];
     
     if (!supportedTypes.includes(fileExtension)) {
       fs.unlinkSync(req.file.path);
       return res.status(400).json({ 
-        error: 'Unsupported file type. Supported: PDF, Word (DOCX/DOC), PowerPoint (PPTX), text (TXT), images (PNG/JPG/GIF/BMP), Excel (XLSX/XLS), and CSV' 
+        error: 'Unsupported file type. Supported: PDF, Word (DOCX/DOC), PowerPoint (PPTX/PPT), text (TXT), images (PNG/JPG/GIF/BMP), Excel (XLSX/XLS), and CSV' 
       });
     }
 
@@ -412,6 +413,13 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       ) {
         console.log('[Upload] 📊 Extracting text from PowerPoint (PPTX)...');
         extractedText = await extractTextFromPowerPoint(req.file.path);
+      } else if (
+        req.file.mimetype === 'application/vnd.ms-powerpoint' ||
+        req.file.originalname.endsWith('.ppt')
+      ) {
+        // Legacy PPT format not supported - throw error to trigger graceful fallback
+        console.log('[Upload] ⚠️ Legacy PPT format detected - extraction not supported');
+        throw new Error('Legacy .ppt format is not supported. Please save as .pptx and re-upload.');
       } else if (req.file.mimetype === 'text/plain') {
         console.log('[Upload] 📃 Reading text file...');
         extractedText = await fsPromises.readFile(req.file.path, 'utf-8');

@@ -255,7 +255,7 @@ export function AssignmentsPanel({
             <input
               ref={fileInputRef}
               type="file"
-              accept=".pdf,.doc,.docx,.txt,.csv,.xls,.xlsx,.png,.jpg,.jpeg,.gif,.bmp"
+              accept=".pdf,.doc,.docx,.ppt,.pptx,.txt,.csv,.xls,.xlsx,.png,.jpg,.jpeg,.gif,.bmp"
               onChange={handleFileSelect}
               className="hidden"
               data-testid="file-input"
@@ -271,7 +271,7 @@ export function AssignmentsPanel({
                   Click to select a file
                 </p>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                  PDF, Word, Excel, Text, or Image files (max 10MB)
+                  PDF, Word, PowerPoint, Excel, Text, or Image files (max 10MB)
                 </p>
               </div>
             ) : (
