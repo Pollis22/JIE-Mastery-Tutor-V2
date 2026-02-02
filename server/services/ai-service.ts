@@ -142,8 +142,19 @@ You do NOT have access to any document text for this turn.
     if (languageContext || modalityContext) {
       systemPrompt = `${languageContext}${modalityContext ? modalityContext + '\n\n' : ''}${systemInstruction}`;
     }
-    // Even with custom instruction, add no-ghosting if no content
-    if (!hasActualContent) {
+    
+    // CRITICAL FIX: Append actual document content when systemInstruction is provided
+    // Previously, document content was ONLY included in the else branch, causing
+    // mid-session uploads to fail - AI saw metadata but not the actual text
+    if (hasActualContent && documentContext) {
+      systemPrompt = `${systemPrompt}
+
+<document_contents>
+${documentContext}
+</document_contents>`;
+      console.log(`[AI Service] 📄 Appended ${parsedDocs.length} document(s) content to system prompt (${ragChars} chars)`);
+    } else if (!hasActualContent) {
+      // No content available - add no-ghosting instruction
       systemPrompt = `${noGhostingInstruction}\n\n${systemPrompt}`;
     }
   } else {
