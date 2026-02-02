@@ -325,24 +325,23 @@ export function AssignmentsPanel({
         ) : (
           <>
             <div className="overflow-x-auto">
-              <table className="w-full border-collapse">
+              <table className="w-full border-collapse table-fixed">
                 <thead>
                   <tr className="bg-gray-50 dark:bg-gray-700">
                     {onDocumentSelectionChange && (
-                      <th className="text-center p-3 font-medium text-gray-900 dark:text-white w-24" title="Toggle to activate document for this tutoring session">Active</th>
+                      <th className="text-center p-2 font-medium text-gray-900 dark:text-white w-16" title="Toggle to activate document for this tutoring session">Active</th>
                     )}
-                    <th className="text-left p-3 font-medium text-gray-900 dark:text-white">Document</th>
-                    <th className="text-left p-3 font-medium text-gray-900 dark:text-white">Size</th>
-                    <th className="text-left p-3 font-medium text-gray-900 dark:text-white">Status</th>
-                    <th className="text-left p-3 font-medium text-gray-900 dark:text-white">Expires</th>
-                    <th className="text-left p-3 font-medium text-gray-900 dark:text-white">Actions</th>
+                    <th className="text-left p-2 font-medium text-gray-900 dark:text-white">Document</th>
+                    <th className="text-left p-2 font-medium text-gray-900 dark:text-white w-16">Size</th>
+                    <th className="text-left p-2 font-medium text-gray-900 dark:text-white w-20">Status</th>
+                    <th className="text-center p-2 font-medium text-gray-900 dark:text-white w-14">Delete</th>
                   </tr>
                 </thead>
                 <tbody>
                   {documents.map((document) => (
                     <tr key={document.id} className="border-b border-gray-200 dark:border-gray-700" data-testid={`document-row-${document.id}`}>
                       {onDocumentSelectionChange && (
-                        <td className="p-3 text-center">
+                        <td className="p-2 text-center">
                           <input
                             type="checkbox"
                             checked={selectedDocumentIds.includes(document.id)}
@@ -353,47 +352,37 @@ export function AssignmentsPanel({
                           />
                         </td>
                       )}
-                      <td className="p-3">
-                        <div className="flex items-center gap-2">
-                          <FileText className="w-4 h-4 text-gray-500" />
-                          <div>
-                            <div className="font-medium text-gray-900 dark:text-white">{document.title}</div>
-                            <div className="text-sm text-gray-500 dark:text-gray-400">
-                              {document.subject && <span className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded text-xs mr-2">{document.subject}</span>}
-                              {document.grade && <span className="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded text-xs">{document.grade}</span>}
-                            </div>
+                      <td className="p-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <FileText className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                          <div className="min-w-0">
+                            <div className="font-medium text-gray-900 dark:text-white truncate" title={document.title}>{document.title}</div>
+                            {(document.subject || document.grade) && (
+                              <div className="text-sm text-gray-500 dark:text-gray-400">
+                                {document.subject && <span className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-xs mr-1">{document.subject}</span>}
+                                {document.grade && <span className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-xs">{document.grade}</span>}
+                              </div>
+                            )}
                           </div>
                         </div>
                       </td>
-                      <td className="p-3 text-sm text-gray-500 dark:text-gray-400">{formatFileSize(document.fileSize)}</td>
-                      <td className="p-3">
+                      <td className="p-2 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">{formatFileSize(document.fileSize)}</td>
+                      <td className="p-2">
                         <StatusPill 
                           status={document.processingStatus} 
                           error={document.processingError}
                           retryCount={document.retryCount}
                         />
-                        {document.processingError && (
-                          <div className="text-xs text-red-600 dark:text-red-400 mt-1" title={document.processingError}>
-                            {document.processingError.length > 50 
-                              ? document.processingError.substring(0, 50) + '...' 
-                              : document.processingError}
-                          </div>
-                        )}
                       </td>
-                      <td className="p-3 text-sm text-gray-500 dark:text-gray-400">
-                        {document.expiresAt ? formatChicagoDate(document.expiresAt) : 'Never'}
-                      </td>
-                      <td className="p-3">
-                        <div className="actions flex gap-2">
-                          <button
-                            onClick={() => deleteMutation.mutate(document.id)}
-                            className="p-2 text-gray-500 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400 transition-colors"
-                            title="Delete document"
-                            data-testid={`button-delete-${document.id}`}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
+                      <td className="p-2 text-center">
+                        <button
+                          onClick={() => deleteMutation.mutate(document.id)}
+                          className="p-1.5 text-gray-500 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400 transition-colors hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
+                          title="Delete document"
+                          data-testid={`button-delete-${document.id}`}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </td>
                     </tr>
                   ))}
