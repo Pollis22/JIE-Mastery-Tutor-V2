@@ -89,6 +89,14 @@ export function activateDocForSession(
     activeCount: activeDocs.size,
   });
   
+  // Structured log per spec
+  console.log('[DOCS] activate', JSON.stringify({
+    timestamp: new Date().toISOString(),
+    sessionId,
+    userId,
+    docId,
+  }));
+  
   return { 
     success: true, 
     activeCount: activeDocs.size 
@@ -127,6 +135,14 @@ export function deactivateDocForSession(
     activeCount: activeDocs.size,
   });
   
+  // Structured log per spec
+  console.log('[DOCS] deactivate', JSON.stringify({
+    timestamp: new Date().toISOString(),
+    sessionId,
+    userId,
+    docId,
+  }));
+  
   return { 
     success: true, 
     activeCount: activeDocs.size 
@@ -160,6 +176,14 @@ export function setActiveDocsForSession(
     docIds,
     activeCount: docIds.length,
   });
+  
+  // Structured log per spec
+  console.log('[DOCS] active_state', JSON.stringify({
+    timestamp: new Date().toISOString(),
+    sessionId,
+    userId,
+    activeDocIds: docIds,
+  }));
   
   return { 
     success: true, 
@@ -226,10 +250,11 @@ export function logRagRetrievalDocsSelected(params: {
 export function logDocUpload(params: {
   userId: string;
   sessionId?: string;
-  docId: string;
+  conversationId?: string;
+  docId?: string;
   filename: string;
   mimeType: string;
-  size: number;
+  bytes: number;
 }): void {
   console.log('[DOCS] uploaded:', JSON.stringify({
     timestamp: new Date().toISOString(),

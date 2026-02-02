@@ -61,6 +61,10 @@ function buildSystemPrompt(
     const preview = content.substring(0, 500).trim() + (content.length > 500 ? '...' : '');
     return { filename, content, preview };
   });
+  
+  // NO-GHOSTING GUARANTEE: Calculate actual ragChars (total content characters)
+  const ragChars = parsedDocs.reduce((sum, doc) => sum + doc.content.length, 0);
+  const hasActualContent = ragChars > 0;
 
   // Build structured document list for Claude (JSON format for clarity)
   const documentList = parsedDocs.length > 0
@@ -121,6 +125,16 @@ MULTIPLE DOCUMENTS:
 - When referencing content, always specify which document it's from.`
     : '';
 
+  // NO-GHOSTING: Instruction when we have no actual document content
+  const noGhostingInstruction = `
+NO-GHOSTING ENFORCEMENT (CRITICAL):
+You do NOT have access to any document text for this turn.
+- Do NOT claim you can "see", "read", or "access" any uploaded documents
+- Do NOT pretend to have document content or make up content
+- If the student asks about a document, respond:
+  "I don't have access to your document text yet. Please make sure your document is selected/activated, or paste the relevant section directly in the chat."
+- You may help with general questions, but cannot reference specific document content`;
+
   let systemPrompt = "";
   
   if (systemInstruction) {
@@ -128,8 +142,13 @@ MULTIPLE DOCUMENTS:
     if (languageContext || modalityContext) {
       systemPrompt = `${languageContext}${modalityContext ? modalityContext + '\n\n' : ''}${systemInstruction}`;
     }
+    // Even with custom instruction, add no-ghosting if no content
+    if (!hasActualContent) {
+      systemPrompt = `${noGhostingInstruction}\n\n${systemPrompt}`;
+    }
   } else {
-    if (uploadedDocuments.length > 0) {
+    // NO-GHOSTING: Check hasActualContent, not just array length
+    if (hasActualContent) {
       systemPrompt = `You are an expert AI tutor helping students with homework and learning.
 
 ${modalityContext ? modalityContext + '\n' : ''}
@@ -154,19 +173,22 @@ GENERAL TUTORING INSTRUCTIONS:
 - Reference the uploaded documents BY FILENAME when answering questions
 - ${inputModality === "voice" ? "You are having a VOICE conversation - the student can HEAR you" : "The student sent you a text message"}`;
     } else {
+      // NO-GHOSTING: No actual content available
       systemPrompt = `You are an expert AI tutor helping students with homework and learning.
 
 ${modalityContext ? modalityContext + '\n' : ''}
-NO DOCUMENTS SELECTED:
-The student has not selected any documents for this session.
-- If they ask about a specific document, explain that no documents are loaded
-- Suggest they restart the session and select the document they want help with
+${noGhostingInstruction}
+
+NO DOCUMENTS AVAILABLE:
+The student has not selected any documents, or no document content could be retrieved.
+- If they ask about a specific document, explain that no document content is loaded
+- Suggest they: 1) Select/activate a document, 2) Paste the content directly, or 3) Upload a new document
 
 GENERAL TUTORING INSTRUCTIONS:
 - Be encouraging, patient, and clear
 - Use the Socratic method - ask questions to guide understanding
 - Keep responses VERY CONCISE (1-2 sentences max) since this is voice conversation
-- Help with general understanding since no specific materials were uploaded
+- Help with general understanding since no specific materials are available
 - ${inputModality === "voice" ? "You are having a VOICE conversation - the student can HEAR you" : "The student sent you a text message"}`;
     }
   }
@@ -197,6 +219,10 @@ export async function generateTutorResponseStreaming(
   console.log("[AI Service] 🎤 Input modality:", inputModality || "unknown");
   console.log("[AI Service] 📚 Documents available:", uploadedDocuments.length);
   console.log("[AI Service] 🎓 Grade level:", gradeLevel || "unknown");
+  
+  // NO-GHOSTING: Calculate and log ragChars
+  const ragChars = uploadedDocuments.reduce((sum, doc) => sum + doc.length, 0);
+  console.log(`[RAG] preLLM { ragChars: ${ragChars}, docCount: ${uploadedDocuments.length}, hasContent: ${ragChars > 0} }`);
 
   const systemPrompt = buildSystemPrompt(uploadedDocuments, systemInstruction, inputModality, language);
   console.log("[AI Service] 📄 System prompt length:", systemPrompt.length, "chars");
@@ -349,6 +375,10 @@ export async function generateTutorResponse(
   console.log("[AI Service] 🎤 Input modality:", inputModality || "unknown");
   console.log("[AI Service] 📚 Documents available:", uploadedDocuments.length);
   console.log("[AI Service] 🎓 Grade level:", gradeLevel || "unknown");
+  
+  // NO-GHOSTING: Calculate and log ragChars
+  const ragChars = uploadedDocuments.reduce((sum, doc) => sum + doc.length, 0);
+  console.log(`[RAG] preLLM { ragChars: ${ragChars}, docCount: ${uploadedDocuments.length}, hasContent: ${ragChars > 0} }`);
   
   const systemPrompt = buildSystemPrompt(uploadedDocuments, systemInstruction, inputModality, language);
   console.log("[AI Service] 📄 System prompt length:", systemPrompt.length, "chars");
