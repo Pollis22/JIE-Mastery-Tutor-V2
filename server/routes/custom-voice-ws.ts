@@ -2983,10 +2983,12 @@ export function setupCustomVoiceWebSocket(server: Server) {
                   
                   // Log preLLM docs selection for voice session
                   logRagRetrievalDocsSelected({
-                    sessionId: sessionId,
-                    numDocs: documentIds.length,
+                    sessionId: state.sessionId,
+                    userId: authenticatedUserId,
+                    activeDocCount: documentIds.length,
+                    docIds: documentIds,
+                    reason: fallbackUsed ? 'fallback_all_docs' : 'active_docs_only',
                     fallbackUsed,
-                    requestedDocIds: documentIds,
                   });
                   
                   if (documentIds.length === 0) {
@@ -3018,7 +3020,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
               } catch (error) {
                 console.error('[Custom Voice] ❌ Error loading documents:', error);
                 logRagError({
-                  sessionId: sessionId,
+                  sessionId: state.sessionId,
+                  userId: authenticatedUserId,
                   error: error instanceof Error ? error.message : String(error),
                   stage: 'document_load',
                 });
