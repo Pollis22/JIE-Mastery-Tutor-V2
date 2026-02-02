@@ -11,7 +11,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import mammoth from 'mammoth';
-import { PdfJsTextExtractor } from './pdf-extractor';
+import { PdfJsTextExtractor, PdfExtractionResult } from './pdf-extractor';
 import xlsx from 'xlsx';
 import { parse } from 'csv-parse/sync';
 import { createWorker } from 'tesseract.js';
@@ -26,6 +26,8 @@ export interface ProcessedDocument {
   }>;
   totalTokens: number;
   processingTime: number;
+  extractionMethod?: string;
+  extractionWarning?: string;
 }
 
 export class DocumentProcessor {
@@ -80,27 +82,41 @@ export class DocumentProcessor {
   async processFile(filePath: string, fileType: string, language: string = 'en'): Promise<ProcessedDocument> {
     const startTime = Date.now();
     let text: string;
+    let extractionMethod: string | undefined;
+    let extractionWarning: string | undefined;
 
     try {
       switch (fileType.toLowerCase()) {
         case 'pdf':
-          text = await this.extractPdfText(filePath);
+          const pdfResult = await this.extractPdfText(filePath);
+          text = pdfResult.text;
+          extractionMethod = pdfResult.method;
+          extractionWarning = pdfResult.warning;
+          
+          // If PDF extraction failed, throw to trigger the error handling
+          if (pdfResult.method === 'failed') {
+            throw new Error(pdfResult.warning || 'PDF extraction failed');
+          }
           break;
         case 'docx':
         case 'doc':
           text = await this.extractDocxText(filePath);
+          extractionMethod = 'mammoth';
           break;
         case 'txt':
         case 'md':
         case 'markdown':
           text = await this.extractTxtText(filePath);
+          extractionMethod = 'text';
           break;
         case 'csv':
           text = await this.extractCsvText(filePath);
+          extractionMethod = 'csv-parse';
           break;
         case 'xlsx':
         case 'xls':
           text = await this.extractExcelText(filePath);
+          extractionMethod = 'xlsx';
           break;
         case 'png':
         case 'jpg':
@@ -109,12 +125,14 @@ export class DocumentProcessor {
         case 'bmp':
         case 'webp':
           text = await this.extractImageText(filePath, language);
+          extractionMethod = 'tesseract-ocr';
           break;
         default:
           // Best-effort: try to read as plain text for unknown formats
           console.log(`[DOCS] Attempting best-effort text extraction for unknown type: ${fileType}`);
           try {
             text = await this.extractTxtText(filePath);
+            extractionMethod = 'text-fallback';
             console.log(`[DOCS] Best-effort extraction succeeded for ${fileType}: ${text.length} chars`);
           } catch (e) {
             console.error(`[DOCS] Best-effort extraction failed for ${fileType}:`, e);
@@ -136,6 +154,8 @@ export class DocumentProcessor {
         chunks,
         totalTokens,
         processingTime: Date.now() - startTime,
+        extractionMethod,
+        extractionWarning,
       };
     } catch (error) {
       console.error(`Failed to process ${fileType} file:`, error);
@@ -145,10 +165,21 @@ export class DocumentProcessor {
   }
 
   /**
-   * Extract text from PDF using PDF.js
+   * Extract text from PDF using multiple methods with fallbacks
    */
-  private async extractPdfText(filePath: string): Promise<string> {
-    return this.pdfExtractor.extractText(filePath);
+  private async extractPdfText(filePath: string): Promise<{ text: string; method: string; warning?: string }> {
+    const result = await this.pdfExtractor.extractTextWithDetails(filePath);
+    
+    if (result.success) {
+      return { text: result.text, method: result.method };
+    }
+    
+    // Extraction failed - return error info instead of throwing
+    return { 
+      text: '', 
+      method: 'failed', 
+      warning: result.error || 'PDF extraction failed'
+    };
   }
 
   /**
