@@ -15,6 +15,7 @@ import fs from 'fs';
 import { z } from 'zod';
 import { storage } from '../storage';
 import { DocumentProcessor } from '../services/document-processor';
+import { PdfJsTextExtractor } from '../services/pdf-extractor';
 import { createRequire } from 'module';
 import { 
   logDocUpload, 
@@ -25,13 +26,15 @@ import {
 // Create require for CommonJS modules
 const require = createRequire(import.meta.url);
 
-// Import CommonJS modules at the top
-const pdfParse = require('pdf-parse');
+// Import CommonJS modules at the top (pdf-parse no longer needed - using PdfJsTextExtractor)
 const mammoth = require('mammoth');
 const Tesseract = require('tesseract.js');
 const XLSX = require('xlsx');
 const AdmZip = require('adm-zip');
 const xml2js = require('xml2js');
+
+// Initialize PDF extractor with multiple fallback methods
+const pdfExtractor = new PdfJsTextExtractor();
 
 const router = Router();
 
@@ -95,53 +98,22 @@ const processor = new DocumentProcessor();
 const fsPromises = fs.promises;
 
 // Text extraction helper functions
+// Uses PdfJsTextExtractor which tries pdfjs-dist first, then pdf-parse as fallback
 async function extractTextFromPDF(filePath: string): Promise<string> {
-  try {
-    console.log('[PDF Extract] Reading file:', filePath);
-    const dataBuffer = await fsPromises.readFile(filePath);
-    
-    if (dataBuffer.length === 0) {
-      throw new Error('PDF file is empty');
-    }
-    
-    console.log(`[PDF Extract] File size: ${dataBuffer.length} bytes, starting extraction...`);
-    
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // FIX (Nov 3, 2025): Add timeout to prevent hanging on complex PDFs
-    // Catch parsePromise rejections to prevent unhandled rejection errors
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    const parsePromise = pdfParse(dataBuffer).catch((err: Error) => {
-      console.log('[PDF Extract] Parse error caught:', err.message);
-      throw err; // Re-throw to be handled by outer try/catch
-    });
-    
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('PDF parsing timed out after 30 seconds')), 30000);
-    });
-    
-    // Race between parsing and timeout
-    const data = await Promise.race([parsePromise, timeoutPromise]) as any;
-    
-    console.log(`[PDF Extract] ✅ Extracted ${data.text.length} characters from ${data.numpages} pages`);
-    
-    if (!data.text || data.text.trim().length === 0) {
-      // Some PDFs are scanned images - provide helpful message
-      console.log('[PDF Extract] ⚠️ No text found - may be scanned image');
-      return '[This PDF appears to be a scanned image. Text extraction is not available, but your tutor can still help if you describe the content or paste specific questions.]';
-    }
-    
-    return data.text || '';
-  } catch (error) {
-    console.error('[PDF Extract] Error:', error);
-    
-    // Provide specific error messages
-    const errMsg = error instanceof Error ? error.message : 'Unknown error';
-    if (errMsg.includes('timeout')) {
-      throw new Error('PDF is too large or complex to process. Please try a smaller file.');
-    }
-    
-    throw new Error(`Failed to extract text from PDF: ${errMsg}`);
+  console.log('[PDF Extract] Using multi-method extraction with fallbacks...');
+  
+  // Use the robust extractor that tries multiple methods
+  const result = await pdfExtractor.extractTextWithDetails(filePath);
+  
+  if (result.success && result.text.trim().length > 0) {
+    console.log(`[PDF Extract] ✅ Extracted ${result.text.length} chars via ${result.method}`);
+    return result.text;
   }
+  
+  // Extraction failed or returned empty text - throw to trigger graceful degradation
+  // NO-GHOSTING: Do NOT return placeholder text - let the upload handler deal with it
+  console.log(`[PDF Extract] ❌ No text extracted (method: ${result.method}, error: ${result.error || 'empty text'})`);
+  throw new Error(result.error || 'No readable text content found in PDF. The file may be scanned, encrypted, or in an unsupported format.');
 }
 
 async function extractTextFromWord(filePath: string): Promise<string> {
@@ -487,15 +459,16 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
       console.log('[Upload] ⚠️ Extraction failed - file stored but NOT indexed');
       
-      // Update document status to indicate extraction failure
+      // Update document status - use 'ready' so UI doesn't show "Failed"
+      // The file is stored, just without extracted text for RAG
       try {
-        await storage.updateDocument(documentId, userId, { processingStatus: 'failed' });
-        console.log('[Upload] ✅ Document stored with extraction_failed status');
+        await storage.updateDocument(documentId, userId, { processingStatus: 'ready' });
+        console.log('[Upload] ✅ Document stored as ready (extraction failed but file accessible)');
       } catch (updateError) {
         console.error('[Upload] ⚠️ Could not update status:', updateError);
       }
       
-      // Log extraction failure per spec
+      // Log extraction failure for diagnostics
       console.error(`[DOCS] extraction_failed: ${JSON.stringify({
         docId: documentId,
         mimeType: req.file.mimetype,
@@ -509,20 +482,20 @@ router.post('/upload', upload.single('file'), async (req, res) => {
         ocrUsed: false,
       });
       
-      // Return success with warning - file visible in UI but NOT indexed for RAG
-      // This prevents placeholder text from being chunked/embedded
-      console.log('[Upload] ⚠️ Returning success with extraction_failed warning');
+      // Return success with warning - file shows as Ready in UI but no RAG content
+      // User can still reference file by name or paste content manually
+      console.log('[Upload] ⚠️ Returning success with extraction warning (status=ready)');
       return res.json({
         id: document.id,
         title: document.title,
         originalName: document.originalName,
         fileType: fileExtension,
         fileSize: req.file.size,
-        processingStatus: 'failed',
+        processingStatus: 'ready',  // Show as Ready, not Failed
         createdAt: document.createdAt,
         chunks: 0,
         characters: 0,
-        warning: 'Text extraction failed. The file is saved but content is not available for the AI tutor. Try pasting the text directly instead.'
+        extractionWarning: 'Text could not be extracted from this file. The AI tutor can see the filename but cannot read its contents. Consider pasting the text directly.'
       });
     }
     
