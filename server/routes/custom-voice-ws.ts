@@ -3112,14 +3112,43 @@ DOCUMENT ACCESS INSTRUCTIONS:
 ✅ Help with the specific homework/problems in their uploaded materials
 ✅ Quote or paraphrase specific text from the documents when relevant
 ✅ If asked about unique markers or specific text, read from the actual content
+
+PROOF REQUIREMENT:
+When the student asks if you can see their document or asks you to prove access:
+- You MUST quote or paraphrase a specific line, sentence, or phrase from the document
+- If there's a unique marker (like "ALGEBRA-BLUEBERRY-DELTA"), find and state it exactly
+- NEVER make up or guess content - only reference what is actually in the loaded text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
               
               console.log(`[Custom Voice] 📚 System instruction enhanced with ${state.uploadedDocuments.length} documents (${ragChars} chars)`);
+            } else if (state.uploadedDocuments && state.uploadedDocuments.length > 0) {
+              // NO-GHOSTING: Files were uploaded but content extraction failed or is empty
+              // Be HONEST about this - acknowledge upload but not content
+              const uploadedFilenames = state.uploadedDocuments.map((doc, i) => {
+                const titleMatch = doc.match(/^\[Document: ([^\]]+)\]/);
+                return titleMatch ? titleMatch[1] : `file ${i + 1}`;
+              });
+              
+              state.systemInstruction = `${personality.systemPrompt}${VOICE_CONVERSATION_CONSTRAINTS}${K2_CONSTRAINTS}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️ DOCUMENT UPLOAD ISSUE:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Files were uploaded (${uploadedFilenames.join(', ')}) but content was NOT successfully extracted.
+
+HONESTY INSTRUCTIONS:
+❌ Do NOT claim you can see or read the document content
+❌ Do NOT make up or guess what might be in the document
+✅ Be honest: "I can see a file was uploaded, but I wasn't able to load its content"
+✅ Suggest: "Could you try pasting the text directly, or re-uploading the file?"
+✅ Continue tutoring normally without referencing document content
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+              
+              console.log(`[Custom Voice] ⚠️ Files uploaded but no content extracted (ragChars=0, files=${uploadedFilenames.join(', ')}) - using honest acknowledgment`);
             } else {
-              // NO-GHOSTING: No actual content loaded - use standard prompt
-              // Do NOT claim document access when content is empty
+              // No documents at all - use standard prompt
               state.systemInstruction = personality.systemPrompt + VOICE_CONVERSATION_CONSTRAINTS + K2_CONSTRAINTS;
-              console.log(`[Custom Voice] ⚠️ No document content loaded (ragChars=0) - using standard prompt`);
+              console.log(`[Custom Voice] No documents uploaded - using standard prompt`);
             }
             
             // Generate enhanced personalized greeting with LANGUAGE SUPPORT

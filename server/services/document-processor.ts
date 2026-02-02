@@ -91,6 +91,8 @@ export class DocumentProcessor {
           text = await this.extractDocxText(filePath);
           break;
         case 'txt':
+        case 'md':
+        case 'markdown':
           text = await this.extractTxtText(filePath);
           break;
         case 'csv':
@@ -105,10 +107,19 @@ export class DocumentProcessor {
         case 'jpeg':
         case 'gif':
         case 'bmp':
+        case 'webp':
           text = await this.extractImageText(filePath, language);
           break;
         default:
-          throw new Error(`Unsupported file type: ${fileType}`);
+          // Best-effort: try to read as plain text for unknown formats
+          console.log(`[DOCS] Attempting best-effort text extraction for unknown type: ${fileType}`);
+          try {
+            text = await this.extractTxtText(filePath);
+            console.log(`[DOCS] Best-effort extraction succeeded for ${fileType}: ${text.length} chars`);
+          } catch (e) {
+            console.error(`[DOCS] Best-effort extraction failed for ${fileType}:`, e);
+            throw new Error(`Unsupported file type: ${fileType}. Please try uploading as PDF, DOCX, TXT, or paste the content directly.`);
+          }
       }
 
       // Clean and validate text
