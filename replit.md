@@ -1,6 +1,6 @@
 # JIE Mastery AI Tutor - Web Application
 
-**Last Updated:** January 30, 2026
+**Last Updated:** February 3, 2026
 
 ## Overview
 The JIE Mastery AI Tutor is a production-ready conversational AI tutoring web platform for Math, English, and Spanish. It supports 25 languages and is designed for global accessibility, offering interactive voice conversations, personalized quizzes, and adaptive learning paths. The platform features a multi-agent AI system with five age-specific tutors (K-2, Grades 3-5, 6-8, 9-12, College/Adult) that utilize an Adaptive Socratic Method. It includes a hybrid minute tracking policy (subscription and rollover minutes) and prioritizes per-session configuration for flexible family sharing, ensuring high reliability and a streamlined user experience. The project's ambition is to make personalized, adaptive AI tutoring accessible worldwide, significantly improving educational outcomes across various subjects and age groups.
@@ -77,6 +77,26 @@ Features include auto-selection of the last used profile, integrated profile man
 
 ### AI & Learning Engine
 The primary AI model is Claude Sonnet 4 (`claude-sonnet-4-20250514`) with a 200k token context window and a temperature of 0.7. It employs a Modified Adaptive Socratic Method with three phases: Guided Discovery, Direct Instruction, and Understanding Check, including frustration detection. Five distinct tutor personalities are defined for different age groups. A K-2 specific turn policy (`TURN_POLICY_K2_ENABLED`) offers very patient turn-taking for young learners.
+
+### Age-Based Visual Engagement System
+The platform features a comprehensive age-appropriate visual system that adapts UI to different learner groups:
+
+**Theme System** (`client/src/styles/themes.ts`, `client/src/contexts/ThemeContext.tsx`):
+- 5 distinct age themes: K-2, Grades 3-5, 6-8, 9-12, College
+- Each theme defines: colors (primary, secondary, accent, background), fonts, emojis, and styling
+- AgeThemeProvider wraps voice sessions to provide theme context throughout the app
+
+**Visual Components**:
+- **TutorAvatar** (`TutorAvatar.tsx`): Expressive emoji-based avatar for K-5 with states (idle, listening, thinking, speaking, celebrating)
+- **AnimatedBackground** (`AnimatedBackground.tsx`): Floating shapes animation for K-5 learners with age-appropriate colors
+- **VoicePresenceIndicator** (`VoicePresenceIndicator.tsx`): Professional orb indicator for older students (6-12, College)
+- **SessionProgress** (`SessionProgress.tsx`): XP/streak gamification for K-8, minimal "topics covered" for older students
+- **Celebration** (`Celebration.tsx`): Confetti triggers for achievements and milestones
+
+**Accessibility**:
+- All animations respect `prefers-reduced-motion` media query
+- Transcript animations disabled when reduced motion preferred
+- Motion effects use Framer Motion with conditional animation states
 
 ### Content Moderation System
 A balanced, context-aware moderation system uses a keyword whitelist for educational terms and multi-layered AI moderation that acts only on high-confidence violations.
