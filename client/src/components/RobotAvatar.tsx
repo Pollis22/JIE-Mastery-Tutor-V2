@@ -113,7 +113,7 @@ export function RobotAvatar({ isSpeaking, isListening, ageGroup, size = 'md' }: 
         <img
           src={robotImage}
           alt="AI Tutor"
-          className="w-full h-full object-cover object-top"
+          className="w-full h-full object-cover object-center scale-110"
         />
         
         {isSpeaking && (
