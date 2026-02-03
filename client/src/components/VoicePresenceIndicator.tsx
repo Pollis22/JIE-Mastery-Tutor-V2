@@ -12,31 +12,26 @@ interface VoicePresenceIndicatorProps {
 const STATE_CONFIG: Record<VoicePresenceState, {
   baseColor: string;
   glowColor: string;
-  label: string;
   ariaLabel: string;
 }> = {
   idle: {
-    baseColor: 'bg-slate-300 dark:bg-slate-600',
-    glowColor: 'shadow-slate-300/30 dark:shadow-slate-500/20',
-    label: '',
+    baseColor: 'bg-slate-200 dark:bg-slate-700',
+    glowColor: 'shadow-slate-200/20 dark:shadow-slate-600/15',
     ariaLabel: 'Voice session ready'
   },
   listening: {
-    baseColor: 'bg-emerald-400 dark:bg-emerald-500',
-    glowColor: 'shadow-emerald-400/40 dark:shadow-emerald-500/30',
-    label: 'Listening...',
+    baseColor: 'bg-teal-300 dark:bg-teal-500',
+    glowColor: 'shadow-teal-300/30 dark:shadow-teal-500/25',
     ariaLabel: 'JIE is listening'
   },
   userSpeaking: {
-    baseColor: 'bg-blue-400 dark:bg-blue-500',
-    glowColor: 'shadow-blue-400/50 dark:shadow-blue-500/40',
-    label: 'Hearing you',
+    baseColor: 'bg-sky-300 dark:bg-sky-500',
+    glowColor: 'shadow-sky-300/35 dark:shadow-sky-500/30',
     ariaLabel: 'JIE is hearing you'
   },
   tutorSpeaking: {
-    baseColor: 'bg-purple-500 dark:bg-purple-400',
-    glowColor: 'shadow-purple-500/50 dark:shadow-purple-400/40',
-    label: 'JIE is speaking...',
+    baseColor: 'bg-violet-400 dark:bg-violet-500',
+    glowColor: 'shadow-violet-400/40 dark:shadow-violet-500/35',
     ariaLabel: 'JIE is speaking'
   }
 };
@@ -100,7 +95,7 @@ export function VoicePresenceIndicator({
       data-testid="voice-presence-indicator"
       data-state={state}
       className={cn(
-        'flex flex-col items-center gap-2',
+        'flex items-center justify-center',
         className
       )}
     >
@@ -108,53 +103,58 @@ export function VoicePresenceIndicator({
         {!prefersReducedMotion && state !== 'idle' && (
           <div 
             className={cn(
-              'absolute inset-0 rounded-full blur-md transition-all duration-500',
-              config.baseColor,
-              state === 'listening' && 'animate-pulse',
-              state === 'userSpeaking' && 'animate-pulse'
+              'absolute rounded-full blur-xl transition-all duration-700 ease-out',
+              config.baseColor
             )}
             style={{ 
-              transform: `scale(${state === 'tutorSpeaking' ? 1.3 + normalizedAmplitude * 0.2 : 1.2})`,
-              opacity: state === 'tutorSpeaking' ? 0.3 + normalizedAmplitude * 0.2 : 0.25
+              width: 80,
+              height: 80,
+              transform: `scale(${state === 'tutorSpeaking' ? 1.1 + normalizedAmplitude * 0.15 : 1})`,
+              opacity: state === 'tutorSpeaking' ? 0.25 + normalizedAmplitude * 0.15 : 0.2
             }}
             aria-hidden="true"
           />
         )}
 
-        <div 
-          className={cn(
-            'absolute rounded-full transition-all duration-200',
-            state === 'listening' && !prefersReducedMotion && 'animate-[ping_2s_ease-in-out_infinite]',
-            config.baseColor
-          )}
-          style={{ 
-            width: 52, 
-            height: 52,
-            opacity: state === 'listening' ? 0.3 : 0
-          }}
-          aria-hidden="true"
-        />
+        {!prefersReducedMotion && state === 'listening' && (
+          <div 
+            className={cn(
+              'absolute rounded-full',
+              config.baseColor
+            )}
+            style={{ 
+              width: 56, 
+              height: 56,
+              opacity: 0.15,
+              animation: 'pulse 3s ease-in-out infinite'
+            }}
+            aria-hidden="true"
+          />
+        )}
 
         <div
           ref={orbRef}
           className={cn(
-            'relative w-12 h-12 rounded-full transition-colors duration-300',
+            'relative w-14 h-14 rounded-full transition-colors duration-500 ease-out',
             config.baseColor,
-            'shadow-lg',
+            'shadow-xl',
             config.glowColor
           )}
           style={{
             transform: prefersReducedMotion ? 'scale(1)' : undefined,
-            opacity: prefersReducedMotion ? 0.9 : undefined,
-            transition: 'transform 0.05s ease-out, opacity 0.1s ease-out'
+            opacity: prefersReducedMotion ? 0.85 : undefined,
+            transition: 'transform 0.08s ease-out, opacity 0.15s ease-out, background-color 0.5s ease-out'
           }}
         >
           {state === 'userSpeaking' && !prefersReducedMotion && (
             <div 
               className={cn(
-                'absolute inset-0 rounded-full border-2 border-blue-400 dark:border-blue-300 animate-[ping_1s_ease-in-out_infinite]'
+                'absolute -inset-1 rounded-full border border-sky-300 dark:border-sky-400'
               )}
-              style={{ opacity: 0.4 }}
+              style={{ 
+                opacity: 0.4,
+                animation: 'ping 1.5s ease-in-out infinite'
+              }}
               aria-hidden="true"
             />
           )}
@@ -162,27 +162,12 @@ export function VoicePresenceIndicator({
           <div 
             className="absolute inset-0 rounded-full"
             style={{
-              background: 'radial-gradient(circle at 30% 30%, rgba(255,255,255,0.4) 0%, transparent 60%)'
+              background: 'radial-gradient(circle at 35% 35%, rgba(255,255,255,0.35) 0%, transparent 55%)'
             }}
             aria-hidden="true"
           />
         </div>
       </div>
-
-      {config.label && (
-        <span 
-          className={cn(
-            'text-xs font-medium transition-colors duration-300',
-            state === 'tutorSpeaking' && 'text-purple-600 dark:text-purple-400',
-            state === 'listening' && 'text-emerald-600 dark:text-emerald-400',
-            state === 'userSpeaking' && 'text-blue-600 dark:text-blue-400',
-            state === 'idle' && 'text-muted-foreground'
-          )}
-          data-testid="voice-presence-label"
-        >
-          {prefersReducedMotion && state === 'tutorSpeaking' ? 'Speaking...' : config.label}
-        </span>
-      )}
     </div>
   );
 }
