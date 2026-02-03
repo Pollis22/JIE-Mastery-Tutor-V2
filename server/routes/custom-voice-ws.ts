@@ -732,6 +732,7 @@ interface SessionState {
   }>; // SAFETY: Track safety incidents in session
   terminatedForSafety: boolean; // SAFETY: Whether session was ended due to safety violations
   parentEmail?: string; // SAFETY: Parent email for alerts
+  hasGreeted: boolean; // GREETING: Prevent duplicate greetings on reconnect
   studentId?: string; // SAFETY: Student ID for incident tracking
   pendingFragment?: string; // LEXICAL_GRACE: Pending transcript fragment awaiting merge
   pendingFragmentTime?: number; // LEXICAL_GRACE: When the pending fragment was created
@@ -1523,6 +1524,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
       lastPongAt: new Date(),
       missedPongCount: 0,
       turnResponseProduced: false,
+      hasGreeted: false, // GREETING: Not greeted yet
     };
 
     // FIX #3: Auto-persist every 10 seconds
@@ -3196,12 +3198,22 @@ HONESTY INSTRUCTIONS:
             }
             
             // Generate enhanced personalized greeting with LANGUAGE SUPPORT
-            let greeting: string;
+            let greeting: string = '';
+            
+            // FIRST-TURN-ONLY GUARANTEE: Check if we should skip greeting entirely
+            // 1) hasGreeted flag (in-memory) prevents duplicate greetings on reconnect within same session
+            // 2) Check if tutor already has messages in transcript (backup for state rehydration)
+            const tutorAlreadySpoke = state.transcript.some(t => t.speaker === 'tutor');
+            const shouldSkipGreeting = state.hasGreeted || tutorAlreadySpoke;
+            
+            if (shouldSkipGreeting) {
+              console.log(`[MEMORY_GREETING] sessionId=${state.sessionId}, SKIPPED (hasGreeted=${state.hasGreeted}, tutorAlreadySpoke=${tutorAlreadySpoke})`);
+            }
             
             // Extract document titles from uploaded documents - but only claim access if content exists
             // NO-GHOSTING: Use hasActualDocContent calculated above
             const greetingDocTitles: string[] = [];
-            if (hasActualDocContent && state.uploadedDocuments && state.uploadedDocuments.length > 0) {
+            if (!shouldSkipGreeting && hasActualDocContent && state.uploadedDocuments && state.uploadedDocuments.length > 0) {
               state.uploadedDocuments.forEach((doc, i) => {
                 const titleMatch = doc.match(/^\[Document: ([^\]]+)\]/);
                 if (titleMatch) {
@@ -3214,48 +3226,69 @@ HONESTY INSTRUCTIONS:
             // ============================================
             // CONTINUITY GREETING: Check for prior sessions
             // ============================================
-            let continuityTopic: string | null = null;
-            let hasPriorSessions = false;
-            
-            try {
-              // STRICT STUDENT ISOLATION: Only get summaries for the exact student
-              const priorSummaries = await getRecentSessionSummaries({
-                userId: state.userId,
-                studentId: state.studentId || null,
-                limit: 1
-              });
+            // Helper: Pick safe topic from summary (NEVER uses summary_text)
+            const pickContinuationTopic = (summary: { subject?: string | null; topicsCovered?: string[] | null }): { topic: string; reason: 'subject' | 'topic' | 'fallback' } => {
+              const FALLBACK = 'what we worked on last time';
               
-              hasPriorSessions = priorSummaries.length > 0;
-              
-              if (hasPriorSessions) {
-                const lastSummary = priorSummaries[0];
-                // Build safe topic string: prefer subject, then first topic, then generic
-                if (lastSummary.subject && lastSummary.subject.length > 0 && lastSummary.subject !== 'general') {
-                  continuityTopic = lastSummary.subject;
-                } else if (lastSummary.topicsCovered && lastSummary.topicsCovered.length > 0) {
-                  continuityTopic = lastSummary.topicsCovered[0];
-                } else {
-                  continuityTopic = 'what we worked on last time';
-                }
-                
-                // Sanitize: max 60 chars, strip newlines/quotes, avoid PII-like patterns
-                continuityTopic = continuityTopic
-                  .replace(/[\n\r"']/g, '')
-                  .replace(/\b(name|email|phone|address|password)\b/gi, '')
+              // Try subject first
+              if (summary.subject && summary.subject.length > 0 && summary.subject !== 'general' && summary.subject !== 'unknown') {
+                let topic = summary.subject
+                  .replace(/[\n\r"'`]/g, '') // Strip newlines, quotes, backticks
+                  .replace(/\[[^\]]*\]/g, '') // Strip bracketed content like [email@example.com]
+                  .replace(/\b(name|email|phone|address|password|ssn|credit|card)\b/gi, '') // Remove PII keywords
                   .trim()
                   .substring(0, 60);
-                
-                if (!continuityTopic || continuityTopic.length < 3) {
-                  continuityTopic = 'what we worked on last time';
+                if (topic.length >= 3) {
+                  return { topic, reason: 'subject' };
                 }
               }
               
-              console.log(`[MEMORY_GREETING] priorExists=${hasPriorSessions}, studentId=${state.studentId ? 'present' : 'missing'}, topic="${continuityTopic || 'none'}"`);
-            } catch (error) {
-              // On any error, use default greeting (no continuity)
-              console.warn(`[MEMORY_GREETING] ⚠️ Error checking prior sessions, using default greeting:`, error);
-              hasPriorSessions = false;
-              continuityTopic = null;
+              // Try first topic from topicsCovered
+              if (summary.topicsCovered && summary.topicsCovered.length > 0 && summary.topicsCovered[0]) {
+                let topic = summary.topicsCovered[0]
+                  .replace(/[\n\r"'`]/g, '')
+                  .replace(/\[[^\]]*\]/g, '')
+                  .replace(/\b(name|email|phone|address|password|ssn|credit|card)\b/gi, '')
+                  .trim()
+                  .substring(0, 60);
+                if (topic.length >= 3) {
+                  return { topic, reason: 'topic' };
+                }
+              }
+              
+              return { topic: FALLBACK, reason: 'fallback' };
+            };
+            
+            let continuityTopic: string | null = null;
+            let hasPriorSessions = false;
+            let topicReason: 'subject' | 'topic' | 'fallback' | 'none' = 'none';
+            
+            // FIRST-TURN-ONLY: Skip greeting lookup if already greeted (reconnect protection)
+            if (!shouldSkipGreeting) {
+              try {
+                // STRICT STUDENT ISOLATION: Only get summaries for the exact student
+                const priorSummaries = await getRecentSessionSummaries({
+                  userId: state.userId,
+                  studentId: state.studentId || null,
+                  limit: 1
+                });
+                
+                hasPriorSessions = priorSummaries.length > 0;
+                
+                if (hasPriorSessions) {
+                  const result = pickContinuationTopic(priorSummaries[0]);
+                  continuityTopic = result.topic;
+                  topicReason = result.reason;
+                }
+                
+                console.log(`[MEMORY_GREETING] sessionId=${state.sessionId}, studentId=${state.studentId ? 'true' : 'false'}, priorExists=${hasPriorSessions}, chosenTopic="${continuityTopic || 'none'}", reason=${topicReason}`);
+              } catch (error) {
+                // On any error, use default greeting (no continuity)
+                console.warn(`[MEMORY_GREETING] sessionId=${state.sessionId}, ERROR - using default greeting:`, error);
+                hasPriorSessions = false;
+                continuityTopic = null;
+                topicReason = 'none';
+              }
             }
             
             // LANGUAGE: Generate greetings in the selected language
@@ -3427,25 +3460,31 @@ HONESTY INSTRUCTIONS:
             // LANGUAGE: Generate greeting in the selected language
             // NO-GHOSTING: Use greetingDocTitles which is empty if no actual content
             // CONTINUITY: Pass hasPriorSessions and continuityTopic
-            greeting = getLocalizedGreeting(state.language, state.studentName, personality.name, state.ageGroup, greetingDocTitles, hasPriorSessions, continuityTopic);
-            console.log(`[Custom Voice] 🌍 Generated greeting in language: ${state.language}`);
-            
-            console.log(`[Custom Voice] 👋 Greeting: "${greeting}"`);
-            
-            // Add greeting to conversation history
-            state.conversationHistory.push({
-              role: "assistant",
-              content: greeting
-            });
-            
-            // Add greeting to transcript
-            const greetingEntry: TranscriptEntry = {
-              speaker: "tutor",
-              text: greeting,
-              timestamp: new Date().toISOString(),
-              messageId: crypto.randomUUID(),
-            };
-            state.transcript.push(greetingEntry);
+            // FIRST-TURN-ONLY: Only generate and add greeting if not already greeted
+            if (!shouldSkipGreeting) {
+              greeting = getLocalizedGreeting(state.language, state.studentName, personality.name, state.ageGroup, greetingDocTitles, hasPriorSessions, continuityTopic);
+              console.log(`[Custom Voice] 🌍 Generated greeting in language: ${state.language}`);
+              
+              console.log(`[Custom Voice] 👋 Greeting: "${greeting}"`);
+              
+              // Add greeting to conversation history
+              state.conversationHistory.push({
+                role: "assistant",
+                content: greeting
+              });
+              
+              // Add greeting to transcript
+              const greetingEntry: TranscriptEntry = {
+                speaker: "tutor",
+                text: greeting,
+                timestamp: new Date().toISOString(),
+                messageId: crypto.randomUUID(),
+              };
+              state.transcript.push(greetingEntry);
+              
+              // FIRST-TURN-ONLY: Mark as greeted to prevent duplicate greetings on reconnect
+              state.hasGreeted = true;
+            }
 
             // ============================================
             // STT PROVIDER INITIALIZATION (FEATURE FLAG)
@@ -4225,29 +4264,33 @@ HONESTY INSTRUCTIONS:
             );
             } // End of Deepgram else block
 
-            // Generate and send greeting audio
-            try {
-              const greetingAudio = await generateSpeech(greeting, state.ageGroup, state.speechSpeed);
-              
-              // Send greeting transcript
-              ws.send(JSON.stringify({
-                type: "transcript",
-                text: greeting,
-                speaker: "tutor"
-              }));
-              
-              // Send greeting audio with format metadata
-              ws.send(JSON.stringify({
-                type: "audio",
-                data: greetingAudio.toString("base64"),
-                audioFormat: "pcm_s16le",
-                sampleRate: 16000,
-                channels: 1
-              }));
-              
-              console.log(`[Custom Voice] 🔊 Sent greeting audio (${greetingAudio.length} bytes, pcm_s16le 16kHz mono)`);
-            } catch (error) {
-              console.error("[Custom Voice] ❌ Failed to generate greeting audio:", error);
+            // Generate and send greeting audio - ONLY if greeting was generated (first turn only)
+            if (greeting && greeting.length > 0) {
+              try {
+                const greetingAudio = await generateSpeech(greeting, state.ageGroup, state.speechSpeed);
+                
+                // Send greeting transcript
+                ws.send(JSON.stringify({
+                  type: "transcript",
+                  text: greeting,
+                  speaker: "tutor"
+                }));
+                
+                // Send greeting audio with format metadata
+                ws.send(JSON.stringify({
+                  type: "audio",
+                  data: greetingAudio.toString("base64"),
+                  audioFormat: "pcm_s16le",
+                  sampleRate: 16000,
+                  channels: 1
+                }));
+                
+                console.log(`[Custom Voice] 🔊 Sent greeting audio (${greetingAudio.length} bytes, pcm_s16le 16kHz mono)`);
+              } catch (error) {
+                console.error("[Custom Voice] ❌ Failed to generate greeting audio:", error);
+              }
+            } else {
+              console.log(`[Custom Voice] 🔄 Reconnect detected - skipping greeting audio`);
             }
 
             ws.send(JSON.stringify({ type: "ready" }));
