@@ -81,7 +81,7 @@ Current step content: ${JSON.stringify(lessonPlan?.content || {})}`;
           `Perfect! "${studentAnswer}" is correct.`,
           `Excellent work! Yes, it's "${studentAnswer}".`,
           `That's right! "${studentAnswer}" is the answer.`,
-          `Nice work! "${studentAnswer}" is exactly right.`,
+          `Great job! "${studentAnswer}" is exactly right.`,
           `Exactly! "${studentAnswer}" is perfect.`
         ]);
       } else {
