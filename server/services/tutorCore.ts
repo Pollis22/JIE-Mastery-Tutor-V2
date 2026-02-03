@@ -67,7 +67,7 @@ Current step content: ${JSON.stringify(lessonPlan?.content || {})}`;
         studentAnswer.toLowerCase().includes('yes') ||
         studentAnswer.toLowerCase().includes('begin')) {
       prefix = this.getRandomPhrase([
-        "Great! Let's begin.",
+        "Let's begin.",
         "Perfect! Here we go.",
         "Wonderful! Let's start.",
         "Excellent! Let's dive in."
@@ -81,7 +81,7 @@ Current step content: ${JSON.stringify(lessonPlan?.content || {})}`;
           `Perfect! "${studentAnswer}" is correct.`,
           `Excellent work! Yes, it's "${studentAnswer}".`,
           `That's right! "${studentAnswer}" is the answer.`,
-          `Great job! "${studentAnswer}" is exactly right.`,
+          `Nice work! "${studentAnswer}" is exactly right.`,
           `Exactly! "${studentAnswer}" is perfect.`
         ]);
       } else {

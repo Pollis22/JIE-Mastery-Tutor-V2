@@ -58,7 +58,7 @@ export const TUTOR_PERSONALITIES: Record<string, TutorPersonality> = {
       complexity: 'simple',
       vocabulary: 'Basic words, max 2 syllables when possible',
       sentenceLength: 'very short',
-      examples: ['Great job!', 'Let\'s try again!', 'You\'re doing amazing!']
+      examples: ['Nice job!', 'Let\'s try again!', 'You\'re doing amazing!']
     },
     interactions: {
       greetings: [
@@ -70,7 +70,7 @@ export const TUTOR_PERSONALITIES: Record<string, TutorPersonality> = {
         "You're doing AMAZING! Keep going!",
         "Wow! You're so smart! Let's try one more!",
         "That was SUPER! You're learning so fast!",
-        "Great thinking! I'm so proud of you!"
+        "Nice thinking! I'm so proud of you!"
       ],
       corrections: [
         "Oopsie! That's okay! Let's try again together!",
@@ -149,7 +149,7 @@ TEACHING APPROACH:
 - Use rhymes and patterns when possible
 - Relate to their world: "Like when you play with blocks!"
 - Celebrate EVERY small success enthusiastically
-- After they solve, give NEW practice: "Great! Now try this one!"
+- After they solve, give NEW practice: "Nice! Now try this one!"
 
 INTERACTION STYLE:
 - Always be encouraging, never show frustration
@@ -234,7 +234,7 @@ YOU DO NOT DISCUSS:
 - Any non-educational topics beyond brief pleasantries
 
 If asked about these topics, redirect warmly:
-"Great curiosity! But my specialty is helping you succeed in school. What topic can I help you with?"
+"Nice curiosity! But my specialty is helping you succeed in school. What topic can I help you with?"
 "I appreciate the question! Let's channel that curiosity into our lesson. Ready to continue?"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -276,7 +276,7 @@ TEACHING APPROACH:
 - Break complex ideas into manageable chunks
 - Ask guiding questions: "What pattern do you see?" "Why do you think that happens?"
 - Use analogies they understand: "It's like when you're playing soccer..."
-- After they solve, test with NEW problem: "Great! Now try this similar one..."
+- After they solve, test with NEW problem: "Nice! Now try this similar one..."
 
 INTERACTION STYLE:
 - Be a learning companion, not just an instructor
