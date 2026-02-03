@@ -750,7 +750,9 @@ export default function TutorPage() {
             </button>
           </div>
 
-          {/* Getting Started Instructions */}
+          {/* Getting Started Instructions - Hidden during active session */}
+          {!mounted && (
+          <>
           <div className="relative bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-4 rounded-md overflow-hidden">
             {/* Background image - positioned absolutely, behind content */}
             <div 
@@ -807,7 +809,7 @@ export default function TutorPage() {
             </div>
           </div>
 
-          {/* Voice Tips Section */}
+          {/* Voice Tips Section - Hidden during active session */}
           <div className="relative mt-4">
             <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-4 rounded-lg border border-blue-100 dark:border-blue-900 shadow-sm">
               <h3 className="font-bold text-blue-900 dark:text-blue-100 mb-3 flex items-center gap-2">
@@ -862,6 +864,8 @@ export default function TutorPage() {
               </div>
             </div>
           </div>
+          </>
+          )}
 
           {/* Active Lesson Context Card */}
           {activeLesson && (
@@ -913,14 +917,17 @@ export default function TutorPage() {
             </Card>
           )}
 
-          {/* Document Upload Section - Using AssignmentsPanel */}
-          {mounted && user && (
+          {/* Document Upload Section - Only shown BEFORE session starts */}
+          {!mounted && user && (
             <Card className="mt-4" data-testid="card-document-upload">
               <CardContent className="pt-4">
                 <h3 className="text-sm font-semibold flex items-center gap-2 mb-3">
                   <Paperclip className="w-4 h-4" />
                   Study Materials
                 </h3>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Select documents before starting your session. You can also upload files during the session using the chat input.
+                </p>
                 <AssignmentsPanel 
                   userId={user.id}
                   selectedDocumentIds={selectedDocumentIds}

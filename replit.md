@@ -1,9 +1,7 @@
 # JIE Mastery AI Tutor - Web Application
 
-**Last Updated:** February 3, 2026
-
 ## Overview
-The JIE Mastery AI Tutor is a production-ready conversational AI tutoring web platform for Math, English, and Spanish. It supports 25 languages and is designed for global accessibility, offering interactive voice conversations, personalized quizzes, and adaptive learning paths. The platform features a multi-agent AI system with five age-specific tutors (K-2, Grades 3-5, 6-8, 9-12, College/Adult) that utilize an Adaptive Socratic Method. It includes a hybrid minute tracking policy (subscription and rollover minutes) and prioritizes per-session configuration for flexible family sharing, ensuring high reliability and a streamlined user experience. The project's ambition is to make personalized, adaptive AI tutoring accessible worldwide, significantly improving educational outcomes across various subjects and age groups.
+The JIE Mastery AI Tutor is a production-ready conversational AI tutoring web platform supporting Math, English, and Spanish across 25 languages. It features a multi-agent AI system with five age-specific tutors (K-2, Grades 3-5, 6-8, 9-12, College/Adult) utilizing an Adaptive Socratic Method. Key capabilities include interactive voice conversations, personalized quizzes, adaptive learning paths, and a hybrid minute tracking policy. The platform prioritizes per-session configuration for flexible family sharing, global accessibility, and a streamlined user experience, aiming to make personalized, adaptive AI tutoring accessible worldwide and improve educational outcomes.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
@@ -12,160 +10,37 @@ Timezone display: All timestamps display in America/Chicago (Central Time) using
 ## System Architecture
 
 ### Full-Stack Architecture
-The platform uses a modern full-stack architecture with React 18+ (TypeScript, Vite, Wouter) for the frontend, Node.js 20 (Express.js, TypeScript) for the backend, and PostgreSQL (Neon) with Drizzle ORM for the database. Styling is handled with Tailwind CSS and Shadcn/ui, state management with TanStack Query v5, and authentication via Passport.js (session-based).
+The platform uses React 18+ (TypeScript, Vite, Wouter) for the frontend, Node.js 20 (Express.js, TypeScript) for the backend, and PostgreSQL (Neon) with Drizzle ORM for the database. Styling uses Tailwind CSS and Shadcn/ui, state management with TanStack Query v5, and authentication via Passport.js (session-based).
 
 ### Request Flow
-Requests from the client (browser) are processed via HTTPS/WSS to an Express.js server. HTTP routes interact with the storage layer and PostgreSQL, while WebSocket connections for custom voice interactions integrate with Deepgram/AssemblyAI for STT, Claude Sonnet 4 for AI responses, and ElevenLabs for TTS.
+Client requests (HTTPS/WSS) are processed by an Express.js server. HTTP routes handle storage and PostgreSQL interactions, while WebSocket connections manage custom voice interactions, integrating with STT, AI response generation, and TTS services.
 
 ### Custom Voice Stack
-A custom-built voice stack provides real-time, low-latency (1-2 seconds end-to-end) conversations using PCM16 audio (16-bit Linear PCM, 16kHz, Mono) encoded in Base64 over WebSockets. It integrates an STT provider (Deepgram Nova-2 or AssemblyAI), Claude Sonnet 4 for AI response generation, and ElevenLabs TTS (Turbo v2.5) with age-specific voices. The system includes adaptive barge-in detection, bounded patience logic, reading mode patience, adaptive session-level patience, and robust handling of background noise.
+A custom voice stack provides real-time, low-latency (1-2 seconds end-to-end) conversations using PCM16 audio over WebSockets. It integrates an STT provider, Claude Sonnet 4 for AI responses, and ElevenLabs TTS with age-specific voices. Features include adaptive barge-in detection, bounded patience logic, and robust background noise handling. Production-hardening includes mic health monitoring, LLM watchdog, and turn fallback timers.
 
-### Voice Pipeline Hardening (Steps 1-6)
-Production-hardening features with feature flags:
-- **Step 1**: Fixed misleading ACK/WS-close logging for cleaner diagnostics
-- **Step 2** (`VOICE_BG_NOISE_COACHING`): Background-noise coaching with 25s rolling window, 6-event threshold, 2min cooldown
-- **Step 3** (`VOICE_AMBIENT_SUPPRESS`): Ambient speech suppression rejecting <2 word utterances and vowel-less fragments
-- **Step 4** (`LEXICAL_GRACE_ENABLED`): 300ms lexical grace period preventing mid-word turn finalization
-- **Step 5a** (`VITE_MIC_WATCHDOG_ENABLED`): Proactive 5s mic health monitoring with auto-recovery
-- **Step 5b**: Grade-based max_tokens (K-2: 120, 3-5: 150, 6-8: 175, 9-12: 200, College: 300)
-- **Step 6** (`LLM_WATCHDOG_ENABLED`): LLM trigger watchdog (default ON) - 3s failsafe timer after end_of_turn that forces LLM invocation if missed. Prevents session freeze in long sessions where STT delivers final transcript but LLM is never triggered. Also prevents recovery phrases ("I'm finished", "I'm done", "hello?") from ending session during stall.
-- **Step 7** (`TURN_FALLBACK_ENABLED`): Turn fallback timer (default ON) - 15s failsafe that sends "I didn't quite catch that. Can you repeat your last sentence?" if no AI response is produced. Prevents silent hangs from moderation errors or pipeline failures.
+### Content Moderation & Safety
+A balanced, context-aware moderation system uses keyword whitelists and multi-layered AI moderation. Critical safety incidents (self-harm, violent threats, harm to others) trigger immediate session termination, parent notifications, and internal JIE Support alerts. All moderation and safety actions are logged and non-fatal to prevent session freezes.
 
-### Content Moderation Safety
-Moderation and violation logging are non-fatal to prevent voice session freezes:
-- All `db.insert(contentViolations)` and `db.insert(userSuspensions)` calls are wrapped in try/catch
-- Missing tables are created automatically via idempotent migration guard (`ensureContentModerationTables`)
-- Profanity patterns use proper word boundaries to prevent false positives
-- Matched terms are tracked for audit logging (`matchedTerms` field in moderation results)
-
-### Safety Enforcement (Expanded)
-Critical safety incidents trigger immediate session termination (bypassing warning system):
-- **Self-harm patterns**: Suicide ideation, self-harm statements, expressions of wanting to die
-- **Violent threats**: Threats to kill, shoot, bomb, or attack others
-- **Harm to others**: Intent to hurt family members, teachers, or other students
-- All safety incidents send dual notifications:
-  1. **Parent notification** - Alert to parent's email (existing system)
-  2. **JIE Support notification** - Internal alert to `JIE_SUPPORT_EMAIL` (configurable env var, defaults to `ADMIN_EMAIL`)
-- Safety incidents logged to `content_violations` table with new types: `self_harm`, `violent_threat`, `harm_to_others`
-- Termination message includes 988 crisis line reference for mental health concerns
-- All notification operations are non-fatal (wrapped in try/catch) to prevent session freezes
-
-### Session Teardown Safety
-The `finalizeSession()` function is hardened to never throw and always complete:
-- Separate try/catch blocks for DB write, minute deduction, and email sending
-- `session_ended` event always emitted to client, even if billing fails
-- Failed operations logged with `RECONCILIATION NEEDED` markers for manual review
-- Returns status object: `{ success, dbWriteFailed?, minuteDeductionFailed? }`
-
-### Minutes & Billing Priority
-Minute enforcement follows this authoritative order (no hard-coded defaults):
-1. Trial status (`is_trial_active`) - 30-minute trial if active
-2. Subscription limit (`subscription_minutes_limit`) - Stripe tier-based
-3. Monthly allocation (`monthly_voice_minutes`) - Fallback allocation
-4. Bonus/purchased minutes - Additive pools from one-time purchases
-
-For comprehensive voice system documentation, see: **docs/VOICE_SYSTEM.md**
-
-### Authentication & Authorization
-Session-based authentication uses Passport.js with PostgreSQL session storage, including features for password reset and account recovery. WebSocket security incorporates session validation and IP-based rate limiting. Access control verifies authentication, active subscription, and minute balance.
-
-### Session Priority System
-A session-first data priority model allows per-session configuration for grade level, subject, and language, facilitating flexible family sharing.
-
-### Student Profile Management
-Features include auto-selection of the last used profile, integrated profile management with avatar systems, and unique preferences per profile (e.g., pace, encouragement, goals).
+### Session Management & Billing
+The `finalizeSession()` function is hardened to ensure completion, even if billing or database operations fail. Minute enforcement follows a priority order: trial status, subscription limits, monthly allocation, and bonus minutes. A session-first data priority model enables per-session configuration for grade level, subject, and language, supporting flexible family sharing.
 
 ### AI & Learning Engine
-The primary AI model is Claude Sonnet 4 (`claude-sonnet-4-20250514`) with a 200k token context window and a temperature of 0.7. It employs a Modified Adaptive Socratic Method with three phases: Guided Discovery, Direct Instruction, and Understanding Check, including frustration detection. Five distinct tutor personalities are defined for different age groups. A K-2 specific turn policy (`TURN_POLICY_K2_ENABLED`) offers very patient turn-taking for young learners.
+The primary AI model is Claude Sonnet 4 (`claude-sonnet-4-20250514`) with a 200k token context window and a temperature of 0.7. It implements a Modified Adaptive Socratic Method with Guided Discovery, Direct Instruction, and Understanding Check phases, including frustration detection. Five distinct tutor personalities cater to different age groups.
 
 ### Age-Based Visual Engagement System
-The platform features a comprehensive age-appropriate visual system that adapts UI to different learner groups:
-
-**Theme System** (`client/src/styles/themes.ts`, `client/src/contexts/ThemeContext.tsx`):
-- 5 distinct age themes: K-2, Grades 3-5, 6-8, 9-12, College
-- Each theme defines: colors, fonts, emojis, avatarStyle, messageBubbleClass, isDark flag
-- AgeThemeProvider wraps voice sessions to provide theme context throughout the app
-- K-5: Playful pastels with emoji avatars and floating shapes
-- 6-8: Dark slate/indigo "Explorer" theme with geometric avatar and cyan accents
-- 9-12: Near-black "Focus" theme with waveform avatar and violet accents
-- College: Clean professional gray with minimal dot avatar
-
-**Visual Components**:
-- **TutorAvatar** (`TutorAvatar.tsx`): Age-specific avatars:
-  - `emoji` (K-5): Animated emoji face with bouncing speech indicators
-  - `geometric` (6-8): Rotating diamond shape with cyan/blue gradients
-  - `waveform` (9-12): Audio bar visualization with violet tones
-  - `minimal` (College): Simple pulsing dot, professional styling
-- **AnimatedBackground** (`AnimatedBackground.tsx`): Floating shapes animation for K-5 learners only
-- **VoicePresenceIndicator** (`VoicePresenceIndicator.tsx`): Professional orb indicator (legacy, for backup)
-- **SessionProgress** (`SessionProgress.tsx`): XP/streak for K-8, "topics covered" for 9-12/College, dark-themed for 6-8
-- **Celebration** (`Celebration.tsx`): Confetti triggers for achievements and milestones
-
-**Accessibility**:
-- All animations respect `prefers-reduced-motion` media query
-- Transcript animations disabled when reduced motion preferred
-- Motion effects use Framer Motion with conditional animation states
-
-**Voice Session Layout**:
-- Flex column layout during active sessions prevents content jumping
-- Top controls section uses `flex-shrink-0` for fixed height
-- Transcript area scrolls independently with `flex-1 min-h-0 overflow-y-auto`
-- Chat input is sticky at bottom with backdrop blur for always-visible access
-
-### Content Moderation System
-A balanced, context-aware moderation system uses a keyword whitelist for educational terms and multi-layered AI moderation that acts only on high-confidence violations.
+The platform features five distinct age themes (K-2, Grades 3-5, 6-8, 9-12, College) that define colors, fonts, emojis, and avatar styles. Age-specific visual components include `TutorAvatar`, `AnimatedBackground`, `SessionProgress`, and `Celebration` effects. All animations respect `prefers-reduced-motion` and are built with Framer Motion. The voice session UI maintains a consistent, clean layout across all age bands during active sessions, with controls, tutor avatar, progress, mode selector, transcript, and sticky chat input.
 
 ### RAG (Retrieval-Augmented Generation) System
 The RAG system supports various document formats (PDF, DOCX, Images via OCR, XLSX, TXT, XML). The processing pipeline involves upload, text extraction, chunking, embedding (OpenAI text-embedding-3-small), and storage in `pgvector`. OCR supports 25 languages.
 
-### Database Schema
-The core database tables include `users`, `sessions`, `realtime_sessions`, `students`, `user_documents`, `document_chunks`, `document_embeddings`, `content_violations`, `user_suspensions`, `admin_logs`, and `minute_purchases`.
+### Database Schema & Migrations
+Core database tables include `users`, `sessions`, `students`, `user_documents`, `content_violations`, and `minute_purchases`. Production-safe migration guards ensure idempotent schema updates.
 
-**Production-Safe Migration Guards** (`server/db-init.ts`):
-- `ensureRealtimeSessionsColumns()`: Adds telemetry columns (`close_reason`, `close_details`, `reconnect_count`, `last_heartbeat_at`) using `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`
-- `ensureUsersTranscriptEmailColumn()`: Adds `transcript_email` column for separate transcript delivery address
-- All guards are idempotent and log which columns are added at startup
+### Trial & Payment System
+A 30-minute account-based trial system is implemented with abuse prevention. Stripe is integrated for subscription management, one-time purchases, and a hybrid minute tracking system.
 
-### Trial System
-The platform features a 30-minute account-based trial system (`/start-trial`) that provides full access to the AI tutor. It includes abuse prevention mechanisms (device/IP hashing). A legacy 5-minute demo trial system, without account requirements, is being phased out.
-
-### Payment & Subscription System
-Stripe is integrated for subscription management and one-time purchases. A hybrid minute tracking system distinguishes between monthly subscription minutes and purchased rollover minutes. Promo code support is included.
-
-### Admin Dashboard System
-A comprehensive administrative interface provides user management, subscription controls, session analytics, document management, content violation review, marketing campaign management, and audit logging. Admin accounts can manage user accounts with capabilities to cancel subscriptions, disable accounts, and soft-delete accounts, all with detailed audit logging.
-
-### Background Jobs
-Key background jobs include daily digest emails for parents, document cleanup, and a continuous embedding worker.
-
-### Email Digest System (Daily/Weekly)
-
-**Overview**: Parents can receive session summary emails via three frequencies: per-session, daily digest (8 PM ET), or weekly digest (Sundays 8 PM ET).
-
-**Production Trigger Mechanism**:
-Since autoscale deployments may not be running at scheduled times, use external cron services to trigger digest endpoints:
-
-| Digest Type | Endpoint | Schedule | Timezone |
-|-------------|----------|----------|----------|
-| Daily | `POST /api/cron/daily-digest` | 8:00 PM daily | America/New_York |
-| Weekly | `POST /api/cron/weekly-digest` | 8:00 PM Sundays | America/New_York |
-
-**Required Environment Variables**:
-- `CRON_SECRET`: Secret token for authenticating external cron requests. Add as header: `X-Cron-Secret: <value>`
-
-**Endpoint Security**: 
-- Returns `401 Unauthorized` if secret is missing/invalid
-- Returns `503 Service Unavailable` if `CRON_SECRET` is not configured
-
-**Idempotency**: 
-- The `digest_tracking` table prevents double-sends by recording `(user_id, digest_type, digest_date)` for each sent digest
-- If triggered twice on the same day, subsequent calls skip already-sent users
-
-**Admin Testing**:
-- `POST /api/admin/test-daily-digest` - Trigger digest for all eligible users (admin only)
-- `POST /api/admin/test-digest-user` - Test digest for single user with body: `{ userId, digestType, date?, force? }`
-
-**User Preference Field**: `users.email_summary_frequency` values: `'off'`, `'per_session'`, `'daily'`, `'weekly'` (default: `'daily'`)
+### Admin Dashboard & Background Jobs
+A comprehensive admin dashboard provides user, subscription, and session management, content violation review, and marketing tools. Key background jobs include daily digest emails for parents, document cleanup, and an embedding worker. An email digest system allows parents to receive session summaries per-session, daily, or weekly, triggered by external cron services.
 
 ### Production Deployment
 The platform is designed for Replit Autoscale Deployment, supporting WebSockets, horizontal scaling, and managed PostgreSQL.
