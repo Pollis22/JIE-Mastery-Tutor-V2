@@ -3173,7 +3173,7 @@ HONESTY INSTRUCTIONS:
               const greetings: Record<string, { intro: string; docAck: (count: number, titles: string) => string; closing: Record<string, string> }> = {
                 en: {
                   intro: `Hi ${name}! I'm ${tutorName}, your AI tutor.`,
-                  docAck: (count, titles) => count === 1 ? ` I can see you've uploaded "${titles}" - excellent!` : ` I've loaded ${count} documents for our session. Great!`,
+                  docAck: (count, titles) => count === 1 ? ` I can see you've uploaded "${titles}" - excellent!` : ` I've loaded ${count} documents for our session.`,
                   closing: {
                     'K-2': docTitles.length > 0 ? " Let's look at it together! What do you want to learn about?" : " I'm so excited to learn with you today! What would you like to explore?",
                     '3-5': docTitles.length > 0 ? " I'm here to help you understand it! What part should we start with?" : " I'm here to help you learn something new! What subject interests you today?",
