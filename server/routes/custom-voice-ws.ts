@@ -19,6 +19,7 @@ import { trialService } from '../services/trial-service';
 import { detectSafetyIssues, getStrikeMessage, shouldTerminateSession, SafetyDetectionResult } from '../services/safety-detection-service';
 import { sendAdminSafetyAlert, logSafetyIncident, SafetyAlertData, handleSafetyIncident, SafetyIncidentNotification, SafetyIncidentType } from '../services/safety-alert-service';
 import { safetyIncidents } from '@shared/schema';
+import { getRecentSessionSummaries } from '../services/memory-service';
 import {
   type GradeBand,
   type TurnPolicyState,
@@ -3210,8 +3211,55 @@ HONESTY INSTRUCTIONS:
             }
             // If no actual content, greetingDocTitles stays empty - greeting won't claim doc access
             
+            // ============================================
+            // CONTINUITY GREETING: Check for prior sessions
+            // ============================================
+            let continuityTopic: string | null = null;
+            let hasPriorSessions = false;
+            
+            try {
+              // STRICT STUDENT ISOLATION: Only get summaries for the exact student
+              const priorSummaries = await getRecentSessionSummaries({
+                userId: state.userId,
+                studentId: state.studentId || null,
+                limit: 1
+              });
+              
+              hasPriorSessions = priorSummaries.length > 0;
+              
+              if (hasPriorSessions) {
+                const lastSummary = priorSummaries[0];
+                // Build safe topic string: prefer subject, then first topic, then generic
+                if (lastSummary.subject && lastSummary.subject.length > 0 && lastSummary.subject !== 'general') {
+                  continuityTopic = lastSummary.subject;
+                } else if (lastSummary.topicsCovered && lastSummary.topicsCovered.length > 0) {
+                  continuityTopic = lastSummary.topicsCovered[0];
+                } else {
+                  continuityTopic = 'what we worked on last time';
+                }
+                
+                // Sanitize: max 60 chars, strip newlines/quotes, avoid PII-like patterns
+                continuityTopic = continuityTopic
+                  .replace(/[\n\r"']/g, '')
+                  .replace(/\b(name|email|phone|address|password)\b/gi, '')
+                  .trim()
+                  .substring(0, 60);
+                
+                if (!continuityTopic || continuityTopic.length < 3) {
+                  continuityTopic = 'what we worked on last time';
+                }
+              }
+              
+              console.log(`[MEMORY_GREETING] priorExists=${hasPriorSessions}, studentId=${state.studentId ? 'present' : 'missing'}, topic="${continuityTopic || 'none'}"`);
+            } catch (error) {
+              // On any error, use default greeting (no continuity)
+              console.warn(`[MEMORY_GREETING] ⚠️ Error checking prior sessions, using default greeting:`, error);
+              hasPriorSessions = false;
+              continuityTopic = null;
+            }
+            
             // LANGUAGE: Generate greetings in the selected language
-            const getLocalizedGreeting = (lang: string, name: string, tutorName: string, ageGroup: string, docTitles: string[]): string => {
+            const getLocalizedGreeting = (lang: string, name: string, tutorName: string, ageGroup: string, docTitles: string[], priorExists: boolean, topic: string | null): string => {
               // Language-specific greeting templates
               const greetings: Record<string, { intro: string; docAck: (count: number, titles: string) => string; closing: Record<string, string> }> = {
                 en: {
@@ -3352,6 +3400,23 @@ HONESTY INSTRUCTIONS:
               const langGreeting = greetings[lang] || greetings['en'];
               const ageClosing = langGreeting.closing[ageGroup] || langGreeting.closing['College/Adult'];
               
+              // CONTINUITY GREETING: If prior sessions exist, use welcome back greeting
+              if (priorExists && topic) {
+                // Language-specific continuity greetings
+                const continuityGreetings: Record<string, (name: string, tutorName: string, topic: string) => string> = {
+                  en: (n, t, tp) => `Welcome back, ${n}! I'm ${t}, your AI tutor. Shall we continue our discussion on ${tp}? What do you remember most from last time?`,
+                  es: (n, t, tp) => `¡Bienvenido de nuevo, ${n}! Soy ${t}, tu tutor de IA. ¿Continuamos con nuestra conversación sobre ${tp}? ¿Qué recuerdas de la última vez?`,
+                  fr: (n, t, tp) => `Content de te revoir, ${n}! Je suis ${t}, ton tuteur IA. On continue notre discussion sur ${tp}? Qu'est-ce que tu te rappelles de la dernière fois?`,
+                  de: (n, t, tp) => `Willkommen zurück, ${n}! Ich bin ${t}, dein KI-Tutor. Sollen wir unsere Diskussion über ${tp} fortsetzen? Woran erinnerst du dich von letztem Mal?`,
+                  pt: (n, t, tp) => `Bem-vindo de volta, ${n}! Sou ${t}, seu tutor de IA. Vamos continuar nossa discussão sobre ${tp}? O que você lembra da última vez?`,
+                  zh: (n, t, tp) => `欢迎回来，${n}！我是${t}，你的AI导师。我们继续讨论${tp}吧？你还记得上次我们讲了什么吗？`,
+                  ar: (n, t, tp) => `أهلاً بعودتك، ${n}! أنا ${t}، معلمك الذكي. هل نستمر في مناقشة ${tp}؟ ماذا تتذكر من المرة الماضية؟`,
+                  sw: (n, t, tp) => `Karibu tena, ${n}! Mimi ni ${t}, mwalimu wako wa AI. Tuendelee na mazungumzo yetu kuhusu ${tp}? Unakumbuka nini kutoka mara ya mwisho?`,
+                };
+                const continuityFn = continuityGreetings[lang] || continuityGreetings['en'];
+                return continuityFn(name, tutorName, topic);
+              }
+              
               if (docTitles.length > 0) {
                 return langGreeting.intro + langGreeting.docAck(docTitles.length, docTitles.join(', ')) + ageClosing;
               } else {
@@ -3361,7 +3426,8 @@ HONESTY INSTRUCTIONS:
             
             // LANGUAGE: Generate greeting in the selected language
             // NO-GHOSTING: Use greetingDocTitles which is empty if no actual content
-            greeting = getLocalizedGreeting(state.language, state.studentName, personality.name, state.ageGroup, greetingDocTitles);
+            // CONTINUITY: Pass hasPriorSessions and continuityTopic
+            greeting = getLocalizedGreeting(state.language, state.studentName, personality.name, state.ageGroup, greetingDocTitles, hasPriorSessions, continuityTopic);
             console.log(`[Custom Voice] 🌍 Generated greeting in language: ${state.language}`);
             
             console.log(`[Custom Voice] 👋 Greeting: "${greeting}"`);
