@@ -80,8 +80,8 @@ export function RealtimeVoiceTranscript({
   };
 
   return (
-    <div className="w-full" data-testid="realtime-voice-transcript">
-      <div className="flex items-center justify-between mb-3">
+    <div className="w-full h-full flex flex-col" data-testid="realtime-voice-transcript">
+      <div className="flex items-center justify-between mb-3 flex-shrink-0">
         <h3 className="text-sm font-medium text-muted-foreground">
           🎙️ Voice Conversation Transcript
         </h3>
@@ -100,9 +100,9 @@ export function RealtimeVoiceTranscript({
         </div>
       </div>
       
-      <Card className="border-2 h-full">
-        <CardContent className="p-0 h-full">
-          <ScrollArea className="h-full min-h-[200px] w-full p-4">
+      <Card className="border-2 flex-1 min-h-0 flex flex-col">
+        <CardContent className="p-0 flex-1 min-h-0 overflow-hidden">
+          <ScrollArea className="h-full w-full p-4">
             <div className="space-y-3">
               {messages.length === 0 ? (
                 <div className="text-center text-muted-foreground text-sm py-8">
@@ -177,6 +177,9 @@ export function RealtimeVoiceTranscript({
                   isHearingStudent={isHearingStudent}
                 />
               </div>
+              
+              {/* Spacer to ensure last message isn't hidden behind sticky input */}
+              <div className="h-4" />
             </div>
           </ScrollArea>
         </CardContent>

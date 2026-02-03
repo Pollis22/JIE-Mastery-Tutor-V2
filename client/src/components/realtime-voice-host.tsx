@@ -707,7 +707,7 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
 
   return (
     <AgeThemeProvider ageGroup={ageGroup}>
-      <div className={`w-full relative ${customVoice.isConnected ? 'h-[calc(100vh-200px)] min-h-[500px] flex flex-col' : 'space-y-4'}`}>
+      <div className={`w-full relative ${customVoice.isConnected ? 'h-[100dvh] min-h-[500px] flex flex-col overflow-hidden' : 'space-y-4'}`}>
         {/* Animated Background for young learners */}
         {isYoungLearner && customVoice.isConnected && <AnimatedBackground />}
         
@@ -900,7 +900,7 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
         {/* End Top Controls Section */}
         
         {/* Scrollable Transcript Area - Takes remaining space */}
-        <div className={`${customVoice.isConnected ? 'flex-1 min-h-0 overflow-y-auto' : ''}`}>
+        <div className={`${customVoice.isConnected ? 'flex-1 min-h-0 overflow-y-auto px-2' : ''}`}>
           <RealtimeVoiceTranscript
             messages={customVoice.transcript.map(t => ({
               role: t.speaker === 'student' ? 'user' as const : 'assistant' as const,
