@@ -3,12 +3,17 @@ import { useCustomVoice } from '@/hooks/use-custom-voice';
 import { RealtimeVoiceTranscript } from './realtime-voice-transcript';
 import { ChatInput } from './ChatInput';
 import { VoicePresenceIndicator, VoicePresenceState } from './VoicePresenceIndicator';
+import { TutorAvatar, TutorState } from './TutorAvatar';
+import { AnimatedBackground } from './AnimatedBackground';
+import { SessionProgress } from './SessionProgress';
 import { useSimulatedAmplitude } from '@/hooks/use-audio-amplitude';
 import { Button } from '@/components/ui/button';
 import { Mic, MicOff, Volume2, VolumeX, AlertTriangle, FileText, Type, Headphones, Timer } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { useLocation } from 'wouter';
+import { AgeThemeProvider } from '@/contexts/ThemeContext';
+import { isYoungLearner as checkYoungLearner } from '@/styles/themes';
 
 // Session Timer Component - UI only, no billing logic
 function SessionTimer({ isActive }: { isActive: boolean }) {
@@ -208,12 +213,24 @@ export function RealtimeVoiceHost({
   // Voice Presence Indicator - simulated amplitude for visual feedback
   const simulatedAmplitude = useSimulatedAmplitude(customVoice.isTutorSpeaking);
   
+  // Check if young learner for enhanced visuals
+  const isYoungLearner = checkYoungLearner(ageGroup);
+  
   // Compute voice presence state from voice connection status
   const voicePresenceState: VoicePresenceState = (() => {
     if (!customVoice.isConnected) return 'idle';
     if (customVoice.isTutorSpeaking) return 'tutorSpeaking';
     if (customVoice.micStatus === 'hearing_you') return 'userSpeaking';
     return 'listening';
+  })();
+  
+  // Compute tutor avatar state for young learners
+  const tutorAvatarState: TutorState = (() => {
+    if (!customVoice.isConnected) return 'idle';
+    if (customVoice.isTutorThinking) return 'thinking';
+    if (customVoice.isTutorSpeaking) return 'speaking';
+    if (customVoice.micStatus === 'hearing_you') return 'listening';
+    return 'idle';
   })();
   
   // Generate a unique session ID
@@ -689,10 +706,14 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
   }, []);
 
   return (
-    <div className="w-full space-y-4">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-2 flex-wrap">
-          {!customVoice.isConnected ? (
+    <AgeThemeProvider ageGroup={ageGroup}>
+      <div className="w-full space-y-4 relative">
+        {/* Animated Background for young learners */}
+        {isYoungLearner && customVoice.isConnected && <AnimatedBackground />}
+        
+        <div className="flex items-center justify-between flex-wrap gap-2 relative z-10">
+          <div className="flex items-center gap-2 flex-wrap">
+            {!customVoice.isConnected ? (
             <>
               <Button
                 onClick={startSession}
@@ -752,13 +773,28 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
           )}
         </div>
         
-        {/* Centered Voice Presence Orb - Single source of truth for session state */}
+        {/* Centered Voice Presence - Single source of truth for session state */}
         {customVoice.isConnected && (
-          <div className="flex justify-center py-4">
-            <VoicePresenceIndicator 
-              state={customVoice.isTutorThinking ? 'listening' : voicePresenceState}
-              amplitude={simulatedAmplitude}
-              className="mx-auto"
+          <div className="flex flex-col items-center gap-3 py-4">
+            {isYoungLearner ? (
+              <TutorAvatar 
+                state={tutorAvatarState}
+                amplitude={simulatedAmplitude}
+                size="large"
+              />
+            ) : (
+              <VoicePresenceIndicator 
+                state={customVoice.isTutorThinking ? 'listening' : voicePresenceState}
+                amplitude={simulatedAmplitude}
+                className="mx-auto"
+              />
+            )}
+            
+            {/* Session Progress - Gamification for K-8 students */}
+            <SessionProgress 
+              questionsAnswered={customVoice.transcript.filter(t => t.speaker === 'tutor').length}
+              xpEarned={customVoice.transcript.filter(t => t.speaker === 'tutor').length * 10}
+              streak={0}
             />
           </div>
         )}
@@ -902,7 +938,7 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
       
       {/* Debug Info - only visible with ?debug=true query param */}
       {isDebugMode && (
-        <div className="text-xs text-muted-foreground p-2 bg-muted/50 rounded border border-dashed border-muted-foreground/30">
+        <div className="text-xs text-muted-foreground p-2 bg-muted/50 rounded border border-dashed border-muted-foreground/30 relative z-10">
           <div className="font-medium mb-1 text-muted-foreground/70">Debug Panel</div>
           <div>Session ID: {sessionId || 'None'}</div>
           <div>Connected: {customVoice.isConnected ? 'Yes' : 'No'}</div>
@@ -916,6 +952,7 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
           <div>Documents: {contextDocumentIds?.length || 0}</div>
         </div>
       )}
-    </div>
+      </div>
+    </AgeThemeProvider>
   );
 }

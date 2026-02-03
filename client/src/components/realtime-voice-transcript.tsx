@@ -1,8 +1,10 @@
 import { useEffect, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { VoiceStatusIndicator } from "./VoiceStatusIndicator";
+import { useAgeTheme } from "@/contexts/ThemeContext";
 
 interface RealtimeMessage {
   role: 'user' | 'assistant' | 'system';
@@ -38,6 +40,11 @@ export function RealtimeVoiceTranscript({
 }: Props) {
   const lastMessageRef = useRef<HTMLDivElement>(null);
   const statusIndicatorRef = useRef<HTMLDivElement>(null);
+  const { theme, isYoungLearner } = useAgeTheme();
+  
+  const prefersReducedMotion = typeof window !== 'undefined' 
+    ? window.matchMedia('(prefers-reduced-motion: reduce)').matches 
+    : false;
 
   useEffect(() => {
     if (statusIndicatorRef.current) {
@@ -104,34 +111,59 @@ export function RealtimeVoiceTranscript({
                     : "Connecting to voice service..."}
                 </div>
               ) : (
-                messages.filter(m => !m.isThinking).map((message, index, arr) => (
-                  <div
-                    key={index}
-                    ref={index === arr.length - 1 ? lastMessageRef : null}
-                    className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                    data-testid={`message-${message.role}-${index}`}
-                  >
-                    <div
-                      className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
-                        message.role === 'user'
-                          ? 'bg-primary text-primary-foreground ml-4'
-                          : 'bg-muted text-foreground mr-4'
-                      }`}
-                    >
-                      <div className="flex items-center space-x-2 mb-1">
-                        <span className="font-medium text-xs">
-                          {message.role === 'user' ? '👤 You' : '🤖 AI Tutor'}
-                        </span>
-                        <span className="text-[10px] opacity-70">
-                          {formatTime(message.timestamp)}
-                        </span>
-                      </div>
-                      <div className="whitespace-pre-wrap break-words">
-                        {message.content}
-                      </div>
-                    </div>
-                  </div>
-                ))
+                <AnimatePresence initial={false}>
+                  {messages.filter(m => !m.isThinking).map((message, index, arr) => {
+                    const isUser = message.role === 'user';
+                    const isLast = index === arr.length - 1;
+                    
+                    return (
+                      <motion.div
+                        key={index}
+                        ref={isLast ? lastMessageRef : null}
+                        initial={prefersReducedMotion ? false : { opacity: 0, y: 10, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.2 }}
+                        className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}
+                        data-testid={`message-${message.role}-${index}`}
+                      >
+                        {!isUser && (
+                          <div className="order-1 mr-2 flex-shrink-0">
+                            <div 
+                              className="w-8 h-8 rounded-full flex items-center justify-center shadow-md"
+                              style={{ 
+                                background: `linear-gradient(135deg, ${theme.primary}, ${theme.secondary})` 
+                              }}
+                            >
+                              <span className="text-sm">{theme.tutorEmoji}</span>
+                            </div>
+                          </div>
+                        )}
+                        
+                        <div className={`max-w-[80%] ${isUser ? 'order-1' : 'order-2'}`}>
+                          <div
+                            className={`
+                              relative px-4 py-3 text-sm shadow-md
+                              ${isUser 
+                                ? `bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-2xl rounded-tr-sm ml-4` 
+                                : `bg-gradient-to-br from-purple-500 to-purple-600 text-white rounded-2xl rounded-tl-sm mr-4`
+                              }
+                            `}
+                            style={{
+                              borderRadius: isYoungLearner ? '20px' : '12px',
+                            }}
+                          >
+                            <div className="whitespace-pre-wrap break-words leading-relaxed">
+                              {message.content}
+                            </div>
+                          </div>
+                          <div className={`text-[10px] text-muted-foreground mt-1 ${isUser ? 'text-right' : 'text-left ml-2'}`}>
+                            {formatTime(message.timestamp)}
+                          </div>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </AnimatePresence>
               )}
               
               {/* Voice Status Indicator - ephemeral, updates in-place, always visible */}
