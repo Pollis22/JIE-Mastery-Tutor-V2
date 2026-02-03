@@ -1012,3 +1012,58 @@ export const insertDigestTrackingSchema = createInsertSchema(digestTracking).omi
 // Digest Tracking types
 export type DigestTracking = typeof digestTracking.$inferSelect;
 export type InsertDigestTracking = z.infer<typeof insertDigestTrackingSchema>;
+
+// Session Summaries table - stores AI-generated session summaries for continuity memory
+export const sessionSummaries = pgTable("session_summaries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  studentId: varchar("student_id").references(() => students.id, { onDelete: 'set null' }),
+  sessionId: varchar("session_id").notNull().references(() => realtimeSessions.id, { onDelete: 'cascade' }),
+  summaryText: text("summary_text").notNull(),
+  topicsCovered: text("topics_covered").array().notNull().default(sql`'{}'::text[]`),
+  conceptsMastered: text("concepts_mastered").array(),
+  conceptsStruggled: text("concepts_struggled").array(),
+  studentInsights: text("student_insights"),
+  subject: varchar("subject", { length: 100 }),
+  gradeBand: varchar("grade_band", { length: 50 }),
+  durationMinutes: integer("duration_minutes"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_session_summaries_user_date").on(table.userId, table.createdAt),
+  index("idx_session_summaries_student_date").on(table.studentId, table.createdAt),
+  uniqueIndex("idx_session_summaries_session").on(table.sessionId),
+]);
+
+export const insertSessionSummarySchema = createInsertSchema(sessionSummaries).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type SessionSummary = typeof sessionSummaries.$inferSelect;
+export type InsertSessionSummary = z.infer<typeof insertSessionSummarySchema>;
+
+// Memory Jobs table - simple DB queue for async summary generation
+export const memoryJobs = pgTable("memory_jobs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  jobType: varchar("job_type", { length: 50 }).notNull(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  studentId: varchar("student_id").references(() => students.id, { onDelete: 'set null' }),
+  sessionId: varchar("session_id").notNull().references(() => realtimeSessions.id, { onDelete: 'cascade' }),
+  status: varchar("status", { length: 20 }).notNull().default('pending').$type<'pending' | 'processing' | 'done' | 'error'>(),
+  attempts: integer("attempts").notNull().default(0),
+  lastError: text("last_error"),
+  runAfter: timestamp("run_after").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_memory_jobs_status_runafter").on(table.status, table.runAfter, table.createdAt),
+]);
+
+export const insertMemoryJobSchema = createInsertSchema(memoryJobs).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type MemoryJob = typeof memoryJobs.$inferSelect;
+export type InsertMemoryJob = z.infer<typeof insertMemoryJobSchema>;
