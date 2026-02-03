@@ -1173,6 +1173,28 @@ async function finalizeSession(
     console.log(`[Custom Voice] ℹ️ Skipping parent email (duration: ${durationSeconds}s, messages: ${state.transcript.length})`);
   }
 
+  // ============================================
+  // CONTINUITY MEMORY: Enqueue summary job (fire-and-forget)
+  // Only for sessions with meaningful content
+  // ============================================
+  if (durationSeconds >= 30 && state.transcript.length >= 3 && state.userId && !isTrialSession) {
+    try {
+      const { enqueueSessionSummaryJob, runOpportunisticJob } = await import('../services/memory-service');
+      
+      await enqueueSessionSummaryJob({
+        userId: state.userId,
+        studentId: state.studentId || null,
+        sessionId: state.sessionId,
+      });
+      
+      // Fire-and-forget opportunistic job processing (non-blocking)
+      runOpportunisticJob().catch(() => {});
+      
+    } catch (memoryError) {
+      console.warn('[Custom Voice] ⚠️ Failed to enqueue memory job (non-blocking):', memoryError);
+    }
+  }
+
   // Return status for caller awareness (session_ended will always be sent)
   return { 
     success: !dbWriteFailed && !minuteDeductionFailed,
@@ -3081,6 +3103,27 @@ FLOW:
               console.log(`[TurnPolicy] 🎯 K2 policy ACTIVE for grade band: ${state.ageGroup}`);
             }
             
+            // CONTINUITY MEMORY: Load recent session summaries for this student
+            let continuityBlock = '';
+            try {
+              const { getRecentSessionSummaries, formatContinuityPromptSection } = await import('../services/memory-service');
+              const summaries = await getRecentSessionSummaries({
+                userId: state.userId,
+                studentId: state.studentId || null,
+                limit: 5
+              });
+              
+              if (summaries.length > 0) {
+                continuityBlock = formatContinuityPromptSection(summaries);
+                console.log(`[MEMORY] 📚 Injected ${summaries.length} summaries into prompt (${continuityBlock.length} chars)`);
+              } else {
+                console.log(`[MEMORY] ℹ️ No previous session summaries found for user ${state.userId}`);
+              }
+            } catch (memoryError) {
+              console.warn('[MEMORY] ⚠️ Failed to load continuity memory (non-blocking):', memoryError);
+              // Continue without memory - non-blocking
+            }
+            
             // Build system instruction with personality and document context
             // NO-GHOSTING FIX: Calculate actual content length before claiming doc access
             const ragChars = state.uploadedDocuments.reduce((sum, doc) => {
@@ -3100,7 +3143,7 @@ FLOW:
               });
               
               // Create enhanced system instruction - NO-GHOSTING: Only claim access when content exists
-              state.systemInstruction = `${personality.systemPrompt}${VOICE_CONVERSATION_CONSTRAINTS}${K2_CONSTRAINTS}
+              state.systemInstruction = `${personality.systemPrompt}${VOICE_CONVERSATION_CONSTRAINTS}${K2_CONSTRAINTS}${continuityBlock}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📚 DOCUMENTS LOADED FOR THIS SESSION (${ragChars} chars):
@@ -3129,7 +3172,7 @@ When the student asks if you can see their document or asks you to prove access:
                 return titleMatch ? titleMatch[1] : `file ${i + 1}`;
               });
               
-              state.systemInstruction = `${personality.systemPrompt}${VOICE_CONVERSATION_CONSTRAINTS}${K2_CONSTRAINTS}
+              state.systemInstruction = `${personality.systemPrompt}${VOICE_CONVERSATION_CONSTRAINTS}${K2_CONSTRAINTS}${continuityBlock}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ⚠️ DOCUMENT UPLOAD ISSUE:
@@ -3147,7 +3190,7 @@ HONESTY INSTRUCTIONS:
               console.log(`[Custom Voice] ⚠️ Files uploaded but no content extracted (ragChars=0, files=${uploadedFilenames.join(', ')}) - using honest acknowledgment`);
             } else {
               // No documents at all - use standard prompt
-              state.systemInstruction = personality.systemPrompt + VOICE_CONVERSATION_CONSTRAINTS + K2_CONSTRAINTS;
+              state.systemInstruction = personality.systemPrompt + VOICE_CONVERSATION_CONSTRAINTS + K2_CONSTRAINTS + continuityBlock;
               console.log(`[Custom Voice] No documents uploaded - using standard prompt`);
             }
             

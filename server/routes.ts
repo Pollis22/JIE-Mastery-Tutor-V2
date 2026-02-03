@@ -2195,6 +2195,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // External cron endpoint for memory job processing
+  app.post("/api/cron/memory-jobs", async (req, res) => {
+    const cronSecret = process.env.CRON_SECRET;
+    const providedSecret = req.headers['x-cron-secret'] || req.query.secret;
+    
+    if (!cronSecret) {
+      console.error('[Cron] CRON_SECRET not configured - endpoint disabled');
+      return res.status(503).json({ error: 'Cron endpoint not configured' });
+    }
+    
+    if (providedSecret !== cronSecret) {
+      console.warn('[Cron] Invalid secret provided for memory-jobs');
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    try {
+      console.log('[Cron] External trigger for memory jobs received');
+      const { processPendingMemoryJobs } = await import('./services/memory-service');
+      const stats = await processPendingMemoryJobs(10);
+      
+      res.json({ 
+        success: true, 
+        message: 'Memory jobs processed',
+        timestamp: new Date().toISOString(),
+        stats
+      });
+    } catch (error: any) {
+      console.error('[Cron] Memory jobs error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Admin endpoint to test digest for a single user
   app.post("/api/admin/test-digest-user", requireAdmin, async (req, res) => {
     try {

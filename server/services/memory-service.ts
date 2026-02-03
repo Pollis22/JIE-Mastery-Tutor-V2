@@ -7,6 +7,10 @@ const MAX_SUMMARIES = 5;
 const MAX_SUMMARY_CHARS = 400;
 const MAX_CONTINUITY_BLOCK_CHARS = 2500;
 const MAX_JOB_ATTEMPTS = 3;
+const MAX_TRANSCRIPT_CHARS_FOR_LLM = 12000; // ~3000 tokens
+const MAX_STORED_SUMMARY_TEXT = 1000;
+const MAX_STORED_ARRAY_ITEMS = 10;
+const MAX_STORED_ITEM_LENGTH = 100;
 
 interface EnqueueJobParams {
   userId: string;
@@ -52,28 +56,26 @@ export async function getRecentSessionSummaries(params: {
   const { userId, studentId, limit = MAX_SUMMARIES } = params;
   
   try {
-    let summaries;
+    // STRICT STUDENT ISOLATION: Only query summaries for the specific student
+    // If studentId is provided, filter by both userId AND studentId
+    // If no studentId, filter by userId AND where studentId is null (sessions without student profile)
+    const summaries = await db.select()
+      .from(sessionSummaries)
+      .where(
+        studentId 
+          ? and(
+              eq(sessionSummaries.userId, userId),
+              eq(sessionSummaries.studentId, studentId)
+            )
+          : and(
+              eq(sessionSummaries.userId, userId),
+              sql`${sessionSummaries.studentId} IS NULL`
+            )
+      )
+      .orderBy(desc(sessionSummaries.createdAt))
+      .limit(limit);
     
-    if (studentId) {
-      summaries = await db.select()
-        .from(sessionSummaries)
-        .where(
-          and(
-            eq(sessionSummaries.userId, userId),
-            eq(sessionSummaries.studentId, studentId)
-          )
-        )
-        .orderBy(desc(sessionSummaries.createdAt))
-        .limit(limit);
-    } else {
-      summaries = await db.select()
-        .from(sessionSummaries)
-        .where(eq(sessionSummaries.userId, userId))
-        .orderBy(desc(sessionSummaries.createdAt))
-        .limit(limit);
-    }
-    
-    console.log(`[MEMORY] Retrieved ${summaries.length} summaries for user ${userId}${studentId ? ` (student ${studentId})` : ''}`);
+    console.log(`[MEMORY] Retrieved ${summaries.length} summaries for user ${userId}${studentId ? ` (student ${studentId})` : ' (no student profile)'}`);
     return summaries;
   } catch (error) {
     console.warn(`[MEMORY] ⚠️ Failed to retrieve summaries:`, error);
@@ -132,6 +134,14 @@ ${block}
 `;
 }
 
+function sanitizeArrayField(arr: string[] | undefined | null, maxItems: number, maxItemLen: number): string[] {
+  if (!arr || !Array.isArray(arr)) return [];
+  return arr
+    .slice(0, maxItems)
+    .map(item => typeof item === 'string' ? item.substring(0, maxItemLen) : String(item).substring(0, maxItemLen))
+    .filter(item => item.length > 0);
+}
+
 async function generateSessionSummary(
   transcript: Array<{ speaker: string; text: string; timestamp: string }>,
   subject?: string | null,
@@ -140,10 +150,17 @@ async function generateSessionSummary(
   try {
     const anthropic = new Anthropic();
     
-    const transcriptText = transcript
+    // Limit transcript to last 50 messages AND cap total characters
+    let transcriptText = transcript
       .slice(-50)
       .map(t => `${t.speaker}: ${t.text}`)
       .join('\n');
+    
+    // Hard cap on transcript size to prevent token explosion
+    if (transcriptText.length > MAX_TRANSCRIPT_CHARS_FOR_LLM) {
+      transcriptText = transcriptText.substring(transcriptText.length - MAX_TRANSCRIPT_CHARS_FOR_LLM);
+      console.log(`[MEMORY] Transcript truncated to ${MAX_TRANSCRIPT_CHARS_FOR_LLM} chars`);
+    }
     
     if (transcriptText.length < 50) {
       console.log('[MEMORY] Transcript too short for summary');
@@ -260,26 +277,37 @@ export async function processPendingMemoryJobs(limit = 5): Promise<{
           throw new Error('Failed to generate summary');
         }
         
+        // SANITIZE before persistence to enforce size caps
+        const sanitizedSummary = {
+          summaryText: (summary.summary_text || '').substring(0, MAX_STORED_SUMMARY_TEXT),
+          topicsCovered: sanitizeArrayField(summary.topics_covered, MAX_STORED_ARRAY_ITEMS, MAX_STORED_ITEM_LENGTH),
+          conceptsMastered: sanitizeArrayField(summary.concepts_mastered, MAX_STORED_ARRAY_ITEMS, MAX_STORED_ITEM_LENGTH),
+          conceptsStruggled: sanitizeArrayField(summary.concepts_struggled, MAX_STORED_ARRAY_ITEMS, MAX_STORED_ITEM_LENGTH),
+          studentInsights: (summary.student_insights || '').substring(0, MAX_STORED_SUMMARY_TEXT),
+          subject: (summary.subject || '').substring(0, 100),
+          gradeBand: (summary.grade_band || '').substring(0, 50),
+        };
+        
         await db.insert(sessionSummaries).values({
           userId: job.userId,
           studentId: job.studentId,
           sessionId: job.sessionId,
-          summaryText: summary.summary_text,
-          topicsCovered: summary.topics_covered,
-          conceptsMastered: summary.concepts_mastered,
-          conceptsStruggled: summary.concepts_struggled,
-          studentInsights: summary.student_insights,
-          subject: summary.subject,
-          gradeBand: summary.grade_band,
+          summaryText: sanitizedSummary.summaryText,
+          topicsCovered: sanitizedSummary.topicsCovered,
+          conceptsMastered: sanitizedSummary.conceptsMastered,
+          conceptsStruggled: sanitizedSummary.conceptsStruggled,
+          studentInsights: sanitizedSummary.studentInsights,
+          subject: sanitizedSummary.subject,
+          gradeBand: sanitizedSummary.gradeBand,
           durationMinutes: session[0].minutesUsed,
         }).onConflictDoUpdate({
           target: sessionSummaries.sessionId,
           set: {
-            summaryText: summary.summary_text,
-            topicsCovered: summary.topics_covered,
-            conceptsMastered: summary.concepts_mastered,
-            conceptsStruggled: summary.concepts_struggled,
-            studentInsights: summary.student_insights,
+            summaryText: sanitizedSummary.summaryText,
+            topicsCovered: sanitizedSummary.topicsCovered,
+            conceptsMastered: sanitizedSummary.conceptsMastered,
+            conceptsStruggled: sanitizedSummary.conceptsStruggled,
+            studentInsights: sanitizedSummary.studentInsights,
           }
         });
         
