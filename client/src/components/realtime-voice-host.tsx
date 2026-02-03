@@ -779,19 +779,11 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
         {/* Centered Voice Presence - Single source of truth for session state */}
         {customVoice.isConnected && (
           <div className="flex flex-col items-center gap-3 py-4">
-            {isYoungLearner ? (
-              <TutorAvatar 
-                state={tutorAvatarState}
-                amplitude={simulatedAmplitude}
-                size="large"
-              />
-            ) : (
-              <VoicePresenceIndicator 
-                state={customVoice.isTutorThinking ? 'listening' : voicePresenceState}
-                amplitude={simulatedAmplitude}
-                className="mx-auto"
-              />
-            )}
+            <TutorAvatar 
+              state={tutorAvatarState}
+              amplitude={simulatedAmplitude}
+              size="large"
+            />
             
             {/* Session Progress - Gamification for K-8 students */}
             <SessionProgress 

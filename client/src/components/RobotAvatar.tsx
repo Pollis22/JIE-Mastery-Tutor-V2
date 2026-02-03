@@ -10,23 +10,22 @@ interface RobotAvatarProps {
 
 export function RobotAvatar({ isSpeaking, isListening, ageGroup, size = 'md' }: RobotAvatarProps) {
   
-  // Color themes per age group
   const glowColors = {
     '6-8': {
-      primary: 'rgba(6, 182, 212, 0.6)',    // Cyan
-      secondary: 'rgba(59, 130, 246, 0.4)', // Blue
+      primary: 'rgba(6, 182, 212, 0.6)',
+      secondary: 'rgba(59, 130, 246, 0.4)',
       ring: 'border-cyan-400',
       shadow: 'shadow-cyan-500/50',
     },
     '9-12': {
-      primary: 'rgba(139, 92, 246, 0.6)',   // Violet
-      secondary: 'rgba(168, 85, 247, 0.4)', // Purple
+      primary: 'rgba(139, 92, 246, 0.6)',
+      secondary: 'rgba(168, 85, 247, 0.4)',
       ring: 'border-violet-400',
       shadow: 'shadow-violet-500/50',
     },
     'College': {
-      primary: 'rgba(16, 185, 129, 0.5)',   // Emerald
-      secondary: 'rgba(156, 163, 175, 0.3)', // Gray
+      primary: 'rgba(16, 185, 129, 0.5)',
+      secondary: 'rgba(156, 163, 175, 0.3)',
       ring: 'border-emerald-400',
       shadow: 'shadow-emerald-500/40',
     },
@@ -34,22 +33,25 @@ export function RobotAvatar({ isSpeaking, isListening, ageGroup, size = 'md' }: 
   
   const colors = glowColors[ageGroup];
   
-  const sizes = {
-    sm: 'w-16 h-16',
-    md: 'w-24 h-24',
-    lg: 'w-32 h-32',
+  const sizeClasses = {
+    sm: { container: 'w-16 h-16', glow: 64 },
+    md: { container: 'w-24 h-24', glow: 96 },
+    lg: { container: 'w-32 h-32', glow: 128 },
   };
+  
+  const currentSize = sizeClasses[size];
   
   return (
     <div className="relative flex items-center justify-center">
       
-      {/* Outer pulsing glow ring - when speaking */}
       {isSpeaking && (
         <>
           <motion.div
-            className={`absolute rounded-full \${sizes[size]}`}
+            className="absolute rounded-full"
             style={{
-              background: `radial-gradient(circle, \${colors.primary} 0%, transparent 70%)`,
+              width: currentSize.glow,
+              height: currentSize.glow,
+              background: `radial-gradient(circle, ${colors.primary} 0%, transparent 70%)`,
             }}
             animate={{
               scale: [1, 1.5, 1],
@@ -62,9 +64,11 @@ export function RobotAvatar({ isSpeaking, isListening, ageGroup, size = 'md' }: 
             }}
           />
           <motion.div
-            className={`absolute rounded-full \${sizes[size]}`}
+            className="absolute rounded-full"
             style={{
-              background: `radial-gradient(circle, \${colors.secondary} 0%, transparent 70%)`,
+              width: currentSize.glow,
+              height: currentSize.glow,
+              background: `radial-gradient(circle, ${colors.secondary} 0%, transparent 70%)`,
             }}
             animate={{
               scale: [1, 1.8, 1],
@@ -80,10 +84,9 @@ export function RobotAvatar({ isSpeaking, isListening, ageGroup, size = 'md' }: 
         </>
       )}
       
-      {/* Listening indicator - subtle pulse */}
       {isListening && !isSpeaking && (
         <motion.div
-          className={`absolute rounded-full border-2 \${colors.ring} \${sizes[size]}`}
+          className={`absolute rounded-full border-2 ${colors.ring} ${currentSize.container}`}
           animate={{
             scale: [1, 1.1, 1],
             opacity: [0.5, 1, 0.5],
@@ -96,13 +99,8 @@ export function RobotAvatar({ isSpeaking, isListening, ageGroup, size = 'md' }: 
         />
       )}
       
-      {/* Main avatar container */}
       <motion.div
-        className={`
-          relative \${sizes[size]} rounded-full overflow-hidden
-          border-3 border-white/20
-          \${isSpeaking ? \`shadow-2xl \${colors.shadow}\` : 'shadow-lg'}
-        `}
+        className={`relative ${currentSize.container} rounded-full overflow-hidden border-2 border-white/20 ${isSpeaking ? `shadow-2xl ${colors.shadow}` : 'shadow-lg'}`}
         animate={isSpeaking ? {
           scale: [1, 1.03, 1],
         } : {}}
@@ -112,19 +110,17 @@ export function RobotAvatar({ isSpeaking, isListening, ageGroup, size = 'md' }: 
           ease: 'easeInOut',
         }}
       >
-        {/* Robot image */}
         <img
           src={robotImage}
           alt="AI Tutor"
           className="w-full h-full object-cover object-top"
         />
         
-        {/* Overlay glow when speaking */}
         {isSpeaking && (
           <motion.div
             className="absolute inset-0"
             style={{
-              background: `radial-gradient(circle at center, \${colors.primary} 0%, transparent 60%)`,
+              background: `radial-gradient(circle at center, ${colors.primary} 0%, transparent 60%)`,
             }}
             animate={{
               opacity: [0.2, 0.4, 0.2],
@@ -137,7 +133,6 @@ export function RobotAvatar({ isSpeaking, isListening, ageGroup, size = 'md' }: 
         )}
       </motion.div>
       
-      {/* Sound wave bars - when speaking */}
       {isSpeaking && (
         <div className="absolute -bottom-4 flex items-end gap-1">
           {[0, 1, 2, 3, 4].map((i) => (
@@ -145,7 +140,7 @@ export function RobotAvatar({ isSpeaking, isListening, ageGroup, size = 'md' }: 
               key={i}
               className="w-1 rounded-full"
               style={{
-                backgroundColor: colors.primary.replace('0.6', '1'),
+                backgroundColor: colors.primary.replace('0.6', '1').replace('0.5', '1'),
               }}
               animate={{
                 height: [4, 16, 4],
