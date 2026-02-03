@@ -707,11 +707,13 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
 
   return (
     <AgeThemeProvider ageGroup={ageGroup}>
-      <div className="w-full space-y-4 relative">
+      <div className={`w-full relative ${customVoice.isConnected ? 'h-[calc(100vh-200px)] min-h-[500px] flex flex-col' : 'space-y-4'}`}>
         {/* Animated Background for young learners */}
         {isYoungLearner && customVoice.isConnected && <AnimatedBackground />}
         
-        <div className="flex items-center justify-between flex-wrap gap-2 relative z-10">
+        {/* Top Controls Section - Fixed height */}
+        <div className="flex-shrink-0 space-y-4 relative z-10">
+          <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2 flex-wrap">
             {!customVoice.isConnected ? (
             <>
@@ -771,6 +773,7 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
               {contextDocumentIds.length} doc{contextDocumentIds.length !== 1 ? 's' : ''}
             </span>
           )}
+          </div>
         </div>
         
         {/* Centered Voice Presence - Single source of truth for session state */}
@@ -798,12 +801,11 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
             />
           </div>
         )}
-      </div>
-      
-      {/* Minimal Audio Controls - Only shown during active session */}
-      {customVoice.isConnected && (
-        <div className="bg-muted/30 border border-border/50 rounded-lg p-3">
-          <div className="flex flex-wrap items-center justify-center gap-3">
+        
+        {/* Minimal Audio Controls - Only shown during active session */}
+        {customVoice.isConnected && (
+          <div className="bg-muted/30 border border-border/50 rounded-lg p-3">
+            <div className="flex flex-wrap items-center justify-center gap-3">
             {Object.entries(MODES).map(([key, config]) => {
               const ModeIcon = config.icon;
               const isActive = communicationMode === key;
@@ -853,71 +855,75 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
                 <MicOff className="h-3.5 w-3.5 text-muted-foreground" />
               )}
             </Button>
+            </div>
           </div>
-        </div>
-      )}
-      
-      {/* Microphone Error Banner */}
-      {customVoice.microphoneError && customVoice.isConnected && (
-        <div className="bg-yellow-50 dark:bg-yellow-950/20 border-l-4 border-yellow-400 dark:border-yellow-600 p-4 rounded-r-lg" data-testid="microphone-error-banner">
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="h-5 w-5 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" />
-            <div className="flex-1 space-y-2">
-              <h3 className="text-sm font-semibold text-yellow-800 dark:text-yellow-300">
-                {customVoice.microphoneError.message}
-              </h3>
-              <div className="text-sm text-yellow-700 dark:text-yellow-400">
-                <p className="font-medium mb-1.5">How to fix:</p>
-                <ol className="list-decimal list-inside space-y-1 ml-1">
-                  {customVoice.microphoneError.troubleshooting.map((step, i) => (
-                    <li key={i} className="leading-relaxed">{step}</li>
-                  ))}
-                </ol>
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button
-                  onClick={customVoice.retryMicrophone}
-                  className="text-sm font-medium text-yellow-800 dark:text-yellow-300 hover:text-yellow-900 dark:hover:text-yellow-200 underline underline-offset-2 transition-colors"
-                  data-testid="button-retry-microphone"
-                >
-                  🔄 Try again
-                </button>
-                <button
-                  onClick={customVoice.dismissMicrophoneError}
-                  className="text-sm font-medium text-yellow-800 dark:text-yellow-300 hover:text-yellow-900 dark:hover:text-yellow-200 transition-colors"
-                  data-testid="button-dismiss-error"
-                >
-                  ✕ Dismiss
-                </button>
+        )}
+        
+        {/* Microphone Error Banner */}
+        {customVoice.microphoneError && customVoice.isConnected && (
+          <div className="bg-yellow-50 dark:bg-yellow-950/20 border-l-4 border-yellow-400 dark:border-yellow-600 p-4 rounded-r-lg" data-testid="microphone-error-banner">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" />
+              <div className="flex-1 space-y-2">
+                <h3 className="text-sm font-semibold text-yellow-800 dark:text-yellow-300">
+                  {customVoice.microphoneError.message}
+                </h3>
+                <div className="text-sm text-yellow-700 dark:text-yellow-400">
+                  <p className="font-medium mb-1.5">How to fix:</p>
+                  <ol className="list-decimal list-inside space-y-1 ml-1">
+                    {customVoice.microphoneError.troubleshooting.map((step, i) => (
+                      <li key={i} className="leading-relaxed">{step}</li>
+                    ))}
+                  </ol>
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={customVoice.retryMicrophone}
+                    className="text-sm font-medium text-yellow-800 dark:text-yellow-300 hover:text-yellow-900 dark:hover:text-yellow-200 underline underline-offset-2 transition-colors"
+                    data-testid="button-retry-microphone"
+                  >
+                    🔄 Try again
+                  </button>
+                  <button
+                    onClick={customVoice.dismissMicrophoneError}
+                    className="text-sm font-medium text-yellow-800 dark:text-yellow-300 hover:text-yellow-900 dark:hover:text-yellow-200 transition-colors"
+                    data-testid="button-dismiss-error"
+                  >
+                    ✕ Dismiss
+                  </button>
+                </div>
               </div>
             </div>
           </div>
+        )}
         </div>
-      )}
+        {/* End Top Controls Section */}
+        
+        {/* Scrollable Transcript Area - Takes remaining space */}
+        <div className={`${customVoice.isConnected ? 'flex-1 min-h-0 overflow-y-auto' : ''}`}>
+          <RealtimeVoiceTranscript
+            messages={customVoice.transcript.map(t => ({
+              role: t.speaker === 'student' ? 'user' as const : 'assistant' as const,
+              content: t.text,
+              timestamp: t.timestamp ? new Date(t.timestamp) : new Date()
+            }))}
+            isConnected={customVoice.isConnected}
+            status={customVoice.isConnected ? 'active' : sessionId ? 'ended' : 'idle'}
+            language={language}
+            voice={`${ageGroup} Tutor`}
+            isTutorThinking={customVoice.isTutorThinking}
+            isTutorSpeaking={customVoice.isTutorSpeaking}
+            communicationMode={communicationMode}
+            studentMicEnabled={studentMicEnabled}
+            isHearingStudent={customVoice.micStatus === 'hearing_you'}
+          />
+        </div>
       
-      {/* Transcript Display */}
-      <RealtimeVoiceTranscript
-        messages={customVoice.transcript.map(t => ({
-          role: t.speaker === 'student' ? 'user' as const : 'assistant' as const,
-          content: t.text,
-          timestamp: t.timestamp ? new Date(t.timestamp) : new Date()
-        }))}
-        isConnected={customVoice.isConnected}
-        status={customVoice.isConnected ? 'active' : sessionId ? 'ended' : 'idle'}
-        language={language}
-        voice={`${ageGroup} Tutor`}
-        isTutorThinking={customVoice.isTutorThinking}
-        isTutorSpeaking={customVoice.isTutorSpeaking}
-        communicationMode={communicationMode}
-        studentMicEnabled={studentMicEnabled}
-        isHearingStudent={customVoice.micStatus === 'hearing_you'}
-      />
-      
-      {/* Chat Input - Only shown during active session */}
+      {/* Sticky Chat Input - Always visible at bottom */}
       {customVoice.isConnected && (
-        <div className={customVoice.microphoneError || !studentMicEnabled ? 'text-mode-emphasis' : ''}>
+        <div className={`flex-shrink-0 sticky bottom-0 bg-background/95 backdrop-blur-sm border-t shadow-[0_-4px_20px_rgba(0,0,0,0.1)] pt-3 pb-4 z-50 ${customVoice.microphoneError || !studentMicEnabled ? 'text-mode-emphasis' : ''}`}>
           {(customVoice.microphoneError || !studentMicEnabled) && (
-            <div className="text-center mb-3 px-4 py-3 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 border-2 border-blue-300 dark:border-blue-700 rounded-lg shadow-sm">
+            <div className="text-center mb-3 px-4 py-2 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 border-2 border-blue-300 dark:border-blue-700 rounded-lg shadow-sm mx-1">
               <div className="flex items-center justify-center gap-2">
                 <Type className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                 <p className="text-blue-700 dark:text-blue-300 font-semibold text-sm">

@@ -100,9 +100,9 @@ export function RealtimeVoiceTranscript({
         </div>
       </div>
       
-      <Card className="border-2">
-        <CardContent className="p-0">
-          <ScrollArea className="h-80 w-full p-4">
+      <Card className="border-2 h-full">
+        <CardContent className="p-0 h-full">
+          <ScrollArea className="h-full min-h-[200px] w-full p-4">
             <div className="space-y-3">
               {messages.length === 0 ? (
                 <div className="text-center text-muted-foreground text-sm py-8">
