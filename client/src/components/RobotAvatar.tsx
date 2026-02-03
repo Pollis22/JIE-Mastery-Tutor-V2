@@ -34,9 +34,9 @@ export function RobotAvatar({ isSpeaking, isListening, ageGroup, size = 'md' }: 
   const colors = glowColors[ageGroup];
   
   const sizeClasses = {
-    sm: { container: 'w-16 h-16', glow: 64 },
-    md: { container: 'w-24 h-24', glow: 96 },
-    lg: { container: 'w-32 h-32', glow: 128 },
+    sm: { container: 'w-20 h-20', glow: 80 },
+    md: { container: 'w-28 h-28', glow: 112 },
+    lg: { container: 'w-40 h-40', glow: 160 },
   };
   
   const currentSize = sizeClasses[size];
@@ -113,7 +113,7 @@ export function RobotAvatar({ isSpeaking, isListening, ageGroup, size = 'md' }: 
         <img
           src={robotImage}
           alt="AI Tutor"
-          className="w-full h-full object-cover object-center scale-110"
+          className="w-full h-full object-contain"
         />
         
         {isSpeaking && (
