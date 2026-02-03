@@ -98,6 +98,12 @@ The platform features a comprehensive age-appropriate visual system that adapts 
 - Transcript animations disabled when reduced motion preferred
 - Motion effects use Framer Motion with conditional animation states
 
+**Voice Session Layout**:
+- Flex column layout during active sessions prevents content jumping
+- Top controls section uses `flex-shrink-0` for fixed height
+- Transcript area scrolls independently with `flex-1 min-h-0 overflow-y-auto`
+- Chat input is sticky at bottom with backdrop blur for always-visible access
+
 ### Content Moderation System
 A balanced, context-aware moderation system uses a keyword whitelist for educational terms and multi-layered AI moderation that acts only on high-confidence violations.
 
