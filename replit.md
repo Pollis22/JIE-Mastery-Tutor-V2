@@ -83,14 +83,22 @@ The platform features a comprehensive age-appropriate visual system that adapts 
 
 **Theme System** (`client/src/styles/themes.ts`, `client/src/contexts/ThemeContext.tsx`):
 - 5 distinct age themes: K-2, Grades 3-5, 6-8, 9-12, College
-- Each theme defines: colors (primary, secondary, accent, background), fonts, emojis, and styling
+- Each theme defines: colors, fonts, emojis, avatarStyle, messageBubbleClass, isDark flag
 - AgeThemeProvider wraps voice sessions to provide theme context throughout the app
+- K-5: Playful pastels with emoji avatars and floating shapes
+- 6-8: Dark slate/indigo "Explorer" theme with geometric avatar and cyan accents
+- 9-12: Near-black "Focus" theme with waveform avatar and violet accents
+- College: Clean professional gray with minimal dot avatar
 
 **Visual Components**:
-- **TutorAvatar** (`TutorAvatar.tsx`): Expressive emoji-based avatar for K-5 with states (idle, listening, thinking, speaking, celebrating)
-- **AnimatedBackground** (`AnimatedBackground.tsx`): Floating shapes animation for K-5 learners with age-appropriate colors
-- **VoicePresenceIndicator** (`VoicePresenceIndicator.tsx`): Professional orb indicator for older students (6-12, College)
-- **SessionProgress** (`SessionProgress.tsx`): XP/streak gamification for K-8, minimal "topics covered" for older students
+- **TutorAvatar** (`TutorAvatar.tsx`): Age-specific avatars:
+  - `emoji` (K-5): Animated emoji face with bouncing speech indicators
+  - `geometric` (6-8): Rotating diamond shape with cyan/blue gradients
+  - `waveform` (9-12): Audio bar visualization with violet tones
+  - `minimal` (College): Simple pulsing dot, professional styling
+- **AnimatedBackground** (`AnimatedBackground.tsx`): Floating shapes animation for K-5 learners only
+- **VoicePresenceIndicator** (`VoicePresenceIndicator.tsx`): Professional orb indicator (legacy, for backup)
+- **SessionProgress** (`SessionProgress.tsx`): XP/streak for K-8, "topics covered" for 9-12/College, dark-themed for 6-8
 - **Celebration** (`Celebration.tsx`): Confetti triggers for achievements and milestones
 
 **Accessibility**:
