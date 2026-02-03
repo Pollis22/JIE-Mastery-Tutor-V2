@@ -1,11 +1,13 @@
 import { createContext, useContext, ReactNode, useMemo } from 'react';
-import { Theme, getTheme, normalizeAgeGroup, AgeGroup } from '@/styles/themes';
+import { Theme, getTheme, normalizeAgeGroup, AgeGroup, isDarkTheme } from '@/styles/themes';
 
 interface ThemeContextValue {
   theme: Theme;
   ageGroup: AgeGroup;
   isYoungLearner: boolean;
+  isMiddleSchool: boolean;
   showGamification: boolean;
+  isDark: boolean;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -24,7 +26,9 @@ export function AgeThemeProvider({ children, ageGroup }: ThemeProviderProps) {
       theme,
       ageGroup: normalized,
       isYoungLearner: normalized === 'K-2' || normalized === '3-5',
-      showGamification: normalized === 'K-2' || normalized === '3-5' || normalized === '6-8',
+      isMiddleSchool: normalized === '6-8',
+      showGamification: theme.showXP,
+      isDark: theme.isDark,
     };
   }, [ageGroup]);
   
@@ -38,11 +42,14 @@ export function AgeThemeProvider({ children, ageGroup }: ThemeProviderProps) {
 export function useAgeTheme(): ThemeContextValue {
   const context = useContext(ThemeContext);
   if (!context) {
+    const theme = getTheme('College');
     return {
-      theme: getTheme('College'),
+      theme,
       ageGroup: 'College',
       isYoungLearner: false,
+      isMiddleSchool: false,
       showGamification: false,
+      isDark: false,
     };
   }
   return context;

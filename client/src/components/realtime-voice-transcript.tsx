@@ -79,20 +79,22 @@ export function RealtimeVoiceTranscript({
     });
   };
 
+  const isDark = theme.isDark;
+  
   return (
     <div className="w-full h-full flex flex-col" data-testid="realtime-voice-transcript">
       <div className="flex items-center justify-between mb-3 flex-shrink-0">
-        <h3 className="text-sm font-medium text-muted-foreground">
+        <h3 className={`text-sm font-medium ${isDark ? 'text-gray-400' : 'text-muted-foreground'}`}>
           🎙️ Voice Conversation Transcript
         </h3>
         <div className="flex items-center gap-2">
           {language && (
-            <Badge variant="outline" className="text-xs">
+            <Badge variant="outline" className={`text-xs ${isDark ? 'border-gray-600 text-gray-300' : ''}`}>
               {language.toUpperCase()}
             </Badge>
           )}
           {voice && (
-            <Badge variant="outline" className="text-xs">
+            <Badge variant="outline" className={`text-xs ${isDark ? 'border-gray-600 text-gray-300' : ''}`}>
               {voice}
             </Badge>
           )}
@@ -100,12 +102,12 @@ export function RealtimeVoiceTranscript({
         </div>
       </div>
       
-      <Card className="border-2 flex-1 min-h-0 flex flex-col">
+      <Card className={`flex-1 min-h-0 flex flex-col ${isDark ? 'bg-slate-800/50 border-slate-700' : 'border-2'}`}>
         <CardContent className="p-0 flex-1 min-h-0 overflow-hidden">
           <ScrollArea className="h-full w-full p-4">
             <div className="space-y-3">
               {messages.length === 0 ? (
-                <div className="text-center text-muted-foreground text-sm py-8">
+                <div className={`text-center text-sm py-8 ${isDark ? 'text-gray-500' : 'text-muted-foreground'}`}>
                   {isConnected 
                     ? "Start speaking to begin the conversation..." 
                     : "Connecting to voice service..."}
@@ -126,7 +128,7 @@ export function RealtimeVoiceTranscript({
                         className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}
                         data-testid={`message-${message.role}-${index}`}
                       >
-                        {!isUser && (
+                        {!isUser && !isDark && (
                           <div className="order-1 mr-2 flex-shrink-0">
                             <div 
                               className="w-8 h-8 rounded-full flex items-center justify-center shadow-md"
@@ -138,25 +140,35 @@ export function RealtimeVoiceTranscript({
                             </div>
                           </div>
                         )}
+                        {!isUser && isDark && (
+                          <div className="order-1 mr-2 flex-shrink-0">
+                            <div 
+                              className="w-6 h-6 rounded-full flex items-center justify-center"
+                              style={{ 
+                                background: `linear-gradient(135deg, ${theme.primary}, ${theme.secondary})` 
+                              }}
+                            />
+                          </div>
+                        )}
                         
                         <div className={`max-w-[80%] ${isUser ? 'order-1' : 'order-2'}`}>
                           <div
                             className={`
                               relative px-4 py-3 text-sm shadow-md
                               ${isUser 
-                                ? `bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-2xl rounded-tr-sm ml-4` 
-                                : `bg-gradient-to-br from-purple-500 to-purple-600 text-white rounded-2xl rounded-tl-sm mr-4`
+                                ? `${theme.userBubbleClass} ml-4` 
+                                : `${theme.messageBubbleClass} mr-4`
                               }
                             `}
                             style={{
-                              borderRadius: isYoungLearner ? '20px' : '12px',
+                              borderRadius: theme.borderRadius,
                             }}
                           >
                             <div className="whitespace-pre-wrap break-words leading-relaxed">
                               {message.content}
                             </div>
                           </div>
-                          <div className={`text-[10px] text-muted-foreground mt-1 ${isUser ? 'text-right' : 'text-left ml-2'}`}>
+                          <div className={`text-[10px] mt-1 ${isUser ? 'text-right' : 'text-left ml-2'} ${theme.isDark ? 'text-gray-500' : 'text-muted-foreground'}`}>
                             {formatTime(message.timestamp)}
                           </div>
                         </div>

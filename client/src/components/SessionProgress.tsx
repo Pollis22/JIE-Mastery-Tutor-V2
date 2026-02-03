@@ -14,15 +14,15 @@ export function SessionProgress({
   xpEarned = 0,
   sessionDuration = 0,
 }: SessionProgressProps) {
-  const { ageGroup, showGamification, theme } = useAgeTheme();
+  const { ageGroup, showGamification, theme, isDark } = useAgeTheme();
   
   if (!showGamification) {
     if (questionsAnswered > 0 && (ageGroup === '9-12' || ageGroup === 'College')) {
       return (
-        <div className="text-sm text-gray-500 flex items-center gap-2">
+        <div className={`text-sm flex items-center gap-2 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
           <span>{questionsAnswered} topics covered</span>
           {sessionDuration > 0 && (
-            <span className="text-gray-400">
+            <span className={isDark ? 'text-gray-500' : 'text-gray-400'}>
               ({Math.floor(sessionDuration / 60)}min)
             </span>
           )}
@@ -34,7 +34,11 @@ export function SessionProgress({
   
   return (
     <motion.div 
-      className="flex items-center gap-3 bg-white/80 dark:bg-gray-800/80 backdrop-blur rounded-full px-4 py-2 shadow-lg"
+      className={`flex items-center gap-3 backdrop-blur rounded-full px-4 py-2 shadow-lg ${
+        isDark 
+          ? 'bg-slate-800/80 text-gray-200' 
+          : 'bg-white/80 text-gray-700'
+      }`}
       initial={{ y: -20, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       transition={{ type: 'spring', stiffness: 300, damping: 30 }}
@@ -49,7 +53,7 @@ export function SessionProgress({
         >
           <span className="text-xl">⭐</span>
           <motion.span 
-            className="font-bold text-purple-600 dark:text-purple-400 min-w-[40px]"
+            className={`font-bold min-w-[40px] ${isDark ? 'text-cyan-400' : 'text-purple-600'}`}
             key={xpEarned}
             animate={{ scale: [1, 1.3, 1] }}
             transition={{ duration: 0.3 }}
@@ -85,7 +89,7 @@ export function SessionProgress({
             animate={{ scale: 1 }}
           >
             <span className="text-xl">📚</span>
-            <span className="font-bold text-blue-600 dark:text-blue-400">
+            <span className={`font-bold ${isDark ? 'text-cyan-400' : 'text-blue-600'}`}>
               {questionsAnswered}
             </span>
           </motion.div>
