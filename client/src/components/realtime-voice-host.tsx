@@ -3,6 +3,8 @@ import { useCustomVoice } from '@/hooks/use-custom-voice';
 import { RealtimeVoiceTranscript } from './realtime-voice-transcript';
 import { ChatInput } from './ChatInput';
 import { MicStatusPill } from './MicStatusPill';
+import { VoicePresenceIndicator, VoicePresenceState } from './VoicePresenceIndicator';
+import { useSimulatedAmplitude } from '@/hooks/use-audio-amplitude';
 import { Button } from '@/components/ui/button';
 import { Mic, MicOff, Volume2, VolumeX, AlertTriangle, FileText, Type, Headphones, Timer } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -195,6 +197,17 @@ export function RealtimeVoiceHost({
   
   // Use Custom Voice Stack (Deepgram + Claude + ElevenLabs)
   const customVoice = useCustomVoice();
+  
+  // Voice Presence Indicator - simulated amplitude for visual feedback
+  const simulatedAmplitude = useSimulatedAmplitude(customVoice.isTutorSpeaking);
+  
+  // Compute voice presence state from voice connection status
+  const voicePresenceState: VoicePresenceState = (() => {
+    if (!customVoice.isConnected) return 'idle';
+    if (customVoice.isTutorSpeaking) return 'tutorSpeaking';
+    if (customVoice.micStatus === 'hearing_you') return 'userSpeaking';
+    return 'listening';
+  })();
   
   // Generate a unique session ID
   const generateSessionId = () => {
@@ -738,10 +751,15 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
         </div>
         
         {customVoice.isConnected && (
-          <div className="flex items-center gap-3">
-            <MicStatusPill status={customVoice.micStatus} />
-            <div className="h-4 w-px bg-border" />
-            {customVoice.isTutorThinking ? (
+          <div className="flex items-center gap-4">
+            {/* Premium Voice Presence Indicator */}
+            <VoicePresenceIndicator 
+              state={customVoice.isTutorThinking ? 'listening' : voicePresenceState}
+              amplitude={simulatedAmplitude}
+            />
+            
+            {/* Thinking indicator overlay */}
+            {customVoice.isTutorThinking && (
               <div className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400" data-testid="status-tutor-thinking">
                 <div className="flex items-center gap-1">
                   <span className="inline-block w-1.5 h-1.5 bg-amber-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
@@ -750,21 +768,14 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
                 </div>
                 <span className="font-medium italic">JIE is thinking...</span>
               </div>
-            ) : customVoice.isTutorSpeaking ? (
-              <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400" data-testid="status-tutor-speaking">
-                <Volume2 className="h-4 w-4 animate-pulse" />
-                <span className="font-medium">Tutor is speaking... (you can interrupt)</span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400" data-testid="status-listening">
-                <Mic className="h-4 w-4 animate-pulse" />
-                <span className="font-semibold">I'm listening - speak anytime!</span>
-              </div>
             )}
+            
+            <div className="h-4 w-px bg-border" />
+            <MicStatusPill status={customVoice.micStatus} />
             <div className="h-4 w-px bg-border" />
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <div className="h-2 w-2 bg-red-500 rounded-full animate-pulse" />
-              <span>Recording</span>
+              <span>Live</span>
             </div>
           </div>
         )}
