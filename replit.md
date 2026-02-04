@@ -162,3 +162,35 @@ The platform is designed for Replit Autoscale Deployment, supporting WebSockets,
 ```
 
 **Rollback:** Set `ASSEMBLYAI_PROFILE_MODE=global` to use hardcoded values (0.72/1200/5500)
+
+### February 2026 - OLDER_STUDENTS Voice-Turn Profile
+**Feature:** Single shared client-side VAD profile for Grade 6-8, Grade 9-12, and College/Adult
+
+**Problem Solved:**
+1. Choppy tutor audio from false interruptions (undefined reason stopping playback)
+2. Student cut off mid-thought (over-eager end-of-speech detection)
+
+**OLDER_STUDENTS Profile Values (client/src/config/voice-constants.ts):**
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| minSpeechMs | 400ms | Minimum continuous speech before "end" is valid |
+| ignoreSpeechEndUnderMs | 250ms | Ignore speech_end if duration below this |
+| ignoreSpeechEndIfDurationZero | true | Hard block duration=0 speech ends |
+| coalesceWindowMs | 3200ms | Window to merge rapid speech segments (was 2200ms) |
+| continuationGraceMs | 1200ms | Extra wait on continuation phrases |
+| maxAdditionalWaitMs | 1500ms | Cap on extra waiting |
+
+**Hardening Applied (client-side only):**
+- A) Interruption blocking: Only stop tutor audio if `reason` is in allowlist: `['barge_in', 'user_speech', 'server_turn_detected']`
+- B) VAD end-of-speech: Ignore duration=0ms events, require 400ms+ continuous speech
+- C) Enhanced coalescing: 3.2s window for thinking pauses
+- D) Continuation phrases: "hold on", "wait", "let me think", "um", etc.
+
+**Log Prefix:** `[VOICE_OLDER_STUDENTS]`
+
+**K-2 and Grades 3-5:** Unchanged - use original VAD profile behavior
+
+**Test Cases:**
+1. Grade 6+ tutor audio should NOT stop on interruption with undefined reason
+2. Grade 6+ student can pause 1-3 seconds mid-thought without being cut off
+3. K-2 and 3-5 behavior remains unchanged

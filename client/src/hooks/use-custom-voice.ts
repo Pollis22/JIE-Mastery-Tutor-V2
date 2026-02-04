@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { VOICE_TIMING, VOICE_THRESHOLDS, VOICE_MESSAGES, EXCLUDED_DEVICE_PATTERNS, ADAPTIVE_BARGE_IN, GradeBandType, TURN_TAKING_FLAGS, FILLER_WORDS } from "@/config/voice-constants";
+import { VOICE_TIMING, VOICE_THRESHOLDS, VOICE_MESSAGES, EXCLUDED_DEVICE_PATTERNS, ADAPTIVE_BARGE_IN, GradeBandType, TURN_TAKING_FLAGS, FILLER_WORDS, OLDER_STUDENTS_PROFILE, CONTINUATION_PHRASES, VALID_INTERRUPTION_REASONS, isOlderStudentsBand } from "@/config/voice-constants";
 import { voiceLogger } from "@/utils/voice-logger";
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -294,6 +294,61 @@ export function useCustomVoice() {
   const gradeBandRef = useRef<string | null>(null); // Set from session config
   const activityModeRef = useRef<'default' | 'reading'>('default'); // Set from session config
   
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // OLDER_STUDENTS: Continuation phrase tracking for grace period
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  const lastStudentPartialRef = useRef<string>(''); // Track last student partial transcript
+  const continuationGraceActiveRef = useRef<boolean>(false); // Grace period flag
+  const continuationGraceEndTimeRef = useRef<number>(0); // When grace period ends
+  const totalContinuationGraceRef = useRef<number>(0); // Track total grace applied to enforce cap
+  
+  // Helper: Check if transcript contains continuation phrases
+  const checkContinuationPhrase = (text: string): { found: boolean; phrase: string | null } => {
+    const lower = text.toLowerCase().trim();
+    for (const phrase of CONTINUATION_PHRASES) {
+      if (lower.includes(phrase) || lower.endsWith(phrase)) {
+        return { found: true, phrase };
+      }
+    }
+    return { found: false, phrase: null };
+  };
+  
+  // Helper: Apply continuation grace period for older students
+  const applyContinuationGrace = (transcript: string): boolean => {
+    if (!isOlderStudentsBand(gradeBandRef.current)) return false;
+    
+    const { found, phrase } = checkContinuationPhrase(transcript);
+    if (!found) return false;
+    
+    const now = Date.now();
+    
+    // Check if we've hit the max additional wait cap
+    if (totalContinuationGraceRef.current >= OLDER_STUDENTS_PROFILE.maxAdditionalWaitMs) {
+      console.log(`[VOICE_OLDER_STUDENTS] 🕐 Continuation grace capped at ${OLDER_STUDENTS_PROFILE.maxAdditionalWaitMs}ms total`);
+      return false;
+    }
+    
+    // Apply grace period
+    const graceToApply = Math.min(
+      OLDER_STUDENTS_PROFILE.continuationGraceMs,
+      OLDER_STUDENTS_PROFILE.maxAdditionalWaitMs - totalContinuationGraceRef.current
+    );
+    
+    continuationGraceActiveRef.current = true;
+    continuationGraceEndTimeRef.current = now + graceToApply;
+    totalContinuationGraceRef.current += graceToApply;
+    
+    console.log(`[VOICE_OLDER_STUDENTS] 🕐 Continuation grace applied: phrase="${phrase}" extraMs=${graceToApply} totalGrace=${totalContinuationGraceRef.current}ms`);
+    return true;
+  };
+  
+  // Helper: Reset continuation grace state (call on speech end)
+  const resetContinuationGrace = () => {
+    continuationGraceActiveRef.current = false;
+    continuationGraceEndTimeRef.current = 0;
+    totalContinuationGraceRef.current = 0;
+  };
+  
   // Check if user allows virtual audio devices
   const getAllowVirtualAudio = (): boolean => {
     try {
@@ -433,6 +488,14 @@ export function useCustomVoice() {
 
   // Update partial transcript (replaces previous partial, doesn't accumulate)
   const updatePartialTranscript = useCallback((text: string) => {
+    // OLDER_STUDENTS: Track partial transcript for continuation phrase detection
+    lastStudentPartialRef.current = text;
+    
+    // Check for continuation phrases and apply grace period
+    if (isOlderStudentsBand(gradeBandRef.current)) {
+      applyContinuationGrace(text);
+    }
+    
     setTranscript(prev => {
       const withoutPartial = prev.filter(m => !m.isPartial);
       return [...withoutPartial, {
@@ -1019,8 +1082,36 @@ export function useCustomVoice() {
               stopPlayback: message.stopPlayback
             });
             
-            // Always stop audio playback on interrupt
-            if (message.stopPlayback !== false) {
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            // OLDER_STUDENTS HARDENING (Feb 2026): Block false interruptions
+            // For Grade 6+, only stop audio if reason is in the allowlist
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            const isOlderStudent = isOlderStudentsBand(gradeBandRef.current);
+            
+            if (isOlderStudent && message.stopPlayback !== false) {
+              // Check if interruption reason is valid
+              const reason = message.reason as string | undefined;
+              const isValidReason = reason && VALID_INTERRUPTION_REASONS.includes(reason as any);
+              const tutorActuallySpeaking = isTutorActuallySpeaking({
+                isTutorSpeakingFlag: isTutorSpeakingRef.current,
+                isPlayingFlag: isPlayingRef.current,
+                audioQueueSize: audioQueueRef.current.length,
+                scheduledSourcesCount: scheduledSourcesRef.current.length,
+              });
+              
+              if (!isValidReason) {
+                console.log(`[VOICE_OLDER_STUDENTS] ⛔ BLOCKED interrupt: reason=${reason || 'undefined'} tutorSpeaking=${tutorActuallySpeaking} isPlaying=${isPlayingRef.current}`);
+                // Do NOT stop audio - this is a false interruption
+              } else if (!tutorActuallySpeaking && !isPlayingRef.current) {
+                console.log(`[VOICE_OLDER_STUDENTS] ⏭️ Skipped interrupt: tutor not speaking (reason=${reason})`);
+                // Tutor not speaking, no need to stop
+              } else {
+                console.log(`[VOICE_OLDER_STUDENTS] ✅ ALLOWED interrupt: reason=${reason} tutorSpeaking=${tutorActuallySpeaking}`);
+                stopAudio();
+                setIsTutorSpeaking(false);
+              }
+            } else if (message.stopPlayback !== false) {
+              // K-2 and 3-5: Original behavior - always stop on interrupt
               stopAudio();
               setIsTutorSpeaking(false);
             }
@@ -1872,6 +1963,7 @@ registerProcessor('audio-processor', AudioProcessor);
             const now = Date.now();
             const speechDuration = workletSpeechStartTime > 0 ? now - workletSpeechStartTime : 0;
             const timeSinceLastEnd = workletLastSpeechEndTime > 0 ? now - workletLastSpeechEndTime : Infinity;
+            const isOlderStudent = isOlderStudentsBand(gradeBandRef.current);
             
             // POST-INTERRUPTION BUFFER: Ignore speech-end during buffer period
             if (workletPostInterruptionBufferActive) {
@@ -1879,6 +1971,53 @@ registerProcessor('audio-processor', AudioProcessor);
               return;
             }
             
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            // OLDER_STUDENTS VAD HARDENING (Feb 2026)
+            // For Grade 6+, apply stricter speech_end validation
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            if (isOlderStudent) {
+              // C1) Hard block duration=0 speech ends
+              if (OLDER_STUDENTS_PROFILE.ignoreSpeechEndIfDurationZero && speechDuration === 0) {
+                console.log(`[VOICE_OLDER_STUDENTS] ⛔ Ignored speech_end: duration=0ms`);
+                return;
+              }
+              
+              // C2) Ignore speech_end if duration < threshold
+              if (speechDuration > 0 && speechDuration < OLDER_STUDENTS_PROFILE.ignoreSpeechEndUnderMs) {
+                console.log(`[VOICE_OLDER_STUDENTS] ⛔ Ignored speech_end: duration=${speechDuration}ms < ${OLDER_STUDENTS_PROFILE.ignoreSpeechEndUnderMs}ms threshold`);
+                workletSpeechStartTime = 0;
+                return;
+              }
+              
+              // C3) Minimum continuous speech before end is valid
+              if (speechDuration > 0 && speechDuration < OLDER_STUDENTS_PROFILE.minSpeechMs) {
+                console.log(`[VOICE_OLDER_STUDENTS] ⛔ Ignored speech_end: duration=${speechDuration}ms < ${OLDER_STUDENTS_PROFILE.minSpeechMs}ms minSpeechMs`);
+                workletSpeechStartTime = 0;
+                return;
+              }
+              
+              // C4) Enhanced coalescing window for older students
+              if (timeSinceLastEnd < OLDER_STUDENTS_PROFILE.coalesceWindowMs) {
+                console.log(`[VOICE_OLDER_STUDENTS] 🔗 Coalescing: gapMs=${timeSinceLastEnd} windowMs=${OLDER_STUDENTS_PROFILE.coalesceWindowMs}`);
+                return;
+              }
+              
+              // C5) Continuation phrase grace period - delay end if student used continuation cue
+              if (continuationGraceActiveRef.current && now < continuationGraceEndTimeRef.current) {
+                const remainingGrace = continuationGraceEndTimeRef.current - now;
+                console.log(`[VOICE_OLDER_STUDENTS] 🕐 Continuation grace active: ${remainingGrace}ms remaining`);
+                return;
+              }
+              
+              // Valid speech end - reset continuation grace state
+              resetContinuationGrace();
+              console.log(`[VOICE_OLDER_STUDENTS] ✅ Valid speech_end: duration=${speechDuration}ms timeSinceLastEnd=${timeSinceLastEnd}ms`);
+              workletLastSpeechEndTime = now;
+              workletSpeechStartTime = 0;
+              return;
+            }
+            
+            // K-2 and 3-5: Original behavior
             // Get current profile for dynamic thresholds
             const profile = getProfile();
             
@@ -2142,9 +2281,64 @@ registerProcessor('audio-processor', AudioProcessor);
               return;
             }
             
+            const speechDuration = speechStartTime > 0 ? now - speechStartTime : 0;
+            const isOlderStudent = isOlderStudentsBand(gradeBandRef.current);
+            
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            // OLDER_STUDENTS VAD HARDENING (Feb 2026) - Fallback path
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            if (isOlderStudent) {
+              // C1) Hard block duration=0 speech ends
+              if (OLDER_STUDENTS_PROFILE.ignoreSpeechEndIfDurationZero && speechDuration === 0) {
+                console.log(`[VOICE_OLDER_STUDENTS] ⛔ Fallback: Ignored speech_end duration=0ms`);
+                return;
+              }
+              
+              // C2) Ignore speech_end if duration < threshold
+              if (speechDuration > 0 && speechDuration < OLDER_STUDENTS_PROFILE.ignoreSpeechEndUnderMs) {
+                console.log(`[VOICE_OLDER_STUDENTS] ⛔ Fallback: Ignored speech_end duration=${speechDuration}ms < ${OLDER_STUDENTS_PROFILE.ignoreSpeechEndUnderMs}ms`);
+                return;
+              }
+              
+              // C3) Minimum continuous speech before end is valid
+              if (speechDuration > 0 && speechDuration < OLDER_STUDENTS_PROFILE.minSpeechMs) {
+                console.log(`[VOICE_OLDER_STUDENTS] ⛔ Fallback: Ignored speech_end duration=${speechDuration}ms < ${OLDER_STUDENTS_PROFILE.minSpeechMs}ms minSpeechMs`);
+                return;
+              }
+              
+              // C4) Enhanced coalescing window for older students
+              if (lastSpeechEndTime > 0 && now - lastSpeechEndTime < OLDER_STUDENTS_PROFILE.coalesceWindowMs) {
+                const gapMs = now - lastSpeechEndTime;
+                console.log(`[VOICE_OLDER_STUDENTS] 🔗 Fallback: Coalescing gapMs=${gapMs} windowMs=${OLDER_STUDENTS_PROFILE.coalesceWindowMs}`);
+                return;
+              }
+              
+              // C5) Continuation phrase grace period - delay end if student used continuation cue
+              if (continuationGraceActiveRef.current && now < continuationGraceEndTimeRef.current) {
+                const remainingGrace = continuationGraceEndTimeRef.current - now;
+                console.log(`[VOICE_OLDER_STUDENTS] 🕐 Fallback: Continuation grace active: ${remainingGrace}ms remaining`);
+                return;
+              }
+              
+              // Confirmed speech end for older student - reset continuation grace
+              resetContinuationGrace();
+              speechActive = false;
+              speechEndTime = 0;
+              speechStartTime = 0;
+              lastSpeechEndTime = now;
+              silentChunks = 0;
+              if (postInterruptionTimeout) {
+                clearTimeout(postInterruptionTimeout);
+                postInterruptionTimeout = null;
+              }
+              postInterruptionBufferActive = false;
+              console.log(`[VOICE_OLDER_STUDENTS] ✅ Fallback: Valid speech_end duration=${speechDuration}ms`);
+              return;
+            }
+            
+            // K-2 and 3-5: Original behavior
             // MINIMUM SPEECH DURATION CHECK using profile values
             const profile = getProfile();
-            const speechDuration = speechStartTime > 0 ? now - speechStartTime : 0;
             
             // Track for auto-escalation
             checkAutoEscalation(speechDuration);

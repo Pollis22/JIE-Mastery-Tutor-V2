@@ -110,3 +110,62 @@ export const TURN_TAKING_FLAGS = {
 
 // Filler words to ignore when checking for content
 export const FILLER_WORDS = ['um', 'uh', 'hmm', 'hm', 'ah', 'er', 'like', 'you know'] as const;
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// OLDER_STUDENTS PROFILE (Feb 2026)
+// Single shared profile for Grade 6-8, Grade 9-12, and College/Adult
+// Fixes: choppy tutor audio (false interruptions), student cut off mid-thought
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+export interface OlderStudentsProfile {
+  minSpeechMs: number;              // Minimum continuous speech before "end" is valid
+  ignoreSpeechEndUnderMs: number;   // Ignore speech_end if duration below this
+  ignoreSpeechEndIfDurationZero: boolean;  // Hard block duration=0 speech ends
+  coalesceWindowMs: number;         // Window to merge rapid speech events
+  continuationGraceMs: number;      // Extra wait on continuation phrases (bounded)
+  maxAdditionalWaitMs: number;      // Cap on extra waiting to avoid sluggishness
+}
+
+export const OLDER_STUDENTS_PROFILE: OlderStudentsProfile = {
+  minSpeechMs: 400,                 // Minimum 400ms of continuous speech before "end" is valid
+  ignoreSpeechEndUnderMs: 250,      // Ignore speech_end if duration < 250ms
+  ignoreSpeechEndIfDurationZero: true,  // Hard block duration=0 events
+  coalesceWindowMs: 3200,           // 3.2s window to merge speech segments (was 2200ms)
+  continuationGraceMs: 1200,        // 1.2s extra wait on continuation cues
+  maxAdditionalWaitMs: 1500,        // Cap extra wait at 1.5s total
+};
+
+// Continuation phrases that indicate student wants more time
+export const CONTINUATION_PHRASES = [
+  'hold on',
+  'wait',
+  "i wasn't finished",
+  "i'm not finished",
+  'let me think',
+  'um',
+  'uh',
+  'so',
+  'because',
+  'and',
+  'but',
+  'also',
+  'actually',
+  'well',
+  'hmm',
+  'okay so',
+  'like',
+] as const;
+
+// Allowed interruption reasons that can stop tutor audio
+export const VALID_INTERRUPTION_REASONS = [
+  'barge_in',
+  'user_speech',
+  'server_turn_detected',
+] as const;
+
+// Check if a grade band is OLDER_STUDENTS (Grade 6+ uses shared profile)
+export function isOlderStudentsBand(gradeBand: string | null | undefined): boolean {
+  if (!gradeBand) return false;
+  const normalized = gradeBand.toUpperCase().replace(/[^A-Z0-9-]/g, '');
+  return normalized === 'G6-8' || normalized === 'G9-12' || normalized === 'ADV' || 
+         normalized === '6-8' || normalized === '9-12' || normalized === 'COLLEGE';
+}
