@@ -11,6 +11,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { withRetry, withRetryStream } from "../utils/retry";
 import { getMaxTokensForGrade, LLM_CONFIG } from "../llm/systemPrompt";
+import { sanitizeTtsText, isOlderGradeBand } from "../utils/tts-sanitizer";
 
 /*
 <important_code_snippet_instructions>
@@ -339,11 +340,29 @@ export async function generateTutorResponseStreaming(
         // Check for complete sentences within the buffer
         const { sentences, remainder } = splitIntoSentences(textBuffer);
         
-        // Send each complete sentence immediately
+        // Send each complete sentence immediately (with sanitization for grade 6+)
         for (const sentence of sentences) {
+          // Apply TTS sanitization for older grade bands
+          const { sanitized, wasModified, skipped, skipReason } = sanitizeTtsText(sentence, gradeLevel || '');
+          
+          if (skipped) {
+            console.log(`[AI Service] ⛔ Sentence skipped: "${sentence.substring(0, 40)}..." (${skipReason})`);
+            continue; // Don't send empty/invalid sentences to TTS
+          }
+          
+          // Skip very short fragments (< 4 chars)
+          if (sanitized.trim().length < 4) {
+            console.log(`[AI Service] ⛔ Fragment skipped: "${sanitized}" (too short)`);
+            continue;
+          }
+          
           sentenceCount++;
-          console.log(`[AI Service] 📤 Sentence ${sentenceCount}: "${sentence.substring(0, 60)}..." (${Date.now() - streamStart}ms)`);
-          await callbacks.onSentence(sentence);
+          if (wasModified) {
+            console.log(`[AI Service] 📤 Sentence ${sentenceCount} (sanitized): "${sanitized.substring(0, 60)}..." (${Date.now() - streamStart}ms)`);
+          } else {
+            console.log(`[AI Service] 📤 Sentence ${sentenceCount}: "${sentence.substring(0, 60)}..." (${Date.now() - streamStart}ms)`);
+          }
+          await callbacks.onSentence(sanitized);
         }
         
         // Keep only the incomplete remainder for next token
@@ -354,11 +373,21 @@ export async function generateTutorResponseStreaming(
     }
     console.log(`[AI Service] ⏱️ Stream ended after ${tokenCount} tokens`);
     
-    // Send any remaining text as final sentence
+    // Send any remaining text as final sentence (with sanitization for grade 6+)
     if (textBuffer.trim()) {
-      sentenceCount++;
-      console.log(`[AI Service] 📤 Final sentence ${sentenceCount}: "${textBuffer.trim().substring(0, 50)}..." (${Date.now() - streamStart}ms)`);
-      await callbacks.onSentence(textBuffer.trim());
+      const { sanitized, wasModified, skipped, skipReason } = sanitizeTtsText(textBuffer.trim(), gradeLevel || '');
+      
+      if (!skipped && sanitized.trim().length >= 4) {
+        sentenceCount++;
+        if (wasModified) {
+          console.log(`[AI Service] 📤 Final sentence ${sentenceCount} (sanitized): "${sanitized.substring(0, 50)}..." (${Date.now() - streamStart}ms)`);
+        } else {
+          console.log(`[AI Service] 📤 Final sentence ${sentenceCount}: "${textBuffer.trim().substring(0, 50)}..." (${Date.now() - streamStart}ms)`);
+        }
+        await callbacks.onSentence(sanitized);
+      } else {
+        console.log(`[AI Service] ⛔ Final sentence skipped: "${textBuffer.trim().substring(0, 40)}..." (${skipReason || 'too short'})`);
+      }
     }
     
     const totalMs = Date.now() - streamStart;
