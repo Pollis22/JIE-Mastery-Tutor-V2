@@ -36,6 +36,12 @@ The RAG system supports various document formats (PDF, DOCX, Images via OCR, XLS
 ### Continuity Memory System
 A per-student memory system provides cross-session context for personalized tutoring. When a voice session ends, a background job generates a structured summary using Claude, storing topics covered, concepts mastered/struggled, and student insights. At session start, the last 5 summaries are injected into the Claude prompt. The system uses a DB-based job queue (`memory_jobs` table) with retry logic, and is triggered via `/api/cron/memory-jobs` (secured by CRON_SECRET). All memory operations are non-blocking with safe fallbacks.
 
+**Adaptive Continuity Greetings:** Returning students receive personalized greetings like "Welcome back! Shall we continue our discussion on [topic]?" in their selected language (8 languages supported). The `pickContinuationTopic()` helper safely extracts topics from `subject` or `topicsCovered[0]` only (never `summary_text`) with PII sanitization and max 60 character limits.
+
+**First-Turn-Only Guarantee:** The `hasGreeted` flag in SessionState prevents duplicate greetings on WebSocket reconnect. Logic: `shouldSkipGreeting = state.hasGreeted || tutorAlreadySpoke`. All greeting generation, transcript/history push, and audio sending are wrapped in this check.
+
+**Student Isolation:** Summaries are fetched via `getRecentSessionSummaries(userId, studentId)` ensuring strict per-student isolation - no cross-topic leakage between siblings sharing an account.
+
 ### Database Schema & Migrations
 Core database tables include `users`, `sessions`, `students`, `user_documents`, `content_violations`, `minute_purchases`, `session_summaries`, and `memory_jobs`. Production-safe migration guards ensure idempotent schema updates.
 
@@ -72,3 +78,27 @@ The platform is designed for Replit Autoscale Deployment, supporting WebSockets,
 -   **Tailwind CSS**: Styling
 -   **React Hook Form**: Form management with Zod validation
 -   **Lucide React**: Icon library
+
+## Build Notes
+
+### February 2026 - Greeting Hardening
+**Feature:** First-Turn-Only Greeting Guarantee
+
+**Changes Made:**
+- Added `hasGreeted: boolean` to SessionState interface in `server/routes/custom-voice-ws.ts`
+- Created `pickContinuationTopic()` helper for safe topic extraction (never uses `summary_text`)
+- Wrapped all greeting logic in `shouldSkipGreeting` check to prevent duplicates on WebSocket reconnect
+
+**Key Implementation Details:**
+- `shouldSkipGreeting = state.hasGreeted || tutorAlreadySpoke` - dual check for robustness
+- Topic sanitization: strips newlines, quotes, bracketed content, PII keywords, max 60 chars
+- Topic selection priority: `subject` → `topicsCovered[0]` → fallback phrase
+- Logging prefix: `[MEMORY_GREETING]` with sessionId, studentId, priorExists, chosenTopic, reason
+
+**Database Requirements:** None - uses existing `session_summaries` table and in-memory state
+
+**Test Cases:**
+1. New student first session → default greeting (no "Welcome back")
+2. Same student second session → continuity greeting shows once
+3. WebSocket reconnect mid-session → NO second greeting
+4. Another student under same user → no cross-topic leakage (strict isolation)
