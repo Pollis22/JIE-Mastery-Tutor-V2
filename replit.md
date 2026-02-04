@@ -131,3 +131,34 @@ The platform is designed for Replit Autoscale Deployment, supporting WebSockets,
 - All new behavior gated by environment variables
 - Default behavior (`edge` + `first_eot`) is safe and low-latency
 - Partials NEVER trigger Claude (only `end_of_turn=true`)
+
+### February 2026 - Phase 2: Age-Band Endpointing Profiles
+**Feature:** Per-tutor-band STT endpointing configuration
+
+**New Environment Variables:**
+| Variable | Values | Default | Description |
+|----------|--------|---------|-------------|
+| `ASSEMBLYAI_PROFILE_MODE` | `profile` \| `global` | `profile` | Profile mode: per-band vs hardcoded |
+
+**Age-Band Profiles (server/config/assemblyai-endpointing-profiles.ts):**
+| Band | Confidence Threshold | Min Silence (ms) | Max Turn Silence (ms) |
+|------|---------------------|------------------|----------------------|
+| K2 | 0.55 | 800 | 6000 |
+| ELEMENTARY (3-5) | 0.60 | 600 | 5000 |
+| MIDDLE (6-8) | 0.65 | 500 | 4000 |
+| HIGH (9-12) | 0.70 | 400 | 3500 |
+| COLLEGE | 0.75 | 300 | 3000 |
+
+**Profile Mapping:**
+- Buddy the Learning Bear → K2
+- Ms. Sunny / Professor Pepper → ELEMENTARY
+- Coach Alex / Dr. Nova → MIDDLE
+- Professor Taylor / Professor Ace → HIGH
+- Dr. Morgan → COLLEGE
+
+**Log Format:**
+```
+[AssemblyAI v3] EndpointingProfile: band=MIDDLE ageGroup=6-8 params={"end_of_turn_confidence_threshold":"0.65","min_end_of_turn_silence_when_confident":"500","max_turn_silence":"4000"}
+```
+
+**Rollback:** Set `ASSEMBLYAI_PROFILE_MODE=global` to use hardcoded values (0.72/1200/5500)

@@ -20,6 +20,7 @@ import { detectSafetyIssues, getStrikeMessage, shouldTerminateSession, SafetyDet
 import { sendAdminSafetyAlert, logSafetyIncident, SafetyAlertData, handleSafetyIncident, SafetyIncidentNotification, SafetyIncidentType } from '../services/safety-alert-service';
 import { safetyIncidents } from '@shared/schema';
 import { getRecentSessionSummaries } from '../services/memory-service';
+import { getEndpointingProfile, ENDPOINTING_PROFILES, type BandName } from '../config/assemblyai-endpointing-profiles';
 import {
   type GradeBand,
   type TurnPolicyState,
@@ -152,10 +153,16 @@ function getInactivityTimeoutSec(): number | null {
   return parsed;
 }
 
+// E) Profile mode: profile (per-band) vs global (hardcoded values)
+type ProfileMode = 'profile' | 'global';
+const ASSEMBLYAI_PROFILE_MODE: ProfileMode = 
+  (process.env.ASSEMBLYAI_PROFILE_MODE as ProfileMode) || 'profile';
+
 console.log('[AssemblyAI v3] Config:', {
   route: ASSEMBLYAI_STREAMING_ROUTE,
   turnCommitMode: ASSEMBLYAI_TURN_COMMIT_MODE,
   inactivityTimeout: getInactivityTimeoutSec(),
+  profileMode: ASSEMBLYAI_PROFILE_MODE,
 });
 
 interface AssemblyAIMessage {
@@ -310,7 +317,8 @@ function createAssemblyAIConnection(
   onTranscript: (text: string, endOfTurn: boolean, confidence: number) => void,
   onError: (error: string) => void,
   onSessionStart?: (sessionId: string) => void,
-  onClose?: () => void
+  onClose?: () => void,
+  ageGroup?: string
 ): { ws: WebSocket; state: AssemblyAIState } {
   console.log('████████████████████████████████████████████████████████████████');
   console.log('[AssemblyAI v3] ENTER createAssemblyAIConnection');
@@ -362,23 +370,47 @@ function createAssemblyAIConnection(
   try {
     // First try with header-based auth (simpler, works for server-side)
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // AssemblyAI v3 end-of-turn configuration for BALANCED profile
-    // These settings allow students time to think (1-3+ second pauses)
+    // AssemblyAI v3 end-of-turn configuration with per-band profiles
+    // Profile mode: 'profile' uses age-band specific params, 'global' uses hardcoded
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // NOISE ROBUSTNESS: Conservative AssemblyAI parameters
-    // Tuned for noisy environments (background noise, siblings, TV)
-    // Higher confidence threshold + longer silence = fewer false triggers
-    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    
+    // Get endpointing profile based on ageGroup
+    // Profile mode: use per-band values (defaults to MIDDLE if ageGroup missing)
+    // Global mode: use hardcoded conservative values
+    let endpointingParams: {
+      end_of_turn_confidence_threshold: string;
+      min_end_of_turn_silence_when_confident: string;
+      max_turn_silence: string;
+    };
+    let selectedBand: BandName | 'GLOBAL' = 'GLOBAL';
+    
+    if (ASSEMBLYAI_PROFILE_MODE === 'profile') {
+      // Profile mode: always use getEndpointingProfile which defaults to MIDDLE
+      const { band, profile } = getEndpointingProfile(undefined, ageGroup);
+      selectedBand = band;
+      endpointingParams = {
+        end_of_turn_confidence_threshold: profile.end_of_turn_confidence_threshold.toString(),
+        min_end_of_turn_silence_when_confident: profile.min_end_of_turn_silence_when_confident.toString(),
+        max_turn_silence: profile.max_turn_silence.toString(),
+      };
+    } else {
+      // Global mode: use hardcoded conservative values (rollback)
+      endpointingParams = {
+        end_of_turn_confidence_threshold: '0.72',
+        min_end_of_turn_silence_when_confident: '1200',
+        max_turn_silence: '5500',
+      };
+    }
+    
+    // D) Log endpointing profile selection
+    console.log(`[AssemblyAI v3] EndpointingProfile: band=${selectedBand} ageGroup=${ageGroup || 'undefined'} params=${JSON.stringify(endpointingParams)}`);
+    
     const urlParams = new URLSearchParams({
       sample_rate: '16000',
       encoding: 'pcm_s16le',
       speech_model: speechModel,
       format_turns: 'true',
-      // End-of-turn detection: CONSERVATIVE for noisy environments
-      end_of_turn_confidence_threshold: '0.72',  // Up from 0.65 - require higher confidence
-      min_end_of_turn_silence_when_confident: '1200',  // Up from 1000ms - more silence required
-      max_turn_silence: '5500',  // Up from 5000ms - allow more thinking time
+      ...endpointingParams,
     });
     
     // E) Add optional inactivity timeout if configured
@@ -4042,7 +4074,9 @@ HONESTY INSTRUCTIONS:
                             }
                           },
                           (error) => console.error('[AssemblyAI] Reconnect error:', error),
-                          (sessionId) => console.log('[AssemblyAI] Reconnected:', sessionId)
+                          (sessionId) => console.log('[AssemblyAI] Reconnected:', sessionId),
+                          undefined, // onClose
+                          state.ageGroup // ageGroup for endpointing profile
                         );
                         state.assemblyAIWs = newWs;
                         state.assemblyAIState = newState;
@@ -4054,7 +4088,8 @@ HONESTY INSTRUCTIONS:
                       }
                     }, backoffDelay);
                   }
-                }
+                },
+                state.ageGroup // ageGroup for endpointing profile
               );
               
               console.log('[AssemblyAI] createAssemblyAIConnection returned successfully');
