@@ -112,6 +112,52 @@ console.log(`[STT] Provider: ${USE_ASSEMBLYAI ? 'AssemblyAI Universal-Streaming'
 // Semantic turn detection for natural conversation flow
 // ============================================
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// ASSEMBLYAI v3 PHASE 1 CONFIGURATION
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// A) Streaming endpoint routing (edge/us/eu/default)
+// Edge provides lowest latency by routing to nearest server
+type AssemblyAIStreamingRoute = 'edge' | 'us' | 'eu' | 'default';
+const ASSEMBLYAI_STREAMING_ROUTE: AssemblyAIStreamingRoute = 
+  (process.env.ASSEMBLYAI_STREAMING_ROUTE as AssemblyAIStreamingRoute) || 'edge';
+
+const ASSEMBLYAI_ROUTE_MAP: Record<AssemblyAIStreamingRoute, string> = {
+  'edge': 'wss://streaming.edge.assemblyai.com',
+  'us': 'wss://streaming.us.assemblyai.com',
+  'eu': 'wss://streaming.eu.assemblyai.com',
+  'default': 'wss://streaming.assemblyai.com',
+};
+
+function getAssemblyAIBaseUrl(): string {
+  const baseUrl = ASSEMBLYAI_ROUTE_MAP[ASSEMBLYAI_STREAMING_ROUTE] || ASSEMBLYAI_ROUTE_MAP['default'];
+  console.log(`[AssemblyAI v3] 🌍 Route: ${ASSEMBLYAI_STREAMING_ROUTE} → ${baseUrl}`);
+  return baseUrl;
+}
+
+// C) Turn commit mode: first_eot (low latency) vs formatted (legacy)
+type TurnCommitMode = 'first_eot' | 'formatted';
+const ASSEMBLYAI_TURN_COMMIT_MODE: TurnCommitMode = 
+  (process.env.ASSEMBLYAI_TURN_COMMIT_MODE as TurnCommitMode) || 'first_eot';
+
+// E) Optional inactivity timeout (5-3600 seconds)
+function getInactivityTimeoutSec(): number | null {
+  const val = process.env.ASSEMBLYAI_INACTIVITY_TIMEOUT_SEC;
+  if (!val) return null;
+  const parsed = parseInt(val, 10);
+  if (isNaN(parsed) || parsed < 5 || parsed > 3600) {
+    console.warn(`[AssemblyAI v3] ⚠️ Invalid ASSEMBLYAI_INACTIVITY_TIMEOUT_SEC: ${val} (must be 5-3600), omitting`);
+    return null;
+  }
+  return parsed;
+}
+
+console.log('[AssemblyAI v3] Config:', {
+  route: ASSEMBLYAI_STREAMING_ROUTE,
+  turnCommitMode: ASSEMBLYAI_TURN_COMMIT_MODE,
+  inactivityTimeout: getInactivityTimeoutSec(),
+});
+
 interface AssemblyAIMessage {
   message_type?: string;
   session_id?: string;
@@ -136,6 +182,12 @@ interface AssemblyAIState {
   pendingFragment?: string; // LEXICAL_GRACE: Pending transcript fragment awaiting merge
   pendingFragmentTime?: number; // LEXICAL_GRACE: When the pending fragment was created
   pendingFragmentTimeout?: NodeJS.Timeout; // LEXICAL_GRACE: Timeout ID to cancel on merge
+  // C) Turn commit tracking to prevent double Claude triggers
+  committedTurnOrders: Set<number>;
+  // C) Fallback guard: one-shot commit flag for when turn_order is missing
+  currentTurnCommitted: boolean;
+  // F) Latency instrumentation
+  firstEotTimestamp?: number;
 }
 
 const ASSEMBLYAI_CONFIG = {
@@ -277,6 +329,12 @@ function createAssemblyAIConnection(
     lastError: null,
     closeCode: null,
     closeReason: null,
+    // C) Track committed turn_order values to prevent double Claude triggers
+    committedTurnOrders: new Set<number>(),
+    // C) Fallback guard: one-shot commit flag for when turn_order is missing
+    currentTurnCommitted: false,
+    // F) Latency instrumentation
+    firstEotTimestamp: undefined,
   };
 
   // Fail fast if no API key
@@ -291,13 +349,14 @@ function createAssemblyAIConnection(
   }
 
   // Select speech model based on language
+  // B) SAFETY FIX: Use correct model name "universal-streaming-multilingual" (not "multi")
   const speechModel = language === 'es' || language === 'spanish' || language === 'espanol'
-    ? 'universal-streaming-multi'
+    ? 'universal-streaming-multilingual'
     : 'universal-streaming-english';
   
   // Get token and connect asynchronously
-  // For now, create a placeholder WebSocket that we'll replace
-  const dummyUrl = 'wss://streaming.assemblyai.com/v3/ws?sample_rate=16000&encoding=pcm_s16le';
+  // A) Use routed base URL for lowest latency
+  const baseUrl = getAssemblyAIBaseUrl();
   let ws: WebSocket;
   
   try {
@@ -322,9 +381,18 @@ function createAssemblyAIConnection(
       max_turn_silence: '5500',  // Up from 5000ms - allow more thinking time
     });
     
-    const wsUrl = `wss://streaming.assemblyai.com/v3/ws?${urlParams.toString()}`;
+    // E) Add optional inactivity timeout if configured
+    const inactivityTimeout = getInactivityTimeoutSec();
+    if (inactivityTimeout !== null) {
+      urlParams.set('inactivity_timeout', inactivityTimeout.toString());
+      console.log(`[AssemblyAI v3] ⏱️ Inactivity timeout: ${inactivityTimeout}s`);
+    }
+    
+    // A) Use routed base URL
+    const wsUrl = `${baseUrl}/v3/ws?${urlParams.toString()}`;
     console.log('[AssemblyAI v3] 🌐 Connecting to:', wsUrl);
     console.log('[AssemblyAI v3] Speech model:', speechModel);
+    console.log('[AssemblyAI v3] Turn commit mode:', ASSEMBLYAI_TURN_COMMIT_MODE);
     
     ws = new WebSocket(wsUrl, {
       headers: {
@@ -425,6 +493,7 @@ function createAssemblyAIConnection(
         const endOfTurn = msg.end_of_turn === true;
         const turnIsFormatted = msg.turn_is_formatted === true;
         const confidence = msg.end_of_turn_confidence || 0;
+        const turnOrder = msg.turn_order as number | undefined;
 
         console.log('[AssemblyAI v3] 📝 Turn:', {
           msgType: messageType,
@@ -432,33 +501,67 @@ function createAssemblyAIConnection(
           endOfTurn,
           turnIsFormatted,
           confidence: typeof confidence === 'number' ? confidence.toFixed(2) : confidence,
-          turnOrder: msg.turn_order,
+          turnOrder,
           hypothesisLen: text.length,
           confirmedLen: confirmedTranscript.length,
+          commitMode: ASSEMBLYAI_TURN_COMMIT_MODE,
         });
 
-        // REPLACE, don't append - v3 gives us the complete transcript each time
+        // C1) Partial handling - REPLACE hypothesis only (never append)
+        // Partials NEVER trigger Claude
         if (text) {
           confirmedTranscript = text;
         }
 
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        // CRITICAL FIX (Dec 23, 2025): Wait for FORMATTED transcript
-        // With format_turns=true, AssemblyAI sends TWO end_of_turn messages:
-        //   1. Unformatted: "spanish" (end_of_turn=true, turn_is_formatted=false)
-        //   2. Formatted: "Spanish." (end_of_turn=true, turn_is_formatted=true)
-        // Previously BOTH were sent to Claude, causing "spanish Spanish."
-        // FIX: Only fire callback when turn_is_formatted=true
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        // C2/C3) Final handling with commit mode awareness
         if (endOfTurn && confirmedTranscript) {
-          // If format_turns is enabled, wait for the formatted version
-          if (!turnIsFormatted) {
-            console.log('[AssemblyAI v3] ⏳ End of turn (unformatted) - waiting for formatted version:', confirmedTranscript);
-            // Don't reset confirmedTranscript - the formatted version will replace it
-            return;
+          // F) Latency instrumentation: Record first EOT timestamp
+          if (!state.firstEotTimestamp) {
+            state.firstEotTimestamp = Date.now();
+            state.currentTurnCommitted = false; // Reset fallback guard on new turn
+            console.log(`[AssemblyAI v3] ⏱️ First EOT timestamp: ${state.firstEotTimestamp}`);
           }
           
-          console.log('[AssemblyAI v3] ✅ End of turn (formatted) - sending to Claude:', confirmedTranscript);
+          // C2) Prevent double triggers - dual check:
+          // 1. Check if turn_order was already committed (primary guard)
+          // 2. Fallback: Check one-shot flag when turn_order is missing
+          if (turnOrder !== undefined) {
+            if (state.committedTurnOrders.has(turnOrder)) {
+              console.log(`[AssemblyAI v3] ⚠️ Turn ${turnOrder} already committed - skipping to prevent double trigger`);
+              return;
+            }
+          } else {
+            // Fallback guard when turn_order is missing
+            if (state.currentTurnCommitted) {
+              console.log(`[AssemblyAI v3] ⚠️ Turn already committed (no turn_order) - skipping to prevent double trigger`);
+              return;
+            }
+          }
+          
+          // C3) Commit mode logic
+          if (ASSEMBLYAI_TURN_COMMIT_MODE === 'first_eot') {
+            // first_eot: Trigger Claude on FIRST end_of_turn=true, ignore formatted version
+            console.log('[AssemblyAI v3] ✅ first_eot mode - committing on first EOT:', confirmedTranscript);
+            // Mark this turn as committed to prevent double trigger from formatted version
+            if (turnOrder !== undefined) {
+              state.committedTurnOrders.add(turnOrder);
+            }
+            state.currentTurnCommitted = true; // Set fallback guard
+          } else {
+            // formatted: Legacy behavior - wait for turn_is_formatted=true
+            if (!turnIsFormatted) {
+              console.log('[AssemblyAI v3] ⏳ formatted mode - waiting for formatted version:', confirmedTranscript);
+              return;
+            }
+            // F) Log formatting wait time
+            const formattingWait = Date.now() - (state.firstEotTimestamp || Date.now());
+            console.log(`[AssemblyAI v3] ⏱️ Formatting wait time: ${formattingWait}ms`);
+            console.log('[AssemblyAI v3] ✅ formatted mode - committing on formatted:', confirmedTranscript);
+            if (turnOrder !== undefined) {
+              state.committedTurnOrders.add(turnOrder);
+            }
+            state.currentTurnCommitted = true; // Set fallback guard
+          }
           
           // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
           // LEXICAL_GRACE: Word fragmentation hardening (Step 4)
@@ -532,11 +635,20 @@ function createAssemblyAIConnection(
             state.pendingFragmentTimeout = undefined;
           }
           
-          // Fire callback with the confirmed, formatted transcript
+          // F) Latency instrumentation: Log EOT → Claude latency
+          const claudeTriggerTimestamp = Date.now();
+          if (state.firstEotTimestamp) {
+            const eotToClaudeLatency = claudeTriggerTimestamp - state.firstEotTimestamp;
+            console.log(`[AssemblyAI] ⏱️ EOT → Claude latency: ${eotToClaudeLatency}ms`);
+          }
+          
+          // Fire callback with the confirmed transcript
           onTranscript(confirmedTranscript, true, confidence);
           
           // Reset for next turn
           confirmedTranscript = '';
+          state.firstEotTimestamp = undefined; // Reset for next turn
+          state.currentTurnCommitted = false; // Reset fallback guard for next turn
           
           // Log for diagnostics
           console.log(`[TurnDiagnostics] User turn FINAL: ${text.substring(0, 30)}... confidence: ${confidence.toFixed(2)}`);

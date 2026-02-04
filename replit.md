@@ -102,3 +102,32 @@ The platform is designed for Replit Autoscale Deployment, supporting WebSockets,
 2. Same student second session → continuity greeting shows once
 3. WebSocket reconnect mid-session → NO second greeting
 4. Another student under same user → no cross-topic leakage (strict isolation)
+
+### February 2026 - AssemblyAI v3 Phase 1 Upgrade
+**Feature:** Low-latency streaming endpoint routing + turn commit optimization
+
+**New Environment Variables:**
+| Variable | Values | Default | Description |
+|----------|--------|---------|-------------|
+| `ASSEMBLYAI_STREAMING_ROUTE` | `edge` \| `us` \| `eu` \| `default` | `edge` | Streaming endpoint routing for lowest latency |
+| `ASSEMBLYAI_TURN_COMMIT_MODE` | `first_eot` \| `formatted` | `first_eot` | When to trigger Claude (first EOT = low latency) |
+| `ASSEMBLYAI_INACTIVITY_TIMEOUT_SEC` | `5-3600` | unset | Optional inactivity timeout in seconds |
+
+**Changes Made:**
+- Added edge endpoint routing (streaming.edge.assemblyai.com) for lowest latency
+- Fixed speech model name: `universal-streaming-multi` → `universal-streaming-multilingual`
+- Implemented `first_eot` commit mode that triggers Claude on first end_of_turn (skips formatted wait)
+- Added `committedTurnOrders` tracking to prevent double Claude triggers
+- Added EOT → Claude latency instrumentation logs
+
+**Key Implementation Details:**
+- `first_eot` mode: Triggers Claude immediately on first `end_of_turn=true`, ignores subsequent formatted version
+- `formatted` mode: Legacy behavior - waits for `turn_is_formatted=true` before triggering Claude
+- Double-trigger prevention: Tracks committed `turn_order` values in Set
+- Latency logs: `[AssemblyAI] ⏱️ EOT → Claude latency: {X}ms`
+
+**Safety Guarantees:**
+- Deepgram path remains intact for rollback (`STT_PROVIDER=deepgram`)
+- All new behavior gated by environment variables
+- Default behavior (`edge` + `first_eot`) is safe and low-latency
+- Partials NEVER trigger Claude (only `end_of_turn=true`)
