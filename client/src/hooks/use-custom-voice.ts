@@ -256,6 +256,9 @@ export function useCustomVoice() {
   const lastAudioPlaybackStartRef = useRef<number>(0);
   const isTutorSpeakingRef = useRef<boolean>(false); // Ref version for audio worklet access
   
+  // ELITE BARGE-IN: Generation ID tracking for stale audio filtering
+  const activeGenIdRef = useRef<number>(0);
+  
   // Track if stream cleanup has been triggered to prevent spam logging
   const streamCleanupTriggeredRef = useRef<boolean>(false);
   
@@ -964,19 +967,36 @@ export function useCustomVoice() {
             });
             break;
 
+          case "tutor_barge_in":
+            console.log(`[Custom Voice] 🛑 BARGE-IN: genId=${message.genId} reason=${message.reason}`);
+            activeGenIdRef.current = message.genId as number;
+            stopAudio();
+            setIsTutorSpeaking(false);
+            isTutorSpeakingRef.current = false;
+            updateMicStatus('listening');
+            break;
+
           case "audio":
-            // Log streaming metadata for debugging
             const audioBytes = message.data?.length || 0;
             const isChunk = message.isChunk || false;
             const chunkIdx = message.chunkIndex || 0;
-            console.log(`[Custom Voice] 🔊 Received audio: ${audioBytes} chars (isChunk=${isChunk}, chunkIndex=${chunkIdx})`);
+            const msgGenId = message.genId as number | undefined;
+            
+            if (msgGenId !== undefined && activeGenIdRef.current > 0 && msgGenId < activeGenIdRef.current) {
+              console.log(`[Custom Voice] 🗑️ Dropped stale audio: genId=${msgGenId} < active=${activeGenIdRef.current}`);
+              break;
+            }
+            
+            if (msgGenId !== undefined) {
+              activeGenIdRef.current = msgGenId;
+            }
+            
+            console.log(`[Custom Voice] 🔊 Received audio: ${audioBytes} chars (isChunk=${isChunk}, chunkIndex=${chunkIdx}, genId=${msgGenId || 'none'})`);
             
             if (audioEnabled) {
               console.log("[Custom Voice] 🔊 Playing audio chunk");
-              // Record when playback starts to prevent self-interrupt from echo
               lastAudioPlaybackStartRef.current = Date.now();
               setIsTutorSpeaking(true);
-              // MIC STATUS: Tutor is speaking
               updateMicStatus('tutor_speaking', true);
               await playAudio(message.data);
             } else {

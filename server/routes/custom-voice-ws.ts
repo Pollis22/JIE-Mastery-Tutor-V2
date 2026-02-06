@@ -986,6 +986,12 @@ interface SessionState {
   continuationTimerId?: NodeJS.Timeout;
   continuationCandidateEotAt?: number;
   continuationSegmentCount: number;
+  // ELITE BARGE-IN: Hard interrupt state
+  playbackGenId: number;
+  llmAbortController: AbortController | null;
+  ttsAbortController: AbortController | null;
+  lastBargeInAt: number;
+  currentPlaybackMode: 'idle' | 'tutor_speaking' | 'listening';
 }
 
 // Helper to send typed WebSocket events
@@ -994,6 +1000,87 @@ function sendWsEvent(ws: WebSocket, type: string, payload: Record<string, unknow
     ws.send(JSON.stringify({ type, ...payload }));
     console.log(`[WS Event] ${type}`, payload.turnId || '');
   }
+}
+
+// ELITE BARGE-IN: Hard interrupt constants
+const BARGE_IN_COOLDOWN_MS = 650;
+
+function hardInterruptTutor(
+  ws: WebSocket,
+  state: SessionState,
+  reason: string
+): boolean {
+  const now = Date.now();
+
+  if (now - state.lastBargeInAt < BARGE_IN_COOLDOWN_MS) {
+    console.log(JSON.stringify({
+      event: 'barge_in_cooldown',
+      session_id: state.sessionId,
+      reason,
+      ms_since_last: now - state.lastBargeInAt,
+      cooldown_ms: BARGE_IN_COOLDOWN_MS,
+    }));
+    return false;
+  }
+
+  const prevGenId = state.playbackGenId;
+  state.playbackGenId++;
+  state.isTutorSpeaking = false;
+  state.bargeInDucking = false;
+  state.currentPlaybackMode = 'listening';
+  state.lastBargeInAt = now;
+  state.wasInterrupted = true;
+  state.lastInterruptionTime = now;
+
+  let llmAborted = false;
+  let ttsAborted = false;
+
+  if (state.llmAbortController) {
+    try {
+      state.llmAbortController.abort();
+      llmAborted = true;
+    } catch (e) {
+      console.error('[BargeIn] llm_abort_err:', e);
+    }
+    state.llmAbortController = null;
+  }
+
+  if (state.ttsAbortController) {
+    try {
+      state.ttsAbortController.abort();
+      ttsAborted = true;
+    } catch (e) {
+      console.error('[BargeIn] tts_abort_err:', e);
+    }
+    state.ttsAbortController = null;
+  }
+
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({
+      type: 'tutor_barge_in',
+      genId: state.playbackGenId,
+      reason,
+    }));
+    ws.send(JSON.stringify({
+      type: 'interrupt',
+      message: 'Student is speaking',
+      stopPlayback: true,
+      reason: 'barge_in',
+    }));
+  }
+
+  console.log(JSON.stringify({
+    event: 'barge_in_triggered',
+    session_id: state.sessionId,
+    reason,
+    prev_gen_id: prevGenId,
+    new_gen_id: state.playbackGenId,
+    llm_aborted: llmAborted,
+    tts_aborted: ttsAborted,
+    timestamp: now,
+  }));
+
+  return true;
 }
 
 // FIX #3: Incremental persistence helper
@@ -1766,6 +1853,11 @@ export function setupCustomVoiceWebSocket(server: Server) {
       continuationPendingText: '',
       continuationSegmentCount: 0,
       hasGreeted: false, // GREETING: Not greeted yet
+      playbackGenId: 1,
+      llmAbortController: null,
+      ttsAbortController: null,
+      lastBargeInAt: 0,
+      currentPlaybackMode: 'idle',
     };
 
     // FIX #3: Auto-persist every 10 seconds
@@ -2653,8 +2745,17 @@ export function setupCustomVoiceWebSocket(server: Server) {
         
         // Track turn for interruption detection
         state.isTutorSpeaking = true;
+        state.currentPlaybackMode = 'tutor_speaking';
         const turnTimestamp = Date.now();
         state.lastAudioSentAt = turnTimestamp;
+        
+        const llmAc = new AbortController();
+        const ttsAc = new AbortController();
+        state.llmAbortController = llmAc;
+        state.ttsAbortController = ttsAc;
+        const activeGenId = state.playbackGenId;
+        
+        console.log(JSON.stringify({ event: 'tutor_reply_started', session_id: state.sessionId, gen_id: activeGenId }));
         
         // ECHO GUARD: Mark playback starting
         const echoConfig = getEchoGuardConfig();
@@ -2716,13 +2817,17 @@ export function setupCustomVoiceWebSocket(server: Server) {
                   
                   console.log(`[Custom Voice] 🔊 Sentence ${sentenceCount} TTS: ${ttsMs}ms, ${audioBuffer.length} bytes`);
                   
-                  // Send audio chunk immediately
+                  if (state.ttsAbortController?.signal.aborted) {
+                    console.log(JSON.stringify({ event: 'audio_dropped_stale_gen', session_id: state.sessionId, sentence: sentenceCount }));
+                    return;
+                  }
                   ws.send(JSON.stringify({
                     type: "audio",
                     data: audioBuffer.toString("base64"),
                     mimeType: "audio/pcm;rate=16000",
                     isChunk: true,
                     chunkIndex: sentenceCount,
+                    genId: state.playbackGenId,
                   }));
                 } catch (ttsError) {
                   console.error(`[Custom Voice] ❌ TTS error for sentence ${sentenceCount}:`, ttsError);
@@ -2783,11 +2888,15 @@ export function setupCustomVoiceWebSocket(server: Server) {
             state.systemInstruction,
             "voice",
             responseLanguage,
-            state.ageGroup  // Step 5: College response-depth tweak
-          ).catch(reject); // Ensure errors are properly propagated
+            state.ageGroup,
+            llmAc.signal
+          ).catch(reject);
         });
 
         console.log("[Custom Voice] 🔊 Streaming response sent, waiting for user...");
+
+        if (state.llmAbortController === llmAc) state.llmAbortController = null;
+        if (state.ttsAbortController === ttsAc) state.ttsAbortController = null;
 
         // FIX #3: Persist after each turn (before pause to avoid blocking)
         await persistTranscript(state.sessionId, state.transcript);
@@ -2902,7 +3011,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
           return;
         }
         
-        // HARDENED BARGE-IN (reconnected handler)
+        // HARDENED BARGE-IN (reconnected handler) → ELITE HARD INTERRUPT
         if (state.isTutorSpeaking && timeSinceLastAudio < 30000) {
           const bargeInValidation = validateTranscriptForBargeIn(transcript);
           
@@ -2914,11 +3023,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
               logBargeInDecision(state.sessionId || 'unknown', 'duck', state.lastMeasuredRms, noiseFloor, bargeInValidation.wordCount, transcript, 'too_short');
             }
           } else {
-            state.wasInterrupted = true;
-            state.lastInterruptionTime = now;
-            state.bargeInDucking = false;
-            ws.send(JSON.stringify({ type: "interrupt", message: "Student is speaking" }));
-            state.isTutorSpeaking = false;
+            hardInterruptTutor(ws, state, 'lexical_validated');
             logBargeInDecision(state.sessionId || 'unknown', 'interrupt', state.lastMeasuredRms, noiseFloor, bargeInValidation.wordCount, transcript, 'lexical_validated');
           }
         }
@@ -2926,6 +3031,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
         if (state.isTutorSpeaking && timeSinceLastAudio >= 30000) {
           state.isTutorSpeaking = false;
           state.bargeInDucking = false;
+          state.currentPlaybackMode = 'listening';
         }
         
         if (!isFinal) return;
@@ -3972,13 +4078,8 @@ HONESTY INSTRUCTIONS:
                       }
                       // Don't block processing - continue to turn policy
                     } else {
-                      // Valid barge-in: >= 3 words, lexical content
                       console.log(`[BargeIn] 🛑 INTERRUPT: "${text.substring(0, 30)}..." (${bargeInValidation.wordCount} words)`);
-                      state.wasInterrupted = true;
-                      state.lastInterruptionTime = now;
-                      state.bargeInDucking = false; // Clear duck state
-                      ws.send(JSON.stringify({ type: "interrupt", message: "Student is speaking" }));
-                      state.isTutorSpeaking = false;
+                      hardInterruptTutor(ws, state, 'lexical_validated');
                       logBargeInDecision(
                         state.sessionId || 'unknown',
                         'interrupt',
@@ -3989,7 +4090,6 @@ HONESTY INSTRUCTIONS:
                       );
                     }
                   } else if (state.bargeInDucking && !state.isTutorSpeaking) {
-                    // Tutor stopped speaking - clear duck state
                     state.bargeInDucking = false;
                     ws.send(JSON.stringify({ type: "unduck", message: "Tutor finished" }));
                   }
@@ -4370,13 +4470,8 @@ HONESTY INSTRUCTIONS:
                       console.log(`[BargeIn] 🔉 DUCK (not interrupt): "${transcript}" (${bargeInValidation.wordCount} words < 3)`);
                     }
                   } else {
-                    // Valid barge-in: >= 3 words, lexical content
                     console.log(`[BargeIn] 🛑 INTERRUPT: "${transcript.substring(0, 30)}..." (${bargeInValidation.wordCount} words)`);
-                    state.wasInterrupted = true;
-                    state.lastInterruptionTime = now;
-                    state.bargeInDucking = false;
-                    ws.send(JSON.stringify({ type: "interrupt", message: "Student is speaking" }));
-                    state.isTutorSpeaking = false;
+                    hardInterruptTutor(ws, state, 'lexical_validated');
                     logBargeInDecision(
                       state.sessionId || 'unknown',
                       'interrupt',
@@ -4391,10 +4486,10 @@ HONESTY INSTRUCTIONS:
                   ws.send(JSON.stringify({ type: "unduck", message: "Tutor finished" }));
                 }
 
-                // Reset stale tutor speaking state (>30s ago)
                 if (state.isTutorSpeaking && timeSinceLastAudio >= 30000) {
                   console.log("[Custom Voice] ⏸️ Resetting stale tutor speaking state...");
                   state.isTutorSpeaking = false;
+                  state.currentPlaybackMode = 'listening';
                   state.bargeInDucking = false;
                 }
 
@@ -5013,7 +5108,15 @@ HONESTY INSTRUCTIONS:
               
               // Mark tutor as speaking for barge-in detection
               state.isTutorSpeaking = true;
+              state.currentPlaybackMode = 'tutor_speaking';
               state.lastAudioSentAt = Date.now();
+              
+              const textLlmAc = new AbortController();
+              const textTtsAc = new AbortController();
+              state.llmAbortController = textLlmAc;
+              state.ttsAbortController = textTtsAc;
+              
+              console.log(JSON.stringify({ event: 'tutor_reply_started', session_id: state.sessionId, gen_id: state.playbackGenId, input: 'text' }));
               
               // Track streaming metrics
               let textSentenceCount = 0;
@@ -5052,13 +5155,17 @@ HONESTY INSTRUCTIONS:
                         
                         console.log(`[Custom Voice] 🔊 Text sentence ${textSentenceCount} TTS: ${audioBuffer.length} bytes`);
                         
-                        // Send audio chunk immediately
+                        if (state.ttsAbortController?.signal.aborted) {
+                          console.log(JSON.stringify({ event: 'audio_dropped_stale_gen', session_id: state.sessionId, sentence: textSentenceCount }));
+                          return;
+                        }
                         ws.send(JSON.stringify({
                           type: "audio",
                           data: audioBuffer.toString("base64"),
                           mimeType: "audio/pcm;rate=16000",
                           isChunk: true,
                           chunkIndex: textSentenceCount,
+                          genId: state.playbackGenId,
                         }));
                       } catch (ttsError) {
                         console.error(`[Custom Voice] ❌ Text TTS error for sentence ${textSentenceCount}:`, ttsError);
@@ -5109,10 +5216,11 @@ HONESTY INSTRUCTIONS:
                   state.uploadedDocuments,
                   textCallbacks,
                   state.systemInstruction,
-                  "text", // Student typed via chat
+                  "text",
                   textResponseLanguage,
-                  state.ageGroup  // Step 5: College response-depth tweak
-                ).catch(textReject); // Ensure errors are properly propagated
+                  state.ageGroup,
+                  textLlmAc.signal
+                ).catch(textReject);
               });
               
               console.log(`[Custom Voice] 🔊 Sent streamed tutor voice response (${textSentenceCount} chunks)`);

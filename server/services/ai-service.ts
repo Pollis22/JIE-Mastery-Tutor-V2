@@ -224,7 +224,8 @@ export async function generateTutorResponseStreaming(
   systemInstruction?: string,
   inputModality?: "voice" | "text",
   language?: string,
-  gradeLevel?: string  // Step 5: College response-depth tweak
+  gradeLevel?: string,
+  abortSignal?: AbortSignal
 ): Promise<void> {
   
   console.log("[AI Service] 📝 Generating STREAMING response");
@@ -319,6 +320,12 @@ export async function generateTutorResponseStreaming(
     
     let tokenCount = 0;
     for await (const event of stream) {
+      if (abortSignal?.aborted) {
+        console.log(`[AI Service] 🛑 LLM stream aborted after ${tokenCount} tokens (${Date.now() - streamStart}ms)`);
+        try { stream.controller.abort(); } catch (_) {}
+        callbacks.onComplete(fullText || '');
+        return;
+      }
       if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
         const text = event.delta.text;
         tokenCount++;
@@ -356,6 +363,7 @@ export async function generateTutorResponseStreaming(
             continue;
           }
           
+          if (abortSignal?.aborted) break;
           sentenceCount++;
           if (wasModified) {
             console.log(`[AI Service] 📤 Sentence ${sentenceCount} (sanitized): "${sanitized.substring(0, 60)}..." (${Date.now() - streamStart}ms)`);
