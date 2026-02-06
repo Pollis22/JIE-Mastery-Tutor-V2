@@ -38,7 +38,7 @@ export function TutorAvatar({ state, amplitude = 0, size = 'medium' }: TutorAvat
 const stateEmojis: Record<TutorState, string> = {
   idle: '😊',
   listening: '👂',
-  thinking: '🤔',
+  thinking: '😊',
   speaking: '😄',
   celebrating: '🎉',
   encouraging: '💪',
