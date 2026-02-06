@@ -284,6 +284,7 @@ export function useCustomVoice() {
   // Refs for state used in async callbacks (prevents stale closures)
   const isConnectedRef = useRef<boolean>(false);
   const isProcessingRef = useRef<boolean>(false);
+  const isSessionActiveRef = useRef<boolean>(false);
   
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // ADAPTIVE BARGE-IN STATE (Feature flag: BARGE_IN_ADAPTIVE_ENABLED)
@@ -882,6 +883,7 @@ export function useCustomVoice() {
           case "ready":
             console.log("[Custom Voice] ✅ Session ready");
             setIsConnected(true);
+            isSessionActiveRef.current = true;
             
             // Only start microphone if student mic is enabled
             if (micEnabledRef.current) {
@@ -1146,6 +1148,8 @@ export function useCustomVoice() {
             break;
           
           case "session_ended":
+            isSessionActiveRef.current = false;
+            console.log("[Custom Voice] 🛑 Session active flag set to FALSE - blocking all outbound audio");
             console.log("[Custom Voice] ✅ Received session_ended ACK from server", {
               sessionId: message.sessionId,
               reason: message.reason,
@@ -1780,6 +1784,9 @@ registerProcessor('audio-processor', AudioProcessor);
         // Handle audio data and VAD events from AudioWorklet
         processor.port.onmessage = (event) => {
           if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+          if (!isSessionActiveRef.current) {
+            return;
+          }
 
           // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
           // RESPONSIVE BARGE-IN with ECHO PROTECTION (AudioWorklet)
@@ -2152,6 +2159,9 @@ registerProcessor('audio-processor', AudioProcessor);
 
         processor.onaudioprocess = (e) => {
           if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+          if (!isSessionActiveRef.current) {
+            return;
+          }
 
           // Check if media stream is still active - trigger recovery if died
           if (!mediaStreamRef.current || !mediaStreamRef.current.active) {

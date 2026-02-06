@@ -227,6 +227,30 @@ const TURN_FALLBACK_CONFIG = {
   MESSAGE: "I didn't quite catch that. Can you repeat your last sentence?",
 };
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// CONTINUATION GUARD: Two-phase commit for user turns (Global, all bands)
+// Prevents premature turn commits that split thoughts into multiple turns
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const CONTINUATION_GUARD_CONFIG = {
+  ENABLED: process.env.CONTINUATION_GUARD_ENABLED !== 'false',
+  GRACE_MS: parseInt(process.env.CONTINUATION_GRACE_MS || '850', 10),
+  HEDGE_GRACE_MS: parseInt(process.env.CONTINUATION_HEDGE_GRACE_MS || '1500', 10),
+  MIN_TURN_CHARS: parseInt(process.env.CONTINUATION_MIN_TURN_CHARS || '2', 10),
+};
+
+const HEDGE_PHRASES = [
+  "i don't know", "i really don't know", "i dont know",
+  "um", "uh", "wait", "hold on", "let me think", "one second",
+  "hmm", "hm", "er", "erm", "well", "so", "like",
+  "i'm not sure", "im not sure", "i am not sure",
+  "let me see", "give me a second", "uno", "este",
+];
+
+function isHedgePhrase(text: string): boolean {
+  const lower = text.toLowerCase().trim();
+  return HEDGE_PHRASES.some(phrase => lower.endsWith(phrase) || lower === phrase);
+}
+
 // Recovery phrases that should NOT end a session (Step 2)
 // These are common phrases users say when waiting for a response
 const RECOVERY_PHRASES = [
@@ -261,6 +285,32 @@ function shouldMergeWithPrevious(
 
   return endsWithConjunction || tooShort;
 }
+
+const STT_ARTIFACT_HARDENING = `
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎙️ SPEECH-TO-TEXT ACCURACY GUIDELINES (CRITICAL FOR VOICE):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Speech-to-text (STT) for young learners, ESL students, and language-learning sessions can be INACCURATE. You MUST follow these rules:
+
+1. If the transcript contains odd English words during a non-English drill (e.g., "tardis" during Spanish practice), assume it is a MIS-TRANSCRIPTION of the target word (e.g., "tardes"). Do NOT go off-topic or respond literally to garbled text.
+
+2. If the transcript is phonetically close to the target word or expected answer, treat it as a near-correct attempt. For example:
+   - "blindness" during Spanish → likely "buenas"
+   - "tardis" during Spanish → likely "tardes"  
+   - "mikasa" during Spanish → likely "mi casa"
+   - "bone jure" during French → likely "bonjour"
+
+3. Use confirmation questions and gentle repetition instead of declaring the student wrong:
+   - "It sounds like you said [target word]! Great attempt! Let's practice saying it together."
+   - "I think you're trying to say [target word] - that's really close! Listen again..."
+
+4. NEVER respond to obviously garbled STT as if the student said something unrelated. Always interpret charitably in the context of the current lesson.
+
+5. If you genuinely cannot determine what the student meant, ask them to repeat rather than guessing wildly:
+   - "Could you say that one more time? I want to make sure I hear you right."
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
 // ============================================
 // AssemblyAI Universal Streaming v3 API
@@ -358,9 +408,41 @@ function createAssemblyAIConnection(
 
   // Select speech model based on language
   // B) SAFETY FIX: Use correct model name "universal-streaming-multilingual" (not "multi")
-  const speechModel = language === 'es' || language === 'spanish' || language === 'espanol'
+  const NON_ENGLISH_LANGUAGES = [
+    'es', 'spanish', 'espanol',
+    'fr', 'french', 'français',
+    'de', 'german', 'deutsch',
+    'it', 'italian', 'italiano',
+    'pt', 'portuguese', 'português',
+    'zh', 'chinese', 'mandarin', '中文',
+    'ja', 'japanese', '日本語',
+    'ko', 'korean', '한국어',
+    'ar', 'arabic', 'العربية',
+    'hi', 'hindi', 'हिन्दी',
+    'ru', 'russian', 'русский',
+    'vi', 'vietnamese', 'tiếng việt',
+    'th', 'thai', 'ไทย',
+    'tr', 'turkish', 'türkçe',
+    'pl', 'polish', 'polski',
+    'nl', 'dutch', 'nederlands',
+    'sv', 'swedish', 'svenska',
+    'da', 'danish', 'dansk',
+    'no', 'norwegian', 'norsk',
+    'fi', 'finnish', 'suomi',
+    'el', 'greek', 'ελληνικά',
+    'he', 'hebrew', 'עברית',
+    'id', 'indonesian', 'bahasa',
+    'ms', 'malay', 'melayu',
+    'tl', 'tagalog', 'filipino',
+  ];
+
+  const isNonEnglish = language && NON_ENGLISH_LANGUAGES.some(
+    lang => language.toLowerCase().startsWith(lang) || language.toLowerCase() === lang
+  );
+  const speechModel = isNonEnglish
     ? 'universal-streaming-multilingual'
     : 'universal-streaming-english';
+  console.log(`[AssemblyAI v3] 🌍 Language detection: input="${language}" isNonEnglish=${isNonEnglish} model=${speechModel}`);
   
   // Get token and connect asynchronously
   // A) Use routed base URL for lowest latency
@@ -899,6 +981,11 @@ interface SessionState {
   // TURN FALLBACK: Sends recovery message if no response produced
   turnFallbackTimerId?: NodeJS.Timeout;
   turnResponseProduced: boolean;
+  // CONTINUATION GUARD: Two-phase commit state
+  continuationPendingText: string;
+  continuationTimerId?: NodeJS.Timeout;
+  continuationCandidateEotAt?: number;
+  continuationSegmentCount: number;
 }
 
 // Helper to send typed WebSocket events
@@ -1146,6 +1233,14 @@ async function finalizeSession(
     console.log(`[Finalize] 🧹 Cleared inactivity timer (reason: ${reason})`);
   }
   
+  // CONTINUATION GUARD: Clear pending continuation timer
+  if (state.continuationTimerId) {
+    clearTimeout(state.continuationTimerId);
+    state.continuationTimerId = undefined;
+    state.continuationPendingText = '';
+    console.log(`[Finalize] 🧹 Cleared continuation guard timer (reason: ${reason})`);
+  }
+
   // K2 TURN POLICY: Clear stall escape timer
   if (state.stallEscapeTimerId) {
     clearTimeout(state.stallEscapeTimerId);
@@ -1668,6 +1763,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
       lastPongAt: new Date(),
       missedPongCount: 0,
       turnResponseProduced: false,
+      continuationPendingText: '',
+      continuationSegmentCount: 0,
       hasGreeted: false, // GREETING: Not greeted yet
     };
 
@@ -3240,6 +3337,8 @@ FLOW:
 "Yes! A is first! Great job! Can you think of a word that starts with A?"
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `;
+
+            // STT_ARTIFACT_HARDENING is defined at module level (see top of file)
             
             // K2 TURN POLICY: Add response constraints for K-2 students
             const gradeBandForPolicy = state.ageGroup as GradeBand;
@@ -3308,7 +3407,7 @@ When the student asks if you can see their document or asks you to prove access:
 - You MUST quote or paraphrase a specific line, sentence, or phrase from the document
 - If there's a unique marker (like "ALGEBRA-BLUEBERRY-DELTA"), find and state it exactly
 - NEVER make up or guess content - only reference what is actually in the loaded text
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${STT_ARTIFACT_HARDENING}`;
               
               console.log(`[Custom Voice] 📚 System instruction enhanced with ${state.uploadedDocuments.length} documents (${ragChars} chars)`);
             } else if (state.uploadedDocuments && state.uploadedDocuments.length > 0) {
@@ -3332,12 +3431,12 @@ HONESTY INSTRUCTIONS:
 ✅ Be honest: "I can see a file was uploaded, but I wasn't able to load its content"
 ✅ Suggest: "Could you try pasting the text directly, or re-uploading the file?"
 ✅ Continue tutoring normally without referencing document content
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${STT_ARTIFACT_HARDENING}`;
               
               console.log(`[Custom Voice] ⚠️ Files uploaded but no content extracted (ragChars=0, files=${uploadedFilenames.join(', ')}) - using honest acknowledgment`);
             } else {
               // No documents at all - use standard prompt
-              state.systemInstruction = personality.systemPrompt + VOICE_CONVERSATION_CONSTRAINTS + K2_CONSTRAINTS + continuityBlock;
+              state.systemInstruction = personality.systemPrompt + VOICE_CONVERSATION_CONSTRAINTS + K2_CONSTRAINTS + continuityBlock + STT_ARTIFACT_HARDENING;
               console.log(`[Custom Voice] No documents uploaded - using standard prompt`);
             }
             
@@ -3901,6 +4000,115 @@ HONESTY INSTRUCTIONS:
                     state.bargeInDucking = false;
                   }
                   
+                  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                  // CONTINUATION GUARD: Two-phase commit for user turns
+                  // Treats end_of_turn as candidate, waits for grace window
+                  // before committing to Claude (prevents split-thought double responses)
+                  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                  if (CONTINUATION_GUARD_CONFIG.ENABLED) {
+                    if (state.continuationTimerId) {
+                      clearTimeout(state.continuationTimerId);
+                      state.continuationTimerId = undefined;
+                      const mergedText = (state.continuationPendingText + ' ' + text).trim();
+                      state.continuationPendingText = mergedText;
+                      state.continuationSegmentCount++;
+                      console.log(JSON.stringify({
+                        event: 'continuation_guard_reset',
+                        session_id: state.sessionId || 'unknown',
+                        merged_text_preview: mergedText.substring(0, 60),
+                        segment_count: state.continuationSegmentCount,
+                        timestamp: new Date().toISOString(),
+                      }));
+                    } else {
+                      state.continuationPendingText = text;
+                      state.continuationCandidateEotAt = Date.now();
+                      state.continuationSegmentCount = 1;
+                      console.log(JSON.stringify({
+                        event: 'candidate_eot_received',
+                        session_id: state.sessionId || 'unknown',
+                        text_preview: text.substring(0, 60),
+                        confidence: confidence.toFixed(2),
+                        timestamp: new Date().toISOString(),
+                      }));
+                    }
+                    
+                    const graceMs = isHedgePhrase(state.continuationPendingText)
+                      ? CONTINUATION_GUARD_CONFIG.HEDGE_GRACE_MS
+                      : CONTINUATION_GUARD_CONFIG.GRACE_MS;
+                    
+                    state.continuationTimerId = setTimeout(() => {
+                      state.continuationTimerId = undefined;
+                      const finalText = state.continuationPendingText;
+                      const segmentCount = state.continuationSegmentCount;
+                      const candidateAt = state.continuationCandidateEotAt || Date.now();
+                      
+                      state.continuationPendingText = '';
+                      state.continuationSegmentCount = 0;
+                      state.continuationCandidateEotAt = undefined;
+                      
+                      if (finalText.trim().length < CONTINUATION_GUARD_CONFIG.MIN_TURN_CHARS) {
+                        console.log(JSON.stringify({
+                          event: 'turn_dropped',
+                          session_id: state.sessionId || 'unknown',
+                          reason: 'below_min_chars',
+                          chars: finalText.trim().length,
+                          text: finalText.trim(),
+                          timestamp: new Date().toISOString(),
+                        }));
+                        return;
+                      }
+                      
+                      const hedgeDetected = isHedgePhrase(finalText);
+                      const commitDurationMs = Date.now() - candidateAt;
+                      
+                      console.log(JSON.stringify({
+                        event: 'turn_committed',
+                        session_id: state.sessionId || 'unknown',
+                        chars: finalText.trim().length,
+                        duration_ms: commitDurationMs,
+                        grace_ms: graceMs,
+                        hedge_detected: hedgeDetected,
+                        segment_count: segmentCount,
+                        text_preview: finalText.substring(0, 60),
+                        timestamp: new Date().toISOString(),
+                      }));
+                      
+                      if (state.isSessionEnded) return;
+                      
+                      const gradeBandForPolicy = state.ageGroup as GradeBand;
+                      const policyEval = evaluateTurn({
+                        gradeBand: gradeBandForPolicy,
+                        sessionK2Override: state.turnPolicyK2Override,
+                        transcript: finalText,
+                        eotConfidence: confidence,
+                        endOfTurn: true,
+                        policyState: state.turnPolicyState,
+                        currentTimestamp: Date.now(),
+                      });
+                      
+                      logTurnPolicyEvaluation(policyEval);
+                      
+                      if (policyEval.hesitation_guard_triggered) {
+                        console.log(`[TurnPolicy] 🤔 Hesitation detected after continuation guard`);
+                        startStallEscapeTimer(finalText);
+                        return;
+                      }
+                      
+                      if (policyEval.should_fire_claude) {
+                        state.postUtteranceGraceUntil = Date.now() + 400;
+                        fireClaudeWithPolicy(finalText);
+                      }
+                    }, graceMs);
+                    
+                    ws.send(JSON.stringify({
+                      type: "partial_transcript",
+                      text: state.continuationPendingText,
+                      isContinuationGuard: true,
+                    }));
+                    
+                    return;
+                  }
+
                   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                   // K2 TURN POLICY: Evaluate whether to fire Claude
                   // For K-2 students, detect hesitation and wait for complete thought
@@ -4978,7 +5186,7 @@ PROOF REQUIREMENT:
 When the student asks if you can see their document or asks you to prove access:
 - You MUST quote or paraphrase a specific line, sentence, or phrase from the document
 - NEVER make up or guess content - only reference what is actually in the loaded text
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${STT_ARTIFACT_HARDENING}`;
                   } else {
                     console.log(`[Custom Voice] ⚠️ Mid-session upload has no content - not claiming access`);
                   }

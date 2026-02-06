@@ -25,6 +25,8 @@ export interface NoiseFloorConfig {
   maxBaselineSamples: number;   // Maximum samples to store (100)
   defaultNoiseFloor: number;    // Default when no samples yet (0.01)
   silenceRmsThreshold: number;  // RMS below this is considered silence (0.02)
+  onsetLatchMs: number;         // Once speech detected, stay open for this long (300ms)
+  hysteresisRatio: number;      // Close threshold = noiseFloor * hysteresisRatio (lower than open)
 }
 
 const DEFAULT_CONFIG: NoiseFloorConfig = {
@@ -35,6 +37,8 @@ const DEFAULT_CONFIG: NoiseFloorConfig = {
   maxBaselineSamples: 100,
   defaultNoiseFloor: 0.01,
   silenceRmsThreshold: 0.02,
+  onsetLatchMs: 300,
+  hysteresisRatio: 1.5,
 };
 
 export function isNoiseFloorEnabled(): boolean {
@@ -59,6 +63,7 @@ export interface NoiseFloorState {
   speechRmsSamples: number[];   // RMS samples during speech detection
   isSpeechActive: boolean;      // Whether speech is currently detected
   lastSpeechEndTime: number;    // When last speech ended (for grace period)
+  onsetLatchUntil: number;      // Timestamp when onset latch expires
   config: NoiseFloorConfig;
 }
 
@@ -84,6 +89,7 @@ export function createNoiseFloorState(): NoiseFloorState {
     speechRmsSamples: [],
     isSpeechActive: false,
     lastSpeechEndTime: 0,
+    onsetLatchUntil: 0,
     config: getNoiseFloorConfig(),
   };
 }
@@ -197,8 +203,8 @@ export function detectSpeech(
   const rms = calculateRMS(audioBuffer);
   const noiseFloor = getNoiseFloor(state);
   const threshold = noiseFloor * config.speechThresholdRatio;
+  const closeThreshold = noiseFloor * config.hysteresisRatio;
   
-  // If noise floor is disabled, consider everything speech
   if (!config.enabled) {
     return {
       isSpeech: true,
@@ -211,19 +217,17 @@ export function detectSpeech(
     };
   }
   
-  // Check if RMS exceeds threshold
   if (rms >= threshold) {
-    // Speech detected - start or continue tracking
     if (state.speechStartTime === null) {
       state.speechStartTime = now;
       state.speechRmsSamples = [rms];
+      state.onsetLatchUntil = now + config.onsetLatchMs;
     } else {
       state.speechRmsSamples.push(rms);
     }
     
     const durationMs = now - state.speechStartTime;
     
-    // Check if speech is sustained for minimum duration
     if (durationMs >= config.minSpeechDurationMs) {
       state.isSpeechActive = true;
       return {
@@ -248,23 +252,46 @@ export function detectSpeech(
     };
   }
   
-  // RMS below threshold - not speech
-  // Reset speech tracking if no speech in progress
-  if (state.speechStartTime !== null && !state.isSpeechActive) {
-    // Brief spike that didn't sustain - reset
+  if (state.speechStartTime !== null) {
+    const durationMs = now - state.speechStartTime;
+    const inOnsetLatch = now < state.onsetLatchUntil;
+    const aboveCloseThreshold = rms >= closeThreshold;
+    
+    if (inOnsetLatch || (state.isSpeechActive && aboveCloseThreshold)) {
+      state.speechRmsSamples.push(rms);
+      
+      if (durationMs >= config.minSpeechDurationMs) {
+        state.isSpeechActive = true;
+        return {
+          isSpeech: true,
+          isPotentialSpeech: true,
+          rms,
+          noiseFloor,
+          threshold,
+          durationMs,
+          reason: 'confirmed_speech',
+        };
+      }
+      
+      return {
+        isSpeech: false,
+        isPotentialSpeech: true,
+        rms,
+        noiseFloor,
+        threshold,
+        durationMs,
+        reason: 'confirming',
+      };
+    }
+    
+    if (state.isSpeechActive) {
+      state.isSpeechActive = false;
+      state.lastSpeechEndTime = now;
+    }
     state.speechStartTime = null;
     state.speechRmsSamples = [];
   }
   
-  if (state.isSpeechActive) {
-    // Speech just ended
-    state.isSpeechActive = false;
-    state.lastSpeechEndTime = now;
-    state.speechStartTime = null;
-    state.speechRmsSamples = [];
-  }
-  
-  // Update baseline during silence
   updateNoiseFloorBaseline(state, rms);
   
   return {
