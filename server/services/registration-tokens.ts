@@ -24,7 +24,7 @@ interface RegistrationData {
   marketingOptIn: boolean;
 }
 
-const TOKEN_EXPIRY_MS = 60 * 60 * 1000; // 1 hour
+const TOKEN_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 class RegistrationTokenStore {
   generateToken(): string {
@@ -49,7 +49,7 @@ class RegistrationTokenStore {
         expiresAt,
       });
       
-      console.log(`[Registration Token] Stored token ${token.substring(0, 8)}... with plan ${data.selectedPlan} in database (expires in 1 hour)`);
+      console.log(`[Registration Token] Stored token ${token.substring(0, 8)}... with plan ${data.selectedPlan} in database (expires in 7 days)`);
     } catch (error: any) {
       console.error('[Registration Token] Failed to store token:', error);
       throw new Error('Failed to store registration token');

@@ -600,6 +600,117 @@ The JIE Mastery Team`;
     }
   }
 
+  async sendVerificationReminder(params: {
+    email: string;
+    name: string;
+    verificationToken?: string | null;
+    tokenExpired: boolean;
+  }) {
+    try {
+      const resend = getResendClient();
+      const fromEmail = getFromEmail();
+      const baseUrl = this.getBaseUrl();
+      
+      const ctaUrl = params.tokenExpired || !params.verificationToken
+        ? `${baseUrl}/start-trial?resend=1`
+        : `${baseUrl}/api/auth/verify-email?token=${params.verificationToken}`;
+      
+      const ctaText = params.tokenExpired || !params.verificationToken
+        ? 'Get a New Verification Link'
+        : 'Verify and Start Your Trial';
+      
+      const html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <style>
+            body { font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f8fafc; }
+            .container { max-width: 600px; margin: 0 auto; background: white; }
+            .header { background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%); color: white; padding: 40px 20px; text-align: center; }
+            .header h1 { margin: 0; font-size: 28px; }
+            .content { padding: 40px 30px; background: #ffffff; }
+            .cta-box { background: #fef2f2; border: 2px solid #dc2626; padding: 30px; border-radius: 12px; margin: 30px 0; text-align: center; }
+            .cta-button { display: inline-block; background: #dc2626; color: white !important; padding: 18px 40px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 18px; }
+            .feature-list { background: #f8fafc; padding: 20px; border-radius: 8px; margin: 20px 0; }
+            .feature-list li { margin: 8px 0; }
+            .footer { background: #f8fafc; padding: 30px; text-align: center; color: #666; font-size: 14px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>🎓 Your Free Trial is Waiting</h1>
+              <p style="margin: 10px 0 0; opacity: 0.9;">Don't miss out on personalized AI tutoring</p>
+            </div>
+            
+            <div class="content">
+              <p>Hi ${params.name}!</p>
+              
+              <p>You signed up for JIE Mastery but haven't started your free trial yet. Your <strong>30 minutes of free AI tutoring</strong> is ready and waiting!</p>
+              
+              <div class="cta-box">
+                <a href="${ctaUrl}" class="cta-button">
+                  ${ctaText}
+                </a>
+              </div>
+              
+              <p>Here's what you'll get with your free trial:</p>
+              <div class="feature-list">
+                <ul style="margin: 0; padding-left: 20px;">
+                  <li>🎤 Real-time voice conversations with an AI tutor</li>
+                  <li>📚 Help with Math, English, and Spanish</li>
+                  <li>🎯 Personalized to your grade level</li>
+                  <li>📊 Adaptive learning that grows with you</li>
+                </ul>
+              </div>
+              
+              <p style="color: #666; font-size: 14px;">If you didn't sign up for JIE Mastery, you can safely ignore this email.</p>
+              
+              <p>We'd love to help you learn!<br><strong>The JIE Mastery Team</strong></p>
+            </div>
+            
+            <div class="footer">
+              <p><strong>JIE Mastery AI Tutor</strong> | Patent Pending System</p>
+              <p>Questions? Reply to this email for support.</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+      
+      const text = `Hi ${params.name}!
+
+You signed up for JIE Mastery but haven't started your free trial yet. Your 30 minutes of free AI tutoring is ready and waiting!
+
+${ctaText}: ${ctaUrl}
+
+Here's what you'll get:
+- Real-time voice conversations with an AI tutor
+- Help with Math, English, and Spanish
+- Personalized to your grade level
+- Adaptive learning that grows with you
+
+If you didn't sign up, you can ignore this email.
+
+The JIE Mastery Team`;
+      
+      await resend.emails.send({
+        from: fromEmail,
+        to: params.email,
+        subject: 'Your JIE Mastery free trial is waiting',
+        html,
+        text
+      });
+      
+      console.log('[EmailService] Verification reminder sent to:', params.email);
+    } catch (error) {
+      console.error('[EmailService] Failed to send verification reminder:', error);
+      throw error;
+    }
+  }
+
   async sendPasswordReset(user: {
     email: string;
     name: string;

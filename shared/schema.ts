@@ -141,6 +141,7 @@ export const users = pgTable("users", {
   trialEndsAt: timestamp("trial_ends_at"),
   trialDeviceHash: varchar("trial_device_hash", { length: 64 }),
   trialIpHash: varchar("trial_ip_hash", { length: 64 }),
+  firstLoginAt: timestamp("first_login_at"),
   // Admin Account Management Fields
   isDisabled: boolean("is_disabled").default(false),
   disabledAt: timestamp("disabled_at"),
@@ -1067,3 +1068,15 @@ export const insertMemoryJobSchema = createInsertSchema(memoryJobs).omit({
 
 export type MemoryJob = typeof memoryJobs.$inferSelect;
 export type InsertMemoryJob = z.infer<typeof insertMemoryJobSchema>;
+
+export const verificationReminderTracking = pgTable("verification_reminder_tracking", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  reminderDate: date("reminder_date").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_verification_reminder_user").on(table.userId),
+  uniqueIndex("idx_verification_reminder_unique").on(table.userId, table.reminderDate),
+]);
+
+export type VerificationReminderTracking = typeof verificationReminderTracking.$inferSelect;

@@ -492,6 +492,33 @@ async function ensureContentModerationTables() {
     }
   } catch (error) {
     console.error('[DB-Init] ⚠️ Failed to ensure content moderation tables:', error);
-    // Don't throw - moderation logging is non-critical, voice sessions should continue
+  }
+
+  console.log('[DB-Init] Checking verification reminder system...');
+  try {
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS first_login_at TIMESTAMP`);
+    
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS verification_reminder_tracking (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        user_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        reminder_date DATE NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_verification_reminder_user ON verification_reminder_tracking(user_id)`);
+    await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_verification_reminder_unique ON verification_reminder_tracking(user_id, reminder_date)`);
+    
+    const backfillResult = await pool.query(`
+      UPDATE users SET first_login_at = COALESCE(first_login_at, created_at)
+      WHERE email_verified = true AND first_login_at IS NULL
+    `);
+    if (backfillResult.rowCount && backfillResult.rowCount > 0) {
+      console.log(`[DB-Init] ✅ Backfilled first_login_at for ${backfillResult.rowCount} verified users`);
+    }
+    
+    console.log('[DB-Init] ✅ Verification reminder system ready');
+  } catch (error) {
+    console.error('[DB-Init] ⚠️ Failed to setup verification reminder system:', error);
   }
 }

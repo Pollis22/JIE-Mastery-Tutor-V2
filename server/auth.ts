@@ -184,6 +184,7 @@ export function setupAuth(app: Express) {
             trialStartedAt: null,
             trialDeviceHash: null,
             trialIpHash: null,
+            firstLoginAt: new Date(),
             createdAt: new Date(),
             updatedAt: new Date(),
           };
@@ -317,6 +318,7 @@ export function setupAuth(app: Express) {
         trialEndsAt: null,
         trialDeviceHash: null,
         trialIpHash: null,
+        firstLoginAt: new Date(),
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -730,7 +732,7 @@ export function setupAuth(app: Express) {
       // Generate email verification token
       const crypto = await import('crypto');
       const verificationToken = crypto.randomBytes(32).toString('hex');
-      const verificationExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+      const verificationExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
 
       // Create trial user with verification token
       const user = await storage.createUser({
@@ -954,6 +956,14 @@ export function setupAuth(app: Express) {
           return res.redirect('/auth?verified=1');
         }
         
+        // Track first login for verification reminder system
+        if (!user.firstLoginAt) {
+          storage.updateUserSettings(user.id, { firstLoginAt: new Date() } as any).catch(err2 =>
+            console.error('[Email Verify] Failed to set first_login_at:', err2)
+          );
+          console.log('[Email Verify] ✓ First login recorded for:', user.email);
+        }
+        
         console.log('[Email Verify] ✓ User logged in after verification');
         
         // Redirect to tutor page
@@ -989,16 +999,16 @@ export function setupAuth(app: Express) {
 
       // Rate limit: only allow resend every 2 minutes
       if (user.emailVerificationExpiry) {
-        const timeSinceLastSend = Date.now() - (new Date(user.emailVerificationExpiry).getTime() - 24 * 60 * 60 * 1000);
+        const timeSinceLastSend = Date.now() - (new Date(user.emailVerificationExpiry).getTime() - 7 * 24 * 60 * 60 * 1000);
         if (timeSinceLastSend < 2 * 60 * 1000) {
           return res.status(429).json({ error: "Please wait 2 minutes before requesting another verification email." });
         }
       }
 
-      // Generate new verification token
+      // Generate new verification token (invalidates previous token)
       const crypto = await import('crypto');
       const verificationToken = crypto.randomBytes(32).toString('hex');
-      const verificationExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const verificationExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
 
       // Update user with new token
       const { db } = await import('./db');
@@ -1165,6 +1175,14 @@ export function setupAuth(app: Express) {
             await enforceConcurrentLoginsAfterAuth(user.id).catch(err => 
               console.error('[Auth] Concurrent login enforcement failed:', err)
             );
+            
+            // Track first login for verification reminder system
+            if (!user.firstLoginAt) {
+              storage.updateUserSettings(user.id, { firstLoginAt: new Date() } as any).catch(err =>
+                console.error('[Auth] Failed to set first_login_at:', err)
+              );
+              console.log('[Auth] ✓ First login recorded for:', user.email);
+            }
             
             // Sanitize user response to exclude sensitive fields
             const { password, ...safeUser } = user as any;

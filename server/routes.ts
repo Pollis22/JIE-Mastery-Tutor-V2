@@ -2227,6 +2227,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/cron/verification-reminders", async (req, res) => {
+    const cronSecret = process.env.CRON_SECRET;
+    const providedSecret = req.headers['x-cron-secret'] || req.query.secret;
+    
+    if (!cronSecret) {
+      console.error('[Cron] CRON_SECRET not configured - endpoint disabled');
+      return res.status(503).json({ error: 'Cron endpoint not configured' });
+    }
+    
+    if (providedSecret !== cronSecret) {
+      console.warn('[Cron] Invalid secret provided for verification-reminders');
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    try {
+      console.log('[Cron] External trigger for verification reminders received');
+      const { processVerificationReminders } = await import('./jobs/verification-reminders');
+      const stats = await processVerificationReminders();
+      
+      res.json({ 
+        success: true, 
+        message: 'Verification reminders processed',
+        timestamp: new Date().toISOString(),
+        stats
+      });
+    } catch (error: any) {
+      console.error('[Cron] Verification reminders error:', error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Admin endpoint to test digest for a single user
   app.post("/api/admin/test-digest-user", requireAdmin, async (req, res) => {
     try {
