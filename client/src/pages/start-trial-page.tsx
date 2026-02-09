@@ -122,11 +122,33 @@ export default function StartTrialPage() {
       if (data.warning) {
         setWarning(data.warning);
       }
+
+      if (data.status === "cooldown" && data.retryInSeconds) {
+        setResendCooldown(data.retryInSeconds);
+        setVerificationPending(true);
+        setPendingEmail(data.user?.email || form.getValues('email'));
+        toast({
+          title: "Please wait",
+          description: `You can request another email in ${data.retryInSeconds} seconds.`,
+        });
+        return;
+      }
+
+      if (data.status === "resent_verification") {
+        setVerificationPending(true);
+        setPendingEmail(data.user?.email || form.getValues('email'));
+        setResendCooldown(60);
+        toast({
+          title: "Verification Email Resent",
+          description: data.message || "Please check your inbox.",
+        });
+        return;
+      }
       
-      // Check if verification is required
       if (data.requiresVerification) {
         setVerificationPending(true);
         setPendingEmail(data.user?.email || form.getValues('email'));
+        setResendCooldown(60);
         toast({
           title: "Check Your Email",
           description: data.message || "Please verify your email to start your trial.",
@@ -148,12 +170,16 @@ export default function StartTrialPage() {
           const errorData = JSON.parse(error.message);
           errorMessage = errorData.error || errorMessage;
           redirect = errorData.redirect;
+          
+          if (errorData.status === "already_verified") {
+            errorMessage = "This email is already verified. Please log in instead.";
+            redirect = redirect || "/auth";
+          }
         }
       } catch {
         errorMessage = error.message || errorMessage;
       }
       
-      // Make the error message more user-friendly
       if (errorMessage.includes("already registered")) {
         errorMessage = "This email is already registered. Please log in instead, or use a different email.";
       }
@@ -172,11 +198,26 @@ export default function StartTrialPage() {
       return response.json();
     },
     onSuccess: (data) => {
+      if (data.status === "already_verified") {
+        toast({
+          title: "Already Verified",
+          description: "This email is already verified. Please log in instead.",
+        });
+        return;
+      }
+      if (data.status === "cooldown" && data.retryInSeconds) {
+        setResendCooldown(data.retryInSeconds);
+        toast({
+          title: "Please wait",
+          description: data.message || `Please wait ${data.retryInSeconds} seconds.`,
+        });
+        return;
+      }
       toast({
         title: "Verification Email Sent",
         description: data.message || "Please check your inbox.",
       });
-      setResendCooldown(120); // 2 minute cooldown
+      setResendCooldown(60);
     },
     onError: (error: any) => {
       let errorMessage = "Failed to resend verification email.";

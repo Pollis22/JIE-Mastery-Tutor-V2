@@ -497,6 +497,7 @@ async function ensureContentModerationTables() {
   console.log('[DB-Init] Checking verification reminder system...');
   try {
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS first_login_at TIMESTAMP`);
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_verification_email_sent_at TIMESTAMP`);
     
     await pool.query(`
       CREATE TABLE IF NOT EXISTS verification_reminder_tracking (

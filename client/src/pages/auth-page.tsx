@@ -75,12 +75,38 @@ export default function AuthPage() {
   const preselectedPlan = searchParams.get('plan');
   const actionParam = searchParams.get('action');
 
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  useEffect(() => {
+    if (resendCooldown > 0) {
+      const timer = setTimeout(() => setResendCooldown(resendCooldown - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [resendCooldown]);
+
   const resendVerificationMutation = useMutation({
     mutationFn: async (email: string) => {
       const res = await apiRequest("POST", "/api/auth/resend-verification", { email });
       return await res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      if (data.status === "already_verified") {
+        setUnverifiedEmail(null);
+        toast({
+          title: "Already Verified",
+          description: "This email is already verified. Please log in.",
+        });
+        return;
+      }
+      if (data.status === "cooldown" && data.retryInSeconds) {
+        setResendCooldown(data.retryInSeconds);
+        toast({
+          title: "Please wait",
+          description: data.message || `Please wait ${data.retryInSeconds} seconds.`,
+        });
+        return;
+      }
+      setResendCooldown(60);
       toast({
         title: "Verification email sent!",
         description: "Please check your inbox for the verification link.",
@@ -401,10 +427,11 @@ export default function AuthPage() {
                     variant="outline"
                     size="sm"
                     onClick={() => resendVerificationMutation.mutate(unverifiedEmail)}
-                    disabled={resendVerificationMutation.isPending}
+                    disabled={resendVerificationMutation.isPending || resendCooldown > 0}
                     className="w-full border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/30"
+                    data-testid="button-resend-verification-login"
                   >
-                    {resendVerificationMutation.isPending ? "Sending..." : "Resend Verification Email"}
+                    {resendVerificationMutation.isPending ? "Sending..." : resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend Verification Email"}
                   </Button>
                 </div>
               )}

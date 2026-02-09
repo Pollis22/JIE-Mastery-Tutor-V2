@@ -360,6 +360,13 @@ export function setupAuth(app: Express) {
       const existingUser = await storage.getUserByEmail(normalizedEmail);
       
       if (existingUser) {
+        if (!existingUser.emailVerified) {
+          console.log(`[Auth] Email check: ${normalizedEmail} exists but unverified - allow re-signup`);
+          return res.json({
+            available: true,
+            unverified: true,
+          });
+        }
         console.log(`[Auth] Email check: ${normalizedEmail} already exists`);
         return res.json({
           available: false,
@@ -644,13 +651,74 @@ export function setupAuth(app: Express) {
       const { email, password, studentName, studentAge, gradeLevel, primarySubject, deviceId } = validation.data;
       const normalizedEmail = email.toLowerCase().trim();
 
-      // Check for existing user - return 409 for conflict
       const existingUser = await storage.getUserByEmail(normalizedEmail);
       if (existingUser) {
-        return res.status(409).json({ 
-          error: "Email already registered. Please log in instead.",
-          field: "email",
-          redirect: "/auth"
+        if (existingUser.emailVerified) {
+          return res.status(409).json({ 
+            status: "already_verified",
+            error: "This email is already verified. Please log in instead.",
+            field: "email",
+            redirect: "/auth"
+          });
+        }
+
+        const now = Date.now();
+        const COOLDOWN_MS = 60 * 1000;
+        if (existingUser.lastVerificationEmailSentAt) {
+          const elapsed = now - new Date(existingUser.lastVerificationEmailSentAt).getTime();
+          if (elapsed < COOLDOWN_MS) {
+            const retryIn = Math.ceil((COOLDOWN_MS - elapsed) / 1000);
+            return res.status(200).json({
+              success: true,
+              status: "cooldown",
+              retryInSeconds: retryIn,
+              requiresVerification: true,
+              user: { email: existingUser.email },
+            });
+          }
+        }
+
+        const crypto = await import('crypto');
+        const newToken = crypto.randomBytes(32).toString('hex');
+        const newExpiry = new Date(now + 7 * 24 * 60 * 60 * 1000);
+
+        const { db } = await import('./db');
+        const { users: usersTable } = await import('@shared/schema');
+        const { eq } = await import('drizzle-orm');
+
+        await db.update(usersTable)
+          .set({
+            emailVerificationToken: newToken,
+            emailVerificationExpiry: newExpiry,
+            lastVerificationEmailSentAt: new Date(),
+          })
+          .where(eq(usersTable.id, existingUser.id));
+
+        try {
+          await emailService.sendEmailVerification({
+            email: existingUser.email,
+            name: existingUser.studentName || existingUser.firstName || 'Student',
+            token: newToken,
+          });
+          console.log('[Trial Signup] ✉️ Resent verification to existing unverified user:', existingUser.email);
+        } catch (emailErr: any) {
+          console.error('[Trial Signup] ❌ Failed to resend verification:', emailErr.message);
+        }
+
+        return res.status(200).json({
+          success: true,
+          status: "resent_verification",
+          requiresVerification: true,
+          emailSent: true,
+          user: {
+            id: existingUser.id,
+            email: existingUser.email,
+            studentName: existingUser.studentName,
+            gradeLevel: existingUser.gradeLevel,
+            trialActive: existingUser.trialActive,
+            emailVerified: false,
+          },
+          message: "Verification email resent. Please check your inbox.",
         });
       }
 
@@ -839,6 +907,13 @@ export function setupAuth(app: Express) {
         });
         emailSent = true;
         console.log('[Trial Signup] ✅ Verification email sent successfully to:', user.email);
+
+        const { db: dbConn } = await import('./db');
+        const { users: usersTable2 } = await import('@shared/schema');
+        const { eq: eq2 } = await import('drizzle-orm');
+        await dbConn.update(usersTable2)
+          .set({ lastVerificationEmailSentAt: new Date() })
+          .where(eq2(usersTable2.id, user.id));
       } catch (err: any) {
         emailError = err;
         console.error('[Trial Signup] ❌ Failed to send verification email:', err?.message || err);
@@ -976,7 +1051,6 @@ export function setupAuth(app: Express) {
     }
   });
 
-  // POST /api/auth/resend-verification - Resend verification email
   app.post("/api/auth/resend-verification", async (req, res) => {
     try {
       const { email } = req.body;
@@ -989,28 +1063,27 @@ export function setupAuth(app: Express) {
       const user = await storage.getUserByEmail(normalizedEmail);
 
       if (!user) {
-        // Don't reveal if email exists
-        return res.json({ success: true, message: "If this email exists, a verification link has been sent." });
+        return res.json({ success: true, message: "If an account exists with this email, a verification link has been sent." });
       }
 
       if (user.emailVerified) {
-        return res.status(400).json({ error: "Email is already verified. Please log in." });
+        return res.json({ success: true, status: "already_verified", message: "This email is already verified. Please log in instead." });
       }
 
-      // Rate limit: only allow resend every 2 minutes
-      if (user.emailVerificationExpiry) {
-        const timeSinceLastSend = Date.now() - (new Date(user.emailVerificationExpiry).getTime() - 7 * 24 * 60 * 60 * 1000);
-        if (timeSinceLastSend < 2 * 60 * 1000) {
-          return res.status(429).json({ error: "Please wait 2 minutes before requesting another verification email." });
+      const now = Date.now();
+      const COOLDOWN_MS = 60 * 1000;
+      if (user.lastVerificationEmailSentAt) {
+        const elapsed = now - new Date(user.lastVerificationEmailSentAt).getTime();
+        if (elapsed < COOLDOWN_MS) {
+          const retryIn = Math.ceil((COOLDOWN_MS - elapsed) / 1000);
+          return res.json({ success: true, status: "cooldown", retryInSeconds: retryIn, message: `Please wait ${retryIn} seconds before requesting another email.` });
         }
       }
 
-      // Generate new verification token (invalidates previous token)
       const crypto = await import('crypto');
       const verificationToken = crypto.randomBytes(32).toString('hex');
-      const verificationExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+      const verificationExpiry = new Date(now + 7 * 24 * 60 * 60 * 1000);
 
-      // Update user with new token
       const { db } = await import('./db');
       const { users } = await import('@shared/schema');
       const { eq } = await import('drizzle-orm');
@@ -1019,10 +1092,10 @@ export function setupAuth(app: Express) {
         .set({
           emailVerificationToken: verificationToken,
           emailVerificationExpiry: verificationExpiry,
+          lastVerificationEmailSentAt: new Date(),
         })
         .where(eq(users.id, user.id));
 
-      // Send verification email
       await emailService.sendEmailVerification({
         email: user.email,
         name: user.studentName || user.firstName || 'Student',
@@ -1336,56 +1409,6 @@ export function setupAuth(app: Express) {
     }
   });
 
-  // Resend Verification Email Endpoint
-  app.post("/api/auth/resend-verification", async (req, res) => {
-    try {
-      const { email } = req.body;
-      
-      if (!email) {
-        return res.status(400).json({ error: 'Email required' });
-      }
-
-      console.log('[Auth] 🔄 Resend verification request:', email);
-
-      const user = await storage.getUserByEmail(email.toLowerCase());
-      
-      if (!user) {
-        // Don't reveal if email exists - security best practice
-        return res.json({
-          success: true,
-          message: 'If that email is registered, a verification email has been sent.',
-        });
-      }
-
-      if (user.emailVerified) {
-        return res.json({
-          success: true,
-          message: 'Email is already verified.',
-          alreadyVerified: true,
-        });
-      }
-
-      // Generate new verification token
-      const verificationToken = await storage.generateEmailVerificationToken(user.id);
-      
-      // Send verification email
-      await emailService.sendEmailVerification({
-        email: user.email,
-        name: user.parentName || user.firstName || 'there',
-        token: verificationToken,
-      });
-
-      console.log('[Auth] ✅ Verification email resent');
-
-      res.json({
-        success: true,
-        message: 'Verification email sent! Please check your inbox.',
-      });
-    } catch (error) {
-      console.error('[Auth] ❌ Resend verification error:', error);
-      res.status(500).json({ error: 'Failed to resend verification email. Please try again.' });
-    }
-  });
 
   app.get("/api/user", (req, res) => {
     // Debug logging for session persistence issues
