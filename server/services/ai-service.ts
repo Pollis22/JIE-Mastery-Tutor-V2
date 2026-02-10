@@ -250,6 +250,16 @@ export async function generateTutorResponseStreaming(
     const streamStart = Date.now();
     console.log(`[AI Service] ⏱️ Starting Claude streaming...`);
     
+    const filteredHistory = conversationHistory.filter(msg => {
+      const content = (msg.content ?? "").trim();
+      if (content.length === 0) return false;
+      return true;
+    });
+    const removedCount = conversationHistory.length - filteredHistory.length;
+    if (removedCount > 0) {
+      console.warn(`[LLM] Removed ${removedCount} empty messages from history before Claude call`);
+    }
+
     // Use streaming API with retry logic for overloaded errors
     const stream = await withRetryStream(async () => {
       return anthropicClient.messages.stream({
@@ -257,7 +267,7 @@ export async function generateTutorResponseStreaming(
         max_tokens: maxTokens,  // Grade-based tokens (Step 5)
         system: systemPrompt,
         messages: [
-          ...conversationHistory,
+          ...filteredHistory,
           { role: "user", content: currentTranscript }
         ],
       });
@@ -323,7 +333,9 @@ export async function generateTutorResponseStreaming(
       if (abortSignal?.aborted) {
         console.log(`[AI Service] 🛑 LLM stream aborted after ${tokenCount} tokens (${Date.now() - streamStart}ms)`);
         try { stream.controller.abort(); } catch (_) {}
-        callbacks.onComplete(fullText || '');
+        const abortedText = (fullText ?? "").trim();
+        console.log(`[AI Service] 🛑 Aborted with partial text: ${abortedText.length} chars (will ${abortedText.length === 0 ? 'NOT' : ''} save to history)`);
+        callbacks.onComplete(abortedText);
         return;
       }
       if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
@@ -442,6 +454,16 @@ export async function generateTutorResponse(
     const apiStart = Date.now();
     console.log(`[AI Service] ⏱️ Calling Claude API... (prompt length: ${systemPrompt.length} chars)`);
     
+    const filteredHistory = conversationHistory.filter(msg => {
+      const content = (msg.content ?? "").trim();
+      if (content.length === 0) return false;
+      return true;
+    });
+    const removedCount = conversationHistory.length - filteredHistory.length;
+    if (removedCount > 0) {
+      console.warn(`[LLM] Removed ${removedCount} empty messages from history before Claude call (non-streaming)`);
+    }
+
     // Wrap Claude API call with retry logic for overloaded errors
     const response = await withRetry(async () => {
       return anthropicClient.messages.create({
@@ -449,7 +471,7 @@ export async function generateTutorResponse(
         max_tokens: maxTokens,  // Grade-based tokens (Step 5)
         system: systemPrompt,
         messages: [
-          ...conversationHistory,
+          ...filteredHistory,
           { role: "user", content: currentTranscript }
         ],
       });

@@ -992,6 +992,7 @@ interface SessionState {
   ttsAbortController: AbortController | null;
   lastBargeInAt: number;
   currentPlaybackMode: 'idle' | 'tutor_speaking' | 'listening';
+  isTutorThinking: boolean; // BARGE-IN: Track if LLM generation is in-flight
 }
 
 // Helper to send typed WebSocket events
@@ -1012,6 +1013,16 @@ function hardInterruptTutor(
 ): boolean {
   const now = Date.now();
 
+  if (!state.isTutorSpeaking && !state.isTutorThinking) {
+    console.log(JSON.stringify({
+      event: 'barge_in_suppressed',
+      session_id: state.sessionId,
+      reason,
+      detail: 'tutor not active (speaking=false, thinking=false)',
+    }));
+    return false;
+  }
+
   if (now - state.lastBargeInAt < BARGE_IN_COOLDOWN_MS) {
     console.log(JSON.stringify({
       event: 'barge_in_cooldown',
@@ -1026,6 +1037,7 @@ function hardInterruptTutor(
   const prevGenId = state.playbackGenId;
   state.playbackGenId++;
   state.isTutorSpeaking = false;
+  state.isTutorThinking = false;
   state.bargeInDucking = false;
   state.currentPlaybackMode = 'listening';
   state.lastBargeInAt = now;
@@ -1858,6 +1870,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
       ttsAbortController: null,
       lastBargeInAt: 0,
       currentPlaybackMode: 'idle',
+      isTutorThinking: false,
     };
 
     // FIX #3: Auto-persist every 10 seconds
@@ -2745,6 +2758,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
         
         // Track turn for interruption detection
         state.isTutorSpeaking = true;
+        state.isTutorThinking = true;
         state.currentPlaybackMode = 'tutor_speaking';
         const turnTimestamp = Date.now();
         state.lastAudioSentAt = turnTimestamp;
@@ -2771,6 +2785,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
               
               if (sentenceCount === 1) {
                 firstSentenceMs = sentenceStart - claudeStart;
+                state.isTutorThinking = false;
                 console.log(`[Custom Voice] ⏱️ First sentence in ${firstSentenceMs}ms`);
                 
                 // TURN FALLBACK: Cancel fallback timer since we're producing a response
@@ -2837,22 +2852,39 @@ export function setupCustomVoiceWebSocket(server: Server) {
             
             onComplete: (fullText: string) => {
               const claudeMs = Date.now() - claudeStart;
+              state.isTutorThinking = false;
               console.log(`[Pipeline] 4. Claude response received (${claudeMs}ms), generating audio...`);
-              console.log(`[Custom Voice] 🤖 Tutor: "${fullText}"`);
+              
+              const normalizedContent = (fullText ?? "").trim();
+              if (normalizedContent.length === 0) {
+                console.warn("[LLM] Aborted/empty assistant response — not saving to history");
+                if (state.currentTurnId) {
+                  sendWsEvent(ws, 'tutor_error', {
+                    sessionId: state.sessionId,
+                    turnId: state.currentTurnId,
+                    timestamp: Date.now(),
+                    message: "Response interrupted",
+                  });
+                }
+                resolve();
+                return;
+              }
+              
+              console.log(`[Custom Voice] 🤖 Tutor: "${normalizedContent}"`);
               
               // ECHO GUARD: Record tutor utterance for echo comparison
-              recordTutorUtterance(state.echoGuardState, fullText, echoConfig);
+              recordTutorUtterance(state.echoGuardState, normalizedContent, echoConfig);
               
               // Add to conversation history
               state.conversationHistory.push(
                 { role: "user", content: transcript },
-                { role: "assistant", content: fullText }
+                { role: "assistant", content: normalizedContent }
               );
               
               // Add AI response to transcript (internal state)
               const aiTranscriptEntry: TranscriptEntry = {
                 speaker: "tutor",
-                text: fullText,
+                text: normalizedContent,
                 timestamp: new Date().toISOString(),
                 messageId: crypto.randomUUID(),
               };
@@ -2862,7 +2894,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
               ws.send(JSON.stringify({
                 type: "transcript",
                 speaker: "tutor",
-                text: fullText,
+                text: normalizedContent,
                 isComplete: true,
               }));
               
@@ -2940,6 +2972,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
       } catch (error) {
         console.error("[Custom Voice] ❌ Error processing:", error);
         state.isTutorSpeaking = false; // Reset on error
+        state.isTutorThinking = false; // Reset on error
         
         // ECHO GUARD: Also mark playback end on error
         markPlaybackEnd(state.echoGuardState, getEchoGuardConfig());
@@ -3030,6 +3063,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
         
         if (state.isTutorSpeaking && timeSinceLastAudio >= 30000) {
           state.isTutorSpeaking = false;
+          state.isTutorThinking = false;
           state.bargeInDucking = false;
           state.currentPlaybackMode = 'listening';
         }
@@ -4097,6 +4131,7 @@ HONESTY INSTRUCTIONS:
                   // Reset stale tutor speaking state
                   if (state.isTutorSpeaking && timeSinceLastAudio >= 30000) {
                     state.isTutorSpeaking = false;
+                    state.isTutorThinking = false;
                     state.bargeInDucking = false;
                   }
                   
@@ -4489,6 +4524,7 @@ HONESTY INSTRUCTIONS:
                 if (state.isTutorSpeaking && timeSinceLastAudio >= 30000) {
                   console.log("[Custom Voice] ⏸️ Resetting stale tutor speaking state...");
                   state.isTutorSpeaking = false;
+                  state.isTutorThinking = false;
                   state.currentPlaybackMode = 'listening';
                   state.bargeInDucking = false;
                 }
@@ -5108,6 +5144,7 @@ HONESTY INSTRUCTIONS:
               
               // Mark tutor as speaking for barge-in detection
               state.isTutorSpeaking = true;
+              state.isTutorThinking = true;
               state.currentPlaybackMode = 'tutor_speaking';
               state.lastAudioSentAt = Date.now();
               
@@ -5175,19 +5212,28 @@ HONESTY INSTRUCTIONS:
                   
                   onComplete: (fullText: string) => {
                     const textStreamMs = Date.now() - textStreamStart;
+                    state.isTutorThinking = false;
                     console.log(`[Custom Voice] ⏱️ Text streaming complete: ${textStreamMs}ms, ${textSentenceCount} sentences`);
-                    console.log(`[Custom Voice] 🤖 Tutor (text): "${fullText}"`);
+                    
+                    const normalizedTextContent = (fullText ?? "").trim();
+                    if (normalizedTextContent.length === 0) {
+                      console.warn("[LLM] Aborted/empty assistant response (text mode) — not saving to history");
+                      textResolve();
+                      return;
+                    }
+                    
+                    console.log(`[Custom Voice] 🤖 Tutor (text): "${normalizedTextContent}"`);
                     
                     // Add to conversation history
                     state.conversationHistory.push(
                       { role: "user", content: message.message },
-                      { role: "assistant", content: fullText }
+                      { role: "assistant", content: normalizedTextContent }
                     );
                     
                     // Add AI response to transcript (internal state)
                     const tutorTextEntry: TranscriptEntry = {
                       speaker: "tutor",
-                      text: fullText,
+                      text: normalizedTextContent,
                       timestamp: new Date().toISOString(),
                       messageId: crypto.randomUUID(),
                     };
@@ -5197,7 +5243,7 @@ HONESTY INSTRUCTIONS:
                     ws.send(JSON.stringify({
                       type: "transcript",
                       speaker: "tutor",
-                      text: fullText,
+                      text: normalizedTextContent,
                       isComplete: true,
                     }));
                     
