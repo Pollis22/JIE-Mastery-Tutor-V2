@@ -251,6 +251,28 @@ function isHedgePhrase(text: string): boolean {
   return HEDGE_PHRASES.some(phrase => lower.endsWith(phrase) || lower === phrase);
 }
 
+// FIX 3: Conversational tail grace extension for short polite lead-ins
+const POLITE_LEADIN_PATTERNS = [
+  /\b(excuse me|if you don't mind|if you dont mind)\s*$/i,
+  /\b(can i|could you|may i|i have a question)\s*$/i,
+  /\b(i wanted to|i want to|i'd like to|id like to)\s*$/i,
+  /\b(let's talk about|lets talk about|how about|what about)\s*$/i,
+  /\b(actually|okay|ok|so yeah|you know)\s*$/i,
+];
+
+function isPoliteLeadIn(text: string): boolean {
+  const trimmed = text.trim();
+  const wordCount = trimmed.split(/\s+/).filter(w => w.length > 0).length;
+  if (wordCount >= 10) return false;
+  return POLITE_LEADIN_PATTERNS.some(p => p.test(trimmed));
+}
+
+function getTailGraceExtension(text: string, ageGroup: string | null): number {
+  if (!isPoliteLeadIn(text)) return 0;
+  const isAdult = ageGroup?.toLowerCase().includes('college') || ageGroup?.toLowerCase().includes('adult');
+  return isAdult ? 800 : 1500;
+}
+
 // Recovery phrases that should NOT end a session (Step 2)
 // These are common phrases users say when waiting for a response
 const RECOVERY_PHRASES = [
@@ -368,7 +390,8 @@ function createAssemblyAIConnection(
   onError: (error: string) => void,
   onSessionStart?: (sessionId: string) => void,
   onClose?: () => void,
-  ageGroup?: string
+  ageGroup?: string,
+  onPartialUpdate?: (text: string, prevText: string) => void
 ): { ws: WebSocket; state: AssemblyAIState } {
   console.log('████████████████████████████████████████████████████████████████');
   console.log('[AssemblyAI v3] ENTER createAssemblyAIConnection');
@@ -624,7 +647,11 @@ function createAssemblyAIConnection(
         // C1) Partial handling - REPLACE hypothesis only (never append)
         // Partials NEVER trigger Claude
         if (text) {
+          const prevTranscript = confirmedTranscript;
           confirmedTranscript = text;
+          if (onPartialUpdate) {
+            onPartialUpdate(text, prevTranscript);
+          }
         }
 
         // C2/C3) Final handling with commit mode awareness
@@ -993,6 +1020,16 @@ interface SessionState {
   lastBargeInAt: number;
   currentPlaybackMode: 'idle' | 'tutor_speaking' | 'listening';
   isTutorThinking: boolean; // BARGE-IN: Track if LLM generation is in-flight
+  // FIX 1A: STT activity tracking to prevent premature turn firing
+  lastSttActivityAt: number;
+  lastAccumulatedTranscript: string;
+  // FIX 2A: Barge-in candidate state machine
+  bargeInCandidate: {
+    isActive: boolean;
+    startedAt: number;
+    peakRms: number;
+    lastAboveAt: number;
+  };
 }
 
 // Helper to send typed WebSocket events
@@ -1000,6 +1037,35 @@ function sendWsEvent(ws: WebSocket, type: string, payload: Record<string, unknow
   if (ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type, ...payload }));
     console.log(`[WS Event] ${type}`, payload.turnId || '');
+  }
+}
+
+// FIX 1A: STT Activity tracking - credit speech activity from transcript growth
+const STT_ACTIVITY_DELTA_THRESHOLD = 4;
+const STT_ACTIVITY_RECENCY_MS = 800;
+
+function creditSttActivity(state: SessionState, currentText: string, prevText: string): void {
+  const content = currentText.trim();
+  const prevContent = (prevText || '').trim();
+  const deltaLen = content.length - prevContent.length;
+  const prevWordCount = prevContent.split(/\s+/).filter(w => w.length > 0).length;
+  const currentWordCount = content.split(/\s+/).filter(w => w.length > 0).length;
+  const newWordBoundary = currentWordCount > prevWordCount;
+
+  if (deltaLen >= STT_ACTIVITY_DELTA_THRESHOLD || newWordBoundary) {
+    const now = Date.now();
+    state.lastSttActivityAt = now;
+    state.lastAccumulatedTranscript = content;
+    state.lastAudioReceivedAt = now;
+    state.lastActivityTime = now;
+
+    if (state.continuationTimerId) {
+      clearTimeout(state.continuationTimerId);
+      state.continuationTimerId = undefined;
+      console.log(`[SpeechActivity] cancelled_continuation_timer (STT still active)`);
+    }
+
+    console.log(`[SpeechActivity] credited_from_stt deltaLen=${deltaLen} words=${currentWordCount} preview="${content.substring(0, 40)}"`);
   }
 }
 
@@ -1871,6 +1937,14 @@ export function setupCustomVoiceWebSocket(server: Server) {
       lastBargeInAt: 0,
       currentPlaybackMode: 'idle',
       isTutorThinking: false,
+      lastSttActivityAt: 0,
+      lastAccumulatedTranscript: '',
+      bargeInCandidate: {
+        isActive: false,
+        startedAt: 0,
+        peakRms: 0,
+        lastAboveAt: 0,
+      },
     };
 
     // FIX #3: Auto-persist every 10 seconds
@@ -3056,8 +3130,13 @@ export function setupCustomVoiceWebSocket(server: Server) {
               logBargeInDecision(state.sessionId || 'unknown', 'duck', state.lastMeasuredRms, noiseFloor, bargeInValidation.wordCount, transcript, 'too_short');
             }
           } else {
-            hardInterruptTutor(ws, state, 'lexical_validated');
-            logBargeInDecision(state.sessionId || 'unknown', 'interrupt', state.lastMeasuredRms, noiseFloor, bargeInValidation.wordCount, transcript, 'lexical_validated');
+            if (!state.isTutorSpeaking && !state.isTutorThinking) {
+              console.log(`[BargeIn] suppressed_late_lexical tutorActive=false`);
+              state.bargeInDucking = false;
+            } else {
+              hardInterruptTutor(ws, state, 'lexical_validated');
+              logBargeInDecision(state.sessionId || 'unknown', 'interrupt', state.lastMeasuredRms, noiseFloor, bargeInValidation.wordCount, transcript, 'lexical_validated');
+            }
           }
         }
         
@@ -3976,6 +4055,10 @@ HONESTY INSTRUCTIONS:
               // K2 TURN POLICY: Helper to fire Claude with optional stall prompt
               // CRITICAL: Always preserve student transcript - stall prompt is appended, not replaced
               const fireClaudeWithPolicy = (transcript: string, stallPrompt?: string) => {
+                if (state.sessionEnded) {
+                  console.log('[TurnPolicy] fireClaudeWithPolicy skipped - session already ended');
+                  return;
+                }
                 if (stallPrompt && transcript.trim()) {
                   // Stall escape - send student's transcript PLUS gentle follow-up
                   // This preserves the student's words while prompting for continuation
@@ -4003,6 +4086,30 @@ HONESTY INSTRUCTIONS:
                 }
               };
               
+              // FIX 1B: STT recency-gated Claude firing
+              // If STT activity occurred within 800ms, defer the Claude call
+              let sttDeferTimerId: NodeJS.Timeout | undefined;
+              const gatedFireClaude = (transcript: string, stallPrompt?: string) => {
+                const sttAge = Date.now() - state.lastSttActivityAt;
+                if (state.lastSttActivityAt > 0 && sttAge < STT_ACTIVITY_RECENCY_MS) {
+                  const deferMs = STT_ACTIVITY_RECENCY_MS - sttAge + 100;
+                  console.log(`[TurnPolicy] suppressed_due_to_recent_stt_activity ageMs=${sttAge} deferMs=${deferMs}`);
+                  if (sttDeferTimerId) clearTimeout(sttDeferTimerId);
+                  sttDeferTimerId = setTimeout(() => {
+                    sttDeferTimerId = undefined;
+                    const recheckAge = Date.now() - state.lastSttActivityAt;
+                    if (recheckAge < STT_ACTIVITY_RECENCY_MS) {
+                      console.log(`[TurnPolicy] still_active_after_defer recheckAgeMs=${recheckAge} - extending`);
+                      gatedFireClaude(transcript, stallPrompt);
+                    } else {
+                      fireClaudeWithPolicy(transcript, stallPrompt);
+                    }
+                  }, deferMs);
+                  return;
+                }
+                fireClaudeWithPolicy(transcript, stallPrompt);
+              };
+
               // K2 TURN POLICY: Start stall escape timer if hesitation detected
               const startStallEscapeTimer = (transcript: string, remainingMs?: number) => {
                 const gradeBand = state.ageGroup as GradeBand;
@@ -4112,16 +4219,21 @@ HONESTY INSTRUCTIONS:
                       }
                       // Don't block processing - continue to turn policy
                     } else {
-                      console.log(`[BargeIn] 🛑 INTERRUPT: "${text.substring(0, 30)}..." (${bargeInValidation.wordCount} words)`);
-                      hardInterruptTutor(ws, state, 'lexical_validated');
-                      logBargeInDecision(
-                        state.sessionId || 'unknown',
-                        'interrupt',
-                        state.lastMeasuredRms, noiseFloor,
-                        bargeInValidation.wordCount,
-                        text,
-                        'lexical_validated'
-                      );
+                      if (!state.isTutorSpeaking && !state.isTutorThinking) {
+                        console.log(`[BargeIn] suppressed_late_lexical tutorActive=false`);
+                        state.bargeInDucking = false;
+                      } else {
+                        console.log(`[BargeIn] 🛑 INTERRUPT: "${text.substring(0, 30)}..." (${bargeInValidation.wordCount} words)`);
+                        hardInterruptTutor(ws, state, 'lexical_validated');
+                        logBargeInDecision(
+                          state.sessionId || 'unknown',
+                          'interrupt',
+                          state.lastMeasuredRms, noiseFloor,
+                          bargeInValidation.wordCount,
+                          text,
+                          'lexical_validated'
+                        );
+                      }
                     }
                   } else if (state.bargeInDucking && !state.isTutorSpeaking) {
                     state.bargeInDucking = false;
@@ -4167,9 +4279,14 @@ HONESTY INSTRUCTIONS:
                       }));
                     }
                     
-                    const graceMs = isHedgePhrase(state.continuationPendingText)
+                    const tailGraceExt = getTailGraceExtension(state.continuationPendingText, state.ageGroup);
+                    let graceMs = isHedgePhrase(state.continuationPendingText)
                       ? CONTINUATION_GUARD_CONFIG.HEDGE_GRACE_MS
                       : CONTINUATION_GUARD_CONFIG.GRACE_MS;
+                    if (tailGraceExt > 0) {
+                      graceMs += tailGraceExt;
+                      console.log(`[TailGrace] extended grace by ${tailGraceExt}ms for polite lead-in, totalGrace=${graceMs}ms`);
+                    }
                     
                     state.continuationTimerId = setTimeout(() => {
                       state.continuationTimerId = undefined;
@@ -4231,7 +4348,7 @@ HONESTY INSTRUCTIONS:
                       
                       if (policyEval.should_fire_claude) {
                         state.postUtteranceGraceUntil = Date.now() + 400;
-                        fireClaudeWithPolicy(finalText);
+                        gatedFireClaude(finalText);
                       }
                     }, graceMs);
                     
@@ -4272,7 +4389,7 @@ HONESTY INSTRUCTIONS:
                   if (evaluation.should_fire_claude) {
                     // Set post-utterance grace period (300-600ms) for merging late transcripts
                     state.postUtteranceGraceUntil = now + 400; // 400ms grace
-                    fireClaudeWithPolicy(text);
+                    gatedFireClaude(text);
                   }
                 },
                 (error) => {
@@ -4413,13 +4530,14 @@ HONESTY INSTRUCTIONS:
                             }
                             
                             if (evaluation.should_fire_claude) {
-                              fireClaudeWithPolicy(text);
+                              gatedFireClaude(text);
                             }
                           },
                           (error) => console.error('[AssemblyAI] Reconnect error:', error),
                           (sessionId) => console.log('[AssemblyAI] Reconnected:', sessionId),
                           undefined, // onClose
-                          state.ageGroup // ageGroup for endpointing profile
+                          state.ageGroup, // ageGroup for endpointing profile
+                          (text, prevText) => creditSttActivity(state, text, prevText)
                         );
                         state.assemblyAIWs = newWs;
                         state.assemblyAIState = newState;
@@ -4432,7 +4550,8 @@ HONESTY INSTRUCTIONS:
                     }, backoffDelay);
                   }
                 },
-                state.ageGroup // ageGroup for endpointing profile
+                state.ageGroup, // ageGroup for endpointing profile
+                (text, prevText) => creditSttActivity(state, text, prevText)
               );
               
               console.log('[AssemblyAI] createAssemblyAIConnection returned successfully');
@@ -4505,16 +4624,21 @@ HONESTY INSTRUCTIONS:
                       console.log(`[BargeIn] 🔉 DUCK (not interrupt): "${transcript}" (${bargeInValidation.wordCount} words < 3)`);
                     }
                   } else {
-                    console.log(`[BargeIn] 🛑 INTERRUPT: "${transcript.substring(0, 30)}..." (${bargeInValidation.wordCount} words)`);
-                    hardInterruptTutor(ws, state, 'lexical_validated');
-                    logBargeInDecision(
-                      state.sessionId || 'unknown',
-                      'interrupt',
-                      state.lastMeasuredRms, noiseFloor,
-                      bargeInValidation.wordCount,
-                      transcript,
-                      'lexical_validated'
-                    );
+                    if (!state.isTutorSpeaking && !state.isTutorThinking) {
+                      console.log(`[BargeIn] suppressed_late_lexical tutorActive=false`);
+                      state.bargeInDucking = false;
+                    } else {
+                      console.log(`[BargeIn] 🛑 INTERRUPT: "${transcript.substring(0, 30)}..." (${bargeInValidation.wordCount} words)`);
+                      hardInterruptTutor(ws, state, 'lexical_validated');
+                      logBargeInDecision(
+                        state.sessionId || 'unknown',
+                        'interrupt',
+                        state.lastMeasuredRms, noiseFloor,
+                        bargeInValidation.wordCount,
+                        transcript,
+                        'lexical_validated'
+                      );
+                    }
                   }
                 } else if (state.bargeInDucking && !state.isTutorSpeaking) {
                   state.bargeInDucking = false;
@@ -4843,6 +4967,49 @@ HONESTY INSTRUCTIONS:
                 // Update lastConfirmedSpeechTime when speech is confirmed
                 if (speechDetection.isSpeech) {
                   state.lastConfirmedSpeechTime = Date.now();
+                }
+                
+                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                // FIX 2A: Barge-in candidate state machine
+                // Once speech onset is detected during tutor speaking, enter
+                // candidate state and hold it until RMS drops for >200ms.
+                // If candidate duration >= 400ms, trigger barge-in immediately.
+                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                const BARGE_IN_DEBOUNCE_MS = 400;
+                const BARGE_IN_DECAY_MS = 200;
+                const noiseFloor = getNoiseFloor(state.noiseFloorState);
+                const fixedRmsThreshold = Math.max(0.03, noiseFloor * 3.0);
+                const isAboveThreshold = rms >= fixedRmsThreshold || speechDetection.isSpeech || speechDetection.isPotentialSpeech;
+
+                if ((state.isTutorSpeaking || state.isTutorThinking) && isAboveThreshold) {
+                  const now = Date.now();
+                  if (!state.bargeInCandidate.isActive) {
+                    state.bargeInCandidate = {
+                      isActive: true,
+                      startedAt: now,
+                      peakRms: rms,
+                      lastAboveAt: now,
+                    };
+                    console.log(`[BargeIn] candidate_state_started rms=${rms.toFixed(4)} noiseFloor=${noiseFloor.toFixed(4)} threshold=${fixedRmsThreshold.toFixed(4)}`);
+                  } else {
+                    state.bargeInCandidate.lastAboveAt = now;
+                    if (rms > state.bargeInCandidate.peakRms) {
+                      state.bargeInCandidate.peakRms = rms;
+                    }
+                    const candidateDuration = now - state.bargeInCandidate.startedAt;
+                    if (candidateDuration >= BARGE_IN_DEBOUNCE_MS) {
+                      console.log(`[BargeIn] candidate_state_committed durationMs=${candidateDuration} peakRms=${state.bargeInCandidate.peakRms.toFixed(4)}`);
+                      hardInterruptTutor(ws, state, 'rms_debounce_committed');
+                      state.bargeInCandidate = { isActive: false, startedAt: 0, peakRms: 0, lastAboveAt: 0 };
+                    }
+                  }
+                } else if (state.bargeInCandidate.isActive) {
+                  const now = Date.now();
+                  const silenceSinceAbove = now - state.bargeInCandidate.lastAboveAt;
+                  if (silenceSinceAbove > BARGE_IN_DECAY_MS) {
+                    console.log(`[BargeIn] candidate_state_expired silenceMs=${silenceSinceAbove} peakRms=${state.bargeInCandidate.peakRms.toFixed(4)}`);
+                    state.bargeInCandidate = { isActive: false, startedAt: 0, peakRms: 0, lastAboveAt: 0 };
+                  }
                 }
                 
                 // Log noise floor gating when speech is ignored (potential but not confirmed)

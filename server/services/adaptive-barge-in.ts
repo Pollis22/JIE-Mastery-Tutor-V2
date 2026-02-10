@@ -374,17 +374,25 @@ export function evaluateBargeIn(
   tutorPlaying: boolean
 ): BargeInEvalResult {
   const config = getBargeInConfig(gradeBand);
-  const common = getCommonBargeInConfig();
   const baseline = getBaselineMedian(baselineState);
-  const adaptiveThreshold = baseline * config.adaptiveRatio;
+  const adaptiveEnabled = isAdaptiveBargeInEnabled();
   
-  // Check adaptive trigger (primary for quiet speakers)
-  const adaptiveTriggered = isAdaptiveBargeInEnabled() && rms >= adaptiveThreshold;
+  let adaptiveTriggered = false;
+  let absoluteTriggered = false;
+  let adaptiveThreshold: number;
+
+  if (adaptiveEnabled) {
+    adaptiveThreshold = baseline * config.adaptiveRatio;
+    adaptiveTriggered = rms >= adaptiveThreshold;
+    absoluteTriggered = rms >= config.rmsThresholdAbs || peak >= config.peakThresholdAbs;
+  } else {
+    // FIX 2B: When adaptive=false, use explicit fixed threshold
+    const fixedRmsThreshold = Math.max(0.03, baseline * 3.0);
+    adaptiveThreshold = fixedRmsThreshold;
+    absoluteTriggered = rms >= fixedRmsThreshold;
+    console.log(`[BargeIn] fixedThresholdComputed noiseFloor=${baseline.toFixed(4)} threshold=${fixedRmsThreshold.toFixed(4)} rms=${rms.toFixed(4)} peak=${peak.toFixed(4)} triggered=${absoluteTriggered}`);
+  }
   
-  // Check absolute thresholds (fallback)
-  const absoluteTriggered = rms >= config.rmsThresholdAbs || peak >= config.peakThresholdAbs;
-  
-  // Either trigger type counts
   const triggered = tutorPlaying && (adaptiveTriggered || absoluteTriggered);
   
   let reason = 'none';
@@ -394,7 +402,7 @@ export function evaluateBargeIn(
     } else if (adaptiveTriggered) {
       reason = 'adaptive';
     } else {
-      reason = 'absolute';
+      reason = adaptiveEnabled ? 'absolute' : 'fixed_threshold';
     }
   } else if (!tutorPlaying) {
     reason = 'tutor_not_playing';
