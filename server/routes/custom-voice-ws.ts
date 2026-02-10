@@ -1487,12 +1487,11 @@ async function finalizeSession(
     return { success: true };
   }
 
-  // Mark as ended FIRST to prevent race conditions
   state.isSessionEnded = true;
+  cancelBargeInCandidate(state, `finalize_${reason}`);
   setPhase(state, 'FINALIZING', `finalize_${reason}`);
   state.sttReconnectEnabled = false;
   
-  // Track failures for reconciliation
   let minuteDeductionFailed = false;
   let dbWriteFailed = false;
   
@@ -4840,6 +4839,11 @@ HONESTY INSTRUCTIONS:
               state.sttDeadmanTimerId = setInterval(() => {
                 if (state.isSessionEnded || !state.sttConnected || state.phase === 'FINALIZING' || !state.sttReconnectEnabled) return;
                 
+                if (state.tutorAudioPlaying) {
+                  console.log(`[STT] deadman_suppressed reason=tutor_speaking phase=${state.phase} sessionId=${state.sessionId}`);
+                  return;
+                }
+                
                 const noMessageMs = Date.now() - state.sttLastMessageAtMs;
                 const audioRecentMs = state.sttLastAudioForwardAtMs > 0 ? Date.now() - state.sttLastAudioForwardAtMs : Infinity;
                 
@@ -5253,47 +5257,63 @@ HONESTY INSTRUCTIONS:
                 
                 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                 // BARGE-IN CANDIDATE STATE MACHINE (phase-gated)
-                // ONLY eligible when phase=TUTOR_SPEAKING + tutorAudioPlaying
-                // Uses grade-band timing for debounce/decay
+                // Requires: phase=TUTOR_SPEAKING + tutorAudioPlaying + genId match
+                // Uses grade-band timing, onset latch, belt-and-suspenders guards
                 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                 const bandTiming = getGradeBandTiming(state.ageGroup);
                 const noiseFloor = getNoiseFloor(state.noiseFloorState);
                 const fixedRmsThreshold = Math.max(0.03, noiseFloor * 3.0);
-                const isAboveThreshold = rms >= fixedRmsThreshold || speechDetection.isSpeech || speechDetection.isPotentialSpeech;
+                const risingThreshold = fixedRmsThreshold * 1.5;
+                const isAboveThreshold = rms >= fixedRmsThreshold && (speechDetection.isSpeech || speechDetection.isPotentialSpeech);
                 const bargeInEligible = state.phase === 'TUTOR_SPEAKING' && state.tutorAudioPlaying && !state.sessionFinalizing;
 
                 if (bargeInEligible && isAboveThreshold) {
                   const now = Date.now();
                   if (!state.bargeInCandidate.isActive) {
+                    const isRising = rms >= risingThreshold;
                     state.bargeInCandidate = {
                       isActive: true,
                       startedAt: now,
                       peakRms: rms,
                       lastAboveAt: now,
+                      genId: state.playbackGenId,
+                      risingEdgeConfirmed: isRising,
                     };
-                    console.log(`[BargeIn] candidate_armed rms=${rms.toFixed(4)} noiseFloor=${noiseFloor.toFixed(4)} threshold=${fixedRmsThreshold.toFixed(4)} phase=${state.phase} genId=${state.playbackGenId}`);
+                    console.log(`[BargeIn] debounce_started gen=${state.playbackGenId} rms=${rms.toFixed(4)} thresh=${fixedRmsThreshold.toFixed(4)} rising=${isRising} phase=${state.phase}`);
                   } else {
                     state.bargeInCandidate.lastAboveAt = now;
                     if (rms > state.bargeInCandidate.peakRms) {
                       state.bargeInCandidate.peakRms = rms;
                     }
+                    if (!state.bargeInCandidate.risingEdgeConfirmed && rms >= risingThreshold) {
+                      state.bargeInCandidate.risingEdgeConfirmed = true;
+                    }
                     const candidateDuration = now - state.bargeInCandidate.startedAt;
-                    if (candidateDuration >= bandTiming.bargeInDebounceMs) {
-                      console.log(`[BargeIn] candidate_committed durationMs=${candidateDuration} peakRms=${state.bargeInCandidate.peakRms.toFixed(4)} phase=${state.phase} genId=${state.playbackGenId}`);
-                      hardInterruptTutor(ws, state, 'rms_debounce_committed');
-                      state.bargeInCandidate = { isActive: false, startedAt: 0, peakRms: 0, lastAboveAt: 0 };
+                    if (candidateDuration >= bandTiming.bargeInDebounceMs && state.bargeInCandidate.risingEdgeConfirmed) {
+                      console.log(`[BargeIn] debounce_fired gen=${state.bargeInCandidate.genId} durationMs=${candidateDuration} peakRms=${state.bargeInCandidate.peakRms.toFixed(4)} phase=${state.phase} tutorAudioPlaying=${state.tutorAudioPlaying}`);
+                      if (state.phase !== 'TUTOR_SPEAKING' || !state.tutorAudioPlaying) {
+                        console.log(`[BargeIn] suppressed_not_playing phase=${state.phase} tutorAudioPlaying=${state.tutorAudioPlaying}`);
+                        cancelBargeInCandidate(state, 'not_playing_at_fire');
+                      } else if (state.bargeInCandidate.genId !== state.playbackGenId) {
+                        console.log(`[BargeIn] suppressed_stale_gen candidateGen=${state.bargeInCandidate.genId} activeGen=${state.playbackGenId}`);
+                        cancelBargeInCandidate(state, 'stale_gen');
+                      } else if (state.tutorAudioStartMs > 0 && (now - state.tutorAudioStartMs) < bandTiming.minMsAfterAudioStartForBargeIn) {
+                        console.log(`[BargeIn] suppressed_too_soon_after_audio msSinceAudioStart=${now - state.tutorAudioStartMs} minMs=${bandTiming.minMsAfterAudioStartForBargeIn}`);
+                        cancelBargeInCandidate(state, 'too_soon_after_audio');
+                      } else {
+                        hardInterruptTutor(ws, state, 'rms_debounce_committed');
+                      }
                     }
                   }
                 } else if (state.bargeInCandidate.isActive) {
                   if (!bargeInEligible) {
-                    console.log(`[BargeIn] candidate_reset reason=phase_change phase=${state.phase} tutorAudioPlaying=${state.tutorAudioPlaying}`);
-                    state.bargeInCandidate = { isActive: false, startedAt: 0, peakRms: 0, lastAboveAt: 0 };
+                    cancelBargeInCandidate(state, `phase_change_${state.phase}`);
                   } else {
                     const now = Date.now();
                     const silenceSinceAbove = now - state.bargeInCandidate.lastAboveAt;
                     if (silenceSinceAbove > bandTiming.bargeInDecayMs) {
                       console.log(`[BargeIn] candidate_expired silenceMs=${silenceSinceAbove} peakRms=${state.bargeInCandidate.peakRms.toFixed(4)} decayMs=${bandTiming.bargeInDecayMs}`);
-                      state.bargeInCandidate = { isActive: false, startedAt: 0, peakRms: 0, lastAboveAt: 0 };
+                      cancelBargeInCandidate(state, 'silence_decay');
                     }
                   }
                 }
@@ -5316,6 +5336,7 @@ HONESTY INSTRUCTIONS:
                 } else if (!speechDetection.isSpeech && state.lastSpeechNotificationSent) {
                   state.lastSpeechNotificationSent = false;
                   ws.send(JSON.stringify({ type: "speech_ended" }));
+                  cancelBargeInCandidate(state, 'speech_ended');
                   if (state.phase === 'SPEECH_DETECTED') {
                     setPhase(state, 'LISTENING', 'vad_speech_ended', ws);
                   }
@@ -6071,7 +6092,7 @@ When the student asks if you can see their document or asks you to prove access:
         responseTimer = null;
       }
       
-      // Clean up STT health timers
+      cancelBargeInCandidate(state, 'ws_close');
       if (state.sttDeadmanTimerId) { clearInterval(state.sttDeadmanTimerId); state.sttDeadmanTimerId = null; }
       if (state.sttReconnectTimerId) { clearTimeout(state.sttReconnectTimerId); state.sttReconnectTimerId = null; }
       
