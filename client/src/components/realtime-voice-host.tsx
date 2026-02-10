@@ -380,6 +380,31 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
     return baseInstruction;
   };
 
+  useEffect(() => {
+    if (!customVoice.isConnected) return;
+    if (customVoice.sttStatus === 'connected') return;
+    
+    if (customVoice.sttStatus === 'failed') {
+      toast({
+        title: "Speech Service Lost",
+        description: "Voice recognition is unavailable. You can still type to communicate.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    const timerId = setTimeout(() => {
+      if (customVoice.sttStatus === 'disconnected' || customVoice.sttStatus === 'reconnecting') {
+        toast({
+          title: "Speech Service Reconnecting",
+          description: "Voice recognition is reconnecting. You can type while waiting.",
+        });
+      }
+    }, 5000);
+    
+    return () => clearTimeout(timerId);
+  }, [customVoice.sttStatus, customVoice.isConnected, toast]);
+  
   const startSession = async () => {
     // CRITICAL: Unlock audio for iOS/Android FIRST - must happen synchronously during user gesture (button tap)
     // Do NOT await this - fire it immediately to catch the gesture timing window
@@ -392,27 +417,64 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
         throw new Error('User not authenticated');
       }
 
-      // Step 1: Create session in database FIRST
+      // Step 1: Create session in database FIRST (with retry on 502)
       console.log('[VoiceHost] 📝 Creating session in database...');
-      const response = await fetch('/api/realtime-sessions/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          studentId,
-          studentName: studentName || 'Student',
-          subject: subject || 'General',
-          language,
-          ageGroup,
-          voice: 'rachel', // Default voice
-          model: 'custom',
-          contextDocuments: contextDocumentIds || []
-        }),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to create session');
+      
+      const SESSION_RETRY_DELAYS = [300, 800, 1500];
+      let response: Response | null = null;
+      let lastError: string = '';
+      
+      for (let attempt = 0; attempt <= SESSION_RETRY_DELAYS.length; attempt++) {
+        try {
+          response = await fetch('/api/realtime-sessions/create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+              studentId,
+              studentName: studentName || 'Student',
+              subject: subject || 'General',
+              language,
+              ageGroup,
+              voice: 'rachel',
+              model: 'custom',
+              contextDocuments: contextDocumentIds || []
+            }),
+          });
+          
+          if (response.status === 401) {
+            console.error('[VoiceHost] 🔒 Session expired (401) - blocking voice start');
+            toast({
+              title: "Session Expired",
+              description: "Please refresh the page and log in again.",
+              variant: "destructive",
+            });
+            return;
+          }
+          
+          if (response.status === 502 && attempt < SESSION_RETRY_DELAYS.length) {
+            console.warn(`[VoiceHost] ⚠️ Server returned 502 - retrying in ${SESSION_RETRY_DELAYS[attempt]}ms (attempt ${attempt + 1}/${SESSION_RETRY_DELAYS.length})`);
+            await new Promise(r => setTimeout(r, SESSION_RETRY_DELAYS[attempt]));
+            continue;
+          }
+          
+          if (response.ok) break;
+          
+          const errorData = await response.json().catch(() => ({ message: `HTTP ${response!.status}` }));
+          lastError = errorData.message || `Server error (${response.status})`;
+          break;
+        } catch (fetchErr) {
+          lastError = fetchErr instanceof Error ? fetchErr.message : 'Network error';
+          if (attempt < SESSION_RETRY_DELAYS.length) {
+            console.warn(`[VoiceHost] ⚠️ Fetch failed - retrying in ${SESSION_RETRY_DELAYS[attempt]}ms`);
+            await new Promise(r => setTimeout(r, SESSION_RETRY_DELAYS[attempt]));
+            continue;
+          }
+        }
+      }
+      
+      if (!response || !response.ok) {
+        throw new Error(lastError || 'Failed to create session');
       }
 
       const sessionData = await response.json();

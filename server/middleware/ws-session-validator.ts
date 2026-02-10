@@ -183,7 +183,12 @@ function getSessionFromStore(
  * Write a rejection response to the socket and close it
  * Must be called before handleUpgrade to prevent connection
  */
-export function rejectWsUpgrade(socket: Socket, statusCode: number, message: string): void {
+export function rejectWsUpgrade(socket: Socket, statusCode: number, message: string, request?: IncomingMessage): void {
+  const ip = request?.headers['x-forwarded-for'] || request?.socket?.remoteAddress || 'unknown';
+  const referer = request?.headers.referer || 'none';
+  const url = request?.url || 'unknown';
+  console.log(`[AUTH] ${statusCode} ws_upgrade_rejected url=${url} ip=${ip} referer=${referer} reason="${message}"`);
+  
   const response = [
     `HTTP/1.1 ${statusCode} ${getStatusMessage(statusCode)}`,
     'Content-Type: text/plain',

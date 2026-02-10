@@ -391,7 +391,9 @@ function createAssemblyAIConnection(
   onSessionStart?: (sessionId: string) => void,
   onClose?: () => void,
   ageGroup?: string,
-  onPartialUpdate?: (text: string, prevText: string) => void
+  onPartialUpdate?: (text: string, prevText: string) => void,
+  onOpen?: () => void,
+  onMessage?: () => void
 ): { ws: WebSocket; state: AssemblyAIState } {
   console.log('████████████████████████████████████████████████████████████████');
   console.log('[AssemblyAI v3] ENTER createAssemblyAIConnection');
@@ -585,6 +587,8 @@ function createAssemblyAIConnection(
       }
       state.audioBuffer = [];
     }
+    
+    if (onOpen) onOpen();
   });
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -600,6 +604,7 @@ function createAssemblyAIConnection(
   ws.on('message', (data) => {
     const msgStr = data.toString();
     console.log('[AssemblyAI v3] 📩 Message received:', msgStr.substring(0, 300));
+    if (onMessage) onMessage();
     try {
       const msg = JSON.parse(msgStr);
 
@@ -836,37 +841,44 @@ function createAssemblyAIConnection(
 let didLogFirstAssemblyAIAudio = false;
 const MAX_AUDIO_BUFFER_SIZE = 50; // Max chunks to buffer while connecting
 
-function sendAudioToAssemblyAI(ws: WebSocket | null, audioBuffer: Buffer, state?: AssemblyAIState): boolean {
+function sendAudioToAssemblyAI(ws: WebSocket | null, audioBuffer: Buffer, state?: AssemblyAIState, sessionState?: SessionState): boolean {
+  if (sessionState) {
+    sessionState.sttLastAudioForwardAtMs = Date.now();
+  }
+  
   if (!ws) {
+    if (sessionState && !sessionState.sttConnected) {
+      sessionState.sttAudioRingBuffer.push(audioBuffer);
+      if (sessionState.sttAudioRingBuffer.length > 16) {
+        sessionState.sttAudioRingBuffer.shift();
+      }
+      return false;
+    }
     console.warn('[AssemblyAI] ⚠️ sendAudio: No WebSocket connection');
     return false;
   }
   
-  // If still connecting, buffer the audio
   if (ws.readyState === WebSocket.CONNECTING) {
     if (state && state.audioBuffer.length < MAX_AUDIO_BUFFER_SIZE) {
       state.audioBuffer.push(audioBuffer);
       if (state.audioBuffer.length === 1) {
         console.log('[AssemblyAI] 📦 Buffering audio while connecting...');
       }
-      return true; // Consider it sent (buffered)
+      return true;
     }
     return false;
   }
   
   if (ws.readyState !== WebSocket.OPEN) {
-    // Log EVERY 10th failure to see the actual error without spam
-    if (!didLogFirstAssemblyAIAudio) {
-      console.warn('████████████████████████████████████████████████████████████████');
-      console.warn('[AssemblyAI] ❌ WS NOT OPEN! readyState:', ws.readyState, 
-        '(0=CONNECTING, 1=OPEN, 2=CLOSING, 3=CLOSED)');
-      if (state) {
-        console.warn('[AssemblyAI] lastError:', state.lastError);
-        console.warn('[AssemblyAI] closeCode:', state.closeCode, 'closeReason:', state.closeReason);
-        console.warn('[AssemblyAI] isOpen flag:', state.isOpen);
+    if (sessionState) {
+      sessionState.sttAudioRingBuffer.push(audioBuffer);
+      if (sessionState.sttAudioRingBuffer.length > 16) {
+        sessionState.sttAudioRingBuffer.shift();
       }
-      console.warn('████████████████████████████████████████████████████████████████');
-      didLogFirstAssemblyAIAudio = true; // Prevent spam
+    }
+    if (!didLogFirstAssemblyAIAudio) {
+      console.warn(`[STT] drop_or_buffer_audio sttDisconnected readyState=${ws.readyState}`);
+      didLogFirstAssemblyAIAudio = true;
     }
     return false;
   }
@@ -1031,6 +1043,16 @@ interface SessionState {
     peakRms: number;
     lastAboveAt: number;
   };
+  // STT HEALTH: Connection health tracking + auto-reconnect
+  sttConnected: boolean;
+  sttLastMessageAtMs: number;
+  sttLastAudioForwardAtMs: number;
+  sttReconnectAttempts: number;
+  sttReconnectTimerId: NodeJS.Timeout | null;
+  sttDeadmanTimerId: NodeJS.Timeout | null;
+  sttConnectionId: number;
+  sttAudioRingBuffer: Buffer[];
+  sttDisconnectedSinceMs: number | null;
 }
 
 // Helper to send typed WebSocket events
@@ -1740,7 +1762,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
     
     if (!rateLimitCheck.allowed) {
       console.error(`[WebSocket] ❌ Rate limit exceeded for ${clientIp}:`, rateLimitCheck.reason);
-      rejectWsUpgrade(socket, 429, rateLimitCheck.reason || 'Too many requests');
+      rejectWsUpgrade(socket, 429, rateLimitCheck.reason || 'Too many requests', request);
       return;
     }
 
@@ -1760,7 +1782,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
       
       if (!trialPayload) {
         console.error('[WebSocket] ❌ Invalid trial token');
-        rejectWsUpgrade(socket, 401, 'Invalid trial token');
+        rejectWsUpgrade(socket, 401, 'Invalid trial token', request);
         return;
       }
       
@@ -1768,7 +1790,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
       const trial = await trialService.getTrialById(trialPayload.trialId);
       if (!trial || trial.status !== 'active') {
         console.error('[WebSocket] ❌ Trial expired or not found');
-        rejectWsUpgrade(socket, 403, 'Trial expired');
+        rejectWsUpgrade(socket, 403, 'Trial expired', request);
         return;
       }
       
@@ -1777,7 +1799,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
       const secondsRemaining = 300 - consumedSeconds;
       if (secondsRemaining <= 0) {
         console.error('[WebSocket] ❌ Trial time exhausted');
-        rejectWsUpgrade(socket, 403, 'Trial time exhausted');
+        rejectWsUpgrade(socket, 403, 'Trial time exhausted', request);
         return;
       }
       
@@ -1793,7 +1815,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
       
       if (!validationResult.valid) {
         console.error(`[WebSocket] ❌ Session validation failed:`, validationResult.error);
-        rejectWsUpgrade(socket, validationResult.statusCode || 401, validationResult.error || 'Unauthorized');
+        rejectWsUpgrade(socket, validationResult.statusCode || 401, validationResult.error || 'Unauthorized', request);
         return;
       }
 
@@ -1833,7 +1855,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
       });
     } catch (upgradeError) {
       console.error('[WebSocket] ❌ Upgrade error:', upgradeError);
-      rejectWsUpgrade(socket, 500, 'Internal server error');
+      rejectWsUpgrade(socket, 500, 'Internal server error', request);
     }
   });
 
@@ -1947,6 +1969,15 @@ export function setupCustomVoiceWebSocket(server: Server) {
         peakRms: 0,
         lastAboveAt: 0,
       },
+      sttConnected: false,
+      sttLastMessageAtMs: 0,
+      sttLastAudioForwardAtMs: 0,
+      sttReconnectAttempts: 0,
+      sttReconnectTimerId: null,
+      sttDeadmanTimerId: null,
+      sttConnectionId: 0,
+      sttAudioRingBuffer: [],
+      sttDisconnectedSinceMs: null,
     };
 
     // FIX #3: Auto-persist every 10 seconds
@@ -4428,165 +4459,242 @@ HONESTY INSTRUCTIONS:
                 (sessionId) => {
                   console.log('[AssemblyAI] 🎬 Session started:', sessionId);
                 },
-                async () => {
-                  console.log('[AssemblyAI] 🔌 Connection closed');
-                  if (state.sessionId && state.transcript.length > 0) {
-                    await persistTranscript(state.sessionId, state.transcript);
-                  }
-                  
-                  // Auto-reconnect if session is still active
-                  if (!state.isSessionEnded && state.sessionId) {
-                    console.warn('[AssemblyAI] ⚠️ Unexpected close - attempting reconnect');
-                    state.isReconnecting = true;
-                    reconnectAttempts++;
-                    
-                    if (reconnectAttempts > 3) {
-                      console.error('[AssemblyAI] ❌ Max reconnect attempts reached');
-                      state.isReconnecting = false;
-                      ws.send(JSON.stringify({ type: "error", error: "Voice connection lost. Please restart." }));
-                      return;
-                    }
-                    
-                    const backoffDelay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), 8000);
-                    setTimeout(() => {
-                      try {
-                        // Clear any lingering stall timer from previous connection to prevent double-fire
-                        if (state.stallEscapeTimerId) {
-                          clearTimeout(state.stallEscapeTimerId);
-                          state.stallEscapeTimerId = null;
-                          console.log('[AssemblyAI-Reconnect] 🧹 Cleared lingering stall timer');
-                        }
-                        
-                        // Preserve turn policy state across reconnect to maintain "very patient" contract
-                        const wasGuardActive = state.turnPolicyState.hesitationGuardActive;
-                        const wasAwaitingEot = state.turnPolicyState.awaitingSecondEot;
-                        const savedLastEotTimestamp = state.turnPolicyState.lastEotTimestamp;
-                        const savedGuardedTranscript = state.guardedTranscript;
-                        const savedStallTimerStartedAt = state.stallTimerStartedAt;
-                        const savedLastAudioReceivedAt = state.lastAudioReceivedAt;
-                        const config = getTurnPolicyConfig(state.ageGroup as GradeBand, state.turnPolicyK2Override);
-                        
-                        // Create fresh state with current timestamps
-                        state.turnPolicyState = createTurnPolicyState();
-                        
-                        // Restore guard state if it was active during disconnect
-                        if (wasGuardActive || wasAwaitingEot) {
-                          state.turnPolicyState.hesitationGuardActive = wasGuardActive;
-                          state.turnPolicyState.awaitingSecondEot = wasAwaitingEot;
-                          // CRITICAL: Preserve original lastEotTimestamp so checkStallEscape measures total silence
-                          state.turnPolicyState.lastEotTimestamp = savedLastEotTimestamp;
-                          state.guardedTranscript = savedGuardedTranscript;
-                          // Preserve lastAudioReceivedAt to maintain silence detection accuracy
-                          state.lastAudioReceivedAt = savedLastAudioReceivedAt;
-                          
-                          // Re-arm the stall escape timer with remaining time to maintain 4.5s guarantee
-                          if (savedStallTimerStartedAt > 0) {
-                            const elapsedMs = Date.now() - savedStallTimerStartedAt;
-                            const remainingMs = Math.max(0, config.max_turn_silence_ms - elapsedMs);
-                            
-                            // Default transcript if empty (shouldn't happen but handle gracefully)
-                            const transcriptToUse = savedGuardedTranscript || '';
-                            
-                            if (remainingMs > 0) {
-                              // Still have time left - re-arm with remaining duration
-                              startStallEscapeTimer(transcriptToUse, remainingMs);
-                              console.log(`[AssemblyAI-Reconnect] 🔄 Preserved guard + re-armed timer (${remainingMs}ms remaining)`);
-                            } else {
-                              // Time already expired - fire stall escape using checkStallEscape for proper logging/metrics
-                              console.log('[AssemblyAI-Reconnect] 🔄 Guard time expired during disconnect - firing stall escape');
-                              const stallResult = checkStallEscape({
-                                gradeBand: state.ageGroup as GradeBand,
-                                sessionK2Override: state.turnPolicyK2Override,
-                                policyState: state.turnPolicyState,
-                                currentTimestamp: Date.now(),
-                                hasAudioInput: false,
-                              });
-                              if (stallResult && stallResult.stall_prompt) {
-                                logTurnPolicyEvaluation(stallResult);
-                                fireClaudeWithPolicy(transcriptToUse, stallResult.stall_prompt);
-                              } else {
-                                // Fallback: fire with default prompt if checkStallEscape doesn't return result
-                                // This can happen due to state issues - log and fire anyway to not leave student waiting
-                                console.log('[AssemblyAI-Reconnect] ⚠️ checkStallEscape returned null - using fallback stall prompt');
-                                const fallbackPrompt = "Do you want more time to think, or would you like some help?";
-                                fireClaudeWithPolicy(transcriptToUse, fallbackPrompt);
-                              }
-                              // Reset state
-                              resetTurnPolicyState(state.turnPolicyState);
-                              state.guardedTranscript = '';
-                              state.stallTimerStartedAt = 0;
-                            }
-                          } else {
-                            // No timer was running but guard was active - shouldn't happen, reset guard
-                            console.log('[AssemblyAI-Reconnect] ⚠️ Guard active but no timer - resetting guard state');
-                            resetTurnPolicyState(state.turnPolicyState);
-                          }
-                        } else {
-                          // No guard was active - fresh start
-                          state.lastAudioReceivedAt = Date.now();
-                          console.log('[AssemblyAI-Reconnect] 🔄 Fresh turn policy state for new connection');
-                        }
-                        
-                        // CRITICAL: Reconnect callback MUST use turn policy logic (same as original)
-                        const { ws: newWs, state: newState } = createAssemblyAIConnection(
-                          state.language,
-                          (text, endOfTurn, confidence) => {
-                            console.log(`[AssemblyAI-Reconnect] 📝 Complete utterance (confidence: ${confidence.toFixed(2)}): "${text}"`);
-                            
-                            // Update last audio received time for stall detection
-                            state.lastAudioReceivedAt = Date.now();
-                            
-                            // K2 TURN POLICY: Evaluate turn before firing Claude
-                            const gradeBand = state.ageGroup as GradeBand;
-                            const evaluation = evaluateTurn({
-                              transcript: text,
-                              endOfTurn: endOfTurn,
-                              eotConfidence: confidence, // CRITICAL: Use correct parameter name
-                              gradeBand: gradeBand,
-                              sessionK2Override: state.turnPolicyK2Override,
-                              policyState: state.turnPolicyState,
-                              currentTimestamp: Date.now(),
-                            });
-                            
-                            // Log turn policy evaluation
-                            logTurnPolicyEvaluation(evaluation);
-                            
-                            if (evaluation.hesitation_guard_triggered) {
-                              // Hesitation detected - start stall escape timer instead of firing immediately
-                              console.log(`[TurnPolicy-Reconnect] 🤔 Hesitation detected - waiting for continuation or stall`);
-                              startStallEscapeTimer(text);
-                              return; // Don't process transcript yet
-                            }
-                            
-                            if (evaluation.should_fire_claude) {
-                              gatedFireClaude(text);
-                            }
-                          },
-                          (error) => console.error('[AssemblyAI] Reconnect error:', error),
-                          (sessionId) => console.log('[AssemblyAI] Reconnected:', sessionId),
-                          undefined, // onClose
-                          state.ageGroup, // ageGroup for endpointing profile
-                          (text, prevText) => creditSttActivity(state, text, prevText)
-                        );
-                        state.assemblyAIWs = newWs;
-                        state.assemblyAIState = newState;
-                        state.isReconnecting = false;
-                        reconnectAttempts = 0;
-                        console.log('[AssemblyAI] ✅ Reconnected');
-                      } catch (e) {
-                        console.error('[AssemblyAI] Reconnect failed:', e);
+                undefined,
+                state.ageGroup,
+                (text, prevText) => creditSttActivity(state, text, prevText),
+                () => {
+                  state.sttConnected = true;
+                  state.sttLastMessageAtMs = Date.now();
+                  state.sttReconnectAttempts = 0;
+                  state.sttDisconnectedSinceMs = null;
+                  state.sttConnectionId++;
+                  console.log(`[STT] connected sessionId=${state.sessionId} connectionId=${state.sttConnectionId}`);
+                  sendWsEvent(ws, 'stt_status', { status: 'connected' });
+                  if (state.sttAudioRingBuffer.length > 0) {
+                    console.log(`[STT] flushing ${state.sttAudioRingBuffer.length} buffered audio chunks after reconnect`);
+                    for (const chunk of state.sttAudioRingBuffer) {
+                      if (state.assemblyAIWs && state.assemblyAIWs.readyState === WebSocket.OPEN) {
+                        state.assemblyAIWs.send(chunk);
                       }
-                    }, backoffDelay);
+                    }
+                    state.sttAudioRingBuffer = [];
                   }
                 },
-                state.ageGroup, // ageGroup for endpointing profile
-                (text, prevText) => creditSttActivity(state, text, prevText)
+                () => {
+                  state.sttLastMessageAtMs = Date.now();
+                }
               );
               
               console.log('[AssemblyAI] createAssemblyAIConnection returned successfully');
               state.assemblyAIWs = assemblyWs;
               state.assemblyAIState = assemblyState;
               console.log('[AssemblyAI] AssemblyAI WS assigned to state');
+              
+              const STT_RING_BUFFER_MAX = 16;
+              const STT_DEADMAN_INTERVAL_MS = 2000;
+              const STT_DEADMAN_NO_MESSAGE_MS = 8000;
+              const STT_DEADMAN_AUDIO_RECENCY_MS = 3000;
+              const STT_MAX_RECONNECT_ATTEMPTS = 5;
+              const STT_RECONNECT_BACKOFF = [250, 500, 1000, 2000, 4000];
+              
+              const sttReconnect = () => {
+                if (state.isSessionEnded) return;
+                if (state.sttReconnectTimerId) return;
+                
+                state.sttReconnectAttempts++;
+                const attempt = state.sttReconnectAttempts;
+                
+                if (attempt > STT_MAX_RECONNECT_ATTEMPTS) {
+                  console.error(`[STT] reconnect_exhausted attempts=${attempt} sessionId=${state.sessionId}`);
+                  state.isReconnecting = false;
+                  sendWsEvent(ws, 'stt_status', { status: 'failed', attempts: attempt });
+                  ws.send(JSON.stringify({ type: "error", error: "Speech service connection lost. Please restart the session." }));
+                  return;
+                }
+                
+                const backoffMs = STT_RECONNECT_BACKOFF[Math.min(attempt - 1, STT_RECONNECT_BACKOFF.length - 1)];
+                console.log(`[STT] reconnecting attempt=${attempt}/${STT_MAX_RECONNECT_ATTEMPTS} backoffMs=${backoffMs} sessionId=${state.sessionId}`);
+                sendWsEvent(ws, 'stt_status', { status: 'reconnecting', attempt, maxAttempts: STT_MAX_RECONNECT_ATTEMPTS });
+                state.isReconnecting = true;
+                
+                state.sttReconnectTimerId = setTimeout(() => {
+                  state.sttReconnectTimerId = null;
+                  if (state.isSessionEnded) return;
+                  
+                  try {
+                    if (state.stallEscapeTimerId) {
+                      clearTimeout(state.stallEscapeTimerId);
+                      state.stallEscapeTimerId = null;
+                      console.log('[STT] reconnect cleared lingering stall timer');
+                    }
+                    
+                    const wasGuardActive = state.turnPolicyState.hesitationGuardActive;
+                    const wasAwaitingEot = state.turnPolicyState.awaitingSecondEot;
+                    const savedLastEotTimestamp = state.turnPolicyState.lastEotTimestamp;
+                    const savedGuardedTranscript = state.guardedTranscript;
+                    const savedStallTimerStartedAt = state.stallTimerStartedAt;
+                    const savedLastAudioReceivedAt = state.lastAudioReceivedAt;
+                    const config = getTurnPolicyConfig(state.ageGroup as GradeBand, state.turnPolicyK2Override);
+                    
+                    state.turnPolicyState = createTurnPolicyState();
+                    
+                    if (wasGuardActive || wasAwaitingEot) {
+                      state.turnPolicyState.hesitationGuardActive = wasGuardActive;
+                      state.turnPolicyState.awaitingSecondEot = wasAwaitingEot;
+                      state.turnPolicyState.lastEotTimestamp = savedLastEotTimestamp;
+                      state.guardedTranscript = savedGuardedTranscript;
+                      state.lastAudioReceivedAt = savedLastAudioReceivedAt;
+                      
+                      if (savedStallTimerStartedAt > 0) {
+                        const elapsedMs = Date.now() - savedStallTimerStartedAt;
+                        const remainingMs = Math.max(0, config.max_turn_silence_ms - elapsedMs);
+                        const transcriptToUse = savedGuardedTranscript || '';
+                        
+                        if (remainingMs > 0) {
+                          startStallEscapeTimer(transcriptToUse, remainingMs);
+                          console.log(`[STT] reconnect preserved guard + re-armed timer (${remainingMs}ms remaining)`);
+                        } else {
+                          console.log('[STT] reconnect guard time expired - firing stall escape');
+                          const stallResult = checkStallEscape({
+                            gradeBand: state.ageGroup as GradeBand,
+                            sessionK2Override: state.turnPolicyK2Override,
+                            policyState: state.turnPolicyState,
+                            currentTimestamp: Date.now(),
+                            hasAudioInput: false,
+                          });
+                          if (stallResult && stallResult.stall_prompt) {
+                            logTurnPolicyEvaluation(stallResult);
+                            fireClaudeWithPolicy(transcriptToUse, stallResult.stall_prompt);
+                          } else {
+                            const fallbackPrompt = "Do you want more time to think, or would you like some help?";
+                            fireClaudeWithPolicy(transcriptToUse, fallbackPrompt);
+                          }
+                          resetTurnPolicyState(state.turnPolicyState);
+                          state.guardedTranscript = '';
+                          state.stallTimerStartedAt = 0;
+                        }
+                      } else {
+                        console.log('[STT] reconnect guard active but no timer - resetting');
+                        resetTurnPolicyState(state.turnPolicyState);
+                      }
+                    } else {
+                      state.lastAudioReceivedAt = Date.now();
+                      console.log('[STT] reconnect fresh turn policy state');
+                    }
+                    
+                    const { ws: newWs, state: newState } = createAssemblyAIConnection(
+                      state.language,
+                      (text, endOfTurn, confidence) => {
+                        console.log(`[AssemblyAI-Reconnect] 📝 Complete utterance (confidence: ${confidence.toFixed(2)}): "${text}"`);
+                        state.lastAudioReceivedAt = Date.now();
+                        
+                        const transcriptValidation = validateTranscript(text, 1);
+                        if (!transcriptValidation.isValid) {
+                          logGhostTurnPrevention(state.sessionId || 'unknown', text, transcriptValidation);
+                          return;
+                        }
+                        
+                        const gradeBand = state.ageGroup as GradeBand;
+                        const evaluation = evaluateTurn({
+                          transcript: text,
+                          endOfTurn: endOfTurn,
+                          eotConfidence: confidence,
+                          gradeBand: gradeBand,
+                          sessionK2Override: state.turnPolicyK2Override,
+                          policyState: state.turnPolicyState,
+                          currentTimestamp: Date.now(),
+                        });
+                        logTurnPolicyEvaluation(evaluation);
+                        
+                        if (evaluation.hesitation_guard_triggered) {
+                          console.log(`[TurnPolicy-Reconnect] Hesitation detected`);
+                          startStallEscapeTimer(text);
+                          return;
+                        }
+                        if (evaluation.should_fire_claude) {
+                          gatedFireClaude(text);
+                        }
+                      },
+                      (error) => console.error('[STT] reconnect_error:', error),
+                      (sessionId) => console.log('[STT] reconnected sttSessionId:', sessionId),
+                      undefined,
+                      state.ageGroup,
+                      (text, prevText) => creditSttActivity(state, text, prevText),
+                      () => {
+                        state.sttConnected = true;
+                        state.sttLastMessageAtMs = Date.now();
+                        state.sttReconnectAttempts = 0;
+                        state.sttDisconnectedSinceMs = null;
+                        state.sttConnectionId++;
+                        console.log(`[STT] reconnected sessionId=${state.sessionId} connectionId=${state.sttConnectionId}`);
+                        sendWsEvent(ws, 'stt_status', { status: 'connected' });
+                        if (state.sttAudioRingBuffer.length > 0) {
+                          console.log(`[STT] flushing ${state.sttAudioRingBuffer.length} buffered audio chunks after reconnect`);
+                          for (const chunk of state.sttAudioRingBuffer) {
+                            if (state.assemblyAIWs && state.assemblyAIWs.readyState === WebSocket.OPEN) {
+                              state.assemblyAIWs.send(chunk);
+                            }
+                          }
+                          state.sttAudioRingBuffer = [];
+                        }
+                        state.isReconnecting = false;
+                      },
+                      () => { state.sttLastMessageAtMs = Date.now(); }
+                    );
+                    
+                    if (state.assemblyAIWs && state.assemblyAIWs.readyState === WebSocket.OPEN) {
+                      try { state.assemblyAIWs.close(); } catch (_e) {}
+                    }
+                    state.assemblyAIWs = newWs;
+                    state.assemblyAIState = newState;
+                    console.log('[STT] reconnect new connection created');
+                  } catch (e) {
+                    console.error('[STT] reconnect_failed:', e);
+                    state.isReconnecting = false;
+                    sttReconnect();
+                  }
+                }, backoffMs);
+              };
+              
+              const handleSttDisconnect = (code?: number, reason?: string) => {
+                state.sttConnected = false;
+                state.sttDisconnectedSinceMs = Date.now();
+                console.log(`[STT] disconnected code=${code} reason=${reason || 'none'} sessionId=${state.sessionId}`);
+                sendWsEvent(ws, 'stt_status', { status: 'disconnected', code, reason });
+                
+                if (state.sessionId && state.transcript.length > 0) {
+                  persistTranscript(state.sessionId, state.transcript).catch(() => {});
+                }
+                
+                if (!state.isSessionEnded && state.sessionId) {
+                  sttReconnect();
+                }
+              };
+              
+              assemblyWs.on('close', (code: number, reason: Buffer) => {
+                handleSttDisconnect(code, reason?.toString());
+              });
+              
+              assemblyWs.on('error', (error: Error) => {
+                console.error(`[STT] ws_error: ${error.message} sessionId=${state.sessionId}`);
+                handleSttDisconnect(undefined, error.message);
+              });
+              
+              state.sttDeadmanTimerId = setInterval(() => {
+                if (state.isSessionEnded || !state.sttConnected) return;
+                
+                const noMessageMs = Date.now() - state.sttLastMessageAtMs;
+                const audioRecentMs = state.sttLastAudioForwardAtMs > 0 ? Date.now() - state.sttLastAudioForwardAtMs : Infinity;
+                
+                if (noMessageMs > STT_DEADMAN_NO_MESSAGE_MS && audioRecentMs < STT_DEADMAN_AUDIO_RECENCY_MS) {
+                  console.log(`[STT] deadman_trigger noMessageMs=${noMessageMs} audioRecentMs=${audioRecentMs.toFixed(0)} sessionId=${state.sessionId}`);
+                  state.sttConnected = false;
+                  if (state.assemblyAIWs) {
+                    try { state.assemblyAIWs.close(); } catch (_e) {}
+                  }
+                  handleSttDisconnect(undefined, 'deadman_trigger');
+                }
+              }, STT_DEADMAN_INTERVAL_MS);
               
             } else {
               // ============================================
@@ -5064,9 +5172,11 @@ HONESTY INSTRUCTIONS:
                 
                 // Send to appropriate STT provider
                 if (USE_ASSEMBLYAI) {
-                  const sent = sendAudioToAssemblyAI(state.assemblyAIWs, audioBuffer);
+                  const sent = sendAudioToAssemblyAI(state.assemblyAIWs, audioBuffer, state.assemblyAIState || undefined, state);
                   if (sent) {
                     console.log('[Custom Voice] ✅ Audio forwarded to AssemblyAI');
+                  } else if (!state.sttConnected) {
+                    // Audio is being ring-buffered, don't spam warnings
                   } else {
                     console.warn('[Custom Voice] ⚠️ Failed to send audio to AssemblyAI');
                   }
@@ -5702,6 +5812,10 @@ When the student asks if you can see their document or asks you to prove access:
             // Mark client intent for telemetry
             state.clientEndIntent = 'user_clicked_end';
 
+            // Clean up STT health timers
+            if (state.sttDeadmanTimerId) { clearInterval(state.sttDeadmanTimerId); state.sttDeadmanTimerId = null; }
+            if (state.sttReconnectTimerId) { clearTimeout(state.sttReconnectTimerId); state.sttReconnectTimerId = null; }
+            
             // Close STT connection first
             if (USE_ASSEMBLYAI && state.assemblyAIWs) {
               console.log("[Session End] 🎤 Closing AssemblyAI connection...");
@@ -5780,6 +5894,10 @@ When the student asks if you can see their document or asks you to prove access:
         clearTimeout(responseTimer);
         responseTimer = null;
       }
+      
+      // Clean up STT health timers
+      if (state.sttDeadmanTimerId) { clearInterval(state.sttDeadmanTimerId); state.sttDeadmanTimerId = null; }
+      if (state.sttReconnectTimerId) { clearTimeout(state.sttReconnectTimerId); state.sttReconnectTimerId = null; }
       
       // Close STT connection (pause audio pipeline, but don't destroy session state yet)
       if (USE_ASSEMBLYAI && state.assemblyAIWs) {

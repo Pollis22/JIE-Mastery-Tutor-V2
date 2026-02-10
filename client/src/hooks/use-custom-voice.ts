@@ -209,6 +209,9 @@ export function useCustomVoice() {
   const [isTutorThinking, setIsTutorThinking] = useState(false);
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [micEnabled, setMicEnabled] = useState(true);
+  const [sttStatus, setSttStatus] = useState<'connected' | 'disconnected' | 'reconnecting' | 'failed'>('connected');
+  const sttDisconnectedSinceRef = useRef<number | null>(null);
+  const sttToastShownRef = useRef(false);
   
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // MIC STATUS STATE: Authoritative state driven by server WebSocket events
@@ -1234,13 +1237,34 @@ export function useCustomVoice() {
           
           case "tutor_error":
             console.log("[Custom Voice] ❌ Tutor error, clearing thinking", message.turnId);
-            // Clear thinking on error (any turnId)
             setIsTutorThinking(false);
             thinkingTurnIdRef.current = null;
-            // MIC STATUS: Return to listening on error
             if (micEnabledRef.current) {
               updateMicStatus('listening');
             }
+            break;
+          
+          case "stt_status":
+            console.log("[Custom Voice] 🎙️ STT status:", message.status, message);
+            setSttStatus(message.status);
+            if (message.status === 'connected') {
+              sttDisconnectedSinceRef.current = null;
+              sttToastShownRef.current = false;
+            } else if (message.status === 'disconnected' || message.status === 'reconnecting') {
+              if (!sttDisconnectedSinceRef.current) {
+                sttDisconnectedSinceRef.current = Date.now();
+              }
+            } else if (message.status === 'failed') {
+              sttDisconnectedSinceRef.current = null;
+            }
+            break;
+          
+          case "queued_user_turn":
+            console.log("[Custom Voice] 📋 Turn queued:", message.text?.substring(0, 40));
+            break;
+          
+          case "pipeline_watchdog_clear":
+            console.log("[Custom Voice] ⚠️ Pipeline watchdog cleared stuck processing");
             break;
         }
       };
@@ -3205,6 +3229,7 @@ registerProcessor('audio-processor', AudioProcessor);
     audioEnabled,
     micEnabled,
     micStatus,
-    showNoiseCoachingHint,  // VOICE_BG_NOISE_COACHING: UI hint for background noise
+    showNoiseCoachingHint,
+    sttStatus,
   };
 }
