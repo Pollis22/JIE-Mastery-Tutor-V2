@@ -8,29 +8,29 @@ export type BandName = 'K2' | 'ELEMENTARY' | 'MIDDLE' | 'HIGH' | 'COLLEGE';
 
 export const ENDPOINTING_PROFILES: Record<BandName, EndpointingProfile> = {
   K2: {
-    end_of_turn_confidence_threshold: 0.55,
-    min_end_of_turn_silence_when_confident: 800,
-    max_turn_silence: 6000,
+    end_of_turn_confidence_threshold: 0.70,
+    min_end_of_turn_silence_when_confident: 1200,
+    max_turn_silence: 8000,
   },
   ELEMENTARY: {
     end_of_turn_confidence_threshold: 0.60,
-    min_end_of_turn_silence_when_confident: 600,
-    max_turn_silence: 5000,
+    min_end_of_turn_silence_when_confident: 1000,
+    max_turn_silence: 6000,
   },
   MIDDLE: {
-    end_of_turn_confidence_threshold: 0.65,
-    min_end_of_turn_silence_when_confident: 500,
-    max_turn_silence: 4000,
+    end_of_turn_confidence_threshold: 0.50,
+    min_end_of_turn_silence_when_confident: 900,
+    max_turn_silence: 5000,
   },
   HIGH: {
-    end_of_turn_confidence_threshold: 0.70,
-    min_end_of_turn_silence_when_confident: 400,
-    max_turn_silence: 3500,
+    end_of_turn_confidence_threshold: 0.50,
+    min_end_of_turn_silence_when_confident: 800,
+    max_turn_silence: 5000,
   },
   COLLEGE: {
-    end_of_turn_confidence_threshold: 0.75,
-    min_end_of_turn_silence_when_confident: 300,
-    max_turn_silence: 3000,
+    end_of_turn_confidence_threshold: 0.50,
+    min_end_of_turn_silence_when_confident: 800,
+    max_turn_silence: 5000,
   },
 };
 

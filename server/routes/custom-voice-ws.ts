@@ -273,6 +273,34 @@ function getTailGraceExtension(text: string, ageGroup: string | null): number {
   return isAdult ? 800 : 1500;
 }
 
+const QUICK_ANSWER_PATTERNS = [
+  /^\d+(\.\d+)?$/,
+  /^(yes|no|yeah|yep|nah|nope|true|false|si|sí|oui|non)$/i,
+  /^(zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand)$/i,
+];
+
+const CONTINUATION_CONJUNCTIONS = [
+  'but', 'and', 'so', 'because', 'if', 'or', 'then', 'when',
+  'while', 'since', 'although', 'though', 'unless', 'until',
+  'after', 'before', 'that', 'which', 'where', 'who', 'whom',
+  'like', 'about', 'with', 'for', 'to', 'the', 'a', 'an',
+];
+
+function isQuickAnswer(text: string): boolean {
+  const trimmed = text.trim();
+  return QUICK_ANSWER_PATTERNS.some(p => p.test(trimmed));
+}
+
+function endsWithConjunctionOrPreposition(text: string): boolean {
+  const lastWord = text.trim().split(/\s+/).pop()?.toLowerCase() || '';
+  return CONTINUATION_CONJUNCTIONS.includes(lastWord);
+}
+
+function isShortDeclarative(text: string): boolean {
+  const words = text.trim().split(/\s+/).filter(w => w.length > 0);
+  return words.length < 8 && !isQuickAnswer(text);
+}
+
 // Recovery phrases that should NOT end a session (Step 2)
 // These are common phrases users say when waiting for a response
 const RECOVERY_PHRASES = [
@@ -946,14 +974,18 @@ interface GradeBandTimingConfig {
   shortBurstMinMs: number;
   postAudioBufferMs: number;
   minMsAfterAudioStartForBargeIn: number;
+  continuationGraceMs: number;
+  continuationHedgeGraceMs: number;
+  bargeInPlaybackThreshold: number;
+  consecutiveFramesRequired: number;
 }
 
 const GRADE_BAND_TIMING: Record<string, GradeBandTimingConfig> = {
-  'K2': { bargeInDebounceMs: 600, bargeInDecayMs: 300, bargeInCooldownMs: 850, shortBurstMinMs: 300, postAudioBufferMs: 2000, minMsAfterAudioStartForBargeIn: 800 },
-  'G3-5': { bargeInDebounceMs: 500, bargeInDecayMs: 260, bargeInCooldownMs: 750, shortBurstMinMs: 260, postAudioBufferMs: 1800, minMsAfterAudioStartForBargeIn: 600 },
-  'G6-8': { bargeInDebounceMs: 400, bargeInDecayMs: 200, bargeInCooldownMs: 650, shortBurstMinMs: 220, postAudioBufferMs: 1500, minMsAfterAudioStartForBargeIn: 500 },
-  'G9-12': { bargeInDebounceMs: 350, bargeInDecayMs: 180, bargeInCooldownMs: 600, shortBurstMinMs: 200, postAudioBufferMs: 1400, minMsAfterAudioStartForBargeIn: 400 },
-  'ADV': { bargeInDebounceMs: 350, bargeInDecayMs: 160, bargeInCooldownMs: 550, shortBurstMinMs: 180, postAudioBufferMs: 1200, minMsAfterAudioStartForBargeIn: 350 },
+  'K2': { bargeInDebounceMs: 600, bargeInDecayMs: 300, bargeInCooldownMs: 850, shortBurstMinMs: 300, postAudioBufferMs: 2000, minMsAfterAudioStartForBargeIn: 800, continuationGraceMs: 800, continuationHedgeGraceMs: 1800, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 4 },
+  'G3-5': { bargeInDebounceMs: 500, bargeInDecayMs: 260, bargeInCooldownMs: 750, shortBurstMinMs: 260, postAudioBufferMs: 1800, minMsAfterAudioStartForBargeIn: 600, continuationGraceMs: 700, continuationHedgeGraceMs: 1600, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 3 },
+  'G6-8': { bargeInDebounceMs: 400, bargeInDecayMs: 200, bargeInCooldownMs: 650, shortBurstMinMs: 220, postAudioBufferMs: 1500, minMsAfterAudioStartForBargeIn: 500, continuationGraceMs: 600, continuationHedgeGraceMs: 1500, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 3 },
+  'G9-12': { bargeInDebounceMs: 350, bargeInDecayMs: 180, bargeInCooldownMs: 600, shortBurstMinMs: 200, postAudioBufferMs: 1400, minMsAfterAudioStartForBargeIn: 400, continuationGraceMs: 550, continuationHedgeGraceMs: 1400, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 3 },
+  'ADV': { bargeInDebounceMs: 350, bargeInDecayMs: 160, bargeInCooldownMs: 550, shortBurstMinMs: 180, postAudioBufferMs: 1200, minMsAfterAudioStartForBargeIn: 350, continuationGraceMs: 550, continuationHedgeGraceMs: 1400, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 3 },
 };
 const DEFAULT_GRADE_BAND_TIMING: GradeBandTimingConfig = GRADE_BAND_TIMING['G6-8'];
 
@@ -984,7 +1016,7 @@ function setPhase(state: SessionState, next: VoicePhase, reason: string, ws?: We
   }
 }
 
-const IDLE_BARGE_IN_CANDIDATE = { isActive: false, startedAt: 0, peakRms: 0, lastAboveAt: 0, genId: null as number | null, risingEdgeConfirmed: false };
+const IDLE_BARGE_IN_CANDIDATE = { isActive: false, startedAt: 0, peakRms: 0, lastAboveAt: 0, genId: null as number | null, risingEdgeConfirmed: false, consecutiveAboveCount: 0 };
 
 function cancelBargeInCandidate(state: SessionState, reason: string): void {
   if (state.bargeInDebounceTimerId) {
@@ -1113,6 +1145,7 @@ interface SessionState {
     lastAboveAt: number;
     genId: number | null;
     risingEdgeConfirmed: boolean;
+    consecutiveAboveCount: number;
   };
   bargeInDebounceTimerId: NodeJS.Timeout | null;
   tutorAudioStartMs: number;
@@ -1249,6 +1282,19 @@ function hardInterruptTutor(
       stopPlayback: true,
       reason: 'barge_in',
     }));
+  }
+
+  if (!llmAborted && !ttsAborted) {
+    console.log(JSON.stringify({
+      event: 'barge_in_fired_but_no_effect',
+      session_id: state.sessionId,
+      reason,
+      target_gen_id: state.playbackGenId,
+      timestamp: now,
+    }));
+    setPhase(state, 'TUTOR_SPEAKING', 'barge_in_no_effect', ws);
+    state.tutorAudioPlaying = true;
+    return false;
   }
 
   console.log(JSON.stringify({
@@ -2078,6 +2124,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
         lastAboveAt: 0,
         genId: null,
         risingEdgeConfirmed: false,
+        consecutiveAboveCount: 0,
       },
       bargeInDebounceTimerId: null,
       tutorAudioStartMs: 0,
@@ -3164,14 +3211,15 @@ export function setupCustomVoiceWebSocket(server: Server) {
               console.log(`[Pipeline] 4. Claude response received (${claudeMs}ms), generating audio...`);
               
               const normalizedContent = (fullText ?? "").trim();
-              if (normalizedContent.length === 0) {
-                console.log(`[History] saved_assistant=false reason=empty_or_aborted genId=${activeGenId} tokens=${sentenceCount} phase=${state.phase}`);
+              const wasAborted = llmAc.signal.aborted || ttsAc.signal.aborted;
+              if (normalizedContent.length === 0 || wasAborted || sentenceCount === 0) {
+                console.log(`[History] saved_assistant=false reason=${wasAborted ? 'aborted' : 'empty'} genId=${activeGenId} tokens=${sentenceCount} phase=${state.phase} len=${normalizedContent.length}`);
                 if (state.currentTurnId) {
                   sendWsEvent(ws, 'tutor_interrupted', {
                     sessionId: state.sessionId,
                     turnId: state.currentTurnId,
                     genId: activeGenId,
-                    reason: 'empty_response',
+                    reason: wasAborted ? 'aborted' : 'empty_response',
                     phase: state.phase,
                     timestamp: Date.now(),
                   });
@@ -4490,10 +4538,29 @@ HONESTY INSTRUCTIONS:
                       }));
                     }
                     
+                    const contBandTiming = getGradeBandTiming(state.ageGroup);
                     const tailGraceExt = getTailGraceExtension(state.continuationPendingText, state.ageGroup);
-                    let graceMs = isHedgePhrase(state.continuationPendingText)
-                      ? CONTINUATION_GUARD_CONFIG.HEDGE_GRACE_MS
-                      : CONTINUATION_GUARD_CONFIG.GRACE_MS;
+                    const pendingText = state.continuationPendingText;
+                    const quickAnswer = isQuickAnswer(pendingText);
+                    const shortDecl = isShortDeclarative(pendingText);
+                    const conjEnding = endsWithConjunctionOrPreposition(pendingText);
+                    const hedge = isHedgePhrase(pendingText);
+
+                    let graceMs: number;
+                    if (quickAnswer) {
+                      graceMs = Math.min(contBandTiming.continuationGraceMs, 400);
+                      console.log(`[ContinuationGuard] quick_answer detected, graceMs=${graceMs}`);
+                    } else if (hedge) {
+                      graceMs = contBandTiming.continuationHedgeGraceMs;
+                    } else if (conjEnding) {
+                      graceMs = contBandTiming.continuationHedgeGraceMs;
+                      console.log(`[ContinuationGuard] conjunction_ending detected, graceMs=${graceMs}`);
+                    } else if (shortDecl) {
+                      graceMs = contBandTiming.continuationGraceMs + 200;
+                      console.log(`[ContinuationGuard] short_declarative hold, graceMs=${graceMs}`);
+                    } else {
+                      graceMs = contBandTiming.continuationGraceMs;
+                    }
                     if (tailGraceExt > 0) {
                       graceMs += tailGraceExt;
                       console.log(`[TailGrace] extended grace by ${tailGraceExt}ms for polite lead-in, totalGrace=${graceMs}ms`);
@@ -4837,10 +4904,16 @@ HONESTY INSTRUCTIONS:
               });
               
               state.sttDeadmanTimerId = setInterval(() => {
-                if (state.isSessionEnded || !state.sttConnected || state.phase === 'FINALIZING' || !state.sttReconnectEnabled) return;
+                if (state.isSessionEnded || !state.sttConnected || state.phase === 'FINALIZING' || !state.sttReconnectEnabled || state.sessionFinalizing) return;
                 
                 if (state.tutorAudioPlaying) {
                   console.log(`[STT] deadman_suppressed reason=tutor_speaking phase=${state.phase} sessionId=${state.sessionId}`);
+                  return;
+                }
+                
+                const msSinceLastBargeIn = Date.now() - state.lastBargeInAt;
+                if (state.lastBargeInAt > 0 && msSinceLastBargeIn < 5000) {
+                  console.log(`[STT] deadman_suppressed reason=barge_in_recovery msSinceBargeIn=${msSinceLastBargeIn} sessionId=${state.sessionId}`);
                   return;
                 }
                 
@@ -5262,7 +5335,10 @@ HONESTY INSTRUCTIONS:
                 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                 const bandTiming = getGradeBandTiming(state.ageGroup);
                 const noiseFloor = getNoiseFloor(state.noiseFloorState);
-                const fixedRmsThreshold = Math.max(0.03, noiseFloor * 3.0);
+                const baseThresh = Math.max(0.03, noiseFloor * 3.0);
+                const fixedRmsThreshold = state.tutorAudioPlaying
+                  ? Math.max(baseThresh, bandTiming.bargeInPlaybackThreshold)
+                  : baseThresh;
                 const risingThreshold = fixedRmsThreshold * 1.5;
                 const isAboveThreshold = rms >= fixedRmsThreshold && (speechDetection.isSpeech || speechDetection.isPotentialSpeech);
                 const bargeInEligible = state.phase === 'TUTOR_SPEAKING' && state.tutorAudioPlaying && !state.sessionFinalizing;
@@ -5278,10 +5354,12 @@ HONESTY INSTRUCTIONS:
                       lastAboveAt: now,
                       genId: state.playbackGenId,
                       risingEdgeConfirmed: isRising,
+                      consecutiveAboveCount: 1,
                     };
                     console.log(`[BargeIn] debounce_started gen=${state.playbackGenId} rms=${rms.toFixed(4)} thresh=${fixedRmsThreshold.toFixed(4)} rising=${isRising} phase=${state.phase}`);
                   } else {
                     state.bargeInCandidate.lastAboveAt = now;
+                    state.bargeInCandidate.consecutiveAboveCount++;
                     if (rms > state.bargeInCandidate.peakRms) {
                       state.bargeInCandidate.peakRms = rms;
                     }
@@ -5289,8 +5367,10 @@ HONESTY INSTRUCTIONS:
                       state.bargeInCandidate.risingEdgeConfirmed = true;
                     }
                     const candidateDuration = now - state.bargeInCandidate.startedAt;
-                    if (candidateDuration >= bandTiming.bargeInDebounceMs && state.bargeInCandidate.risingEdgeConfirmed) {
-                      console.log(`[BargeIn] debounce_fired gen=${state.bargeInCandidate.genId} durationMs=${candidateDuration} peakRms=${state.bargeInCandidate.peakRms.toFixed(4)} phase=${state.phase} tutorAudioPlaying=${state.tutorAudioPlaying}`);
+                    const hasEnoughFrames = state.bargeInCandidate.consecutiveAboveCount >= bandTiming.consecutiveFramesRequired;
+                    const playbackRequiresRising = state.tutorAudioPlaying && !state.bargeInCandidate.risingEdgeConfirmed;
+                    if (candidateDuration >= bandTiming.bargeInDebounceMs && state.bargeInCandidate.risingEdgeConfirmed && hasEnoughFrames && !playbackRequiresRising) {
+                      console.log(`[BargeIn] debounce_fired gen=${state.bargeInCandidate.genId} durationMs=${candidateDuration} peakRms=${state.bargeInCandidate.peakRms.toFixed(4)} frames=${state.bargeInCandidate.consecutiveAboveCount} phase=${state.phase} tutorAudioPlaying=${state.tutorAudioPlaying}`);
                       if (state.phase !== 'TUTOR_SPEAKING' || !state.tutorAudioPlaying) {
                         console.log(`[BargeIn] suppressed_not_playing phase=${state.phase} tutorAudioPlaying=${state.tutorAudioPlaying}`);
                         cancelBargeInCandidate(state, 'not_playing_at_fire');
@@ -5706,15 +5786,15 @@ HONESTY INSTRUCTIONS:
                     console.log(`[Custom Voice] ⏱️ Text streaming complete: ${textStreamMs}ms, ${textSentenceCount} sentences`);
                     
                     const normalizedTextContent = (fullText ?? "").trim();
-                    if (normalizedTextContent.length === 0) {
-                      console.warn("[LLM] Aborted/empty assistant response (text mode) — not saving to history");
+                    const textWasAborted = textLlmAc.signal.aborted || textTtsAc.signal.aborted;
+                    if (normalizedTextContent.length === 0 || textWasAborted || textSentenceCount === 0) {
+                      console.warn(`[LLM] Aborted/empty assistant response (text mode) — not saving to history reason=${textWasAborted ? 'aborted' : 'empty'} sentences=${textSentenceCount}`);
                       textResolve();
                       return;
                     }
                     
                     console.log(`[Custom Voice] 🤖 Tutor (text): "${normalizedTextContent}"`);
                     
-                    // Add to conversation history
                     state.conversationHistory.push(
                       { role: "user", content: message.message },
                       { role: "assistant", content: normalizedTextContent }
@@ -5746,6 +5826,18 @@ HONESTY INSTRUCTIONS:
                   }
                 };
                 
+                const textHistBefore = state.conversationHistory.length;
+                state.conversationHistory = state.conversationHistory.filter(msg => {
+                  if (msg.role === 'assistant' && (!msg.content || msg.content.trim() === '')) {
+                    return false;
+                  }
+                  return true;
+                });
+                const textRemoved = textHistBefore - state.conversationHistory.length;
+                if (textRemoved > 0) {
+                  console.log(`[History] defensive_filter removed=${textRemoved} empty assistant messages before text Claude call`);
+                }
+
                 generateTutorResponseStreaming(
                   state.conversationHistory,
                   message.message,
