@@ -945,14 +945,15 @@ interface GradeBandTimingConfig {
   bargeInCooldownMs: number;
   shortBurstMinMs: number;
   postAudioBufferMs: number;
+  minMsAfterAudioStartForBargeIn: number;
 }
 
 const GRADE_BAND_TIMING: Record<string, GradeBandTimingConfig> = {
-  'K2': { bargeInDebounceMs: 550, bargeInDecayMs: 300, bargeInCooldownMs: 850, shortBurstMinMs: 300, postAudioBufferMs: 2000 },
-  'G3-5': { bargeInDebounceMs: 480, bargeInDecayMs: 260, bargeInCooldownMs: 750, shortBurstMinMs: 260, postAudioBufferMs: 1800 },
-  'G6-8': { bargeInDebounceMs: 400, bargeInDecayMs: 200, bargeInCooldownMs: 650, shortBurstMinMs: 220, postAudioBufferMs: 1500 },
-  'G9-12': { bargeInDebounceMs: 380, bargeInDecayMs: 180, bargeInCooldownMs: 600, shortBurstMinMs: 200, postAudioBufferMs: 1400 },
-  'ADV': { bargeInDebounceMs: 350, bargeInDecayMs: 160, bargeInCooldownMs: 550, shortBurstMinMs: 180, postAudioBufferMs: 1200 },
+  'K2': { bargeInDebounceMs: 600, bargeInDecayMs: 300, bargeInCooldownMs: 850, shortBurstMinMs: 300, postAudioBufferMs: 2000, minMsAfterAudioStartForBargeIn: 800 },
+  'G3-5': { bargeInDebounceMs: 500, bargeInDecayMs: 260, bargeInCooldownMs: 750, shortBurstMinMs: 260, postAudioBufferMs: 1800, minMsAfterAudioStartForBargeIn: 600 },
+  'G6-8': { bargeInDebounceMs: 400, bargeInDecayMs: 200, bargeInCooldownMs: 650, shortBurstMinMs: 220, postAudioBufferMs: 1500, minMsAfterAudioStartForBargeIn: 500 },
+  'G9-12': { bargeInDebounceMs: 350, bargeInDecayMs: 180, bargeInCooldownMs: 600, shortBurstMinMs: 200, postAudioBufferMs: 1400, minMsAfterAudioStartForBargeIn: 400 },
+  'ADV': { bargeInDebounceMs: 350, bargeInDecayMs: 160, bargeInCooldownMs: 550, shortBurstMinMs: 180, postAudioBufferMs: 1200, minMsAfterAudioStartForBargeIn: 350 },
 };
 const DEFAULT_GRADE_BAND_TIMING: GradeBandTimingConfig = GRADE_BAND_TIMING['G6-8'];
 
@@ -980,6 +981,20 @@ function setPhase(state: SessionState, next: VoicePhase, reason: string, ws?: We
   }
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: 'phase_update', phase: next, prev, reason, timestamp: Date.now() }));
+  }
+}
+
+const IDLE_BARGE_IN_CANDIDATE = { isActive: false, startedAt: 0, peakRms: 0, lastAboveAt: 0, genId: null as number | null, risingEdgeConfirmed: false };
+
+function cancelBargeInCandidate(state: SessionState, reason: string): void {
+  if (state.bargeInDebounceTimerId) {
+    clearTimeout(state.bargeInDebounceTimerId);
+    state.bargeInDebounceTimerId = null;
+  }
+  const wasActive = state.bargeInCandidate.isActive;
+  state.bargeInCandidate = { ...IDLE_BARGE_IN_CANDIDATE };
+  if (wasActive) {
+    console.log(`[BargeIn] cancel_candidate reason=${reason} phase=${state.phase} activeGenId=${state.playbackGenId}`);
   }
 }
 
@@ -1091,13 +1106,16 @@ interface SessionState {
   // FIX 1A: STT activity tracking to prevent premature turn firing
   lastSttActivityAt: number;
   lastAccumulatedTranscript: string;
-  // FIX 2A: Barge-in candidate state machine
   bargeInCandidate: {
     isActive: boolean;
     startedAt: number;
     peakRms: number;
     lastAboveAt: number;
+    genId: number | null;
+    risingEdgeConfirmed: boolean;
   };
+  bargeInDebounceTimerId: NodeJS.Timeout | null;
+  tutorAudioStartMs: number;
   // STT HEALTH: Connection health tracking + auto-reconnect
   sttConnected: boolean;
   sttLastMessageAtMs: number;
@@ -1184,11 +1202,11 @@ function hardInterruptTutor(
     return false;
   }
 
-  const prevGenId = state.playbackGenId;
-  state.playbackGenId++;
+  cancelBargeInCandidate(state, `barge_in_${reason}`);
   state.isTutorSpeaking = false;
   state.isTutorThinking = false;
   state.tutorAudioPlaying = false;
+  state.tutorAudioStartMs = 0;
   state.bargeInDucking = false;
   state.currentPlaybackMode = 'listening';
   state.lastBargeInAt = now;
@@ -1237,8 +1255,7 @@ function hardInterruptTutor(
     event: 'barge_in_triggered',
     session_id: state.sessionId,
     reason,
-    prev_gen_id: prevGenId,
-    new_gen_id: state.playbackGenId,
+    target_gen_id: state.playbackGenId,
     llm_aborted: llmAborted,
     tts_aborted: ttsAborted,
     timestamp: now,
@@ -2060,7 +2077,11 @@ export function setupCustomVoiceWebSocket(server: Server) {
         startedAt: 0,
         peakRms: 0,
         lastAboveAt: 0,
+        genId: null,
+        risingEdgeConfirmed: false,
       },
+      bargeInDebounceTimerId: null,
+      tutorAudioStartMs: 0,
       sttConnected: false,
       sttLastMessageAtMs: 0,
       sttLastAudioForwardAtMs: 0,
@@ -2319,6 +2340,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
       console.log(`[TurnCommit] text="${text.substring(0, 60)}" source=${source} isProcessing=${state.isProcessing} queueLen=${state.transcriptQueue.length} phase=${state.phase}`);
 
       state.lastTurnCommittedAtMs = Date.now();
+      cancelBargeInCandidate(state, `turn_committed_${source}`);
       setPhase(state, 'TURN_COMMITTED', `commit_${source}`, ws);
       state.transcriptQueue.push(text);
 
@@ -3015,6 +3037,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
           timestamp: Date.now(),
         });
         state.llmInFlight = true;
+        cancelBargeInCandidate(state, 'awaiting_response');
         setPhase(state, 'AWAITING_RESPONSE', 'llm_request_start', ws);
         console.log(`[LLM] request_start session=${state.sessionId || 'unknown'} turnId=${turnId} messageCount=${state.conversationHistory.length} phase=${state.phase}`);
         
@@ -3032,10 +3055,12 @@ export function setupCustomVoiceWebSocket(server: Server) {
         let totalAudioBytes = 0;
         let sentenceCount = 0;
         
-        // Track turn for interruption detection
+        state.playbackGenId++;
+        cancelBargeInCandidate(state, 'new_tutor_response');
         state.isTutorSpeaking = true;
         state.isTutorThinking = true;
         state.currentPlaybackMode = 'tutor_speaking';
+        state.tutorAudioStartMs = 0;
         const turnTimestamp = Date.now();
         state.lastAudioSentAt = turnTimestamp;
         
@@ -3116,6 +3141,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
                   }
                   if (!state.tutorAudioPlaying) {
                     state.tutorAudioPlaying = true;
+                    state.tutorAudioStartMs = Date.now();
+                    cancelBargeInCandidate(state, 'first_audio_chunk');
                     console.log(`[Phase] tutorAudioPlaying=true genId=${state.playbackGenId} session=${state.sessionId?.substring(0, 8) || 'unknown'}`);
                   }
                   ws.send(JSON.stringify({
@@ -5576,10 +5603,12 @@ HONESTY INSTRUCTIONS:
               // otherwise use selected language
               const textResponseLanguage = state.detectedLanguage || state.language;
               
-              // Mark tutor as speaking for barge-in detection
+              state.playbackGenId++;
+              cancelBargeInCandidate(state, 'new_tutor_response_text');
               state.isTutorSpeaking = true;
               state.isTutorThinking = true;
               state.currentPlaybackMode = 'tutor_speaking';
+              state.tutorAudioStartMs = 0;
               state.lastAudioSentAt = Date.now();
               
               const textLlmAc = new AbortController();
@@ -5629,6 +5658,12 @@ HONESTY INSTRUCTIONS:
                         if (state.ttsAbortController?.signal.aborted) {
                           console.log(JSON.stringify({ event: 'audio_dropped_stale_gen', session_id: state.sessionId, sentence: textSentenceCount }));
                           return;
+                        }
+                        if (!state.tutorAudioPlaying) {
+                          state.tutorAudioPlaying = true;
+                          state.tutorAudioStartMs = Date.now();
+                          cancelBargeInCandidate(state, 'first_audio_chunk_text');
+                          console.log(`[Phase] tutorAudioPlaying=true genId=${state.playbackGenId} session=${state.sessionId?.substring(0, 8) || 'unknown'} input=text`);
                         }
                         ws.send(JSON.stringify({
                           type: "audio",
