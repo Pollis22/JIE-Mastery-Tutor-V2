@@ -942,6 +942,7 @@ interface SessionState {
   assemblyAIWs: WebSocket | null; // AssemblyAI WebSocket connection
   assemblyAIState: AssemblyAIState | null; // AssemblyAI merge guard state
   isProcessing: boolean;
+  processingSinceMs: number | null; // PIPELINE: When isProcessing was set to true
   transcriptQueue: string[]; // FIX #1: Queue for incoming transcripts
   sessionStartTime: number;
   lastPersisted: number;
@@ -1881,6 +1882,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
       assemblyAIWs: null, // AssemblyAI: Initialize to null
       assemblyAIState: null, // AssemblyAI: Merge guard state
       isProcessing: false,
+      processingSinceMs: null,
       transcriptQueue: [], // FIX #1: Initialize queue
       sessionStartTime: Date.now(),
       lastPersisted: Date.now(),
@@ -2134,20 +2136,91 @@ export function setupCustomVoiceWebSocket(server: Server) {
     // SAFETY TIMEOUT (Dec 10, 2025): Reset stuck isProcessing flag
     // Prevents tutor from going silent forever if something fails
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    let processingStartTime: number | null = null;
     const MAX_PROCESSING_TIME_MS = 30000; // 30 seconds max before force-reset
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // PIPELINE WATCHDOG: Periodic check for stuck processing state
+    // Fires every 10s, resets if processing stuck > 30s, then drains queue
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    const pipelineWatchdogId = setInterval(() => {
+      if (state.isSessionEnded) {
+        clearInterval(pipelineWatchdogId);
+        return;
+      }
+      if (state.isProcessing && state.processingSinceMs) {
+        const elapsed = Date.now() - state.processingSinceMs;
+        if (elapsed > MAX_PROCESSING_TIME_MS) {
+          console.error(`[Pipeline] ⚠️ WATCHDOG: isProcessing stuck for ${Math.round(elapsed/1000)}s, forcing reset session=${state.sessionId || 'unknown'}`);
+          state.isProcessing = false;
+          state.processingSinceMs = null;
+          state.isTutorSpeaking = false;
+          state.isTutorThinking = false;
+          try {
+            if (state.llmAbortController && !state.llmAbortController.signal.aborted) {
+              state.llmAbortController.abort();
+              console.log('[Pipeline] WATCHDOG: aborted stuck LLM controller');
+            }
+            if (state.ttsAbortController && !state.ttsAbortController.signal.aborted) {
+              state.ttsAbortController.abort();
+              console.log('[Pipeline] WATCHDOG: aborted stuck TTS controller');
+            }
+          } catch (e) {
+            console.error('[Pipeline] WATCHDOG: error aborting controllers:', e);
+          }
+          if (state.transcriptQueue.length > 0 && !state.isSessionEnded) {
+            console.log(`[Pipeline] WATCHDOG: draining queue, queueLen=${state.transcriptQueue.length}`);
+            setImmediate(() => processTranscriptQueue());
+          }
+        }
+      } else if (!state.isProcessing && state.transcriptQueue.length > 0 && !state.isSessionEnded) {
+        console.log(`[Pipeline] WATCHDOG: orphaned queue items found, queueLen=${state.transcriptQueue.length}, forcing drain`);
+        setImmediate(() => processTranscriptQueue());
+      }
+    }, 10000);
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // PIPELINE: commitUserTurn() - Single entry point for all turn commits
+    // Guarantees: NO silent drops. Every turn is either processed or queued.
+    // Emits immediate client feedback (tutor_thinking or queued_user_turn).
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    function commitUserTurn(text: string, source: 'eot' | 'manual' | 'continuation_guard' | 'turn_policy' | 'watchdog' = 'eot') {
+      if (!text || text.trim().length < 2) {
+        console.log(`[TurnCommit] rejected_empty source=${source} len=${text?.length ?? 0}`);
+        return;
+      }
+      if (state.isSessionEnded) {
+        console.log(`[TurnCommit] rejected_session_ended source=${source} text="${text.substring(0, 40)}"`);
+        return;
+      }
+
+      console.log(`[TurnCommit] text="${text.substring(0, 60)}" source=${source} isProcessing=${state.isProcessing} queueLen=${state.transcriptQueue.length}`);
+
+      state.transcriptQueue.push(text);
+
+      if (state.isProcessing) {
+        console.log(`[Pipeline] queued_turn reason=processing_in_progress source=${source} queueLen=${state.transcriptQueue.length}`);
+        sendWsEvent(ws, 'queued_user_turn', {
+          sessionId: state.sessionId,
+          queueLen: state.transcriptQueue.length,
+          reason: 'processing_in_progress',
+          timestamp: Date.now(),
+        });
+      } else {
+        processTranscriptQueue();
+      }
+    }
 
     // FIX #1: Process queued transcripts sequentially
     async function processTranscriptQueue() {
       // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
       // SAFETY CHECK: Force reset if isProcessing has been stuck too long
       // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-      if (state.isProcessing && processingStartTime) {
-        const elapsed = Date.now() - processingStartTime;
+      if (state.isProcessing && state.processingSinceMs) {
+        const elapsed = Date.now() - state.processingSinceMs;
         if (elapsed > MAX_PROCESSING_TIME_MS) {
           console.error(`[Pipeline] ⚠️ SAFETY RESET: isProcessing stuck for ${Math.round(elapsed/1000)}s, forcing reset`);
           state.isProcessing = false;
-          processingStartTime = null;
+          state.processingSinceMs = null;
           state.isTutorSpeaking = false; // Also reset speaking state
         }
       }
@@ -2160,7 +2233,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
       }
 
       state.isProcessing = true;
-      processingStartTime = Date.now();
+      state.processingSinceMs = Date.now();
+      console.log(`[Pipeline] processing_turn_now session=${state.sessionId || 'unknown'} queueLen=${state.transcriptQueue.length} textPreview="${state.transcriptQueue[0]?.substring(0, 50) || ''}" `);
       
       // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
       // LLM WATCHDOG: Cancel watchdog since we're now processing (Step 3)
@@ -2209,7 +2283,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
               // Mark response as produced and reset processing state
               state.turnResponseProduced = true;
               state.isProcessing = false;
-              processingStartTime = null;
+              state.processingSinceMs = null;
               state.isTutorSpeaking = false;
               
               // Process next item in queue if any
@@ -2219,7 +2293,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
             } catch (fallbackError) {
               console.error('[VOICE] turn_fallback_error:', fallbackError);
               state.isProcessing = false;
-              processingStartTime = null;
+              state.processingSinceMs = null;
             }
           }
           state.turnFallbackTimerId = undefined;
@@ -2239,7 +2313,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
           if (echoCheck.isEcho) {
             console.log(`[EchoGuard] 🚫 Discarding echo transcript: "${transcript.substring(0, 50)}..." (similarity=${echoCheck.similarity.toFixed(3)}, deltaMs=${echoCheck.deltaMs})`);
             state.isProcessing = false;
-            processingStartTime = null;
+            state.processingSinceMs = null;
             // Process next item in queue if any
             if (state.transcriptQueue.length > 0 && !state.isSessionEnded) {
               setImmediate(() => processTranscriptQueue());
@@ -2279,7 +2353,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
             }));
             
             state.isProcessing = false;
-            processingStartTime = null;
+            state.processingSinceMs = null;
             if (state.transcriptQueue.length > 0 && !state.isSessionEnded) {
               setImmediate(() => processTranscriptQueue());
             }
@@ -2308,7 +2382,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
             }));
             
             state.isProcessing = false;
-            processingStartTime = null;
+            state.processingSinceMs = null;
             if (state.transcriptQueue.length > 0 && !state.isSessionEnded) {
               setImmediate(() => processTranscriptQueue());
             }
@@ -2371,7 +2445,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
             }
             
             state.isProcessing = false;
-            processingStartTime = null;
+            state.processingSinceMs = null;
             // Process next item in queue if any
             if (state.transcriptQueue.length > 0 && !state.isSessionEnded) {
               setImmediate(() => processTranscriptQueue());
@@ -2815,6 +2889,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
           turnId,
           timestamp: Date.now(),
         });
+        console.log(`[LLM] request_start session=${state.sessionId || 'unknown'} turnId=${turnId} messageCount=${state.conversationHistory.length}`);
         
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         
@@ -2860,7 +2935,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
               if (sentenceCount === 1) {
                 firstSentenceMs = sentenceStart - claudeStart;
                 state.isTutorThinking = false;
-                console.log(`[Custom Voice] ⏱️ First sentence in ${firstSentenceMs}ms`);
+                console.log(`[LLM] first_token_ms=${firstSentenceMs} session=${state.sessionId || 'unknown'}`);
                 
                 // TURN FALLBACK: Cancel fallback timer since we're producing a response
                 state.turnResponseProduced = true;
@@ -3011,8 +3086,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
         // PACING FIX: Release isProcessing BEFORE pause to allow interruptions
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         state.isProcessing = false;
-        processingStartTime = null; // Clear safety timer
-        console.log(`[Pipeline] 5. Audio sent to client, isProcessing=false`);
+        state.processingSinceMs = null;
+        console.log(`[Pipeline] finalize reason=success_response_sent queueLen=${state.transcriptQueue.length}`);
         
         // Calculate approximate audio duration from total bytes (16kHz, 16-bit = 2 bytes/sample)
         const audioDuration = totalAudioBytes / (16000 * 2); // seconds
@@ -3073,11 +3148,19 @@ export function setupCustomVoiceWebSocket(server: Server) {
         }
       } finally {
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        // CRITICAL FIX (Dec 10, 2025): ALWAYS release processing lock
+        // CRITICAL: ALWAYS release processing lock and drain queue
         // Ensures tutor never gets stuck silent due to unreleased locks
-        // This is idempotent - safe to call even if already false
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        const wasProcessing = state.isProcessing;
         state.isProcessing = false;
+        state.processingSinceMs = null;
+        if (wasProcessing) {
+          console.log(`[Pipeline] finalize reason=finally_block queueLen=${state.transcriptQueue.length}`);
+        }
+        if (state.transcriptQueue.length > 0 && !state.isSessionEnded) {
+          console.log(`[Pipeline] drainQueue from finally block, queueLen=${state.transcriptQueue.length}`);
+          setImmediate(() => processTranscriptQueue());
+        }
       }
     }
 
@@ -3192,31 +3275,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
             const completeUtterance = pendingTranscript;
             console.log(`[Custom Voice] ✅ Utterance complete (reconnected): "${completeUtterance}"`);
             pendingTranscript = '';
-            // Always push to queue - queue handles serialization
-            state.transcriptQueue.push(completeUtterance);
-            
-            // LLM WATCHDOG: Start timer (reconnected handler)
             state.lastEndOfTurnTime = Date.now();
-            if (LLM_WATCHDOG_CONFIG.ENABLED && !state.isProcessing) {
-              const tokenCount = completeUtterance.trim().split(/\s+/).length;
-              if (tokenCount >= LLM_WATCHDOG_CONFIG.MIN_TOKENS) {
-                if (state.llmWatchdogTimerId) clearTimeout(state.llmWatchdogTimerId);
-                state.llmWatchdogTranscript = completeUtterance;
-                console.log(`[VOICE] watchdog_started session=${state.sessionId || 'unknown'} (reconnected)`);
-                state.llmWatchdogTimerId = setTimeout(() => {
-                  if (!state.isProcessing && state.transcriptQueue.length > 0 && !state.isSessionEnded) {
-                    console.log(`[VOICE] watchdog_fired forcing_llm session=${state.sessionId || 'unknown'}`);
-                    processTranscriptQueue();
-                  }
-                  state.llmWatchdogTimerId = undefined;
-                  state.llmWatchdogTranscript = undefined;
-                }, LLM_WATCHDOG_CONFIG.DELAY_MS);
-              }
-            }
-            
-            if (!state.isProcessing) {
-              processTranscriptQueue();
-            }
+            commitUserTurn(completeUtterance, 'eot');
           }
           transcriptAccumulationTimer = null;
         }, UTTERANCE_COMPLETE_DELAY_MS);
@@ -3992,39 +4052,8 @@ HONESTY INSTRUCTIONS:
                   const completeUtterance = pendingTranscript;
                   console.log(`[STT] ✅ Utterance complete: "${completeUtterance}"`);
                   pendingTranscript = '';
-                  state.transcriptQueue.push(completeUtterance);
-                  
-                  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                  // LLM WATCHDOG: Start timer to force LLM invocation (Step 1)
-                  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                   state.lastEndOfTurnTime = Date.now();
-                  if (LLM_WATCHDOG_CONFIG.ENABLED && !state.isProcessing) {
-                    const tokenCount = completeUtterance.trim().split(/\s+/).length;
-                    if (tokenCount >= LLM_WATCHDOG_CONFIG.MIN_TOKENS) {
-                      // Clear any existing watchdog
-                      if (state.llmWatchdogTimerId) {
-                        clearTimeout(state.llmWatchdogTimerId);
-                      }
-                      state.llmWatchdogTranscript = completeUtterance;
-                      console.log(`[VOICE] watchdog_started session=${state.sessionId || 'unknown'} transcript_tokens=${tokenCount}`);
-                      
-                      state.llmWatchdogTimerId = setTimeout(() => {
-                        // Check if LLM started since watchdog was set
-                        if (!state.isProcessing && state.transcriptQueue.length > 0 && !state.isSessionEnded) {
-                          console.log(`[VOICE] watchdog_fired forcing_llm session=${state.sessionId || 'unknown'}`);
-                          processTranscriptQueue();
-                        } else {
-                          console.log(`[VOICE] watchdog_expired_no_action session=${state.sessionId || 'unknown'} isProcessing=${state.isProcessing} queueLen=${state.transcriptQueue.length}`);
-                        }
-                        state.llmWatchdogTimerId = undefined;
-                        state.llmWatchdogTranscript = undefined;
-                      }, LLM_WATCHDOG_CONFIG.DELAY_MS);
-                    }
-                  }
-                  
-                  if (!state.isProcessing) {
-                    processTranscriptQueue();
-                  }
+                  commitUserTurn(completeUtterance, 'eot');
                 }
                 transcriptAccumulationTimer = null;
               }, USE_ASSEMBLYAI ? 500 : UTTERANCE_COMPLETE_DELAY_MS); // AssemblyAI already handles timing
@@ -4055,7 +4084,7 @@ HONESTY INSTRUCTIONS:
               // K2 TURN POLICY: Helper to fire Claude with optional stall prompt
               // CRITICAL: Always preserve student transcript - stall prompt is appended, not replaced
               const fireClaudeWithPolicy = (transcript: string, stallPrompt?: string) => {
-                if (state.sessionEnded) {
+                if (state.isSessionEnded) {
                   console.log('[TurnPolicy] fireClaudeWithPolicy skipped - session already ended');
                   return;
                 }
@@ -4728,33 +4757,8 @@ HONESTY INSTRUCTIONS:
                     // Clear pending transcript
                     pendingTranscript = '';
                     
-                    // Always push to queue - queue handles serialization
-                    // Don't gate on isProcessing or we lose transcripts during tutor speech
-                    state.transcriptQueue.push(completeUtterance);
-                    
-                    // LLM WATCHDOG: Start timer (Deepgram handler)
                     state.lastEndOfTurnTime = Date.now();
-                    if (LLM_WATCHDOG_CONFIG.ENABLED && !state.isProcessing) {
-                      const tokenCount = completeUtterance.trim().split(/\s+/).length;
-                      if (tokenCount >= LLM_WATCHDOG_CONFIG.MIN_TOKENS) {
-                        if (state.llmWatchdogTimerId) clearTimeout(state.llmWatchdogTimerId);
-                        state.llmWatchdogTranscript = completeUtterance;
-                        console.log(`[VOICE] watchdog_started session=${state.sessionId || 'unknown'} (deepgram)`);
-                        state.llmWatchdogTimerId = setTimeout(() => {
-                          if (!state.isProcessing && state.transcriptQueue.length > 0 && !state.isSessionEnded) {
-                            console.log(`[VOICE] watchdog_fired forcing_llm session=${state.sessionId || 'unknown'}`);
-                            processTranscriptQueue();
-                          }
-                          state.llmWatchdogTimerId = undefined;
-                          state.llmWatchdogTranscript = undefined;
-                        }, LLM_WATCHDOG_CONFIG.DELAY_MS);
-                      }
-                    }
-                    
-                    // Start processing if not already processing (otherwise queue will be processed after current response)
-                    if (!state.isProcessing) {
-                      processTranscriptQueue();
-                    }
+                    commitUserTurn(completeUtterance, 'eot');
                   }
                   transcriptAccumulationTimer = null;
                 }, UTTERANCE_COMPLETE_DELAY_MS);
@@ -4875,18 +4879,21 @@ HONESTY INSTRUCTIONS:
             } // End of Deepgram else block
 
             // Generate and send greeting audio - ONLY if greeting was generated (first turn only)
+            // PIPELINE: Greeting participates in isProcessing to prevent concurrent turn processing
             if (greeting && greeting.length > 0) {
+              state.isProcessing = true;
+              state.processingSinceMs = Date.now();
+              state.isTutorSpeaking = true;
+              console.log(`[Pipeline] greeting_processing_start isProcessing=true`);
               try {
                 const greetingAudio = await generateSpeech(greeting, state.ageGroup, state.speechSpeed);
                 
-                // Send greeting transcript
                 ws.send(JSON.stringify({
                   type: "transcript",
                   text: greeting,
                   speaker: "tutor"
                 }));
                 
-                // Send greeting audio with format metadata
                 ws.send(JSON.stringify({
                   type: "audio",
                   data: greetingAudio.toString("base64"),
@@ -4898,6 +4905,15 @@ HONESTY INSTRUCTIONS:
                 console.log(`[Custom Voice] 🔊 Sent greeting audio (${greetingAudio.length} bytes, pcm_s16le 16kHz mono)`);
               } catch (error) {
                 console.error("[Custom Voice] ❌ Failed to generate greeting audio:", error);
+              } finally {
+                state.isProcessing = false;
+                state.processingSinceMs = null;
+                state.isTutorSpeaking = false;
+                console.log(`[Pipeline] greeting_processing_end isProcessing=false queueLen=${state.transcriptQueue.length}`);
+                if (state.transcriptQueue.length > 0 && !state.isSessionEnded) {
+                  console.log(`[Pipeline] drainQueue after greeting, queueLen=${state.transcriptQueue.length}`);
+                  setImmediate(() => processTranscriptQueue());
+                }
               }
             } else {
               console.log(`[Custom Voice] 🔄 Reconnect detected - skipping greeting audio`);
