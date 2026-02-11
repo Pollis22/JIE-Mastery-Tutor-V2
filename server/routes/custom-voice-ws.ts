@@ -20,7 +20,7 @@ import { detectSafetyIssues, getStrikeMessage, shouldTerminateSession, SafetyDet
 import { sendAdminSafetyAlert, logSafetyIncident, SafetyAlertData, handleSafetyIncident, SafetyIncidentNotification, SafetyIncidentType } from '../services/safety-alert-service';
 import { safetyIncidents } from '@shared/schema';
 import { getRecentSessionSummaries } from '../services/memory-service';
-import { getEndpointingProfile, ENDPOINTING_PROFILES, getKeytermsPrompt, type BandName } from '../config/assemblyai-endpointing-profiles';
+import { getEndpointingProfile, ENDPOINTING_PROFILES, getKeytermsForUrl, sanitizeKeyterms, getSessionKeyterms, type BandName } from '../config/assemblyai-endpointing-profiles';
 import {
   type GradeBand,
   type TurnPolicyState,
@@ -422,7 +422,7 @@ function createAssemblyAIConnection(
   onPartialUpdate?: (text: string, prevText: string) => void,
   onOpen?: () => void,
   onMessage?: () => void,
-  subject?: string
+  keytermsUrlEncoded?: string | null
 ): { ws: WebSocket; state: AssemblyAIState } {
   console.log('████████████████████████████████████████████████████████████████');
   console.log('[AssemblyAI v3] ENTER createAssemblyAIConnection');
@@ -557,10 +557,10 @@ function createAssemblyAIConnection(
     }
     
     // I) Add keyterms_prompt for improved transcription accuracy
-    const keytermsPrompt = getKeytermsPrompt(subject);
-    if (keytermsPrompt) {
-      urlParams.set('keyterms_prompt', keytermsPrompt);
-      console.log(`[AssemblyAI v3] 📚 Keyterms prompt: ${subject} (${keytermsPrompt.length} chars)`);
+    // keyterms_prompt must be a URL-encoded JSON string array per AssemblyAI v3 spec
+    if (keytermsUrlEncoded) {
+      urlParams.set('keyterms_prompt', keytermsUrlEncoded);
+      console.log(`[AssemblyAI v3] 📚 Keyterms prompt set (${keytermsUrlEncoded.length} chars encoded)`);
     }
     
     // A) Use routed base URL
@@ -877,20 +877,24 @@ function createAssemblyAIConnection(
 let didLogFirstAssemblyAIAudio = false;
 const MAX_AUDIO_BUFFER_SIZE = 50; // Max chunks to buffer while connecting
 
+const STT_SEND_FAILURE_WATCHDOG_THRESHOLD = 50;
+const STT_SEND_FAILURE_LOG_RATE_LIMIT_MS = 1000;
+const STT_SEND_FAILURE_LOG_MAX_PER_FRAME = 10;
+
 function sendAudioToAssemblyAI(ws: WebSocket | null, audioBuffer: Buffer, state?: AssemblyAIState, sessionState?: SessionState): boolean {
   if (sessionState) {
     sessionState.sttLastAudioForwardAtMs = Date.now();
   }
   
-  if (!ws) {
-    if (sessionState && !sessionState.sttConnected) {
+  if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+    if (sessionState) {
       sessionState.sttAudioRingBuffer.push(audioBuffer);
       if (sessionState.sttAudioRingBuffer.length > 16) {
         sessionState.sttAudioRingBuffer.shift();
       }
-      return false;
+      // P0.4: Track send failures
+      trackSendFailure(sessionState);
     }
-    console.warn('[AssemblyAI] ⚠️ sendAudio: No WebSocket connection');
     return false;
   }
   
@@ -911,12 +915,20 @@ function sendAudioToAssemblyAI(ws: WebSocket | null, audioBuffer: Buffer, state?
       if (sessionState.sttAudioRingBuffer.length > 16) {
         sessionState.sttAudioRingBuffer.shift();
       }
-    }
-    if (!didLogFirstAssemblyAIAudio) {
-      console.warn(`[STT] drop_or_buffer_audio sttDisconnected readyState=${ws.readyState}`);
-      didLogFirstAssemblyAIAudio = true;
+      trackSendFailure(sessionState);
     }
     return false;
+  }
+  
+  // P0.4: Reset failure tracking on successful send
+  if (sessionState && sessionState.sttConsecutiveSendFailures > 0) {
+    const dropped = sessionState.sttConsecutiveSendFailures;
+    const durationMs = Date.now() - sessionState.sttSendFailureStartedAt;
+    const totalDropped = sessionState.sttSendFailureTotalDropped;
+    console.log(`[STT] recovered after ${dropped} consecutive send failures (${totalDropped} total dropped frames over ${durationMs}ms)`);
+    sessionState.sttConsecutiveSendFailures = 0;
+    sessionState.sttSendFailureTotalDropped = 0;
+    sessionState.sttSendFailureStartedAt = 0;
   }
   
   if (!didLogFirstAssemblyAIAudio) {
@@ -925,6 +937,36 @@ function sendAudioToAssemblyAI(ws: WebSocket | null, audioBuffer: Buffer, state?
   }
   ws.send(audioBuffer);
   return true;
+}
+
+function trackSendFailure(sessionState: SessionState): void {
+  sessionState.sttConsecutiveSendFailures++;
+  sessionState.sttSendFailureTotalDropped++;
+  
+  if (sessionState.sttConsecutiveSendFailures === 1) {
+    sessionState.sttSendFailureStartedAt = Date.now();
+  }
+  
+  // P0.4: Rate-limited logging
+  const now = Date.now();
+  if (sessionState.sttConsecutiveSendFailures <= STT_SEND_FAILURE_LOG_MAX_PER_FRAME) {
+    if (now - sessionState.sttSendFailureLoggedAt >= STT_SEND_FAILURE_LOG_RATE_LIMIT_MS) {
+      console.warn(`[STT] send_failure #${sessionState.sttConsecutiveSendFailures} sessionId=${sessionState.sessionId}`);
+      sessionState.sttSendFailureLoggedAt = now;
+    }
+  }
+  
+  // P0.4: Watchdog - if too many consecutive failures, force connection dead
+  if (sessionState.sttConsecutiveSendFailures >= STT_SEND_FAILURE_WATCHDOG_THRESHOLD) {
+    console.error(`[STT] send_failure_watchdog triggered after ${sessionState.sttConsecutiveSendFailures} consecutive failures - forcing connection dead`);
+    if (sessionState.assemblyAIWs) {
+      try { sessionState.assemblyAIWs.close(); } catch (_e) {}
+      sessionState.assemblyAIWs = null;
+    }
+    sessionState.sttConnected = false;
+    sessionState.sttDisconnectedSinceMs = Date.now();
+    sessionState.sttConsecutiveSendFailures = 0; // Reset to prevent re-triggering
+  }
 }
 
 function resetFirstAudioLog() {
@@ -1009,6 +1051,10 @@ function setPhase(state: SessionState, next: VoicePhase, reason: string, ws?: We
   state.phase = next;
   state.phaseSinceMs = Date.now();
   console.log(`[Phase] ${prev} -> ${next} reason="${reason}" session=${state.sessionId?.substring(0, 8) || 'unknown'} genId=${state.playbackGenId}`);
+  // B1: Cancel barge-in candidate on phase transitions where barge-in is structurally impossible
+  if (next === 'TURN_COMMITTED' || next === 'AWAITING_RESPONSE' || next === 'LISTENING') {
+    cancelBargeInCandidate(state, `phase_transition_to_${next}`, ws);
+  }
   if (next === 'TUTOR_SPEAKING') {
     state.tutorAudioPlaying = false;
   }
@@ -1019,6 +1065,7 @@ function setPhase(state: SessionState, next: VoicePhase, reason: string, ws?: We
   if (next === 'FINALIZING') {
     state.sttReconnectEnabled = false;
     state.sessionFinalizing = true;
+    cancelBargeInCandidate(state, 'phase_transition_to_FINALIZING', ws);
   }
   if (ws && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: 'phase_update', phase: next, prev, reason, timestamp: Date.now() }));
@@ -1176,6 +1223,14 @@ interface SessionState {
   sttConnectionId: number;
   sttAudioRingBuffer: Buffer[];
   sttDisconnectedSinceMs: number | null;
+  // P0.3: Session-sticky keyterms disable after 3005 config error
+  sttKeytermsDisabledForSession: boolean;
+  sttKeytermsUrlEncoded: string | null; // Cached keyterms for reconnects
+  // P0.4: Send-failure watchdog
+  sttConsecutiveSendFailures: number;
+  sttSendFailureLoggedAt: number;
+  sttSendFailureTotalDropped: number;
+  sttSendFailureStartedAt: number;
 }
 
 // Helper to send typed WebSocket events
@@ -2158,6 +2213,12 @@ export function setupCustomVoiceWebSocket(server: Server) {
       sttConnectionId: 0,
       sttAudioRingBuffer: [],
       sttDisconnectedSinceMs: null,
+      sttKeytermsDisabledForSession: false,
+      sttKeytermsUrlEncoded: null,
+      sttConsecutiveSendFailures: 0,
+      sttSendFailureLoggedAt: 0,
+      sttSendFailureTotalDropped: 0,
+      sttSendFailureStartedAt: 0,
     };
 
     // FIX #3: Auto-persist every 10 seconds
@@ -4443,6 +4504,14 @@ HONESTY INSTRUCTIONS:
                 console.log(`[TurnPolicy] ⏱️ Stall escape timer started: ${timerDuration}ms`);
               };
               
+              // P0.1: Compute and cache URL-encoded keyterms (JSON string array) for this session
+              const sessionKeyterms = getKeytermsForUrl({
+                subject: state.subject,
+                studentName: state.studentName,
+              });
+              state.sttKeytermsUrlEncoded = sessionKeyterms;
+              console.log(`[STT] Keyterms cached: ${sessionKeyterms ? 'yes' : 'none'} subject=${state.subject} disabled=${state.sttKeytermsDisabledForSession}`);
+
               const { ws: assemblyWs, state: assemblyState } = createAssemblyAIConnection(
                 state.language,
                 (text, endOfTurn, confidence) => {
@@ -4721,8 +4790,9 @@ HONESTY INSTRUCTIONS:
                 },
                 () => {
                   state.sttLastMessageAtMs = Date.now();
+                  state.sttConsecutiveSendFailures = 0;
                 },
-                state.subject
+                state.sttKeytermsDisabledForSession ? null : state.sttKeytermsUrlEncoded
               );
               
               console.log('[AssemblyAI] createAssemblyAIConnection returned successfully');
@@ -4882,8 +4952,12 @@ HONESTY INSTRUCTIONS:
                         }
                         state.isReconnecting = false;
                       },
-                      () => { state.sttLastMessageAtMs = Date.now(); },
-                      state.subject
+                      () => {
+                        state.sttLastMessageAtMs = Date.now();
+                        state.sttConsecutiveSendFailures = 0;
+                      },
+                      // P0.5: Reconnect preserves keyterms when valid, omits when disabled
+                      state.sttKeytermsDisabledForSession ? null : state.sttKeytermsUrlEncoded
                     );
                     
                     if (state.assemblyAIWs && state.assemblyAIWs.readyState === WebSocket.OPEN) {
@@ -4903,8 +4977,26 @@ HONESTY INSTRUCTIONS:
               const handleSttDisconnect = (code?: number, reason?: string) => {
                 state.sttConnected = false;
                 state.sttDisconnectedSinceMs = Date.now();
+                // P0.4: Clear ws reference on disconnect to prevent stale sends
+                state.assemblyAIWs = null;
                 console.log(`[STT] disconnected code=${code} reason=${reason || 'none'} sessionId=${state.sessionId}`);
                 sendWsEvent(ws, 'stt_status', { status: 'disconnected', code, reason });
+                
+                // P0.3: Handle 3005 as fatal config error (keyterms validation failure)
+                if (code === 3005) {
+                  if (!state.sttKeytermsDisabledForSession && state.sttKeytermsUrlEncoded) {
+                    console.error(`[STT] fatal_config_error code=3005 reason=${reason || 'unknown'} - disabling keyterms for session and reconnecting`);
+                    state.sttKeytermsDisabledForSession = true;
+                    // Immediate reconnect without keyterms (skip backoff)
+                    if (!state.isSessionEnded && state.sessionId && state.sttReconnectEnabled && state.phase !== 'FINALIZING') {
+                      state.sttReconnectAttempts = 0; // Reset attempts for clean fallback
+                      sttReconnect();
+                    }
+                    return;
+                  }
+                  // 3005 without keyterms = different issue, fall through to normal reconnect
+                  console.error(`[STT] fatal_config_error code=3005 without keyterms - unexpected, using normal reconnect`);
+                }
                 
                 if (state.sessionId && state.transcript.length > 0) {
                   persistTranscript(state.sessionId, state.transcript).catch(() => {});
@@ -5530,11 +5622,8 @@ HONESTY INSTRUCTIONS:
                   const sent = sendAudioToAssemblyAI(state.assemblyAIWs, audioBuffer, state.assemblyAIState || undefined, state);
                   if (sent) {
                     console.log('[Custom Voice] ✅ Audio forwarded to AssemblyAI');
-                  } else if (!state.sttConnected) {
-                    // Audio is being ring-buffered, don't spam warnings
-                  } else {
-                    console.warn('[Custom Voice] ⚠️ Failed to send audio to AssemblyAI');
                   }
+                  // P0.4: Send failures are tracked inside sendAudioToAssemblyAI with rate-limited logging
                 } else {
                   state.deepgramConnection!.send(audioBuffer);
                   console.log('[Custom Voice] ✅ Audio forwarded to Deepgram');

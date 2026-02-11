@@ -153,14 +153,47 @@ const COMMON_TUTORING_KEYTERMS: string[] = [
   'I think', "I don't know", 'is it', 'what about',
 ];
 
+const MAX_KEYTERM_LENGTH = 50;
+const MAX_KEYTERMS_COUNT = 100;
+
+export function sanitizeKeyterms(rawTerms: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const term of rawTerms) {
+    const trimmed = term.trim();
+    if (!trimmed) continue;
+    if (trimmed.length > MAX_KEYTERM_LENGTH) continue;
+    const lower = trimmed.toLowerCase();
+    if (seen.has(lower)) continue;
+    seen.add(lower);
+    result.push(trimmed);
+    if (result.length >= MAX_KEYTERMS_COUNT) break;
+  }
+  return result;
+}
+
+export function getSessionKeyterms(opts: { subject?: string; gradeBand?: BandName; studentName?: string }): string[] {
+  const base = [opts.studentName].filter(Boolean) as string[];
+  const normalized = (opts.subject || '').toLowerCase().trim();
+  const subjectTerms = SUBJECT_KEYTERMS[normalized] || [];
+  return sanitizeKeyterms([...base, ...COMMON_TUTORING_KEYTERMS, ...subjectTerms]);
+}
+
 export function getKeytermsPrompt(subject?: string): string | null {
   if (!subject) return null;
 
   const normalized = subject.toLowerCase().trim();
   const subjectTerms = SUBJECT_KEYTERMS[normalized] || [];
   const allTerms = [...COMMON_TUTORING_KEYTERMS, ...subjectTerms];
+  const sanitized = sanitizeKeyterms(allTerms);
 
-  if (allTerms.length === 0) return null;
+  if (sanitized.length === 0) return null;
 
-  return allTerms.join(', ');
+  return sanitized.join(', ');
+}
+
+export function getKeytermsForUrl(opts: { subject?: string; gradeBand?: BandName; studentName?: string }): string | null {
+  const terms = getSessionKeyterms(opts);
+  if (terms.length === 0) return null;
+  return encodeURIComponent(JSON.stringify(terms));
 }
