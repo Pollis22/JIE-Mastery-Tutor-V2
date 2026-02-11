@@ -978,14 +978,15 @@ interface GradeBandTimingConfig {
   continuationHedgeGraceMs: number;
   bargeInPlaybackThreshold: number;
   consecutiveFramesRequired: number;
+  bargeInConfirmDurationMs: number;
 }
 
 const GRADE_BAND_TIMING: Record<string, GradeBandTimingConfig> = {
-  'K2': { bargeInDebounceMs: 600, bargeInDecayMs: 300, bargeInCooldownMs: 850, shortBurstMinMs: 300, postAudioBufferMs: 2000, minMsAfterAudioStartForBargeIn: 800, continuationGraceMs: 800, continuationHedgeGraceMs: 1800, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 4 },
-  'G3-5': { bargeInDebounceMs: 500, bargeInDecayMs: 260, bargeInCooldownMs: 750, shortBurstMinMs: 260, postAudioBufferMs: 1800, minMsAfterAudioStartForBargeIn: 600, continuationGraceMs: 700, continuationHedgeGraceMs: 1600, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 3 },
-  'G6-8': { bargeInDebounceMs: 400, bargeInDecayMs: 200, bargeInCooldownMs: 650, shortBurstMinMs: 220, postAudioBufferMs: 1500, minMsAfterAudioStartForBargeIn: 500, continuationGraceMs: 600, continuationHedgeGraceMs: 1500, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 3 },
-  'G9-12': { bargeInDebounceMs: 350, bargeInDecayMs: 180, bargeInCooldownMs: 600, shortBurstMinMs: 200, postAudioBufferMs: 1400, minMsAfterAudioStartForBargeIn: 400, continuationGraceMs: 550, continuationHedgeGraceMs: 1400, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 3 },
-  'ADV': { bargeInDebounceMs: 350, bargeInDecayMs: 160, bargeInCooldownMs: 550, shortBurstMinMs: 180, postAudioBufferMs: 1200, minMsAfterAudioStartForBargeIn: 350, continuationGraceMs: 550, continuationHedgeGraceMs: 1400, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 3 },
+  'K2': { bargeInDebounceMs: 600, bargeInDecayMs: 300, bargeInCooldownMs: 850, shortBurstMinMs: 300, postAudioBufferMs: 2000, minMsAfterAudioStartForBargeIn: 800, continuationGraceMs: 800, continuationHedgeGraceMs: 1800, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 4, bargeInConfirmDurationMs: 600 },
+  'G3-5': { bargeInDebounceMs: 500, bargeInDecayMs: 260, bargeInCooldownMs: 750, shortBurstMinMs: 260, postAudioBufferMs: 1800, minMsAfterAudioStartForBargeIn: 600, continuationGraceMs: 700, continuationHedgeGraceMs: 1600, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 500 },
+  'G6-8': { bargeInDebounceMs: 400, bargeInDecayMs: 200, bargeInCooldownMs: 650, shortBurstMinMs: 220, postAudioBufferMs: 1500, minMsAfterAudioStartForBargeIn: 500, continuationGraceMs: 600, continuationHedgeGraceMs: 1500, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 400 },
+  'G9-12': { bargeInDebounceMs: 350, bargeInDecayMs: 180, bargeInCooldownMs: 600, shortBurstMinMs: 200, postAudioBufferMs: 1400, minMsAfterAudioStartForBargeIn: 400, continuationGraceMs: 550, continuationHedgeGraceMs: 1400, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 350 },
+  'ADV': { bargeInDebounceMs: 350, bargeInDecayMs: 160, bargeInCooldownMs: 550, shortBurstMinMs: 180, postAudioBufferMs: 1200, minMsAfterAudioStartForBargeIn: 350, continuationGraceMs: 550, continuationHedgeGraceMs: 1400, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 350 },
 };
 const DEFAULT_GRADE_BAND_TIMING: GradeBandTimingConfig = GRADE_BAND_TIMING['G6-8'];
 
@@ -1016,15 +1017,20 @@ function setPhase(state: SessionState, next: VoicePhase, reason: string, ws?: We
   }
 }
 
-const IDLE_BARGE_IN_CANDIDATE = { isActive: false, startedAt: 0, peakRms: 0, lastAboveAt: 0, genId: null as number | null, risingEdgeConfirmed: false, consecutiveAboveCount: 0 };
+const IDLE_BARGE_IN_CANDIDATE = { isActive: false, startedAt: 0, peakRms: 0, lastAboveAt: 0, genId: null as number | null, risingEdgeConfirmed: false, consecutiveAboveCount: 0, stage: 'idle' as 'idle' | 'ducked' | 'confirming', duckStartMs: 0, sttSnapshotAt: 0 };
 
-function cancelBargeInCandidate(state: SessionState, reason: string): void {
+function cancelBargeInCandidate(state: SessionState, reason: string, ws?: WebSocket): void {
   if (state.bargeInDebounceTimerId) {
     clearTimeout(state.bargeInDebounceTimerId);
     state.bargeInDebounceTimerId = null;
   }
   const wasActive = state.bargeInCandidate.isActive;
+  const wasDucked = state.bargeInCandidate.stage === 'ducked' || state.bargeInCandidate.stage === 'confirming';
   state.bargeInCandidate = { ...IDLE_BARGE_IN_CANDIDATE };
+  if (wasDucked && ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'unduck', message: 'Barge-in cancelled' }));
+    console.log(`[BargeIn] unduck reason=${reason}`);
+  }
   if (wasActive) {
     console.log(`[BargeIn] cancel_candidate reason=${reason} phase=${state.phase} activeGenId=${state.playbackGenId}`);
   }
@@ -1146,6 +1152,9 @@ interface SessionState {
     genId: number | null;
     risingEdgeConfirmed: boolean;
     consecutiveAboveCount: number;
+    stage: 'idle' | 'ducked' | 'confirming';
+    duckStartMs: number;
+    sttSnapshotAt: number;
   };
   bargeInDebounceTimerId: NodeJS.Timeout | null;
   tutorAudioStartMs: number;
@@ -1235,7 +1244,7 @@ function hardInterruptTutor(
     return false;
   }
 
-  cancelBargeInCandidate(state, `barge_in_${reason}`);
+  cancelBargeInCandidate(state, `barge_in_${reason}`, ws);
   state.isTutorSpeaking = false;
   state.isTutorThinking = false;
   state.tutorAudioPlaying = false;
@@ -1535,6 +1544,7 @@ async function finalizeSession(
 
   state.isSessionEnded = true;
   cancelBargeInCandidate(state, `finalize_${reason}`);
+  state.bargeInDucking = false;
   setPhase(state, 'FINALIZING', `finalize_${reason}`);
   state.sttReconnectEnabled = false;
   
@@ -2123,6 +2133,9 @@ export function setupCustomVoiceWebSocket(server: Server) {
         peakRms: 0,
         lastAboveAt: 0,
         genId: null,
+        stage: 'idle' as const,
+        duckStartMs: 0,
+        sttSnapshotAt: 0,
         risingEdgeConfirmed: false,
         consecutiveAboveCount: 0,
       },
@@ -2386,7 +2399,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
       console.log(`[TurnCommit] text="${text.substring(0, 60)}" source=${source} isProcessing=${state.isProcessing} queueLen=${state.transcriptQueue.length} phase=${state.phase}`);
 
       state.lastTurnCommittedAtMs = Date.now();
-      cancelBargeInCandidate(state, `turn_committed_${source}`);
+      cancelBargeInCandidate(state, `turn_committed_${source}`, ws);
       setPhase(state, 'TURN_COMMITTED', `commit_${source}`, ws);
       state.transcriptQueue.push(text);
 
@@ -3083,7 +3096,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
           timestamp: Date.now(),
         });
         state.llmInFlight = true;
-        cancelBargeInCandidate(state, 'awaiting_response');
+        cancelBargeInCandidate(state, 'awaiting_response', ws);
         setPhase(state, 'AWAITING_RESPONSE', 'llm_request_start', ws);
         console.log(`[LLM] request_start session=${state.sessionId || 'unknown'} turnId=${turnId} messageCount=${state.conversationHistory.length} phase=${state.phase}`);
         
@@ -3102,7 +3115,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
         let sentenceCount = 0;
         
         state.playbackGenId++;
-        cancelBargeInCandidate(state, 'new_tutor_response');
+        cancelBargeInCandidate(state, 'new_tutor_response', ws);
         state.isTutorSpeaking = true;
         state.isTutorThinking = true;
         state.currentPlaybackMode = 'tutor_speaking';
@@ -3188,7 +3201,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
                   if (!state.tutorAudioPlaying) {
                     state.tutorAudioPlaying = true;
                     state.tutorAudioStartMs = Date.now();
-                    cancelBargeInCandidate(state, 'first_audio_chunk');
+                    cancelBargeInCandidate(state, 'first_audio_chunk', ws);
                     console.log(`[Phase] tutorAudioPlaying=true genId=${state.playbackGenId} session=${state.sessionId?.substring(0, 8) || 'unknown'}`);
                   }
                   ws.send(JSON.stringify({
@@ -5329,19 +5342,20 @@ HONESTY INSTRUCTIONS:
                 }
                 
                 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                // BARGE-IN CANDIDATE STATE MACHINE (phase-gated)
-                // Requires: phase=TUTOR_SPEAKING + tutorAudioPlaying + genId match
-                // Uses grade-band timing, onset latch, belt-and-suspenders guards
+                // TWO-STAGE BARGE-IN STATE MACHINE (phase-gated)
+                // Stage 1: Duck audio on RMS detection (never hard stop on RMS alone)
+                // Stage 2: Hard stop ONLY after sustained speech + transcript/VAD confirmation
                 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                 const bandTiming = getGradeBandTiming(state.ageGroup);
                 const noiseFloor = getNoiseFloor(state.noiseFloorState);
-                const baseThresh = Math.max(0.03, noiseFloor * 3.0);
+                const echoGuardThresh = Math.max(0.05, noiseFloor * 5.0);
                 const fixedRmsThreshold = state.tutorAudioPlaying
-                  ? Math.max(baseThresh, bandTiming.bargeInPlaybackThreshold)
-                  : baseThresh;
+                  ? Math.max(echoGuardThresh, bandTiming.bargeInPlaybackThreshold)
+                  : Math.max(0.03, noiseFloor * 3.0);
                 const risingThreshold = fixedRmsThreshold * 1.5;
                 const isAboveThreshold = rms >= fixedRmsThreshold && (speechDetection.isSpeech || speechDetection.isPotentialSpeech);
                 const bargeInEligible = state.phase === 'TUTOR_SPEAKING' && state.tutorAudioPlaying && !state.sessionFinalizing;
+                const STT_ACTIVITY_WINDOW_MS = 800;
 
                 if (bargeInEligible && isAboveThreshold) {
                   const now = Date.now();
@@ -5355,6 +5369,9 @@ HONESTY INSTRUCTIONS:
                       genId: state.playbackGenId,
                       risingEdgeConfirmed: isRising,
                       consecutiveAboveCount: 1,
+                      stage: 'idle',
+                      duckStartMs: 0,
+                      sttSnapshotAt: 0,
                     };
                     console.log(`[BargeIn] debounce_started gen=${state.playbackGenId} rms=${rms.toFixed(4)} thresh=${fixedRmsThreshold.toFixed(4)} rising=${isRising} phase=${state.phase}`);
                   } else {
@@ -5368,32 +5385,91 @@ HONESTY INSTRUCTIONS:
                     }
                     const candidateDuration = now - state.bargeInCandidate.startedAt;
                     const hasEnoughFrames = state.bargeInCandidate.consecutiveAboveCount >= bandTiming.consecutiveFramesRequired;
-                    const playbackRequiresRising = state.tutorAudioPlaying && !state.bargeInCandidate.risingEdgeConfirmed;
-                    if (candidateDuration >= bandTiming.bargeInDebounceMs && state.bargeInCandidate.risingEdgeConfirmed && hasEnoughFrames && !playbackRequiresRising) {
-                      console.log(`[BargeIn] debounce_fired gen=${state.bargeInCandidate.genId} durationMs=${candidateDuration} peakRms=${state.bargeInCandidate.peakRms.toFixed(4)} frames=${state.bargeInCandidate.consecutiveAboveCount} phase=${state.phase} tutorAudioPlaying=${state.tutorAudioPlaying}`);
+
+                    if (state.bargeInCandidate.stage === 'idle' && candidateDuration >= bandTiming.bargeInDebounceMs && hasEnoughFrames && state.bargeInCandidate.risingEdgeConfirmed) {
+                      state.bargeInCandidate.stage = 'ducked';
+                      state.bargeInCandidate.duckStartMs = now;
+                      state.bargeInCandidate.sttSnapshotAt = state.lastSttActivityAt;
+                      state.bargeInDucking = true;
+                      state.bargeInDuckStartTime = now;
+                      if (ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({ type: 'duck', message: 'Potential speech detected' }));
+                      }
+                      console.log(JSON.stringify({
+                        event: 'barge_in_duck_start',
+                        session_id: state.sessionId,
+                        gen_id: state.bargeInCandidate.genId,
+                        rms: rms.toFixed(4),
+                        threshold: fixedRmsThreshold.toFixed(4),
+                        frames: state.bargeInCandidate.consecutiveAboveCount,
+                        debounce_ms: candidateDuration,
+                        confirm_duration_ms: bandTiming.bargeInConfirmDurationMs,
+                      }));
+                    }
+
+                    if (state.bargeInCandidate.stage === 'ducked' || state.bargeInCandidate.stage === 'confirming') {
+                      const duckDuration = now - state.bargeInCandidate.duckStartMs;
+
                       if (state.phase !== 'TUTOR_SPEAKING' || !state.tutorAudioPlaying) {
                         console.log(`[BargeIn] suppressed_not_playing phase=${state.phase} tutorAudioPlaying=${state.tutorAudioPlaying}`);
-                        cancelBargeInCandidate(state, 'not_playing_at_fire');
+                        cancelBargeInCandidate(state, 'not_playing_at_fire', ws);
                       } else if (state.bargeInCandidate.genId !== state.playbackGenId) {
                         console.log(`[BargeIn] suppressed_stale_gen candidateGen=${state.bargeInCandidate.genId} activeGen=${state.playbackGenId}`);
-                        cancelBargeInCandidate(state, 'stale_gen');
+                        cancelBargeInCandidate(state, 'stale_gen', ws);
                       } else if (state.tutorAudioStartMs > 0 && (now - state.tutorAudioStartMs) < bandTiming.minMsAfterAudioStartForBargeIn) {
                         console.log(`[BargeIn] suppressed_too_soon_after_audio msSinceAudioStart=${now - state.tutorAudioStartMs} minMs=${bandTiming.minMsAfterAudioStartForBargeIn}`);
-                        cancelBargeInCandidate(state, 'too_soon_after_audio');
+                        cancelBargeInCandidate(state, 'too_soon_after_audio', ws);
+                      } else if (duckDuration >= bandTiming.bargeInConfirmDurationMs) {
+                        if (state.bargeInCandidate.stage !== 'confirming') {
+                          state.bargeInCandidate.stage = 'confirming';
+                        }
+                        const sttAdvanced = state.lastSttActivityAt > state.bargeInCandidate.duckStartMs &&
+                          (now - state.lastSttActivityAt) < STT_ACTIVITY_WINDOW_MS;
+                        const vadConfirmed = speechDetection.isSpeech;
+
+                        if (sttAdvanced || vadConfirmed) {
+                          console.log(JSON.stringify({
+                            event: 'barge_in_hard_stop_confirmed',
+                            session_id: state.sessionId,
+                            gen_id: state.bargeInCandidate.genId,
+                            duck_duration_ms: duckDuration,
+                            confirm_reason: sttAdvanced ? 'transcript_advanced' : 'vad_confirmed',
+                            peak_rms: state.bargeInCandidate.peakRms.toFixed(4),
+                            frames: state.bargeInCandidate.consecutiveAboveCount,
+                          }));
+                          state.bargeInDucking = false;
+                          hardInterruptTutor(ws, state, 'two_stage_confirmed');
+                        } else {
+                          const confirmAge = now - (state.bargeInCandidate.duckStartMs + bandTiming.bargeInConfirmDurationMs);
+                          if (confirmAge > STT_ACTIVITY_WINDOW_MS) {
+                            console.log(JSON.stringify({
+                              event: 'barge_in_suppressed_not_confirmed',
+                              session_id: state.sessionId,
+                              gen_id: state.bargeInCandidate.genId,
+                              duck_duration_ms: duckDuration,
+                              stt_advanced: sttAdvanced,
+                              vad_confirmed: vadConfirmed,
+                              peak_rms: state.bargeInCandidate.peakRms.toFixed(4),
+                            }));
+                            cancelBargeInCandidate(state, 'not_confirmed_after_duration', ws);
+                          }
+                        }
                       } else {
-                        hardInterruptTutor(ws, state, 'rms_debounce_committed');
+                        if (Math.random() < 0.1) {
+                          console.log(`[BargeIn] confirm_window_active duckMs=${duckDuration}/${bandTiming.bargeInConfirmDurationMs} rms=${rms.toFixed(4)} sttActive=${(now - state.lastSttActivityAt) < STT_ACTIVITY_WINDOW_MS}`);
+                        }
                       }
                     }
                   }
                 } else if (state.bargeInCandidate.isActive) {
                   if (!bargeInEligible) {
-                    cancelBargeInCandidate(state, `phase_change_${state.phase}`);
+                    cancelBargeInCandidate(state, `phase_change_${state.phase}`, ws);
                   } else {
                     const now = Date.now();
                     const silenceSinceAbove = now - state.bargeInCandidate.lastAboveAt;
                     if (silenceSinceAbove > bandTiming.bargeInDecayMs) {
                       console.log(`[BargeIn] candidate_expired silenceMs=${silenceSinceAbove} peakRms=${state.bargeInCandidate.peakRms.toFixed(4)} decayMs=${bandTiming.bargeInDecayMs}`);
-                      cancelBargeInCandidate(state, 'silence_decay');
+                      cancelBargeInCandidate(state, 'silence_decay', ws);
                     }
                   }
                 }
@@ -5416,7 +5492,7 @@ HONESTY INSTRUCTIONS:
                 } else if (!speechDetection.isSpeech && state.lastSpeechNotificationSent) {
                   state.lastSpeechNotificationSent = false;
                   ws.send(JSON.stringify({ type: "speech_ended" }));
-                  cancelBargeInCandidate(state, 'speech_ended');
+                  cancelBargeInCandidate(state, 'speech_ended', ws);
                   if (state.phase === 'SPEECH_DETECTED') {
                     setPhase(state, 'LISTENING', 'vad_speech_ended', ws);
                   }
@@ -5705,7 +5781,7 @@ HONESTY INSTRUCTIONS:
               const textResponseLanguage = state.detectedLanguage || state.language;
               
               state.playbackGenId++;
-              cancelBargeInCandidate(state, 'new_tutor_response_text');
+              cancelBargeInCandidate(state, 'new_tutor_response_text', ws);
               state.isTutorSpeaking = true;
               state.isTutorThinking = true;
               state.currentPlaybackMode = 'tutor_speaking';
@@ -5763,7 +5839,7 @@ HONESTY INSTRUCTIONS:
                         if (!state.tutorAudioPlaying) {
                           state.tutorAudioPlaying = true;
                           state.tutorAudioStartMs = Date.now();
-                          cancelBargeInCandidate(state, 'first_audio_chunk_text');
+                          cancelBargeInCandidate(state, 'first_audio_chunk_text', ws);
                           console.log(`[Phase] tutorAudioPlaying=true genId=${state.playbackGenId} session=${state.sessionId?.substring(0, 8) || 'unknown'} input=text`);
                         }
                         ws.send(JSON.stringify({
@@ -6184,7 +6260,7 @@ When the student asks if you can see their document or asks you to prove access:
         responseTimer = null;
       }
       
-      cancelBargeInCandidate(state, 'ws_close');
+      cancelBargeInCandidate(state, 'ws_close', ws);
       if (state.sttDeadmanTimerId) { clearInterval(state.sttDeadmanTimerId); state.sttDeadmanTimerId = null; }
       if (state.sttReconnectTimerId) { clearTimeout(state.sttReconnectTimerId); state.sttReconnectTimerId = null; }
       
