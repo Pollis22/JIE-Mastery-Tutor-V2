@@ -20,7 +20,7 @@ import { detectSafetyIssues, getStrikeMessage, shouldTerminateSession, SafetyDet
 import { sendAdminSafetyAlert, logSafetyIncident, SafetyAlertData, handleSafetyIncident, SafetyIncidentNotification, SafetyIncidentType } from '../services/safety-alert-service';
 import { safetyIncidents } from '@shared/schema';
 import { getRecentSessionSummaries } from '../services/memory-service';
-import { getEndpointingProfile, ENDPOINTING_PROFILES, type BandName } from '../config/assemblyai-endpointing-profiles';
+import { getEndpointingProfile, ENDPOINTING_PROFILES, getKeytermsPrompt, type BandName } from '../config/assemblyai-endpointing-profiles';
 import {
   type GradeBand,
   type TurnPolicyState,
@@ -421,7 +421,8 @@ function createAssemblyAIConnection(
   ageGroup?: string,
   onPartialUpdate?: (text: string, prevText: string) => void,
   onOpen?: () => void,
-  onMessage?: () => void
+  onMessage?: () => void,
+  subject?: string
 ): { ws: WebSocket; state: AssemblyAIState } {
   console.log('████████████████████████████████████████████████████████████████');
   console.log('[AssemblyAI v3] ENTER createAssemblyAIConnection');
@@ -553,6 +554,13 @@ function createAssemblyAIConnection(
     if (inactivityTimeout !== null) {
       urlParams.set('inactivity_timeout', inactivityTimeout.toString());
       console.log(`[AssemblyAI v3] ⏱️ Inactivity timeout: ${inactivityTimeout}s`);
+    }
+    
+    // I) Add keyterms_prompt for improved transcription accuracy
+    const keytermsPrompt = getKeytermsPrompt(subject);
+    if (keytermsPrompt) {
+      urlParams.set('keyterms_prompt', keytermsPrompt);
+      console.log(`[AssemblyAI v3] 📚 Keyterms prompt: ${subject} (${keytermsPrompt.length} chars)`);
     }
     
     // A) Use routed base URL
@@ -4713,7 +4721,8 @@ HONESTY INSTRUCTIONS:
                 },
                 () => {
                   state.sttLastMessageAtMs = Date.now();
-                }
+                },
+                state.subject
               );
               
               console.log('[AssemblyAI] createAssemblyAIConnection returned successfully');
@@ -4873,7 +4882,8 @@ HONESTY INSTRUCTIONS:
                         }
                         state.isReconnecting = false;
                       },
-                      () => { state.sttLastMessageAtMs = Date.now(); }
+                      () => { state.sttLastMessageAtMs = Date.now(); },
+                      state.subject
                     );
                     
                     if (state.assemblyAIWs && state.assemblyAIWs.readyState === WebSocket.OPEN) {

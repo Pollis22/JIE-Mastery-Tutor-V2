@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { VOICE_TIMING, VOICE_THRESHOLDS, VOICE_MESSAGES, EXCLUDED_DEVICE_PATTERNS, ADAPTIVE_BARGE_IN, GradeBandType, TURN_TAKING_FLAGS, FILLER_WORDS, OLDER_STUDENTS_PROFILE, CONTINUATION_PHRASES, VALID_INTERRUPTION_REASONS, isOlderStudentsBand } from "@/config/voice-constants";
+import { VOICE_TIMING, VOICE_THRESHOLDS, VOICE_MESSAGES, EXCLUDED_DEVICE_PATTERNS, ADAPTIVE_BARGE_IN, SILERO_BARGE_IN, GradeBandType, TURN_TAKING_FLAGS, FILLER_WORDS, OLDER_STUDENTS_PROFILE, CONTINUATION_PHRASES, VALID_INTERRUPTION_REASONS, isOlderStudentsBand } from "@/config/voice-constants";
 import { voiceLogger } from "@/utils/voice-logger";
+import type { MicVAD } from "@ricky0123/vad-web";
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // ADAPTIVE BARGE-IN: Duck-then-confirm flow for quiet/nervous speakers
@@ -61,6 +62,18 @@ function getBargeInConfig(gradeBand: string | null): { adaptiveRatio: number; mi
   if (!gradeBand) return ADAPTIVE_BARGE_IN.DEFAULT;
   const normalized = gradeBand.toUpperCase().replace(/[^A-Z0-9-]/g, '') as GradeBandType;
   return ADAPTIVE_BARGE_IN.GRADE_BANDS[normalized] || ADAPTIVE_BARGE_IN.DEFAULT;
+}
+
+function getSileroConfirmMs(gradeBand: string | null): number {
+  if (!gradeBand) return SILERO_BARGE_IN.DEFAULT_CONFIRM_MS;
+  const normalized = gradeBand.toUpperCase().replace(/[^A-Z0-9-]/g, '') as GradeBandType;
+  return SILERO_BARGE_IN.CONFIRM_THRESHOLDS[normalized] || SILERO_BARGE_IN.DEFAULT_CONFIRM_MS;
+}
+
+function getSileroImmunityMs(gradeBand: string | null): number {
+  if (!gradeBand) return SILERO_BARGE_IN.DEFAULT_IMMUNITY_MS;
+  const normalized = gradeBand.toUpperCase().replace(/[^A-Z0-9-]/g, '') as GradeBandType;
+  return SILERO_BARGE_IN.IMMUNITY_AFTER_TURN_COMMIT_MS[normalized] || SILERO_BARGE_IN.DEFAULT_IMMUNITY_MS;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -300,6 +313,18 @@ export function useCustomVoice() {
   const duckStateRef = useRef<DuckState>(createDuckState());
   const gradeBandRef = useRef<string | null>(null); // Set from session config
   const activityModeRef = useRef<'default' | 'reading'>('default'); // Set from session config
+  
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // SILERO VAD: Neural barge-in detection (authoritative for interrupt decisions)
+  // AudioWorklet RMS VAD is kept ONLY for UI mic indicator, NOT for barge-in
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  const sileroVadRef = useRef<MicVAD | null>(null);
+  const sileroSpeechActiveRef = useRef<boolean>(false);
+  const sileroSpeechStartTimeRef = useRef<number>(0);
+  const sileroConfirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sileroDuckedRef = useRef<boolean>(false);
+  const sileroBargeInConfirmedRef = useRef<boolean>(false);
+  const lastTurnCommitTimeRef = useRef<number>(0);
   
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // OLDER_STUDENTS: Continuation phrase tracking for grace period
@@ -976,6 +1001,12 @@ export function useCustomVoice() {
             stopAudio();
             setIsTutorSpeaking(false);
             isTutorSpeakingRef.current = false;
+            sileroBargeInConfirmedRef.current = false;
+            sileroDuckedRef.current = false;
+            if (sileroConfirmTimerRef.current) {
+              clearTimeout(sileroConfirmTimerRef.current);
+              sileroConfirmTimerRef.current = null;
+            }
             updateMicStatus('listening');
             break;
 
@@ -1220,7 +1251,15 @@ export function useCustomVoice() {
             console.log("[Custom Voice] 💭 Tutor is thinking...", message.turnId);
             thinkingTurnIdRef.current = message.turnId;
             setIsTutorThinking(true);
-            // MIC STATUS: Processing (waiting for AI response)
+            lastTurnCommitTimeRef.current = Date.now();
+            if (sileroConfirmTimerRef.current) {
+              clearTimeout(sileroConfirmTimerRef.current);
+              sileroConfirmTimerRef.current = null;
+            }
+            if (sileroDuckedRef.current && !sileroBargeInConfirmedRef.current && playbackGainNodeRef.current && audioContextRef.current) {
+              playbackGainNodeRef.current.gain.setValueAtTime(1.0, audioContextRef.current.currentTime);
+              sileroDuckedRef.current = false;
+            }
             updateMicStatus('processing', true);
             break;
           
@@ -1612,6 +1651,160 @@ export function useCustomVoice() {
       }
       
       // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      // SILERO VAD: Neural speech detection for authoritative barge-in
+      // Uses @ricky0123/vad-web with existing MediaStream (no second getUserMedia)
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      try {
+        if (sileroVadRef.current) {
+          sileroVadRef.current.destroy();
+          sileroVadRef.current = null;
+        }
+        const { MicVAD } = await import("@ricky0123/vad-web");
+        const capturedStream = stream;
+        const sileroVad = await MicVAD.new({
+          positiveSpeechThreshold: 0.8,
+          negativeSpeechThreshold: 0.35,
+          redemptionMs: 250,
+          minSpeechMs: 100,
+          submitUserSpeechOnPause: false,
+          baseAssetPath: "/",
+          onnxWASMBasePath: "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/",
+          getStream: async () => capturedStream,
+
+          onSpeechStart: () => {
+            const now = Date.now();
+            sileroSpeechActiveRef.current = true;
+            sileroSpeechStartTimeRef.current = now;
+
+            const immunityMs = getSileroImmunityMs(gradeBandRef.current);
+            if (lastTurnCommitTimeRef.current > 0 && (now - lastTurnCommitTimeRef.current) < immunityMs) {
+              console.log(`[SileroVAD] speech_start IGNORED (immunity window: ${now - lastTurnCommitTimeRef.current}ms < ${immunityMs}ms)`);
+              return;
+            }
+
+            const tutorState: TutorSpeakingState = {
+              isTutorSpeakingFlag: isTutorSpeakingRef.current,
+              isPlayingFlag: isPlayingRef.current,
+              audioQueueSize: audioQueueRef.current.length,
+              scheduledSourcesCount: scheduledSourcesRef.current.length
+            };
+            const tutorActuallySpeaking = isTutorActuallySpeaking(tutorState);
+
+            if (!tutorActuallySpeaking) {
+              console.log("[SileroVAD] speech_start (tutor not speaking, no barge-in action)");
+              return;
+            }
+
+            console.log(`[SileroVAD] speech_start DURING TUTOR PLAYBACK → Stage 1 DUCK (gradeBand=${gradeBandRef.current})`);
+            sileroDuckedRef.current = true;
+            sileroBargeInConfirmedRef.current = false;
+
+            if (playbackGainNodeRef.current && audioContextRef.current) {
+              const ctx = audioContextRef.current;
+              const gain = playbackGainNodeRef.current.gain;
+              gain.cancelScheduledValues(ctx.currentTime);
+              gain.setValueAtTime(gain.value, ctx.currentTime);
+              gain.linearRampToValueAtTime(SILERO_BARGE_IN.DUCK_GAIN, ctx.currentTime + SILERO_BARGE_IN.DUCK_FADE_MS);
+            }
+
+            if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+              wsRef.current.send(JSON.stringify({
+                type: "barge_in_event",
+                evaluation: { outcome: 'silero_duck_start', gradeBand: gradeBandRef.current }
+              }));
+            }
+
+            const confirmMs = getSileroConfirmMs(gradeBandRef.current);
+            if (sileroConfirmTimerRef.current) {
+              clearTimeout(sileroConfirmTimerRef.current);
+            }
+            sileroConfirmTimerRef.current = setTimeout(() => {
+              sileroConfirmTimerRef.current = null;
+              if (!sileroSpeechActiveRef.current || !sileroDuckedRef.current) {
+                console.log("[SileroVAD] confirm timer fired but speech ended or unducked, skipping");
+                return;
+              }
+              const tutorNow: TutorSpeakingState = {
+                isTutorSpeakingFlag: isTutorSpeakingRef.current,
+                isPlayingFlag: isPlayingRef.current,
+                audioQueueSize: audioQueueRef.current.length,
+                scheduledSourcesCount: scheduledSourcesRef.current.length
+              };
+              if (!isTutorActuallySpeaking(tutorNow)) {
+                console.log("[SileroVAD] confirm timer: tutor stopped speaking, canceling");
+                sileroDuckedRef.current = false;
+                if (playbackGainNodeRef.current && audioContextRef.current) {
+                  playbackGainNodeRef.current.gain.setValueAtTime(1.0, audioContextRef.current.currentTime);
+                }
+                return;
+              }
+
+              console.log(`[SileroVAD] Stage 2 CONFIRMED after ${confirmMs}ms sustained speech → HARD STOP`);
+              sileroBargeInConfirmedRef.current = true;
+              sileroDuckedRef.current = false;
+
+              stopAudio();
+              setIsTutorSpeaking(false);
+              isTutorSpeakingRef.current = false;
+              updateMicStatus('listening');
+
+              if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+                wsRef.current.send(JSON.stringify({
+                  type: "speech_detected",
+                  bargeIn: true,
+                  adaptive: true,
+                  gradeBand: gradeBandRef.current,
+                  reason: "silero_vad_confirmed"
+                }));
+                wsRef.current.send(JSON.stringify({
+                  type: "barge_in_event",
+                  evaluation: { outcome: 'silero_hard_stop', confirmMs, gradeBand: gradeBandRef.current }
+                }));
+              }
+            }, confirmMs);
+          },
+
+          onSpeechEnd: () => {
+            sileroSpeechActiveRef.current = false;
+            const speechDuration = sileroSpeechStartTimeRef.current > 0 ? Date.now() - sileroSpeechStartTimeRef.current : 0;
+            sileroSpeechStartTimeRef.current = 0;
+
+            if (sileroConfirmTimerRef.current) {
+              clearTimeout(sileroConfirmTimerRef.current);
+              sileroConfirmTimerRef.current = null;
+            }
+
+            if (sileroDuckedRef.current && !sileroBargeInConfirmedRef.current) {
+              console.log(`[SileroVAD] speech_end before confirm (${speechDuration}ms) → UNDUCK (smooth restore)`);
+              sileroDuckedRef.current = false;
+              if (playbackGainNodeRef.current && audioContextRef.current) {
+                const ctx = audioContextRef.current;
+                const gain = playbackGainNodeRef.current.gain;
+                gain.cancelScheduledValues(ctx.currentTime);
+                gain.setValueAtTime(gain.value, ctx.currentTime);
+                gain.linearRampToValueAtTime(1.0, ctx.currentTime + SILERO_BARGE_IN.DUCK_FADE_MS);
+              }
+              if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+                wsRef.current.send(JSON.stringify({
+                  type: "barge_in_event",
+                  evaluation: { outcome: 'silero_unduck', speechDuration, gradeBand: gradeBandRef.current }
+                }));
+              }
+            }
+
+            sileroBargeInConfirmedRef.current = false;
+            console.log(`[SileroVAD] speech_end duration=${speechDuration}ms`);
+          },
+        });
+        sileroVad.start();
+        sileroVadRef.current = sileroVad;
+        console.log("[SileroVAD] ✅ Silero VAD initialized and started (authoritative for barge-in)");
+      } catch (vadError) {
+        console.error("[SileroVAD] ❌ Failed to initialize Silero VAD, falling back to RMS-only:", vadError);
+        sileroVadRef.current = null;
+      }
+      
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
       // SHARED HELPERS: Used by both AudioWorklet and ScriptProcessor paths
       // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
       
@@ -1859,153 +2052,101 @@ registerProcessor('audio-processor', AudioProcessor);
             };
             const tutorActuallySpeaking = isTutorActuallySpeaking(tutorState);
             
-            // If tutor is currently speaking, we need confidence that this is
-            // the USER speaking and not just echo from the speakers
+            // SILERO VAD is authoritative for barge-in when active.
+            // AudioWorklet RMS path is kept ONLY as UI mic indicator fallback.
+            if (sileroVadRef.current) {
+              if (workletSpeechStartTime === 0) {
+                workletSpeechStartTime = now;
+              }
+              return;
+            }
+
+            // FALLBACK: RMS-based barge-in (only when Silero VAD failed to initialize)
             if (tutorActuallySpeaking) {
               const timeSincePlayback = now - lastAudioPlaybackStartRef.current;
               
-              // B) Barge-in path: use much shorter cooldown (or bypass entirely)
               const cooldownMs = TURN_TAKING_FLAGS.BARGE_IN_COOLDOWN_BYPASS_ENABLED 
                 ? TURN_TAKING_FLAGS.BARGE_IN_MAX_COOLDOWN_MS 
                 : 300;
               
               if (timeSincePlayback < cooldownMs) {
-                console.log(`[Custom Voice] ⏱️ VAD barge-in cooldown (${(cooldownMs - timeSincePlayback).toFixed(0)}ms) - waiting`);
                 return;
               }
-              
-              // Log barge-in evaluation for debugging
-              console.log(`[Custom Voice] 🎯 barge_in_eval: tutorActuallySpeaking=${tutorActuallySpeaking}, isPlaying=${isPlayingRef.current}, queueSize=${audioQueueRef.current.length}, scheduledSources=${scheduledSourcesRef.current.length}`);
 
-              // Get grade-specific config for adaptive thresholds
               const bargeInCfg = getBargeInConfig(gradeBandRef.current);
               const baseline = getBaselineMedian(baselineStateRef.current);
               const adaptiveThreshold = baseline * bargeInCfg.adaptiveRatio;
-              
-              // ADAPTIVE BARGE-IN: Check both adaptive and absolute thresholds
               const adaptiveTriggered = adaptiveBargeInEnabledRef.current && rms >= adaptiveThreshold;
               const absoluteTriggered = rms >= bargeInCfg.rmsThreshold || peak >= bargeInCfg.peakThreshold;
               const bargeInTriggered = adaptiveTriggered || absoluteTriggered;
 
               if (!bargeInTriggered) {
-                // Log rejected barge-in for observability (only occasionally to avoid spam)
-                if (adaptiveBargeInEnabledRef.current && wsRef.current && Math.random() < 0.1) {
-                  wsRef.current.send(JSON.stringify({
-                    type: "barge_in_event",
-                    evaluation: {
-                      inputEnergy: rms,
-                      baselineRms: baseline,
-                      ratio: baseline > 0 ? rms / baseline : 0,
-                      threshold: adaptiveThreshold,
-                      outcome: 'rejected',
-                    }
-                  }));
-                }
-                console.log(`[Custom Voice] 🔇 VAD: Ignoring ambient sound during tutor (rms=${rms.toFixed(4)}, peak=${peak.toFixed(4)}, baseline=${baseline.toFixed(4)}, adaptiveThreshold=${adaptiveThreshold.toFixed(4)}) - below barge-in threshold`);
                 return;
               }
               
-              // Get profile for timing values
               const profile = getProfile();
               const minSpeechMs = adaptiveBargeInEnabledRef.current ? bargeInCfg.minSpeechMs : profile.minBargeInSpeechMs;
               
-              // Start debounce timer for sustained speech
               if (workletSpeechStartTime === 0) {
                 workletSpeechStartTime = now;
                 
-                // DUCK-THEN-CONFIRM: Apply duck gain immediately on suspected barge-in
                 if (adaptiveBargeInEnabledRef.current && playbackGainNodeRef.current && !duckStateRef.current.isActive) {
                   duckStateRef.current.isActive = true;
                   duckStateRef.current.startTime = now;
                   duckStateRef.current.originalGain = playbackGainNodeRef.current.gain.value;
                   duckStateRef.current.speechStartTime = now;
                   playbackGainNodeRef.current.gain.value = ADAPTIVE_BARGE_IN.COMMON.DUCK_GAIN;
-                  console.log(`[Custom Voice] 🔉 DUCK: Applied duck gain (${ADAPTIVE_BARGE_IN.COMMON.DUCK_GAIN}) for suspected barge-in (rms=${rms.toFixed(4)}, adaptive=${adaptiveTriggered})`);
                 }
-                
-                console.log(`[Custom Voice] 🎤 VAD: Speech onset detected (rms=${rms.toFixed(4)}, adaptive=${adaptiveTriggered}, starting ${minSpeechMs}ms debounce, grade=${gradeBandRef.current || 'default'})`);
                 return;
               }
               
-              // Check if speech sustained for barge-in threshold
               if (now - workletSpeechStartTime < minSpeechMs) {
-                console.log(`[Custom Voice] ⏱️ VAD debounce: ${(now - workletSpeechStartTime).toFixed(0)}ms/${minSpeechMs}ms - waiting for sustained speech`);
                 return;
               }
 
-              // CONFIRMED BARGE-IN: Stop playback
-              console.log(`[Custom Voice] 🛑 VAD: CONFIRMED barge-in after debounce (rms=${rms.toFixed(4)}, peak=${peak.toFixed(4)}, adaptive=${adaptiveTriggered})`);
+              console.log(`[Custom Voice] 🛑 RMS-FALLBACK: CONFIRMED barge-in (rms=${rms.toFixed(4)})`);
               
-              // Reset duck state before stopping
               if (duckStateRef.current.isActive) {
                 duckStateRef.current.isActive = false;
-                console.log(`[Custom Voice] 🔉 DUCK: Confirmed barge-in, stopping playback`);
               }
               
               stopAudio();
               setIsTutorSpeaking(false);
               
-              // POST-INTERRUPTION BUFFER (Dec 10, 2025 FIX)
-              // After barge-in, ignore rapid speech-end events for 2 seconds
               workletPostInterruptionBufferActive = true;
               if (workletPostInterruptionTimeout) {
                 clearTimeout(workletPostInterruptionTimeout);
               }
               workletPostInterruptionTimeout = setTimeout(() => {
                 workletPostInterruptionBufferActive = false;
-                console.log('[Custom Voice] ✅ Post-interruption buffer ended (AudioWorklet)');
               }, POST_INTERRUPTION_BUFFER_MS);
-              console.log(`[Custom Voice] 🛡️ Post-interruption buffer active for ${POST_INTERRUPTION_BUFFER_MS}ms (AudioWorklet)`);
 
-              // Notify server for state sync with barge-in details
               wsRef.current.send(JSON.stringify({ 
                 type: "speech_detected",
                 bargeIn: true,
                 adaptive: adaptiveTriggered,
                 gradeBand: gradeBandRef.current
               }));
-              
-              // Send barge-in event for server-side structured logging
-              if (adaptiveBargeInEnabledRef.current) {
-                wsRef.current.send(JSON.stringify({
-                  type: "barge_in_event",
-                  evaluation: {
-                    inputEnergy: rms,
-                    baselineRms: baseline,
-                    ratio: baseline > 0 ? rms / baseline : 0,
-                    threshold: adaptiveThreshold,
-                    outcome: 'confirmed',
-                    duckGain: ADAPTIVE_BARGE_IN.COMMON.DUCK_GAIN,
-                    confirmWindowMs: minSpeechMs,
-                  }
-                }));
-              }
             } else {
-              // Tutor not speaking - track speech start for min duration check
-              // Also reset duck state if it was active
               if (duckStateRef.current.isActive && playbackGainNodeRef.current) {
                 playbackGainNodeRef.current.gain.value = duckStateRef.current.originalGain;
                 duckStateRef.current.isActive = false;
-                console.log(`[Custom Voice] 🔊 DUCK: Restored original gain (tutor stopped playing)`);
               }
               
               if (workletSpeechStartTime === 0) {
                 workletSpeechStartTime = now;
               }
-              console.log("[Custom Voice] 🎤 VAD: Speech detected (tutor not playing)");
             }
             return;
           }
           
-          // Handle duck timeout - restore volume if speech not confirmed
-          if (event.data.type === 'speech_end' && duckStateRef.current.isActive) {
+          // Handle duck timeout (RMS fallback only) - restore volume if speech not confirmed
+          if (event.data.type === 'speech_end' && duckStateRef.current.isActive && !sileroVadRef.current) {
             const now = Date.now();
             const duckDuration = now - duckStateRef.current.startTime;
             
-            // If duck active but no confirmed barge-in, restore volume
             if (playbackGainNodeRef.current && duckDuration < ADAPTIVE_BARGE_IN.COMMON.CONFIRM_MS) {
               playbackGainNodeRef.current.gain.value = duckStateRef.current.originalGain;
-              console.log(`[Custom Voice] 🔊 DUCK: Restored original gain (speech ended before confirmation, ${duckDuration}ms)`);
             }
             duckStateRef.current.isActive = false;
           }
@@ -2806,6 +2947,22 @@ registerProcessor('audio-processor', AudioProcessor);
 
   const cleanup = () => {
     stopAudio();
+    
+    if (sileroVadRef.current) {
+      try {
+        sileroVadRef.current.destroy();
+      } catch (e) {
+        console.warn('[SileroVAD] Cleanup warning:', e);
+      }
+      sileroVadRef.current = null;
+    }
+    if (sileroConfirmTimerRef.current) {
+      clearTimeout(sileroConfirmTimerRef.current);
+      sileroConfirmTimerRef.current = null;
+    }
+    sileroSpeechActiveRef.current = false;
+    sileroDuckedRef.current = false;
+    sileroBargeInConfirmedRef.current = false;
     
     if (processorRef.current) {
       try {

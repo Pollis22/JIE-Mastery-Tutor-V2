@@ -44,6 +44,27 @@ export const VOICE_THRESHOLDS = {
 
 export type GradeBandType = 'K2' | 'G3-5' | 'G6-8' | 'G9-12' | 'ADV';
 
+export const SILERO_BARGE_IN = {
+  DUCK_GAIN: 0.056, // -25dB = 10^(-25/20) ≈ 0.056
+  DUCK_FADE_MS: 0.02, // 20ms fade for duck/unduck transitions
+  CONFIRM_THRESHOLDS: {
+    'K2': 600,
+    'G3-5': 500,
+    'G6-8': 400,
+    'G9-12': 350,
+    'ADV': 350,
+  } as Record<GradeBandType, number>,
+  DEFAULT_CONFIRM_MS: 400,
+  IMMUNITY_AFTER_TURN_COMMIT_MS: {
+    'K2': 700,
+    'G3-5': 600,
+    'G6-8': 500,
+    'G9-12': 500,
+    'ADV': 500,
+  } as Record<GradeBandType, number>,
+  DEFAULT_IMMUNITY_MS: 500,
+} as const;
+
 export const ADAPTIVE_BARGE_IN = {
   COMMON: {
     BASELINE_WINDOW_MS: 1500,

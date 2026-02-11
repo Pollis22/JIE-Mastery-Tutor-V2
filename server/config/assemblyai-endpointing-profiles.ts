@@ -92,3 +92,75 @@ export function getEndpointingProfile(
   const band = bandFromPersona || getBandFromGradeLevel(gradeLevel);
   return { band, profile: ENDPOINTING_PROFILES[band] };
 }
+
+const MATH_KEYTERMS: string[] = [
+  'algebra', 'equation', 'variable', 'fraction', 'denominator', 'numerator',
+  'polynomial', 'quadratic', 'exponent', 'coefficient', 'integer', 'decimal',
+  'geometry', 'triangle', 'hypotenuse', 'perpendicular', 'parallel', 'circumference',
+  'radius', 'diameter', 'perimeter', 'area', 'volume', 'angle', 'degrees',
+  'sine', 'cosine', 'tangent', 'calculus', 'derivative', 'integral',
+  'probability', 'statistics', 'mean', 'median', 'mode', 'standard deviation',
+  'slope', 'intercept', 'linear', 'function', 'graph', 'coordinate',
+  'pi', 'squared', 'cubed', 'square root', 'absolute value',
+  'greater than', 'less than', 'equal to', 'inequality',
+  'multiplication', 'division', 'addition', 'subtraction',
+  'plus', 'minus', 'times', 'divided by', 'remainder',
+];
+
+const ENGLISH_KEYTERMS: string[] = [
+  'noun', 'verb', 'adjective', 'adverb', 'pronoun', 'preposition',
+  'conjunction', 'article', 'subject', 'predicate', 'clause', 'phrase',
+  'paragraph', 'essay', 'thesis', 'topic sentence', 'conclusion',
+  'metaphor', 'simile', 'alliteration', 'onomatopoeia', 'personification',
+  'hyperbole', 'imagery', 'symbolism', 'irony', 'foreshadowing',
+  'protagonist', 'antagonist', 'narrator', 'point of view',
+  'vocabulary', 'synonym', 'antonym', 'homophone', 'prefix', 'suffix',
+  'syllable', 'consonant', 'vowel', 'punctuation', 'apostrophe',
+  'comma', 'semicolon', 'quotation', 'exclamation',
+  'reading comprehension', 'inference', 'context clues', 'main idea',
+];
+
+const SPANISH_KEYTERMS: string[] = [
+  'conjugation', 'conjugar', 'subjunctive', 'subjuntivo',
+  'preterite', 'pretérito', 'imperfect', 'imperfecto',
+  'indicative', 'indicativo', 'infinitive', 'infinitivo',
+  'reflexive', 'reflexivo', 'gerund', 'gerundio',
+  'masculine', 'feminine', 'plural', 'singular',
+  'ser', 'estar', 'haber', 'tener', 'hacer',
+  'sustantivo', 'verbo', 'adjetivo', 'adverbio',
+  'acento', 'tilde', 'ñ', 'español',
+  'vocabulario', 'gramática', 'oración', 'párrafo',
+  'presente', 'pasado', 'futuro', 'condicional',
+  'pronunciation', 'pronunciación',
+];
+
+const SUBJECT_KEYTERMS: Record<string, string[]> = {
+  'math': MATH_KEYTERMS,
+  'mathematics': MATH_KEYTERMS,
+  'english': ENGLISH_KEYTERMS,
+  'reading': ENGLISH_KEYTERMS,
+  'writing': ENGLISH_KEYTERMS,
+  'language arts': ENGLISH_KEYTERMS,
+  'spanish': SPANISH_KEYTERMS,
+  'español': SPANISH_KEYTERMS,
+};
+
+const COMMON_TUTORING_KEYTERMS: string[] = [
+  'correct', 'incorrect', 'answer', 'question', 'explain',
+  'example', 'practice', 'homework', 'quiz', 'test',
+  'hint', 'help', 'understand', 'confused', 'repeat',
+  'step by step', 'show me', 'try again', 'next one',
+  'I think', "I don't know", 'is it', 'what about',
+];
+
+export function getKeytermsPrompt(subject?: string): string | null {
+  if (!subject) return null;
+
+  const normalized = subject.toLowerCase().trim();
+  const subjectTerms = SUBJECT_KEYTERMS[normalized] || [];
+  const allTerms = [...COMMON_TUTORING_KEYTERMS, ...subjectTerms];
+
+  if (allTerms.length === 0) return null;
+
+  return allTerms.join(', ');
+}
