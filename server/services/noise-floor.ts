@@ -64,6 +64,7 @@ export interface NoiseFloorState {
   isSpeechActive: boolean;      // Whether speech is currently detected
   lastSpeechEndTime: number;    // When last speech ended (for grace period)
   onsetLatchUntil: number;      // Timestamp when onset latch expires
+  microBufferWindowUntil: number; // MICRO-UTTERANCE: Relaxed gating window expiry (0 = inactive)
   config: NoiseFloorConfig;
 }
 
@@ -90,9 +91,12 @@ export function createNoiseFloorState(): NoiseFloorState {
     isSpeechActive: false,
     lastSpeechEndTime: 0,
     onsetLatchUntil: 0,
+    microBufferWindowUntil: 0,
     config: getNoiseFloorConfig(),
   };
 }
+
+export const MICRO_BUFFER_WINDOW_MS = 1200;
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Noise Floor Calculation
@@ -217,18 +221,24 @@ export function detectSpeech(
     };
   }
   
+  const inMicroBuffer = state.microBufferWindowUntil > 0 && now < state.microBufferWindowUntil;
+  const effectiveMinSpeechMs = inMicroBuffer ? Math.min(80, config.minSpeechDurationMs) : config.minSpeechDurationMs;
+
   if (rms >= threshold) {
     if (state.speechStartTime === null) {
       state.speechStartTime = now;
       state.speechRmsSamples = [rms];
       state.onsetLatchUntil = now + config.onsetLatchMs;
+      if (state.microBufferWindowUntil === 0) {
+        state.microBufferWindowUntil = now + MICRO_BUFFER_WINDOW_MS;
+      }
     } else {
       state.speechRmsSamples.push(rms);
     }
     
     const durationMs = now - state.speechStartTime;
     
-    if (durationMs >= config.minSpeechDurationMs) {
+    if (durationMs >= effectiveMinSpeechMs) {
       state.isSpeechActive = true;
       return {
         isSpeech: true,
@@ -257,10 +267,10 @@ export function detectSpeech(
     const inOnsetLatch = now < state.onsetLatchUntil;
     const aboveCloseThreshold = rms >= closeThreshold;
     
-    if (inOnsetLatch || (state.isSpeechActive && aboveCloseThreshold)) {
+    if (inOnsetLatch || inMicroBuffer || (state.isSpeechActive && aboveCloseThreshold)) {
       state.speechRmsSamples.push(rms);
       
-      if (durationMs >= config.minSpeechDurationMs) {
+      if (durationMs >= effectiveMinSpeechMs) {
         state.isSpeechActive = true;
         return {
           isSpeech: true,
@@ -290,6 +300,9 @@ export function detectSpeech(
     }
     state.speechStartTime = null;
     state.speechRmsSamples = [];
+    if (state.microBufferWindowUntil > 0 && now >= state.microBufferWindowUntil) {
+      state.microBufferWindowUntil = 0;
+    }
   }
   
   updateNoiseFloorBaseline(state, rms);
@@ -312,6 +325,11 @@ export function resetSpeechDetection(state: NoiseFloorState): void {
   state.speechStartTime = null;
   state.speechRmsSamples = [];
   state.isSpeechActive = false;
+  state.microBufferWindowUntil = 0;
+}
+
+export function activateMicroBufferWindow(state: NoiseFloorState): void {
+  state.microBufferWindowUntil = Date.now() + MICRO_BUFFER_WINDOW_MS;
 }
 
 /**

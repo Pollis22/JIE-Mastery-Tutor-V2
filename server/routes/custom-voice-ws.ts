@@ -89,6 +89,8 @@ import {
   getNoiseFloor,
   getSpeechThreshold,
   resetSpeechDetection,
+  activateMicroBufferWindow,
+  MICRO_BUFFER_WINDOW_MS,
   isInGracePeriod,
   validateTranscript,
   validateTranscriptForBargeIn,
@@ -1289,6 +1291,10 @@ interface SessionState {
   sttSendFailureLoggedAt: number;
   sttSendFailureTotalDropped: number;
   sttSendFailureStartedAt: number;
+  // MICRO-UTTERANCE: Track speech onset/end for micro-burst detection
+  microSpeechOnsetAtMs: number;
+  microSpeechEndedAtMs: number;
+  microUtteranceProbeCount: number;
 }
 
 // Helper to send typed WebSocket events
@@ -2289,6 +2295,9 @@ export function setupCustomVoiceWebSocket(server: Server) {
       sttSendFailureLoggedAt: 0,
       sttSendFailureTotalDropped: 0,
       sttSendFailureStartedAt: 0,
+      microSpeechOnsetAtMs: 0,
+      microSpeechEndedAtMs: 0,
+      microUtteranceProbeCount: 0,
     };
 
     // FIX #3: Auto-persist every 10 seconds
@@ -2536,6 +2545,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
       console.log(`[TurnCommit] text="${text.substring(0, 60)}" source=${source} isProcessing=${state.isProcessing} queueLen=${state.transcriptQueue.length} phase=${state.phase}`);
 
       state.lastTurnCommittedAtMs = Date.now();
+      state.microSpeechOnsetAtMs = 0;
+      state.microSpeechEndedAtMs = 0;
       cancelBargeInCandidate(state, `turn_committed_${source}`, ws);
 
       // P1.5: Phase discipline — queue only if tutor is speaking or thinking
@@ -4622,7 +4633,43 @@ HONESTY INSTRUCTIONS:
                   if (!transcriptValidation.isValid) {
                     logGhostTurnPrevention(state.sessionId || 'unknown', text, transcriptValidation);
                     console.log(`[GhostTurn] 🚫 Ignored transcript: "${text}" (${transcriptValidation.reason})`);
-                    return; // Don't process ghost turns
+                    return;
+                  }
+                  
+                  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                  // MICRO-UTTERANCE PROBE: Instrumentation for diagnosing short answer drops
+                  // Rate-limited: logs every utterance but JSON-compact for parsing
+                  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                  const noiseFloorNow = getNoiseFloor(state.noiseFloorState);
+                  const trimmedText = text.trim();
+                  const wordCount = trimmedText.split(/\s+/).filter((w: string) => w.length > 0).length;
+                  const isMicroUtterance = wordCount <= 2;
+                  const isQuick = isQuickAnswer(trimmedText);
+                  const speechDurMs = state.microSpeechOnsetAtMs > 0 && state.microSpeechEndedAtMs > state.microSpeechOnsetAtMs
+                    ? state.microSpeechEndedAtMs - state.microSpeechOnsetAtMs
+                    : (state.microSpeechOnsetAtMs > 0 ? Date.now() - state.microSpeechOnsetAtMs : -1);
+                  const isMicroBurst = state.microSpeechOnsetAtMs > 0 && state.microSpeechEndedAtMs > state.microSpeechOnsetAtMs
+                    && (state.microSpeechEndedAtMs - state.microSpeechOnsetAtMs) <= MICRO_BUFFER_WINDOW_MS;
+
+                  state.microUtteranceProbeCount++;
+                  if (isMicroUtterance || state.microUtteranceProbeCount % 10 === 0) {
+                    console.log(JSON.stringify({
+                      event: 'micro_utterance_probe',
+                      session_id: (state.sessionId || 'unknown').substring(0, 8),
+                      text: trimmedText.substring(0, 40),
+                      confidence: confidence.toFixed(2),
+                      end_of_turn: endOfTurn,
+                      word_count: wordCount,
+                      is_quick_answer: isQuick,
+                      is_micro_burst: isMicroBurst,
+                      speech_duration_ms: speechDurMs,
+                      noise_floor: noiseFloorNow.toFixed(4),
+                      rms: state.lastMeasuredRms.toFixed(4),
+                      is_speech: state.noiseFloorState.isSpeechActive,
+                      phase: state.phase,
+                      continuation_timer_active: !!state.continuationTimerId,
+                      micro_buffer_active: state.noiseFloorState.microBufferWindowUntil > Date.now(),
+                    }));
                   }
                   
                   // Check if we're in post-utterance grace period for merging
@@ -4727,8 +4774,22 @@ HONESTY INSTRUCTIONS:
                     const conjEnding = endsWithConjunctionOrPreposition(pendingText);
                     const hedge = isHedgePhrase(pendingText);
 
+                    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                    // MICRO-UTTERANCE ASSIST: Fast-commit for confirmed micro-utterances
+                    // Quick answers + micro-bursts get 200ms grace (was 400ms)
+                    // Single-word lexical + final STT segment also get 200ms
+                    // Prevents "no" from being lost to slow continuation guard
+                    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                    const pendingWords = pendingText.trim().split(/\s+/).filter((w: string) => w.length > 0).length;
+                    const pendingDropCheck = shouldDropTranscript(pendingText, state);
+                    const isMicroAssist = !pendingDropCheck.drop && (isQuickAnswer(pendingText) || pendingWords === 1)
+                      && (endOfTurn || isMicroBurst);
+
                     let graceMs: number;
-                    if (quickAnswer) {
+                    if (isMicroAssist) {
+                      graceMs = 200;
+                      console.log(`[MicroUtterance] assist_fast_commit text="${pendingText.substring(0, 20)}" graceMs=${graceMs} isMicroBurst=${isMicroBurst} endOfTurn=${endOfTurn}`);
+                    } else if (quickAnswer) {
                       graceMs = Math.min(contBandTiming.continuationGraceMs, 400);
                       console.log(`[ContinuationGuard] quick_answer detected, graceMs=${graceMs}`);
                     } else if (hedge) {
@@ -5698,11 +5759,14 @@ HONESTY INSTRUCTIONS:
                   ws.send(JSON.stringify({ type: "speech_detected" }));
                   state.lastSpeechNotificationSent = true;
                   state.lastUserSpeechAtMs = Date.now();
+                  state.microSpeechOnsetAtMs = Date.now();
+                  activateMicroBufferWindow(state.noiseFloorState);
                   if (state.phase === 'LISTENING') {
                     setPhase(state, 'SPEECH_DETECTED', 'vad_speech_onset', ws);
                   }
                 } else if (!speechDetection.isSpeech && state.lastSpeechNotificationSent) {
                   state.lastSpeechNotificationSent = false;
+                  state.microSpeechEndedAtMs = Date.now();
                   ws.send(JSON.stringify({ type: "speech_ended" }));
                   cancelBargeInCandidate(state, 'speech_ended', ws);
                   if (state.phase === 'SPEECH_DETECTED') {
