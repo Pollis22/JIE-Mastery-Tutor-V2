@@ -279,11 +279,12 @@ const QUICK_ANSWER_PATTERNS = [
   /^(zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand)$/i,
 ];
 
+// P1: Removed articles ('the', 'a', 'an') that caused random sluggishness
 const CONTINUATION_CONJUNCTIONS = [
   'but', 'and', 'so', 'because', 'if', 'or', 'then', 'when',
   'while', 'since', 'although', 'though', 'unless', 'until',
   'after', 'before', 'that', 'which', 'where', 'who', 'whom',
-  'like', 'about', 'with', 'for', 'to', 'the', 'a', 'an',
+  'like', 'about', 'with', 'for', 'to',
 ];
 
 function isQuickAnswer(text: string): boolean {
@@ -292,13 +293,65 @@ function isQuickAnswer(text: string): boolean {
 }
 
 function endsWithConjunctionOrPreposition(text: string): boolean {
-  const lastWord = text.trim().split(/\s+/).pop()?.toLowerCase() || '';
+  // P1: Strip trailing punctuation before checking last token
+  const stripped = text.trim().replace(/[.,!?;:]+$/, '').trim();
+  const lastWord = stripped.split(/\s+/).pop()?.toLowerCase() || '';
   return CONTINUATION_CONJUNCTIONS.includes(lastWord);
 }
 
 function isShortDeclarative(text: string): boolean {
   const words = text.trim().split(/\s+/).filter(w => w.length > 0);
   return words.length < 8 && !isQuickAnswer(text);
+}
+
+// P0: Centralized transcript drop decision — replaces ALL raw char-length gates
+// Allows legitimate short lexical answers like "no", "ok", "I", "2", "5", "a", "y"
+function shouldDropTranscript(text: string, state: { isSessionEnded: boolean; sessionFinalizing: boolean }): { drop: boolean; reason: string } {
+  if (!text || !text.trim()) {
+    return { drop: true, reason: 'empty' };
+  }
+  if (state.isSessionEnded || state.sessionFinalizing) {
+    return { drop: true, reason: 'session_ended' };
+  }
+  const trimmed = text.trim();
+  const NON_LEXICAL_DROP = [
+    /^(um+|uh+|hmm+|hm+|ah+|oh+|er+|erm+)$/i,
+    /^\[.*\]$/,
+    /^[\s.,!?]*$/,
+  ];
+  for (const pattern of NON_LEXICAL_DROP) {
+    if (pattern.test(trimmed)) {
+      return { drop: true, reason: 'non_lexical' };
+    }
+  }
+  return { drop: false, reason: 'valid' };
+}
+
+// P1: Thinking-aloud detection for older bands — adds continuation patience
+const OLDER_BANDS = new Set(['G6-8', 'G9-12', 'ADV']);
+const THINKING_ALOUD_EXTRA_GRACE_MS = 800;
+
+function isThinkingAloud(pendingText: string): boolean {
+  const trimmed = pendingText.trim();
+  const words = trimmed.split(/\s+/).filter(w => w.length > 0);
+  if (words.length >= 5) return true;
+  if (trimmed.length >= 20) return true;
+  if (endsWithContinuationCue(trimmed)) return true;
+  return false;
+}
+
+// P1: Real continuation cues only (no articles: 'the', 'a', 'an')
+const REAL_CONTINUATION_CUES = [
+  'but', 'and', 'so', 'because', 'if', 'or', 'then', 'when',
+  'while', 'since', 'although', 'though', 'unless', 'until',
+  'after', 'before', 'that', 'which', 'where', 'who', 'whom',
+  'like', 'about', 'with', 'for', 'to',
+];
+
+function endsWithContinuationCue(text: string): boolean {
+  const stripped = text.replace(/[.,!?;:]+$/, '').trim();
+  const lastWord = stripped.split(/\s+/).pop()?.toLowerCase() || '';
+  return REAL_CONTINUATION_CUES.includes(lastWord);
 }
 
 // Recovery phrases that should NOT end a session (Step 2)
@@ -1048,6 +1101,11 @@ function getGradeBandTiming(ageGroup: string): GradeBandTimingConfig {
 function setPhase(state: SessionState, next: VoicePhase, reason: string, ws?: WebSocket): void {
   const prev = state.phase;
   if (prev === next) return;
+  // P1.5: Hard guard — TURN_COMMITTED must never be set during TUTOR_SPEAKING or AWAITING_RESPONSE
+  if (next === 'TURN_COMMITTED' && (prev === 'TUTOR_SPEAKING' || prev === 'AWAITING_RESPONSE')) {
+    console.error(`[Phase] BLOCKED invalid transition ${prev} -> ${next} reason="${reason}" session=${state.sessionId?.substring(0, 8) || 'unknown'} — must queue instead`);
+    return;
+  }
   state.phase = next;
   state.phaseSinceMs = Date.now();
   console.log(`[Phase] ${prev} -> ${next} reason="${reason}" session=${state.sessionId?.substring(0, 8) || 'unknown'} genId=${state.playbackGenId}`);
@@ -1281,7 +1339,9 @@ function hardInterruptTutor(
   const now = Date.now();
   const timing = getGradeBandTiming(state.ageGroup);
 
-  if (state.phase !== 'TUTOR_SPEAKING' || !state.tutorAudioPlaying) {
+  // P2: Allow pre-roll barge-in when phase=TUTOR_SPEAKING but audio hasn't started yet
+  // This enables interrupting the tutor immediately as TTS/LLM response begins
+  if (state.phase !== 'TUTOR_SPEAKING') {
     console.log(JSON.stringify({
       event: 'barge_in_suppressed',
       session_id: state.sessionId,
@@ -1293,6 +1353,16 @@ function hardInterruptTutor(
               'phase_not_tutor_speaking',
     }));
     return false;
+  }
+  const isPreRoll = !state.tutorAudioPlaying;
+  if (isPreRoll) {
+    console.log(JSON.stringify({
+      event: 'barge_in_pre_roll',
+      session_id: state.sessionId,
+      reason,
+      phase: state.phase,
+      detail: 'pre_roll_interrupt_before_audio_started',
+    }));
   }
 
   if (now - state.lastBargeInAt < timing.bargeInCooldownMs) {
@@ -2456,12 +2526,10 @@ export function setupCustomVoiceWebSocket(server: Server) {
     // Emits immediate client feedback (tutor_thinking or queued_user_turn).
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     function commitUserTurn(text: string, source: 'eot' | 'manual' | 'continuation_guard' | 'turn_policy' | 'watchdog' = 'eot') {
-      if (!text || text.trim().length < 2) {
-        console.log(`[TurnCommit] rejected_empty source=${source} len=${text?.length ?? 0}`);
-        return;
-      }
-      if (state.isSessionEnded) {
-        console.log(`[TurnCommit] rejected_session_ended source=${source} text="${text.substring(0, 40)}"`);
+      // P0: Use shouldDropTranscript — allows "no", "ok", "I", "2" etc.
+      const dropCheck = shouldDropTranscript(text, state);
+      if (dropCheck.drop) {
+        console.log(`[TurnCommit] rejected source=${source} reason=${dropCheck.reason} text="${(text || '').substring(0, 40)}" len=${(text || '').trim().length}`);
         return;
       }
 
@@ -2469,6 +2537,21 @@ export function setupCustomVoiceWebSocket(server: Server) {
 
       state.lastTurnCommittedAtMs = Date.now();
       cancelBargeInCandidate(state, `turn_committed_${source}`, ws);
+
+      // P1.5: Phase discipline — queue only if tutor is speaking or thinking
+      // Do NOT transition to TURN_COMMITTED during TUTOR_SPEAKING / AWAITING_RESPONSE
+      if (state.phase === 'TUTOR_SPEAKING' || state.phase === 'AWAITING_RESPONSE') {
+        state.transcriptQueue.push(text);
+        console.log(`[Pipeline] queued_turn_phase_guard reason=phase_${state.phase} source=${source} queueLen=${state.transcriptQueue.length}`);
+        sendWsEvent(ws, 'queued_user_turn', {
+          sessionId: state.sessionId,
+          queueLen: state.transcriptQueue.length,
+          reason: `phase_guard_${state.phase}`,
+          timestamp: Date.now(),
+        });
+        return;
+      }
+
       setPhase(state, 'TURN_COMMITTED', `commit_${source}`, ws);
       state.transcriptQueue.push(text);
 
@@ -3546,7 +3629,12 @@ export function setupCustomVoiceWebSocket(server: Server) {
         }
         
         if (!isFinal) return;
-        if (!transcript || transcript.trim().length < 3) return;
+        // P0: Use shouldDropTranscript instead of raw char-length gate (reconnected STT path)
+        const reconnDropCheck = shouldDropTranscript(transcript, state);
+        if (reconnDropCheck.drop) {
+          console.log(`[GhostTurn] dropped reason=${reconnDropCheck.reason} text="${(transcript || '').substring(0, 30)}" len=${(transcript || '').trim().length} path=reconnected`);
+          return;
+        }
         
         state.lastActivityTime = Date.now();
         state.inactivityWarningSent = false;
@@ -4331,8 +4419,10 @@ HONESTY INSTRUCTIONS:
             
             // Shared transcript handler for both providers
             const handleCompleteUtterance = (transcript: string) => {
-              if (!transcript || transcript.trim().length < 3 || state.isSessionEnded) {
-                console.log("[STT] ⏭️ Skipping short/empty/ended transcript");
+              // P0: Use shouldDropTranscript instead of raw char-length gate
+              const dropCheck = shouldDropTranscript(transcript, state);
+              if (dropCheck.drop) {
+                console.log(`[GhostTurn] dropped reason=${dropCheck.reason} text="${(transcript || '').substring(0, 30)}" len=${(transcript || '').trim().length}`);
                 return;
               }
               
@@ -4550,7 +4640,8 @@ HONESTY INSTRUCTIONS:
                   const timeSinceLastAudio = now - state.lastAudioSentAt;
                   const noiseFloor = getNoiseFloor(state.noiseFloorState);
                   
-                  if (state.phase === 'TUTOR_SPEAKING' && state.tutorAudioPlaying && timeSinceLastAudio < 30000) {
+                  // P2: Allow lexical barge-in during pre-roll (tutorAudioPlaying may be false)
+                  if (state.phase === 'TUTOR_SPEAKING' && timeSinceLastAudio < 30000) {
                     const bargeInValidation = validateTranscriptForBargeIn(text);
                     
                     if (!bargeInValidation.isValid) {
@@ -4569,8 +4660,8 @@ HONESTY INSTRUCTIONS:
                         console.log(`[BargeIn] 🔉 DUCK (not interrupt): "${text}" (${bargeInValidation.wordCount} words < 3)`);
                       }
                     } else {
-                      if (state.phase !== 'TUTOR_SPEAKING' || !state.tutorAudioPlaying) {
-                        console.log(`[BargeIn] suppressed_late_lexical tutorAudioPlaying=${state.tutorAudioPlaying} phase=${state.phase} genId=${state.playbackGenId}`);
+                      if (state.phase !== 'TUTOR_SPEAKING') {
+                        console.log(`[BargeIn] suppressed_late_lexical phase=${state.phase} genId=${state.playbackGenId}`);
                         state.bargeInDucking = false;
                       } else {
                         console.log(`[BargeIn] 🛑 INTERRUPT: "${text.substring(0, 30)}..." (${bargeInValidation.wordCount} words)`);
@@ -4655,6 +4746,19 @@ HONESTY INSTRUCTIONS:
                       graceMs += tailGraceExt;
                       console.log(`[TailGrace] extended grace by ${tailGraceExt}ms for polite lead-in, totalGrace=${graceMs}ms`);
                     }
+                    // P1: Thinking-aloud extension for older bands (G6-8, G9-12, ADV)
+                    // Adds +800ms patience when student is forming a longer thought
+                    // Does NOT apply to quickAnswer (already handled above with fast path)
+                    const gradeBand = normalizeGradeBand(state.ageGroup);
+                    if (!quickAnswer && OLDER_BANDS.has(gradeBand) && isThinkingAloud(pendingText)) {
+                      const preExtend = graceMs;
+                      graceMs += THINKING_ALOUD_EXTRA_GRACE_MS;
+                      // Cap at hedge grace to prevent excessive wait (unless already hedge)
+                      if (!hedge && graceMs > contBandTiming.continuationHedgeGraceMs) {
+                        graceMs = contBandTiming.continuationHedgeGraceMs;
+                      }
+                      console.log(`[ContinuationGuard] thinking_aloud_extend band=${gradeBand} pre=${preExtend}ms post=${graceMs}ms`);
+                    }
                     
                     state.continuationTimerId = setTimeout(() => {
                       state.continuationTimerId = undefined;
@@ -4666,11 +4770,13 @@ HONESTY INSTRUCTIONS:
                       state.continuationSegmentCount = 0;
                       state.continuationCandidateEotAt = undefined;
                       
-                      if (finalText.trim().length < CONTINUATION_GUARD_CONFIG.MIN_TURN_CHARS) {
+                      // P0: Use shouldDropTranscript instead of raw char-length gate
+                      const contDropCheck = shouldDropTranscript(finalText, state);
+                      if (contDropCheck.drop) {
                         console.log(JSON.stringify({
                           event: 'turn_dropped',
                           session_id: state.sessionId || 'unknown',
-                          reason: 'below_min_chars',
+                          reason: contDropCheck.reason,
                           chars: finalText.trim().length,
                           text: finalText.trim(),
                           timestamp: new Date().toISOString(),
@@ -5144,8 +5250,10 @@ HONESTY INSTRUCTIONS:
                   return;
                 }
 
-                if (!transcript || transcript.trim().length < 3) {
-                  console.log("[Custom Voice] ⏭️ Skipping short/empty transcript");
+                // P0: Use shouldDropTranscript instead of raw char-length gate (Deepgram path)
+                const deepgramDropCheck = shouldDropTranscript(transcript, state);
+                if (deepgramDropCheck.drop) {
+                  console.log(`[GhostTurn] dropped reason=${deepgramDropCheck.reason} text="${(transcript || '').substring(0, 30)}" len=${(transcript || '').trim().length}`);
                   return;
                 }
 
@@ -5456,7 +5564,8 @@ HONESTY INSTRUCTIONS:
                   : Math.max(0.03, noiseFloor * 3.0);
                 const risingThreshold = fixedRmsThreshold * 1.5;
                 const isAboveThreshold = rms >= fixedRmsThreshold && (speechDetection.isSpeech || speechDetection.isPotentialSpeech);
-                const bargeInEligible = state.phase === 'TUTOR_SPEAKING' && state.tutorAudioPlaying && !state.sessionFinalizing;
+                // P2: Allow pre-roll barge-in (phase=TUTOR_SPEAKING, tutorAudioPlaying=false)
+                const bargeInEligible = state.phase === 'TUTOR_SPEAKING' && !state.sessionFinalizing;
                 const STT_ACTIVITY_WINDOW_MS = 800;
 
                 if (bargeInEligible && isAboveThreshold) {
@@ -5512,7 +5621,8 @@ HONESTY INSTRUCTIONS:
                     if (state.bargeInCandidate.stage === 'ducked' || state.bargeInCandidate.stage === 'confirming') {
                       const duckDuration = now - state.bargeInCandidate.duckStartMs;
 
-                      if (state.phase !== 'TUTOR_SPEAKING' || !state.tutorAudioPlaying) {
+                      // P2: Allow pre-roll barge-in - only suppress if phase changed away from TUTOR_SPEAKING
+                      if (state.phase !== 'TUTOR_SPEAKING') {
                         console.log(`[BargeIn] suppressed_not_playing phase=${state.phase} tutorAudioPlaying=${state.tutorAudioPlaying}`);
                         cancelBargeInCandidate(state, 'not_playing_at_fire', ws);
                       } else if (state.bargeInCandidate.genId !== state.playbackGenId) {
