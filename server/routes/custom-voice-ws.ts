@@ -744,12 +744,21 @@ function createAssemblyAIConnection(
           commitMode: ASSEMBLYAI_TURN_COMMIT_MODE,
         });
 
+        // C2-EARLY) For EOT messages, check if this turn was already committed
+        // BEFORE calling onPartialUpdate/creditSttActivity — the formatted echo
+        // of a committed turn must NOT update lastSttActivityAt or it poisons
+        // the deferred commit timer, causing Claude to never fire.
+        const isAlreadyCommitted = endOfTurn && (
+          (turnOrder !== undefined && state.committedTurnOrders.has(turnOrder)) ||
+          (turnOrder === undefined && state.currentTurnCommitted)
+        );
+
         // C1) Partial handling - REPLACE hypothesis only (never append)
         // Partials NEVER trigger Claude
         if (text) {
           const prevTranscript = confirmedTranscript;
           confirmedTranscript = text;
-          if (onPartialUpdate) {
+          if (onPartialUpdate && !isAlreadyCommitted) {
             onPartialUpdate(text, prevTranscript);
           }
         }
