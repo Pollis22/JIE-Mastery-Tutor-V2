@@ -614,15 +614,17 @@ function createAssemblyAIConnection(
     }
     
     // I) Add keyterms_prompt for improved transcription accuracy
-    // keyterms_prompt must be a URL-encoded JSON string array per AssemblyAI v3 spec
+    // keyterms_prompt is a JSON string array — URLSearchParams handles URL-encoding
     if (keytermsUrlEncoded) {
       urlParams.set('keyterms_prompt', keytermsUrlEncoded);
-      console.log(`[AssemblyAI v3] 📚 Keyterms prompt set (${keytermsUrlEncoded.length} chars encoded)`);
+      console.log(`[AssemblyAI v3] 📚 Keyterms prompt set (${keytermsUrlEncoded.length} chars, JSON array)`);
     }
     
     // A) Use routed base URL
     const wsUrl = `${baseUrl}/v3/ws?${urlParams.toString()}`;
-    console.log('[AssemblyAI v3] 🌐 Connecting to:', wsUrl);
+    const sanitizedUrl = wsUrl.replace(/authorization=[^&]+/, 'authorization=REDACTED');
+    console.log('[AssemblyAI v3] 🌐 Connecting to:', sanitizedUrl);
+    console.log(`[AssemblyAI v3] URL params: keyterms=${urlParams.has('keyterms_prompt')} sampleRate=${urlParams.get('sample_rate')} formatTurns=${urlParams.get('format_turns')} encoding=${urlParams.get('encoding')}`);
     console.log('[AssemblyAI v3] Speech model:', speechModel);
     console.log('[AssemblyAI v3] Turn commit mode:', ASSEMBLYAI_TURN_COMMIT_MODE);
     
@@ -5165,9 +5167,19 @@ HONESTY INSTRUCTIONS:
                       console.log('[STT] reconnect fresh turn policy state');
                     }
                     
+                    const reconnectKeyterms = state.sttKeytermsDisabledForSession ? null : state.sttKeytermsUrlEncoded;
+                    console.log(`[STT] reconnect_params keyterms=${reconnectKeyterms ? 'yes' : 'disabled'} sampleRate=16000 formatTurns=true sessionId=${state.sessionId}`);
+                    
+                    let reconnectFirstMessageReceived = false;
+                    const reconnectOpenedAt = Date.now();
+                    
                     const { ws: newWs, state: newState } = createAssemblyAIConnection(
                       state.language,
                       (text, endOfTurn, confidence) => {
+                        if (!reconnectFirstMessageReceived) {
+                          reconnectFirstMessageReceived = true;
+                          console.log(`[STT] first_transcript_after_reconnect type=utterance hasText=${!!text} elapsedMs=${Date.now() - reconnectOpenedAt}`);
+                        }
                         console.log(`[AssemblyAI-Reconnect] 📝 Complete utterance (confidence: ${confidence.toFixed(2)}): "${text}"`);
                         state.lastAudioReceivedAt = Date.now();
                         
@@ -5221,14 +5233,33 @@ HONESTY INSTRUCTIONS:
                           state.sttAudioRingBuffer = [];
                         }
                         state.isReconnecting = false;
+                        
+                        const noMessageWatchdogMs = 10000;
+                        setTimeout(() => {
+                          if (!reconnectFirstMessageReceived && state.sttConnected && !state.isSessionEnded) {
+                            console.warn(`[STT] WARNING: no_messages_after_reconnect elapsedMs=${Date.now() - reconnectOpenedAt} sessionId=${state.sessionId}`);
+                          }
+                        }, noMessageWatchdogMs);
                       },
                       () => {
+                        if (!reconnectFirstMessageReceived) {
+                          reconnectFirstMessageReceived = true;
+                          console.log(`[STT] first_message_after_reconnect type=any elapsedMs=${Date.now() - reconnectOpenedAt}`);
+                        }
                         state.sttLastMessageAtMs = Date.now();
                         state.sttConsecutiveSendFailures = 0;
                       },
-                      // P0.5: Reconnect preserves keyterms when valid, omits when disabled
-                      state.sttKeytermsDisabledForSession ? null : state.sttKeytermsUrlEncoded
+                      reconnectKeyterms
                     );
+                    
+                    newWs.on('close', (code: number, reason: Buffer) => {
+                      console.log(`[STT] reconnected_ws_closed code=${code} reason=${reason?.toString() || 'none'} sessionId=${state.sessionId}`);
+                      handleSttDisconnect(code, reason?.toString());
+                    });
+                    newWs.on('error', (error: Error) => {
+                      console.error(`[STT] reconnected_ws_error: ${error.message} sessionId=${state.sessionId}`);
+                      handleSttDisconnect(undefined, error.message);
+                    });
                     
                     if (state.assemblyAIWs && state.assemblyAIWs.readyState === WebSocket.OPEN) {
                       try { state.assemblyAIWs.close(); } catch (_e) {}

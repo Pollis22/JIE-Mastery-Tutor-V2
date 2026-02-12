@@ -147,8 +147,8 @@ export interface OlderStudentsProfile {
 }
 
 export const OLDER_STUDENTS_PROFILE: OlderStudentsProfile = {
-  minSpeechMs: 400,                 // Minimum 400ms of continuous speech before "end" is valid
-  ignoreSpeechEndUnderMs: 250,      // Ignore speech_end if duration < 250ms
+  minSpeechMs: 200,                 // Minimum 200ms of continuous speech before "end" is valid (lowered from 400ms to allow short answers like "no", "yes")
+  ignoreSpeechEndUnderMs: 150,      // Ignore speech_end if duration < 150ms (lowered from 250ms)
   ignoreSpeechEndIfDurationZero: true,  // Hard block duration=0 events
   coalesceWindowMs: 3200,           // 3.2s window to merge speech segments (was 2200ms)
   continuationGraceMs: 1200,        // 1.2s extra wait on continuation cues

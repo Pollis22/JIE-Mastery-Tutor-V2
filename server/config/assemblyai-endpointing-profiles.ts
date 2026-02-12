@@ -195,5 +195,5 @@ export function getKeytermsPrompt(subject?: string): string | null {
 export function getKeytermsForUrl(opts: { subject?: string; gradeBand?: BandName; studentName?: string }): string | null {
   const terms = getSessionKeyterms(opts);
   if (terms.length === 0) return null;
-  return encodeURIComponent(JSON.stringify(terms));
+  return JSON.stringify(terms);
 }
