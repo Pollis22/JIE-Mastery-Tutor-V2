@@ -245,7 +245,9 @@ const HEDGE_PHRASES = [
   "um", "uh", "wait", "hold on", "let me think", "one second",
   "hmm", "hm", "er", "erm", "well", "so", "like",
   "i'm not sure", "im not sure", "i am not sure",
-  "let me see", "give me a second", "uno", "este",
+  "let me see", "let's see", "lets see", "give me a second",
+  "hang on", "okay so", "ok so",
+  "uno", "este",
 ];
 
 function isHedgePhrase(text: string): boolean {
@@ -1090,8 +1092,8 @@ const GRADE_BAND_TIMING: Record<string, GradeBandTimingConfig> = {
   'K2': { bargeInDebounceMs: 600, bargeInDecayMs: 300, bargeInCooldownMs: 850, shortBurstMinMs: 300, postAudioBufferMs: 2000, minMsAfterAudioStartForBargeIn: 800, continuationGraceMs: 800, continuationHedgeGraceMs: 1800, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 4, bargeInConfirmDurationMs: 600 },
   'G3-5': { bargeInDebounceMs: 500, bargeInDecayMs: 260, bargeInCooldownMs: 750, shortBurstMinMs: 260, postAudioBufferMs: 1800, minMsAfterAudioStartForBargeIn: 600, continuationGraceMs: 700, continuationHedgeGraceMs: 1600, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 500 },
   'G6-8': { bargeInDebounceMs: 400, bargeInDecayMs: 200, bargeInCooldownMs: 650, shortBurstMinMs: 220, postAudioBufferMs: 1500, minMsAfterAudioStartForBargeIn: 500, continuationGraceMs: 600, continuationHedgeGraceMs: 1500, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 400 },
-  'G9-12': { bargeInDebounceMs: 350, bargeInDecayMs: 180, bargeInCooldownMs: 600, shortBurstMinMs: 200, postAudioBufferMs: 1400, minMsAfterAudioStartForBargeIn: 400, continuationGraceMs: 550, continuationHedgeGraceMs: 1400, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 350 },
-  'ADV': { bargeInDebounceMs: 350, bargeInDecayMs: 160, bargeInCooldownMs: 550, shortBurstMinMs: 180, postAudioBufferMs: 1200, minMsAfterAudioStartForBargeIn: 350, continuationGraceMs: 550, continuationHedgeGraceMs: 1400, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 350 },
+  'G9-12': { bargeInDebounceMs: 400, bargeInDecayMs: 200, bargeInCooldownMs: 650, shortBurstMinMs: 220, postAudioBufferMs: 1500, minMsAfterAudioStartForBargeIn: 500, continuationGraceMs: 600, continuationHedgeGraceMs: 1500, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 400 },
+  'ADV': { bargeInDebounceMs: 400, bargeInDecayMs: 200, bargeInCooldownMs: 650, shortBurstMinMs: 220, postAudioBufferMs: 1500, minMsAfterAudioStartForBargeIn: 500, continuationGraceMs: 600, continuationHedgeGraceMs: 1500, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 400 },
 };
 const DEFAULT_GRADE_BAND_TIMING: GradeBandTimingConfig = GRADE_BAND_TIMING['G6-8'];
 
@@ -1295,6 +1297,12 @@ interface SessionState {
   microSpeechOnsetAtMs: number;
   microSpeechEndedAtMs: number;
   microUtteranceProbeCount: number;
+  // DEFERRED COMMIT: Track deferred commit state for cancellation
+  deferredCommitTimerId: NodeJS.Timeout | null;
+  deferredCommitText: string;
+  deferredCommitStartedAtMs: number;
+  deferredCommitSttActivityAtMs: number;
+  lastSpeechDetectedAtMs: number;
 }
 
 // Helper to send typed WebSocket events
@@ -1303,6 +1311,16 @@ function sendWsEvent(ws: WebSocket, type: string, payload: Record<string, unknow
     ws.send(JSON.stringify({ type, ...payload }));
     console.log(`[WS Event] ${type}`, payload.turnId || '');
   }
+}
+
+// P0.2: Sanity clamp for silence duration calculations (5 minutes max)
+const SILENCE_DURATION_MAX_MS = 300000;
+function clampSilenceDuration(rawMs: number, label?: string): number {
+  if (rawMs > SILENCE_DURATION_MAX_MS) {
+    console.log(JSON.stringify({ event: 'silence_duration_sanity_clamp', raw: rawMs, clamped: 0, label: label || 'unknown' }));
+    return 0;
+  }
+  return rawMs;
 }
 
 // FIX 1A: STT Activity tracking - credit speech activity from transcript growth
@@ -1703,6 +1721,15 @@ async function finalizeSession(
     state.continuationTimerId = undefined;
     state.continuationPendingText = '';
     console.log(`[Finalize] 🧹 Cleared continuation guard timer (reason: ${reason})`);
+  }
+  
+  // DEFERRED COMMIT: Clear any pending deferred commit
+  if (state.deferredCommitTimerId) {
+    clearTimeout(state.deferredCommitTimerId);
+    state.deferredCommitTimerId = null;
+    state.deferredCommitText = '';
+    state.deferredCommitStartedAtMs = 0;
+    console.log(`[Finalize] 🧹 Cleared deferred commit timer (reason: ${reason})`);
   }
 
   // K2 TURN POLICY: Clear stall escape timer
@@ -2298,6 +2325,11 @@ export function setupCustomVoiceWebSocket(server: Server) {
       microSpeechOnsetAtMs: 0,
       microSpeechEndedAtMs: 0,
       microUtteranceProbeCount: 0,
+      deferredCommitTimerId: null,
+      deferredCommitText: '',
+      deferredCommitStartedAtMs: 0,
+      deferredCommitSttActivityAtMs: 0,
+      lastSpeechDetectedAtMs: 0,
     };
 
     // FIX #3: Auto-persist every 10 seconds
@@ -4531,18 +4563,75 @@ HONESTY INSTRUCTIONS:
                 }
               };
               
-              // FIX 1B: STT recency-gated Claude firing
+              // FIX 1B: STT recency-gated Claude firing with deferred commit tracking
               // If STT activity occurred within 800ms, defer the Claude call
+              // Deferred commits are CANCELED if student resumes speaking or new STT arrives
               let sttDeferTimerId: NodeJS.Timeout | undefined;
               const gatedFireClaude = (transcript: string, stallPrompt?: string) => {
-                const sttAge = Date.now() - state.lastSttActivityAt;
+                const rawSttAge = Date.now() - state.lastSttActivityAt;
+                const sttAge = clampSilenceDuration(rawSttAge, 'gatedFireClaude_sttAge');
                 if (state.lastSttActivityAt > 0 && sttAge < STT_ACTIVITY_RECENCY_MS) {
                   const deferMs = STT_ACTIVITY_RECENCY_MS - sttAge + 100;
-                  console.log(`[TurnPolicy] suppressed_due_to_recent_stt_activity ageMs=${sttAge} deferMs=${deferMs}`);
+                  console.log(JSON.stringify({
+                    event: 'deferred_commit_scheduled',
+                    text: transcript.substring(0, 40),
+                    deferMs,
+                    phase: state.phase,
+                    sttAge: Math.round(sttAge),
+                  }));
                   if (sttDeferTimerId) clearTimeout(sttDeferTimerId);
+                  state.deferredCommitTimerId = null;
+                  state.deferredCommitText = transcript;
+                  state.deferredCommitStartedAtMs = Date.now();
+                  state.deferredCommitSttActivityAtMs = state.lastSttActivityAt;
                   sttDeferTimerId = setTimeout(() => {
                     sttDeferTimerId = undefined;
-                    const recheckAge = Date.now() - state.lastSttActivityAt;
+                    const now = Date.now();
+                    const ageMs = now - state.deferredCommitStartedAtMs;
+
+                    if (state.phase === 'SPEECH_DETECTED') {
+                      console.log(JSON.stringify({ event: 'deferred_commit_canceled', reason: 'student_speaking', text: transcript.substring(0, 40), ageMs, phase: state.phase }));
+                      if (transcript && state.continuationPendingText) {
+                        state.continuationPendingText = (state.continuationPendingText + ' ' + transcript).trim();
+                      } else if (transcript) {
+                        state.continuationPendingText = transcript;
+                      }
+                      state.deferredCommitText = '';
+                      state.deferredCommitStartedAtMs = 0;
+                      return;
+                    }
+                    if (state.lastSttActivityAt > state.deferredCommitStartedAtMs) {
+                      console.log(JSON.stringify({ event: 'deferred_commit_canceled', reason: 'new_stt_words', text: transcript.substring(0, 40), ageMs, lastSttAge: now - state.lastSttActivityAt }));
+                      if (transcript && state.continuationPendingText) {
+                        state.continuationPendingText = (state.continuationPendingText + ' ' + transcript).trim();
+                      } else if (transcript) {
+                        state.continuationPendingText = transcript;
+                      }
+                      state.deferredCommitText = '';
+                      state.deferredCommitStartedAtMs = 0;
+                      return;
+                    }
+                    if (state.lastSpeechDetectedAtMs > state.deferredCommitStartedAtMs) {
+                      console.log(JSON.stringify({ event: 'deferred_commit_canceled', reason: 'new_speech_detected', text: transcript.substring(0, 40), ageMs }));
+                      if (transcript && state.continuationPendingText) {
+                        state.continuationPendingText = (state.continuationPendingText + ' ' + transcript).trim();
+                      } else if (transcript) {
+                        state.continuationPendingText = transcript;
+                      }
+                      state.deferredCommitText = '';
+                      state.deferredCommitStartedAtMs = 0;
+                      return;
+                    }
+                    if (state.sessionFinalizing || state.isSessionEnded) {
+                      console.log(JSON.stringify({ event: 'deferred_commit_canceled', reason: 'session_ended', text: transcript.substring(0, 40), ageMs }));
+                      state.deferredCommitText = '';
+                      state.deferredCommitStartedAtMs = 0;
+                      return;
+                    }
+                    state.deferredCommitText = '';
+                    state.deferredCommitStartedAtMs = 0;
+
+                    const recheckAge = clampSilenceDuration(Date.now() - state.lastSttActivityAt, 'deferred_recheck');
                     if (recheckAge < STT_ACTIVITY_RECENCY_MS) {
                       console.log(`[TurnPolicy] still_active_after_defer recheckAgeMs=${recheckAge} - extending`);
                       gatedFireClaude(transcript, stallPrompt);
@@ -4550,6 +4639,7 @@ HONESTY INSTRUCTIONS:
                       fireClaudeWithPolicy(transcript, stallPrompt);
                     }
                   }, deferMs);
+                  state.deferredCommitTimerId = sttDeferTimerId;
                   return;
                 }
                 fireClaudeWithPolicy(transcript, stallPrompt);
@@ -4786,22 +4876,30 @@ HONESTY INSTRUCTIONS:
                       && (endOfTurn || isMicroBurst);
 
                     let graceMs: number;
+                    let graceReason: string;
                     if (isMicroAssist) {
                       graceMs = 200;
+                      graceReason = 'micro_assist';
                       console.log(`[MicroUtterance] assist_fast_commit text="${pendingText.substring(0, 20)}" graceMs=${graceMs} isMicroBurst=${isMicroBurst} endOfTurn=${endOfTurn}`);
                     } else if (quickAnswer) {
                       graceMs = Math.min(contBandTiming.continuationGraceMs, 400);
+                      graceReason = 'quick_answer';
                       console.log(`[ContinuationGuard] quick_answer detected, graceMs=${graceMs}`);
                     } else if (hedge) {
-                      graceMs = contBandTiming.continuationHedgeGraceMs;
+                      graceMs = Math.max(contBandTiming.continuationHedgeGraceMs, 1500);
+                      graceReason = 'hedge';
+                      console.log(`[ContinuationGuard] hedge_detected text="${pendingText.substring(0, 30)}" graceMs=${graceMs}`);
                     } else if (conjEnding) {
                       graceMs = contBandTiming.continuationHedgeGraceMs;
+                      graceReason = 'conjunction';
                       console.log(`[ContinuationGuard] conjunction_ending detected, graceMs=${graceMs}`);
                     } else if (shortDecl) {
                       graceMs = contBandTiming.continuationGraceMs + 200;
+                      graceReason = 'short_declarative';
                       console.log(`[ContinuationGuard] short_declarative hold, graceMs=${graceMs}`);
                     } else {
                       graceMs = contBandTiming.continuationGraceMs;
+                      graceReason = 'default';
                     }
                     if (tailGraceExt > 0) {
                       graceMs += tailGraceExt;
@@ -4849,11 +4947,13 @@ HONESTY INSTRUCTIONS:
                       const commitDurationMs = Date.now() - candidateAt;
                       
                       console.log(JSON.stringify({
-                        event: 'turn_committed',
+                        event: 'continuation_guard_fired',
                         session_id: state.sessionId || 'unknown',
+                        band: gradeBand,
                         chars: finalText.trim().length,
                         duration_ms: commitDurationMs,
                         grace_ms: graceMs,
+                        reason: graceReason,
                         hedge_detected: hedgeDetected,
                         segment_count: segmentCount,
                         text_preview: finalText.substring(0, 60),
@@ -4943,7 +5043,10 @@ HONESTY INSTRUCTIONS:
                   state.sttReconnectAttempts = 0;
                   state.sttDisconnectedSinceMs = null;
                   state.sttConnectionId++;
-                  console.log(`[STT] connected sessionId=${state.sessionId} connectionId=${state.sttConnectionId}`);
+                  const nowMs = Date.now();
+                  if (state.lastSttActivityAt === 0) state.lastSttActivityAt = nowMs;
+                  if (state.lastUserSpeechAtMs === 0) state.lastUserSpeechAtMs = nowMs;
+                  console.log(`[STT] connected sessionId=${state.sessionId} connectionId=${state.sttConnectionId} timestamps_init=true`);
                   sendWsEvent(ws, 'stt_status', { status: 'connected' });
                   if (state.sttAudioRingBuffer.length > 0) {
                     console.log(`[STT] flushing ${state.sttAudioRingBuffer.length} buffered audio chunks after reconnect`);
@@ -5759,8 +5862,24 @@ HONESTY INSTRUCTIONS:
                   ws.send(JSON.stringify({ type: "speech_detected" }));
                   state.lastSpeechNotificationSent = true;
                   state.lastUserSpeechAtMs = Date.now();
+                  state.lastSpeechDetectedAtMs = Date.now();
                   state.microSpeechOnsetAtMs = Date.now();
                   activateMicroBufferWindow(state.noiseFloorState);
+                  if (state.deferredCommitTimerId) {
+                    clearTimeout(state.deferredCommitTimerId);
+                    const deferredText = state.deferredCommitText;
+                    state.deferredCommitTimerId = null;
+                    state.deferredCommitText = '';
+                    state.deferredCommitStartedAtMs = 0;
+                    state.deferredCommitSttActivityAtMs = 0;
+                    console.log(`[TurnPolicy] deferred_commit_timer_cleared reason=new_speech_detected text="${deferredText.substring(0, 40)}"`);
+                    if (deferredText && state.continuationPendingText) {
+                      state.continuationPendingText = (state.continuationPendingText + ' ' + deferredText).trim();
+                      console.log(`[TurnPolicy] deferred_text_merged_to_continuation merged="${state.continuationPendingText.substring(0, 60)}"`);
+                    } else if (deferredText && !state.continuationPendingText) {
+                      state.continuationPendingText = deferredText;
+                    }
+                  }
                   if (state.phase === 'LISTENING') {
                     setPhase(state, 'SPEECH_DETECTED', 'vad_speech_onset', ws);
                   }

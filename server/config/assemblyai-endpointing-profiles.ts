@@ -24,12 +24,12 @@ export const ENDPOINTING_PROFILES: Record<BandName, EndpointingProfile> = {
   },
   HIGH: {
     end_of_turn_confidence_threshold: 0.50,
-    min_end_of_turn_silence_when_confident: 800,
+    min_end_of_turn_silence_when_confident: 900,
     max_turn_silence: 5000,
   },
   COLLEGE: {
     end_of_turn_confidence_threshold: 0.50,
-    min_end_of_turn_silence_when_confident: 800,
+    min_end_of_turn_silence_when_confident: 900,
     max_turn_silence: 5000,
   },
 };
