@@ -3035,8 +3035,8 @@ registerProcessor('audio-processor', AudioProcessor);
         
         let sessionEndedAckReceived = false;
         const HTTP_FALLBACK_TIMEOUT = 3000; // 3 seconds
+        let ackTimeoutId: ReturnType<typeof setTimeout> | null = null;
         
-        // Listen for session_ended ACK using addEventListener (doesn't overwrite existing handlers)
         const ackPromise = new Promise<boolean>((resolve) => {
           console.log("[Custom Voice] 🕐 Setting up ACK listener with", HTTP_FALLBACK_TIMEOUT, "ms timeout");
           
@@ -3047,6 +3047,11 @@ registerProcessor('audio-processor', AudioProcessor);
               if (message.type === "session_ended") {
                 console.log("[Custom Voice] ✅ Received session_ended ACK - WebSocket succeeded");
                 sessionEndedAckReceived = true;
+                // P0.3: Clear timeout immediately on ACK to prevent stale timeout firing
+                if (ackTimeoutId) {
+                  clearTimeout(ackTimeoutId);
+                  ackTimeoutId = null;
+                }
                 resolve(true);
               }
             } catch (e) {
@@ -3054,34 +3059,30 @@ registerProcessor('audio-processor', AudioProcessor);
             }
           };
           
-          // Add our listener (doesn't replace existing onmessage handler)
           console.log("[Custom Voice] 📡 Adding ACK event listener");
           ws.addEventListener('message', ackHandler);
           
-          // Also listen for close event to resolve early if WebSocket closes
           const closeHandler = () => {
-            // VOICE_FIX_ACK_LOGS: Only log as warning if ACK wasn't received
             if (!sessionEndedAckReceived) {
               console.log("[Custom Voice] 🔌 WebSocket closed before ACK received");
               resolve(false);
             } else {
-              // ACK was already received, this is expected - don't log as warning
               console.log("[Custom Voice] 🔌 WebSocket closed (ACK already received)");
             }
           };
           ws.addEventListener('close', closeHandler, { once: true });
           
-          // Timeout after 3 seconds
-          setTimeout(() => {
-            // VOICE_FIX_ACK_LOGS: Only log timeout warning if ACK wasn't received
-            if (!sessionEndedAckReceived) {
-              console.log("[Custom Voice] ⏱️ ACK timeout fired. ACK received?", sessionEndedAckReceived);
-              console.log("[Custom Voice] ⚠️ No ACK received within timeout - will use HTTP fallback");
-              resolve(false);
-            } else {
-              // ACK was already received, timeout is expected - log only for debugging
-              console.log("[Custom Voice] ⏱️ ACK timeout fired. ACK received?", sessionEndedAckReceived);
+          // P0.3: Store timeout ID so we can clear it when ACK arrives
+          ackTimeoutId = setTimeout(() => {
+            ackTimeoutId = null;
+            // P0.3: Check ackReceived first — if true, NO-OP
+            if (sessionEndedAckReceived) {
+              console.log("[Custom Voice] ⏱️ ack_timeout_ignored_ack_already_received");
+              return;
             }
+            console.log("[Custom Voice] ⏱️ ACK timeout fired. ACK received?", sessionEndedAckReceived);
+            console.log("[Custom Voice] ⚠️ No ACK received within timeout - will use HTTP fallback");
+            resolve(false);
           }, HTTP_FALLBACK_TIMEOUT);
         });
       

@@ -143,6 +143,17 @@ type TurnCommitMode = 'first_eot' | 'formatted';
 const ASSEMBLYAI_TURN_COMMIT_MODE: TurnCommitMode = 
   (process.env.ASSEMBLYAI_TURN_COMMIT_MODE as TurnCommitMode) || 'first_eot';
 
+// P0.0: TURN_COMMIT_MODE kill-switch — "safe" disables deferred/continuation merge logic
+// "safe" = never defer, never store pending, commit at EOT or VAD forced endpoint
+// "experimental" = full deferred commit + continuation merge logic
+type SafetyCommitMode = 'safe' | 'experimental';
+const TURN_COMMIT_MODE: SafetyCommitMode =
+  (process.env.TURN_COMMIT_MODE as SafetyCommitMode) || 'safe';
+console.log(`[P0.0] TURN_COMMIT_MODE=${TURN_COMMIT_MODE} (safe=never-swallow, experimental=deferred+merge)`);
+
+// P0.1: VAD forced endpoint — commits within VAD_FORCED_ENDPOINT_MS after speech_ended
+const VAD_FORCED_ENDPOINT_MS = 1200;
+
 // E) Optional inactivity timeout (5-3600 seconds)
 function getInactivityTimeoutSec(): number | null {
   const val = process.env.ASSEMBLYAI_INACTIVITY_TIMEOUT_SEC;
@@ -1334,6 +1345,9 @@ interface SessionState {
   pendingCommitCreatedAtMs: number;
   pendingCommitCount: number;
   pendingCommitForcedEndpointTimerId: NodeJS.Timeout | null;
+  // P0.1: VAD forced endpoint timer — fires commitUserTurn after speech_ended if no commit within VAD_FORCED_ENDPOINT_MS
+  vadForcedEndpointTimerId: NodeJS.Timeout | null;
+  vadForcedEndpointText: string;
 }
 
 // Helper to send typed WebSocket events
@@ -1762,6 +1776,14 @@ async function finalizeSession(
   state.pendingCommitText = '';
   state.pendingCommitCreatedAtMs = 0;
   state.pendingCommitCount = 0;
+
+  // P0.1: Clear VAD forced endpoint timer
+  if (state.vadForcedEndpointTimerId) {
+    clearTimeout(state.vadForcedEndpointTimerId);
+    state.vadForcedEndpointTimerId = null;
+    state.vadForcedEndpointText = '';
+    console.log(`[Finalize] 🧹 Cleared VAD forced endpoint timer (reason: ${reason})`);
+  }
 
   // DEFERRED COMMIT: Clear any pending deferred commit
   if (state.deferredCommitTimerId) {
@@ -2374,6 +2396,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
       pendingCommitCreatedAtMs: 0,
       pendingCommitCount: 0,
       pendingCommitForcedEndpointTimerId: null,
+      vadForcedEndpointTimerId: null,
+      vadForcedEndpointText: '',
     };
 
     // FIX #3: Auto-persist every 10 seconds
@@ -2610,7 +2634,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
     // Guarantees: NO silent drops. Every turn is either processed or queued.
     // Emits immediate client feedback (tutor_thinking or queued_user_turn).
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    function commitUserTurn(text: string, source: 'eot' | 'manual' | 'continuation_guard' | 'turn_policy' | 'watchdog' = 'eot') {
+    function commitUserTurn(text: string, source: 'eot' | 'manual' | 'continuation_guard' | 'turn_policy' | 'watchdog' | 'vad_forced_endpoint' = 'eot') {
       // P0: Use shouldDropTranscript — allows "no", "ok", "I", "2" etc.
       const dropCheck = shouldDropTranscript(text, state);
       if (dropCheck.drop) {
@@ -2618,7 +2642,14 @@ export function setupCustomVoiceWebSocket(server: Server) {
         return;
       }
 
-      console.log(`[TurnCommit] text="${text.substring(0, 60)}" source=${source} isProcessing=${state.isProcessing} queueLen=${state.transcriptQueue.length} phase=${state.phase}`);
+      console.log(`[TurnCommit] text="${text.substring(0, 60)}" source=${source} isProcessing=${state.isProcessing} queueLen=${state.transcriptQueue.length} phase=${state.phase} mode=${TURN_COMMIT_MODE}`);
+
+      // P0.1: Clear VAD forced endpoint timer on any commit (prevents double-commit)
+      if (state.vadForcedEndpointTimerId) {
+        clearTimeout(state.vadForcedEndpointTimerId);
+        state.vadForcedEndpointTimerId = null;
+        state.vadForcedEndpointText = '';
+      }
 
       state.lastTurnCommittedAtMs = Date.now();
       state.microSpeechOnsetAtMs = 0;
@@ -4610,8 +4641,13 @@ HONESTY INSTRUCTIONS:
               // P0 ANTI-SWALLOW: Route canceled deferred text based on classification
               // HEDGE → merge into continuationPendingText (existing behavior)
               // COMPLETE/UNKNOWN → store as pendingCommitText (commits on next EOT or forced endpoint)
+              // P0.0: In SAFE mode, this function is a no-op (deferred commits don't happen)
               const storeCanceledDeferredText = (text: string, reason: string) => {
                 if (!text) return;
+                if (TURN_COMMIT_MODE === 'safe') {
+                  console.log(JSON.stringify({ event: 'store_canceled_skipped_safe_mode', reason, text: text.substring(0, 40) }));
+                  return;
+                }
                 const classification = classifyDeferredText(text);
                 if (classification === 'HEDGE') {
                   if (state.continuationPendingText) {
@@ -4664,8 +4700,15 @@ HONESTY INSTRUCTIONS:
               // FIX 1B: STT recency-gated Claude firing with deferred commit tracking
               // If STT activity occurred within 800ms, defer the Claude call
               // Deferred commits are CANCELED if student resumes speaking or new STT arrives
+              // P0.0: In SAFE mode, deferral is completely bypassed — always fires immediately
               let sttDeferTimerId: NodeJS.Timeout | undefined;
               const gatedFireClaude = (transcript: string, stallPrompt?: string) => {
+                // P0.0 SAFE MODE: Skip all deferral logic — commit immediately
+                if (TURN_COMMIT_MODE === 'safe') {
+                  fireClaudeWithPolicy(transcript, stallPrompt);
+                  return;
+                }
+
                 const rawSttAge = Date.now() - state.lastSttActivityAt;
                 const sttAge = clampSilenceDuration(rawSttAge, 'gatedFireClaude_sttAge');
                 if (state.lastSttActivityAt > 0 && sttAge < STT_ACTIVITY_RECENCY_MS) {
@@ -6020,6 +6063,14 @@ HONESTY INSTRUCTIONS:
                   state.lastSpeechDetectedAtMs = Date.now();
                   state.microSpeechOnsetAtMs = Date.now();
                   activateMicroBufferWindow(state.noiseFloorState);
+
+                  // P0.1: Cancel VAD forced endpoint on new speech (user is still talking)
+                  if (state.vadForcedEndpointTimerId) {
+                    clearTimeout(state.vadForcedEndpointTimerId);
+                    state.vadForcedEndpointTimerId = null;
+                    state.vadForcedEndpointText = '';
+                  }
+
                   if (state.deferredCommitTimerId) {
                     clearTimeout(state.deferredCommitTimerId);
                     const deferredText = state.deferredCommitText;
@@ -6027,8 +6078,11 @@ HONESTY INSTRUCTIONS:
                     state.deferredCommitText = '';
                     state.deferredCommitStartedAtMs = 0;
                     state.deferredCommitSttActivityAtMs = 0;
-                    console.log(`[TurnPolicy] deferred_commit_timer_cleared reason=new_speech_detected text="${deferredText.substring(0, 40)}"`);
-                    if (deferredText) {
+                    console.log(`[TurnPolicy] deferred_commit_timer_cleared reason=new_speech_detected text="${deferredText.substring(0, 40)}" mode=${TURN_COMMIT_MODE}`);
+
+                    // P0.0/P0.2: In SAFE mode, do NOT store/merge deferred text — just discard
+                    // The text will be re-accumulated via normal STT flow and committed at EOT or VAD forced endpoint
+                    if (TURN_COMMIT_MODE === 'experimental' && deferredText) {
                       const vadDeferClass = classifyDeferredText(deferredText);
                       if (vadDeferClass === 'HEDGE') {
                         if (state.continuationPendingText) {
@@ -6071,6 +6125,52 @@ HONESTY INSTRUCTIONS:
                   cancelBargeInCandidate(state, 'speech_ended', ws);
                   if (state.phase === 'SPEECH_DETECTED') {
                     setPhase(state, 'LISTENING', 'vad_speech_ended', ws);
+                  }
+
+                  // P0.1: VAD forced endpoint — start timer to commit accumulated text
+                  // If no commit happens within VAD_FORCED_ENDPOINT_MS, force-commit whatever we have
+                  // This bypasses continuation guard and deferred commit logic entirely
+                  if (!state.vadForcedEndpointTimerId && !state.isSessionEnded && !state.sessionFinalizing) {
+                    const accumulatedText = (state.continuationPendingText || state.lastAccumulatedTranscript || '').trim();
+                    const pendingText = state.pendingCommitText ? (state.pendingCommitText + ' ' + accumulatedText).trim() : accumulatedText;
+                    if (pendingText) {
+                      state.vadForcedEndpointText = pendingText;
+                      const speechEndedAtMs = Date.now();
+                      state.vadForcedEndpointTimerId = setTimeout(() => {
+                        state.vadForcedEndpointTimerId = null;
+                        if (state.isSessionEnded || state.sessionFinalizing) return;
+                        const textToCommit = state.vadForcedEndpointText;
+                        state.vadForcedEndpointText = '';
+                        if (!textToCommit) return;
+                        const ageSinceSpeechEnd = Date.now() - speechEndedAtMs;
+                        const words = textToCommit.trim().split(/\s+/).filter((w: string) => w.length > 0).length;
+                        console.log(JSON.stringify({ event: 'vad_forced_endpoint', textLen: textToCommit.length, words, ageMsSinceSpeechEnd: ageSinceSpeechEnd, mode: TURN_COMMIT_MODE }));
+                        // Clear continuation state to prevent double-commit
+                        if (state.continuationTimerId) {
+                          clearTimeout(state.continuationTimerId);
+                          state.continuationTimerId = undefined;
+                        }
+                        state.continuationPendingText = '';
+                        state.continuationSegmentCount = 0;
+                        state.continuationCandidateEotAt = undefined;
+                        // Clear pending commit state
+                        state.pendingCommitText = '';
+                        state.pendingCommitCreatedAtMs = 0;
+                        state.pendingCommitCount = 0;
+                        if (state.pendingCommitForcedEndpointTimerId) {
+                          clearTimeout(state.pendingCommitForcedEndpointTimerId);
+                          state.pendingCommitForcedEndpointTimerId = null;
+                        }
+                        // Clear deferred commit state
+                        if (state.deferredCommitTimerId) {
+                          clearTimeout(state.deferredCommitTimerId);
+                          state.deferredCommitTimerId = null;
+                          state.deferredCommitText = '';
+                          state.deferredCommitStartedAtMs = 0;
+                        }
+                        commitUserTurn(textToCommit, 'vad_forced_endpoint');
+                      }, VAD_FORCED_ENDPOINT_MS);
+                    }
                   }
                 }
                 
