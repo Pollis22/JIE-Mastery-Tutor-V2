@@ -1299,7 +1299,7 @@ export function useCustomVoice() {
             break;
           
           case "queued_user_turn":
-            console.log("[Custom Voice] 📋 Turn queued:", message.text?.substring(0, 40));
+            console.log(`[Custom Voice] 📋 Turn queued: "${(message.text || '').substring(0, 40)}" reason=${message.reason || 'unknown'} queueLen=${message.queueLen || '?'}`);
             break;
           
           case "pipeline_watchdog_clear":

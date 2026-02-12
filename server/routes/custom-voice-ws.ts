@@ -327,6 +327,28 @@ function shouldDropTranscript(text: string, state: { isSessionEnded: boolean; se
   return { drop: false, reason: 'valid' };
 }
 
+// P0-minor: Tail-continuation hold — prevents premature end-of-turn on tail fillers
+// e.g., "...so yeah" where the student adds the concluding clause after
+const CONTINUATION_TAIL_HOLD_ENABLED = process.env.CONTINUATION_TAIL_HOLD_ENABLED === 'true';
+const CONTINUATION_TAIL_HOLD_MS = parseInt(process.env.CONTINUATION_TAIL_HOLD_MS || '800', 10);
+
+const TAIL_SINGLE_TOKENS = new Set(['yeah', 'yep', 'ok', 'okay', 'right']);
+const TAIL_BIGRAMS = new Set(['so yeah', 'and yeah', 'but yeah', 'so ok', 'so okay', 'so yep', 'and yep', 'but yep', 'so right', 'and right', 'but right']);
+
+function endsWithTailContinuation(text: string): boolean {
+  const stripped = text.trim().replace(/[.,!?;:]+$/, '').trim().toLowerCase();
+  if (!stripped) return false;
+  const tokens = stripped.split(/\s+/);
+  if (tokens.length < 2) return false;
+  const lastToken = tokens[tokens.length - 1];
+  if (TAIL_SINGLE_TOKENS.has(lastToken)) {
+    const bigram = tokens[tokens.length - 2] + ' ' + lastToken;
+    if (TAIL_BIGRAMS.has(bigram)) return true;
+    if (tokens.length >= 3) return true;
+  }
+  return false;
+}
+
 // P1: Thinking-aloud detection for older bands — adds continuation patience
 const OLDER_BANDS = new Set(['G6-8', 'G9-12', 'ADV']);
 const THINKING_ALOUD_EXTRA_GRACE_MS = 800;
@@ -2545,6 +2567,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
         console.log(`[Pipeline] queued_turn_phase_guard reason=phase_${state.phase} source=${source} queueLen=${state.transcriptQueue.length}`);
         sendWsEvent(ws, 'queued_user_turn', {
           sessionId: state.sessionId,
+          text: text,
           queueLen: state.transcriptQueue.length,
           reason: `phase_guard_${state.phase}`,
           timestamp: Date.now(),
@@ -2559,6 +2582,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
         console.log(`[Pipeline] queued_turn reason=processing_in_progress source=${source} queueLen=${state.transcriptQueue.length}`);
         sendWsEvent(ws, 'queued_user_turn', {
           sessionId: state.sessionId,
+          text: text,
           queueLen: state.transcriptQueue.length,
           reason: 'processing_in_progress',
           timestamp: Date.now(),
@@ -4746,10 +4770,19 @@ HONESTY INSTRUCTIONS:
                       graceMs += tailGraceExt;
                       console.log(`[TailGrace] extended grace by ${tailGraceExt}ms for polite lead-in, totalGrace=${graceMs}ms`);
                     }
+                    // P0-minor: Tail-continuation hold for older bands
+                    // Adds extra grace when utterance ends in tail fillers like "so yeah"
+                    // Gated behind CONTINUATION_TAIL_HOLD_ENABLED (default OFF)
+                    const gradeBand = normalizeGradeBand(state.ageGroup);
+                    if (!quickAnswer && CONTINUATION_TAIL_HOLD_ENABLED && OLDER_BANDS.has(gradeBand) && endsWithTailContinuation(pendingText)) {
+                      const preExtend = graceMs;
+                      graceMs = Math.max(graceMs, contBandTiming.continuationGraceMs + CONTINUATION_TAIL_HOLD_MS);
+                      const lastWords = pendingText.trim().split(/\s+/).slice(-3).join(' ');
+                      console.log(`[ContinuationGuard] tail_hold_applied ageGroup=${state.ageGroup} graceMs=${graceMs} lastWords="${lastWords}"`);
+                    }
                     // P1: Thinking-aloud extension for older bands (G6-8, G9-12, ADV)
                     // Adds +800ms patience when student is forming a longer thought
                     // Does NOT apply to quickAnswer (already handled above with fast path)
-                    const gradeBand = normalizeGradeBand(state.ageGroup);
                     if (!quickAnswer && OLDER_BANDS.has(gradeBand) && isThinkingAloud(pendingText)) {
                       const preExtend = graceMs;
                       graceMs += THINKING_ALOUD_EXTRA_GRACE_MS;
