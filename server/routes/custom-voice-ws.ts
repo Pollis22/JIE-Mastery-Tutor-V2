@@ -255,6 +255,21 @@ function isHedgePhrase(text: string): boolean {
   return HEDGE_PHRASES.some(phrase => lower.endsWith(phrase) || lower === phrase);
 }
 
+type DeferredTextClass = 'HEDGE' | 'COMPLETE' | 'UNKNOWN';
+
+function classifyDeferredText(text: string): DeferredTextClass {
+  const trimmed = (text || '').trim();
+  if (!trimmed) return 'UNKNOWN';
+  const lower = trimmed.toLowerCase();
+  const words = trimmed.split(/\s+/).filter(w => w.length > 0);
+  const wordCount = words.length;
+  if (isHedgePhrase(trimmed)) return 'HEDGE';
+  if (wordCount <= 3 && HEDGE_PHRASES.some(p => lower === p || lower.startsWith(p))) return 'HEDGE';
+  if (wordCount >= 4) return 'COMPLETE';
+  if (/[.!?]$/.test(trimmed)) return 'COMPLETE';
+  return 'UNKNOWN';
+}
+
 // FIX 3: Conversational tail grace extension for short polite lead-ins
 const POLITE_LEADIN_PATTERNS = [
   /\b(excuse me|if you don't mind|if you dont mind)\s*$/i,
@@ -1314,6 +1329,11 @@ interface SessionState {
   deferredCommitStartedAtMs: number;
   deferredCommitSttActivityAtMs: number;
   lastSpeechDetectedAtMs: number;
+  // P0 ANTI-SWALLOW: Pending commit for complete sentences that were deferred
+  pendingCommitText: string;
+  pendingCommitCreatedAtMs: number;
+  pendingCommitCount: number;
+  pendingCommitForcedEndpointTimerId: NodeJS.Timeout | null;
 }
 
 // Helper to send typed WebSocket events
@@ -1734,6 +1754,15 @@ async function finalizeSession(
     console.log(`[Finalize] 🧹 Cleared continuation guard timer (reason: ${reason})`);
   }
   
+  // P0 ANTI-SWALLOW: Clear pending commit
+  if (state.pendingCommitForcedEndpointTimerId) {
+    clearTimeout(state.pendingCommitForcedEndpointTimerId);
+    state.pendingCommitForcedEndpointTimerId = null;
+  }
+  state.pendingCommitText = '';
+  state.pendingCommitCreatedAtMs = 0;
+  state.pendingCommitCount = 0;
+
   // DEFERRED COMMIT: Clear any pending deferred commit
   if (state.deferredCommitTimerId) {
     clearTimeout(state.deferredCommitTimerId);
@@ -2341,6 +2370,10 @@ export function setupCustomVoiceWebSocket(server: Server) {
       deferredCommitStartedAtMs: 0,
       deferredCommitSttActivityAtMs: 0,
       lastSpeechDetectedAtMs: 0,
+      pendingCommitText: '',
+      pendingCommitCreatedAtMs: 0,
+      pendingCommitCount: 0,
+      pendingCommitForcedEndpointTimerId: null,
     };
 
     // FIX #3: Auto-persist every 10 seconds
@@ -4574,6 +4607,60 @@ HONESTY INSTRUCTIONS:
                 }
               };
               
+              // P0 ANTI-SWALLOW: Route canceled deferred text based on classification
+              // HEDGE → merge into continuationPendingText (existing behavior)
+              // COMPLETE/UNKNOWN → store as pendingCommitText (commits on next EOT or forced endpoint)
+              const storeCanceledDeferredText = (text: string, reason: string) => {
+                if (!text) return;
+                const classification = classifyDeferredText(text);
+                if (classification === 'HEDGE') {
+                  if (state.continuationPendingText) {
+                    state.continuationPendingText = (state.continuationPendingText + ' ' + text).trim();
+                  } else {
+                    state.continuationPendingText = text;
+                  }
+                  console.log(JSON.stringify({ event: 'deferred_commit_canceled', reason, classification, action: 'merge_to_cont', text: text.substring(0, 40) }));
+                } else {
+                  if (state.pendingCommitText) {
+                    state.pendingCommitText = (state.pendingCommitText + ' ' + text).trim();
+                  } else {
+                    state.pendingCommitText = text;
+                  }
+                  state.pendingCommitCreatedAtMs = state.pendingCommitCreatedAtMs || Date.now();
+                  state.pendingCommitCount++;
+                  console.log(JSON.stringify({ event: 'deferred_commit_canceled', reason, classification, action: 'store_pending', text: text.substring(0, 40), pendingCommitCount: state.pendingCommitCount }));
+
+                  if (state.pendingCommitCount >= 2) {
+                    console.log(JSON.stringify({ event: 'pending_commit_force_commit', count: state.pendingCommitCount, text: state.pendingCommitText.substring(0, 60), reason: 'cap_reached' }));
+                    const forceText = state.pendingCommitText;
+                    state.pendingCommitText = '';
+                    state.pendingCommitCreatedAtMs = 0;
+                    state.pendingCommitCount = 0;
+                    if (state.pendingCommitForcedEndpointTimerId) {
+                      clearTimeout(state.pendingCommitForcedEndpointTimerId);
+                      state.pendingCommitForcedEndpointTimerId = null;
+                    }
+                    commitUserTurn(forceText, 'turn_policy');
+                    return;
+                  }
+
+                  if (state.pendingCommitForcedEndpointTimerId) {
+                    clearTimeout(state.pendingCommitForcedEndpointTimerId);
+                  }
+                  state.pendingCommitForcedEndpointTimerId = setTimeout(() => {
+                    state.pendingCommitForcedEndpointTimerId = null;
+                    if (state.pendingCommitText && !state.isSessionEnded && !state.sessionFinalizing) {
+                      console.log(JSON.stringify({ event: 'forced_endpoint_triggered', reason: 'timeout_no_eot', text: state.pendingCommitText.substring(0, 60) }));
+                      const forceText = state.pendingCommitText;
+                      state.pendingCommitText = '';
+                      state.pendingCommitCreatedAtMs = 0;
+                      state.pendingCommitCount = 0;
+                      commitUserTurn(forceText, 'turn_policy');
+                    }
+                  }, 1200);
+                }
+              };
+
               // FIX 1B: STT recency-gated Claude firing with deferred commit tracking
               // If STT activity occurred within 800ms, defer the Claude call
               // Deferred commits are CANCELED if student resumes speaking or new STT arrives
@@ -4583,10 +4670,12 @@ HONESTY INSTRUCTIONS:
                 const sttAge = clampSilenceDuration(rawSttAge, 'gatedFireClaude_sttAge');
                 if (state.lastSttActivityAt > 0 && sttAge < STT_ACTIVITY_RECENCY_MS) {
                   const deferMs = STT_ACTIVITY_RECENCY_MS - sttAge + 100;
+                  const classification = classifyDeferredText(transcript);
                   console.log(JSON.stringify({
                     event: 'deferred_commit_scheduled',
                     text: transcript.substring(0, 40),
                     deferMs,
+                    classification,
                     phase: state.phase,
                     sttAge: Math.round(sttAge),
                   }));
@@ -4601,34 +4690,19 @@ HONESTY INSTRUCTIONS:
                     const ageMs = now - state.deferredCommitStartedAtMs;
 
                     if (state.phase === 'SPEECH_DETECTED') {
-                      console.log(JSON.stringify({ event: 'deferred_commit_canceled', reason: 'student_speaking', text: transcript.substring(0, 40), ageMs, phase: state.phase }));
-                      if (transcript && state.continuationPendingText) {
-                        state.continuationPendingText = (state.continuationPendingText + ' ' + transcript).trim();
-                      } else if (transcript) {
-                        state.continuationPendingText = transcript;
-                      }
+                      storeCanceledDeferredText(transcript, 'student_speaking');
                       state.deferredCommitText = '';
                       state.deferredCommitStartedAtMs = 0;
                       return;
                     }
                     if (state.lastSttActivityAt > state.deferredCommitStartedAtMs) {
-                      console.log(JSON.stringify({ event: 'deferred_commit_canceled', reason: 'new_stt_words', text: transcript.substring(0, 40), ageMs, lastSttAge: now - state.lastSttActivityAt }));
-                      if (transcript && state.continuationPendingText) {
-                        state.continuationPendingText = (state.continuationPendingText + ' ' + transcript).trim();
-                      } else if (transcript) {
-                        state.continuationPendingText = transcript;
-                      }
+                      storeCanceledDeferredText(transcript, 'new_stt_words');
                       state.deferredCommitText = '';
                       state.deferredCommitStartedAtMs = 0;
                       return;
                     }
                     if (state.lastSpeechDetectedAtMs > state.deferredCommitStartedAtMs) {
-                      console.log(JSON.stringify({ event: 'deferred_commit_canceled', reason: 'new_speech_detected', text: transcript.substring(0, 40), ageMs }));
-                      if (transcript && state.continuationPendingText) {
-                        state.continuationPendingText = (state.continuationPendingText + ' ' + transcript).trim();
-                      } else if (transcript) {
-                        state.continuationPendingText = transcript;
-                      }
+                      storeCanceledDeferredText(transcript, 'new_speech_detected');
                       state.deferredCommitText = '';
                       state.deferredCommitStartedAtMs = 0;
                       return;
@@ -4836,6 +4910,35 @@ HONESTY INSTRUCTIONS:
                   }
                   
                   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                  // P0 ANTI-SWALLOW: "Commit on next EOT" rule
+                  // If pendingCommitText exists and a new valid EOT arrives,
+                  // merge and commit immediately — prevents infinite deferral loop
+                  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                  if (state.pendingCommitText && endOfTurn && text) {
+                    const pendingDropCheck = shouldDropTranscript(text, state);
+                    if (!pendingDropCheck.drop) {
+                      const mergedTurn = (state.pendingCommitText + ' ' + text).trim();
+                      console.log(JSON.stringify({ event: 'pending_commit_committed', mode: 'next_eot', mergedWithNewText: true, text: mergedTurn.substring(0, 60), pendingAge: Date.now() - state.pendingCommitCreatedAtMs }));
+                      state.pendingCommitText = '';
+                      state.pendingCommitCreatedAtMs = 0;
+                      state.pendingCommitCount = 0;
+                      if (state.pendingCommitForcedEndpointTimerId) {
+                        clearTimeout(state.pendingCommitForcedEndpointTimerId);
+                        state.pendingCommitForcedEndpointTimerId = null;
+                      }
+                      if (state.continuationTimerId) {
+                        clearTimeout(state.continuationTimerId);
+                        state.continuationTimerId = undefined;
+                      }
+                      state.continuationPendingText = '';
+                      state.continuationSegmentCount = 0;
+                      state.continuationCandidateEotAt = undefined;
+                      commitUserTurn(mergedTurn, 'eot');
+                      return;
+                    }
+                  }
+
+                  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                   // CONTINUATION GUARD: Two-phase commit for user turns
                   // Treats end_of_turn as candidate, waits for grace window
                   // before committing to Claude (prevents split-thought double responses)
@@ -4932,10 +5035,22 @@ HONESTY INSTRUCTIONS:
                     
                     state.continuationTimerId = setTimeout(() => {
                       state.continuationTimerId = undefined;
-                      const finalText = state.continuationPendingText;
+                      let finalText = state.continuationPendingText;
                       const segmentCount = state.continuationSegmentCount;
                       const candidateAt = state.continuationCandidateEotAt || Date.now();
                       
+                      if (state.pendingCommitText) {
+                        finalText = (state.pendingCommitText + ' ' + finalText).trim();
+                        console.log(JSON.stringify({ event: 'pending_commit_committed', mode: 'continuation_guard_fired', mergedWithNewText: true, text: finalText.substring(0, 60) }));
+                        state.pendingCommitText = '';
+                        state.pendingCommitCreatedAtMs = 0;
+                        state.pendingCommitCount = 0;
+                        if (state.pendingCommitForcedEndpointTimerId) {
+                          clearTimeout(state.pendingCommitForcedEndpointTimerId);
+                          state.pendingCommitForcedEndpointTimerId = null;
+                        }
+                      }
+
                       state.continuationPendingText = '';
                       state.continuationSegmentCount = 0;
                       state.continuationCandidateEotAt = undefined;
@@ -5913,11 +6028,37 @@ HONESTY INSTRUCTIONS:
                     state.deferredCommitStartedAtMs = 0;
                     state.deferredCommitSttActivityAtMs = 0;
                     console.log(`[TurnPolicy] deferred_commit_timer_cleared reason=new_speech_detected text="${deferredText.substring(0, 40)}"`);
-                    if (deferredText && state.continuationPendingText) {
-                      state.continuationPendingText = (state.continuationPendingText + ' ' + deferredText).trim();
-                      console.log(`[TurnPolicy] deferred_text_merged_to_continuation merged="${state.continuationPendingText.substring(0, 60)}"`);
-                    } else if (deferredText && !state.continuationPendingText) {
-                      state.continuationPendingText = deferredText;
+                    if (deferredText) {
+                      const vadDeferClass = classifyDeferredText(deferredText);
+                      if (vadDeferClass === 'HEDGE') {
+                        if (state.continuationPendingText) {
+                          state.continuationPendingText = (state.continuationPendingText + ' ' + deferredText).trim();
+                        } else {
+                          state.continuationPendingText = deferredText;
+                        }
+                        console.log(JSON.stringify({ event: 'deferred_commit_canceled', reason: 'vad_speech_onset', classification: vadDeferClass, action: 'merge_to_cont', text: deferredText.substring(0, 40) }));
+                      } else {
+                        if (state.pendingCommitText) {
+                          state.pendingCommitText = (state.pendingCommitText + ' ' + deferredText).trim();
+                        } else {
+                          state.pendingCommitText = deferredText;
+                        }
+                        state.pendingCommitCreatedAtMs = state.pendingCommitCreatedAtMs || Date.now();
+                        state.pendingCommitCount++;
+                        console.log(JSON.stringify({ event: 'deferred_commit_canceled', reason: 'vad_speech_onset', classification: vadDeferClass, action: 'store_pending', text: deferredText.substring(0, 40), pendingCommitCount: state.pendingCommitCount }));
+                        if (state.pendingCommitCount >= 2 && !state.isSessionEnded && !state.sessionFinalizing) {
+                          console.log(JSON.stringify({ event: 'pending_commit_force_commit', count: state.pendingCommitCount, text: state.pendingCommitText.substring(0, 60), reason: 'cap_reached' }));
+                          const forceText = state.pendingCommitText;
+                          state.pendingCommitText = '';
+                          state.pendingCommitCreatedAtMs = 0;
+                          state.pendingCommitCount = 0;
+                          if (state.pendingCommitForcedEndpointTimerId) {
+                            clearTimeout(state.pendingCommitForcedEndpointTimerId);
+                            state.pendingCommitForcedEndpointTimerId = null;
+                          }
+                          commitUserTurn(forceText, 'turn_policy');
+                        }
+                      }
                     }
                   }
                   if (state.phase === 'LISTENING') {
