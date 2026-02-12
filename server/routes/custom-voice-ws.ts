@@ -89,8 +89,6 @@ import {
   getNoiseFloor,
   getSpeechThreshold,
   resetSpeechDetection,
-  activateMicroBufferWindow,
-  MICRO_BUFFER_WINDOW_MS,
   isInGracePeriod,
   validateTranscript,
   validateTranscriptForBargeIn,
@@ -142,17 +140,6 @@ function getAssemblyAIBaseUrl(): string {
 type TurnCommitMode = 'first_eot' | 'formatted';
 const ASSEMBLYAI_TURN_COMMIT_MODE: TurnCommitMode = 
   (process.env.ASSEMBLYAI_TURN_COMMIT_MODE as TurnCommitMode) || 'first_eot';
-
-// P0.0: TURN_COMMIT_MODE kill-switch — "safe" disables deferred/continuation merge logic
-// "safe" = never defer, never store pending, commit at EOT or VAD forced endpoint
-// "experimental" = full deferred commit + continuation merge logic
-type SafetyCommitMode = 'safe' | 'experimental';
-const TURN_COMMIT_MODE: SafetyCommitMode =
-  (process.env.TURN_COMMIT_MODE as SafetyCommitMode) || 'safe';
-console.log(`[P0.0] TURN_COMMIT_MODE=${TURN_COMMIT_MODE} (safe=never-swallow, experimental=deferred+merge)`);
-
-// P0.1: VAD forced endpoint — commits within VAD_FORCED_ENDPOINT_MS after speech_ended
-const VAD_FORCED_ENDPOINT_MS = 1200;
 
 // E) Optional inactivity timeout (5-3600 seconds)
 function getInactivityTimeoutSec(): number | null {
@@ -256,29 +243,12 @@ const HEDGE_PHRASES = [
   "um", "uh", "wait", "hold on", "let me think", "one second",
   "hmm", "hm", "er", "erm", "well", "so", "like",
   "i'm not sure", "im not sure", "i am not sure",
-  "let me see", "let's see", "lets see", "give me a second",
-  "hang on", "okay so", "ok so",
-  "uno", "este",
+  "let me see", "give me a second", "uno", "este",
 ];
 
 function isHedgePhrase(text: string): boolean {
   const lower = text.toLowerCase().trim();
   return HEDGE_PHRASES.some(phrase => lower.endsWith(phrase) || lower === phrase);
-}
-
-type DeferredTextClass = 'HEDGE' | 'COMPLETE' | 'UNKNOWN';
-
-function classifyDeferredText(text: string): DeferredTextClass {
-  const trimmed = (text || '').trim();
-  if (!trimmed) return 'UNKNOWN';
-  const lower = trimmed.toLowerCase();
-  const words = trimmed.split(/\s+/).filter(w => w.length > 0);
-  const wordCount = words.length;
-  if (isHedgePhrase(trimmed)) return 'HEDGE';
-  if (wordCount <= 3 && HEDGE_PHRASES.some(p => lower === p || lower.startsWith(p))) return 'HEDGE';
-  if (wordCount >= 4) return 'COMPLETE';
-  if (/[.!?]$/.test(trimmed)) return 'COMPLETE';
-  return 'UNKNOWN';
 }
 
 // FIX 3: Conversational tail grace extension for short polite lead-ins
@@ -640,17 +610,15 @@ function createAssemblyAIConnection(
     }
     
     // I) Add keyterms_prompt for improved transcription accuracy
-    // keyterms_prompt is a JSON string array — URLSearchParams handles URL-encoding
+    // keyterms_prompt must be a URL-encoded JSON string array per AssemblyAI v3 spec
     if (keytermsUrlEncoded) {
       urlParams.set('keyterms_prompt', keytermsUrlEncoded);
-      console.log(`[AssemblyAI v3] 📚 Keyterms prompt set (${keytermsUrlEncoded.length} chars, JSON array)`);
+      console.log(`[AssemblyAI v3] 📚 Keyterms prompt set (${keytermsUrlEncoded.length} chars encoded)`);
     }
     
     // A) Use routed base URL
     const wsUrl = `${baseUrl}/v3/ws?${urlParams.toString()}`;
-    const sanitizedUrl = wsUrl.replace(/authorization=[^&]+/, 'authorization=REDACTED');
-    console.log('[AssemblyAI v3] 🌐 Connecting to:', sanitizedUrl);
-    console.log(`[AssemblyAI v3] URL params: keyterms=${urlParams.has('keyterms_prompt')} sampleRate=${urlParams.get('sample_rate')} formatTurns=${urlParams.get('format_turns')} encoding=${urlParams.get('encoding')}`);
+    console.log('[AssemblyAI v3] 🌐 Connecting to:', wsUrl);
     console.log('[AssemblyAI v3] Speech model:', speechModel);
     console.log('[AssemblyAI v3] Turn commit mode:', ASSEMBLYAI_TURN_COMMIT_MODE);
     
@@ -770,21 +738,12 @@ function createAssemblyAIConnection(
           commitMode: ASSEMBLYAI_TURN_COMMIT_MODE,
         });
 
-        // C2-EARLY) For EOT messages, check if this turn was already committed
-        // BEFORE calling onPartialUpdate/creditSttActivity — the formatted echo
-        // of a committed turn must NOT update lastSttActivityAt or it poisons
-        // the deferred commit timer, causing Claude to never fire.
-        const isAlreadyCommitted = endOfTurn && (
-          (turnOrder !== undefined && state.committedTurnOrders.has(turnOrder)) ||
-          (turnOrder === undefined && state.currentTurnCommitted)
-        );
-
         // C1) Partial handling - REPLACE hypothesis only (never append)
         // Partials NEVER trigger Claude
         if (text) {
           const prevTranscript = confirmedTranscript;
           confirmedTranscript = text;
-          if (onPartialUpdate && !isAlreadyCommitted) {
+          if (onPartialUpdate) {
             onPartialUpdate(text, prevTranscript);
           }
         }
@@ -1129,8 +1088,8 @@ const GRADE_BAND_TIMING: Record<string, GradeBandTimingConfig> = {
   'K2': { bargeInDebounceMs: 600, bargeInDecayMs: 300, bargeInCooldownMs: 850, shortBurstMinMs: 300, postAudioBufferMs: 2000, minMsAfterAudioStartForBargeIn: 800, continuationGraceMs: 800, continuationHedgeGraceMs: 1800, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 4, bargeInConfirmDurationMs: 600 },
   'G3-5': { bargeInDebounceMs: 500, bargeInDecayMs: 260, bargeInCooldownMs: 750, shortBurstMinMs: 260, postAudioBufferMs: 1800, minMsAfterAudioStartForBargeIn: 600, continuationGraceMs: 700, continuationHedgeGraceMs: 1600, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 500 },
   'G6-8': { bargeInDebounceMs: 400, bargeInDecayMs: 200, bargeInCooldownMs: 650, shortBurstMinMs: 220, postAudioBufferMs: 1500, minMsAfterAudioStartForBargeIn: 500, continuationGraceMs: 600, continuationHedgeGraceMs: 1500, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 400 },
-  'G9-12': { bargeInDebounceMs: 400, bargeInDecayMs: 200, bargeInCooldownMs: 650, shortBurstMinMs: 220, postAudioBufferMs: 1500, minMsAfterAudioStartForBargeIn: 500, continuationGraceMs: 600, continuationHedgeGraceMs: 1500, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 400 },
-  'ADV': { bargeInDebounceMs: 400, bargeInDecayMs: 200, bargeInCooldownMs: 650, shortBurstMinMs: 220, postAudioBufferMs: 1500, minMsAfterAudioStartForBargeIn: 500, continuationGraceMs: 600, continuationHedgeGraceMs: 1500, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 400 },
+  'G9-12': { bargeInDebounceMs: 350, bargeInDecayMs: 180, bargeInCooldownMs: 600, shortBurstMinMs: 200, postAudioBufferMs: 1400, minMsAfterAudioStartForBargeIn: 400, continuationGraceMs: 550, continuationHedgeGraceMs: 1400, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 350 },
+  'ADV': { bargeInDebounceMs: 350, bargeInDecayMs: 160, bargeInCooldownMs: 550, shortBurstMinMs: 180, postAudioBufferMs: 1200, minMsAfterAudioStartForBargeIn: 350, continuationGraceMs: 550, continuationHedgeGraceMs: 1400, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 350 },
 };
 const DEFAULT_GRADE_BAND_TIMING: GradeBandTimingConfig = GRADE_BAND_TIMING['G6-8'];
 
@@ -1330,24 +1289,6 @@ interface SessionState {
   sttSendFailureLoggedAt: number;
   sttSendFailureTotalDropped: number;
   sttSendFailureStartedAt: number;
-  // MICRO-UTTERANCE: Track speech onset/end for micro-burst detection
-  microSpeechOnsetAtMs: number;
-  microSpeechEndedAtMs: number;
-  microUtteranceProbeCount: number;
-  // DEFERRED COMMIT: Track deferred commit state for cancellation
-  deferredCommitTimerId: NodeJS.Timeout | null;
-  deferredCommitText: string;
-  deferredCommitStartedAtMs: number;
-  deferredCommitSttActivityAtMs: number;
-  lastSpeechDetectedAtMs: number;
-  // P0 ANTI-SWALLOW: Pending commit for complete sentences that were deferred
-  pendingCommitText: string;
-  pendingCommitCreatedAtMs: number;
-  pendingCommitCount: number;
-  pendingCommitForcedEndpointTimerId: NodeJS.Timeout | null;
-  // P0.1: VAD forced endpoint timer — fires commitUserTurn after speech_ended if no commit within VAD_FORCED_ENDPOINT_MS
-  vadForcedEndpointTimerId: NodeJS.Timeout | null;
-  vadForcedEndpointText: string;
 }
 
 // Helper to send typed WebSocket events
@@ -1356,16 +1297,6 @@ function sendWsEvent(ws: WebSocket, type: string, payload: Record<string, unknow
     ws.send(JSON.stringify({ type, ...payload }));
     console.log(`[WS Event] ${type}`, payload.turnId || '');
   }
-}
-
-// P0.2: Sanity clamp for silence duration calculations (5 minutes max)
-const SILENCE_DURATION_MAX_MS = 300000;
-function clampSilenceDuration(rawMs: number, label?: string): number {
-  if (rawMs > SILENCE_DURATION_MAX_MS) {
-    console.log(JSON.stringify({ event: 'silence_duration_sanity_clamp', raw: rawMs, clamped: 0, label: label || 'unknown' }));
-    return 0;
-  }
-  return rawMs;
 }
 
 // FIX 1A: STT Activity tracking - credit speech activity from transcript growth
@@ -1766,32 +1697,6 @@ async function finalizeSession(
     state.continuationTimerId = undefined;
     state.continuationPendingText = '';
     console.log(`[Finalize] 🧹 Cleared continuation guard timer (reason: ${reason})`);
-  }
-  
-  // P0 ANTI-SWALLOW: Clear pending commit
-  if (state.pendingCommitForcedEndpointTimerId) {
-    clearTimeout(state.pendingCommitForcedEndpointTimerId);
-    state.pendingCommitForcedEndpointTimerId = null;
-  }
-  state.pendingCommitText = '';
-  state.pendingCommitCreatedAtMs = 0;
-  state.pendingCommitCount = 0;
-
-  // P0.1: Clear VAD forced endpoint timer
-  if (state.vadForcedEndpointTimerId) {
-    clearTimeout(state.vadForcedEndpointTimerId);
-    state.vadForcedEndpointTimerId = null;
-    state.vadForcedEndpointText = '';
-    console.log(`[Finalize] 🧹 Cleared VAD forced endpoint timer (reason: ${reason})`);
-  }
-
-  // DEFERRED COMMIT: Clear any pending deferred commit
-  if (state.deferredCommitTimerId) {
-    clearTimeout(state.deferredCommitTimerId);
-    state.deferredCommitTimerId = null;
-    state.deferredCommitText = '';
-    state.deferredCommitStartedAtMs = 0;
-    console.log(`[Finalize] 🧹 Cleared deferred commit timer (reason: ${reason})`);
   }
 
   // K2 TURN POLICY: Clear stall escape timer
@@ -2384,20 +2289,6 @@ export function setupCustomVoiceWebSocket(server: Server) {
       sttSendFailureLoggedAt: 0,
       sttSendFailureTotalDropped: 0,
       sttSendFailureStartedAt: 0,
-      microSpeechOnsetAtMs: 0,
-      microSpeechEndedAtMs: 0,
-      microUtteranceProbeCount: 0,
-      deferredCommitTimerId: null,
-      deferredCommitText: '',
-      deferredCommitStartedAtMs: 0,
-      deferredCommitSttActivityAtMs: 0,
-      lastSpeechDetectedAtMs: 0,
-      pendingCommitText: '',
-      pendingCommitCreatedAtMs: 0,
-      pendingCommitCount: 0,
-      pendingCommitForcedEndpointTimerId: null,
-      vadForcedEndpointTimerId: null,
-      vadForcedEndpointText: '',
     };
 
     // FIX #3: Auto-persist every 10 seconds
@@ -2634,7 +2525,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
     // Guarantees: NO silent drops. Every turn is either processed or queued.
     // Emits immediate client feedback (tutor_thinking or queued_user_turn).
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    function commitUserTurn(text: string, source: 'eot' | 'manual' | 'continuation_guard' | 'turn_policy' | 'watchdog' | 'vad_forced_endpoint' = 'eot') {
+    function commitUserTurn(text: string, source: 'eot' | 'manual' | 'continuation_guard' | 'turn_policy' | 'watchdog' = 'eot') {
       // P0: Use shouldDropTranscript — allows "no", "ok", "I", "2" etc.
       const dropCheck = shouldDropTranscript(text, state);
       if (dropCheck.drop) {
@@ -2642,18 +2533,9 @@ export function setupCustomVoiceWebSocket(server: Server) {
         return;
       }
 
-      console.log(`[TurnCommit] text="${text.substring(0, 60)}" source=${source} isProcessing=${state.isProcessing} queueLen=${state.transcriptQueue.length} phase=${state.phase} mode=${TURN_COMMIT_MODE}`);
-
-      // P0.1: Clear VAD forced endpoint timer on any commit (prevents double-commit)
-      if (state.vadForcedEndpointTimerId) {
-        clearTimeout(state.vadForcedEndpointTimerId);
-        state.vadForcedEndpointTimerId = null;
-        state.vadForcedEndpointText = '';
-      }
+      console.log(`[TurnCommit] text="${text.substring(0, 60)}" source=${source} isProcessing=${state.isProcessing} queueLen=${state.transcriptQueue.length} phase=${state.phase}`);
 
       state.lastTurnCommittedAtMs = Date.now();
-      state.microSpeechOnsetAtMs = 0;
-      state.microSpeechEndedAtMs = 0;
       cancelBargeInCandidate(state, `turn_committed_${source}`, ws);
 
       // P1.5: Phase discipline — queue only if tutor is speaking or thinking
@@ -4638,128 +4520,18 @@ HONESTY INSTRUCTIONS:
                 }
               };
               
-              // P0 ANTI-SWALLOW: Route canceled deferred text based on classification
-              // HEDGE → merge into continuationPendingText (existing behavior)
-              // COMPLETE/UNKNOWN → store as pendingCommitText (commits on next EOT or forced endpoint)
-              // P0.0: In SAFE mode, this function is a no-op (deferred commits don't happen)
-              const storeCanceledDeferredText = (text: string, reason: string) => {
-                if (!text) return;
-                if (TURN_COMMIT_MODE === 'safe') {
-                  console.log(JSON.stringify({ event: 'store_canceled_skipped_safe_mode', reason, text: text.substring(0, 40) }));
-                  return;
-                }
-                const classification = classifyDeferredText(text);
-                if (classification === 'HEDGE') {
-                  if (state.continuationPendingText) {
-                    state.continuationPendingText = (state.continuationPendingText + ' ' + text).trim();
-                  } else {
-                    state.continuationPendingText = text;
-                  }
-                  console.log(JSON.stringify({ event: 'deferred_commit_canceled', reason, classification, action: 'merge_to_cont', text: text.substring(0, 40) }));
-                } else {
-                  if (state.pendingCommitText) {
-                    state.pendingCommitText = (state.pendingCommitText + ' ' + text).trim();
-                  } else {
-                    state.pendingCommitText = text;
-                  }
-                  state.pendingCommitCreatedAtMs = state.pendingCommitCreatedAtMs || Date.now();
-                  state.pendingCommitCount++;
-                  console.log(JSON.stringify({ event: 'deferred_commit_canceled', reason, classification, action: 'store_pending', text: text.substring(0, 40), pendingCommitCount: state.pendingCommitCount }));
-
-                  if (state.pendingCommitCount >= 2) {
-                    console.log(JSON.stringify({ event: 'pending_commit_force_commit', count: state.pendingCommitCount, text: state.pendingCommitText.substring(0, 60), reason: 'cap_reached' }));
-                    const forceText = state.pendingCommitText;
-                    state.pendingCommitText = '';
-                    state.pendingCommitCreatedAtMs = 0;
-                    state.pendingCommitCount = 0;
-                    if (state.pendingCommitForcedEndpointTimerId) {
-                      clearTimeout(state.pendingCommitForcedEndpointTimerId);
-                      state.pendingCommitForcedEndpointTimerId = null;
-                    }
-                    commitUserTurn(forceText, 'turn_policy');
-                    return;
-                  }
-
-                  if (state.pendingCommitForcedEndpointTimerId) {
-                    clearTimeout(state.pendingCommitForcedEndpointTimerId);
-                  }
-                  state.pendingCommitForcedEndpointTimerId = setTimeout(() => {
-                    state.pendingCommitForcedEndpointTimerId = null;
-                    if (state.pendingCommitText && !state.isSessionEnded && !state.sessionFinalizing) {
-                      console.log(JSON.stringify({ event: 'forced_endpoint_triggered', reason: 'timeout_no_eot', text: state.pendingCommitText.substring(0, 60) }));
-                      const forceText = state.pendingCommitText;
-                      state.pendingCommitText = '';
-                      state.pendingCommitCreatedAtMs = 0;
-                      state.pendingCommitCount = 0;
-                      commitUserTurn(forceText, 'turn_policy');
-                    }
-                  }, 1200);
-                }
-              };
-
-              // FIX 1B: STT recency-gated Claude firing with deferred commit tracking
+              // FIX 1B: STT recency-gated Claude firing
               // If STT activity occurred within 800ms, defer the Claude call
-              // Deferred commits are CANCELED if student resumes speaking or new STT arrives
-              // P0.0: In SAFE mode, deferral is completely bypassed — always fires immediately
               let sttDeferTimerId: NodeJS.Timeout | undefined;
               const gatedFireClaude = (transcript: string, stallPrompt?: string) => {
-                // P0.0 SAFE MODE: Skip all deferral logic — commit immediately
-                if (TURN_COMMIT_MODE === 'safe') {
-                  fireClaudeWithPolicy(transcript, stallPrompt);
-                  return;
-                }
-
-                const rawSttAge = Date.now() - state.lastSttActivityAt;
-                const sttAge = clampSilenceDuration(rawSttAge, 'gatedFireClaude_sttAge');
+                const sttAge = Date.now() - state.lastSttActivityAt;
                 if (state.lastSttActivityAt > 0 && sttAge < STT_ACTIVITY_RECENCY_MS) {
                   const deferMs = STT_ACTIVITY_RECENCY_MS - sttAge + 100;
-                  const classification = classifyDeferredText(transcript);
-                  console.log(JSON.stringify({
-                    event: 'deferred_commit_scheduled',
-                    text: transcript.substring(0, 40),
-                    deferMs,
-                    classification,
-                    phase: state.phase,
-                    sttAge: Math.round(sttAge),
-                  }));
+                  console.log(`[TurnPolicy] suppressed_due_to_recent_stt_activity ageMs=${sttAge} deferMs=${deferMs}`);
                   if (sttDeferTimerId) clearTimeout(sttDeferTimerId);
-                  state.deferredCommitTimerId = null;
-                  state.deferredCommitText = transcript;
-                  state.deferredCommitStartedAtMs = Date.now();
-                  state.deferredCommitSttActivityAtMs = state.lastSttActivityAt;
                   sttDeferTimerId = setTimeout(() => {
                     sttDeferTimerId = undefined;
-                    const now = Date.now();
-                    const ageMs = now - state.deferredCommitStartedAtMs;
-
-                    if (state.phase === 'SPEECH_DETECTED') {
-                      storeCanceledDeferredText(transcript, 'student_speaking');
-                      state.deferredCommitText = '';
-                      state.deferredCommitStartedAtMs = 0;
-                      return;
-                    }
-                    if (state.lastSttActivityAt > state.deferredCommitStartedAtMs) {
-                      storeCanceledDeferredText(transcript, 'new_stt_words');
-                      state.deferredCommitText = '';
-                      state.deferredCommitStartedAtMs = 0;
-                      return;
-                    }
-                    if (state.lastSpeechDetectedAtMs > state.deferredCommitStartedAtMs) {
-                      storeCanceledDeferredText(transcript, 'new_speech_detected');
-                      state.deferredCommitText = '';
-                      state.deferredCommitStartedAtMs = 0;
-                      return;
-                    }
-                    if (state.sessionFinalizing || state.isSessionEnded) {
-                      console.log(JSON.stringify({ event: 'deferred_commit_canceled', reason: 'session_ended', text: transcript.substring(0, 40), ageMs }));
-                      state.deferredCommitText = '';
-                      state.deferredCommitStartedAtMs = 0;
-                      return;
-                    }
-                    state.deferredCommitText = '';
-                    state.deferredCommitStartedAtMs = 0;
-
-                    const recheckAge = clampSilenceDuration(Date.now() - state.lastSttActivityAt, 'deferred_recheck');
+                    const recheckAge = Date.now() - state.lastSttActivityAt;
                     if (recheckAge < STT_ACTIVITY_RECENCY_MS) {
                       console.log(`[TurnPolicy] still_active_after_defer recheckAgeMs=${recheckAge} - extending`);
                       gatedFireClaude(transcript, stallPrompt);
@@ -4767,7 +4539,6 @@ HONESTY INSTRUCTIONS:
                       fireClaudeWithPolicy(transcript, stallPrompt);
                     }
                   }, deferMs);
-                  state.deferredCommitTimerId = sttDeferTimerId;
                   return;
                 }
                 fireClaudeWithPolicy(transcript, stallPrompt);
@@ -4851,43 +4622,7 @@ HONESTY INSTRUCTIONS:
                   if (!transcriptValidation.isValid) {
                     logGhostTurnPrevention(state.sessionId || 'unknown', text, transcriptValidation);
                     console.log(`[GhostTurn] 🚫 Ignored transcript: "${text}" (${transcriptValidation.reason})`);
-                    return;
-                  }
-                  
-                  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                  // MICRO-UTTERANCE PROBE: Instrumentation for diagnosing short answer drops
-                  // Rate-limited: logs every utterance but JSON-compact for parsing
-                  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                  const noiseFloorNow = getNoiseFloor(state.noiseFloorState);
-                  const trimmedText = text.trim();
-                  const wordCount = trimmedText.split(/\s+/).filter((w: string) => w.length > 0).length;
-                  const isMicroUtterance = wordCount <= 2;
-                  const isQuick = isQuickAnswer(trimmedText);
-                  const speechDurMs = state.microSpeechOnsetAtMs > 0 && state.microSpeechEndedAtMs > state.microSpeechOnsetAtMs
-                    ? state.microSpeechEndedAtMs - state.microSpeechOnsetAtMs
-                    : (state.microSpeechOnsetAtMs > 0 ? Date.now() - state.microSpeechOnsetAtMs : -1);
-                  const isMicroBurst = state.microSpeechOnsetAtMs > 0 && state.microSpeechEndedAtMs > state.microSpeechOnsetAtMs
-                    && (state.microSpeechEndedAtMs - state.microSpeechOnsetAtMs) <= MICRO_BUFFER_WINDOW_MS;
-
-                  state.microUtteranceProbeCount++;
-                  if (isMicroUtterance || state.microUtteranceProbeCount % 10 === 0) {
-                    console.log(JSON.stringify({
-                      event: 'micro_utterance_probe',
-                      session_id: (state.sessionId || 'unknown').substring(0, 8),
-                      text: trimmedText.substring(0, 40),
-                      confidence: confidence.toFixed(2),
-                      end_of_turn: endOfTurn,
-                      word_count: wordCount,
-                      is_quick_answer: isQuick,
-                      is_micro_burst: isMicroBurst,
-                      speech_duration_ms: speechDurMs,
-                      noise_floor: noiseFloorNow.toFixed(4),
-                      rms: state.lastMeasuredRms.toFixed(4),
-                      is_speech: state.noiseFloorState.isSpeechActive,
-                      phase: state.phase,
-                      continuation_timer_active: !!state.continuationTimerId,
-                      micro_buffer_active: state.noiseFloorState.microBufferWindowUntil > Date.now(),
-                    }));
+                    return; // Don't process ghost turns
                   }
                   
                   // Check if we're in post-utterance grace period for merging
@@ -4953,35 +4688,6 @@ HONESTY INSTRUCTIONS:
                   }
                   
                   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                  // P0 ANTI-SWALLOW: "Commit on next EOT" rule
-                  // If pendingCommitText exists and a new valid EOT arrives,
-                  // merge and commit immediately — prevents infinite deferral loop
-                  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                  if (state.pendingCommitText && endOfTurn && text) {
-                    const pendingDropCheck = shouldDropTranscript(text, state);
-                    if (!pendingDropCheck.drop) {
-                      const mergedTurn = (state.pendingCommitText + ' ' + text).trim();
-                      console.log(JSON.stringify({ event: 'pending_commit_committed', mode: 'next_eot', mergedWithNewText: true, text: mergedTurn.substring(0, 60), pendingAge: Date.now() - state.pendingCommitCreatedAtMs }));
-                      state.pendingCommitText = '';
-                      state.pendingCommitCreatedAtMs = 0;
-                      state.pendingCommitCount = 0;
-                      if (state.pendingCommitForcedEndpointTimerId) {
-                        clearTimeout(state.pendingCommitForcedEndpointTimerId);
-                        state.pendingCommitForcedEndpointTimerId = null;
-                      }
-                      if (state.continuationTimerId) {
-                        clearTimeout(state.continuationTimerId);
-                        state.continuationTimerId = undefined;
-                      }
-                      state.continuationPendingText = '';
-                      state.continuationSegmentCount = 0;
-                      state.continuationCandidateEotAt = undefined;
-                      commitUserTurn(mergedTurn, 'eot');
-                      return;
-                    }
-                  }
-
-                  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                   // CONTINUATION GUARD: Two-phase commit for user turns
                   // Treats end_of_turn as candidate, waits for grace window
                   // before committing to Claude (prevents split-thought double responses)
@@ -5021,42 +4727,20 @@ HONESTY INSTRUCTIONS:
                     const conjEnding = endsWithConjunctionOrPreposition(pendingText);
                     const hedge = isHedgePhrase(pendingText);
 
-                    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                    // MICRO-UTTERANCE ASSIST: Fast-commit for confirmed micro-utterances
-                    // Quick answers + micro-bursts get 200ms grace (was 400ms)
-                    // Single-word lexical + final STT segment also get 200ms
-                    // Prevents "no" from being lost to slow continuation guard
-                    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                    const pendingWords = pendingText.trim().split(/\s+/).filter((w: string) => w.length > 0).length;
-                    const pendingDropCheck = shouldDropTranscript(pendingText, state);
-                    const isMicroAssist = !pendingDropCheck.drop && (isQuickAnswer(pendingText) || pendingWords === 1)
-                      && (endOfTurn || isMicroBurst);
-
                     let graceMs: number;
-                    let graceReason: string;
-                    if (isMicroAssist) {
-                      graceMs = 200;
-                      graceReason = 'micro_assist';
-                      console.log(`[MicroUtterance] assist_fast_commit text="${pendingText.substring(0, 20)}" graceMs=${graceMs} isMicroBurst=${isMicroBurst} endOfTurn=${endOfTurn}`);
-                    } else if (quickAnswer) {
+                    if (quickAnswer) {
                       graceMs = Math.min(contBandTiming.continuationGraceMs, 400);
-                      graceReason = 'quick_answer';
                       console.log(`[ContinuationGuard] quick_answer detected, graceMs=${graceMs}`);
                     } else if (hedge) {
-                      graceMs = Math.max(contBandTiming.continuationHedgeGraceMs, 1500);
-                      graceReason = 'hedge';
-                      console.log(`[ContinuationGuard] hedge_detected text="${pendingText.substring(0, 30)}" graceMs=${graceMs}`);
+                      graceMs = contBandTiming.continuationHedgeGraceMs;
                     } else if (conjEnding) {
                       graceMs = contBandTiming.continuationHedgeGraceMs;
-                      graceReason = 'conjunction';
                       console.log(`[ContinuationGuard] conjunction_ending detected, graceMs=${graceMs}`);
                     } else if (shortDecl) {
                       graceMs = contBandTiming.continuationGraceMs + 200;
-                      graceReason = 'short_declarative';
                       console.log(`[ContinuationGuard] short_declarative hold, graceMs=${graceMs}`);
                     } else {
                       graceMs = contBandTiming.continuationGraceMs;
-                      graceReason = 'default';
                     }
                     if (tailGraceExt > 0) {
                       graceMs += tailGraceExt;
@@ -5078,22 +4762,10 @@ HONESTY INSTRUCTIONS:
                     
                     state.continuationTimerId = setTimeout(() => {
                       state.continuationTimerId = undefined;
-                      let finalText = state.continuationPendingText;
+                      const finalText = state.continuationPendingText;
                       const segmentCount = state.continuationSegmentCount;
                       const candidateAt = state.continuationCandidateEotAt || Date.now();
                       
-                      if (state.pendingCommitText) {
-                        finalText = (state.pendingCommitText + ' ' + finalText).trim();
-                        console.log(JSON.stringify({ event: 'pending_commit_committed', mode: 'continuation_guard_fired', mergedWithNewText: true, text: finalText.substring(0, 60) }));
-                        state.pendingCommitText = '';
-                        state.pendingCommitCreatedAtMs = 0;
-                        state.pendingCommitCount = 0;
-                        if (state.pendingCommitForcedEndpointTimerId) {
-                          clearTimeout(state.pendingCommitForcedEndpointTimerId);
-                          state.pendingCommitForcedEndpointTimerId = null;
-                        }
-                      }
-
                       state.continuationPendingText = '';
                       state.continuationSegmentCount = 0;
                       state.continuationCandidateEotAt = undefined;
@@ -5116,13 +4788,11 @@ HONESTY INSTRUCTIONS:
                       const commitDurationMs = Date.now() - candidateAt;
                       
                       console.log(JSON.stringify({
-                        event: 'continuation_guard_fired',
+                        event: 'turn_committed',
                         session_id: state.sessionId || 'unknown',
-                        band: gradeBand,
                         chars: finalText.trim().length,
                         duration_ms: commitDurationMs,
                         grace_ms: graceMs,
-                        reason: graceReason,
                         hedge_detected: hedgeDetected,
                         segment_count: segmentCount,
                         text_preview: finalText.substring(0, 60),
@@ -5212,10 +4882,7 @@ HONESTY INSTRUCTIONS:
                   state.sttReconnectAttempts = 0;
                   state.sttDisconnectedSinceMs = null;
                   state.sttConnectionId++;
-                  const nowMs = Date.now();
-                  if (state.lastSttActivityAt === 0) state.lastSttActivityAt = nowMs;
-                  if (state.lastUserSpeechAtMs === 0) state.lastUserSpeechAtMs = nowMs;
-                  console.log(`[STT] connected sessionId=${state.sessionId} connectionId=${state.sttConnectionId} timestamps_init=true`);
+                  console.log(`[STT] connected sessionId=${state.sessionId} connectionId=${state.sttConnectionId}`);
                   sendWsEvent(ws, 'stt_status', { status: 'connected' });
                   if (state.sttAudioRingBuffer.length > 0) {
                     console.log(`[STT] flushing ${state.sttAudioRingBuffer.length} buffered audio chunks after reconnect`);
@@ -5334,19 +5001,9 @@ HONESTY INSTRUCTIONS:
                       console.log('[STT] reconnect fresh turn policy state');
                     }
                     
-                    const reconnectKeyterms = state.sttKeytermsDisabledForSession ? null : state.sttKeytermsUrlEncoded;
-                    console.log(`[STT] reconnect_params keyterms=${reconnectKeyterms ? 'yes' : 'disabled'} sampleRate=16000 formatTurns=true sessionId=${state.sessionId}`);
-                    
-                    let reconnectFirstMessageReceived = false;
-                    const reconnectOpenedAt = Date.now();
-                    
                     const { ws: newWs, state: newState } = createAssemblyAIConnection(
                       state.language,
                       (text, endOfTurn, confidence) => {
-                        if (!reconnectFirstMessageReceived) {
-                          reconnectFirstMessageReceived = true;
-                          console.log(`[STT] first_transcript_after_reconnect type=utterance hasText=${!!text} elapsedMs=${Date.now() - reconnectOpenedAt}`);
-                        }
                         console.log(`[AssemblyAI-Reconnect] 📝 Complete utterance (confidence: ${confidence.toFixed(2)}): "${text}"`);
                         state.lastAudioReceivedAt = Date.now();
                         
@@ -5400,33 +5057,14 @@ HONESTY INSTRUCTIONS:
                           state.sttAudioRingBuffer = [];
                         }
                         state.isReconnecting = false;
-                        
-                        const noMessageWatchdogMs = 10000;
-                        setTimeout(() => {
-                          if (!reconnectFirstMessageReceived && state.sttConnected && !state.isSessionEnded) {
-                            console.warn(`[STT] WARNING: no_messages_after_reconnect elapsedMs=${Date.now() - reconnectOpenedAt} sessionId=${state.sessionId}`);
-                          }
-                        }, noMessageWatchdogMs);
                       },
                       () => {
-                        if (!reconnectFirstMessageReceived) {
-                          reconnectFirstMessageReceived = true;
-                          console.log(`[STT] first_message_after_reconnect type=any elapsedMs=${Date.now() - reconnectOpenedAt}`);
-                        }
                         state.sttLastMessageAtMs = Date.now();
                         state.sttConsecutiveSendFailures = 0;
                       },
-                      reconnectKeyterms
+                      // P0.5: Reconnect preserves keyterms when valid, omits when disabled
+                      state.sttKeytermsDisabledForSession ? null : state.sttKeytermsUrlEncoded
                     );
-                    
-                    newWs.on('close', (code: number, reason: Buffer) => {
-                      console.log(`[STT] reconnected_ws_closed code=${code} reason=${reason?.toString() || 'none'} sessionId=${state.sessionId}`);
-                      handleSttDisconnect(code, reason?.toString());
-                    });
-                    newWs.on('error', (error: Error) => {
-                      console.error(`[STT] reconnected_ws_error: ${error.message} sessionId=${state.sessionId}`);
-                      handleSttDisconnect(undefined, error.message);
-                    });
                     
                     if (state.assemblyAIWs && state.assemblyAIWs.readyState === WebSocket.OPEN) {
                       try { state.assemblyAIWs.close(); } catch (_e) {}
@@ -6060,117 +5698,15 @@ HONESTY INSTRUCTIONS:
                   ws.send(JSON.stringify({ type: "speech_detected" }));
                   state.lastSpeechNotificationSent = true;
                   state.lastUserSpeechAtMs = Date.now();
-                  state.lastSpeechDetectedAtMs = Date.now();
-                  state.microSpeechOnsetAtMs = Date.now();
-                  activateMicroBufferWindow(state.noiseFloorState);
-
-                  // P0.1: Cancel VAD forced endpoint on new speech (user is still talking)
-                  if (state.vadForcedEndpointTimerId) {
-                    clearTimeout(state.vadForcedEndpointTimerId);
-                    state.vadForcedEndpointTimerId = null;
-                    state.vadForcedEndpointText = '';
-                  }
-
-                  if (state.deferredCommitTimerId) {
-                    clearTimeout(state.deferredCommitTimerId);
-                    const deferredText = state.deferredCommitText;
-                    state.deferredCommitTimerId = null;
-                    state.deferredCommitText = '';
-                    state.deferredCommitStartedAtMs = 0;
-                    state.deferredCommitSttActivityAtMs = 0;
-                    console.log(`[TurnPolicy] deferred_commit_timer_cleared reason=new_speech_detected text="${deferredText.substring(0, 40)}" mode=${TURN_COMMIT_MODE}`);
-
-                    // P0.0/P0.2: In SAFE mode, do NOT store/merge deferred text — just discard
-                    // The text will be re-accumulated via normal STT flow and committed at EOT or VAD forced endpoint
-                    if (TURN_COMMIT_MODE === 'experimental' && deferredText) {
-                      const vadDeferClass = classifyDeferredText(deferredText);
-                      if (vadDeferClass === 'HEDGE') {
-                        if (state.continuationPendingText) {
-                          state.continuationPendingText = (state.continuationPendingText + ' ' + deferredText).trim();
-                        } else {
-                          state.continuationPendingText = deferredText;
-                        }
-                        console.log(JSON.stringify({ event: 'deferred_commit_canceled', reason: 'vad_speech_onset', classification: vadDeferClass, action: 'merge_to_cont', text: deferredText.substring(0, 40) }));
-                      } else {
-                        if (state.pendingCommitText) {
-                          state.pendingCommitText = (state.pendingCommitText + ' ' + deferredText).trim();
-                        } else {
-                          state.pendingCommitText = deferredText;
-                        }
-                        state.pendingCommitCreatedAtMs = state.pendingCommitCreatedAtMs || Date.now();
-                        state.pendingCommitCount++;
-                        console.log(JSON.stringify({ event: 'deferred_commit_canceled', reason: 'vad_speech_onset', classification: vadDeferClass, action: 'store_pending', text: deferredText.substring(0, 40), pendingCommitCount: state.pendingCommitCount }));
-                        if (state.pendingCommitCount >= 2 && !state.isSessionEnded && !state.sessionFinalizing) {
-                          console.log(JSON.stringify({ event: 'pending_commit_force_commit', count: state.pendingCommitCount, text: state.pendingCommitText.substring(0, 60), reason: 'cap_reached' }));
-                          const forceText = state.pendingCommitText;
-                          state.pendingCommitText = '';
-                          state.pendingCommitCreatedAtMs = 0;
-                          state.pendingCommitCount = 0;
-                          if (state.pendingCommitForcedEndpointTimerId) {
-                            clearTimeout(state.pendingCommitForcedEndpointTimerId);
-                            state.pendingCommitForcedEndpointTimerId = null;
-                          }
-                          commitUserTurn(forceText, 'turn_policy');
-                        }
-                      }
-                    }
-                  }
                   if (state.phase === 'LISTENING') {
                     setPhase(state, 'SPEECH_DETECTED', 'vad_speech_onset', ws);
                   }
                 } else if (!speechDetection.isSpeech && state.lastSpeechNotificationSent) {
                   state.lastSpeechNotificationSent = false;
-                  state.microSpeechEndedAtMs = Date.now();
                   ws.send(JSON.stringify({ type: "speech_ended" }));
                   cancelBargeInCandidate(state, 'speech_ended', ws);
                   if (state.phase === 'SPEECH_DETECTED') {
                     setPhase(state, 'LISTENING', 'vad_speech_ended', ws);
-                  }
-
-                  // P0.1: VAD forced endpoint — start timer to commit accumulated text
-                  // If no commit happens within VAD_FORCED_ENDPOINT_MS, force-commit whatever we have
-                  // This bypasses continuation guard and deferred commit logic entirely
-                  if (!state.vadForcedEndpointTimerId && !state.isSessionEnded && !state.sessionFinalizing) {
-                    const accumulatedText = (state.continuationPendingText || state.lastAccumulatedTranscript || '').trim();
-                    const pendingText = state.pendingCommitText ? (state.pendingCommitText + ' ' + accumulatedText).trim() : accumulatedText;
-                    if (pendingText) {
-                      state.vadForcedEndpointText = pendingText;
-                      const speechEndedAtMs = Date.now();
-                      state.vadForcedEndpointTimerId = setTimeout(() => {
-                        state.vadForcedEndpointTimerId = null;
-                        if (state.isSessionEnded || state.sessionFinalizing) return;
-                        const textToCommit = state.vadForcedEndpointText;
-                        state.vadForcedEndpointText = '';
-                        if (!textToCommit) return;
-                        const ageSinceSpeechEnd = Date.now() - speechEndedAtMs;
-                        const words = textToCommit.trim().split(/\s+/).filter((w: string) => w.length > 0).length;
-                        console.log(JSON.stringify({ event: 'vad_forced_endpoint', textLen: textToCommit.length, words, ageMsSinceSpeechEnd: ageSinceSpeechEnd, mode: TURN_COMMIT_MODE }));
-                        // Clear continuation state to prevent double-commit
-                        if (state.continuationTimerId) {
-                          clearTimeout(state.continuationTimerId);
-                          state.continuationTimerId = undefined;
-                        }
-                        state.continuationPendingText = '';
-                        state.continuationSegmentCount = 0;
-                        state.continuationCandidateEotAt = undefined;
-                        // Clear pending commit state
-                        state.pendingCommitText = '';
-                        state.pendingCommitCreatedAtMs = 0;
-                        state.pendingCommitCount = 0;
-                        if (state.pendingCommitForcedEndpointTimerId) {
-                          clearTimeout(state.pendingCommitForcedEndpointTimerId);
-                          state.pendingCommitForcedEndpointTimerId = null;
-                        }
-                        // Clear deferred commit state
-                        if (state.deferredCommitTimerId) {
-                          clearTimeout(state.deferredCommitTimerId);
-                          state.deferredCommitTimerId = null;
-                          state.deferredCommitText = '';
-                          state.deferredCommitStartedAtMs = 0;
-                        }
-                        commitUserTurn(textToCommit, 'vad_forced_endpoint');
-                      }, VAD_FORCED_ENDPOINT_MS);
-                    }
                   }
                 }
                 

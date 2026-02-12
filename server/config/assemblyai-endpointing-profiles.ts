@@ -24,12 +24,12 @@ export const ENDPOINTING_PROFILES: Record<BandName, EndpointingProfile> = {
   },
   HIGH: {
     end_of_turn_confidence_threshold: 0.50,
-    min_end_of_turn_silence_when_confident: 900,
+    min_end_of_turn_silence_when_confident: 800,
     max_turn_silence: 5000,
   },
   COLLEGE: {
     end_of_turn_confidence_threshold: 0.50,
-    min_end_of_turn_silence_when_confident: 900,
+    min_end_of_turn_silence_when_confident: 800,
     max_turn_silence: 5000,
   },
 };
@@ -195,5 +195,5 @@ export function getKeytermsPrompt(subject?: string): string | null {
 export function getKeytermsForUrl(opts: { subject?: string; gradeBand?: BandName; studentName?: string }): string | null {
   const terms = getSessionKeyterms(opts);
   if (terms.length === 0) return null;
-  return JSON.stringify(terms);
+  return encodeURIComponent(JSON.stringify(terms));
 }

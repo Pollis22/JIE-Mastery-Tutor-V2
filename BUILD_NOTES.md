@@ -1,12 +1,12 @@
 # JIE Mastery AI Tutor - Build Notes & Latest Updates
 
-**Last Updated:** February 12, 2026  
+**Last Updated:** November 14, 2025  
 **Platform Status:** Production-Ready  
 **Deployment Target:** Replit Autoscale
 
 ---
 
-## Table of Contents
+## 📋 Table of Contents
 
 1. [Recent Updates & Fixes](#recent-updates--fixes)
 2. [Voice Technology Stack](#voice-technology-stack)
@@ -20,110 +20,75 @@
 
 ---
 
-## Recent Updates & Fixes
+## 🆕 Recent Updates & Fixes
 
-### **February 12, 2026 - Voice Pipeline P0 Hardening**
+### **November 14, 2025 - Voice Pipeline & Teaching Method Updates**
 
-#### **1. Deferred Commit Anti-Swallow System**
-- **Problem:** Complete student sentences were getting trapped in the continuation buffer and never committed to Claude, causing the tutor to "ignore" what the student said
-- **Solution:** Implemented `classifyDeferredText()` system with three-way classification:
-  - **HEDGE** text ("let's see", "um", etc.) merges safely into continuation buffer
-  - **COMPLETE** text (4+ words or sentence punctuation) stores as `pendingCommitText`
-  - **UNKNOWN** text treated as COMPLETE for safety
-- **Commit guarantees:**
-  - "Commit on next EOT" rule: pending text merges with new speech at next endpoint
-  - 1200ms forced endpoint timer ensures no text waits indefinitely
-  - Hard cap (pendingCommitCount>=2) forces immediate commit to prevent infinite deferral loops
-  - Continuation guard absorbs pendingCommitText when its timer fires
-- **File:** `server/routes/custom-voice-ws.ts`
+#### **1. Audio Gain Amplification Fix**
+- **Problem:** Microphone audio was too quiet (amplitude 12-23 instead of 1000+)
+- **Solution:** Implemented 100x gain multiplier in audio processing pipeline
+- **Impact:** Voice transcription now works reliably with quiet microphones
+- **File:** `client/src/hooks/use-custom-voice.ts`
 
-#### **2. Dead Voice Session Fix (AssemblyAI)**
-- **Problem:** Double URL-encoding of `keyterms_prompt` caused AssemblyAI 3005 connection errors, killing voice sessions
-- **Solution:** Removed redundant `encodeURIComponent()` call; added close/error handlers to reconnected WebSocket
-- **Impact:** Voice sessions no longer silently die after STT reconnection
-- **File:** `server/routes/custom-voice-ws.ts`
+```typescript
+// Audio amplification before PCM16 conversion
+const GAIN = 100; // Amplifies quiet microphones
+const amplified = inputData[i] * GAIN;
+const clamped = Math.max(-1, Math.min(1, amplified));
+```
 
-#### **3. Formatted Echo Poison Fix**
-- **Problem:** AssemblyAI's reformatted transcripts (e.g., "Testing, 1, 2, 3." after "testing one two three") updated `lastSttActivityAt` even for already-committed turns, causing deferred commits to cancel before Claude could respond
-- **Solution:** Added `isAlreadyCommitted` check to `onPartialUpdate` handler; excluded formatted echoes from `creditSttActivity`
-- **File:** `server/routes/custom-voice-ws.ts`
+#### **2. Modified Socratic Method Implementation**
+- **Problem:** Tutor was giving direct answers on first question ("What's 5+5?" → "That's 10!")
+- **Solution:** Enforced 3-phase teaching approach:
+  - **Phase 1 (First Question):** ALWAYS guide with questions, never give direct answer
+  - **Phase 2 (After 2-3 Tries):** Give complete answer with clear explanation
+  - **Phase 3 (Understanding Check):** Confirm comprehension
+- **Impact:** Students now engage in real learning, not just answer-getting
+- **File:** `server/llm/adaptiveSocraticCore.ts`
 
-#### **4. Micro-Utterance Detection**
-- **Problem:** Short answers like "yes", "no", "2" were being dropped by VAD thresholds
-- **Solution:** Lowered OLDER_STUDENTS_PROFILE `minSpeechMs` from 400ms to 200ms; added Silero VAD model loading fallback
-- **Files:** `client/src/config/voice-constants.ts`, `client/src/hooks/use-custom-voice.ts`
+**Example Flow:**
+```
+Student: "What's 8 + 7?"
+Tutor: "Great question! What do you think it is? Try counting it out!"
 
-#### **5. Patience Crisis Fixes**
-- **Problem:** Silence duration overflow from uninitialized timestamps (Date.now()-0 producing 300s+), inconsistent patience settings across older bands
-- **Solution:** 300,000ms sanity clamp on silence calculations; unified G6-8/G9-12/ADV continuation settings (continuationGraceMs=600, continuationHedgeGraceMs=1500, bargeInConfirmDurationMs=400)
-- **File:** `server/routes/custom-voice-ws.ts`, `server/config/assemblyai-endpointing-profiles.ts`
+Student: "Um... 16?"
+Tutor: "Good try! Let's break 7 into 2 + 5. So 8 + 2 = 10, then 10 + 5 = ?"
 
----
+Student: "I don't know..."
+Tutor: "No worries! The answer is 15. Here's why: 8 + 7 = 15..."
+```
 
-### Previous Major Updates
-
-#### **Continuity Memory System**
-- Per-student cross-session memory using Claude-generated structured summaries
-- Last 5 session summaries injected into Claude prompt at session start
-- DB-based job queue with retry logic triggered via `/api/cron/memory-jobs`
-- Adaptive continuity greetings for returning students with first-turn-only guarantee
-- Student isolation prevents cross-topic leakage between siblings
-
-#### **Content Moderation & Safety System**
-- Balanced, context-aware moderation with keyword whitelists
-- Multi-layered AI moderation with educational context awareness
-- Critical safety incidents trigger immediate session termination + parent notification + internal alerts
-- All actions logged and non-fatal to prevent session freezes
-
-#### **Email Verification & Reminder System**
-- 7-day verification token validity
-- Daily reminder emails for unverified users until first login
-- Per-user per-day idempotency via `verification_reminder_tracking` table
-- Re-signup with existing unverified email resends verification (no duplicates)
-- 60-second cooldown on resend with frontend countdown timers
-
-#### **Age-Based Visual Engagement System**
-- Five distinct age themes (K-2, Grades 3-5, 6-8, 9-12, College) with unique colors, fonts, emojis, and avatar styles
-- Components: `TutorAvatar`, `AnimatedBackground`, `SessionProgress`, `Celebration` effects
-- All animations respect `prefers-reduced-motion`; built with Framer Motion
-
-#### **RAG Document System**
-- Supports PDF, DOCX, Images (OCR), XLSX, TXT, XML
-- Pipeline: upload, text extraction, chunking, embedding (OpenAI text-embedding-3-small), pgvector storage
-- OCR supports 25 languages
-- Background embedding worker with automatic document cleanup (6-month retention)
+#### **3. Audio Processing Pipeline Enhancements**
+- Removed non-existent `.getReadyState()` method call (Deepgram LiveClient API)
+- Added comprehensive audio buffer logging
+- Implemented silence detection with lowered threshold (10 instead of 100)
+- Added MediaStream health checks to prevent disconnections
+- Implemented audio context suspension protection
 
 ---
 
-## Voice Technology Stack
+## 🎙️ Voice Technology Stack
 
 ### **Custom Real-Time Voice Pipeline**
 
-Production voice stack delivering 1-2 second end-to-end latency for educational conversations:
+Our platform uses a proprietary voice stack designed for educational conversations with 1-2 second end-to-end latency:
 
 ```
-[User Microphone]
-    | (Silero VAD neural speech detection)
-    v
-[AudioWorklet Capture - Float32, 16kHz]
-    | (PCM16 conversion + base64 encoding)
-    v
-[WebSocket Transport]
-    | (Session-authenticated, rate-limited)
-    v
+[User Microphone] 
+    ↓ (ScriptProcessorNode with 100x gain)
+[Audio Capture - Float32, 16kHz] 
+    ↓ (PCM16 conversion + base64 encoding)
+[WebSocket Transport] 
+    ↓ (Session-authenticated, rate-limited)
 [Backend Audio Processor]
-    | (Continuation Guard + Deferred Commit System)
-    v
-[AssemblyAI STT] -> Text Transcript
-    | (Band-tuned endpointing profiles)
-    v
-[Claude Sonnet 4] -> AI Response
-    | (Adaptive Socratic Method, 200K context)
-    v
-[ElevenLabs TTS] -> Audio Stream
-    | (Age-specific voices, Turbo v2.5)
-    v
-[Frontend Audio Player] -> Speaker Output
+    ↓ (Buffer decoding)
+[Deepgram STT] → Text Transcript
+    ↓
+[Claude Sonnet 4] → AI Response
+    ↓
+[ElevenLabs TTS] → Audio Stream
+    ↓
+[Frontend Audio Player] → Speaker Output
 ```
 
 ### **Audio Specifications**
@@ -131,72 +96,47 @@ Production voice stack delivering 1-2 second end-to-end latency for educational 
 - **Format:** PCM16 (16-bit Linear PCM)
 - **Sample Rate:** 16,000 Hz (mono)
 - **Buffer Size:** 4096 samples
+- **Gain Amplification:** 100x multiplier
+- **Silence Threshold:** 10 (allows natural pauses)
 - **Encoding:** Base64 over WebSocket
-- **VAD:** Silero VAD v5 (neural, client-side) + AudioWorklet for capture/UI
 
 ### **Speech-to-Text (STT)**
 
-**Primary Provider:** AssemblyAI Universal-Streaming  
+**Provider:** Deepgram Nova-2  
 **Configuration:**
-- Model: `universal-streaming` (English), `universal-streaming-multilingual` (25+ languages)
-- Band-tuned endpointing profiles:
-  - K-2: 1200ms threshold / 0.70 confidence / 8000ms max wait
-  - Elementary: 1000ms / 0.60 / 6000ms
-  - Middle/High/College: 900ms / 0.50 / 5000ms
-- Subject-specific `keyterms_prompt` for transcription accuracy (Math, English, Spanish vocabulary)
-- STT artifact hardening instructions in Claude system prompt
+- Model: `nova-2`
+- Language: Auto-detected from browser (22 languages supported)
+- Smart Formatting: Enabled
+- Interim Results: Enabled for real-time transcription
+- Punctuation: Auto-enabled
 
 **Supported Languages:**
 ```
 English, Spanish, French, German, Italian, Portuguese, Dutch, Polish,
 Russian, Turkish, Ukrainian, Swedish, Danish, Norwegian, Finnish,
-Arabic, Hindi, Japanese, Korean, Chinese (Simplified & Traditional),
-Vietnamese, Indonesian, Thai
+Arabic, Hindi, Japanese, Korean, Chinese (Simplified & Traditional), Vietnamese
 ```
-
-### **Continuation Guard & Turn Management**
-
-**Server-side two-phase commit system for user turns:**
-- Grade-band-driven grace timing (continuationGraceMs / continuationHedgeGraceMs per band)
-- Quick-answer fast-commit (pure numbers, yes/no)
-- Short-declarative hold (+200ms for <8 words)
-- Conjunction/preposition ending detection for extended hold
-- Thinking-aloud grace extension (+800ms for older bands when wordCount>=5 or length>=20)
-- Hedge phrase detection enforces minimum 1500ms grace
-- Deferred commit system with `classifyDeferredText()` (HEDGE/COMPLETE/UNKNOWN)
-- Anti-swallow: pendingCommitText commits on next EOT, 1200ms forced endpoint, or hard cap
-
-### **Barge-In System**
-
-**Two-stage Silero VAD barge-in:**
-- Stage 1 (duck): Immediately reduces tutor audio gain (GainNode fade to -25dB in 20ms) on speech detection
-- Stage 2 (confirm): Requires sustained speech beyond grade-band thresholds before hard-stopping tutor
-  - K-2: 600ms, G3-5: 500ms, G6-8: 400ms, G9-12/ADV: 350ms
-- Elite barge-in with monotonic `playbackGenId`, `AbortController` for LLM+TTS, `hardInterruptTutor()`
-- Post-turn-commit immunity windows prevent false barge-ins (K2:700ms, G3-5:600ms, G6-8+:500ms)
-- Echo guard raises RMS threshold during tutor playback
-- 650ms cooldown prevents barge-in thrashing
-- Aborted/partial assistant output never written to conversation history
 
 ### **AI Processing**
 
 **Provider:** Anthropic Claude  
-**Model:** Claude Sonnet 4 (`claude-sonnet-4-20250514`)  
+**Model:** Claude Sonnet 4  
 **Features:**
-- 200K token context window, temperature 0.7
-- Adaptive Socratic Method system prompt with 5 age-specific personalities
+- 200K token context window
+- Adaptive Socratic Method system prompt
+- 5 age-specific tutor personalities
 - Real-time streaming responses
 - Document RAG integration
-- Continuity memory injection (last 5 session summaries)
-- STT artifact hardening instructions
 
 ### **Text-to-Speech (TTS)**
 
-**Provider:** ElevenLabs (Turbo v2.5)  
+**Provider:** ElevenLabs  
+**Technology:** Azure Neural TTS voices as fallback  
 **Configuration:**
 - 5 distinct voices per language (one for each age group)
 - Streaming audio delivery
-- TTS text sanitization for Grade 6+ (number pronunciation, markdown stripping)
+- User-controlled speech speed (0.8x - 1.2x)
+- High-quality, natural-sounding voices
 
 **Age-Specific Voices:**
 - **K-2 (5-7 years):** Cheerful, animated, slightly slower
@@ -207,15 +147,14 @@ Vietnamese, Indonesian, Thai
 
 ---
 
-## Core Features
+## 🌟 Core Features
 
-### **1. Multi-Language Support (25 Languages)**
+### **1. Multi-Language Support (22 Languages)**
 
 - Auto-detection from browser language settings
 - Seamless language switching per session
 - Localized UI and voice responses
 - Full support for non-English tutoring
-- Multilingual STT model automatically selected for non-English sessions
 
 ### **2. Age-Specific Tutor Personalities**
 
@@ -234,7 +173,6 @@ Vietnamese, Indonesian, Thai
 - Subject-appropriate vocabulary and examples
 - Age-matched humor and engagement strategies
 - Tailored content moderation rules
-- Unique visual theme (colors, fonts, emojis, avatar)
 
 ### **3. Flexible Communication Modes**
 
@@ -247,41 +185,32 @@ Vietnamese, Indonesian, Thai
 **Supported Formats:**
 - PDF documents
 - Microsoft Word (DOCX)
-- Images (PNG, JPG) with OCR (25 languages)
+- Images (PNG, JPG) with OCR
 - Excel spreadsheets (XLSX)
-- Plain text files, XML
+- Plain text files
 
 **Processing Pipeline:**
 1. Document upload and validation
 2. Text extraction (PDF parsing, OCR, etc.)
-3. Intelligent chunking
-4. Embedding generation (OpenAI text-embedding-3-small)
-5. pgvector storage for similarity search
-6. Integration into tutor context per session
+3. Intelligent chunking (1000 characters per chunk)
+4. Embedding generation (optional)
+5. Integration into tutor context per session
 
-### **5. Session Management & Family Sharing**
+### **5. Real-Time Session Management**
 
 - Per-session configuration (grade level, subject, language)
-- Session-first data model enables flexible family sharing
-- Concurrent session tracking with minute enforcement
+- Session-first data model for family sharing
+- Concurrent session tracking
+- Minute balance enforcement
 - Cross-device session synchronization (30-second polling)
-- Trial status, subscription limits, monthly allocation, and bonus minutes priority
-
-### **6. Continuity Memory**
-
-- Per-student cross-session memory for personalized tutoring
-- Claude-generated structured summaries (topics, mastered/struggled concepts, student insights)
-- Last 5 summaries injected into Claude prompt at session start
-- Adaptive continuity greetings for returning students
-- Student isolation ensures no cross-topic leakage between siblings
 
 ---
 
-## AI Teaching System
+## 🧠 AI Teaching System
 
-### **Adaptive Socratic Method with Guided Discovery**
+### **Adaptive Socratic Method**
 
-Core teaching methodology balancing guided discovery with direct instruction to prevent frustration while maximizing learning.
+Our proprietary teaching methodology balances guided discovery with direct instruction to prevent frustration while maximizing learning.
 
 #### **Core Philosophy**
 
@@ -324,16 +253,22 @@ The AI recognizes 8+ frustration signals:
 
 **Balanced, Context-Aware System:**
 - Age-appropriate content filtering
-- Educational context awareness (science/anatomy terms whitelisted)
+- Educational context awareness
 - Multi-layered AI moderation
-- Critical safety: immediate session termination + parent notification + internal alerts
-- All moderation actions logged and non-fatal to prevent session freezes
+- Keyword whitelist for science/anatomy terms
+- Polite refusal for inappropriate requests
+
+**Enforcement:**
+- Refuses sexual/violent/profane content
+- Blocks personal information requests
+- Prevents role-playing that breaks teaching context
+- Maintains educational focus
 
 ---
 
-## Security & Authentication
+## 🔒 Security & Authentication
 
-### **Production-Grade WebSocket Security**
+### **Production-Grade WebSocket Security (November 2025)**
 
 #### **Session-Based Authentication**
 - No client-sent userId trusted
@@ -359,12 +294,12 @@ The AI recognizes 8+ frustration signals:
 **Method:** Passport.js Local Strategy  
 **Session Storage:** PostgreSQL (connect-pg-simple)  
 **Password Security:** bcrypt hashing  
-**COPPA Compliance:** Email verification system (7-day token validity)  
+**COPPA Compliance:** Email verification system  
 **Role-Based Access:** Admin privileges supported
 
 ---
 
-## Database & Storage
+## 💾 Database & Storage
 
 ### **PostgreSQL Database**
 
@@ -375,31 +310,26 @@ The AI recognizes 8+ frustration signals:
 ### **Core Schema**
 
 **Primary Tables:**
-- `users` - User accounts and profiles (includes `first_login_at`, `last_verification_email_sent_at`)
-- `sessions` / `realtime_sessions` - Active tutoring sessions with telemetry columns
-- `students` - Student profiles for family sharing
+- `users` - User accounts and profiles
+- `learning_sessions` - Active tutoring sessions
+- `quiz_attempts` - Assessment history
 - `user_documents` - Uploaded learning materials
-- `document_embeddings` - RAG vector storage (pgvector)
-- `content_violations` - Moderation records
-- `user_suspensions` - Safety enforcement
-- `stripe_customers` / `subscriptions` - Payment integration
-- `minute_purchases` / `minute_transactions` - Usage tracking
-- `session_summaries` - Continuity memory summaries
-- `memory_jobs` - Background memory job queue
-- `verification_reminder_tracking` - Email reminder idempotency
-- `trial_abuse_tracking` - Trial abuse prevention
+- `document_embeddings` - RAG vector storage
+- `stripe_customers` - Payment integration
+- `subscriptions` - Active subscriptions
+- `minute_transactions` - Usage tracking
 - `admin_audit_log` - Admin activity logging
 
 ### **Key Features**
-- Production-safe migration guards (idempotent schema updates)
-- `ADD COLUMN IF NOT EXISTS` pattern
+- Lazy database initialization
+- Safe migration system using `ADD COLUMN IF NOT EXISTS`
 - Session-based persistence
 - Cross-device state synchronization
 - Audit logging for compliance
 
 ---
 
-## Payment & Subscriptions
+## 💳 Payment & Subscriptions
 
 ### **Stripe Integration**
 
@@ -407,7 +337,6 @@ The AI recognizes 8+ frustration signals:
 - Starter Plan
 - Standard Plan
 - Pro Plan
-- Elite Plan
 - One-time minute purchases (Top-ups)
 
 ### **Hybrid Minute Tracking**
@@ -425,15 +354,9 @@ The AI recognizes 8+ frustration signals:
    - Used after subscription minutes
 
 **Deduction Priority:**
-1. Trial minutes (if active)
-2. Subscription minutes
-3. Purchased minutes (top-ups)
-4. Block access when balance = 0
-
-### **Trial System**
-- 30-minute account-based trial
-- Abuse prevention via `trial_abuse_tracking`
-- Seamless upgrade path to paid subscriptions
+1. Use subscription minutes first
+2. Fall back to purchased minutes
+3. Block access when balance = 0
 
 ### **WebSocket Minute Enforcement**
 
@@ -445,88 +368,77 @@ The AI recognizes 8+ frustration signals:
 
 ---
 
-## Technical Architecture
+## 🏗️ Technical Architecture
 
 ### **Frontend Stack**
 
-- **Framework:** React 18+ with TypeScript, Vite
+- **Framework:** React 18+ with Vite
 - **Routing:** Wouter (lightweight SPA routing)
 - **State Management:** TanStack Query v5
 - **UI Components:** Shadcn/ui + Radix UI
 - **Styling:** Tailwind CSS
-- **Animations:** Framer Motion (respects prefers-reduced-motion)
 - **Forms:** React Hook Form + Zod validation
 - **Icons:** Lucide React
-- **Voice:** Silero VAD (@ricky0123/vad-web), AudioWorklet
 
 ### **Backend Stack**
 
-- **Runtime:** Node.js 20 with Express.js, TypeScript
+- **Runtime:** Node.js with Express
 - **API:** RESTful routes + WebSocket endpoints
 - **Authentication:** Passport.js with PostgreSQL sessions
-- **Database:** Drizzle ORM + PostgreSQL (Neon)
+- **Database:** Drizzle ORM + PostgreSQL
 - **WebSocket:** Native ws library with custom security
-- **Background Jobs:** Email digests, document cleanup, embedding worker, memory jobs, trial reminders
 
 ### **External Services**
 
 | Service | Purpose | Status |
 |---------|---------|--------|
-| AssemblyAI | Primary speech-to-text | Active |
-| Anthropic Claude | AI tutoring (Sonnet 4) | Active |
-| ElevenLabs | Text-to-speech (Turbo v2.5) | Active |
-| Stripe | Payments & subscriptions | Active |
-| Resend | Email delivery | Active |
-| OpenAI | Embeddings (text-embedding-3-small) | Active |
+| Deepgram | Speech-to-text | Configured |
+| Anthropic Claude | AI tutoring | Configured |
+| ElevenLabs | Text-to-speech | Configured |
+| Azure Speech | TTS fallback | Configured |
+| Stripe | Payments | Configured |
+| Resend | Email delivery | Configured |
 
 ### **File Structure**
 
 ```
 server/
-  routes/
-    custom-voice-ws.ts        # Voice WebSocket handler (continuation guard, barge-in, deferred commit)
-    routes.ts                  # API endpoints
-  services/
-    assemblyai-service.ts      # STT integration
-    elevenlabs-service.ts      # TTS integration
-    ai-service.ts              # Claude integration
-  llm/
-    adaptiveSocraticCore.ts    # Teaching methodology
-  config/
-    tutor-personalities.ts     # Age-specific tutors
-    assemblyai-endpointing-profiles.ts  # Band-tuned STT profiles
-  middleware/
-    ws-session-validator.ts    # WebSocket auth
-    ws-rate-limiter.ts         # DoS protection
-  storage.ts                   # Database layer
+├── routes/
+│   ├── custom-voice-ws.ts      # Voice WebSocket handler
+│   └── routes.ts                # API endpoints
+├── services/
+│   ├── deepgram-service.ts     # STT integration
+│   ├── elevenlabs-service.ts   # TTS integration
+│   └── ai-service.ts            # Claude integration
+├── llm/
+│   └── adaptiveSocraticCore.ts # Teaching methodology
+├── config/
+│   └── tutor-personalities.ts  # Age-specific tutors
+├── middleware/
+│   ├── ws-session-validator.ts # WebSocket auth
+│   └── ws-rate-limiter.ts      # DoS protection
+└── storage.ts                   # Database layer
 
 client/src/
-  pages/                       # Route components
-  components/                  # Reusable UI (age themes, tutor avatars, etc.)
-  hooks/
-    use-custom-voice.ts        # Voice frontend logic (Silero VAD, barge-in, audio playback)
-  config/
-    voice-constants.ts         # VAD profiles, barge-in thresholds
-  lib/
-    queryClient.ts             # TanStack Query setup
+├── pages/                       # Route components
+├── components/                  # Reusable UI
+├── hooks/
+│   └── use-custom-voice.ts     # Voice frontend logic
+└── lib/
+    └── queryClient.ts          # TanStack Query setup
 
 shared/
-  schema.ts                    # Shared TypeScript types & Drizzle schema
-
-public/
-  silero_vad_v5.onnx           # Silero VAD model
-  silero_vad_legacy.onnx       # Fallback VAD model
-  vad.worklet.bundle.min.js    # VAD AudioWorklet
+└── schema.ts                    # Shared TypeScript types
 ```
 
 ---
 
-## Deployment Configuration
+## 🚀 Deployment Configuration
 
 ### **Replit Autoscale Deployment**
 
 **Build Command:** None (Vite handles bundling)  
-**Run Command:** `PORT=5000 npm run dev`  
+**Run Command:** `npm run dev` (production uses optimized server)  
 **Port:** 5000 (frontend + backend on same port)
 
 ### **Environment Variables (Required)**
@@ -534,11 +446,17 @@ public/
 ```bash
 # AI Services
 ANTHROPIC_API_KEY=sk-ant-...
-OPENAI_API_KEY=sk-...
+OPENAI_API_KEY=sk-...          # Optional
+GEMINI_API_KEY=...             # Optional
 
 # Voice Services
-ASSEMBLYAI_API_KEY=...
+DEEPGRAM_API_KEY=...
 ELEVENLABS_API_KEY=...
+ELEVENLABS_AGENT_ID=...        # Multiple agent IDs supported
+
+# Azure Speech (Fallback)
+AZURE_SPEECH_KEY=...
+AZURE_SPEECH_REGION=...
 
 # Payment
 STRIPE_SECRET_KEY=sk_live_...
@@ -547,69 +465,68 @@ STRIPE_WEBHOOK_SECRET=whsec_...
 STRIPE_PRICE_STARTER=price_...
 STRIPE_PRICE_STANDARD=price_...
 STRIPE_PRICE_PRO=price_...
-STRIPE_PRICE_ELITE=price_...
-STRIPE_PRICE_TOPUP_60=price_...
 
 # Database
 DATABASE_URL=postgresql://...
+PGHOST=...
+PGPORT=...
+PGDATABASE=...
+PGUSER=...
+PGPASSWORD=...
 
 # Email
 RESEND_API_KEY=re_...
 RESEND_FROM_EMAIL=noreply@...
 
-# Cron Security
-CRON_SECRET=...
-
 # Frontend
 VITE_STRIPE_PUBLIC_KEY=pk_live_...
 ```
 
-### **Background Jobs & Cron Endpoints**
-
-| Endpoint | Schedule | Purpose |
-|----------|----------|---------|
-| `POST /api/cron/memory-jobs` | On session end | Process continuity memory summaries |
-| `POST /api/cron/verification-reminders` | Daily | Send verification reminder emails |
-| Internal scheduler | Daily 8 PM ET | Daily digest emails for parents |
-| Internal scheduler | Sunday 8 PM ET | Weekly digest emails for parents |
-| Internal scheduler | Every 6 hours | Trial reminder emails |
-| Internal scheduler | Every 24 hours | Expired document cleanup |
-
 ### **Production Features**
 
-- Session-based authentication with PostgreSQL
-- WebSocket security with IP-based rate limiting
-- Horizontal scaling support (stateless design)
-- Database connection pooling
-- Error logging and monitoring
-- CORS configuration
-- Secure cookie handling
-- Content Security Policy headers
-- Robust voice pipeline with anti-swallow guarantees
+✅ Session-based authentication with PostgreSQL  
+✅ WebSocket security with IP-based rate limiting  
+✅ Horizontal scaling support (stateless design)  
+✅ Database connection pooling  
+✅ Error logging and monitoring  
+✅ CORS configuration  
+✅ Secure cookie handling  
+✅ Content Security Policy headers  
+
+### **Deployment Checklist**
+
+- [ ] All environment variables configured
+- [ ] Database migrations applied (`npm run db:push`)
+- [ ] Stripe webhooks configured
+- [ ] Email domain verified (Resend)
+- [ ] WebSocket rate limits tested
+- [ ] Voice stack validated (all 3 services)
+- [ ] Content moderation tested
+- [ ] Payment flow end-to-end tested
 
 ---
 
-## Performance Metrics
+## 📊 Performance Metrics
 
 ### **Voice Latency**
 
 - **Target:** 1-2 seconds end-to-end
-- **Achieved:** ~1.5 seconds average
+- **Achieved:** 1.5 seconds average
 - **Breakdown:**
-  - STT (AssemblyAI): ~300ms
-  - AI Processing (Claude Sonnet 4): ~800ms
-  - TTS (ElevenLabs Turbo v2.5): ~400ms
+  - STT (Deepgram): ~300ms
+  - AI Processing (Claude): ~800ms
+  - TTS (ElevenLabs): ~400ms
 
 ### **Scalability**
 
 - **Architecture:** Stateless, horizontally scalable
 - **WebSocket Connections:** 5 concurrent per IP
-- **Database:** Connection pooled (Neon)
+- **Database:** Connection pooled
 - **Session Storage:** PostgreSQL-backed
 
 ---
 
-## Maintenance & Operations
+## 🔧 Maintenance & Operations
 
 ### **Database Management**
 
@@ -619,13 +536,18 @@ npm run db:push
 
 # Force schema sync (if warnings)
 npm run db:push --force
+
+# Never manually write SQL migrations
 ```
 
-### **Development Commands**
+### **Testing Commands**
 
 ```bash
 # Start development server
-PORT=5000 npm run dev
+npm run dev
+
+# Run tests (if configured)
+npm test
 
 # Check TypeScript errors
 npx tsc --noEmit
@@ -633,20 +555,41 @@ npx tsc --noEmit
 
 ### **Monitoring**
 
-- WebSocket connection and phase transition logs
-- AssemblyAI STT status and reconnection logs
-- Continuation guard commit/defer/cancel logs
-- Barge-in stage tracking logs
+- WebSocket connection logs
+- Audio buffer analysis logs
+- Deepgram transcript logging
 - Stripe webhook event logging
 - Admin audit log tracking
-- Heartbeat logging (5-second intervals)
 
 ---
 
+## 📝 Known Limitations & Roadmap
+
+### **Current Limitations**
+
+- AudioWorklet not supported (uses ScriptProcessorNode fallback)
+- Voice sessions limited by minute balance
+- Document processing queue not implemented (synchronous)
+- Admin dashboard analytics limited to basic metrics
+
+### **Future Enhancements**
+
+- [ ] Implement AudioWorklet for better audio processing
+- [ ] Add voice activity detection (VAD) for silence handling
+- [ ] Expand document types (PowerPoint, video transcripts)
+- [ ] Add quiz generation from uploaded documents
+- [ ] Implement learning analytics dashboard
+- [ ] Add parent/teacher reporting features
+- [ ] Support for group tutoring sessions
+
+---
+
+## 📞 Support & Contact
+
 **Platform:** JIE Mastery AI Tutor  
 **Deployment:** Replit  
-**Last Updated:** February 12, 2026  
-**Status:** Production-Ready
+**Build Date:** November 14, 2025  
+**Status:** Production-Ready ✅
 
 ---
 
