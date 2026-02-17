@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useLocation } from "wouter";
 import { Footer } from "@/components/footer";
+import { PublicMobileMenu } from "@/components/PublicMobileMenu";
 import jieLogo from "@/assets/jie-mastery-logo-sm.jpg";
 import schoolClassroom from "@/assets/school-classroom.png";
 import familyHomework from "@/assets/family-homework.png";
@@ -88,15 +89,7 @@ export default function SchoolsPage() {
                 Sign In
               </Button>
             </div>
-            {/* Mobile Sign In button - always visible */}
-            <Button 
-              className="md:hidden"
-              size="sm"
-              onClick={() => setLocation("/auth?action=login")}
-              data-testid="button-sign-in-mobile"
-            >
-              Sign In
-            </Button>
+            <PublicMobileMenu onSignIn={() => setLocation("/auth?action=login")} />
           </div>
         </div>
       </nav>

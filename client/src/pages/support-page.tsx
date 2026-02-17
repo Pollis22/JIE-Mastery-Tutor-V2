@@ -1,5 +1,6 @@
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
+import { PublicMobileMenu } from "@/components/PublicMobileMenu";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BookOpen, HelpCircle, Mail, MessageCircle } from "lucide-react";
 import jieLogo from "@/assets/jie-mastery-logo-sm.jpg";
@@ -18,7 +19,7 @@ export default function SupportPage() {
               <img src={jieLogo} alt="JIE Mastery" className="h-10 w-auto" />
               <span className="text-xl font-bold text-foreground">JIE Mastery Tutor</span>
             </div>
-            <div className="flex items-center space-x-4">
+            <div className="hidden md:flex items-center space-x-4">
               <Button 
                 variant="ghost" 
                 onClick={() => setLocation("/benefits")} 
@@ -69,6 +70,7 @@ export default function SupportPage() {
                 Pricing
               </Button>
             </div>
+            <PublicMobileMenu onSignIn={() => setLocation("/auth?action=login")} />
           </div>
         </div>
       </nav>

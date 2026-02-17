@@ -18,6 +18,7 @@ import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Footer } from "@/components/footer";
+import { PublicMobileMenu } from "@/components/PublicMobileMenu";
 import jieLogo from "@/assets/jie-mastery-logo-sm.jpg";
 import studentUsingJie from "@/assets/student-using-jie.png";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -332,15 +333,7 @@ export default function AuthPage() {
                 Sign In
               </Button>
             </div>
-            {/* Mobile Sign In button - always visible */}
-            <Button 
-              className="md:hidden"
-              size="sm"
-              onClick={() => setLoginModalOpen(true)}
-              data-testid="button-sign-in-mobile"
-            >
-              Sign In
-            </Button>
+            <PublicMobileMenu onSignIn={() => setLoginModalOpen(true)} />
           </div>
         </div>
       </nav>

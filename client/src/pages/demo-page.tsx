@@ -1,5 +1,6 @@
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
+import { PublicMobileMenu } from "@/components/PublicMobileMenu";
 import jieLogo from "@/assets/jie-mastery-logo-sm.jpg";
 
 export default function DemoPage() {
@@ -16,7 +17,7 @@ export default function DemoPage() {
               <span className="text-xl font-bold text-foreground">JIE Mastery Tutor</span>
             </div>
             {/* Desktop navigation - hidden on mobile */}
-            <div className="hidden lg:flex items-center space-x-4">
+            <div className="hidden md:flex items-center space-x-4">
               <Button 
                 variant="ghost" 
                 onClick={() => setLocation("/benefits")} 
@@ -73,14 +74,7 @@ export default function DemoPage() {
                 Sign In
               </Button>
             </div>
-            {/* Mobile Sign In button - always visible */}
-            <Button 
-              className="lg:hidden"
-              onClick={() => setLocation("/auth?action=login")} 
-              data-testid="button-sign-in-mobile"
-            >
-              Sign In
-            </Button>
+            <PublicMobileMenu onSignIn={() => setLocation("/auth?action=login")} />
           </div>
         </div>
       </nav>

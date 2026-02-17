@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { StartTrialButton } from "@/components/StartTrialButton";
+import { PublicMobileMenu } from "@/components/PublicMobileMenu";
 import { trackBeginCheckout } from "@/hooks/use-tracking";
 
 const plans = [
@@ -152,7 +153,7 @@ export default function PricingPage() {
               </div>
               <span className="ml-3 text-xl font-bold text-foreground">AI Tutor</span>
             </div>
-            <div className="flex items-center space-x-4">
+            <div className="hidden md:flex items-center space-x-4">
               <StartTrialButton variant="outline" size="sm" />
               <Button variant="ghost" onClick={() => setLocation("/contact")} data-testid="button-nav-contact">
                 Contact
@@ -164,6 +165,7 @@ export default function PricingPage() {
                 Get Started
               </Button>
             </div>
+            <PublicMobileMenu onSignIn={() => setLocation("/auth?action=login")} />
           </div>
         </div>
       </header>

@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { useLocation } from "wouter";
+import { PublicMobileMenu } from "@/components/PublicMobileMenu";
 import jieLogo from "@/assets/jie-mastery-logo-sm.jpg";
 import { StartTrialButton } from "@/components/StartTrialButton";
 import { 
@@ -70,14 +71,15 @@ export default function BenefitsPage() {
               </button>
             </div>
             
-            <div className="flex items-center space-x-3">
-              <Button variant="outline" onClick={handlePricing} className="hidden sm:inline-flex" data-testid="button-nav-pricing">
+            <div className="hidden md:flex items-center space-x-3">
+              <Button variant="outline" onClick={handlePricing} data-testid="button-nav-pricing">
                 View Pricing
               </Button>
               <Button variant="default" onClick={handleCTA} data-testid="button-nav-cta">
                 Try JIE Mastery AI Tutor
               </Button>
             </div>
+            <PublicMobileMenu onSignIn={() => setLocation("/auth?action=login")} />
           </div>
         </div>
       </nav>
