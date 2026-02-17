@@ -798,6 +798,17 @@ export default function AuthPage() {
                   Sign in
                 </button>
               </p>
+
+              <p className="text-sm text-muted-foreground mt-3" data-testid="text-live-advisor-cta">
+                Have questions?{' '}
+                <a 
+                  href="/support" 
+                  className="text-primary hover:underline font-medium"
+                  data-testid="link-live-advisor"
+                >
+                  Talk to our live AI advisor here.
+                </a>
+              </p>
             </div>
             
             {/* Right Column - Student Image */}
