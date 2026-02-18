@@ -771,9 +771,9 @@ export default function TutorPage() {
                   <p><strong>Set up your audio devices</strong> - Go to Settings (menu button) to select and test your microphone and speakers. This is especially important for first-time users to ensure clear voice communication.</p>
                 </div>
                 
-                <div className="flex gap-3 items-start bg-blue-50 dark:bg-blue-900/30 p-3 rounded-md border border-blue-200 dark:border-blue-800">
-                  <div className="bg-blue-600 text-white rounded-full w-5 h-5 flex items-center justify-center shrink-0 mt-0.5 font-bold text-xs">2</div>
-                  <p><strong>REQUIRED: Create/Select a student profile</strong> - Use the profile dropdown at the top to choose your profile, or create a new one. Each family member must have their own profile with a custom avatar to start!</p>
+                <div className="flex gap-3 items-start bg-red-50 dark:bg-red-900/30 p-3 rounded-md border-2 border-red-400 dark:border-red-600">
+                  <div className="bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center shrink-0 mt-0.5 font-bold text-xs">2</div>
+                  <p className="text-red-700 dark:text-red-300 font-bold" data-testid="text-profile-required-notice">Please complete your user profile for each student to start the session.</p>
                 </div>
 
                 <div className="flex gap-3 items-start">
@@ -992,6 +992,11 @@ export default function TutorPage() {
               setSelectedStudentId(null);
             }
           }}
+          signupDefaults={user ? {
+            studentName: user.studentName || undefined,
+            studentAge: user.studentAge || undefined,
+            gradeLevel: user.gradeLevel || undefined,
+          } : undefined}
         />
 
         {/* Minute Top-Up Modal */}

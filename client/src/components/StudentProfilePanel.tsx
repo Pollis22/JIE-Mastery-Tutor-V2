@@ -85,13 +85,36 @@ interface StudentPin {
   docId: string;
 }
 
+interface SignupDefaults {
+  studentName?: string;
+  studentAge?: number;
+  gradeLevel?: string;
+}
+
 interface StudentProfilePanelProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   studentId?: string;
   onStudentSaved?: (studentId: string) => void;
   onStudentDeleted?: (studentId: string) => void;
+  signupDefaults?: SignupDefaults;
 }
+
+const mapGradeLevelToDisplay = (grade?: string): string => {
+  if (!grade) return "";
+  const map: Record<string, string> = {
+    "kindergarten-2": "K-2nd Grade",
+    "grades-3-5": "3rd-5th Grade",
+    "grades-6-8": "6th-8th Grade",
+    "grades-9-12": "9th-12th Grade",
+    "college-adult": "College/Adult",
+    "K-2": "K-2nd Grade",
+    "3-5": "3rd-5th Grade",
+    "6-8": "6th-8th Grade",
+    "9-12": "9th-12th Grade",
+  };
+  return map[grade] || grade;
+};
 
 export function StudentProfilePanel({
   open,
@@ -99,6 +122,7 @@ export function StudentProfilePanel({
   studentId,
   onStudentSaved,
   onStudentDeleted,
+  signupDefaults,
 }: StudentProfilePanelProps) {
   const { toast } = useToast();
   const [goalsText, setGoalsText] = useState("");
@@ -168,20 +192,21 @@ export function StudentProfilePanel({
       setGoalsText((student.goals || []).join("\n"));
       setSelectedAvatar(student.avatarUrl || "");
     } else {
+      const isNewStudent = !studentId;
       form.reset({
-        name: "",
-        grade: "",
+        name: isNewStudent && signupDefaults?.studentName ? signupDefaults.studentName : "",
+        grade: isNewStudent && signupDefaults?.gradeLevel ? mapGradeLevelToDisplay(signupDefaults.gradeLevel) : "",
         learningPace: undefined,
         encouragementLevel: undefined,
         goals: [],
         avatarUrl: "",
         avatarType: "default",
-        age: undefined,
+        age: isNewStudent && signupDefaults?.studentAge ? signupDefaults.studentAge : undefined,
       });
       setGoalsText("");
       setSelectedAvatar("");
     }
-  }, [student, form]);
+  }, [student, form, studentId, signupDefaults]);
 
   const mapPaceToBackend = (pace?: string) => {
     if (!pace) return undefined;
