@@ -475,7 +475,7 @@ function createAssemblyAIConnection(
   onPartialUpdate?: (text: string, prevText: string) => void,
   onOpen?: () => void,
   onMessage?: () => void,
-  keytermsUrlEncoded?: string | null
+  keytermsJson?: string | null
 ): { ws: WebSocket; state: AssemblyAIState } {
   console.log('████████████████████████████████████████████████████████████████');
   console.log('[AssemblyAI v3] ENTER createAssemblyAIConnection');
@@ -610,10 +610,10 @@ function createAssemblyAIConnection(
     }
     
     // I) Add keyterms_prompt for improved transcription accuracy
-    // keyterms_prompt must be a URL-encoded JSON string array per AssemblyAI v3 spec
-    if (keytermsUrlEncoded) {
-      urlParams.set('keyterms_prompt', keytermsUrlEncoded);
-      console.log(`[AssemblyAI v3] 📚 Keyterms prompt set (${keytermsUrlEncoded.length} chars encoded)`);
+    // keyterms_prompt is a raw JSON string array — URLSearchParams handles encoding
+    if (keytermsJson) {
+      urlParams.set('keyterms_prompt', keytermsJson);
+      console.log(`[AssemblyAI v3] 📚 Keyterms prompt set (${keytermsJson.length} chars raw JSON)`);
     }
     
     // A) Use routed base URL
@@ -1285,7 +1285,7 @@ interface SessionState {
   sttDisconnectedSinceMs: number | null;
   // P0.3: Session-sticky keyterms disable after 3005 config error
   sttKeytermsDisabledForSession: boolean;
-  sttKeytermsUrlEncoded: string | null; // Cached keyterms for reconnects
+  sttKeytermsJson: string | null; // Cached keyterms JSON for reconnects
   // P0.4: Send-failure watchdog
   sttConsecutiveSendFailures: number;
   sttSendFailureLoggedAt: number;
@@ -2286,7 +2286,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
       sttAudioRingBuffer: [],
       sttDisconnectedSinceMs: null,
       sttKeytermsDisabledForSession: false,
-      sttKeytermsUrlEncoded: null,
+      sttKeytermsJson: null,
       sttConsecutiveSendFailures: 0,
       sttSendFailureLoggedAt: 0,
       sttSendFailureTotalDropped: 0,
@@ -4601,7 +4601,7 @@ HONESTY INSTRUCTIONS:
                 subject: state.subject,
                 studentName: state.studentName,
               });
-              state.sttKeytermsUrlEncoded = sessionKeyterms;
+              state.sttKeytermsJson = sessionKeyterms;
               console.log(`[STT] Keyterms cached: ${sessionKeyterms ? 'yes' : 'none'} subject=${state.subject} disabled=${state.sttKeytermsDisabledForSession}`);
 
               const { ws: assemblyWs, state: assemblyState } = createAssemblyAIConnection(
@@ -4900,7 +4900,7 @@ HONESTY INSTRUCTIONS:
                   state.sttLastMessageAtMs = Date.now();
                   state.sttConsecutiveSendFailures = 0;
                 },
-                state.sttKeytermsDisabledForSession ? null : state.sttKeytermsUrlEncoded
+                state.sttKeytermsDisabledForSession ? null : state.sttKeytermsJson
               );
               
               console.log('[AssemblyAI] createAssemblyAIConnection returned successfully');
@@ -5065,7 +5065,7 @@ HONESTY INSTRUCTIONS:
                         state.sttConsecutiveSendFailures = 0;
                       },
                       // P0.5: Reconnect preserves keyterms when valid, omits when disabled
-                      state.sttKeytermsDisabledForSession ? null : state.sttKeytermsUrlEncoded
+                      state.sttKeytermsDisabledForSession ? null : state.sttKeytermsJson
                     );
                     
                     if (state.assemblyAIWs && state.assemblyAIWs.readyState === WebSocket.OPEN) {
@@ -5092,7 +5092,7 @@ HONESTY INSTRUCTIONS:
                 
                 // P0.3: Handle 3005 as fatal config error (keyterms validation failure)
                 if (code === 3005) {
-                  if (!state.sttKeytermsDisabledForSession && state.sttKeytermsUrlEncoded) {
+                  if (!state.sttKeytermsDisabledForSession && state.sttKeytermsJson) {
                     console.error(`[STT] fatal_config_error code=3005 reason=${reason || 'unknown'} - disabling keyterms for session and reconnecting`);
                     state.sttKeytermsDisabledForSession = true;
                     // Immediate reconnect without keyterms (skip backoff)
