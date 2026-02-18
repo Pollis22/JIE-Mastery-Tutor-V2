@@ -621,6 +621,7 @@ function createAssemblyAIConnection(
     console.log('[AssemblyAI v3] 🌐 Connecting to:', wsUrl);
     console.log('[AssemblyAI v3] Speech model:', speechModel);
     console.log('[AssemblyAI v3] Turn commit mode:', ASSEMBLYAI_TURN_COMMIT_MODE);
+    console.log('[AssemblyAI CONNECT URL]', wsUrl);
     
     ws = new WebSocket(wsUrl, {
       headers: {
@@ -911,10 +912,11 @@ function createAssemblyAIConnection(
     onError(error.message);
   });
 
-  ws.on('close', (code, reason) => {
+  ws.on('close', (code: number, reasonBuf: Buffer) => {
     clearTimeout(handshakeTimeout);
-    const reasonStr = reason?.toString() || '';
+    const reasonStr = reasonBuf?.toString?.('utf8') ?? String(reasonBuf ?? '');
     console.log('[AssemblyAI v3] 🔌 WebSocket CLOSED - code:', code, 'reason:', reasonStr);
+    console.log('[AssemblyAI CLOSE]', { code, reason: reasonStr });
     state.isOpen = false;
     state.closeCode = code;
     state.closeReason = reasonStr;
