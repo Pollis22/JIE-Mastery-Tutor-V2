@@ -939,6 +939,7 @@ const STT_SEND_FAILURE_LOG_MAX_PER_FRAME = 10;
 function sendAudioToAssemblyAI(ws: WebSocket | null, audioBuffer: Buffer, state?: AssemblyAIState, sessionState?: SessionState): boolean {
   if (sessionState) {
     sessionState.sttLastAudioForwardAtMs = Date.now();
+    markProgress(sessionState);
   }
   
   if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
@@ -1702,12 +1703,15 @@ async function finalizeSession(
   let minuteDeductionFailed = false;
   let dbWriteFailed = false;
   
-  // CRITICAL: Clear inactivity timer to prevent duplicate finalization
   if (state.inactivityTimerId) {
     clearInterval(state.inactivityTimerId);
     state.inactivityTimerId = null;
-    console.log(`[Finalize] 🧹 Cleared inactivity timer (reason: ${reason})`);
   }
+  if (state.watchdogTimerId) {
+    clearInterval(state.watchdogTimerId);
+    state.watchdogTimerId = null;
+  }
+  state.watchdogDisabled = true;
   
   // CONTINUATION GUARD: Clear pending continuation timer
   if (state.continuationTimerId) {
@@ -2365,6 +2369,62 @@ export function setupCustomVoiceWebSocket(server: Server) {
       }
     }, HEARTBEAT_INTERVAL);
 
+    // ============================================
+    // NO-PROGRESS WATCHDOG: Detect stalled sessions and auto-recover STT
+    // Runs every 3s, triggers after 15s of no progress, max 2 recoveries per 60s
+    // ============================================
+    state.watchdogTimerId = setInterval(() => {
+      if (state.isSessionEnded || state.sessionFinalizing || state.watchdogDisabled || state.isPendingReconnect) {
+        return;
+      }
+      
+      const now = Date.now();
+      const sinceProgress = now - state.lastProgressAt;
+      
+      if (sinceProgress < WATCHDOG_STALL_THRESHOLD_MS) {
+        return;
+      }
+      
+      const recoveriesInWindow = (now - state.lastWatchdogRecoveryAt < WATCHDOG_RECOVERY_WINDOW_MS)
+        ? state.watchdogRecoveries
+        : 0;
+      
+      console.log(`[WATCHDOG_STALL_DETECTED] sessionId=${state.sessionId} userId=${state.userId} studentId=${state.studentId || 'n/a'} sttProvider=assemblyai reconnectCount=${state.reconnectCount} secondsSinceProgress=${Math.round(sinceProgress / 1000)} recoveries=${recoveriesInWindow}/${WATCHDOG_MAX_RECOVERIES_PER_WINDOW}`);
+      
+      if (recoveriesInWindow >= WATCHDOG_MAX_RECOVERIES_PER_WINDOW) {
+        console.error(`[WATCHDOG] ❌ Max recoveries (${WATCHDOG_MAX_RECOVERIES_PER_WINDOW}) exhausted within ${WATCHDOG_RECOVERY_WINDOW_MS / 1000}s - ending session`);
+        state.watchdogDisabled = true;
+        sendWsEvent(ws, 'voice_status', { status: 'audio_reconnect_failed' });
+        ws.send(JSON.stringify({
+          type: 'session_ended',
+          reason: 'audio_reconnect_failed',
+          message: 'Voice connection could not be restored. Please start a new session.',
+        }));
+        finalizeSession(state, 'audio_reconnect_failed' as any).catch((err) => {
+          console.error('[WATCHDOG] finalizeSession error:', err);
+        });
+        return;
+      }
+      
+      sendWsEvent(ws, 'voice_status', { status: 'reconnecting_audio' });
+      
+      if (state.assemblyAIWs) {
+        try { state.assemblyAIWs.close(); } catch (_e) {}
+        state.assemblyAIWs = null;
+      }
+      state.sttConnected = false;
+      
+      if (now - state.lastWatchdogRecoveryAt >= WATCHDOG_RECOVERY_WINDOW_MS) {
+        state.watchdogRecoveries = 1;
+      } else {
+        state.watchdogRecoveries++;
+      }
+      state.lastWatchdogRecoveryAt = now;
+      markProgress(state);
+      
+      console.log(`[WATCHDOG] 🔄 Triggering STT reconnect (recovery ${state.watchdogRecoveries}/${WATCHDOG_MAX_RECOVERIES_PER_WINDOW})`);
+    }, WATCHDOG_CHECK_INTERVAL_MS);
+
     // INACTIVITY: Check for user inactivity every 30 seconds
     state.inactivityTimerId = setInterval(async () => {
       const inactiveTime = Date.now() - state.lastActivityTime;
@@ -2485,12 +2545,15 @@ export function setupCustomVoiceWebSocket(server: Server) {
           
         }, 5000); // 5 second delay
         
-        // Clear the inactivity interval to prevent multiple triggers
         if (state.inactivityTimerId) {
           clearInterval(state.inactivityTimerId);
           state.inactivityTimerId = null;
-          console.log('[Inactivity] ✅ Inactivity timer cleared');
         }
+        if (state.watchdogTimerId) {
+          clearInterval(state.watchdogTimerId);
+          state.watchdogTimerId = null;
+        }
+        state.watchdogDisabled = true;
       }
       
     }, 30000); // Check every 30 seconds
@@ -2957,6 +3020,11 @@ export function setupCustomVoiceWebSocket(server: Server) {
               clearInterval(state.inactivityTimerId);
               state.inactivityTimerId = null;
             }
+            if (state.watchdogTimerId) {
+              clearInterval(state.watchdogTimerId);
+              state.watchdogTimerId = null;
+            }
+            state.watchdogDisabled = true;
             
             try {
               ws.send(JSON.stringify({
@@ -3387,6 +3455,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
                     chunkIndex: sentenceCount,
                     genId: state.playbackGenId,
                   }));
+                  markProgress(state);
                 } catch (ttsError) {
                   console.error(`[Custom Voice] ❌ TTS error for sentence ${sentenceCount}:`, ttsError);
                 }
@@ -3396,6 +3465,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
             onComplete: (fullText: string) => {
               const claudeMs = Date.now() - claudeStart;
               state.isTutorThinking = false;
+              markProgress(state);
               console.log(`[Pipeline] 4. Claude response received (${claudeMs}ms), generating audio...`);
               
               const normalizedContent = (fullText ?? "").trim();
@@ -4904,6 +4974,7 @@ HONESTY INSTRUCTIONS:
                   state.sttLastMessageAtMs = Date.now();
                   state.sttReconnectAttempts = 0;
                   state.sttDisconnectedSinceMs = null;
+                  markProgress(state);
                   state.sttConnectionId++;
                   console.log(`[STT] connected sessionId=${state.sessionId} connectionId=${state.sttConnectionId}`);
                   sendWsEvent(ws, 'stt_status', { status: 'connected' });
@@ -4920,6 +4991,7 @@ HONESTY INSTRUCTIONS:
                 () => {
                   state.sttLastMessageAtMs = Date.now();
                   state.sttConsecutiveSendFailures = 0;
+                  markProgress(state);
                 },
                 state.sttKeytermsDisabledForSession ? null : state.sttKeytermsJson
               );
@@ -5067,8 +5139,13 @@ HONESTY INSTRUCTIONS:
                         state.sttLastMessageAtMs = Date.now();
                         state.sttReconnectAttempts = 0;
                         state.sttDisconnectedSinceMs = null;
+                        markProgress(state);
                         state.sttConnectionId++;
                         console.log(`[STT] reconnected sessionId=${state.sessionId} connectionId=${state.sttConnectionId}`);
+                        if (state.watchdogRecoveries > 0) {
+                          console.log(`[WATCHDOG_RECOVERY_SUCCESS] sessionId=${state.sessionId} recovery=${state.watchdogRecoveries}`);
+                          sendWsEvent(ws, 'voice_status', { status: 'audio_restored' });
+                        }
                         sendWsEvent(ws, 'stt_status', { status: 'connected' });
                         if (state.sttAudioRingBuffer.length > 0) {
                           console.log(`[STT] flushing ${state.sttAudioRingBuffer.length} buffered audio chunks after reconnect`);
@@ -5084,6 +5161,7 @@ HONESTY INSTRUCTIONS:
                       () => {
                         state.sttLastMessageAtMs = Date.now();
                         state.sttConsecutiveSendFailures = 0;
+                        markProgress(state);
                       },
                       // P0.5: Reconnect preserves keyterms when valid, omits when disabled
                       state.sttKeytermsDisabledForSession ? null : state.sttKeytermsJson
@@ -5864,6 +5942,11 @@ HONESTY INSTRUCTIONS:
                   clearInterval(state.inactivityTimerId);
                   state.inactivityTimerId = null;
                 }
+                if (state.watchdogTimerId) {
+                  clearInterval(state.watchdogTimerId);
+                  state.watchdogTimerId = null;
+                }
+                state.watchdogDisabled = true;
                 
                 try {
                   ws.send(JSON.stringify({
@@ -5936,6 +6019,11 @@ HONESTY INSTRUCTIONS:
                     clearInterval(state.inactivityTimerId);
                     state.inactivityTimerId = null;
                   }
+                  if (state.watchdogTimerId) {
+                    clearInterval(state.watchdogTimerId);
+                    state.watchdogTimerId = null;
+                  }
+                  state.watchdogDisabled = true;
                   
                   try {
                     ws.send(JSON.stringify({
@@ -6374,11 +6462,10 @@ When the student asks if you can see their document or asks you to prove access:
             break;
           
           case "pong":
-            // Client responds to ping - update heartbeat tracking
             state.lastPongAt = new Date();
             state.missedPongCount = 0;
             state.lastHeartbeatAt = new Date();
-            // Don't log every pong to avoid spam
+            markProgress(state);
             break;
           
           case "client_visibility":
@@ -6517,10 +6604,12 @@ When the student asks if you can see their document or asks you to prove access:
       const qualifiesForGrace = isAbnormalClose(code) && !hasExplicitUserEnd && state.sessionId;
       
       if (qualifiesForGrace) {
-        // DON'T clear persistence interval - keep transcript safe
-        // DON'T finalize - enter grace window
-        // BUT DO clear heartbeat interval - no need to ping during grace
         clearInterval(heartbeatInterval);
+        if (state.watchdogTimerId) {
+          clearInterval(state.watchdogTimerId);
+          state.watchdogTimerId = null;
+        }
+        state.watchdogDisabled = true;
         console.log(`[Custom Voice] 🕐 Abnormal close (code: ${code}) - entering grace window for session ${state.sessionId}`);
         createPendingReconnect(state.sessionId, state, code, persistInterval);
         return; // Exit without finalizing
@@ -6529,6 +6618,11 @@ When the student asks if you can see their document or asks you to prove access:
       // Normal close or explicit user end - finalize immediately
       clearInterval(persistInterval);
       clearInterval(heartbeatInterval);
+      if (state.watchdogTimerId) {
+        clearInterval(state.watchdogTimerId);
+        state.watchdogTimerId = null;
+      }
+      state.watchdogDisabled = true;
       
       // Determine close reason based on WS code and client intent
       let closeReason: 'normal' | 'disconnect' = 'disconnect';
