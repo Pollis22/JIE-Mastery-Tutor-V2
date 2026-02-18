@@ -1291,6 +1291,12 @@ interface SessionState {
   sttSendFailureLoggedAt: number;
   sttSendFailureTotalDropped: number;
   sttSendFailureStartedAt: number;
+  // NO-PROGRESS WATCHDOG: Detect stalled sessions and auto-recover
+  lastProgressAt: number;
+  watchdogTimerId: NodeJS.Timeout | null;
+  watchdogRecoveries: number;
+  lastWatchdogRecoveryAt: number;
+  watchdogDisabled: boolean;
 }
 
 // Helper to send typed WebSocket events
@@ -1299,6 +1305,16 @@ function sendWsEvent(ws: WebSocket, type: string, payload: Record<string, unknow
     ws.send(JSON.stringify({ type, ...payload }));
     console.log(`[WS Event] ${type}`, payload.turnId || '');
   }
+}
+
+// NO-PROGRESS WATCHDOG: Update progress timestamp on any meaningful activity
+const WATCHDOG_STALL_THRESHOLD_MS = 15_000;
+const WATCHDOG_CHECK_INTERVAL_MS = 3_000;
+const WATCHDOG_MAX_RECOVERIES_PER_WINDOW = 2;
+const WATCHDOG_RECOVERY_WINDOW_MS = 60_000;
+
+function markProgress(state: SessionState): void {
+  state.lastProgressAt = Date.now();
 }
 
 // FIX 1A: STT Activity tracking - credit speech activity from transcript growth
@@ -2291,6 +2307,11 @@ export function setupCustomVoiceWebSocket(server: Server) {
       sttSendFailureLoggedAt: 0,
       sttSendFailureTotalDropped: 0,
       sttSendFailureStartedAt: 0,
+      lastProgressAt: Date.now(),
+      watchdogTimerId: null,
+      watchdogRecoveries: 0,
+      lastWatchdogRecoveryAt: 0,
+      watchdogDisabled: false,
     };
 
     // FIX #3: Auto-persist every 10 seconds
