@@ -799,16 +799,19 @@ export default function AuthPage() {
                 </button>
               </p>
 
-              <p className="text-sm text-muted-foreground mt-3" data-testid="text-live-advisor-cta">
-                Have questions?{' '}
-                <a 
-                  href="/support" 
-                  className="text-primary hover:underline font-medium"
-                  data-testid="link-live-advisor"
-                >
-                  Talk to our live AI advisor here.
-                </a>
-              </p>
+              <div className="mt-5 flex items-center gap-2 bg-primary/5 border border-primary/20 rounded-lg px-4 py-3" data-testid="text-live-advisor-cta">
+                <MessageCircle className="h-5 w-5 text-primary flex-shrink-0" />
+                <p className="text-base font-medium text-foreground">
+                  Have questions?{' '}
+                  <a 
+                    href="/support" 
+                    className="text-primary hover:underline font-semibold"
+                    data-testid="link-live-advisor"
+                  >
+                    Talk to our live AI advisor here.
+                  </a>
+                </p>
+              </div>
             </div>
             
             {/* Right Column - Student Image */}
