@@ -444,10 +444,26 @@ export default function TutorPage() {
     setTranscriptMessages([]);
     setIsTranscriptConnected(false);
     
+    // CRITICAL: Pre-unlock audio during this user gesture for iOS/Android
+    // RealtimeVoiceHost will auto-connect on mount, but audio unlock must happen
+    // synchronously during a user gesture (button tap). Creating and resuming
+    // an AudioContext here ensures audio playback works on mobile.
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      if (ctx.state === 'suspended') ctx.resume();
+      const buf = ctx.createBuffer(1, 1, 22050);
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(ctx.destination);
+      src.start(0);
+    } catch (e) {
+      console.log('[TutorPage] Audio pre-unlock attempt:', e);
+    }
+    
     // Start session tracking
     setSessionStartTime(new Date());
     
-    // Simple static agent connection - no dynamic session creation
+    // Mount RealtimeVoiceHost which will auto-connect
     setMounted(true);
     
     toast({
@@ -725,69 +741,14 @@ export default function TutorPage() {
             </Card>
           )}
 
-          {/* Controls */}
-          <div className="flex flex-wrap gap-3 items-center justify-center">
-            <select 
-              id="age-range" 
-              value={level} 
-              onChange={e => setLevel(e.target.value as AgentLevel)}
-              className="px-3 py-2 border border-input bg-background text-foreground rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-              data-testid="select-level"
-            >
-              <option value="k2">Kindergarten–2</option>
-              <option value="g3_5">Grades 3–5</option>
-              <option value="g6_8">Grades 6–8</option>
-              <option value="g9_12">Grades 9–12</option>
-              <option value="college">College/Adult</option>
-            </select>
-
-            <select 
-              id="language" 
-              value={selectedLanguage} 
-              onChange={e => setSelectedLanguage(e.target.value)}
-              className="px-3 py-2 border border-input bg-background text-foreground rounded-md focus:outline-none focus:ring-2 focus:ring-primary flex items-center gap-2"
-              data-testid="select-language"
-            >
-              {SUPPORTED_LANGUAGES.map(lang => (
-                <option key={lang.code} value={lang.code}>
-                  {lang.name}
-                </option>
-              ))}
-            </select>
-
-
-            <button 
-              id="start-btn" 
-              onClick={startTutor} 
-              disabled={!scriptReady || !selectedStudentId}
-              className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary"
-              data-testid="button-start-tutor"
-              title={!selectedStudentId ? "Please select a student profile to connect" : ""}
-            >
-              Start Session
-            </button>
-            
-            <button 
-              id="end-btn" 
-              onClick={stop} 
-              disabled={!mounted}
-              className="px-4 py-2 bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary"
-              data-testid="button-stop-tutor"
-            >
-              Stop Session
-            </button>
-          </div>
-
           {/* Getting Started Instructions - Hidden during active session */}
           {!mounted && (
           <>
           <div className="relative bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-4 rounded-md overflow-hidden">
-            {/* Background image - positioned absolutely, behind content */}
             <div 
               className="absolute inset-0 opacity-15 pointer-events-none bg-cover bg-right-bottom"
               style={{ backgroundImage: `url(${tutorHero})` }}
             />
-            {/* Content - positioned relatively to appear on top */}
             <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-4 rounded-lg border border-blue-100 dark:border-blue-900 shadow-sm">
               <h3 className="font-bold text-blue-900 dark:text-blue-100 mb-3 flex items-center gap-2">
                 <BookOpen className="h-5 w-5 text-blue-600" />
@@ -821,7 +782,7 @@ export default function TutorPage() {
 
                 <div className="flex gap-3 items-start">
                   <div className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full w-5 h-5 flex items-center justify-center shrink-0 mt-0.5 font-bold text-xs">6</div>
-                  <p>Click <strong>"Start Session"</strong> to begin your voice conversation.</p>
+                  <p>Click <strong>"Start Tutor Session"</strong> to begin your voice conversation.</p>
                 </div>
 
                 <div className="flex gap-3 items-start">
@@ -836,9 +797,67 @@ export default function TutorPage() {
               </div>
             </div>
           </div>
+          </>
+          )}
+
+          {/* Session Controls Row */}
+          <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-center">
+            <select 
+              id="age-range" 
+              value={level} 
+              onChange={e => setLevel(e.target.value as AgentLevel)}
+              className="px-3 py-2 border border-input bg-background text-foreground rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+              data-testid="select-level"
+              disabled={mounted}
+            >
+              <option value="k2">Kindergarten–2</option>
+              <option value="g3_5">Grades 3–5</option>
+              <option value="g6_8">Grades 6–8</option>
+              <option value="g9_12">Grades 9–12</option>
+              <option value="college">College/Adult</option>
+            </select>
+
+            <select 
+              id="language" 
+              value={selectedLanguage} 
+              onChange={e => setSelectedLanguage(e.target.value)}
+              className="px-3 py-2 border border-input bg-background text-foreground rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+              data-testid="select-language"
+              disabled={mounted}
+            >
+              {SUPPORTED_LANGUAGES.map(lang => (
+                <option key={lang.code} value={lang.code}>
+                  {lang.name}
+                </option>
+              ))}
+            </select>
+
+            {!mounted ? (
+              <button 
+                id="start-btn" 
+                onClick={startTutor} 
+                disabled={!scriptReady || !selectedStudentId}
+                className="px-6 py-2.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary font-semibold text-base"
+                data-testid="button-start-tutor"
+                title={!selectedStudentId ? "Please select a student profile to connect" : ""}
+              >
+                Start Tutor Session
+              </button>
+            ) : (
+              <button 
+                id="end-btn" 
+                onClick={stop} 
+                className="px-6 py-2.5 bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90 focus:outline-none focus:ring-2 focus:ring-primary font-semibold text-base"
+                data-testid="button-stop-tutor"
+              >
+                End Session
+              </button>
+            )}
+          </div>
 
           {/* Voice Tips Section - Hidden during active session */}
-          <div className="relative mt-4">
+          {!mounted && (
+          <div className="relative">
             <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-4 rounded-lg border border-blue-100 dark:border-blue-900 shadow-sm">
               <h3 className="font-bold text-blue-900 dark:text-blue-100 mb-3 flex items-center gap-2">
                 <BookOpen className="h-5 w-5 text-blue-600" />
@@ -892,7 +911,6 @@ export default function TutorPage() {
               </div>
             </div>
           </div>
-          </>
           )}
 
           {/* Active Lesson Context Card */}
@@ -998,8 +1016,10 @@ export default function TutorPage() {
                     contextDocumentIds={selectedDocumentIds}
                     uploadedDocCount={uploadedDocCount}
                     activeLesson={activeLesson}
+                    autoConnect={true}
                     onSessionStart={() => setSessionStartTime(new Date())}
                     onSessionEnd={() => setSessionStartTime(null)}
+                    onDisconnected={() => setMounted(false)}
                   />
                 </>
               )}

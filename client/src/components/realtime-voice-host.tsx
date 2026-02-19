@@ -145,8 +145,10 @@ interface RealtimeVoiceHostProps {
   contextDocumentIds?: string[];
   uploadedDocCount?: number;
   activeLesson?: ActiveLesson | null; // Practice lesson context
+  autoConnect?: boolean;
   onSessionStart?: () => void;
   onSessionEnd?: () => void;
+  onDisconnected?: () => void;
 }
 
 export function RealtimeVoiceHost({
@@ -158,8 +160,10 @@ export function RealtimeVoiceHost({
   contextDocumentIds = [],
   uploadedDocCount = 0,
   activeLesson,
+  autoConnect = false,
   onSessionStart,
   onSessionEnd,
+  onDisconnected,
 }: RealtimeVoiceHostProps) {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -762,6 +766,24 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
     }
   }, [customVoice.error, toast]);
 
+  // Auto-connect on mount when autoConnect is true
+  const autoConnectFired = useRef(false);
+  useEffect(() => {
+    if (autoConnect && !autoConnectFired.current && !customVoice.isConnected && user?.id) {
+      autoConnectFired.current = true;
+      startSession();
+    }
+  }, [autoConnect, user?.id]);
+
+  // Notify parent when voice disconnects (e.g., session ended from within)
+  const wasConnectedForParent = useRef(false);
+  useEffect(() => {
+    if (wasConnectedForParent.current && !customVoice.isConnected) {
+      onDisconnected?.();
+    }
+    wasConnectedForParent.current = customVoice.isConnected;
+  }, [customVoice.isConnected, onDisconnected]);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -783,17 +805,10 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
           <div className="flex items-center gap-2 flex-wrap">
             {!customVoice.isConnected ? (
             <>
-              <Button
-                onClick={startSession}
-                variant="default"
-                size="sm"
-                className="gap-2"
-                disabled={!user}
-                data-testid="button-start-session"
-              >
-                <Mic className="h-4 w-4" />
-                Talk to your tutor
-              </Button>
+              <span className="text-sm text-muted-foreground flex items-center gap-2" data-testid="text-connecting-status">
+                <Mic className="h-4 w-4 animate-pulse" />
+                Connecting to voice service...
+              </span>
               <MinutesRemainingBadge />
             </>
           ) : (
