@@ -8,7 +8,7 @@ import { AnimatedBackground } from './AnimatedBackground';
 import { SessionProgress } from './SessionProgress';
 import { useSimulatedAmplitude } from '@/hooks/use-audio-amplitude';
 import { Button } from '@/components/ui/button';
-import { Mic, MicOff, Volume2, VolumeX, AlertTriangle, FileText, Type, Headphones, Timer } from 'lucide-react';
+import { Mic, MicOff, Volume2, VolumeX, AlertTriangle, FileText, Type, Headphones, Timer, Square } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { useLocation } from 'wouter';
@@ -149,6 +149,8 @@ interface RealtimeVoiceHostProps {
   onSessionStart?: () => void;
   onSessionEnd?: () => void;
   onDisconnected?: () => void;
+  onRequestEnd?: () => void;
+  isEnding?: boolean;
 }
 
 export interface RealtimeVoiceHostHandle {
@@ -168,6 +170,8 @@ export const RealtimeVoiceHost = forwardRef<RealtimeVoiceHostHandle, RealtimeVoi
   onSessionStart,
   onSessionEnd,
   onDisconnected,
+  onRequestEnd,
+  isEnding = false,
 }, ref) {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -993,7 +997,7 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
           />
         </div>
       
-      {/* Sticky Chat Input - Always visible at bottom */}
+      {/* Sticky Chat Input + End Session - Always visible at bottom */}
       {customVoice.isConnected && (
         <div className={`flex-shrink-0 sticky bottom-0 bg-background/95 backdrop-blur-sm border-t shadow-[0_-4px_20px_rgba(0,0,0,0.1)] pt-3 pb-4 z-50 ${customVoice.microphoneError || !studentMicEnabled ? 'text-mode-emphasis' : ''}`}>
           {(customVoice.microphoneError || !studentMicEnabled) && (
@@ -1002,17 +1006,32 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
                 <Type className="h-5 w-5 text-blue-600 dark:text-blue-400" />
                 <p className="text-blue-700 dark:text-blue-300 font-semibold text-sm">
                   {!studentMicEnabled && !customVoice.microphoneError
-                    ? '👇 Text Mode Active - Type your messages below 👇'
-                    : '👇 Your tutor is listening! Type your questions here 👇'}
+                    ? 'Text Mode Active - Type your messages below'
+                    : 'Your tutor is listening! Type your questions here'}
                 </p>
               </div>
             </div>
           )}
-          <ChatInput
-            onSendMessage={handleChatMessage}
-            onFileUpload={handleChatFileUpload}
-            disabled={!customVoice.isConnected}
-          />
+          <div className="flex items-end gap-2">
+            <div className="flex-1 min-w-0">
+              <ChatInput
+                onSendMessage={handleChatMessage}
+                onFileUpload={handleChatFileUpload}
+                disabled={!customVoice.isConnected}
+              />
+            </div>
+            {onRequestEnd && (
+              <button
+                onClick={onRequestEnd}
+                disabled={isEnding}
+                className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2.5 mb-[2px] rounded-md text-sm font-medium bg-destructive text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                data-testid="button-end-session-bottom"
+              >
+                <Square className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">{isEnding ? 'Ending...' : 'End'}</span>
+              </button>
+            )}
+          </div>
         </div>
       )}
       

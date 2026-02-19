@@ -969,28 +969,16 @@ export default function TutorPage() {
                     ))}
                   </select>
 
-                  {sessionState === 'idle' ? (
-                    <button 
-                      id="start-btn" 
-                      onClick={startTutor} 
-                      disabled={!scriptReady || !selectedStudentId || sessionState !== 'idle'}
-                      className="px-6 py-2.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary font-semibold text-base sm:ml-auto"
-                      data-testid="button-start-tutor"
-                      title={!selectedStudentId ? "Please select a student profile to connect" : ""}
-                    >
-                      Start Tutor Session
-                    </button>
-                  ) : (
-                    <button 
-                      id="end-btn" 
-                      onClick={stop} 
-                      disabled={sessionState === 'ending' || sessionState === 'starting'}
-                      className="px-6 py-2.5 bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary font-semibold text-base sm:ml-auto"
-                      data-testid="button-stop-tutor"
-                    >
-                      {sessionState === 'ending' ? 'Ending…' : 'End Session'}
-                    </button>
-                  )}
+                  <button 
+                    id="start-btn" 
+                    onClick={startTutor} 
+                    disabled={!scriptReady || !selectedStudentId || sessionState !== 'idle'}
+                    className={`px-6 py-2.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary font-semibold text-base sm:ml-auto ${sessionState !== 'idle' ? 'hidden' : ''}`}
+                    data-testid="button-start-tutor"
+                    title={!selectedStudentId ? "Please select a student profile to connect" : ""}
+                  >
+                    Start Tutor Session
+                  </button>
                 </div>
               </CardContent>
             </Card>
@@ -1033,7 +1021,13 @@ export default function TutorPage() {
                     autoConnect={true}
                     onSessionStart={() => setSessionStartTime(new Date())}
                     onSessionEnd={() => setSessionStartTime(null)}
-                    onDisconnected={() => setMounted(false)}
+                    onDisconnected={() => {
+                      if (sessionState !== 'ending') {
+                        setMounted(false);
+                      }
+                    }}
+                    onRequestEnd={stop}
+                    isEnding={sessionState === 'ending'}
                   />
                 </>
               )}
