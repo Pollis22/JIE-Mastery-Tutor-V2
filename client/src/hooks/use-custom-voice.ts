@@ -866,7 +866,8 @@ export function useCustomVoice() {
     ageGroup: string,
     systemInstruction: string,
     documents: string[] = [],
-    language: string = 'en'
+    language: string = 'en',
+    studentId?: string
   ) => {
     try {
       console.log("[Custom Voice] 🚀 Connecting...", { language });
@@ -889,10 +890,11 @@ export function useCustomVoice() {
           sessionId,
           userId,
           studentName,
+          studentId: studentId || undefined,
           ageGroup,
           systemInstruction,
           documents,
-          language, // LANGUAGE: Pass selected language to backend
+          language,
         }));
       };
 

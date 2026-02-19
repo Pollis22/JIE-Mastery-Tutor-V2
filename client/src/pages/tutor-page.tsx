@@ -559,6 +559,23 @@ export default function TutorPage() {
     setProfileDrawerOpen(true);
   };
 
+  const handleStudentSwitch = async (newStudentId: string | null) => {
+    const oldStudentId = selectedStudentId;
+    if (oldStudentId === newStudentId) return;
+    
+    console.log(`[PROFILE] switch old=${oldStudentId || 'none'} new=${newStudentId || 'none'} forced_session_restart=${!!sessionStartTime}`);
+    
+    if (sessionStartTime) {
+      console.log('[PROFILE] Active session detected - forcing teardown before profile switch');
+      await stop();
+      setTranscriptMessages([]);
+      setIsTranscriptConnected(false);
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+    
+    setSelectedStudentId(newStudentId);
+  };
+
   // Handle page close/refresh to log minutes
   useEffect(() => {
     const handleBeforeUnload = async () => {
@@ -608,7 +625,7 @@ export default function TutorPage() {
               <div className="flex-1 flex justify-end items-center gap-2">
                 <StudentSwitcher
                   selectedStudentId={selectedStudentId || undefined}
-                  onSelectStudent={setSelectedStudentId}
+                  onSelectStudent={handleStudentSwitch}
                   onOpenProfile={handleOpenProfile}
                 />
                 <DropdownMenu>

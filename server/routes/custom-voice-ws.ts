@@ -3963,6 +3963,26 @@ export function setupCustomVoiceWebSocket(server: Server) {
               state.subject = message.subject || "General"; // SESSION: Store tutoring subject
               state.language = message.language || "en"; // LANGUAGE: Store selected language
               
+              // STUDENT ISOLATION: Set studentId from init message
+              // Also fall back to the session record's studentId for safety
+              if (message.studentId) {
+                state.studentId = message.studentId;
+              } else {
+                // Fallback: read studentId from the validated session record
+                try {
+                  const sessionRecord = await db.select({ studentId: realtimeSessions.studentId })
+                    .from(realtimeSessions)
+                    .where(eq(realtimeSessions.id, message.sessionId))
+                    .limit(1);
+                  if (sessionRecord[0]?.studentId) {
+                    state.studentId = sessionRecord[0].studentId;
+                  }
+                } catch (e) {
+                  console.warn('[Custom Voice] ⚠️ Could not read studentId from session record:', e);
+                }
+              }
+              console.log(`[CONTINUITY] studentId resolved: studentId=${state.studentId || 'none'} userId=${state.userId} source=${message.studentId ? 'init_message' : 'session_record'}`);
+              
               // CRITICAL FIX (Nov 14, 2025): Log userId after initialization to verify authentication
               console.log(`[Custom Voice] 🔐 Session state initialized:`, {
                 sessionId: state.sessionId,
@@ -3971,6 +3991,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
                 hasUserId: !!state.userId,
                 userIdType: typeof state.userId,
                 studentName: state.studentName,
+                studentId: state.studentId || 'none',
                 ageGroup: state.ageGroup,
                 language: state.language
               });

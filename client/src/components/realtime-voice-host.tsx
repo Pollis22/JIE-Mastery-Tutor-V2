@@ -556,7 +556,8 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
         ageGroup,
         createSystemInstruction(),
         documents,
-        language // LANGUAGE: Pass selected language to backend
+        language,
+        studentId
       );
       
       toast({

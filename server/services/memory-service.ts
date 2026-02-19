@@ -75,7 +75,7 @@ export async function getRecentSessionSummaries(params: {
       .orderBy(desc(sessionSummaries.createdAt))
       .limit(limit);
     
-    console.log(`[MEMORY] Retrieved ${summaries.length} summaries for user ${userId}${studentId ? ` (student ${studentId})` : ' (no student profile)'}`);
+    console.log(`[CONTINUITY] loading summary student_profile_id=${studentId || 'null'} user_id=${userId} found=${summaries.length > 0} count=${summaries.length}`);
     return summaries;
   } catch (error) {
     console.warn(`[MEMORY] ⚠️ Failed to retrieve summaries:`, error);
