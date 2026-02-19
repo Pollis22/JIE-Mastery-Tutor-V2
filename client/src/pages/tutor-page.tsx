@@ -503,11 +503,14 @@ export default function TutorPage() {
     
     if (voiceHostRef.current) {
       try {
+        console.log('[VOICE_UI] calling voiceHostRef.endSession()');
         await voiceHostRef.current.endSession();
         console.log('[VOICE_UI] endSession resolved — WS closed');
       } catch (error) {
         console.error('[VOICE_UI] endSession error:', error);
       }
+    } else {
+      console.warn('[VOICE_UI] voiceHostRef.current is NULL — cannot call endSession');
     }
     
     // Log usage if session was active
@@ -1018,6 +1021,7 @@ export default function TutorPage() {
                 <>
                   {/* Custom Voice System (Deepgram + Claude + ElevenLabs) */}
                   <RealtimeVoiceHost
+                    ref={voiceHostRef}
                     studentId={selectedStudentId || undefined}
                     studentName={selectedStudent?.name || studentName}
                     subject={activeLesson?.subject || subject}
