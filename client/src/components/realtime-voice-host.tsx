@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
 import { useCustomVoice } from '@/hooks/use-custom-voice';
 import { RealtimeVoiceTranscript } from './realtime-voice-transcript';
 import { ChatInput } from './ChatInput';
@@ -151,7 +151,11 @@ interface RealtimeVoiceHostProps {
   onDisconnected?: () => void;
 }
 
-export function RealtimeVoiceHost({
+export interface RealtimeVoiceHostHandle {
+  endSession: () => Promise<void>;
+}
+
+export const RealtimeVoiceHost = forwardRef<RealtimeVoiceHostHandle, RealtimeVoiceHostProps>(function RealtimeVoiceHost({
   studentId,
   studentName,
   subject,
@@ -164,7 +168,7 @@ export function RealtimeVoiceHost({
   onSessionStart,
   onSessionEnd,
   onDisconnected,
-}: RealtimeVoiceHostProps) {
+}, ref) {
   const { user } = useAuth();
   const { toast } = useToast();
   const [location] = useLocation();
@@ -585,28 +589,33 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
     }
   };
 
+  const isEndingRef = useRef(false);
+  
   const endSession = useCallback(async () => {
+    if (isEndingRef.current) {
+      console.log('[VOICE_UI] endSession called but already ending — idempotent skip');
+      return;
+    }
+    isEndingRef.current = true;
+    
     try {
       const currentSessionId = sessionIdRef.current;
-      console.log('[VoiceHost] 🛑 Ending session...');
-      console.log('[VoiceHost] Session ID from ref:', currentSessionId);
+      console.log(`[VOICE_UI] state=ending sessionId=${currentSessionId}`);
       
-      // Disconnect custom voice with sessionId for HTTP fallback
       if (currentSessionId) {
-        console.log('[VoiceHost] 📤 Calling disconnect with sessionId:', currentSessionId);
+        console.log(`[VOICE_UI] ws_close_sent sessionId=${currentSessionId}`);
         await customVoice.disconnect(currentSessionId);
+        console.log(`[VOICE_UI] ws_closed sessionId=${currentSessionId}`);
       } else {
-        console.warn('[VoiceHost] ⚠️ No sessionId available for HTTP fallback');
+        console.warn('[VOICE_UI] No sessionId — calling disconnect without ID');
         await customVoice.disconnect();
       }
       
-      // Reset state
       setIsMuted(false);
       setSessionId(null);
       sessionIdRef.current = null;
-      previouslyConnectedRef.current = false; // Reset connection tracking for next session
+      previouslyConnectedRef.current = false;
       
-      // Trigger onSessionEnd callback if provided
       onSessionEnd?.();
       
       toast({
@@ -614,16 +623,22 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
         description: "Voice tutoring session has ended",
       });
       
-      console.log('[VoiceHost] ✅ Session ended successfully');
+      console.log('[VOICE_UI] state=ended — teardown complete');
     } catch (error: any) {
-      console.error('[VoiceHost] ❌ Error ending session:', error);
+      console.error('[VOICE_UI] endSession error:', error);
       toast({
         title: "Error",
         description: "Failed to end session properly",
         variant: "destructive",
       });
+    } finally {
+      isEndingRef.current = false;
     }
   }, [customVoice, toast, onSessionEnd]);
+
+  useImperativeHandle(ref, () => ({
+    endSession,
+  }), [endSession]);
 
   const toggleMute = () => {
     setIsMuted(prev => !prev);
@@ -1034,4 +1049,4 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
       </div>
     </AgeThemeProvider>
   );
-}
+});

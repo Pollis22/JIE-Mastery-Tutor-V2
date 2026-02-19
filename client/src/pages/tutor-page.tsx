@@ -1,10 +1,10 @@
 import { useAuth } from "@/hooks/use-auth";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { TutorErrorBoundary } from "@/components/tutor-error-boundary";
 import { NetworkAwareWrapper } from "@/components/network-aware-wrapper";
 import ConvaiHost, { type ConvaiMessage } from "@/components/convai-host";
 import { ConvaiTranscript } from "@/components/convai-transcript";
-import { RealtimeVoiceHost } from "@/components/realtime-voice-host";
+import { RealtimeVoiceHost, type RealtimeVoiceHostHandle } from "@/components/realtime-voice-host";
 import { AssignmentsPanel } from "@/components/AssignmentsPanel";
 import { StudentSwitcher } from "@/components/StudentSwitcher";
 import { StudentProfilePanel } from "@/components/StudentProfilePanel";
@@ -84,6 +84,8 @@ export default function TutorPage() {
   const [studentName, setStudentName] = useState("");
   const [gradeText, setGradeText] = useState("");
   const [mounted, setMounted] = useState(false);
+  const [sessionState, setSessionState] = useState<'idle' | 'starting' | 'active' | 'ending'>('idle');
+  const voiceHostRef = useRef<RealtimeVoiceHostHandle>(null);
   const [lastSummary, setLastSummary] = useState(memo.lastSummary || "");
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [profileDrawerOpen, setProfileDrawerOpen] = useState(false);
@@ -335,6 +337,16 @@ export default function TutorPage() {
   const startTutor = async () => {
     if (!scriptReady) return;
     
+    if (sessionState !== 'idle') {
+      console.log(`[VOICE_UI] Start blocked — sessionState=${sessionState}`);
+      if (sessionState === 'ending') {
+        toast({ title: "Please wait", description: "Session is still ending…" });
+      }
+      return;
+    }
+    
+    setSessionState('starting');
+    
     // Require a student profile to be selected
     if (!selectedStudentId || !selectedStudent) {
       toast({
@@ -342,8 +354,8 @@ export default function TutorPage() {
         description: "Please select or create a student profile before starting a session.",
         variant: "destructive",
       });
-      // Open the profile panel to create a new student
       setProfileDrawerOpen(true);
+      setSessionState('idle');
       return;
     }
     
@@ -356,6 +368,7 @@ export default function TutorPage() {
         description: "Please select a student profile with a valid name.",
         variant: "destructive",
       });
+      setSessionState('idle');
       return;
     }
     
@@ -378,43 +391,23 @@ export default function TutorPage() {
             description: availabilityData.message || "Please verify your email address to start tutoring.",
             variant: "destructive",
           });
-          return;
         } else if (availabilityData.reason === 'no_subscription') {
-          toast({
-            title: "Subscription Required",
-            description: availabilityData.message,
-            variant: "destructive",
-          });
+          toast({ title: "Subscription Required", description: availabilityData.message, variant: "destructive" });
           setLocation('/pricing');
-          return;
         } else if (availabilityData.reason === 'subscription_expired' || availabilityData.reason === 'subscription_ended') {
-          toast({
-            title: "Subscription Expired",
-            description: availabilityData.message || "Your subscription has ended. Please reactivate to continue learning.",
-            variant: "destructive",
-          });
+          toast({ title: "Subscription Expired", description: availabilityData.message || "Your subscription has ended. Please reactivate to continue learning.", variant: "destructive" });
           setLocation('/dashboard?tab=subscription');
-          return;
         } else if (availabilityData.reason === 'payment_failed') {
-          toast({
-            title: "Payment Issue",
-            description: availabilityData.message || "There is an issue with your payment. Please update your payment method.",
-            variant: "destructive",
-          });
+          toast({ title: "Payment Issue", description: availabilityData.message || "There is an issue with your payment. Please update your payment method.", variant: "destructive" });
           setLocation('/dashboard?tab=subscription');
-          return;
         } else if (availabilityData.reason === 'no_minutes') {
-          toast({
-            title: "Out of Minutes",
-            description: availabilityData.message,
-            variant: "destructive",
-          });
+          toast({ title: "Out of Minutes", description: availabilityData.message, variant: "destructive" });
           setShowTopUpModal(true);
-          return;
         }
+        setSessionState('idle');
+        return;
       }
 
-      // Show warning if running low on minutes
       if (availabilityData.warningThreshold && availabilityData.remainingMinutes < 10) {
         toast({
           title: "Low Minutes",
@@ -428,6 +421,7 @@ export default function TutorPage() {
         description: "Failed to check session availability. Please try again.",
         variant: "destructive",
       });
+      setSessionState('idle');
       return;
     }
     
@@ -460,10 +454,8 @@ export default function TutorPage() {
       console.log('[TutorPage] Audio pre-unlock attempt:', e);
     }
     
-    // Start session tracking
     setSessionStartTime(new Date());
-    
-    // Mount RealtimeVoiceHost which will auto-connect
+    setSessionState('active');
     setMounted(true);
     
     toast({
@@ -502,6 +494,22 @@ export default function TutorPage() {
   };
 
   const stop = async () => {
+    if (sessionState === 'ending') {
+      console.log('[VOICE_UI] stop() called but already ending — skip');
+      return;
+    }
+    console.log('[VOICE_UI] state=ending awaiting_endSession=true');
+    setSessionState('ending');
+    
+    if (voiceHostRef.current) {
+      try {
+        await voiceHostRef.current.endSession();
+        console.log('[VOICE_UI] endSession resolved — WS closed');
+      } catch (error) {
+        console.error('[VOICE_UI] endSession error:', error);
+      }
+    }
+    
     // Log usage if session was active
     if (sessionStartTime) {
       const endTime = new Date();
@@ -516,7 +524,6 @@ export default function TutorPage() {
             sessionEnd: endTime.toISOString(),
           });
           
-          // Refresh minutes data - invalidate ALL balance-related caches
           queryClient.invalidateQueries({ queryKey: ['/api/session/check-availability'] });
           queryClient.invalidateQueries({ queryKey: ['/api/voice-balance'] });
           queryClient.invalidateQueries({ queryKey: ['/api/user/voice-balance'] });
@@ -537,9 +544,8 @@ export default function TutorPage() {
     setMounted(false);
     setTranscriptMessages([]);
     setIsTranscriptConnected(false);
-    
-    // Sessions are automatically saved by the backend when WebSocket connection ends
-    // No manual save modal needed - transcript and duration are persisted automatically
+    setSessionState('idle');
+    console.log('[VOICE_UI] state=idle — fully torn down');
     
     // Analytics
     if (typeof window !== 'undefined' && (window as any).gtag) {
@@ -936,7 +942,7 @@ export default function TutorPage() {
                     onChange={e => setLevel(e.target.value as AgentLevel)}
                     className="px-3 py-2 border border-input bg-background text-foreground rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
                     data-testid="select-level"
-                    disabled={mounted}
+                    disabled={sessionState !== 'idle'}
                   >
                     <option value="k2">Kindergarten–2</option>
                     <option value="g3_5">Grades 3–5</option>
@@ -951,7 +957,7 @@ export default function TutorPage() {
                     onChange={e => setSelectedLanguage(e.target.value)}
                     className="px-3 py-2 border border-input bg-background text-foreground rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
                     data-testid="select-language"
-                    disabled={mounted}
+                    disabled={sessionState !== 'idle'}
                   >
                     {SUPPORTED_LANGUAGES.map(lang => (
                       <option key={lang.code} value={lang.code}>
@@ -960,11 +966,11 @@ export default function TutorPage() {
                     ))}
                   </select>
 
-                  {!mounted ? (
+                  {sessionState === 'idle' ? (
                     <button 
                       id="start-btn" 
                       onClick={startTutor} 
-                      disabled={!scriptReady || !selectedStudentId}
+                      disabled={!scriptReady || !selectedStudentId || sessionState !== 'idle'}
                       className="px-6 py-2.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary font-semibold text-base sm:ml-auto"
                       data-testid="button-start-tutor"
                       title={!selectedStudentId ? "Please select a student profile to connect" : ""}
@@ -975,10 +981,11 @@ export default function TutorPage() {
                     <button 
                       id="end-btn" 
                       onClick={stop} 
-                      className="px-6 py-2.5 bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90 focus:outline-none focus:ring-2 focus:ring-primary font-semibold text-base sm:ml-auto"
+                      disabled={sessionState === 'ending' || sessionState === 'starting'}
+                      className="px-6 py-2.5 bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary font-semibold text-base sm:ml-auto"
                       data-testid="button-stop-tutor"
                     >
-                      End Session
+                      {sessionState === 'ending' ? 'Ending…' : 'End Session'}
                     </button>
                   )}
                 </div>

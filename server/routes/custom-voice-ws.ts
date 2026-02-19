@@ -5670,6 +5670,7 @@ HONESTY INSTRUCTIONS:
 
           case "audio":
             if (state.phase === 'FINALIZING' || state.sessionFinalizing || state.isSessionEnded) {
+              console.log(`[LATE_AUDIO_IGNORED] sessionId=${state.sessionId} phase=${state.phase} ended=${state.isSessionEnded}`);
               break;
             }
             
