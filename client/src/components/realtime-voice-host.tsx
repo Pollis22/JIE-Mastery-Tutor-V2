@@ -143,6 +143,7 @@ interface RealtimeVoiceHostProps {
   language?: string; // LANGUAGE: Now supports all 22 languages
   ageGroup?: 'K-2' | '3-5' | '6-8' | '9-12' | 'College/Adult';
   contextDocumentIds?: string[];
+  uploadedDocCount?: number;
   activeLesson?: ActiveLesson | null; // Practice lesson context
   onSessionStart?: () => void;
   onSessionEnd?: () => void;
@@ -155,6 +156,7 @@ export function RealtimeVoiceHost({
   language = 'en',
   ageGroup = '3-5',
   contextDocumentIds = [],
+  uploadedDocCount = 0,
   activeLesson,
   onSessionStart,
   onSessionEnd,
@@ -557,7 +559,8 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
         createSystemInstruction(),
         documents,
         language,
-        studentId
+        studentId,
+        uploadedDocCount
       );
       
       toast({

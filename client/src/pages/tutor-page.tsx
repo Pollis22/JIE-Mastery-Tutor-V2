@@ -260,6 +260,17 @@ export default function TutorPage() {
     enabled: !!selectedStudentId,
   });
 
+  // Fetch total uploaded document count for doc acknowledgment logic
+  const { data: allDocuments } = useQuery<{ documents: Array<{ id: string }> }>({
+    queryKey: ['documents', user?.id],
+    queryFn: async () => {
+      const response = await apiRequest('GET', '/api/documents/list');
+      return response.json();
+    },
+    enabled: !!user?.id,
+  });
+  const uploadedDocCount = allDocuments?.documents?.length ?? 0;
+
   // Fetch active lesson details for structured tutoring
   const { data: activeLessonData } = useQuery<{
     lesson: {
@@ -985,6 +996,7 @@ export default function TutorPage() {
                     language={selectedLanguage}
                     ageGroup={level === 'k2' ? 'K-2' : level === 'g3_5' ? '3-5' : level === 'g6_8' ? '6-8' : level === 'g9_12' ? '9-12' : 'College/Adult'}
                     contextDocumentIds={selectedDocumentIds}
+                    uploadedDocCount={uploadedDocCount}
                     activeLesson={activeLesson}
                     onSessionStart={() => setSessionStartTime(new Date())}
                     onSessionEnd={() => setSessionStartTime(null)}

@@ -6,7 +6,7 @@
  * 
  * Feature flags:
  * - DOCS_REQUIRE_EXPLICIT_ACTIVATION (default: true) - require explicit activation
- * - DOCS_FALLBACK_TO_ALL_IF_NONE_ACTIVE (default: true) - fall back to all docs if none active
+ * - DOCS_FALLBACK_TO_ALL_IF_NONE_ACTIVE (default: false) - fall back to all docs if none active
  */
 
 // Feature flag - when true, documents must be explicitly activated for retrieval
@@ -15,10 +15,10 @@ export const DOCS_REQUIRE_EXPLICIT_ACTIVATION =
   process.env.DOCS_REQUIRE_EXPLICIT_ACTIVATION !== 'false';
 
 // Feature flag - when true, if no docs are active, fall back to all user's ready documents
-// This ensures the system remains functional even if activation wiring is broken
-// Default: true for immediate restore of document functionality
+// Default: false — only Active (checkbox-checked) documents are injected into the LLM prompt.
+// Inactive (uploaded-only) documents are never used for retrieval or mentioned by the tutor.
 export const DOCS_FALLBACK_TO_ALL_IF_NONE_ACTIVE = 
-  process.env.DOCS_FALLBACK_TO_ALL_IF_NONE_ACTIVE !== 'false';
+  process.env.DOCS_FALLBACK_TO_ALL_IF_NONE_ACTIVE === 'true';
 
 // In-memory store for session-scoped active document IDs
 // Key: sessionId, Value: Set of active document IDs

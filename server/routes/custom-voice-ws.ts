@@ -1214,6 +1214,8 @@ interface SessionState {
   terminatedForSafety: boolean; // SAFETY: Whether session was ended due to safety violations
   parentEmail?: string; // SAFETY: Parent email for alerts
   hasGreeted: boolean; // GREETING: Prevent duplicate greetings on reconnect
+  hasAcknowledgedDocs: boolean; // DOCS: One-time doc acknowledgment flag per session
+  uploadedDocCount: number; // DOCS: Total uploaded documents (Active + Inactive)
   studentId?: string; // SAFETY: Student ID for incident tracking
   pendingFragment?: string; // LEXICAL_GRACE: Pending transcript fragment awaiting merge
   pendingFragmentTime?: number; // LEXICAL_GRACE: When the pending fragment was created
@@ -2268,6 +2270,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
       continuationPendingText: '',
       continuationSegmentCount: 0,
       hasGreeted: false, // GREETING: Not greeted yet
+      hasAcknowledgedDocs: false, // DOCS: Not acknowledged yet
+      uploadedDocCount: 0, // DOCS: Set from init message
       phase: 'LISTENING' as VoicePhase,
       phaseSinceMs: Date.now(),
       lastUserSpeechAtMs: 0,
@@ -3962,6 +3966,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
               state.ageGroup = message.ageGroup || "College/Adult";
               state.subject = message.subject || "General"; // SESSION: Store tutoring subject
               state.language = message.language || "en"; // LANGUAGE: Store selected language
+              state.uploadedDocCount = typeof message.uploadedDocCount === 'number' ? message.uploadedDocCount : 0;
               
               // STUDENT ISOLATION: Set studentId from init message
               // Also fall back to the session record's studentId for safety
@@ -4205,6 +4210,11 @@ When the student asks if you can see their document or asks you to prove access:
 - You MUST quote or paraphrase a specific line, sentence, or phrase from the document
 - If there's a unique marker (like "ALGEBRA-BLUEBERRY-DELTA"), find and state it exactly
 - NEVER make up or guess content - only reference what is actually in the loaded text
+
+DOCUMENT ACKNOWLEDGMENT RULE:
+- Documents were already acknowledged in your opening greeting. Do NOT list or re-announce document names again.
+- When the student asks about their documents, reference the content directly — never recite a list of filenames.
+- Focus on helping with the material, not on describing what files are loaded.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${STT_ARTIFACT_HARDENING}`;
               
               console.log(`[Custom Voice] 📚 System instruction enhanced with ${state.uploadedDocuments.length} documents (${ragChars} chars)`);
@@ -4251,18 +4261,21 @@ HONESTY INSTRUCTIONS:
               console.log(`[MEMORY_GREETING] sessionId=${state.sessionId}, SKIPPED (hasGreeted=${state.hasGreeted}, tutorAlreadySpoke=${tutorAlreadySpoke})`);
             }
             
-            // Extract document titles from uploaded documents - but only claim access if content exists
+            // Extract document titles from Active documents only (checkbox-checked)
             // NO-GHOSTING: Use hasActualDocContent calculated above
+            // CAP: Show at most 3 filenames in greeting to avoid rambling
             const greetingDocTitles: string[] = [];
             if (!shouldSkipGreeting && hasActualDocContent && state.uploadedDocuments && state.uploadedDocuments.length > 0) {
-              state.uploadedDocuments.forEach((doc, i) => {
+              state.uploadedDocuments.forEach((doc) => {
                 const titleMatch = doc.match(/^\[Document: ([^\]]+)\]/);
-                if (titleMatch) {
+                if (titleMatch && greetingDocTitles.length < 3) {
                   greetingDocTitles.push(titleMatch[1]);
                 }
               });
             }
-            // If no actual content, greetingDocTitles stays empty - greeting won't claim doc access
+            // Count of Active docs vs total uploaded (Active + Inactive)
+            const activeDocCount = greetingDocTitles.length;
+            const inactiveDocCount = Math.max(0, state.uploadedDocCount - (state.uploadedDocuments?.length || 0));
             
             // ============================================
             // CONTINUITY GREETING: Check for prior sessions
@@ -4525,6 +4538,10 @@ HONESTY INSTRUCTIONS:
               
               // FIRST-TURN-ONLY: Mark as greeted to prevent duplicate greetings on reconnect
               state.hasGreeted = true;
+              // DOCS: Mark docs as acknowledged so tutor never re-lists them later
+              if (greetingDocTitles.length > 0) {
+                state.hasAcknowledgedDocs = true;
+              }
             }
 
             // ============================================
@@ -6341,6 +6358,10 @@ PROOF REQUIREMENT:
 When the student asks if you can see their document or asks you to prove access:
 - You MUST quote or paraphrase a specific line, sentence, or phrase from the document
 - NEVER make up or guess content - only reference what is actually in the loaded text
+
+DOCUMENT ACKNOWLEDGMENT RULE:
+- Do NOT list or re-announce document names. Reference the content directly.
+- Focus on helping with the material, not on describing what files are loaded.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${STT_ARTIFACT_HARDENING}`;
                   } else {
                     console.log(`[Custom Voice] ⚠️ Mid-session upload has no content - not claiming access`);
@@ -6348,8 +6369,8 @@ When the student asks if you can see their document or asks you to prove access:
                   
                   console.log(`[Custom Voice] 📚 System instruction updated with ${state.uploadedDocuments.length} documents`);
                   
-                  // Send acknowledgment via voice
-                  const ackMessage = `Great! I can now see "${message.filename}". What would you like to know about it?`;
+                  // Send acknowledgment via voice — content-focused, no filename listing
+                  const ackMessage = `I've loaded your new document. What would you like to work on from it?`;
                   
                   // Add to transcript
                   const ackEntry: TranscriptEntry = {
