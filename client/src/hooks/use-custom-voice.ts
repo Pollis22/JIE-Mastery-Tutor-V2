@@ -304,6 +304,8 @@ export function useCustomVoice() {
   const isConnectedRef = useRef<boolean>(false);
   const isProcessingRef = useRef<boolean>(false);
   const isSessionActiveRef = useRef<boolean>(false);
+  const micMeterIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const fallbackMicMeterIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // ADAPTIVE BARGE-IN STATE (Feature flag: BARGE_IN_ADAPTIVE_ENABLED)
@@ -1323,17 +1325,10 @@ export function useCustomVoice() {
         // DIAGNOSTIC FIX (Dec 23, 2025): Log close reason for debugging
         // Helps diagnose premature session endings
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        console.log("[Custom Voice] 🔌 Disconnected", {
-          code: event.code,
-          reason: event.reason || "(no reason)",
-          wasClean: event.wasClean,
-        });
-        console.trace("[Custom Voice] onclose stack trace");
+        console.log(`[VOICE_END] wsClosed code=${event.code} reason=${event.reason || 'none'} clean=${event.wasClean}`);
         setIsConnected(false);
-        // Clear thinking indicator on disconnect
         setIsTutorThinking(false);
         thinkingTurnIdRef.current = null;
-        // MIC STATUS: Disconnected, mic is off
         updateMicStatus('mic_off', true);
         cleanup();
       };
@@ -1992,17 +1987,10 @@ registerProcessor('audio-processor', AudioProcessor);
           console.log(`[MicMeter] rms=${rms.toFixed(6)} hasNonZero=${hasNonZero} ctx=${audioContextRef.current?.state} track=${trackState} stream=${streamActive ? 'active' : 'inactive'}`);
         };
         
-        // Log mic level every 2 seconds
-        const micMeterInterval = setInterval(logMicRms, 2000);
+        if (micMeterIntervalRef.current) clearInterval(micMeterIntervalRef.current);
+        micMeterIntervalRef.current = setInterval(logMicRms, 2000);
         
-        // Initial log
         setTimeout(logMicRms, 100);
-        
-        // Cleanup interval when processor is disconnected
-        const originalDisconnect = () => {
-          clearInterval(micMeterInterval);
-        };
-        // Note: will be called when session ends
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
         // Add a GainNode to amplify quiet microphones at the hardware level
@@ -2321,7 +2309,8 @@ registerProcessor('audio-processor', AudioProcessor);
           console.log(`[MicMeter-Fallback] rms=${rms.toFixed(6)} hasNonZero=${hasNonZero} ctx=${audioContextRef.current?.state} track=${trackState} stream=${streamActive ? 'active' : 'inactive'}`);
         };
         
-        const fallbackMicMeterInterval = setInterval(logFallbackMicRms, 2000);
+        if (fallbackMicMeterIntervalRef.current) clearInterval(fallbackMicMeterIntervalRef.current);
+        fallbackMicMeterIntervalRef.current = setInterval(logFallbackMicRms, 2000);
         setTimeout(logFallbackMicRms, 100);
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -2724,29 +2713,26 @@ registerProcessor('audio-processor', AudioProcessor);
   };
   
   const stopMicrophone = () => {
-    console.log("[Custom Voice] 🛑 Stopping microphone...");
+    const trackCount = mediaStreamRef.current?.getTracks().length || 0;
+    console.log("[VOICE_END] stopMicrophone trackCount=" + trackCount);
     
-    // Stop all tracks in the media stream
     if (mediaStreamRef.current) {
       mediaStreamRef.current.getTracks().forEach(track => {
         track.stop();
-        console.log("[Custom Voice] ⏸️ Stopped track:", track.kind);
       });
       mediaStreamRef.current = null;
     }
     
-    // Disconnect and clean up audio processor
     if (processorRef.current) {
       try {
         processorRef.current.disconnect();
-        console.log("[Custom Voice] 🔌 Disconnected audio processor");
       } catch (error) {
-        console.warn("[Custom Voice] ⚠️ Error disconnecting processor:", error);
+        // Already disconnected
       }
       processorRef.current = null;
     }
     
-    console.log("[Custom Voice] ✅ Microphone stopped successfully");
+    console.log("[VOICE_END] stopMicrophone complete");
   };
   
   const retryMicrophone = useCallback(async () => {
@@ -2950,6 +2936,18 @@ registerProcessor('audio-processor', AudioProcessor);
   };
 
   const cleanup = () => {
+    console.log("[VOICE_END] cleanup() — stopping all audio/mic/intervals");
+    isSessionActiveRef.current = false;
+    
+    if (micMeterIntervalRef.current) {
+      clearInterval(micMeterIntervalRef.current);
+      micMeterIntervalRef.current = null;
+    }
+    if (fallbackMicMeterIntervalRef.current) {
+      clearInterval(fallbackMicMeterIntervalRef.current);
+      fallbackMicMeterIntervalRef.current = null;
+    }
+    
     stopAudio();
     
     if (sileroVadRef.current) {
@@ -3020,12 +3018,9 @@ registerProcessor('audio-processor', AudioProcessor);
     }
     
     disconnectInProgress.current = true;
+    isSessionActiveRef.current = false;
     
-    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    console.log("[Custom Voice] 🛑 DISCONNECT CALLED");
-    console.log("[Custom Voice] Session ID:", sessionId);
-    console.log("[Custom Voice] WebSocket state:", wsRef.current?.readyState);
-    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    console.log("[VOICE_END] disconnect() called sessionId=" + (sessionId || 'none') + " wsReadyState=" + (wsRef.current?.readyState ?? 'null'));
     
     // Capture current WebSocket instance to prevent issues if wsRef changes during async ops
     const ws = wsRef.current;
@@ -3137,17 +3132,17 @@ registerProcessor('audio-processor', AudioProcessor);
       }
       
     } finally {
-      // Always cleanup: remove event listener and reset flag
-      console.log("[Custom Voice] 🧹 Running finally block cleanup");
+      console.log("[VOICE_END] finally block — full cleanup");
       
       if (ackHandler && ws) {
-        console.log("[Custom Voice] 🔄 Removing ACK listener in finally");
         ws.removeEventListener('message', ackHandler);
       }
       
+      const micTrackCount = mediaStreamRef.current?.getTracks().length || 0;
       cleanup();
       setIsConnected(false);
       disconnectInProgress.current = false;
+      console.log("[VOICE_END] micTracksStopped count=" + micTrackCount + " wsClosed=" + (!wsRef.current || wsRef.current.readyState >= WebSocket.CLOSING));
       
       // VOICE_FIX_ACK_LOGS: Structured summary log at end of disconnect
       console.log("[Custom Voice] 📊 Disconnect summary:", JSON.stringify({

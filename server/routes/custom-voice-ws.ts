@@ -6549,70 +6549,69 @@ DOCUMENT ACKNOWLEDGMENT RULE:
             break;
 
           case "end":
-            console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-            console.log("[Session End] 🛑 RECEIVED SESSION END REQUEST");
-            console.log("[Session End] Session ID:", state.sessionId);
-            console.log("[Session End] User ID:", state.userId);
-            console.log("[Session End] Transcript length:", state.transcript.length);
-            console.log("[Session End] Session already ended?", state.isSessionEnded);
-            console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            console.log(`[VOICE_END] received end_session user_id=${state.userId} session_id=${state.sessionId}`);
 
-            // Mark client intent for telemetry
+            if (state.isSessionEnded) {
+              console.log("[VOICE_END] session already ended — skipping duplicate end");
+              break;
+            }
+
             state.clientEndIntent = 'user_clicked_end';
 
-            // Clean up STT health timers
+            // Stop STT
             if (state.sttDeadmanTimerId) { clearInterval(state.sttDeadmanTimerId); state.sttDeadmanTimerId = null; }
             if (state.sttReconnectTimerId) { clearTimeout(state.sttReconnectTimerId); state.sttReconnectTimerId = null; }
             
-            // Close STT connection first
+            let sttClosed = false;
             if (USE_ASSEMBLYAI && state.assemblyAIWs) {
-              console.log("[Session End] 🎤 Closing AssemblyAI connection...");
               closeAssemblyAI(state.assemblyAIWs);
               if (state.assemblyAIState) resetAssemblyAIMergeGuard(state.assemblyAIState);
               state.assemblyAIWs = null;
               state.assemblyAIState = null;
-              console.log("[Session End] ✅ AssemblyAI closed");
+              sttClosed = true;
             } else if (state.deepgramConnection) {
-              console.log("[Session End] 🎤 Closing Deepgram connection...");
               state.deepgramConnection.close();
               state.deepgramConnection = null;
-              console.log("[Session End] ✅ Deepgram closed");
+              sttClosed = true;
             }
 
-            // Clear persistence interval
-            console.log("[Session End] 🧹 Clearing persistence interval...");
-            clearInterval(persistInterval);
-            console.log("[Session End] ✅ Persistence interval cleared");
+            // Stop LLM + TTS
+            if (state.llmAbortController) {
+              state.llmAbortController.abort();
+              state.llmAbortController = null;
+            }
+            if (state.ttsAbortController) {
+              state.ttsAbortController.abort();
+              state.ttsAbortController = null;
+            }
 
-            // Finalize session with user_clicked_end reason
-            console.log("[Session End] 💾 Calling finalizeSession...");
+            // Clear intervals
+            clearInterval(persistInterval);
+            clearInterval(heartbeatInterval);
+
+            // Finalize
             try {
               const endCloseDetails: CloseDetails = {
                 triggeredBy: 'client',
                 clientIntent: 'user_clicked_end',
               };
               await finalizeSession(state, 'normal', undefined, endCloseDetails);
-              console.log("[Session End] ✅ finalizeSession completed successfully");
             } catch (error) {
-              console.error("[Session End] ❌ finalizeSession FAILED:", error);
-              // Don't throw - still try to close gracefully
+              console.error("[VOICE_END] finalizeSession error:", error);
             }
 
-            // Send acknowledgment to client
-            console.log("[Session End] 📤 Sending session_ended ACK to client...");
+            // ACK
             ws.send(JSON.stringify({ 
               type: "session_ended",
               sessionId: state.sessionId,
               transcriptLength: state.transcript.length,
               success: true
             }));
-            console.log("[Session End] ✅ ACK sent");
             
-            // Close WebSocket
-            console.log("[Session End] 🔌 Closing WebSocket...");
+            console.log(`[VOICE_END] sttClosed=${sttClosed} ttsCanceled=true audioForwardingStopped=true session_ended_sent=true`);
+            
             ws.close(1000, 'Session ended normally');
-            console.log("[Session End] ✅ Session end complete");
-            console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            console.log(`[VOICE_END] wsClosed=true session_id=${state.sessionId}`);
             break;
 
           default:

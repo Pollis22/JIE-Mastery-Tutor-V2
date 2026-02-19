@@ -593,23 +593,22 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
   
   const endSession = useCallback(async () => {
     if (isEndingRef.current) {
-      console.log('[VOICE_UI] endSession called but already ending — idempotent skip');
+      console.log('[VOICE_END] endSession already in progress — skip');
       return;
     }
     isEndingRef.current = true;
     
     try {
       const currentSessionId = sessionIdRef.current;
-      console.log(`[VOICE_UI] state=ending sessionId=${currentSessionId}`);
+      console.log(`[VOICE_END] sent end_session wsReadyState=${customVoice.isConnected ? 'OPEN' : 'CLOSED'} sessionId=${currentSessionId}`);
       
       if (currentSessionId) {
-        console.log(`[VOICE_UI] ws_close_sent sessionId=${currentSessionId}`);
         await customVoice.disconnect(currentSessionId);
-        console.log(`[VOICE_UI] ws_closed sessionId=${currentSessionId}`);
       } else {
-        console.warn('[VOICE_UI] No sessionId — calling disconnect without ID');
         await customVoice.disconnect();
       }
+      
+      console.log(`[VOICE_END] disconnect resolved sessionId=${currentSessionId}`);
       
       setIsMuted(false);
       setSessionId(null);
@@ -622,10 +621,8 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
         title: "Session Ended",
         description: "Voice tutoring session has ended",
       });
-      
-      console.log('[VOICE_UI] state=ended — teardown complete');
     } catch (error: any) {
-      console.error('[VOICE_UI] endSession error:', error);
+      console.error('[VOICE_END] endSession error:', error);
       toast({
         title: "Error",
         description: "Failed to end session properly",
@@ -828,17 +825,6 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
             </>
           ) : (
             <>
-              <Button
-                onClick={endSession}
-                variant="destructive"
-                size="sm"
-                className="gap-2"
-                data-testid="button-end-session"
-              >
-                <MicOff className="h-4 w-4" />
-                End Session
-              </Button>
-              
               <Button
                 onClick={toggleMute}
                 variant="outline"
