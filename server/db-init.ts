@@ -72,6 +72,9 @@ export async function initializeDatabase() {
     // PRODUCTION-SAFE: Ensure users.transcript_email column exists
     await ensureUsersTranscriptEmailColumn();
     
+    // PRODUCTION-SAFE: Ensure users.additional_emails column exists
+    await ensureUsersAdditionalEmailsColumn();
+    
     // PRODUCTION-SAFE: Ensure content_violations and user_suspensions tables exist
     await ensureContentModerationTables();
     
@@ -385,6 +388,32 @@ async function ensureUsersTranscriptEmailColumn() {
   } catch (error) {
     console.error('[DB-Init] ⚠️ Failed to add users.transcript_email column:', error);
     // Don't throw - this is non-critical, fallback to login email will work
+  }
+}
+
+/**
+ * PRODUCTION-SAFE: Ensure users table has additional_emails column
+ * Uses ALTER TABLE ... ADD COLUMN IF NOT EXISTS for idempotent execution
+ */
+async function ensureUsersAdditionalEmailsColumn() {
+  console.log('[DB-Init] Checking users.additional_emails column...');
+  
+  try {
+    const checkResult = await pool.query(`
+      SELECT 1 FROM information_schema.columns 
+      WHERE table_schema = 'public' 
+      AND table_name = 'users' 
+      AND column_name = 'additional_emails'
+    `);
+    
+    if (checkResult.rows.length === 0) {
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS additional_emails text[]`);
+      console.log('[DB-Init] ✅ Added column: users.additional_emails');
+    } else {
+      console.log('[DB-Init] ✅ users.additional_emails column already exists');
+    }
+  } catch (error) {
+    console.error('[DB-Init] ⚠️ Failed to add users.additional_emails column:', error);
   }
 }
 
