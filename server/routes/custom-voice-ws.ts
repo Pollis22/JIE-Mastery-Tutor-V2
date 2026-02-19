@@ -1851,6 +1851,7 @@ async function finalizeSession(
       const parentResult = await db.select({
         email: users.email,
         transcriptEmail: users.transcriptEmail,
+        additionalEmails: users.additionalEmails,
         parentName: users.parentName,
         emailSummaryFrequency: users.emailSummaryFrequency,
       })
@@ -1861,23 +1862,23 @@ async function finalizeSession(
       const parent = parentResult[0];
       
       if (parent?.email) {
-        // Resolve transcript email destination (transcript_email ?? login email)
-        const destinationEmail = parent.transcriptEmail || parent.email;
-        const emailSource = parent.transcriptEmail ? 'transcript_email' : 'fallback_email';
-        
-        // Check user's email preference before sending
         const emailFrequency = parent.emailSummaryFrequency || 'daily';
+        
+        // Build full recipient list: primary (transcript_email or login) + additional emails
+        const primaryEmail = (parent.transcriptEmail || parent.email).toLowerCase();
+        const allRecipients = new Set<string>([primaryEmail]);
+        if (parent.additionalEmails && Array.isArray(parent.additionalEmails)) {
+          for (const extra of parent.additionalEmails) {
+            if (extra && extra.trim()) allRecipients.add(extra.trim().toLowerCase());
+          }
+        }
         
         if (emailFrequency === 'off') {
           console.log(`[Custom Voice] ℹ️ Email summaries disabled for ${parent.email}`);
         } else if (emailFrequency === 'per_session') {
-          // Send immediately only for 'per_session' preference
           const emailService = new EmailService();
-          
-          // Use subject from session state
           const sessionSubject = state.subject || 'General';
           
-          // Filter and sanitize transcript: remove empty texts and map roles
           const sanitizedTranscript = state.transcript
             .filter(t => t.text && t.text.trim().length > 0)
             .map(t => ({
@@ -1885,24 +1886,25 @@ async function finalizeSession(
               text: t.text.trim()
             }));
           
-          console.log(`[Custom Voice] Email destination: user_id=${state.userId}, to=${destinationEmail}, reason=${emailSource}`);
+          console.log(`[Custom Voice] Email destinations: user_id=${state.userId}, to=[${Array.from(allRecipients).join(', ')}]`);
           
-          await emailService.sendSessionSummary({
-            parentEmail: destinationEmail,
-            parentName: parent.parentName || '',
-            studentName: state.studentName || 'Your child',
-            subject: sessionSubject,
-            gradeLevel: state.ageGroup || 'K-12',
-            duration: durationMinutes,
-            messageCount: sanitizedTranscript.length,
-            transcript: sanitizedTranscript,
-            sessionDate: new Date()
-          });
+          for (const recipientEmail of allRecipients) {
+            await emailService.sendSessionSummary({
+              parentEmail: recipientEmail,
+              parentName: parent.parentName || '',
+              studentName: state.studentName || 'Your child',
+              subject: sessionSubject,
+              gradeLevel: state.ageGroup || 'K-12',
+              duration: durationMinutes,
+              messageCount: sanitizedTranscript.length,
+              transcript: sanitizedTranscript,
+              sessionDate: new Date()
+            });
+          }
           
-          console.log(`[Custom Voice] ✉️ Parent summary email sent to ${destinationEmail}`);
+          console.log(`[Custom Voice] ✉️ Summary email sent to ${allRecipients.size} recipient(s)`);
         } else {
-          // 'daily' or 'weekly' - let cron job handle it
-          console.log(`[Custom Voice] ℹ️ Email will be sent via ${emailFrequency} digest for ${destinationEmail} (${emailSource})`);
+          console.log(`[Custom Voice] ℹ️ Email will be sent via ${emailFrequency} digest to ${allRecipients.size} recipient(s)`);
         }
       }
     } catch (emailError) {

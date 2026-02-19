@@ -31,8 +31,22 @@ interface UserRow {
   user_id: string;
   email: string;
   transcript_email: string | null;
+  additional_emails: string[] | null;
   parent_name: string | null;
   first_name: string | null;
+}
+
+function getDigestRecipients(user: UserRow): string[] {
+  const primaryEmail = user.transcript_email || user.email;
+  const recipients = new Set<string>([primaryEmail.toLowerCase()]);
+  if (user.additional_emails && Array.isArray(user.additional_emails)) {
+    for (const email of user.additional_emails) {
+      if (email && email.trim()) {
+        recipients.add(email.trim().toLowerCase());
+      }
+    }
+  }
+  return Array.from(recipients);
 }
 
 interface DigestStats {
@@ -199,6 +213,7 @@ async function sendDailyDigests(targetDate?: Date): Promise<DigestStats> {
       u.id as user_id,
       u.email,
       u.transcript_email,
+      u.additional_emails,
       u.parent_name,
       u.first_name
     FROM users u
@@ -302,18 +317,19 @@ async function sendDigestForUser(
     }))
   );
 
-  // Resolve transcript email destination (transcript_email ?? login email)
-  const destinationEmail = user.transcript_email || user.email;
-  const emailSource = user.transcript_email ? 'transcript_email' : 'fallback_email';
-  console.log(`[DailyDigest] Email destination: user_id=${user.user_id}, to=${destinationEmail}, reason=${emailSource}`);
+  // Build list of all recipient emails
+  const allRecipients = getDigestRecipients(user);
+  console.log(`[DailyDigest] Email destinations: user_id=${user.user_id}, to=[${allRecipients.join(', ')}]`);
 
-  // Send the digest
-  await emailService.sendDailyDigest({
-    parentEmail: destinationEmail,
-    parentName: user.parent_name || user.first_name || '',
-    sessions,
-    date: digestDate
-  });
+  // Send the digest to all recipients
+  for (const recipientEmail of allRecipients) {
+    await emailService.sendDailyDigest({
+      parentEmail: recipientEmail,
+      parentName: user.parent_name || user.first_name || '',
+      sessions,
+      date: digestDate
+    });
+  }
 
   return sessions.length;
 }
@@ -391,6 +407,7 @@ async function sendWeeklyDigests(): Promise<DigestStats> {
       u.id as user_id,
       u.email,
       u.transcript_email,
+      u.additional_emails,
       u.parent_name,
       u.first_name
     FROM users u
@@ -492,18 +509,19 @@ async function sendWeeklyDigestForUser(
     }))
   );
 
-  // Resolve transcript email destination (transcript_email ?? login email)
-  const destinationEmail = user.transcript_email || user.email;
-  const emailSource = user.transcript_email ? 'transcript_email' : 'fallback_email';
-  console.log(`[WeeklyDigest] Email destination: user_id=${user.user_id}, to=${destinationEmail}, reason=${emailSource}`);
+  // Build list of all recipient emails
+  const allRecipients = getDigestRecipients(user);
+  console.log(`[WeeklyDigest] Email destinations: user_id=${user.user_id}, to=[${allRecipients.join(', ')}]`);
 
-  await emailService.sendDailyDigest({
-    parentEmail: destinationEmail,
-    parentName: user.parent_name || user.first_name || '',
-    sessions,
-    date: digestDate,
-    isWeekly: true
-  });
+  for (const recipientEmail of allRecipients) {
+    await emailService.sendDailyDigest({
+      parentEmail: recipientEmail,
+      parentName: user.parent_name || user.first_name || '',
+      sessions,
+      date: digestDate,
+      isWeekly: true
+    });
+  }
 
   return sessions.length;
 }

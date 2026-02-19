@@ -115,6 +115,8 @@ export const users = pgTable("users", {
   emailSummaryFrequency: varchar("email_summary_frequency", { length: 20 }).default('daily'),
   // Transcript email - separate delivery address for session/digest emails (does NOT affect login)
   transcriptEmail: text("transcript_email"),
+  // Additional email addresses for receiving session summaries (up to 3)
+  additionalEmails: text("additional_emails").array(),
   // Email verification fields
   emailVerified: boolean("email_verified").default(false),
   emailVerificationToken: text("email_verification_token"),

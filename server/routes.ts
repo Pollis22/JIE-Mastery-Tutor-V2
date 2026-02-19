@@ -1104,11 +1104,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Validate and update transcript email if provided
       if (transcriptEmail !== undefined) {
-        // Empty string or null means clear the transcript email (use login email)
         if (transcriptEmail === '' || transcriptEmail === null) {
           updates.transcriptEmail = null;
         } else {
-          // Validate email format
           const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
           if (!emailRegex.test(transcriptEmail)) {
             return res.status(400).json({ 
@@ -1117,6 +1115,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           updates.transcriptEmail = transcriptEmail;
         }
+      }
+      
+      // Validate and update additional emails if provided (up to 3)
+      const { additionalEmails } = req.body;
+      if (additionalEmails !== undefined) {
+        if (!Array.isArray(additionalEmails)) {
+          return res.status(400).json({ message: "additionalEmails must be an array" });
+        }
+        if (additionalEmails.length > 3) {
+          return res.status(400).json({ message: "Maximum 3 additional email addresses allowed" });
+        }
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        const cleaned = additionalEmails
+          .map((e: string) => (e || '').trim())
+          .filter((e: string) => e.length > 0);
+        for (const email of cleaned) {
+          if (!emailRegex.test(email)) {
+            return res.status(400).json({ message: `Invalid email format: ${email}` });
+          }
+        }
+        updates.additionalEmails = cleaned.length > 0 ? cleaned : null;
       }
       
       // Update user's email preferences
@@ -1147,6 +1166,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({
         emailSummaryFrequency: userData?.emailSummaryFrequency || 'daily',
         transcriptEmail: userData?.transcriptEmail || null,
+        additionalEmails: userData?.additionalEmails || [],
         loginEmail: userData?.email || null
       });
     } catch (error: any) {
