@@ -800,61 +800,6 @@ export default function TutorPage() {
           </>
           )}
 
-          {/* Session Controls Row */}
-          <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-center">
-            <select 
-              id="age-range" 
-              value={level} 
-              onChange={e => setLevel(e.target.value as AgentLevel)}
-              className="px-3 py-2 border border-input bg-background text-foreground rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-              data-testid="select-level"
-              disabled={mounted}
-            >
-              <option value="k2">Kindergarten–2</option>
-              <option value="g3_5">Grades 3–5</option>
-              <option value="g6_8">Grades 6–8</option>
-              <option value="g9_12">Grades 9–12</option>
-              <option value="college">College/Adult</option>
-            </select>
-
-            <select 
-              id="language" 
-              value={selectedLanguage} 
-              onChange={e => setSelectedLanguage(e.target.value)}
-              className="px-3 py-2 border border-input bg-background text-foreground rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
-              data-testid="select-language"
-              disabled={mounted}
-            >
-              {SUPPORTED_LANGUAGES.map(lang => (
-                <option key={lang.code} value={lang.code}>
-                  {lang.name}
-                </option>
-              ))}
-            </select>
-
-            {!mounted ? (
-              <button 
-                id="start-btn" 
-                onClick={startTutor} 
-                disabled={!scriptReady || !selectedStudentId}
-                className="px-6 py-2.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary font-semibold text-base"
-                data-testid="button-start-tutor"
-                title={!selectedStudentId ? "Please select a student profile to connect" : ""}
-              >
-                Start Tutor Session
-              </button>
-            ) : (
-              <button 
-                id="end-btn" 
-                onClick={stop} 
-                className="px-6 py-2.5 bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90 focus:outline-none focus:ring-2 focus:ring-primary font-semibold text-base"
-                data-testid="button-stop-tutor"
-              >
-                End Session
-              </button>
-            )}
-          </div>
-
           {/* Voice Tips Section - Hidden during active session */}
           {!mounted && (
           <div className="relative">
@@ -963,22 +908,80 @@ export default function TutorPage() {
             </Card>
           )}
 
-          {/* Document Upload Section - Only shown BEFORE session starts */}
-          {!mounted && user && (
+          {/* Document Upload & Session Controls Section */}
+          {user && (
             <Card className="mt-4" data-testid="card-document-upload">
               <CardContent className="pt-4">
-                <h3 className="text-sm font-semibold flex items-center gap-2 mb-3">
-                  <Paperclip className="w-4 h-4" />
-                  Study Materials
-                </h3>
-                <p className="text-xs text-muted-foreground mb-3">
-                  Select documents before starting your session. You can also upload files during the session using the chat input.
-                </p>
-                <AssignmentsPanel 
-                  userId={user.id}
-                  selectedDocumentIds={selectedDocumentIds}
-                  onDocumentSelectionChange={setSelectedDocumentIds}
-                />
+                {!mounted && (
+                  <>
+                    <h3 className="text-sm font-semibold flex items-center gap-2 mb-3">
+                      <Paperclip className="w-4 h-4" />
+                      Study Materials
+                    </h3>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      Select documents before starting your session. You can also upload files during the session using the chat input.
+                    </p>
+                    <AssignmentsPanel 
+                      userId={user.id}
+                      selectedDocumentIds={selectedDocumentIds}
+                      onDocumentSelectionChange={setSelectedDocumentIds}
+                    />
+                  </>
+                )}
+
+                <div className={`flex flex-col sm:flex-row gap-3 items-stretch sm:items-center ${!mounted ? 'mt-5 pt-5 border-t border-border' : ''}`}>
+                  <select 
+                    id="age-range" 
+                    value={level} 
+                    onChange={e => setLevel(e.target.value as AgentLevel)}
+                    className="px-3 py-2 border border-input bg-background text-foreground rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                    data-testid="select-level"
+                    disabled={mounted}
+                  >
+                    <option value="k2">Kindergarten–2</option>
+                    <option value="g3_5">Grades 3–5</option>
+                    <option value="g6_8">Grades 6–8</option>
+                    <option value="g9_12">Grades 9–12</option>
+                    <option value="college">College/Adult</option>
+                  </select>
+
+                  <select 
+                    id="language" 
+                    value={selectedLanguage} 
+                    onChange={e => setSelectedLanguage(e.target.value)}
+                    className="px-3 py-2 border border-input bg-background text-foreground rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                    data-testid="select-language"
+                    disabled={mounted}
+                  >
+                    {SUPPORTED_LANGUAGES.map(lang => (
+                      <option key={lang.code} value={lang.code}>
+                        {lang.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  {!mounted ? (
+                    <button 
+                      id="start-btn" 
+                      onClick={startTutor} 
+                      disabled={!scriptReady || !selectedStudentId}
+                      className="px-6 py-2.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary font-semibold text-base sm:ml-auto"
+                      data-testid="button-start-tutor"
+                      title={!selectedStudentId ? "Please select a student profile to connect" : ""}
+                    >
+                      Start Tutor Session
+                    </button>
+                  ) : (
+                    <button 
+                      id="end-btn" 
+                      onClick={stop} 
+                      className="px-6 py-2.5 bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90 focus:outline-none focus:ring-2 focus:ring-primary font-semibold text-base sm:ml-auto"
+                      data-testid="button-stop-tutor"
+                    >
+                      End Session
+                    </button>
+                  )}
+                </div>
               </CardContent>
             </Card>
           )}
