@@ -1,10 +1,10 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card, CardContent } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { VoiceStatusIndicator } from "./VoiceStatusIndicator";
 import { useAgeTheme } from "@/contexts/ThemeContext";
+import { ArrowDown } from "lucide-react";
 
 interface RealtimeMessage {
   role: 'user' | 'assistant' | 'system';
@@ -26,6 +26,8 @@ interface Props {
   isHearingStudent?: boolean;
 }
 
+const NEAR_BOTTOM_THRESHOLD = 80;
+
 export function RealtimeVoiceTranscript({ 
   messages, 
   isConnected, 
@@ -39,20 +41,68 @@ export function RealtimeVoiceTranscript({
   isHearingStudent = false
 }: Props) {
   const lastMessageRef = useRef<HTMLDivElement>(null);
-  const statusIndicatorRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const { theme, isYoungLearner } = useAgeTheme();
+  
+  const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
+  const autoScrollRef = useRef(true);
+  const programmaticScrollRef = useRef(false);
+  const prevMessagesLenRef = useRef(0);
   
   const prefersReducedMotion = typeof window !== 'undefined' 
     ? window.matchMedia('(prefers-reduced-motion: reduce)').matches 
     : false;
 
-  useEffect(() => {
-    if (statusIndicatorRef.current) {
-      statusIndicatorRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
-    } else if (lastMessageRef.current) {
-      lastMessageRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  const checkNearBottom = useCallback((): boolean => {
+    const el = scrollContainerRef.current;
+    if (!el) return true;
+    return (el.scrollHeight - (el.scrollTop + el.clientHeight)) < NEAR_BOTTOM_THRESHOLD;
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    programmaticScrollRef.current = true;
+    el.scrollTo({ top: el.scrollHeight, behavior: prefersReducedMotion ? 'auto' : 'smooth' });
+    requestAnimationFrame(() => {
+      programmaticScrollRef.current = false;
+    });
+  }, [prefersReducedMotion]);
+
+  const handleScroll = useCallback(() => {
+    if (programmaticScrollRef.current) return;
+    const nearBottom = checkNearBottom();
+    if (nearBottom !== autoScrollRef.current) {
+      autoScrollRef.current = nearBottom;
+      setAutoScrollEnabled(nearBottom);
     }
-  }, [messages, isTutorThinking, isTutorSpeaking, isHearingStudent]);
+  }, [checkNearBottom]);
+
+  const handleJumpToLive = useCallback(() => {
+    autoScrollRef.current = true;
+    setAutoScrollEnabled(true);
+    scrollToBottom();
+  }, [scrollToBottom]);
+
+  useEffect(() => {
+    const newLen = messages.length;
+    const grew = newLen > prevMessagesLenRef.current;
+    prevMessagesLenRef.current = newLen;
+
+    if (autoScrollRef.current) {
+      requestAnimationFrame(() => {
+        scrollToBottom();
+      });
+    } else if (grew) {
+      requestAnimationFrame(() => {
+        if (checkNearBottom()) {
+          autoScrollRef.current = true;
+          setAutoScrollEnabled(true);
+          scrollToBottom();
+        }
+      });
+    }
+  }, [messages, isTutorThinking, isTutorSpeaking, isHearingStudent, scrollToBottom, checkNearBottom]);
 
   const getStatusBadge = () => {
     if (!isConnected) return <Badge variant="secondary">Disconnected</Badge>;
@@ -61,7 +111,7 @@ export function RealtimeVoiceTranscript({
       case 'connecting':
         return <Badge variant="outline" className="animate-pulse">Connecting...</Badge>;
       case 'active':
-        return <Badge variant="default" className="bg-green-600">🎤 Live</Badge>;
+        return <Badge variant="default" className="bg-green-600">Live</Badge>;
       case 'ended':
         return <Badge variant="secondary">Ended</Badge>;
       case 'error':
@@ -85,7 +135,7 @@ export function RealtimeVoiceTranscript({
     <div className="w-full h-full flex flex-col" data-testid="realtime-voice-transcript">
       <div className="flex items-center justify-between mb-3 flex-shrink-0">
         <h3 className={`text-sm font-medium ${isDark ? 'text-gray-400' : 'text-muted-foreground'}`}>
-          🎙️ Voice Conversation Transcript
+          Voice Conversation Transcript
         </h3>
         <div className="flex items-center gap-2">
           {language && (
@@ -102,9 +152,14 @@ export function RealtimeVoiceTranscript({
         </div>
       </div>
       
-      <Card className={`flex-1 min-h-0 flex flex-col ${isDark ? 'bg-slate-800/50 border-slate-700' : 'border-2'}`}>
-        <CardContent className="p-0 flex-1 min-h-0 overflow-hidden">
-          <ScrollArea className="h-full w-full p-4">
+      <Card className={`flex-1 min-h-0 flex flex-col relative ${isDark ? 'bg-slate-800/50 border-slate-700' : 'border-2'}`}>
+        <CardContent className="p-0 flex-1 min-h-0 overflow-hidden relative">
+          <div
+            ref={scrollContainerRef}
+            onScroll={handleScroll}
+            className="h-full w-full overflow-y-auto p-4 scroll-smooth"
+            data-testid="transcript-scroll-container"
+          >
             <div className="space-y-3">
               {messages.length === 0 ? (
                 <div className={`text-center text-sm py-8 ${isDark ? 'text-gray-500' : 'text-muted-foreground'}`}>
@@ -178,8 +233,7 @@ export function RealtimeVoiceTranscript({
                 </AnimatePresence>
               )}
               
-              {/* Voice Status Indicator - ephemeral, updates in-place, always visible */}
-              <div ref={statusIndicatorRef}>
+              <div>
                 <VoiceStatusIndicator
                   isConnected={isConnected}
                   communicationMode={communicationMode}
@@ -190,10 +244,29 @@ export function RealtimeVoiceTranscript({
                 />
               </div>
               
-              {/* Spacer to ensure last message isn't hidden behind sticky input */}
-              <div className="h-4" />
+              <div className="h-20" />
             </div>
-          </ScrollArea>
+          </div>
+          
+          {!autoScrollEnabled && messages.length > 0 && (
+            <button
+              onClick={handleJumpToLive}
+              className={`
+                absolute bottom-3 left-1/2 -translate-x-1/2 z-10
+                flex items-center gap-1.5 px-3 py-1.5 rounded-full
+                text-xs font-medium shadow-lg transition-all
+                hover:scale-105 active:scale-95
+                ${isDark
+                  ? 'bg-blue-600 text-white hover:bg-blue-500 shadow-blue-900/40'
+                  : 'bg-blue-600 text-white hover:bg-blue-700 shadow-blue-600/30'
+                }
+              `}
+              data-testid="button-jump-to-live"
+            >
+              <ArrowDown className="h-3 w-3" />
+              Jump to live
+            </button>
+          )}
         </CardContent>
       </Card>
     </div>
