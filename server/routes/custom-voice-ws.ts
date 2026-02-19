@@ -4487,9 +4487,31 @@ HONESTY INSTRUCTIONS:
               const langGreeting = greetings[lang] || greetings['en'];
               const ageClosing = langGreeting.closing[ageGroup] || langGreeting.closing['College/Adult'];
               
-              // CONTINUITY GREETING: If prior sessions exist, use welcome back greeting
+              // GREETING PRIORITY ORDER:
+              // (1) Active docs > (2) Continuity > (3) Generic
+              
+              // (1) ACTIVE DOCS GREETING: If active documents are selected, always acknowledge them first
+              if (docTitles.length > 0) {
+                if (docTitles.length <= 3) {
+                  return langGreeting.intro + langGreeting.docAck(docTitles.length, docTitles.join(', ')) + ageClosing;
+                } else {
+                  // 4+ active docs: don't list filenames
+                  const manyDocsAck: Record<string, string> = {
+                    en: ` You have multiple Active documents selected for this session.`,
+                    es: ` Tienes múltiples documentos activos seleccionados para esta sesión.`,
+                    fr: ` Tu as plusieurs documents actifs sélectionnés pour cette session.`,
+                    de: ` Du hast mehrere aktive Dokumente für diese Sitzung ausgewählt.`,
+                    pt: ` Você tem vários documentos ativos selecionados para esta sessão.`,
+                    zh: `你为本次课程选择了多个活跃文档。`,
+                    ar: ` لديك عدة مستندات نشطة محددة لهذه الجلسة.`,
+                    sw: ` Una nyaraka nyingi zinazotumika zilizochaguliwa kwa kipindi hiki.`,
+                  };
+                  return langGreeting.intro + (manyDocsAck[lang] || manyDocsAck['en']) + ageClosing;
+                }
+              }
+              
+              // (2) CONTINUITY GREETING: If prior sessions exist and no active docs, use welcome back greeting
               if (priorExists && topic) {
-                // Language-specific continuity greetings
                 const continuityGreetings: Record<string, (name: string, tutorName: string, topic: string) => string> = {
                   en: (n, t, tp) => `Welcome back, ${n}! I'm ${t}, your AI tutor. Shall we continue our discussion on ${tp}? What do you remember most from last time?`,
                   es: (n, t, tp) => `¡Bienvenido de nuevo, ${n}! Soy ${t}, tu tutor de IA. ¿Continuamos con nuestra conversación sobre ${tp}? ¿Qué recuerdas de la última vez?`,
@@ -4504,18 +4526,15 @@ HONESTY INSTRUCTIONS:
                 return continuityFn(name, tutorName, topic);
               }
               
-              if (docTitles.length > 0) {
-                return langGreeting.intro + langGreeting.docAck(docTitles.length, docTitles.join(', ')) + ageClosing;
-              } else {
-                return langGreeting.intro + ageClosing;
-              }
+              // (3) GENERIC GREETING: No active docs and no continuity
+              return langGreeting.intro + ageClosing;
             };
             
-            // LANGUAGE: Generate greeting in the selected language
-            // NO-GHOSTING: Use greetingDocTitles which is empty if no actual content
-            // CONTINUITY: Pass hasPriorSessions and continuityTopic
+            // GREETING PRIORITY: (1) Active docs > (2) Continuity > (3) Generic
             // FIRST-TURN-ONLY: Only generate and add greeting if not already greeted
             if (!shouldSkipGreeting) {
+              const greetingMode = greetingDocTitles.length > 0 ? 'ACTIVE_DOCS' : (hasPriorSessions && continuityTopic ? 'CONTINUITY' : 'GENERIC');
+              console.log(`[GREETING_PRIORITY] mode=${greetingMode}, activeDocTitles=${greetingDocTitles.length}, hasPrior=${hasPriorSessions}, topic=${continuityTopic || 'none'}`);
               greeting = getLocalizedGreeting(state.language, state.studentName, personality.name, state.ageGroup, greetingDocTitles, hasPriorSessions, continuityTopic);
               console.log(`[Custom Voice] 🌍 Generated greeting in language: ${state.language}`);
               
