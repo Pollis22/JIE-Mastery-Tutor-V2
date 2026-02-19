@@ -157,6 +157,67 @@ async function testStudentIsolation() {
       failed++;
     }
 
+    console.log('\nTEST 4: Null studentId isolation (sessions without student profile)');
+    const summariesNull = await getRecentSessionSummaries({
+      userId: testUserId!,
+      studentId: null,
+      limit: 5
+    });
+    const nullHasA = summariesNull.some(s => s.studentId === studentAId);
+    const nullHasB = summariesNull.some(s => s.studentId === studentBId);
+    if (!nullHasA && !nullHasB) {
+      console.log('  PASS: Null studentId query returns only null-studentId summaries');
+      passed++;
+    } else {
+      console.log(`  FAIL: Null studentId query leaked student data! hasA=${nullHasA} hasB=${nullHasB}`);
+      failed++;
+    }
+
+    console.log('\nTEST 5: Cross-user isolation (different user cannot access summaries)');
+    const fakeUserId = 'fake-user-' + suffix;
+    const summariesCrossUser = await getRecentSessionSummaries({
+      userId: fakeUserId,
+      studentId: studentAId,
+      limit: 5
+    });
+    if (summariesCrossUser.length === 0) {
+      console.log('  PASS: Different user cannot access Student A summaries');
+      passed++;
+    } else {
+      console.log(`  FAIL: Cross-user leak! Found ${summariesCrossUser.length} summaries for fake user`);
+      failed++;
+    }
+
+    console.log('\nTEST 6: Continuity block positive content verification');
+    if (blockA.includes('multiplication') || blockA.includes('times tables')) {
+      console.log('  PASS: A block contains expected A topics (multiplication/times tables)');
+      passed++;
+    } else {
+      console.log(`  FAIL: A block missing expected topics. Content: ${blockA.substring(0, 100)}`);
+      failed++;
+    }
+    if (blockB.includes('reading comprehension') || blockB.includes('vocabulary')) {
+      console.log('  PASS: B block contains expected B topics (reading/vocabulary)');
+      passed++;
+    } else {
+      console.log(`  FAIL: B block missing expected topics. Content: ${blockB.substring(0, 100)}`);
+      failed++;
+    }
+
+    console.log('\nTEST 7: Error path returns empty array (safe fallback)');
+    const summariesBadUser = await getRecentSessionSummaries({
+      userId: '',
+      studentId: 'nonexistent-student-id',
+      limit: 5
+    });
+    if (Array.isArray(summariesBadUser) && summariesBadUser.length === 0) {
+      console.log('  PASS: Invalid params return empty array (safe fallback)');
+      passed++;
+    } else {
+      console.log(`  FAIL: Invalid params did not return empty array`);
+      failed++;
+    }
+
   } catch (error) {
     console.error('Test execution error:', error);
     failed++;
