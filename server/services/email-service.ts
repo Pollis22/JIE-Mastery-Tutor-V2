@@ -2202,6 +2202,318 @@ Summary for parent:`
       return false;
     }
   }
+
+  async sendEnhancedSessionSummary(data: {
+    parentEmail: string;
+    parentName: string;
+    studentName: string;
+    subject: string;
+    gradeLevel: string;
+    duration: number;
+    messageCount: number;
+    transcript: Array<{ role: string; text: string; timestamp?: number }>;
+    sessionDate: Date;
+    performanceMetrics: {
+      avgPromptsPerConcept: string;
+      avgResponseLatencySeconds: string;
+      conceptsReached: number;
+      engagementRating: string;
+    };
+    observationFlagsHtml: string;
+  }): Promise<boolean> {
+    try {
+      const resend = getResendClient();
+      const fromEmail = getFromEmail();
+
+      const formattedDate = data.sessionDate.toLocaleDateString('en-US', {
+        weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
+        timeZone: 'America/Chicago'
+      });
+
+      const formattedTime = data.sessionDate.toLocaleTimeString('en-US', {
+        hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago'
+      });
+
+      // Section 2: What We Worked On (Claude narrative, 5-8 sentences)
+      const narrativeSummary = await this.generateEnhancedNarrative(data.transcript, data.subject, data.studentName);
+
+      // Sections 4, 5, 6: Claude JSON extraction
+      const { strengths, areasToStrengthen, followUp } = await this.generateStructuredInsights(
+        data.transcript, data.subject, data.studentName
+      );
+
+      // Section 7: Last 10 messages
+      const highlightExchanges = this.formatEnhancedTranscriptHighlights(data.transcript);
+
+      const metricsTable = `
+        <table style="width:100%; border-collapse:collapse; margin:16px 0; font-size:14px;">
+          <tr style="background:#f1f5f9;">
+            <td style="padding:10px 14px; border:1px solid #e2e8f0; font-weight:600; color:#374151;">Concepts Reached</td>
+            <td style="padding:10px 14px; border:1px solid #e2e8f0; color:#111827;">${data.performanceMetrics.conceptsReached}</td>
+          </tr>
+          <tr>
+            <td style="padding:10px 14px; border:1px solid #e2e8f0; font-weight:600; color:#374151;">Avg Prompts per Concept</td>
+            <td style="padding:10px 14px; border:1px solid #e2e8f0; color:#111827;">${data.performanceMetrics.avgPromptsPerConcept}</td>
+          </tr>
+          <tr style="background:#f1f5f9;">
+            <td style="padding:10px 14px; border:1px solid #e2e8f0; font-weight:600; color:#374151;">Avg Response Time</td>
+            <td style="padding:10px 14px; border:1px solid #e2e8f0; color:#111827;">${data.performanceMetrics.avgResponseLatencySeconds}s</td>
+          </tr>
+          <tr>
+            <td style="padding:10px 14px; border:1px solid #e2e8f0; font-weight:600; color:#374151;">Engagement Rating</td>
+            <td style="padding:10px 14px; border:1px solid #e2e8f0; color:#111827;">${data.performanceMetrics.engagementRating} / 5.0</td>
+          </tr>
+        </table>
+      `;
+
+      const strengthsHtml = strengths.length > 0
+        ? strengths.map(s => `<li style="margin:6px 0; color:#374151;">${s}</li>`).join('')
+        : '<li style="color:#6b7280;">Summary will be available after longer sessions.</li>';
+
+      const areasHtml = areasToStrengthen.length > 0
+        ? areasToStrengthen.map(a => `<li style="margin:6px 0; color:#374151;">${a}</li>`).join('')
+        : '<li style="color:#6b7280;">No specific areas identified this session.</li>';
+
+      const followUpHtml = followUp.length > 0
+        ? followUp.map(f => `<li style="margin:6px 0; color:#374151;">${f}</li>`).join('')
+        : '<li style="color:#6b7280;">Continue practicing at the current pace.</li>';
+
+      const html = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <style>
+            body { font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f8fafc; }
+            .container { max-width: 640px; margin: 0 auto; }
+            .header { background: linear-gradient(135deg, #4F46E5 0%, #3730A3 100%); color: white; padding: 30px 20px; border-radius: 8px 8px 0 0; text-align: center; }
+            .header h1 { margin: 0; font-size: 22px; }
+            .content { background: #ffffff; padding: 30px; border-radius: 0 0 8px 8px; }
+            .section { margin: 24px 0; }
+            .section h3 { color: #4F46E5; margin: 0 0 10px; font-size: 16px; }
+            .narrative-box { background: #f0f9ff; padding: 18px; border-radius: 8px; border-left: 4px solid #4F46E5; }
+            .transcript-box { background: #fafafa; padding: 16px; border-radius: 8px; }
+            .tutor-msg { color: #4F46E5; margin: 10px 0; padding-left: 12px; border-left: 2px solid #4F46E5; font-size: 14px; }
+            .student-msg { color: #059669; margin: 10px 0; padding-left: 12px; border-left: 2px solid #059669; font-size: 14px; }
+            .footer { text-align: center; margin-top: 30px; padding: 20px; color: #6b7280; font-size: 11px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <!-- Section 1: Session Header -->
+            <div class="header">
+              <h1>Session Report: ${data.studentName}</h1>
+              <p style="margin: 6px 0 0; opacity: 0.9; font-size: 14px;">${data.subject} &bull; ${data.gradeLevel} &bull; ${data.duration} min &bull; ${formattedDate} at ${formattedTime} CT</p>
+            </div>
+
+            <div class="content">
+              <p>Hi ${data.parentName || 'there'},</p>
+
+              <!-- Section 2: What We Worked On -->
+              <div class="section">
+                <h3>What We Worked On</h3>
+                <div class="narrative-box">
+                  <p style="margin:0; color:#374151;">${narrativeSummary}</p>
+                </div>
+              </div>
+
+              <!-- Section 3: Performance Snapshot -->
+              <div class="section">
+                <h3>Performance Snapshot</h3>
+                ${metricsTable}
+              </div>
+
+              <!-- Section 4: Strengths -->
+              <div class="section">
+                <h3>Strengths Demonstrated</h3>
+                <ul style="margin:0; padding-left:20px;">${strengthsHtml}</ul>
+              </div>
+
+              <!-- Section 5: Areas to Strengthen -->
+              <div class="section">
+                <h3>Areas to Strengthen</h3>
+                <ul style="margin:0; padding-left:20px;">${areasHtml}</ul>
+              </div>
+
+              <!-- Section 6: Recommended Follow-Up -->
+              <div class="section">
+                <h3>Recommended Follow-Up</h3>
+                <ul style="margin:0; padding-left:20px;">${followUpHtml}</ul>
+              </div>
+
+              <!-- Section 7: Session Highlights -->
+              <div class="section">
+                <h3>Session Highlights</h3>
+                <div class="transcript-box">${highlightExchanges}</div>
+              </div>
+
+              <!-- Section 8: Learning Pattern Observations (conditional) -->
+              ${data.observationFlagsHtml}
+
+              <!-- Section 9: Footer -->
+              <div style="text-align: center; margin-top: 20px;">
+                <a href="${this.getBaseUrl()}/dashboard" style="display:inline-block; background:#4F46E5; color:white !important; padding:12px 24px; text-decoration:none; border-radius:8px; font-weight:600;">View Dashboard</a>
+              </div>
+            </div>
+
+            <div class="footer">
+              <p>JIE Mastery AI Tutor &bull; Personalized Learning for Every Student</p>
+              <p style="font-size:10px; color:#9ca3af; margin-top:8px;">
+                This report is auto-generated by JIE Mastery AI and has not been reviewed by a licensed educator, 
+                psychologist, or medical professional. Performance metrics reflect in-session interactions only and 
+                should not be interpreted as formal academic assessments. For concerns about your child's learning 
+                or development, consult a qualified professional.
+              </p>
+              <p style="font-size:10px; color:#9ca3af;">
+                To change email frequency, visit your <a href="${this.getBaseUrl()}/dashboard" style="color:#4F46E5;">account settings</a>.
+              </p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+
+      await resend.emails.send({
+        from: `JIE Mastery <${fromEmail}>`,
+        to: data.parentEmail,
+        subject: `${data.studentName}'s Session Report - ${data.subject} - ${formattedDate}`,
+        html
+      });
+
+      console.log(`[EmailService] Enhanced session summary sent to: ${data.parentEmail}`);
+      return true;
+    } catch (error) {
+      console.error('[EmailService] Failed to send enhanced session summary:', error);
+      return false;
+    }
+  }
+
+  private async generateEnhancedNarrative(
+    transcript: Array<{ role: string; text: string }>,
+    subject: string,
+    studentName: string
+  ): Promise<string> {
+    const fallback = `${studentName} had a productive ${subject} tutoring session today.`;
+    if (transcript.length < 2) return fallback;
+
+    const recentTranscript = transcript.slice(-30);
+    const conversationText = recentTranscript
+      .map(t => `${t.role === 'assistant' ? 'Tutor' : 'Student'}: ${t.text}`)
+      .join('\n');
+
+    try {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': process.env.ANTHROPIC_API_KEY || '',
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 300,
+          messages: [{
+            role: 'user',
+            content: `You are writing a session narrative for a parent about their child's tutoring session. Write 5-8 sentences describing what ${studentName} worked on in this ${subject} session. Be specific about topics, concepts, and progression. Use a warm but professional tone. Do not use quotes or bullet points. Focus on what was covered and how the student progressed.
+
+Conversation:
+${conversationText}
+
+Narrative for parent:`
+          }]
+        })
+      });
+
+      if (!response.ok) return fallback;
+      const data = await response.json();
+      return data.content?.[0]?.text?.trim() || fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  private async generateStructuredInsights(
+    transcript: Array<{ role: string; text: string }>,
+    subject: string,
+    studentName: string
+  ): Promise<{ strengths: string[]; areasToStrengthen: string[]; followUp: string[] }> {
+    const fallback = { strengths: [], areasToStrengthen: [], followUp: [] };
+    if (transcript.length < 4) return fallback;
+
+    const recentTranscript = transcript.slice(-30);
+    const conversationText = recentTranscript
+      .map(t => `${t.role === 'assistant' ? 'Tutor' : 'Student'}: ${t.text}`)
+      .join('\n');
+
+    try {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': process.env.ANTHROPIC_API_KEY || '',
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 400,
+          messages: [{
+            role: 'user',
+            content: `Analyze this ${subject} tutoring session for ${studentName}. Return ONLY valid JSON with no additional text, in this exact format:
+{
+  "strengths": ["strength 1", "strength 2"],
+  "areasToStrengthen": ["area 1"],
+  "followUp": ["suggestion 1", "suggestion 2"]
+}
+
+Rules:
+- Each array should have 1-3 items
+- Each item should be one clear, specific sentence
+- Be encouraging and constructive
+- Focus on observable behaviors, not diagnoses
+- "followUp" should contain actionable suggestions for home practice
+
+Conversation:
+${conversationText}`
+          }]
+        })
+      });
+
+      if (!response.ok) return fallback;
+      const data = await response.json();
+      const text = data.content?.[0]?.text?.trim() || '';
+
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) return fallback;
+      const parsed = JSON.parse(jsonMatch[0]);
+      return {
+        strengths: Array.isArray(parsed.strengths) ? parsed.strengths.slice(0, 3) : [],
+        areasToStrengthen: Array.isArray(parsed.areasToStrengthen) ? parsed.areasToStrengthen.slice(0, 3) : [],
+        followUp: Array.isArray(parsed.followUp) ? parsed.followUp.slice(0, 3) : []
+      };
+    } catch {
+      return fallback;
+    }
+  }
+
+  private formatEnhancedTranscriptHighlights(
+    transcript: Array<{ role: string; text: string }>
+  ): string {
+    const highlights = transcript.slice(-10);
+    if (highlights.length === 0) {
+      return '<p style="color: #666; font-style: italic;">No transcript available.</p>';
+    }
+    return highlights
+      .map(t => {
+        const isTutor = t.role === 'assistant';
+        const speaker = isTutor ? 'Tutor' : 'Student';
+        const className = isTutor ? 'tutor-msg' : 'student-msg';
+        const icon = isTutor ? '🎓' : '👤';
+        const text = t.text.length > 300 ? t.text.substring(0, 300) + '...' : t.text;
+        return `<p class="${className}">${icon} <strong>${speaker}:</strong> ${text}</p>`;
+      })
+      .join('');
+  }
 }
 
 export const emailService = new EmailService();

@@ -3822,6 +3822,74 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ============================================
+  // LEARNING OBSERVATIONS API
+  // ============================================
+  app.get("/api/learning-observations/:studentName", async (req, res) => {
+    try {
+      if (!req.isAuthenticated()) {
+        return res.status(401).json({ message: "Not authenticated" });
+      }
+      const user = req.user as any;
+      const studentName = decodeURIComponent(req.params.studentName);
+
+      const { pool } = await import('./db');
+
+      const instResult = await pool.query(
+        `SELECT enable_learning_observations FROM institution_settings WHERE institution_id = $1`,
+        [user.id]
+      );
+      if (instResult.rows[0] && instResult.rows[0].enable_learning_observations === false) {
+        return res.status(403).json({ message: "Learning observations are disabled" });
+      }
+
+      const obsResult = await pool.query(
+        `SELECT * FROM learning_observations WHERE user_id = $1 AND student_name = $2`,
+        [user.id, studentName]
+      );
+
+      if (!obsResult.rows[0]) {
+        return res.json({ observations: null, message: "No observations yet" });
+      }
+
+      const obs = obsResult.rows[0];
+      if (obs.total_sessions < 5) {
+        return res.json({
+          observations: {
+            totalSessions: obs.total_sessions,
+            totalSessionMinutes: obs.total_session_minutes,
+            strongestSubject: obs.strongest_subject,
+            subjectRequiringAttention: obs.subject_requiring_attention,
+          },
+          flags: [],
+          message: `${5 - obs.total_sessions} more sessions needed before learning pattern observations appear.`
+        });
+      }
+
+      return res.json({
+        observations: {
+          totalSessions: obs.total_sessions,
+          totalSessionMinutes: obs.total_session_minutes,
+          avgResponseLatencyMs: obs.avg_response_latency_ms,
+          avgPromptsPerConcept: obs.avg_prompts_per_concept,
+          avgEngagementScore: obs.avg_engagement_score,
+          shortAnswerFrequency: obs.short_answer_frequency,
+          sessionCompletionRate: obs.session_completion_rate,
+          strongestSubject: obs.strongest_subject,
+          subjectRequiringAttention: obs.subject_requiring_attention,
+          subjectLatency: obs.subject_latency,
+          subjectPrompts: obs.subject_prompts,
+          subjectEngagement: obs.subject_engagement,
+        },
+        flags: obs.active_flags || [],
+        lastUpdated: obs.last_updated,
+      });
+    } catch (error: any) {
+      console.error('[API] Failed to fetch learning observations:', error);
+      res.status(500).json({ message: "Failed to fetch learning observations" });
+    }
+  });
+
   const httpServer = createServer(app);
   
   return httpServer;

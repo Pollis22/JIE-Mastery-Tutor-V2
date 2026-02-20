@@ -1885,13 +1885,54 @@ async function finalizeSession(
             .filter(t => t.text && t.text.trim().length > 0)
             .map(t => ({
               role: t.speaker === 'student' ? 'user' : 'assistant',
-              text: t.text.trim()
+              text: t.text.trim(),
+              timestamp: t.timestamp
             }));
+          
+          // Calculate session metrics for enhanced email + observation update
+          const { calculateSessionMetrics, calculateEmailMetrics, updateLearningObservations, renderObservationFlags } = await import('../services/learning-observation-service');
+          
+          const sessionMetricsRaw = calculateSessionMetrics(sanitizedTranscript, reason);
+          const emailMetrics = calculateEmailMetrics(sanitizedTranscript, state.ageGroup || 'K-12');
+          
+          // Update learning observations (isolated try/catch)
+          let observationFlagsHtml = '';
+          try {
+            if (state.userId && state.studentName) {
+              const metrics = {
+                ...sessionMetricsRaw,
+                userId: state.userId,
+                studentName: state.studentName || 'Your child',
+                subject: sessionSubject,
+                gradeLevel: state.ageGroup || 'K-12',
+                durationMinutes,
+                transcript: sanitizedTranscript
+              };
+              await updateLearningObservations(metrics);
+              console.log(`[Custom Voice] ✅ Learning observations updated for ${state.studentName}`);
+              
+              // Fetch current flags for email rendering
+              const { pool } = await import('../db');
+              const obsResult = await pool.query(
+                `SELECT active_flags, total_sessions FROM learning_observations WHERE user_id = $1 AND student_name = $2`,
+                [state.userId, state.studentName]
+              );
+              if (obsResult.rows[0]) {
+                const flags = obsResult.rows[0].active_flags || [];
+                const totalSessions = obsResult.rows[0].total_sessions || 0;
+                if (flags.length > 0) {
+                  observationFlagsHtml = renderObservationFlags(flags, state.studentName || 'Your child', totalSessions);
+                }
+              }
+            }
+          } catch (obsError) {
+            console.warn('[Custom Voice] ⚠️ Learning observation update failed (non-blocking):', obsError);
+          }
           
           console.log(`[Custom Voice] Email destinations: user_id=${state.userId}, to=[${Array.from(allRecipients).join(', ')}]`);
           
           for (const recipientEmail of allRecipients) {
-            await emailService.sendSessionSummary({
+            await emailService.sendEnhancedSessionSummary({
               parentEmail: recipientEmail,
               parentName: parent.parentName || '',
               studentName: state.studentName || 'Your child',
@@ -1900,11 +1941,13 @@ async function finalizeSession(
               duration: durationMinutes,
               messageCount: sanitizedTranscript.length,
               transcript: sanitizedTranscript,
-              sessionDate: new Date()
+              sessionDate: new Date(),
+              performanceMetrics: emailMetrics,
+              observationFlagsHtml
             });
           }
           
-          console.log(`[Custom Voice] ✉️ Summary email sent to ${allRecipients.size} recipient(s)`);
+          console.log(`[Custom Voice] ✉️ Enhanced summary email sent to ${allRecipients.size} recipient(s)`);
         } else {
           console.log(`[Custom Voice] ℹ️ Email will be sent via ${emailFrequency} digest to ${allRecipients.size} recipient(s)`);
         }
