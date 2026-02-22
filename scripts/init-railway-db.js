@@ -162,6 +162,102 @@ async function initializeDatabase() {
     `);
     console.log('✅ document_embeddings table created');
 
+    // Create session_summaries table for continuity memory
+    console.log('📝 Creating session_summaries table...');
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS session_summaries (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        user_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        student_id VARCHAR REFERENCES students(id) ON DELETE SET NULL,
+        session_id VARCHAR NOT NULL REFERENCES realtime_sessions(id) ON DELETE CASCADE,
+        summary_text TEXT NOT NULL,
+        topics_covered TEXT[] NOT NULL DEFAULT '{}'::text[],
+        concepts_mastered TEXT[],
+        concepts_struggled TEXT[],
+        student_insights TEXT,
+        subject VARCHAR(100),
+        grade_band VARCHAR(50),
+        duration_minutes INTEGER,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_session_summaries_user_date ON session_summaries(user_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_session_summaries_student_date ON session_summaries(student_id, created_at);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_session_summaries_session ON session_summaries(session_id);
+    `);
+    console.log('✅ session_summaries table created');
+
+    // Create memory_jobs table for async summary generation queue
+    console.log('📝 Creating memory_jobs table...');
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS memory_jobs (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        job_type VARCHAR(50) NOT NULL,
+        user_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        student_id VARCHAR REFERENCES students(id) ON DELETE SET NULL,
+        session_id VARCHAR NOT NULL REFERENCES realtime_sessions(id) ON DELETE CASCADE,
+        status VARCHAR(20) NOT NULL DEFAULT 'pending',
+        attempts INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT,
+        run_after TIMESTAMPTZ DEFAULT NOW(),
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_memory_jobs_status_runafter ON memory_jobs(status, run_after, created_at);
+    `);
+    console.log('✅ memory_jobs table created');
+
+    // Create learning_observations table for per-student rolling analytics
+    console.log('📝 Creating learning_observations table...');
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS learning_observations (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        user_id VARCHAR NOT NULL,
+        student_name TEXT NOT NULL,
+        total_sessions INTEGER NOT NULL DEFAULT 0,
+        total_session_minutes INTEGER NOT NULL DEFAULT 0,
+        avg_response_latency_ms NUMERIC DEFAULT 0,
+        subject_latency JSONB DEFAULT '{}',
+        subject_session_counts JSONB DEFAULT '{}',
+        avg_prompts_per_concept NUMERIC DEFAULT 0,
+        subject_prompts JSONB DEFAULT '{}',
+        avg_engagement_score NUMERIC DEFAULT 0,
+        subject_engagement JSONB DEFAULT '{}',
+        short_answer_frequency NUMERIC DEFAULT 0,
+        one_word_answer_count INTEGER DEFAULT 0,
+        early_dropoff_count INTEGER DEFAULT 0,
+        session_completion_rate NUMERIC DEFAULT 0,
+        strongest_subject TEXT,
+        subject_requiring_attention TEXT,
+        active_flags JSONB DEFAULT '[]',
+        recent_flag_window JSONB DEFAULT '[]',
+        last_updated TIMESTAMPTZ DEFAULT NOW(),
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(user_id, student_name)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_learning_observations_user ON learning_observations(user_id);
+    `);
+    console.log('✅ learning_observations table created');
+
+    // Create usage_logs table for billing minute tracking
+    console.log('📝 Creating usage_logs table...');
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS usage_logs (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        user_id VARCHAR NOT NULL REFERENCES users(id),
+        session_id VARCHAR REFERENCES learning_sessions(id),
+        minutes_used INTEGER NOT NULL,
+        session_type TEXT NOT NULL,
+        "timestamp" TIMESTAMPTZ DEFAULT NOW() NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_usage_logs_user ON usage_logs(user_id);
+    `);
+    console.log('✅ usage_logs table created');
+
     // Create admin_logs table
     console.log('📝 Creating admin_logs table...');
     await pool.query(`

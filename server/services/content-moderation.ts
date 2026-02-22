@@ -288,7 +288,7 @@ export async function moderateContent(
       
       const response = await withRetry(async () => {
         return anthropic.messages.create({
-          model: "claude-3-5-haiku-20241022", // Fast, cheap model for moderation
+          model: "claude-haiku-4-5-20251001", // Fast, cheap model for moderation
           max_tokens: 100,
           messages: [{
             role: "user",
