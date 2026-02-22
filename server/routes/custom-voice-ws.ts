@@ -1091,8 +1091,8 @@ const GRADE_BAND_TIMING: Record<string, GradeBandTimingConfig> = {
   'K2': { bargeInDebounceMs: 600, bargeInDecayMs: 300, bargeInCooldownMs: 850, shortBurstMinMs: 300, postAudioBufferMs: 2000, minMsAfterAudioStartForBargeIn: 800, continuationGraceMs: 800, continuationHedgeGraceMs: 1800, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 4, bargeInConfirmDurationMs: 600 },
   'G3-5': { bargeInDebounceMs: 500, bargeInDecayMs: 260, bargeInCooldownMs: 750, shortBurstMinMs: 260, postAudioBufferMs: 1800, minMsAfterAudioStartForBargeIn: 600, continuationGraceMs: 700, continuationHedgeGraceMs: 1600, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 500 },
   'G6-8': { bargeInDebounceMs: 400, bargeInDecayMs: 200, bargeInCooldownMs: 650, shortBurstMinMs: 220, postAudioBufferMs: 1500, minMsAfterAudioStartForBargeIn: 500, continuationGraceMs: 600, continuationHedgeGraceMs: 1500, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 400 },
-  'G9-12': { bargeInDebounceMs: 350, bargeInDecayMs: 180, bargeInCooldownMs: 600, shortBurstMinMs: 200, postAudioBufferMs: 1400, minMsAfterAudioStartForBargeIn: 400, continuationGraceMs: 550, continuationHedgeGraceMs: 1400, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 350 },
-  'ADV': { bargeInDebounceMs: 350, bargeInDecayMs: 160, bargeInCooldownMs: 550, shortBurstMinMs: 180, postAudioBufferMs: 1200, minMsAfterAudioStartForBargeIn: 350, continuationGraceMs: 550, continuationHedgeGraceMs: 1400, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 350 },
+  'G9-12': { bargeInDebounceMs: 200, bargeInDecayMs: 140, bargeInCooldownMs: 300, shortBurstMinMs: 140, postAudioBufferMs: 1400, minMsAfterAudioStartForBargeIn: 150, continuationGraceMs: 550, continuationHedgeGraceMs: 1400, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 2, bargeInConfirmDurationMs: 150 },
+  'ADV': { bargeInDebounceMs: 200, bargeInDecayMs: 120, bargeInCooldownMs: 250, shortBurstMinMs: 120, postAudioBufferMs: 1200, minMsAfterAudioStartForBargeIn: 150, continuationGraceMs: 550, continuationHedgeGraceMs: 1400, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 2, bargeInConfirmDurationMs: 150 },
 };
 const DEFAULT_GRADE_BAND_TIMING: GradeBandTimingConfig = GRADE_BAND_TIMING['G6-8'];
 
@@ -6477,23 +6477,29 @@ DOCUMENT ACKNOWLEDGMENT RULE:
             // so we trust this signal and update server state
             // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
             const timeSinceAudioForVAD = Date.now() - state.lastAudioSentAt;
+            const isClientBargeIn = message.bargeIn === true;
 
             // Only process if tutor was speaking recently
             if (state.isTutorSpeaking && timeSinceAudioForVAD < 30000) {
-              console.log(`[Custom Voice] 🛑 BARGE-IN via client VAD (audio sent ${timeSinceAudioForVAD}ms ago)`);
+              console.log(`[Custom Voice] 🛑 BARGE-IN via client VAD (audio sent ${timeSinceAudioForVAD}ms ago, clientBargeIn=${isClientBargeIn})`);
 
-              // Mark interruption for post-interrupt buffer
-              state.wasInterrupted = true;
-              state.lastInterruptionTime = Date.now();
-              state.isTutorSpeaking = false;
+              if (isClientBargeIn && (state.phase === 'TUTOR_SPEAKING' || state.phase === 'AWAITING_RESPONSE')) {
+                // Client already stopped audio locally — now abort LLM/TTS on server
+                hardInterruptTutor(ws, state, 'client_vad_barge_in');
+                console.log("[Custom Voice] ✅ Client barge-in: LLM/TTS aborted via hardInterruptTutor");
+              } else {
+                // Legacy path: just sync state
+                state.wasInterrupted = true;
+                state.lastInterruptionTime = Date.now();
+                state.isTutorSpeaking = false;
 
-              // Send interrupt signal - confirms server is in sync with client
-              ws.send(JSON.stringify({
-                type: "interrupt",
-                message: "Student speaking (VAD)",
-              }));
+                ws.send(JSON.stringify({
+                  type: "interrupt",
+                  message: "Student speaking (VAD)",
+                }));
 
-              console.log("[Custom Voice] ✅ VAD barge-in processed");
+                console.log("[Custom Voice] ✅ VAD barge-in processed (state sync only)");
+              }
             } else if (timeSinceAudioForVAD < 30000) {
               // Audio was sent recently but isTutorSpeaking is false
               // This means client already stopped playback, just sync state

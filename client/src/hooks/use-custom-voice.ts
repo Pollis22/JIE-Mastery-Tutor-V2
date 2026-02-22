@@ -2419,7 +2419,7 @@ registerProcessor('audio-processor', AudioProcessor);
               console.log(`[Custom Voice] 🛑 VAD (fallback): CONFIRMED barge-in after debounce (rms=${rms.toFixed(4)}, peak=${maxAmplitude.toFixed(4)})`);
               stopAudio();
               setIsTutorSpeaking(false);
-              wsRef.current.send(JSON.stringify({ type: "speech_detected" }));
+              wsRef.current.send(JSON.stringify({ type: "speech_detected", bargeIn: true, gradeBand: gradeBandRef.current }));
               
               // POST-INTERRUPTION BUFFER (Dec 10, 2025 FIX)
               // After barge-in, ignore rapid speech-end events for 2 seconds
