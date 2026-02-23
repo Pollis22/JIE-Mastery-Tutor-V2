@@ -15,7 +15,8 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
-import { Clock, AlertCircle, Upload, File, X, Paperclip, LogOut, Settings, LayoutDashboard, User, Globe, Menu, BookOpen, GraduationCap, ChevronRight } from "lucide-react";
+import { Clock, AlertCircle, Upload, File, X, Paperclip, LogOut, Settings, LayoutDashboard, User, Globe, Menu, BookOpen, GraduationCap, ChevronRight, ChevronDown } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { SUPPORTED_LANGUAGES } from "@shared/languages";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -750,19 +751,26 @@ export default function TutorPage() {
             </Card>
           )}
 
-          {/* Getting Started Instructions - Hidden during active session */}
+          {/* Getting Started Instructions - Collapsible, Hidden during active session */}
           {!mounted && (
           <>
-          <div className="relative bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-4 rounded-md overflow-hidden">
+          <Collapsible>
+          <div className="relative bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden">
             <div 
               className="absolute inset-0 opacity-15 pointer-events-none bg-cover bg-right-bottom"
               style={{ backgroundImage: `url(${tutorHero})` }}
             />
-            <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-4 rounded-lg border border-blue-100 dark:border-blue-900 shadow-sm">
-              <h3 className="font-bold text-blue-900 dark:text-blue-100 mb-3 flex items-center gap-2">
-                <BookOpen className="h-5 w-5 text-blue-600" />
-                How to Use JIE Mastery Tutor
-              </h3>
+            <CollapsibleTrigger className="w-full">
+              <div className="flex items-center justify-between p-4 cursor-pointer hover:bg-blue-50/50 dark:hover:bg-blue-900/20 transition-colors">
+                <h3 className="font-bold text-blue-900 dark:text-blue-100 flex items-center gap-2">
+                  <BookOpen className="h-5 w-5 text-blue-600" />
+                  How to Use JIE Mastery Tutor
+                </h3>
+                <ChevronDown className="h-5 w-5 text-blue-600 transition-transform duration-200 group-data-[state=open]:rotate-180" />
+              </div>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+            <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-4 pt-0 rounded-lg mx-4 mb-4 border border-blue-100 dark:border-blue-900 shadow-sm">
               <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300">
                 <div className="flex gap-3 items-start">
                   <div className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full w-5 h-5 flex items-center justify-center shrink-0 mt-0.5 font-bold text-xs">1</div>
@@ -805,18 +813,27 @@ export default function TutorPage() {
                 </div>
               </div>
             </div>
+            </CollapsibleContent>
           </div>
+          </Collapsible>
           </>
           )}
 
-          {/* Voice Tips Section - Hidden during active session */}
+          {/* Voice Tips Section - Collapsible, Hidden during active session */}
           {!mounted && (
-          <div className="relative">
-            <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm p-4 rounded-lg border border-blue-100 dark:border-blue-900 shadow-sm">
-              <h3 className="font-bold text-blue-900 dark:text-blue-100 mb-3 flex items-center gap-2">
-                <BookOpen className="h-5 w-5 text-blue-600" />
-                How to Talk to Your Tutor (Voice Tips)
-              </h3>
+          <Collapsible>
+          <div className="relative bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden">
+            <CollapsibleTrigger className="w-full">
+              <div className="flex items-center justify-between p-4 cursor-pointer hover:bg-blue-50/50 dark:hover:bg-blue-900/20 transition-colors">
+                <h3 className="font-bold text-blue-900 dark:text-blue-100 flex items-center gap-2">
+                  <BookOpen className="h-5 w-5 text-blue-600" />
+                  How to Talk to Your Tutor (Voice Tips)
+                </h3>
+                <ChevronDown className="h-5 w-5 text-blue-600 transition-transform duration-200 group-data-[state=open]:rotate-180" />
+              </div>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+            <div className="px-4 pb-4">
               <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300">
                 <p className="text-gray-600 dark:text-gray-400">
                   Speaking naturally works best. You don't need special commands or perfect phrasing—just talk as you would to a real tutor.
@@ -864,7 +881,9 @@ export default function TutorPage() {
                 </p>
               </div>
             </div>
+            </CollapsibleContent>
           </div>
+          </Collapsible>
           )}
 
           {/* Active Lesson Context Card */}
