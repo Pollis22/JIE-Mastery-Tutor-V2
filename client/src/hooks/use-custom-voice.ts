@@ -1667,7 +1667,7 @@ export function useCustomVoice() {
           minSpeechMs: 100,
           submitUserSpeechOnPause: false,
           baseAssetPath: "/",
-          onnxWASMBasePath: "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/",
+          onnxWASMBasePath: "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.17.3/dist/",
           getStream: async () => capturedStream,
 
           onSpeechStart: () => {
