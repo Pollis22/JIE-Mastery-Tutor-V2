@@ -1669,6 +1669,10 @@ export function useCustomVoice() {
           submitUserSpeechOnPause: false,
           baseAssetPath: "/",
           onnxWASMBasePath: "/onnx/",
+          ortConfig: (ort) => {
+            ort.env.wasm.numThreads = 1;
+            ort.env.wasm.simd = true;
+          },
           getStream: async () => capturedStream,
 
           onSpeechStart: () => {
