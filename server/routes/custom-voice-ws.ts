@@ -1091,8 +1091,8 @@ const GRADE_BAND_TIMING: Record<string, GradeBandTimingConfig> = {
   'K2': { bargeInDebounceMs: 600, bargeInDecayMs: 300, bargeInCooldownMs: 850, shortBurstMinMs: 300, postAudioBufferMs: 2000, minMsAfterAudioStartForBargeIn: 800, continuationGraceMs: 800, continuationHedgeGraceMs: 1800, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 4, bargeInConfirmDurationMs: 600 },
   'G3-5': { bargeInDebounceMs: 500, bargeInDecayMs: 260, bargeInCooldownMs: 750, shortBurstMinMs: 260, postAudioBufferMs: 1800, minMsAfterAudioStartForBargeIn: 600, continuationGraceMs: 700, continuationHedgeGraceMs: 1600, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 500 },
   'G6-8': { bargeInDebounceMs: 400, bargeInDecayMs: 200, bargeInCooldownMs: 650, shortBurstMinMs: 220, postAudioBufferMs: 1500, minMsAfterAudioStartForBargeIn: 500, continuationGraceMs: 600, continuationHedgeGraceMs: 1500, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 400 },
-  'G9-12': { bargeInDebounceMs: 200, bargeInDecayMs: 140, bargeInCooldownMs: 300, shortBurstMinMs: 140, postAudioBufferMs: 1400, minMsAfterAudioStartForBargeIn: 150, continuationGraceMs: 550, continuationHedgeGraceMs: 1400, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 2, bargeInConfirmDurationMs: 150 },
-  'ADV': { bargeInDebounceMs: 200, bargeInDecayMs: 120, bargeInCooldownMs: 250, shortBurstMinMs: 120, postAudioBufferMs: 1200, minMsAfterAudioStartForBargeIn: 150, continuationGraceMs: 550, continuationHedgeGraceMs: 1400, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 2, bargeInConfirmDurationMs: 150 },
+  'G9-12': { bargeInDebounceMs: 150, bargeInDecayMs: 220, bargeInCooldownMs: 300, shortBurstMinMs: 140, postAudioBufferMs: 1400, minMsAfterAudioStartForBargeIn: 150, continuationGraceMs: 550, continuationHedgeGraceMs: 1400, bargeInPlaybackThreshold: 0.06, consecutiveFramesRequired: 2, bargeInConfirmDurationMs: 120 },
+  'ADV': { bargeInDebounceMs: 100, bargeInDecayMs: 250, bargeInCooldownMs: 200, shortBurstMinMs: 100, postAudioBufferMs: 1000, minMsAfterAudioStartForBargeIn: 100, continuationGraceMs: 500, continuationHedgeGraceMs: 1200, bargeInPlaybackThreshold: 0.05, consecutiveFramesRequired: 1, bargeInConfirmDurationMs: 80 },
 };
 const DEFAULT_GRADE_BAND_TIMING: GradeBandTimingConfig = GRADE_BAND_TIMING['G6-8'];
 
@@ -1339,19 +1339,20 @@ function creditSttActivity(state: SessionState, currentText: string, prevText: s
     state.lastAudioReceivedAt = now;
     state.lastActivityTime = now;
 
-    // FIX (Feb 24, 2026): Only cancel continuation timer if this is genuinely NEW speech
-    // (new words beyond what's already pending in the continuation guard).
-    // AssemblyAI sends formatted duplicates of the same turn which were falsely
-    // cancelling the timer, preventing Claude from ever firing.
-    if (state.continuationTimerId) {
-      const pendingWords = (state.continuationPendingText || '').trim().split(/\s+/).filter(w => w.length > 0).length;
-      if (currentWordCount > pendingWords) {
-        clearTimeout(state.continuationTimerId);
-        state.continuationTimerId = undefined;
-        console.log(`[SpeechActivity] cancelled_continuation_timer (genuinely new speech: ${currentWordCount} words > ${pendingWords} pending)`);
-      } else {
-        console.log(`[SpeechActivity] kept_continuation_timer (no new words: ${currentWordCount} <= ${pendingWords} pending)`);
-      }
+    // Only cancel continuation timer if this is genuinely NEW speech (not a formatted duplicate)
+    // When using first_eot commit mode, AssemblyAI sends a formatted version ~150ms after the 
+    // unformatted EOT. The formatted version has different capitalization/punctuation which 
+    // triggers deltaLen >= 4, but it's not new speech - it's the same turn reformatted.
+    // Cancelling the timer here caused Claude to never be called.
+    if (state.continuationTimerId && !state.continuationPendingText) {
+      // No pending text means no active continuation guard - safe to cancel
+      clearTimeout(state.continuationTimerId);
+      state.continuationTimerId = undefined;
+      console.log(`[SpeechActivity] cancelled_continuation_timer (STT still active, no pending)`);
+    } else if (state.continuationTimerId && state.continuationPendingText) {
+      // Continuation guard is active with pending text - DON'T cancel the timer
+      // This is likely a formatted duplicate or minor STT update
+      console.log(`[SpeechActivity] preserved_continuation_timer (formatted_dup?) pendingLen=${state.continuationPendingText.length} deltaLen=${deltaLen}`);
     }
 
     console.log(`[SpeechActivity] credited_from_stt deltaLen=${deltaLen} words=${currentWordCount} preview="${content.substring(0, 40)}"`);
@@ -3502,7 +3503,12 @@ export function setupCustomVoiceWebSocket(server: Server) {
                   if (!state.tutorAudioPlaying) {
                     state.tutorAudioPlaying = true;
                     state.tutorAudioStartMs = Date.now();
-                    cancelBargeInCandidate(state, 'first_audio_chunk', ws);
+                    // Only cancel idle barge-in candidates - if already ducked/confirming, user is actively speaking
+                    if (!state.bargeInCandidate.isActive || state.bargeInCandidate.stage === 'idle') {
+                      cancelBargeInCandidate(state, 'first_audio_chunk', ws);
+                    } else {
+                      console.log(`[BargeIn] preserved_active_candidate_on_audio_start stage=${state.bargeInCandidate.stage} rms=${state.bargeInCandidate.peakRms.toFixed(4)}`);
+                    }
                     console.log(`[Phase] tutorAudioPlaying=true genId=${state.playbackGenId} session=${state.sessionId?.substring(0, 8) || 'unknown'}`);
                   }
                   ws.send(JSON.stringify({
@@ -5851,15 +5857,21 @@ HONESTY INSTRUCTIONS:
                         const sttAdvanced = state.lastSttActivityAt > state.bargeInCandidate.duckStartMs &&
                           (now - state.lastSttActivityAt) < STT_ACTIVITY_WINDOW_MS;
                         const vadConfirmed = speechDetection.isSpeech;
+                        // For fast bands (ADV, G9-12), high sustained RMS alone confirms barge-in
+                        // STT is too slow and Silero VAD is broken, so requiring them blocks all interruptions
+                        const isFastBand = bandTiming.bargeInConfirmDurationMs <= 150;
+                        const rmsConfirmed = isFastBand && state.bargeInCandidate.peakRms >= 0.15 && rms >= fixedRmsThreshold;
 
-                        if (sttAdvanced || vadConfirmed) {
+                        if (sttAdvanced || vadConfirmed || rmsConfirmed) {
+                          const confirmReason = sttAdvanced ? 'transcript_advanced' : vadConfirmed ? 'vad_confirmed' : 'rms_sustained';
                           console.log(JSON.stringify({
                             event: 'barge_in_hard_stop_confirmed',
                             session_id: state.sessionId,
                             gen_id: state.bargeInCandidate.genId,
                             duck_duration_ms: duckDuration,
-                            confirm_reason: sttAdvanced ? 'transcript_advanced' : 'vad_confirmed',
+                            confirm_reason: confirmReason,
                             peak_rms: state.bargeInCandidate.peakRms.toFixed(4),
+                            current_rms: rms.toFixed(4),
                             frames: state.bargeInCandidate.consecutiveAboveCount,
                           }));
                           state.bargeInDucking = false;
@@ -6271,7 +6283,11 @@ HONESTY INSTRUCTIONS:
                         if (!state.tutorAudioPlaying) {
                           state.tutorAudioPlaying = true;
                           state.tutorAudioStartMs = Date.now();
-                          cancelBargeInCandidate(state, 'first_audio_chunk_text', ws);
+                          if (!state.bargeInCandidate.isActive || state.bargeInCandidate.stage === 'idle') {
+                            cancelBargeInCandidate(state, 'first_audio_chunk_text', ws);
+                          } else {
+                            console.log(`[BargeIn] preserved_active_candidate_on_audio_start stage=${state.bargeInCandidate.stage} rms=${state.bargeInCandidate.peakRms.toFixed(4)} path=text`);
+                          }
                           console.log(`[Phase] tutorAudioPlaying=true genId=${state.playbackGenId} session=${state.sessionId?.substring(0, 8) || 'unknown'} input=text`);
                         }
                         ws.send(JSON.stringify({
