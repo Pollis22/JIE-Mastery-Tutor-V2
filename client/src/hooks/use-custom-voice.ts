@@ -1661,6 +1661,7 @@ export function useCustomVoice() {
         const { MicVAD } = await import("@ricky0123/vad-web");
         const capturedStream = stream;
         const sileroVad = await MicVAD.new({
+          model: "v5",
           positiveSpeechThreshold: 0.8,
           negativeSpeechThreshold: 0.35,
           redemptionMs: 250,
