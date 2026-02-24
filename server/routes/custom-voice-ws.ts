@@ -1339,10 +1339,20 @@ function creditSttActivity(state: SessionState, currentText: string, prevText: s
     state.lastAudioReceivedAt = now;
     state.lastActivityTime = now;
 
-    if (state.continuationTimerId) {
+    // Only cancel continuation timer if this is genuinely NEW speech (not a formatted duplicate)
+    // When using first_eot commit mode, AssemblyAI sends a formatted version ~150ms after the 
+    // unformatted EOT. The formatted version has different capitalization/punctuation which 
+    // triggers deltaLen >= 4, but it's not new speech - it's the same turn reformatted.
+    // Cancelling the timer here caused Claude to never be called.
+    if (state.continuationTimerId && !state.continuationPendingText) {
+      // No pending text means no active continuation guard - safe to cancel
       clearTimeout(state.continuationTimerId);
       state.continuationTimerId = undefined;
-      console.log(`[SpeechActivity] cancelled_continuation_timer (STT still active)`);
+      console.log(`[SpeechActivity] cancelled_continuation_timer (STT still active, no pending)`);
+    } else if (state.continuationTimerId && state.continuationPendingText) {
+      // Continuation guard is active with pending text - DON'T cancel the timer
+      // This is likely a formatted duplicate or minor STT update
+      console.log(`[SpeechActivity] preserved_continuation_timer (formatted_dup?) pendingLen=${state.continuationPendingText.length} deltaLen=${deltaLen}`);
     }
 
     console.log(`[SpeechActivity] credited_from_stt deltaLen=${deltaLen} words=${currentWordCount} preview="${content.substring(0, 40)}"`);
