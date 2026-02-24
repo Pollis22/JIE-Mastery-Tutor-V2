@@ -1339,10 +1339,19 @@ function creditSttActivity(state: SessionState, currentText: string, prevText: s
     state.lastAudioReceivedAt = now;
     state.lastActivityTime = now;
 
+    // FIX (Feb 24, 2026): Only cancel continuation timer if this is genuinely NEW speech
+    // (new words beyond what's already pending in the continuation guard).
+    // AssemblyAI sends formatted duplicates of the same turn which were falsely
+    // cancelling the timer, preventing Claude from ever firing.
     if (state.continuationTimerId) {
-      clearTimeout(state.continuationTimerId);
-      state.continuationTimerId = undefined;
-      console.log(`[SpeechActivity] cancelled_continuation_timer (STT still active)`);
+      const pendingWords = (state.continuationPendingText || '').trim().split(/\s+/).filter(w => w.length > 0).length;
+      if (currentWordCount > pendingWords) {
+        clearTimeout(state.continuationTimerId);
+        state.continuationTimerId = undefined;
+        console.log(`[SpeechActivity] cancelled_continuation_timer (genuinely new speech: ${currentWordCount} words > ${pendingWords} pending)`);
+      } else {
+        console.log(`[SpeechActivity] kept_continuation_timer (no new words: ${currentWordCount} <= ${pendingWords} pending)`);
+      }
     }
 
     console.log(`[SpeechActivity] credited_from_stt deltaLen=${deltaLen} words=${currentWordCount} preview="${content.substring(0, 40)}"`);
