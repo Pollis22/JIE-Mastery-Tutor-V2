@@ -233,8 +233,8 @@ const TURN_FALLBACK_CONFIG = {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 const CONTINUATION_GUARD_CONFIG = {
   ENABLED: process.env.CONTINUATION_GUARD_ENABLED !== 'false',
-  GRACE_MS: parseInt(process.env.CONTINUATION_GRACE_MS || '850', 10),
-  HEDGE_GRACE_MS: parseInt(process.env.CONTINUATION_HEDGE_GRACE_MS || '1500', 10),
+  GRACE_MS: parseInt(process.env.CONTINUATION_GRACE_MS || '1000', 10),
+  HEDGE_GRACE_MS: parseInt(process.env.CONTINUATION_HEDGE_GRACE_MS || '2500', 10),
   MIN_TURN_CHARS: parseInt(process.env.CONTINUATION_MIN_TURN_CHARS || '2', 10),
 };
 
@@ -244,6 +244,13 @@ const HEDGE_PHRASES = [
   "hmm", "hm", "er", "erm", "well", "so", "like",
   "i'm not sure", "im not sure", "i am not sure",
   "let me see", "give me a second", "uno", "este",
+  // Skip-turn phrases (inspired by ElevenLabs Skip Turn tool)
+  "give me a moment", "one moment", "let me think about that",
+  "hang on", "just a second", "just a moment", "let me figure this out",
+  "i'm thinking", "im thinking", "i need a second", "i need a moment",
+  "bear with me", "let me remember", "what was it",
+  "that's a good question", "thats a good question",
+  "okay let me think", "ok let me think",
 ];
 
 function isHedgePhrase(text: string): boolean {
@@ -329,7 +336,7 @@ function shouldDropTranscript(text: string, state: { isSessionEnded: boolean; se
 
 // P1: Thinking-aloud detection for older bands — adds continuation patience
 const OLDER_BANDS = new Set(['G6-8', 'G9-12', 'ADV']);
-const THINKING_ALOUD_EXTRA_GRACE_MS = 800;
+const THINKING_ALOUD_EXTRA_GRACE_MS = 1200;
 
 function isThinkingAloud(pendingText: string): boolean {
   const trimmed = pendingText.trim();
@@ -585,9 +592,9 @@ function createAssemblyAIConnection(
     } else {
       // Global mode: use hardcoded conservative values (rollback)
       endpointingParams = {
-        end_of_turn_confidence_threshold: '0.72',
+        end_of_turn_confidence_threshold: '0.75',
         min_end_of_turn_silence_when_confident: '1200',
-        max_turn_silence: '5500',
+        max_turn_silence: '6000',
       };
     }
     
@@ -776,6 +783,67 @@ function createAssemblyAIConnection(
           
           // C3) Commit mode logic
           if (ASSEMBLYAI_TURN_COMMIT_MODE === 'first_eot') {
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            // LOW-CONFIDENCE EOT DEFERRAL: When confidence is below threshold,
+            // wait briefly before committing. This prevents premature first-sentence
+            // commits (e.g., "okay so what are you packaging" at conf=0.38 while
+            // student is still saying "how much does it weigh...").
+            // If no new EOT arrives during the deferral, we commit what we have.
+            // If a new EOT arrives, the deferral is cancelled and we get the fuller text.
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            const LOW_CONF_THRESHOLD = parseFloat(process.env.EOT_LOW_CONF_THRESHOLD || '0.55');
+            const LOW_CONF_DEFER_MS = parseInt(process.env.EOT_LOW_CONF_DEFER_MS || '900', 10);
+            
+            if (confidence > 0 && confidence < LOW_CONF_THRESHOLD && !state.eotDeferTimerId) {
+              console.log(`[AssemblyAI v3] ⏳ Low-confidence EOT (${confidence.toFixed(2)} < ${LOW_CONF_THRESHOLD}) - deferring ${LOW_CONF_DEFER_MS}ms to accumulate more speech`);
+              // Store deferred state for comparison when next EOT arrives
+              state.eotDeferredWordCount = confirmedTranscript.trim().split(/\s+/).filter((w: string) => w.length > 0).length;
+              state.eotDeferredConfidence = confidence;
+              state.eotDeferTimerId = setTimeout(() => {
+                state.eotDeferTimerId = undefined;
+                state.eotDeferredWordCount = undefined;
+                state.eotDeferredConfidence = undefined;
+                if (confirmedTranscript && !state.currentTurnCommitted) {
+                  console.log(`[AssemblyAI v3] ✅ Deferred EOT firing now with: "${confirmedTranscript.substring(0, 60)}"`);
+                  if (turnOrder !== undefined) {
+                    state.committedTurnOrders.add(turnOrder);
+                  }
+                  state.currentTurnCommitted = true;
+                  // Continue to onTranscript below via the stored text
+                  const deferredText = confirmedTranscript;
+                  const deferredConf = confidence;
+                  confirmedTranscript = '';
+                  state.firstEotTimestamp = undefined;
+                  state.currentTurnCommitted = false;
+                  onTranscript(deferredText, true, deferredConf);
+                }
+              }, LOW_CONF_DEFER_MS);
+              return; // Don't commit yet — wait for deferral or a higher-confidence EOT
+            }
+            
+            // If a deferred EOT is pending and a new EOT arrives, check if it's genuinely new speech
+            // vs just the formatted version of the same turn (which has same confidence + same words)
+            if (state.eotDeferTimerId) {
+              const currentWordCount = confirmedTranscript.trim().split(/\s+/).filter((w: string) => w.length > 0).length;
+              const prevWordCount = state.eotDeferredWordCount || 0;
+              const prevConf = state.eotDeferredConfidence || 0;
+              const hasNewWords = currentWordCount > prevWordCount + 1; // At least 2 new words = genuinely new speech
+              const hasHigherConf = confidence >= LOW_CONF_THRESHOLD && confidence > prevConf + 0.1; // Jumped above threshold significantly
+              
+              if (hasNewWords || hasHigherConf) {
+                // Genuinely new/better EOT — cancel deferral and commit now
+                clearTimeout(state.eotDeferTimerId);
+                state.eotDeferTimerId = undefined;
+                state.eotDeferredWordCount = undefined;
+                state.eotDeferredConfidence = undefined;
+                console.log(`[AssemblyAI v3] ✅ Cancelled deferred EOT - genuinely new speech (words: ${prevWordCount}→${currentWordCount}, conf: ${prevConf.toFixed(2)}→${confidence.toFixed(2)})`);
+              } else {
+                // Same turn reformatted or trivially updated — let the deferral ride
+                console.log(`[AssemblyAI v3] ⏳ Ignoring formatted/duplicate EOT during deferral (words: ${prevWordCount}→${currentWordCount}, conf: ${prevConf.toFixed(2)}→${confidence.toFixed(2)}) - deferral continues`);
+                return; // Don't commit — let the 900ms deferral complete
+              }
+            }
+            
             // first_eot: Trigger Claude on FIRST end_of_turn=true, ignore formatted version
             console.log('[AssemblyAI v3] ✅ first_eot mode - committing on first EOT:', confirmedTranscript);
             // Mark this turn as committed to prevent double trigger from formatted version
@@ -1088,11 +1156,11 @@ interface GradeBandTimingConfig {
 }
 
 const GRADE_BAND_TIMING: Record<string, GradeBandTimingConfig> = {
-  'K2': { bargeInDebounceMs: 600, bargeInDecayMs: 300, bargeInCooldownMs: 850, shortBurstMinMs: 300, postAudioBufferMs: 2000, minMsAfterAudioStartForBargeIn: 800, continuationGraceMs: 800, continuationHedgeGraceMs: 1800, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 4, bargeInConfirmDurationMs: 600 },
-  'G3-5': { bargeInDebounceMs: 500, bargeInDecayMs: 260, bargeInCooldownMs: 750, shortBurstMinMs: 260, postAudioBufferMs: 1800, minMsAfterAudioStartForBargeIn: 600, continuationGraceMs: 700, continuationHedgeGraceMs: 1600, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 500 },
-  'G6-8': { bargeInDebounceMs: 400, bargeInDecayMs: 200, bargeInCooldownMs: 650, shortBurstMinMs: 220, postAudioBufferMs: 1500, minMsAfterAudioStartForBargeIn: 500, continuationGraceMs: 600, continuationHedgeGraceMs: 1500, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 400 },
-  'G9-12': { bargeInDebounceMs: 150, bargeInDecayMs: 220, bargeInCooldownMs: 300, shortBurstMinMs: 140, postAudioBufferMs: 1400, minMsAfterAudioStartForBargeIn: 150, continuationGraceMs: 550, continuationHedgeGraceMs: 1400, bargeInPlaybackThreshold: 0.06, consecutiveFramesRequired: 2, bargeInConfirmDurationMs: 120 },
-  'ADV': { bargeInDebounceMs: 100, bargeInDecayMs: 250, bargeInCooldownMs: 200, shortBurstMinMs: 100, postAudioBufferMs: 1000, minMsAfterAudioStartForBargeIn: 100, continuationGraceMs: 500, continuationHedgeGraceMs: 1200, bargeInPlaybackThreshold: 0.05, consecutiveFramesRequired: 1, bargeInConfirmDurationMs: 80 },
+  'K2': { bargeInDebounceMs: 600, bargeInDecayMs: 300, bargeInCooldownMs: 850, shortBurstMinMs: 300, postAudioBufferMs: 2000, minMsAfterAudioStartForBargeIn: 800, continuationGraceMs: 1400, continuationHedgeGraceMs: 3000, bargeInPlaybackThreshold: 0.15, consecutiveFramesRequired: 4, bargeInConfirmDurationMs: 600 },
+  'G3-5': { bargeInDebounceMs: 500, bargeInDecayMs: 260, bargeInCooldownMs: 750, shortBurstMinMs: 260, postAudioBufferMs: 1800, minMsAfterAudioStartForBargeIn: 600, continuationGraceMs: 1200, continuationHedgeGraceMs: 2800, bargeInPlaybackThreshold: 0.14, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 500 },
+  'G6-8': { bargeInDebounceMs: 400, bargeInDecayMs: 200, bargeInCooldownMs: 650, shortBurstMinMs: 220, postAudioBufferMs: 1500, minMsAfterAudioStartForBargeIn: 500, continuationGraceMs: 1000, continuationHedgeGraceMs: 2500, bargeInPlaybackThreshold: 0.12, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 400 },
+  'G9-12': { bargeInDebounceMs: 150, bargeInDecayMs: 220, bargeInCooldownMs: 300, shortBurstMinMs: 140, postAudioBufferMs: 1400, minMsAfterAudioStartForBargeIn: 150, continuationGraceMs: 900, continuationHedgeGraceMs: 2200, bargeInPlaybackThreshold: 0.10, consecutiveFramesRequired: 2, bargeInConfirmDurationMs: 120 },
+  'ADV': { bargeInDebounceMs: 100, bargeInDecayMs: 250, bargeInCooldownMs: 200, shortBurstMinMs: 100, postAudioBufferMs: 1000, minMsAfterAudioStartForBargeIn: 100, continuationGraceMs: 800, continuationHedgeGraceMs: 2000, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 1, bargeInConfirmDurationMs: 80 },
 };
 const DEFAULT_GRADE_BAND_TIMING: GradeBandTimingConfig = GRADE_BAND_TIMING['G6-8'];
 
@@ -1243,6 +1311,10 @@ interface SessionState {
   continuationTimerId?: NodeJS.Timeout;
   continuationCandidateEotAt?: number;
   continuationSegmentCount: number;
+  // LOW-CONFIDENCE EOT DEFERRAL: Timer for deferred commit
+  eotDeferTimerId?: NodeJS.Timeout;
+  eotDeferredWordCount?: number;
+  eotDeferredConfidence?: number;
   // VOICE PHASE STATE MACHINE: Server-authoritative phase tracking
   phase: VoicePhase;
   phaseSinceMs: number;
@@ -1731,6 +1803,13 @@ async function finalizeSession(
     state.continuationTimerId = undefined;
     state.continuationPendingText = '';
     console.log(`[Finalize] 🧹 Cleared continuation guard timer (reason: ${reason})`);
+  }
+  
+  // LOW-CONFIDENCE EOT DEFERRAL: Clear pending deferral timer
+  if (state.eotDeferTimerId) {
+    clearTimeout(state.eotDeferTimerId);
+    state.eotDeferTimerId = undefined;
+    console.log(`[Finalize] 🧹 Cleared EOT deferral timer (reason: ${reason})`);
   }
 
   // K2 TURN POLICY: Clear stall escape timer
@@ -2322,6 +2401,9 @@ export function setupCustomVoiceWebSocket(server: Server) {
       turnResponseProduced: false,
       continuationPendingText: '',
       continuationSegmentCount: 0,
+      eotDeferTimerId: undefined,
+      eotDeferredWordCount: undefined,
+      eotDeferredConfidence: undefined,
       hasGreeted: false, // GREETING: Not greeted yet
       hasAcknowledgedDocs: false, // DOCS: Not acknowledged yet
       uploadedDocCount: 0, // DOCS: Set from init message
@@ -2686,8 +2768,17 @@ export function setupCustomVoiceWebSocket(server: Server) {
       // P1.5: Phase discipline — queue only if tutor is speaking or thinking
       // Do NOT transition to TURN_COMMITTED during TUTOR_SPEAKING / AWAITING_RESPONSE
       if (state.phase === 'TUTOR_SPEAKING' || state.phase === 'AWAITING_RESPONSE') {
-        state.transcriptQueue.push(text);
-        console.log(`[Pipeline] queued_turn_phase_guard reason=phase_${state.phase} source=${source} queueLen=${state.transcriptQueue.length}`);
+        // QUEUE COALESCING: Merge with last queued item instead of pushing separately
+        // This prevents fragments like "on" + "okay" + "right at this point" from
+        // becoming 3 separate Claude calls
+        if (state.transcriptQueue.length > 0) {
+          const lastIdx = state.transcriptQueue.length - 1;
+          state.transcriptQueue[lastIdx] = (state.transcriptQueue[lastIdx] + ' ' + text).trim();
+          console.log(`[Pipeline] queued_turn_MERGED reason=phase_${state.phase} source=${source} queueLen=${state.transcriptQueue.length} mergedPreview="${state.transcriptQueue[lastIdx].substring(0, 60)}"`);
+        } else {
+          state.transcriptQueue.push(text);
+          console.log(`[Pipeline] queued_turn_phase_guard reason=phase_${state.phase} source=${source} queueLen=${state.transcriptQueue.length}`);
+        }
         sendWsEvent(ws, 'queued_user_turn', {
           sessionId: state.sessionId,
           queueLen: state.transcriptQueue.length,
@@ -2698,10 +2789,17 @@ export function setupCustomVoiceWebSocket(server: Server) {
       }
 
       setPhase(state, 'TURN_COMMITTED', `commit_${source}`, ws);
-      state.transcriptQueue.push(text);
 
       if (state.isProcessing) {
-        console.log(`[Pipeline] queued_turn reason=processing_in_progress source=${source} queueLen=${state.transcriptQueue.length}`);
+        // QUEUE COALESCING: Merge with last queued item if processing
+        if (state.transcriptQueue.length > 0) {
+          const lastIdx = state.transcriptQueue.length - 1;
+          state.transcriptQueue[lastIdx] = (state.transcriptQueue[lastIdx] + ' ' + text).trim();
+          console.log(`[Pipeline] queued_turn_MERGED reason=processing_in_progress source=${source} queueLen=${state.transcriptQueue.length} mergedPreview="${state.transcriptQueue[lastIdx].substring(0, 60)}"`);
+        } else {
+          state.transcriptQueue.push(text);
+          console.log(`[Pipeline] queued_turn reason=processing_in_progress source=${source} queueLen=${state.transcriptQueue.length}`);
+        }
         sendWsEvent(ws, 'queued_user_turn', {
           sessionId: state.sessionId,
           queueLen: state.transcriptQueue.length,
@@ -2709,6 +2807,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
           timestamp: Date.now(),
         });
       } else {
+        state.transcriptQueue.push(text);
         processTranscriptQueue();
       }
     }
@@ -2803,8 +2902,25 @@ export function setupCustomVoiceWebSocket(server: Server) {
         }, TURN_FALLBACK_CONFIG.TIMEOUT_MS);
       }
       
-      console.log(`[Pipeline] 2. Starting to process transcript, queue size: ${state.transcriptQueue.length + 1}`);
-      const transcript = state.transcriptQueue.shift()!;
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      // QUEUE COALESCING: Merge all queued items into a single turn
+      // When the student speaks while the tutor is talking/thinking,
+      // multiple fragments get queued (e.g., "on", "okay", "right at
+      // this point"). Sending them individually causes Claude to say
+      // "your response got cut off" for each fragment. Instead, join
+      // them into one coherent turn before sending to Claude.
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      const queueLen = state.transcriptQueue.length;
+      let transcript: string;
+      if (queueLen > 1) {
+        // Coalesce all queued items into one turn
+        const allItems = state.transcriptQueue.splice(0, queueLen);
+        transcript = allItems.join(' ').trim();
+        console.log(`[Pipeline] 2. COALESCED ${queueLen} queued items into single turn, preview=\"${transcript.substring(0, 80)}\"`);
+      } else {
+        transcript = state.transcriptQueue.shift()!;
+        console.log(`[Pipeline] 2. Starting to process transcript, queue size: 1`);
+      }
 
       try {
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -5777,7 +5893,7 @@ HONESTY INSTRUCTIONS:
                 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                 const bandTiming = getGradeBandTiming(state.ageGroup);
                 const noiseFloor = getNoiseFloor(state.noiseFloorState);
-                const echoGuardThresh = Math.max(0.05, noiseFloor * 5.0);
+                const echoGuardThresh = Math.max(0.06, noiseFloor * 6.0);
                 const fixedRmsThreshold = state.tutorAudioPlaying
                   ? Math.max(echoGuardThresh, bandTiming.bargeInPlaybackThreshold)
                   : Math.max(0.03, noiseFloor * 3.0);
@@ -5860,7 +5976,7 @@ HONESTY INSTRUCTIONS:
                         // For fast bands (ADV, G9-12), high sustained RMS alone confirms barge-in
                         // STT is too slow and Silero VAD is broken, so requiring them blocks all interruptions
                         const isFastBand = bandTiming.bargeInConfirmDurationMs <= 150;
-                        const rmsConfirmed = isFastBand && state.bargeInCandidate.peakRms >= 0.15 && rms >= fixedRmsThreshold;
+                        const rmsConfirmed = isFastBand && state.bargeInCandidate.peakRms >= 0.25 && rms >= fixedRmsThreshold;
 
                         if (sttAdvanced || vadConfirmed || rmsConfirmed) {
                           const confirmReason = sttAdvanced ? 'transcript_advanced' : vadConfirmed ? 'vad_confirmed' : 'rms_sustained';

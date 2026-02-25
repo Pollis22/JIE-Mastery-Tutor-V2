@@ -152,25 +152,25 @@ interface VADProfile {
 const VAD_PROFILES: Record<VADProfileName, VADProfile> = {
   BALANCED: {
     minSpeechMs: 250,
-    endSilenceMs: 850,
-    coalesceWindowMs: 2200,
-    thinkPauseGraceMs: 1400,
+    endSilenceMs: 1100,
+    coalesceWindowMs: 3000,
+    thinkPauseGraceMs: 1800,
     minBargeInSpeechMs: 400,
     minBargeInEnergyMs: 220,
   },
   PATIENT: {
     minSpeechMs: 200,
-    endSilenceMs: 1100,
-    coalesceWindowMs: 3000,
-    thinkPauseGraceMs: 2200,
+    endSilenceMs: 1500,
+    coalesceWindowMs: 4000,
+    thinkPauseGraceMs: 3000,
     minBargeInSpeechMs: 550,
     minBargeInEnergyMs: 260,
   },
   FAST: {
     minSpeechMs: 300,
-    endSilenceMs: 650,
-    coalesceWindowMs: 1500,
-    thinkPauseGraceMs: 900,
+    endSilenceMs: 750,
+    coalesceWindowMs: 2000,
+    thinkPauseGraceMs: 1200,
     minBargeInSpeechMs: 350,
     minBargeInEnergyMs: 200,
   },
@@ -1661,13 +1661,14 @@ export function useCustomVoice() {
         const { MicVAD } = await import("@ricky0123/vad-web");
         const capturedStream = stream;
         const sileroVad = await MicVAD.new({
+          model: "v5",
           positiveSpeechThreshold: 0.8,
           negativeSpeechThreshold: 0.35,
           redemptionMs: 250,
           minSpeechMs: 100,
           submitUserSpeechOnPause: false,
           baseAssetPath: "/",
-          onnxWASMBasePath: "https://unpkg.com/onnxruntime-web@1.17.3/dist/",
+          onnxWASMBasePath: "/onnx/",
           getStream: async () => capturedStream,
 
           onSpeechStart: () => {
@@ -2388,10 +2389,21 @@ registerProcessor('audio-processor', AudioProcessor);
             }
             
             // If tutor is currently speaking, check for user speech above threshold
-            // Lowered from 0.12/0.25 for more responsive interruption
+            // Grade-band-aware: kids need higher thresholds due to ambient noise
             if (isTutorSpeakingRef.current && isPlayingRef.current) {
-              const BARGE_IN_RMS_THRESHOLD = 0.08; // Lowered from 0.12
-              const BARGE_IN_PEAK_THRESHOLD = 0.15; // Lowered from 0.25
+              // Grade-band-aware barge-in thresholds
+              // Kids generate more ambient noise (fidgeting, chair movement, pencil tapping)
+              // so they need higher thresholds to avoid false barge-ins
+              const BARGE_IN_THRESHOLDS: Record<string, { rms: number; peak: number }> = {
+                'K2':    { rms: 0.18, peak: 0.30 },
+                'G3-5':  { rms: 0.16, peak: 0.28 },
+                'G6-8':  { rms: 0.14, peak: 0.24 },
+                'G9-12': { rms: 0.10, peak: 0.18 },
+                'ADV':   { rms: 0.10, peak: 0.18 },
+              };
+              const bandThresholds = BARGE_IN_THRESHOLDS[gradeBandRef.current || 'ADV'] || BARGE_IN_THRESHOLDS['ADV'];
+              const BARGE_IN_RMS_THRESHOLD = bandThresholds.rms;
+              const BARGE_IN_PEAK_THRESHOLD = bandThresholds.peak;
 
               if (rms < BARGE_IN_RMS_THRESHOLD || maxAmplitude < BARGE_IN_PEAK_THRESHOLD) {
                 console.log(`[Custom Voice] 🔇 VAD (fallback): Ignoring ambient sound during tutor (rms=${rms.toFixed(4)}, peak=${maxAmplitude.toFixed(4)}) - below barge-in threshold`);
