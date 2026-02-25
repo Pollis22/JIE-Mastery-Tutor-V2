@@ -796,8 +796,13 @@ function createAssemblyAIConnection(
             
             if (confidence > 0 && confidence < LOW_CONF_THRESHOLD && !state.eotDeferTimerId) {
               console.log(`[AssemblyAI v3] ⏳ Low-confidence EOT (${confidence.toFixed(2)} < ${LOW_CONF_THRESHOLD}) - deferring ${LOW_CONF_DEFER_MS}ms to accumulate more speech`);
+              // Store deferred state for comparison when next EOT arrives
+              state.eotDeferredWordCount = confirmedTranscript.trim().split(/\s+/).filter((w: string) => w.length > 0).length;
+              state.eotDeferredConfidence = confidence;
               state.eotDeferTimerId = setTimeout(() => {
                 state.eotDeferTimerId = undefined;
+                state.eotDeferredWordCount = undefined;
+                state.eotDeferredConfidence = undefined;
                 if (confirmedTranscript && !state.currentTurnCommitted) {
                   console.log(`[AssemblyAI v3] ✅ Deferred EOT firing now with: "${confirmedTranscript.substring(0, 60)}"`);
                   if (turnOrder !== undefined) {
@@ -816,11 +821,27 @@ function createAssemblyAIConnection(
               return; // Don't commit yet — wait for deferral or a higher-confidence EOT
             }
             
-            // If a deferred EOT is pending and a new (better) EOT arrives, cancel the deferral
+            // If a deferred EOT is pending and a new EOT arrives, check if it's genuinely new speech
+            // vs just the formatted version of the same turn (which has same confidence + same words)
             if (state.eotDeferTimerId) {
-              clearTimeout(state.eotDeferTimerId);
-              state.eotDeferTimerId = undefined;
-              console.log(`[AssemblyAI v3] ✅ Cancelled deferred EOT - newer/better EOT arrived (conf=${confidence.toFixed(2)})`);
+              const currentWordCount = confirmedTranscript.trim().split(/\s+/).filter((w: string) => w.length > 0).length;
+              const prevWordCount = state.eotDeferredWordCount || 0;
+              const prevConf = state.eotDeferredConfidence || 0;
+              const hasNewWords = currentWordCount > prevWordCount + 1; // At least 2 new words = genuinely new speech
+              const hasHigherConf = confidence >= LOW_CONF_THRESHOLD && confidence > prevConf + 0.1; // Jumped above threshold significantly
+              
+              if (hasNewWords || hasHigherConf) {
+                // Genuinely new/better EOT — cancel deferral and commit now
+                clearTimeout(state.eotDeferTimerId);
+                state.eotDeferTimerId = undefined;
+                state.eotDeferredWordCount = undefined;
+                state.eotDeferredConfidence = undefined;
+                console.log(`[AssemblyAI v3] ✅ Cancelled deferred EOT - genuinely new speech (words: ${prevWordCount}→${currentWordCount}, conf: ${prevConf.toFixed(2)}→${confidence.toFixed(2)})`);
+              } else {
+                // Same turn reformatted or trivially updated — let the deferral ride
+                console.log(`[AssemblyAI v3] ⏳ Ignoring formatted/duplicate EOT during deferral (words: ${prevWordCount}→${currentWordCount}, conf: ${prevConf.toFixed(2)}→${confidence.toFixed(2)}) - deferral continues`);
+                return; // Don't commit — let the 900ms deferral complete
+              }
             }
             
             // first_eot: Trigger Claude on FIRST end_of_turn=true, ignore formatted version
@@ -1292,6 +1313,8 @@ interface SessionState {
   continuationSegmentCount: number;
   // LOW-CONFIDENCE EOT DEFERRAL: Timer for deferred commit
   eotDeferTimerId?: NodeJS.Timeout;
+  eotDeferredWordCount?: number;
+  eotDeferredConfidence?: number;
   // VOICE PHASE STATE MACHINE: Server-authoritative phase tracking
   phase: VoicePhase;
   phaseSinceMs: number;
@@ -2379,6 +2402,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
       continuationPendingText: '',
       continuationSegmentCount: 0,
       eotDeferTimerId: undefined,
+      eotDeferredWordCount: undefined,
+      eotDeferredConfidence: undefined,
       hasGreeted: false, // GREETING: Not greeted yet
       hasAcknowledgedDocs: false, // DOCS: Not acknowledged yet
       uploadedDocCount: 0, // DOCS: Set from init message
