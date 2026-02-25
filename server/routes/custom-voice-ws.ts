@@ -776,6 +776,46 @@ function createAssemblyAIConnection(
           
           // C3) Commit mode logic
           if (ASSEMBLYAI_TURN_COMMIT_MODE === 'first_eot') {
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            // LOW-CONFIDENCE EOT DEFERRAL: When confidence is below threshold,
+            // wait briefly before committing. This prevents premature first-sentence
+            // commits (e.g., "okay so what are you packaging" at conf=0.38 while
+            // student is still saying "how much does it weigh...").
+            // If no new EOT arrives during the deferral, we commit what we have.
+            // If a new EOT arrives, the deferral is cancelled and we get the fuller text.
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            const LOW_CONF_THRESHOLD = parseFloat(process.env.EOT_LOW_CONF_THRESHOLD || '0.45');
+            const LOW_CONF_DEFER_MS = parseInt(process.env.EOT_LOW_CONF_DEFER_MS || '600', 10);
+            
+            if (confidence > 0 && confidence < LOW_CONF_THRESHOLD && !state.eotDeferTimerId) {
+              console.log(`[AssemblyAI v3] ⏳ Low-confidence EOT (${confidence.toFixed(2)} < ${LOW_CONF_THRESHOLD}) - deferring ${LOW_CONF_DEFER_MS}ms to accumulate more speech`);
+              state.eotDeferTimerId = setTimeout(() => {
+                state.eotDeferTimerId = undefined;
+                if (confirmedTranscript && !state.currentTurnCommitted) {
+                  console.log(`[AssemblyAI v3] ✅ Deferred EOT firing now with: "${confirmedTranscript.substring(0, 60)}"`);
+                  if (turnOrder !== undefined) {
+                    state.committedTurnOrders.add(turnOrder);
+                  }
+                  state.currentTurnCommitted = true;
+                  // Continue to onTranscript below via the stored text
+                  const deferredText = confirmedTranscript;
+                  const deferredConf = confidence;
+                  confirmedTranscript = '';
+                  state.firstEotTimestamp = undefined;
+                  state.currentTurnCommitted = false;
+                  onTranscript(deferredText, true, deferredConf);
+                }
+              }, LOW_CONF_DEFER_MS);
+              return; // Don't commit yet — wait for deferral or a higher-confidence EOT
+            }
+            
+            // If a deferred EOT is pending and a new (better) EOT arrives, cancel the deferral
+            if (state.eotDeferTimerId) {
+              clearTimeout(state.eotDeferTimerId);
+              state.eotDeferTimerId = undefined;
+              console.log(`[AssemblyAI v3] ✅ Cancelled deferred EOT - newer/better EOT arrived (conf=${confidence.toFixed(2)})`);
+            }
+            
             // first_eot: Trigger Claude on FIRST end_of_turn=true, ignore formatted version
             console.log('[AssemblyAI v3] ✅ first_eot mode - committing on first EOT:', confirmedTranscript);
             // Mark this turn as committed to prevent double trigger from formatted version
@@ -1243,6 +1283,8 @@ interface SessionState {
   continuationTimerId?: NodeJS.Timeout;
   continuationCandidateEotAt?: number;
   continuationSegmentCount: number;
+  // LOW-CONFIDENCE EOT DEFERRAL: Timer for deferred commit
+  eotDeferTimerId?: NodeJS.Timeout;
   // VOICE PHASE STATE MACHINE: Server-authoritative phase tracking
   phase: VoicePhase;
   phaseSinceMs: number;
@@ -1731,6 +1773,13 @@ async function finalizeSession(
     state.continuationTimerId = undefined;
     state.continuationPendingText = '';
     console.log(`[Finalize] 🧹 Cleared continuation guard timer (reason: ${reason})`);
+  }
+  
+  // LOW-CONFIDENCE EOT DEFERRAL: Clear pending deferral timer
+  if (state.eotDeferTimerId) {
+    clearTimeout(state.eotDeferTimerId);
+    state.eotDeferTimerId = undefined;
+    console.log(`[Finalize] 🧹 Cleared EOT deferral timer (reason: ${reason})`);
   }
 
   // K2 TURN POLICY: Clear stall escape timer
@@ -2322,6 +2371,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
       turnResponseProduced: false,
       continuationPendingText: '',
       continuationSegmentCount: 0,
+      eotDeferTimerId: undefined,
       hasGreeted: false, // GREETING: Not greeted yet
       hasAcknowledgedDocs: false, // DOCS: Not acknowledged yet
       uploadedDocCount: 0, // DOCS: Set from init message
@@ -2686,8 +2736,17 @@ export function setupCustomVoiceWebSocket(server: Server) {
       // P1.5: Phase discipline — queue only if tutor is speaking or thinking
       // Do NOT transition to TURN_COMMITTED during TUTOR_SPEAKING / AWAITING_RESPONSE
       if (state.phase === 'TUTOR_SPEAKING' || state.phase === 'AWAITING_RESPONSE') {
-        state.transcriptQueue.push(text);
-        console.log(`[Pipeline] queued_turn_phase_guard reason=phase_${state.phase} source=${source} queueLen=${state.transcriptQueue.length}`);
+        // QUEUE COALESCING: Merge with last queued item instead of pushing separately
+        // This prevents fragments like "on" + "okay" + "right at this point" from
+        // becoming 3 separate Claude calls
+        if (state.transcriptQueue.length > 0) {
+          const lastIdx = state.transcriptQueue.length - 1;
+          state.transcriptQueue[lastIdx] = (state.transcriptQueue[lastIdx] + ' ' + text).trim();
+          console.log(`[Pipeline] queued_turn_MERGED reason=phase_${state.phase} source=${source} queueLen=${state.transcriptQueue.length} mergedPreview="${state.transcriptQueue[lastIdx].substring(0, 60)}"`);
+        } else {
+          state.transcriptQueue.push(text);
+          console.log(`[Pipeline] queued_turn_phase_guard reason=phase_${state.phase} source=${source} queueLen=${state.transcriptQueue.length}`);
+        }
         sendWsEvent(ws, 'queued_user_turn', {
           sessionId: state.sessionId,
           queueLen: state.transcriptQueue.length,
@@ -2698,10 +2757,17 @@ export function setupCustomVoiceWebSocket(server: Server) {
       }
 
       setPhase(state, 'TURN_COMMITTED', `commit_${source}`, ws);
-      state.transcriptQueue.push(text);
 
       if (state.isProcessing) {
-        console.log(`[Pipeline] queued_turn reason=processing_in_progress source=${source} queueLen=${state.transcriptQueue.length}`);
+        // QUEUE COALESCING: Merge with last queued item if processing
+        if (state.transcriptQueue.length > 0) {
+          const lastIdx = state.transcriptQueue.length - 1;
+          state.transcriptQueue[lastIdx] = (state.transcriptQueue[lastIdx] + ' ' + text).trim();
+          console.log(`[Pipeline] queued_turn_MERGED reason=processing_in_progress source=${source} queueLen=${state.transcriptQueue.length} mergedPreview="${state.transcriptQueue[lastIdx].substring(0, 60)}"`);
+        } else {
+          state.transcriptQueue.push(text);
+          console.log(`[Pipeline] queued_turn reason=processing_in_progress source=${source} queueLen=${state.transcriptQueue.length}`);
+        }
         sendWsEvent(ws, 'queued_user_turn', {
           sessionId: state.sessionId,
           queueLen: state.transcriptQueue.length,
@@ -2709,6 +2775,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
           timestamp: Date.now(),
         });
       } else {
+        state.transcriptQueue.push(text);
         processTranscriptQueue();
       }
     }
@@ -2803,8 +2870,25 @@ export function setupCustomVoiceWebSocket(server: Server) {
         }, TURN_FALLBACK_CONFIG.TIMEOUT_MS);
       }
       
-      console.log(`[Pipeline] 2. Starting to process transcript, queue size: ${state.transcriptQueue.length + 1}`);
-      const transcript = state.transcriptQueue.shift()!;
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      // QUEUE COALESCING: Merge all queued items into a single turn
+      // When the student speaks while the tutor is talking/thinking,
+      // multiple fragments get queued (e.g., "on", "okay", "right at
+      // this point"). Sending them individually causes Claude to say
+      // "your response got cut off" for each fragment. Instead, join
+      // them into one coherent turn before sending to Claude.
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      const queueLen = state.transcriptQueue.length;
+      let transcript: string;
+      if (queueLen > 1) {
+        // Coalesce all queued items into one turn
+        const allItems = state.transcriptQueue.splice(0, queueLen);
+        transcript = allItems.join(' ').trim();
+        console.log(`[Pipeline] 2. COALESCED ${queueLen} queued items into single turn, preview=\"${transcript.substring(0, 80)}\"`);
+      } else {
+        transcript = state.transcriptQueue.shift()!;
+        console.log(`[Pipeline] 2. Starting to process transcript, queue size: 1`);
+      }
 
       try {
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
