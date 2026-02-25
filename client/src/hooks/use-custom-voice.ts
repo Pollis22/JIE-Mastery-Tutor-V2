@@ -2389,10 +2389,21 @@ registerProcessor('audio-processor', AudioProcessor);
             }
             
             // If tutor is currently speaking, check for user speech above threshold
-            // Lowered from 0.12/0.25 for more responsive interruption
+            // Grade-band-aware: kids need higher thresholds due to ambient noise
             if (isTutorSpeakingRef.current && isPlayingRef.current) {
-              const BARGE_IN_RMS_THRESHOLD = 0.08; // Lowered from 0.12
-              const BARGE_IN_PEAK_THRESHOLD = 0.15; // Lowered from 0.25
+              // Grade-band-aware barge-in thresholds
+              // Kids generate more ambient noise (fidgeting, chair movement, pencil tapping)
+              // so they need higher thresholds to avoid false barge-ins
+              const BARGE_IN_THRESHOLDS: Record<string, { rms: number; peak: number }> = {
+                'K2':    { rms: 0.18, peak: 0.30 },
+                'G3-5':  { rms: 0.16, peak: 0.28 },
+                'G6-8':  { rms: 0.14, peak: 0.24 },
+                'G9-12': { rms: 0.10, peak: 0.18 },
+                'ADV':   { rms: 0.10, peak: 0.18 },
+              };
+              const bandThresholds = BARGE_IN_THRESHOLDS[gradeBandRef.current || 'ADV'] || BARGE_IN_THRESHOLDS['ADV'];
+              const BARGE_IN_RMS_THRESHOLD = bandThresholds.rms;
+              const BARGE_IN_PEAK_THRESHOLD = bandThresholds.peak;
 
               if (rms < BARGE_IN_RMS_THRESHOLD || maxAmplitude < BARGE_IN_PEAK_THRESHOLD) {
                 console.log(`[Custom Voice] 🔇 VAD (fallback): Ignoring ambient sound during tutor (rms=${rms.toFixed(4)}, peak=${maxAmplitude.toFixed(4)}) - below barge-in threshold`);

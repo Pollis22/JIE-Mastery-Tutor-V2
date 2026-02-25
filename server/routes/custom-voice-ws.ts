@@ -1128,11 +1128,11 @@ interface GradeBandTimingConfig {
 }
 
 const GRADE_BAND_TIMING: Record<string, GradeBandTimingConfig> = {
-  'K2': { bargeInDebounceMs: 600, bargeInDecayMs: 300, bargeInCooldownMs: 850, shortBurstMinMs: 300, postAudioBufferMs: 2000, minMsAfterAudioStartForBargeIn: 800, continuationGraceMs: 800, continuationHedgeGraceMs: 1800, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 4, bargeInConfirmDurationMs: 600 },
-  'G3-5': { bargeInDebounceMs: 500, bargeInDecayMs: 260, bargeInCooldownMs: 750, shortBurstMinMs: 260, postAudioBufferMs: 1800, minMsAfterAudioStartForBargeIn: 600, continuationGraceMs: 700, continuationHedgeGraceMs: 1600, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 500 },
-  'G6-8': { bargeInDebounceMs: 400, bargeInDecayMs: 200, bargeInCooldownMs: 650, shortBurstMinMs: 220, postAudioBufferMs: 1500, minMsAfterAudioStartForBargeIn: 500, continuationGraceMs: 600, continuationHedgeGraceMs: 1500, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 400 },
-  'G9-12': { bargeInDebounceMs: 150, bargeInDecayMs: 220, bargeInCooldownMs: 300, shortBurstMinMs: 140, postAudioBufferMs: 1400, minMsAfterAudioStartForBargeIn: 150, continuationGraceMs: 550, continuationHedgeGraceMs: 1400, bargeInPlaybackThreshold: 0.06, consecutiveFramesRequired: 2, bargeInConfirmDurationMs: 120 },
-  'ADV': { bargeInDebounceMs: 100, bargeInDecayMs: 250, bargeInCooldownMs: 200, shortBurstMinMs: 100, postAudioBufferMs: 1000, minMsAfterAudioStartForBargeIn: 100, continuationGraceMs: 500, continuationHedgeGraceMs: 1200, bargeInPlaybackThreshold: 0.05, consecutiveFramesRequired: 1, bargeInConfirmDurationMs: 80 },
+  'K2': { bargeInDebounceMs: 600, bargeInDecayMs: 300, bargeInCooldownMs: 850, shortBurstMinMs: 300, postAudioBufferMs: 2000, minMsAfterAudioStartForBargeIn: 800, continuationGraceMs: 800, continuationHedgeGraceMs: 1800, bargeInPlaybackThreshold: 0.15, consecutiveFramesRequired: 4, bargeInConfirmDurationMs: 600 },
+  'G3-5': { bargeInDebounceMs: 500, bargeInDecayMs: 260, bargeInCooldownMs: 750, shortBurstMinMs: 260, postAudioBufferMs: 1800, minMsAfterAudioStartForBargeIn: 600, continuationGraceMs: 700, continuationHedgeGraceMs: 1600, bargeInPlaybackThreshold: 0.14, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 500 },
+  'G6-8': { bargeInDebounceMs: 400, bargeInDecayMs: 200, bargeInCooldownMs: 650, shortBurstMinMs: 220, postAudioBufferMs: 1500, minMsAfterAudioStartForBargeIn: 500, continuationGraceMs: 600, continuationHedgeGraceMs: 1500, bargeInPlaybackThreshold: 0.12, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 400 },
+  'G9-12': { bargeInDebounceMs: 150, bargeInDecayMs: 220, bargeInCooldownMs: 300, shortBurstMinMs: 140, postAudioBufferMs: 1400, minMsAfterAudioStartForBargeIn: 150, continuationGraceMs: 550, continuationHedgeGraceMs: 1400, bargeInPlaybackThreshold: 0.10, consecutiveFramesRequired: 2, bargeInConfirmDurationMs: 120 },
+  'ADV': { bargeInDebounceMs: 100, bargeInDecayMs: 250, bargeInCooldownMs: 200, shortBurstMinMs: 100, postAudioBufferMs: 1000, minMsAfterAudioStartForBargeIn: 100, continuationGraceMs: 500, continuationHedgeGraceMs: 1200, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 1, bargeInConfirmDurationMs: 80 },
 };
 const DEFAULT_GRADE_BAND_TIMING: GradeBandTimingConfig = GRADE_BAND_TIMING['G6-8'];
 
@@ -5861,7 +5861,7 @@ HONESTY INSTRUCTIONS:
                 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                 const bandTiming = getGradeBandTiming(state.ageGroup);
                 const noiseFloor = getNoiseFloor(state.noiseFloorState);
-                const echoGuardThresh = Math.max(0.05, noiseFloor * 5.0);
+                const echoGuardThresh = Math.max(0.06, noiseFloor * 6.0);
                 const fixedRmsThreshold = state.tutorAudioPlaying
                   ? Math.max(echoGuardThresh, bandTiming.bargeInPlaybackThreshold)
                   : Math.max(0.03, noiseFloor * 3.0);
@@ -5944,7 +5944,7 @@ HONESTY INSTRUCTIONS:
                         // For fast bands (ADV, G9-12), high sustained RMS alone confirms barge-in
                         // STT is too slow and Silero VAD is broken, so requiring them blocks all interruptions
                         const isFastBand = bandTiming.bargeInConfirmDurationMs <= 150;
-                        const rmsConfirmed = isFastBand && state.bargeInCandidate.peakRms >= 0.15 && rms >= fixedRmsThreshold;
+                        const rmsConfirmed = isFastBand && state.bargeInCandidate.peakRms >= 0.25 && rms >= fixedRmsThreshold;
 
                         if (sttAdvanced || vadConfirmed || rmsConfirmed) {
                           const confirmReason = sttAdvanced ? 'transcript_advanced' : vadConfirmed ? 'vad_confirmed' : 'rms_sustained';
