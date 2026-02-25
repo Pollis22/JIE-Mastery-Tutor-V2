@@ -233,8 +233,8 @@ const TURN_FALLBACK_CONFIG = {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 const CONTINUATION_GUARD_CONFIG = {
   ENABLED: process.env.CONTINUATION_GUARD_ENABLED !== 'false',
-  GRACE_MS: parseInt(process.env.CONTINUATION_GRACE_MS || '850', 10),
-  HEDGE_GRACE_MS: parseInt(process.env.CONTINUATION_HEDGE_GRACE_MS || '1500', 10),
+  GRACE_MS: parseInt(process.env.CONTINUATION_GRACE_MS || '1000', 10),
+  HEDGE_GRACE_MS: parseInt(process.env.CONTINUATION_HEDGE_GRACE_MS || '2500', 10),
   MIN_TURN_CHARS: parseInt(process.env.CONTINUATION_MIN_TURN_CHARS || '2', 10),
 };
 
@@ -244,6 +244,13 @@ const HEDGE_PHRASES = [
   "hmm", "hm", "er", "erm", "well", "so", "like",
   "i'm not sure", "im not sure", "i am not sure",
   "let me see", "give me a second", "uno", "este",
+  // Skip-turn phrases (inspired by ElevenLabs Skip Turn tool)
+  "give me a moment", "one moment", "let me think about that",
+  "hang on", "just a second", "just a moment", "let me figure this out",
+  "i'm thinking", "im thinking", "i need a second", "i need a moment",
+  "bear with me", "let me remember", "what was it",
+  "that's a good question", "thats a good question",
+  "okay let me think", "ok let me think",
 ];
 
 function isHedgePhrase(text: string): boolean {
@@ -329,7 +336,7 @@ function shouldDropTranscript(text: string, state: { isSessionEnded: boolean; se
 
 // P1: Thinking-aloud detection for older bands — adds continuation patience
 const OLDER_BANDS = new Set(['G6-8', 'G9-12', 'ADV']);
-const THINKING_ALOUD_EXTRA_GRACE_MS = 800;
+const THINKING_ALOUD_EXTRA_GRACE_MS = 1200;
 
 function isThinkingAloud(pendingText: string): boolean {
   const trimmed = pendingText.trim();
@@ -585,9 +592,9 @@ function createAssemblyAIConnection(
     } else {
       // Global mode: use hardcoded conservative values (rollback)
       endpointingParams = {
-        end_of_turn_confidence_threshold: '0.72',
+        end_of_turn_confidence_threshold: '0.75',
         min_end_of_turn_silence_when_confident: '1200',
-        max_turn_silence: '5500',
+        max_turn_silence: '6000',
       };
     }
     
@@ -784,8 +791,8 @@ function createAssemblyAIConnection(
             // If no new EOT arrives during the deferral, we commit what we have.
             // If a new EOT arrives, the deferral is cancelled and we get the fuller text.
             // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-            const LOW_CONF_THRESHOLD = parseFloat(process.env.EOT_LOW_CONF_THRESHOLD || '0.45');
-            const LOW_CONF_DEFER_MS = parseInt(process.env.EOT_LOW_CONF_DEFER_MS || '600', 10);
+            const LOW_CONF_THRESHOLD = parseFloat(process.env.EOT_LOW_CONF_THRESHOLD || '0.55');
+            const LOW_CONF_DEFER_MS = parseInt(process.env.EOT_LOW_CONF_DEFER_MS || '900', 10);
             
             if (confidence > 0 && confidence < LOW_CONF_THRESHOLD && !state.eotDeferTimerId) {
               console.log(`[AssemblyAI v3] ⏳ Low-confidence EOT (${confidence.toFixed(2)} < ${LOW_CONF_THRESHOLD}) - deferring ${LOW_CONF_DEFER_MS}ms to accumulate more speech`);
@@ -1128,11 +1135,11 @@ interface GradeBandTimingConfig {
 }
 
 const GRADE_BAND_TIMING: Record<string, GradeBandTimingConfig> = {
-  'K2': { bargeInDebounceMs: 600, bargeInDecayMs: 300, bargeInCooldownMs: 850, shortBurstMinMs: 300, postAudioBufferMs: 2000, minMsAfterAudioStartForBargeIn: 800, continuationGraceMs: 800, continuationHedgeGraceMs: 1800, bargeInPlaybackThreshold: 0.15, consecutiveFramesRequired: 4, bargeInConfirmDurationMs: 600 },
-  'G3-5': { bargeInDebounceMs: 500, bargeInDecayMs: 260, bargeInCooldownMs: 750, shortBurstMinMs: 260, postAudioBufferMs: 1800, minMsAfterAudioStartForBargeIn: 600, continuationGraceMs: 700, continuationHedgeGraceMs: 1600, bargeInPlaybackThreshold: 0.14, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 500 },
-  'G6-8': { bargeInDebounceMs: 400, bargeInDecayMs: 200, bargeInCooldownMs: 650, shortBurstMinMs: 220, postAudioBufferMs: 1500, minMsAfterAudioStartForBargeIn: 500, continuationGraceMs: 600, continuationHedgeGraceMs: 1500, bargeInPlaybackThreshold: 0.12, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 400 },
-  'G9-12': { bargeInDebounceMs: 150, bargeInDecayMs: 220, bargeInCooldownMs: 300, shortBurstMinMs: 140, postAudioBufferMs: 1400, minMsAfterAudioStartForBargeIn: 150, continuationGraceMs: 550, continuationHedgeGraceMs: 1400, bargeInPlaybackThreshold: 0.10, consecutiveFramesRequired: 2, bargeInConfirmDurationMs: 120 },
-  'ADV': { bargeInDebounceMs: 100, bargeInDecayMs: 250, bargeInCooldownMs: 200, shortBurstMinMs: 100, postAudioBufferMs: 1000, minMsAfterAudioStartForBargeIn: 100, continuationGraceMs: 500, continuationHedgeGraceMs: 1200, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 1, bargeInConfirmDurationMs: 80 },
+  'K2': { bargeInDebounceMs: 600, bargeInDecayMs: 300, bargeInCooldownMs: 850, shortBurstMinMs: 300, postAudioBufferMs: 2000, minMsAfterAudioStartForBargeIn: 800, continuationGraceMs: 1400, continuationHedgeGraceMs: 3000, bargeInPlaybackThreshold: 0.15, consecutiveFramesRequired: 4, bargeInConfirmDurationMs: 600 },
+  'G3-5': { bargeInDebounceMs: 500, bargeInDecayMs: 260, bargeInCooldownMs: 750, shortBurstMinMs: 260, postAudioBufferMs: 1800, minMsAfterAudioStartForBargeIn: 600, continuationGraceMs: 1200, continuationHedgeGraceMs: 2800, bargeInPlaybackThreshold: 0.14, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 500 },
+  'G6-8': { bargeInDebounceMs: 400, bargeInDecayMs: 200, bargeInCooldownMs: 650, shortBurstMinMs: 220, postAudioBufferMs: 1500, minMsAfterAudioStartForBargeIn: 500, continuationGraceMs: 1000, continuationHedgeGraceMs: 2500, bargeInPlaybackThreshold: 0.12, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 400 },
+  'G9-12': { bargeInDebounceMs: 150, bargeInDecayMs: 220, bargeInCooldownMs: 300, shortBurstMinMs: 140, postAudioBufferMs: 1400, minMsAfterAudioStartForBargeIn: 150, continuationGraceMs: 900, continuationHedgeGraceMs: 2200, bargeInPlaybackThreshold: 0.10, consecutiveFramesRequired: 2, bargeInConfirmDurationMs: 120 },
+  'ADV': { bargeInDebounceMs: 100, bargeInDecayMs: 250, bargeInCooldownMs: 200, shortBurstMinMs: 100, postAudioBufferMs: 1000, minMsAfterAudioStartForBargeIn: 100, continuationGraceMs: 800, continuationHedgeGraceMs: 2000, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 1, bargeInConfirmDurationMs: 80 },
 };
 const DEFAULT_GRADE_BAND_TIMING: GradeBandTimingConfig = GRADE_BAND_TIMING['G6-8'];
 

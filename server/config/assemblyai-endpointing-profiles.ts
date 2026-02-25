@@ -6,29 +6,34 @@ export type EndpointingProfile = {
 
 export type BandName = 'K2' | 'ELEMENTARY' | 'MIDDLE' | 'HIGH' | 'COLLEGE';
 
+// Tuned for education (ElevenLabs recommends "Patient" mode for tutoring).
+// AssemblyAI defaults: confidence=0.7, min_silence=400ms, max_silence=2400ms.
+// We raise confidence so the semantic model must be more certain the student is done,
+// and raise min_silence so breath pauses don't commit prematurely.
+// Vapi's default no-punctuation wait is 1500ms; ElevenLabs Patient gives 10-30s turn timeout.
 export const ENDPOINTING_PROFILES: Record<BandName, EndpointingProfile> = {
   K2: {
-    end_of_turn_confidence_threshold: 0.70,
+    end_of_turn_confidence_threshold: 0.85,
+    min_end_of_turn_silence_when_confident: 1400,
+    max_turn_silence: 10000,
+  },
+  ELEMENTARY: {
+    end_of_turn_confidence_threshold: 0.80,
     min_end_of_turn_silence_when_confident: 1200,
     max_turn_silence: 8000,
   },
-  ELEMENTARY: {
-    end_of_turn_confidence_threshold: 0.60,
+  MIDDLE: {
+    end_of_turn_confidence_threshold: 0.75,
     min_end_of_turn_silence_when_confident: 1000,
     max_turn_silence: 6000,
   },
-  MIDDLE: {
-    end_of_turn_confidence_threshold: 0.50,
+  HIGH: {
+    end_of_turn_confidence_threshold: 0.72,
     min_end_of_turn_silence_when_confident: 900,
     max_turn_silence: 5000,
   },
-  HIGH: {
-    end_of_turn_confidence_threshold: 0.50,
-    min_end_of_turn_silence_when_confident: 800,
-    max_turn_silence: 5000,
-  },
   COLLEGE: {
-    end_of_turn_confidence_threshold: 0.50,
+    end_of_turn_confidence_threshold: 0.70,
     min_end_of_turn_silence_when_confident: 800,
     max_turn_silence: 5000,
   },
