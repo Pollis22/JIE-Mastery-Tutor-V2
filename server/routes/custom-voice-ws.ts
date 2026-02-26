@@ -4790,10 +4790,6 @@ HONESTY INSTRUCTIONS:
               }, USE_ASSEMBLYAI ? 500 : UTTERANCE_COMPLETE_DELAY_MS); // AssemblyAI already handles timing
             };
             
-            console.log('████████████████████████████████████████████████████████████████');
-            console.log('[DEBUG] STT SETUP - USE_ASSEMBLYAI:', USE_ASSEMBLYAI);
-            console.log('[DEBUG] File+line: custom-voice-ws.ts STT_SETUP_BLOCK');
-            console.log('████████████████████████████████████████████████████████████████');
             
             if (USE_ASSEMBLYAI) {
               // ============================================
@@ -4814,29 +4810,49 @@ HONESTY INSTRUCTIONS:
               
               // K2 TURN POLICY: Helper to fire Claude with optional stall prompt
               // CRITICAL: Always preserve student transcript - stall prompt is appended, not replaced
+              // fireClaudeWithPolicy: Routes directly to commitUserTurn, bypassing
+              // handleCompleteUtterance's 500ms accumulation timer. By the time this fires,
+              // AssemblyAI silence detection + continuation guard have already confirmed
+              // the turn is complete — the extra 500ms was pure dead air.
               const fireClaudeWithPolicy = (transcript: string, stallPrompt?: string) => {
                 if (state.isSessionEnded) {
                   console.log('[TurnPolicy] fireClaudeWithPolicy skipped - session already ended');
                   return;
                 }
+
+                let finalText: string;
                 if (stallPrompt && transcript.trim()) {
                   // Stall escape - send student's transcript PLUS gentle follow-up
-                  // This preserves the student's words while prompting for continuation
                   const trimmedTranscript = transcript.trim();
-                  // Handle punctuation: add separator only if transcript doesn't end with punctuation
                   const endsWithPunctuation = /[.!?]$/.test(trimmedTranscript);
                   const separator = endsWithPunctuation ? ' ' : '. ';
-                  const combinedMessage = `${trimmedTranscript}${separator}(after pause) ${stallPrompt}`;
+                  finalText = `${trimmedTranscript}${separator}(after pause) ${stallPrompt}`;
                   console.log('[TurnPolicy] 🆘 Stall escape triggered - preserving transcript with gentle prompt');
-                  console.log(`[TurnPolicy] Original: "${transcript}", Combined: "${combinedMessage}"`);
-                  handleCompleteUtterance(combinedMessage);
+                  console.log(`[TurnPolicy] Original: "${transcript}", Combined: "${finalText}"`);
                 } else if (stallPrompt) {
-                  // Edge case: stall with no transcript (shouldn't happen, but handle gracefully)
+                  finalText = stallPrompt;
                   console.log('[TurnPolicy] 🆘 Stall escape with no transcript - using prompt only');
-                  handleCompleteUtterance(stallPrompt);
                 } else {
-                  handleCompleteUtterance(transcript);
+                  finalText = transcript;
                 }
+
+                // Inline the essential bookkeeping from handleCompleteUtterance
+                // (commitUserTurn already has its own shouldDropTranscript check)
+                state.lastActivityTime = Date.now();
+                state.inactivityWarningSent = false;
+                state.lastEndOfTurnTime = Date.now();
+
+                // Clear any pending accumulation timer (in case handleCompleteUtterance
+                // was also triggered separately by a late partial)
+                if (transcriptAccumulationTimer) {
+                  clearTimeout(transcriptAccumulationTimer);
+                  transcriptAccumulationTimer = null;
+                }
+                pendingTranscript = '';
+
+                console.log(`[TurnPolicy] ⚡ Direct commit (bypassing 500ms timer): "${finalText.substring(0, 60)}"`);
+                commitUserTurn(finalText, 'turn_policy');
+
                 // Reset turn policy state after firing
                 resetTurnPolicyState(state.turnPolicyState);
                 // Clear any pending stall timer
