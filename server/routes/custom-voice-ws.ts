@@ -5792,31 +5792,60 @@ HONESTY INSTRUCTIONS:
             );
             } // End of Deepgram else block
 
-            // Generate and send greeting audio - ONLY if greeting was generated (first turn only)
+            // Generate and send greeting audio - SENTENCE-CHUNKED for faster first-audio
+            // Instead of waiting for the entire greeting to synthesize, split into sentences
+            // and send each chunk as it completes. First sentence (~5-10 words) synthesizes
+            // in ~300-400ms vs 2-3s for the full greeting.
             // PIPELINE: Greeting participates in isProcessing to prevent concurrent turn processing
             if (greeting && greeting.length > 0) {
               state.isProcessing = true;
               state.processingSinceMs = Date.now();
               state.isTutorSpeaking = true;
               console.log(`[Pipeline] greeting_processing_start isProcessing=true`);
+              
+              // Split greeting into sentences at sentence boundaries
+              // Handles: periods, exclamation marks, question marks (including after quotes)
+              // Preserves punctuation with the sentence it belongs to
+              const greetingSentences = greeting
+                .match(/[^.!?]+[.!?]+["']?\s*/g)
+                ?.map(s => s.trim())
+                .filter(s => s.length > 0) || [greeting];
+              
+              console.log(`[Greeting Chunking] 📝 Split greeting into ${greetingSentences.length} sentence(s)`);
+              
+              // Send full transcript text immediately (client shows text while audio streams)
+              ws.send(JSON.stringify({
+                type: "transcript",
+                text: greeting,
+                speaker: "tutor"
+              }));
+              
+              const greetingTtsStart = Date.now();
+              let totalGreetingAudioBytes = 0;
+              let chunkIndex = 0;
+              
               try {
-                const greetingAudio = await generateSpeech(greeting, state.ageGroup, state.speechSpeed);
+                for (const sentence of greetingSentences) {
+                  chunkIndex++;
+                  const chunkStart = Date.now();
+                  
+                  const audioBuffer = await generateSpeech(sentence, state.ageGroup, state.speechSpeed);
+                  const chunkMs = Date.now() - chunkStart;
+                  totalGreetingAudioBytes += audioBuffer.length;
+                  
+                  console.log(`[Greeting Chunking] 🔊 Chunk ${chunkIndex}/${greetingSentences.length}: ${chunkMs}ms, ${audioBuffer.length} bytes | "${sentence.substring(0, 50)}..."`);
+                  
+                  ws.send(JSON.stringify({
+                    type: "audio",
+                    data: audioBuffer.toString("base64"),
+                    audioFormat: "pcm_s16le",
+                    sampleRate: 16000,
+                    channels: 1
+                  }));
+                }
                 
-                ws.send(JSON.stringify({
-                  type: "transcript",
-                  text: greeting,
-                  speaker: "tutor"
-                }));
-                
-                ws.send(JSON.stringify({
-                  type: "audio",
-                  data: greetingAudio.toString("base64"),
-                  audioFormat: "pcm_s16le",
-                  sampleRate: 16000,
-                  channels: 1
-                }));
-                
-                console.log(`[Custom Voice] 🔊 Sent greeting audio (${greetingAudio.length} bytes, pcm_s16le 16kHz mono)`);
+                const totalGreetingMs = Date.now() - greetingTtsStart;
+                console.log(`[Greeting Chunking] ✅ All ${chunkIndex} chunks sent in ${totalGreetingMs}ms total (${totalGreetingAudioBytes} bytes)`);
               } catch (error) {
                 console.error("[Custom Voice] ❌ Failed to generate greeting audio:", error);
               } finally {
