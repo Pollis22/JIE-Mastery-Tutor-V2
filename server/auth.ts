@@ -547,6 +547,29 @@ export function setupAuth(app: Express) {
 
       console.log('[Register] ✅ User created successfully:', user.email);
 
+      // Auto-create default student profile so user can start tutoring immediately
+      try {
+        const gradeBandMap: Record<string, string> = {
+          'kindergarten-2': 'k-2',
+          'grades-3-5': '3-5',
+          'grades-6-8': '6-8',
+          'grades-9-12': '9-12',
+          'college-adult': 'college',
+        };
+        const gradeBand = gradeBandMap[validation.data.gradeLevel] || 'college';
+        await storage.createStudent({
+          ownerUserId: user.id,
+          name: validation.data.studentName,
+          gradeBand,
+          age: validation.data.studentAge || null,
+          pace: 'normal',
+          encouragement: 'medium',
+        });
+        console.log('[Register] ✅ Default student profile created:', validation.data.studentName, gradeBand);
+      } catch (profileError) {
+        console.error('[Register] ⚠️ Failed to create default student profile (non-fatal):', profileError);
+      }
+
       req.login(user, async (err) => {
         if (err) {
           console.error('[Register] ❌ Login after registration failed:', err);
@@ -834,6 +857,29 @@ export function setupAuth(app: Express) {
 
       console.log('[Trial Signup] ✅ Trial user created:', user.email, 'emailVerified=false');
       console.log('[Trial Signup] 🔑 Created verification token expires:', verificationExpiry.toISOString());
+
+      // Auto-create default student profile so user can start tutoring immediately
+      try {
+        const gradeBandMap: Record<string, string> = {
+          'kindergarten-2': 'k-2',
+          'grades-3-5': '3-5',
+          'grades-6-8': '6-8',
+          'grades-9-12': '9-12',
+          'college-adult': 'college',
+        };
+        const gradeBand = gradeBandMap[gradeLevel] || 'college';
+        await storage.createStudent({
+          ownerUserId: user.id,
+          name: studentName,
+          gradeBand,
+          age: studentAge || null,
+          pace: 'normal',
+          encouragement: 'medium',
+        });
+        console.log('[Trial Signup] ✅ Default student profile created:', studentName, gradeBand);
+      } catch (profileError) {
+        console.error('[Trial Signup] ⚠️ Failed to create default student profile (non-fatal):', profileError);
+      }
       
       // DEV: Log verification URL for testing
       if (process.env.NODE_ENV !== 'production' || process.env.TEST_MODE === 'true') {
