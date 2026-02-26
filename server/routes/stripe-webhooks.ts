@@ -195,6 +195,29 @@ router.post(
 
             console.log('[Stripe Webhook] ✅ User account created:', newUser.email);
 
+            // Auto-create default student profile so user can start tutoring immediately
+            try {
+              const gradeBandMap: Record<string, string> = {
+                'kindergarten-2': 'k-2',
+                'grades-3-5': '3-5',
+                'grades-6-8': '6-8',
+                'grades-9-12': '9-12',
+                'college-adult': 'college',
+              };
+              const gradeBand = gradeBandMap[gradeLevel || ''] || 'college';
+              await storage.createStudent({
+                ownerUserId: newUser.id,
+                name: studentName || firstName || 'Student',
+                gradeBand,
+                age: studentAge || null,
+                pace: 'normal',
+                encouragement: 'medium',
+              });
+              console.log('[Stripe Webhook] ✅ Default student profile created:', studentName, gradeBand);
+            } catch (profileError) {
+              console.error('[Stripe Webhook] ⚠️ Failed to create default student profile (non-fatal):', profileError);
+            }
+
             // 🔒 SECURITY: Delete registration token from database after successful account creation
             await registrationTokenStore.deleteToken(registrationToken);
 
