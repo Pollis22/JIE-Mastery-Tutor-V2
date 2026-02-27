@@ -4175,7 +4175,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
                 language: state.language
               });
               
-              // Fetch user's speech speed preference from database using authenticated userId
+              // Fetch user's speech speed preference and parent email from database using authenticated userId
               try {
                 const user = await storage.getUser(authenticatedUserId);
                 if (user && user.speechSpeed) {
@@ -4184,6 +4184,11 @@ export function setupCustomVoiceWebSocket(server: Server) {
                 } else {
                   state.speechSpeed = 1.0; // Default (normal speed)
                   console.log(`[Custom Voice] ⚙️ Using default speech speed: 1.0`);
+                }
+                // SAFETY: Populate parentEmail for safety incident notifications
+                if (user && user.email) {
+                  state.parentEmail = user.email;
+                  console.log(`[Custom Voice] 🛡️ Parent email set for safety alerts: ${user.email.substring(0, 3)}***`);
                 }
               } catch (error) {
                 console.error("[Custom Voice] ⚠️ Error fetching user settings, using default speech speed:", error);

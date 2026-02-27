@@ -371,6 +371,82 @@ async function initializeDatabase() {
     `);
     console.log('✅ trial_rate_limits table created');
 
+    // Create safety_incidents table for admin Safety tab
+    console.log('📝 Creating safety_incidents table...');
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS safety_incidents (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        session_id VARCHAR REFERENCES realtime_sessions(id) ON DELETE CASCADE,
+        student_id VARCHAR REFERENCES students(id) ON DELETE SET NULL,
+        user_id VARCHAR REFERENCES users(id) ON DELETE CASCADE,
+        flag_type VARCHAR(50) NOT NULL,
+        severity VARCHAR(20) NOT NULL,
+        trigger_text TEXT,
+        tutor_response TEXT,
+        action_taken VARCHAR(50),
+        admin_notified BOOLEAN DEFAULT false,
+        parent_notified BOOLEAN DEFAULT false,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_safety_incidents_user ON safety_incidents(user_id);
+      CREATE INDEX IF NOT EXISTS idx_safety_incidents_session ON safety_incidents(session_id);
+      CREATE INDEX IF NOT EXISTS idx_safety_incidents_type ON safety_incidents(flag_type);
+      CREATE INDEX IF NOT EXISTS idx_safety_incidents_severity ON safety_incidents(severity);
+    `);
+    console.log('✅ safety_incidents table created');
+
+    // Create content_violations table for violation tracking
+    console.log('📝 Creating content_violations table...');
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS content_violations (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        user_id VARCHAR NOT NULL REFERENCES users(id),
+        session_id VARCHAR,
+        violation_type TEXT NOT NULL,
+        severity TEXT NOT NULL,
+        user_message TEXT NOT NULL,
+        ai_response TEXT,
+        confidence DECIMAL(3,2),
+        review_status TEXT DEFAULT 'pending',
+        action_taken TEXT,
+        notified_parent BOOLEAN DEFAULT false,
+        notified_support BOOLEAN DEFAULT false,
+        reviewed_by VARCHAR REFERENCES users(id),
+        reviewed_at TIMESTAMPTZ,
+        review_notes TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_violations_user ON content_violations(user_id);
+      CREATE INDEX IF NOT EXISTS idx_violations_status ON content_violations(review_status);
+      CREATE INDEX IF NOT EXISTS idx_violations_created ON content_violations(created_at);
+    `);
+    console.log('✅ content_violations table created');
+
+    // Create user_suspensions table for account suspension tracking
+    console.log('📝 Creating user_suspensions table...');
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS user_suspensions (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        user_id VARCHAR NOT NULL REFERENCES users(id),
+        reason TEXT NOT NULL,
+        violation_ids TEXT[],
+        suspended_until TIMESTAMPTZ,
+        is_permanent BOOLEAN DEFAULT false,
+        suspended_by VARCHAR REFERENCES users(id),
+        is_active BOOLEAN DEFAULT true,
+        lifted_at TIMESTAMPTZ,
+        lifted_by VARCHAR REFERENCES users(id),
+        lift_reason TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_suspensions_user ON user_suspensions(user_id);
+      CREATE INDEX IF NOT EXISTS idx_suspensions_active ON user_suspensions(is_active);
+    `);
+    console.log('✅ user_suspensions table created');
+
     console.log('✅ Database initialization complete!');
     
   } catch (error) {
