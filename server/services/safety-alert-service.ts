@@ -9,6 +9,11 @@ import { safetyIncidents } from '@shared/schema';
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 
+// Use verified Resend domain - must match what's configured in Resend dashboard
+function getSafetyFromEmail(): string {
+  return process.env.RESEND_FROM_EMAIL || 'noreply@jiemastery.ai';
+}
+
 export interface SafetyAlertData {
   flagType: string;
   severity: 'info' | 'warning' | 'alert' | 'critical';
@@ -125,7 +130,7 @@ This is an automated alert from JIE Mastery Safety System.
   if (resend) {
     try {
       await resend.emails.send({
-        from: 'JIE Mastery Safety <safety@jiemastery.com>',
+        from: getSafetyFromEmail(),
         to: adminEmail,
         subject,
         text: body,
@@ -180,7 +185,7 @@ JIE Mastery Team
 
   try {
     await resend.emails.send({
-      from: 'JIE Mastery <notifications@jiemastery.com>',
+      from: getSafetyFromEmail(),
       to: data.parentEmail,
       subject,
       text: body,
@@ -320,7 +325,7 @@ ${'='.repeat(60)}
   if (resend) {
     try {
       await resend.emails.send({
-        from: 'JIE Mastery Safety <safety@jiemastery.com>',
+        from: getSafetyFromEmail(),
         to: jieSuportEmail,
         subject,
         text: body,
@@ -347,6 +352,31 @@ ${'='.repeat(60)}
 export async function handleSafetyIncident(data: SafetyIncidentNotification): Promise<void> {
   console.log(`[SafetyAlert] 🚨 Handling safety incident: ${data.incidentType} (severity: ${data.severity})`);
   
+  // Resolve the user's preferred email (transcriptEmail > login email) for parent alerts
+  let resolvedParentEmail = data.parentEmail;
+  if (data.userId) {
+    try {
+      const { users } = await import('@shared/schema');
+      const { eq } = await import('drizzle-orm');
+      const userResult = await db.select({
+        email: users.email,
+        transcriptEmail: users.transcriptEmail,
+      })
+      .from(users)
+      .where(eq(users.id, data.userId))
+      .limit(1);
+      
+      if (userResult[0]) {
+        resolvedParentEmail = (userResult[0].transcriptEmail || userResult[0].email) || data.parentEmail;
+        if (resolvedParentEmail !== data.parentEmail) {
+          console.log(`[SafetyAlert] 📧 Resolved parent email to Primary Email (transcriptEmail) for user ${data.userId}`);
+        }
+      }
+    } catch (lookupError) {
+      console.warn('[SafetyAlert] ⚠️ Could not look up user preferred email, using fallback:', lookupError);
+    }
+  }
+  
   // All operations are non-fatal - wrap in try/catch
   let parentNotified = false;
   let supportNotified = false;
@@ -360,14 +390,14 @@ export async function handleSafetyIncident(data: SafetyIncidentNotification): Pr
   }
   
   // 2. Send parent notification (if email available and not abuse-related)
-  if (data.parentEmail) {
+  if (resolvedParentEmail) {
     try {
       const parentData: SafetyAlertData = {
         flagType: mapIncidentTypeToFlag(data.incidentType),
         severity: mapSeverityToAlert(data.severity),
         sessionId: data.sessionId,
         studentName: data.studentName,
-        parentEmail: data.parentEmail,
+        parentEmail: resolvedParentEmail,
         userId: data.userId,
         triggerText: data.triggerText,
         tutorResponse: 'Session was terminated for safety reasons.',

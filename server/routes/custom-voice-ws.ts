@@ -3264,8 +3264,32 @@ export function setupCustomVoiceWebSocket(server: Server) {
               console.log(`[Custom Voice] 🚨 CRITICAL SAFETY: ${moderation.violationType} requires immediate termination`);
               warningLevel = 'final'; // Force immediate termination
             } else {
+              // Count severe profanity instances in the message for escalation
+              // A message with multiple F-bombs + hostility should escalate faster
+              const severePatterns = [
+                /\bf[u*\-_]ck(?:ing|ed|er|s)?\b/gi,
+                /\bsh[i*\-_]t(?:ty|s)?\b/gi,
+                /\bb[i*\-_]tch(?:es|ing)?\b/gi,
+                /\bass(?:hole|es)\b/gi,
+              ];
+              let severeMatchCount = 0;
+              for (const pattern of severePatterns) {
+                const matches = transcript.match(pattern);
+                if (matches) severeMatchCount += matches.length;
+              }
+              
+              // Check for hostility directed at the tutor (e.g., "fuck off", "you suck", "your voice is whack")
+              const tutorHostility = /\b(?:fuck\s*(?:off|you)|screw\s*you|you\s+suck|hate\s+you|shut\s+(?:the\s+)?(?:fuck\s+)?up)\b/i.test(transcript);
+              
+              // Escalation: multi-profanity (3+) or profanity + tutor hostility = +1 extra strike
+              let extraStrikes = 0;
+              if (severeMatchCount >= 3 || (severeMatchCount >= 2 && tutorHostility)) {
+                extraStrikes = 1;
+                console.log(`[Custom Voice] ⚠️ Escalated violation: ${severeMatchCount} severe terms${tutorHostility ? ' + tutor hostility' : ''} → +1 extra strike`);
+              }
+              
               // Increment violation count for non-critical violations
-              state.violationCount++;
+              state.violationCount += (1 + extraStrikes);
               warningLevel = shouldWarnUser(state.violationCount - 1);
             }
             
@@ -3307,9 +3331,9 @@ export function setupCustomVoiceWebSocket(server: Server) {
           if (warningLevel === 'final') {
             console.log("[Custom Voice] 🚫 Suspending user due to repeated violations");
             
-            // Create suspension record (24 hour suspension)
+            // Create suspension record (1 hour suspension)
             const suspendedUntil = new Date();
-            suspendedUntil.setHours(suspendedUntil.getHours() + 24);
+            suspendedUntil.setHours(suspendedUntil.getHours() + 1);
             
             try {
               await db.insert(userSuspensions).values({
@@ -3337,7 +3361,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
                 matchedTerms: moderation.matchedTerms,
                 actionTaken: isImmediateTermination 
                   ? `Critical safety incident - Immediate session termination (${moderation.violationType})`
-                  : 'Session terminated - User suspended for 24 hours',
+                  : 'Session terminated - User suspended for 1 hour',
                 timestamp: new Date()
               };
               handleSafetyIncident(safetyNotification).catch(err => {
@@ -4175,7 +4199,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
                 language: state.language
               });
               
-              // Fetch user's speech speed preference and parent email from database using authenticated userId
+              // Fetch user's speech speed preference from database using authenticated userId
               try {
                 const user = await storage.getUser(authenticatedUserId);
                 if (user && user.speechSpeed) {
@@ -4185,6 +4209,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
                   state.speechSpeed = 1.0; // Default (normal speed)
                   console.log(`[Custom Voice] ⚙️ Using default speech speed: 1.0`);
                 }
+                
                 // SAFETY: Populate parentEmail for safety incident notifications
                 if (user && user.email) {
                   state.parentEmail = user.email;
