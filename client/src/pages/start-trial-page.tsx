@@ -1,3 +1,9 @@
+declare global {
+  interface Window {
+    fbq: (...args: any[]) => void;
+  }
+}
+
 import { useState, useEffect } from "react";
 import { useLocation, useSearch } from "wouter";
 import { useForm } from "react-hook-form";
@@ -118,6 +124,14 @@ export default function StartTrialPage() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+
+      // Meta Pixel: track trial signup as a conversion
+      if (typeof window.fbq === 'function') {
+        window.fbq('track', 'CompleteRegistration', {
+          content_name: 'Free Trial Signup',
+          status: data.status || 'success',
+        });
+      }
       
       if (data.warning) {
         setWarning(data.warning);

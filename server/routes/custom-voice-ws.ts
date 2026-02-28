@@ -1529,19 +1529,11 @@ function hardInterruptTutor(
     }));
   }
 
-  if (!llmAborted && !ttsAborted) {
-    console.log(JSON.stringify({
-      event: 'barge_in_fired_but_no_effect',
-      session_id: state.sessionId,
-      reason,
-      target_gen_id: state.playbackGenId,
-      timestamp: now,
-    }));
-    setPhase(state, 'TUTOR_SPEAKING', 'barge_in_no_effect', ws);
-    state.tutorAudioPlaying = true;
-    return false;
-  }
-
+  // Even when LLM/TTS are already done generating, the barge-in is still valid:
+  // Audio may be queued and playing client-side. The tutor_barge_in + interrupt
+  // messages we already sent (above) tell the client to stop playback.
+  // Previously this reverted to TUTOR_SPEAKING which caused a phase conflict
+  // (client stops, but server thinks tutor is still speaking).
   console.log(JSON.stringify({
     event: 'barge_in_triggered',
     session_id: state.sessionId,
@@ -1549,6 +1541,7 @@ function hardInterruptTutor(
     target_gen_id: state.playbackGenId,
     llm_aborted: llmAborted,
     tts_aborted: ttsAborted,
+    client_side_stop: !llmAborted && !ttsAborted,
     timestamp: now,
   }));
 
