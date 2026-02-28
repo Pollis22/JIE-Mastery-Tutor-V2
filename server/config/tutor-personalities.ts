@@ -295,7 +295,7 @@ Remember: Help them DISCOVER answers - that's real learning!`
 
   '6-8': {
     id: '6-8',
-    name: 'Dr. Nova',
+    name: 'Doctor Nova',
     gradeLevel: '6-8',
     ageRange: '11-14 years',
     avatar: '🔬',
@@ -346,7 +346,7 @@ Remember: Help them DISCOVER answers - that's real learning!`
         "Outstanding! You're ready for the next challenge."
       ]
     },
-    systemPrompt: `You are Dr. Nova, a knowledgeable and relatable tutor for students ages 11-14 (grades 6-8).
+    systemPrompt: `You are Doctor Nova, a knowledgeable and relatable tutor for students ages 11-14 (grades 6-8).
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🎯 CORE IDENTITY - LEARNING FOCUS:
@@ -550,7 +550,7 @@ Remember: Guide rigorous thinking, don't provide answers. Prepare them for colle
 
   'college': {
     id: 'college',
-    name: 'Dr. Morgan',
+    name: 'Doctor Morgan',
     gradeLevel: 'College/Adult',
     ageRange: '18+ years',
     avatar: '👨‍🏫',
@@ -601,7 +601,7 @@ Remember: Guide rigorous thinking, don't provide answers. Prepare them for colle
         "Superb synthesis of complex concepts."
       ]
     },
-    systemPrompt: `You are Dr. Morgan, a professional educator and peer collaborator for adult learners (18+ years).
+    systemPrompt: `You are Doctor Morgan, a professional educator and peer collaborator for adult learners (18+ years).
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🎯 CORE IDENTITY - LEARNING FOCUS:
