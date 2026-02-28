@@ -799,23 +799,26 @@ function createAssemblyAIConnection(
               // Store deferred state for comparison when next EOT arrives
               state.eotDeferredWordCount = confirmedTranscript.trim().split(/\s+/).filter((w: string) => w.length > 0).length;
               state.eotDeferredConfidence = confidence;
+              // Store current transcript in state so deferred timer has latest
+              state.lastAccumulatedTranscript = confirmedTranscript;
+              state.lastAccumulatedConfidence = confidence;
               state.eotDeferTimerId = setTimeout(() => {
                 state.eotDeferTimerId = undefined;
                 state.eotDeferredWordCount = undefined;
                 state.eotDeferredConfidence = undefined;
-                if (confirmedTranscript && !state.currentTurnCommitted) {
-                  console.log(`[AssemblyAI v3] ✅ Deferred EOT firing now with: "${confirmedTranscript.substring(0, 60)}"`);
+                // Read LATEST transcript from state — not the stale closure capture
+                const latestTranscript = state.lastAccumulatedTranscript.trim();
+                const latestConf = state.lastAccumulatedConfidence || confidence;
+                if (latestTranscript && !state.currentTurnCommitted) {
+                  console.log(`[AssemblyAI v3] ✅ Deferred EOT firing now with: "${latestTranscript.substring(0, 60)}"`);
                   if (turnOrder !== undefined) {
                     state.committedTurnOrders.add(turnOrder);
                   }
                   state.currentTurnCommitted = true;
-                  // Continue to onTranscript below via the stored text
-                  const deferredText = confirmedTranscript;
-                  const deferredConf = confidence;
                   confirmedTranscript = '';
                   state.firstEotTimestamp = undefined;
                   state.currentTurnCommitted = false;
-                  onTranscript(deferredText, true, deferredConf);
+                  onTranscript(latestTranscript, true, latestConf);
                 }
               }, LOW_CONF_DEFER_MS);
               return; // Don't commit yet — wait for deferral or a higher-confidence EOT
@@ -1334,6 +1337,8 @@ interface SessionState {
   // FIX 1A: STT activity tracking to prevent premature turn firing
   lastSttActivityAt: number;
   lastAccumulatedTranscript: string;
+  lastAccumulatedConfidence: number; // Track latest EOT confidence for state-based commit
+  audioFrameCount: number; // LOG REDUCTION: Count audio frames for sampled logging
   bargeInCandidate: {
     isActive: boolean;
     startedAt: number;
@@ -2416,6 +2421,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
       isTutorThinking: false,
       lastSttActivityAt: 0,
       lastAccumulatedTranscript: '',
+      lastAccumulatedConfidence: 0,
+      audioFrameCount: 0,
       bargeInCandidate: {
         isActive: false,
         startedAt: 0,
@@ -4843,6 +4850,17 @@ HONESTY INSTRUCTIONS:
                   return;
                 }
 
+                // FRAGMENT GUARD: Single conjunction/filler words are likely mid-sentence
+                // fragments caused by brief pauses. Don't commit — let continuation guard
+                // or next EOT accumulate the full sentence.
+                const FRAGMENT_WORDS = new Set(['and', 'but', 'so', 'because', 'like', 'or', 'well', 'the', 'a', 'to', 'i', 'it', 'if', 'then', 'also', 'just']);
+                const fragmentCheck = transcript.trim().toLowerCase().replace(/[.,!?]/g, '');
+                const fragmentWords = fragmentCheck.split(/\s+/).filter((w: string) => w.length > 0);
+                if (!stallPrompt && fragmentWords.length <= 2 && fragmentWords.every((w: string) => FRAGMENT_WORDS.has(w))) {
+                  console.log(`[TurnPolicy] 🔇 Fragment guard: "${transcript.trim()}" (${fragmentWords.length} word${fragmentWords.length > 1 ? 's' : ''}) - deferring as likely mid-sentence`);
+                  return;
+                }
+
                 let finalText: string;
                 if (stallPrompt && transcript.trim()) {
                   // Stall escape - send student's transcript PLUS gentle follow-up
@@ -4887,8 +4905,11 @@ HONESTY INSTRUCTIONS:
               
               // FIX 1B: STT recency-gated Claude firing
               // If STT activity occurred within 800ms, defer the Claude call
+              // CRITICAL: Do NOT pass transcript through closure — read from state at fire time
+              // to avoid stale-closure bug where early text ("i do") is committed instead of
+              // the full accumulated transcript ("i do see a pattern but if i pause...")
               let sttDeferTimerId: NodeJS.Timeout | undefined;
-              const gatedFireClaude = (transcript: string, stallPrompt?: string) => {
+              const gatedFireClaude = (stallPrompt?: string) => {
                 const sttAge = Date.now() - state.lastSttActivityAt;
                 if (state.lastSttActivityAt > 0 && sttAge < STT_ACTIVITY_RECENCY_MS) {
                   const deferMs = STT_ACTIVITY_RECENCY_MS - sttAge + 100;
@@ -4899,14 +4920,27 @@ HONESTY INSTRUCTIONS:
                     const recheckAge = Date.now() - state.lastSttActivityAt;
                     if (recheckAge < STT_ACTIVITY_RECENCY_MS) {
                       console.log(`[TurnPolicy] still_active_after_defer recheckAgeMs=${recheckAge} - extending`);
-                      gatedFireClaude(transcript, stallPrompt);
+                      gatedFireClaude(stallPrompt);
                     } else {
-                      fireClaudeWithPolicy(transcript, stallPrompt);
+                      // Read LATEST transcript from state — not from closure
+                      const freshTranscript = state.lastAccumulatedTranscript.trim();
+                      if (!freshTranscript) {
+                        console.log(`[TurnPolicy] gated_fire_skipped - no accumulated transcript`);
+                        return;
+                      }
+                      console.log(`[TurnPolicy] gated_fire_using_fresh_transcript: "${freshTranscript.substring(0, 60)}"`);
+                      fireClaudeWithPolicy(freshTranscript, stallPrompt);
                     }
                   }, deferMs);
                   return;
                 }
-                fireClaudeWithPolicy(transcript, stallPrompt);
+                // No defer needed — but still read from state for consistency
+                const freshTranscript = state.lastAccumulatedTranscript.trim();
+                if (!freshTranscript) {
+                  console.log(`[TurnPolicy] gated_fire_skipped - no accumulated transcript`);
+                  return;
+                }
+                fireClaudeWithPolicy(freshTranscript, stallPrompt);
               };
 
               // K2 TURN POLICY: Start stall escape timer if hesitation detected
@@ -5187,7 +5221,11 @@ HONESTY INSTRUCTIONS:
                       
                       if (policyEval.should_fire_claude) {
                         state.postUtteranceGraceUntil = Date.now() + 400;
-                        gatedFireClaude(finalText);
+                        // Ensure state has the latest text from continuation guard
+                        if (finalText.trim().length > state.lastAccumulatedTranscript.trim().length) {
+                          state.lastAccumulatedTranscript = finalText;
+                        }
+                        gatedFireClaude();
                       }
                     }, graceMs);
                     
@@ -5228,7 +5266,11 @@ HONESTY INSTRUCTIONS:
                   if (evaluation.should_fire_claude) {
                     // Set post-utterance grace period (300-600ms) for merging late transcripts
                     state.postUtteranceGraceUntil = now + 400; // 400ms grace
-                    gatedFireClaude(text);
+                    // Ensure state has latest text before gated fire
+                    if (text.trim().length > state.lastAccumulatedTranscript.trim().length) {
+                      state.lastAccumulatedTranscript = text;
+                    }
+                    gatedFireClaude();
                   }
                 },
                 (error) => {
@@ -5398,7 +5440,11 @@ HONESTY INSTRUCTIONS:
                           return;
                         }
                         if (evaluation.should_fire_claude) {
-                          gatedFireClaude(text);
+                          // Ensure state has latest text before gated fire
+                          if (text.trim().length > state.lastAccumulatedTranscript.trim().length) {
+                            state.lastAccumulatedTranscript = text;
+                          }
+                          gatedFireClaude();
                         }
                       },
                       (error) => console.error('[STT] reconnect_error:', error),
@@ -5917,13 +5963,19 @@ HONESTY INSTRUCTIONS:
             }
             
             const hasConnection = USE_ASSEMBLYAI ? !!state.assemblyAIWs : !!state.deepgramConnection;
-            console.log('[Custom Voice] 📥 Audio message received:', {
-              hasData: !!message.data,
-              dataLength: message.data?.length || 0,
-              provider: USE_ASSEMBLYAI ? 'AssemblyAI' : 'Deepgram',
-              hasConnection,
-              isReconnecting: state.isReconnecting
-            });
+            // Reduced logging: only log every 100th audio frame to prevent Railway rate limits
+            // (was logging every frame, causing 96+ message drops during high-churn windows)
+            state.audioFrameCount = (state.audioFrameCount || 0) + 1;
+            if (state.audioFrameCount <= 2 || state.audioFrameCount % 100 === 0) {
+              console.log('[Custom Voice] 📥 Audio message received:', {
+                hasData: !!message.data,
+                dataLength: message.data?.length || 0,
+                provider: USE_ASSEMBLYAI ? 'AssemblyAI' : 'Deepgram',
+                hasConnection,
+                isReconnecting: state.isReconnecting,
+                frameCount: state.audioFrameCount,
+              });
+            }
             
             if (state.isReconnecting) {
               console.warn('[Custom Voice] ⏸️ Audio dropped - reconnection in progress');
@@ -6139,13 +6191,15 @@ HONESTY INSTRUCTIONS:
                 // Send to appropriate STT provider
                 if (USE_ASSEMBLYAI) {
                   const sent = sendAudioToAssemblyAI(state.assemblyAIWs, audioBuffer, state.assemblyAIState || undefined, state);
-                  if (sent) {
+                  if (sent && (state.audioFrameCount <= 2 || state.audioFrameCount % 100 === 0)) {
                     console.log('[Custom Voice] ✅ Audio forwarded to AssemblyAI');
                   }
                   // P0.4: Send failures are tracked inside sendAudioToAssemblyAI with rate-limited logging
                 } else {
                   state.deepgramConnection!.send(audioBuffer);
-                  console.log('[Custom Voice] ✅ Audio forwarded to Deepgram');
+                  if (state.audioFrameCount <= 2 || state.audioFrameCount % 100 === 0) {
+                    console.log('[Custom Voice] ✅ Audio forwarded to Deepgram');
+                  }
                 }
               } catch (error) {
                 console.error('[Custom Voice] ❌ Error sending audio:', {
