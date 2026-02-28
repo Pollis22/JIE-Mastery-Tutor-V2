@@ -33,11 +33,20 @@ export interface SessionMetrics {
   oneWordAnswerCount: number;
   earlyDropoff: boolean;
   completedNaturally: boolean;
+  // Wellbeing signals (per-session)
+  frustrationSignals: number;
+  negativeSelfTalkCount: number;
+  avoidanceSignals: number;
+  flatAffectScore: number; // 0-1, how monotone/disengaged responses seem
+  // Learning difficulty signals (per-session)
+  repeatedConfusionCount: number; // times student said variants of "I don't get it" on same concept
+  selfCorrectionCount: number; // "wait no", "I mean", reversal patterns
+  conceptRevisitCount: number; // tutor had to re-explain same concept
 }
 
 export interface ObservationFlag {
   id: string;
-  category: 'processing_speed' | 'subject_gap' | 'engagement' | 'attention';
+  category: 'processing_speed' | 'subject_gap' | 'engagement' | 'attention' | 'wellbeing' | 'learning_difficulty';
   title: string;
   observation: string;
   suggestion: string;
@@ -113,6 +122,100 @@ export function calculateSessionMetrics(
   const naturalEndReasons = ['goodbye', 'timeout_natural', 'student_ended', 'session_complete', 'normal'];
   const completedNaturally = naturalEndReasons.includes(sessionEndReason);
 
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // WELLBEING SIGNALS — detect frustration, negative self-talk, avoidance
+  // These are NOT diagnoses. They are behavioral patterns parents should know about.
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  const frustrationPatterns = [
+    /\bi\s+can'?t\s+do\s+(this|it|anything)/i,
+    /\bthis\s+is\s+(too\s+hard|impossible|stupid|pointless|dumb)/i,
+    /\bi\s+give\s+up/i,
+    /\bwhy\s+is\s+this\s+so\s+hard/i,
+    /\bi'?m\s+so\s+(frustrated|confused|lost|stuck)/i,
+    /\bforget\s+it/i,
+    /\bi\s+don'?t\s+care\s+anymore/i,
+    /\bthis\s+is\s+(useless|a\s+waste)/i,
+  ];
+  
+  const negativeSelfTalkPatterns = [
+    /\bi'?m\s+(so\s+)?(stupid|dumb|an?\s+idiot|slow|bad\s+at|terrible|hopeless|worthless)/i,
+    /\bi\s+(can\s+never|never\s+get|always\s+get\s+it\s+wrong|always\s+fail|always\s+mess)/i,
+    /\beveryone\s+(else\s+)?(gets?\s+it|knows?|understands?|is\s+better)/i,
+    /\bi'?m\s+not\s+(smart|good|capable)\s+enough/i,
+    /\bi\s+hate\s+(myself|my\s+brain|how\s+stupid\s+i\s+am)/i,
+    /\bwhat'?s\s+wrong\s+with\s+me/i,
+    /\bno\s+one\s+(likes|cares\s+about)\s+me/i,
+    /\bi\s+don'?t\s+(matter|belong)/i,
+  ];
+
+  const avoidancePatterns = [
+    /\bi\s+don'?t\s+want\s+to\s+(do|learn|study|try|think\s+about)/i,
+    /\bcan\s+we\s+(skip|stop|not\s+do|do\s+something\s+else)/i,
+    /\bi\s+don'?t\s+(feel\s+like|wanna|want\s+to)/i,
+    /\bthis\s+is\s+boring/i,
+    /\bwhy\s+do\s+i\s+(have|need)\s+to/i,
+    /\bi'?d\s+rather\s+(not|do\s+anything\s+else)/i,
+  ];
+
+  let frustrationSignals = 0;
+  let negativeSelfTalkCount = 0;
+  let avoidanceSignals = 0;
+
+  for (const turn of studentTurns) {
+    const text = turn.text;
+    for (const p of frustrationPatterns) { if (p.test(text)) { frustrationSignals++; break; } }
+    for (const p of negativeSelfTalkPatterns) { if (p.test(text)) { negativeSelfTalkCount++; break; } }
+    for (const p of avoidancePatterns) { if (p.test(text)) { avoidanceSignals++; break; } }
+  }
+
+  // Flat affect: high ratio of very short, low-effort responses suggests disengagement/low mood
+  const veryShortResponses = studentTurns.filter(t => {
+    const words = t.text.trim().split(/\s+/);
+    return words.length <= 2 && !/\?/.test(t.text); // "ok", "yes", "no", "idk" but not questions
+  }).length;
+  const flatAffectScore = studentTurns.length >= 5
+    ? Math.min(veryShortResponses / studentTurns.length, 1) : 0;
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // LEARNING DIFFICULTY SIGNALS — detect patterns, NOT diagnose
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  const confusionPatterns = [
+    /\bi\s+(still\s+)?don'?t\s+(get|understand|know)/i,
+    /\bwait\s+(what|i'?m\s+confused)/i,
+    /\bcan\s+you\s+(explain|say)\s+(that|it)\s+again/i,
+    /\bi'?m\s+(still\s+)?confused/i,
+    /\bhuh\??$/i,
+    /\bwhat\s+do\s+you\s+mean/i,
+  ];
+
+  const selfCorrectionPatterns = [
+    /\bwait\s+(no|actually|never\s*mind)/i,
+    /\bi\s+mean\b/i,
+    /\bno\s+(wait|that'?s\s+not\s+right)/i,
+    /\bsorry\s+(i\s+meant|let\s+me)/i,
+    /\bactually\s+(it'?s|i\s+think|no)/i,
+  ];
+
+  let repeatedConfusionCount = 0;
+  let selfCorrectionCount = 0;
+
+  for (const turn of studentTurns) {
+    for (const p of confusionPatterns) { if (p.test(turn.text)) { repeatedConfusionCount++; break; } }
+    for (const p of selfCorrectionPatterns) { if (p.test(turn.text)) { selfCorrectionCount++; break; } }
+  }
+
+  // Concept revisit: tutor re-explains something it already covered
+  const conceptRevisitPatterns = [
+    /\b(like\s+)?i\s+(said|mentioned|explained)\s+(before|earlier)/i,
+    /\blet'?s\s+(go\s+back|revisit|try\s+again)/i,
+    /\bremember\s+when\s+(we|i)/i,
+    /\bso\s+again\b/i,
+  ];
+  let conceptRevisitCount = 0;
+  for (const turn of tutorTurns) {
+    for (const p of conceptRevisitPatterns) { if (p.test(turn.text)) { conceptRevisitCount++; break; } }
+  }
+
   return {
     avgResponseLatencyMs,
     avgPromptsPerConcept,
@@ -120,7 +223,14 @@ export function calculateSessionMetrics(
     shortAnswerFrequency,
     oneWordAnswerCount,
     earlyDropoff,
-    completedNaturally
+    completedNaturally,
+    frustrationSignals,
+    negativeSelfTalkCount,
+    avoidanceSignals,
+    flatAffectScore,
+    repeatedConfusionCount,
+    selfCorrectionCount,
+    conceptRevisitCount
   };
 }
 
@@ -153,6 +263,17 @@ function evaluateRawFlagIds(obs: any): string[] {
   if (obs.early_dropoff_count / sessions >= 0.5 && sessions >= 8) ids.push('attention_dropoff');
   if (obs.short_answer_frequency >= 0.6 && sessions >= 6) ids.push('minimal_verbalization');
   if (obs.session_completion_rate < 0.5 && sessions >= 8) ids.push('low_completion');
+
+  // Wellbeing flags — require consistent patterns across sessions
+  if (obs.avg_frustration_signals >= 1.5 && sessions >= 5) ids.push('persistent_frustration');
+  if (obs.avg_negative_self_talk >= 1.0 && sessions >= 5) ids.push('negative_self_image');
+  if (obs.avg_avoidance_signals >= 1.5 && sessions >= 5) ids.push('consistent_avoidance');
+  if (obs.avg_flat_affect_score >= 0.6 && sessions >= 6) ids.push('emotional_withdrawal');
+
+  // Learning difficulty flags — require sustained patterns
+  if (obs.avg_repeated_confusion >= 2.0 && sessions >= 6) ids.push('persistent_comprehension_difficulty');
+  if (obs.avg_self_correction >= 2.0 && sessions >= 6) ids.push('frequent_self_correction');
+  if (obs.avg_concept_revisit >= 1.5 && sessions >= 6) ids.push('concept_retention_difficulty');
 
   return ids;
 }
@@ -340,6 +461,170 @@ function evaluateObservationFlags(obs: any): ObservationFlag[] {
     }
   }
 
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // WELLBEING FLAGS — emotional patterns parents should know about
+  // These are NOT clinical assessments. Language is deliberately gentle.
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  // FLAG 7: Persistent frustration across sessions
+  if (obs.avg_frustration_signals >= 1.5 && sessions >= 5) {
+    const rawObs = `Across ${sessions} sessions, ${name} has expressed frustration an average of ${obs.avg_frustration_signals.toFixed(1)} times per session — using phrases like "I can't do this" or "this is too hard." This may reflect the difficulty of the material or how ${name} is feeling about learning right now.`;
+    const rawSugg = `Try checking in with ${name} before sessions to gauge their mood. Starting with easier warm-up material can build confidence. If frustration persists across subjects, a conversation about what's making learning feel hard could be helpful.`;
+
+    const obsCheck = sanitizeObservationText(rawObs);
+    const suggCheck = sanitizeObservationText(rawSugg);
+
+    if (obsCheck.safe && suggCheck.safe && flagIdCount('persistent_frustration') >= 2) {
+      flags.push(buildFlag({
+        id: 'persistent_frustration',
+        category: 'wellbeing',
+        title: 'Frequent Expressions of Frustration During Sessions',
+        observation: obsCheck.text,
+        suggestion: suggCheck.text,
+        severity: sessions >= 8 ? 'notable' : 'informational',
+        detectedAtSession: sessions,
+        dataPoints: sessions
+      }));
+    }
+  }
+
+  // FLAG 8: Negative self-talk pattern
+  if (obs.avg_negative_self_talk >= 1.0 && sessions >= 5) {
+    const rawObs = `${name} has used self-critical language in multiple sessions — statements like "I'm stupid" or "I never get anything right." Over ${sessions} sessions, this has averaged ${obs.avg_negative_self_talk.toFixed(1)} instances per session.`;
+    const rawSugg = `Consistent self-critical language during learning can sometimes reflect how a student feels about themselves more broadly. Positive reinforcement at home — celebrating effort over results — can make a real difference. If this pattern concerns you, a school counselor can offer additional perspective.`;
+
+    const obsCheck = sanitizeObservationText(rawObs);
+    const suggCheck = sanitizeObservationText(rawSugg);
+
+    if (obsCheck.safe && suggCheck.safe && flagIdCount('negative_self_image') >= 2) {
+      flags.push(buildFlag({
+        id: 'negative_self_image',
+        category: 'wellbeing',
+        title: 'Pattern of Self-Critical Language During Learning',
+        observation: obsCheck.text,
+        suggestion: suggCheck.text,
+        severity: 'notable',
+        detectedAtSession: sessions,
+        dataPoints: sessions
+      }));
+    }
+  }
+
+  // FLAG 9: Consistent avoidance behavior
+  if (obs.avg_avoidance_signals >= 1.5 && sessions >= 5) {
+    const rawObs = `${name} has frequently expressed reluctance to engage with material — phrases like "I don't want to do this" or "can we skip this" — averaging ${obs.avg_avoidance_signals.toFixed(1)} times per session over ${sessions} sessions.`;
+    const rawSugg = `Avoidance can stem from many things: difficulty with the subject, feeling overwhelmed, or simply not connecting with the topic. Giving ${name} some choice in what they study, or breaking work into smaller pieces, may help. If avoidance seems to extend beyond academics, checking in about how they're feeling overall could be valuable.`;
+
+    const obsCheck = sanitizeObservationText(rawObs);
+    const suggCheck = sanitizeObservationText(rawSugg);
+
+    if (obsCheck.safe && suggCheck.safe && flagIdCount('consistent_avoidance') >= 2) {
+      flags.push(buildFlag({
+        id: 'consistent_avoidance',
+        category: 'wellbeing',
+        title: 'Frequent Avoidance or Reluctance to Engage',
+        observation: obsCheck.text,
+        suggestion: suggCheck.text,
+        severity: sessions >= 8 ? 'notable' : 'informational',
+        detectedAtSession: sessions,
+        dataPoints: sessions
+      }));
+    }
+  }
+
+  // FLAG 10: Emotional withdrawal (flat affect)
+  if (obs.avg_flat_affect_score >= 0.6 && sessions >= 6) {
+    const rawObs = `In recent sessions, approximately ${Math.round(obs.avg_flat_affect_score * 100)}% of ${name}'s responses have been minimal (one or two words like "ok", "yes", "no"). While some students are naturally concise, a consistently flat response pattern across ${sessions} sessions can sometimes indicate low energy or disengagement.`;
+    const rawSugg = `If this doesn't match how ${name} usually communicates, it may be worth checking in about how they're feeling — about school, friends, or life in general. Sometimes low engagement in tutoring reflects something bigger going on. A school counselor or pediatrician can help if you have concerns.`;
+
+    const obsCheck = sanitizeObservationText(rawObs);
+    const suggCheck = sanitizeObservationText(rawSugg);
+
+    if (obsCheck.safe && suggCheck.safe && flagIdCount('emotional_withdrawal') >= 2) {
+      flags.push(buildFlag({
+        id: 'emotional_withdrawal',
+        category: 'wellbeing',
+        title: 'Consistently Minimal Responses May Indicate Low Engagement',
+        observation: obsCheck.text,
+        suggestion: suggCheck.text,
+        severity: 'notable',
+        detectedAtSession: sessions,
+        dataPoints: sessions
+      }));
+    }
+  }
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // LEARNING DIFFICULTY FLAGS — patterns that may warrant professional evaluation
+  // NOT diagnoses. Framed as observations with actionable suggestions.
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  // FLAG 11: Persistent comprehension difficulty
+  if (obs.avg_repeated_confusion >= 2.0 && sessions >= 6) {
+    const rawObs = `${name} frequently expresses confusion or asks for re-explanation — an average of ${obs.avg_repeated_confusion.toFixed(1)} times per session across ${sessions} sessions. This is higher than typical for ${name}'s grade level.`;
+    const rawSugg = `Some students benefit from material being presented in different ways — visual aids, hands-on examples, or breaking concepts into smaller steps. If ${name} consistently struggles to retain explanations across sessions, discussing this with their teacher could help identify whether a different instructional approach might help.`;
+
+    const obsCheck = sanitizeObservationText(rawObs);
+    const suggCheck = sanitizeObservationText(rawSugg);
+
+    if (obsCheck.safe && suggCheck.safe && flagIdCount('persistent_comprehension_difficulty') >= 2) {
+      flags.push(buildFlag({
+        id: 'persistent_comprehension_difficulty',
+        category: 'learning_difficulty',
+        title: 'Frequent Requests for Re-Explanation',
+        observation: obsCheck.text,
+        suggestion: suggCheck.text,
+        severity: sessions >= 10 ? 'notable' : 'informational',
+        detectedAtSession: sessions,
+        dataPoints: sessions
+      }));
+    }
+  }
+
+  // FLAG 12: Frequent self-correction pattern
+  if (obs.avg_self_correction >= 2.0 && sessions >= 6) {
+    const rawObs = `${name} frequently corrects themselves mid-response — "wait, no" or "I mean" — averaging ${obs.avg_self_correction.toFixed(1)} times per session across ${sessions} sessions. Self-correction shows active thinking, but a high frequency may indicate processing challenges.`;
+    const rawSugg = `Self-correction is actually a positive sign of metacognition — ${name} recognizes errors. To support this, encourage ${name} to slow down and think before answering. If you notice similar patterns in homework or daily tasks, their teacher may have helpful strategies.`;
+
+    const obsCheck = sanitizeObservationText(rawObs);
+    const suggCheck = sanitizeObservationText(rawSugg);
+
+    if (obsCheck.safe && suggCheck.safe && flagIdCount('frequent_self_correction') >= 2) {
+      flags.push(buildFlag({
+        id: 'frequent_self_correction',
+        category: 'learning_difficulty',
+        title: 'Frequent Mid-Response Self-Corrections',
+        observation: obsCheck.text,
+        suggestion: suggCheck.text,
+        severity: 'informational',
+        detectedAtSession: sessions,
+        dataPoints: sessions
+      }));
+    }
+  }
+
+  // FLAG 13: Concept retention difficulty
+  if (obs.avg_concept_revisit >= 1.5 && sessions >= 6) {
+    const rawObs = `The tutor has needed to revisit or re-explain concepts an average of ${obs.avg_concept_revisit.toFixed(1)} times per session with ${name} across ${sessions} sessions. This suggests ${name} may benefit from additional reinforcement between sessions.`;
+    const rawSugg = `Spaced repetition — briefly reviewing previously covered material at the start of each session or at home — can significantly improve retention. If ${name} consistently struggles to recall concepts from prior sessions, their teacher or a school learning specialist may be able to suggest targeted support.`;
+
+    const obsCheck = sanitizeObservationText(rawObs);
+    const suggCheck = sanitizeObservationText(rawSugg);
+
+    if (obsCheck.safe && suggCheck.safe && flagIdCount('concept_retention_difficulty') >= 2) {
+      flags.push(buildFlag({
+        id: 'concept_retention_difficulty',
+        category: 'learning_difficulty',
+        title: 'Concepts Often Need to Be Revisited Across Sessions',
+        observation: obsCheck.text,
+        suggestion: suggCheck.text,
+        severity: sessions >= 10 ? 'notable' : 'informational',
+        detectedAtSession: sessions,
+        dataPoints: sessions
+      }));
+    }
+  }
+
   return flags;
 }
 
@@ -400,6 +685,15 @@ export async function updateLearningObservations(metrics: SessionMetrics): Promi
     session_completion_rate: rollingAvg(current.session_completion_rate, metrics.completedNaturally ? 1 : 0),
     strongest_subject: strongestSubject,
     subject_requiring_attention: attentionSubject,
+    // Wellbeing metrics (rolling averages)
+    avg_frustration_signals: rollingAvg(current.avg_frustration_signals || 0, metrics.frustrationSignals),
+    avg_negative_self_talk: rollingAvg(current.avg_negative_self_talk || 0, metrics.negativeSelfTalkCount),
+    avg_avoidance_signals: rollingAvg(current.avg_avoidance_signals || 0, metrics.avoidanceSignals),
+    avg_flat_affect_score: rollingAvg(current.avg_flat_affect_score || 0, metrics.flatAffectScore),
+    // Learning difficulty metrics (rolling averages)
+    avg_repeated_confusion: rollingAvg(current.avg_repeated_confusion || 0, metrics.repeatedConfusionCount),
+    avg_self_correction: rollingAvg(current.avg_self_correction || 0, metrics.selfCorrectionCount),
+    avg_concept_revisit: rollingAvg(current.avg_concept_revisit || 0, metrics.conceptRevisitCount),
   };
 
   const recentFlagWindow: string[][] = current.recent_flag_window || [];
@@ -431,8 +725,15 @@ export async function updateLearningObservations(metrics: SessionMetrics): Promi
       subject_requiring_attention = $15,
       active_flags = $16,
       recent_flag_window = $17,
+      avg_frustration_signals = $18,
+      avg_negative_self_talk = $19,
+      avg_avoidance_signals = $20,
+      avg_flat_affect_score = $21,
+      avg_repeated_confusion = $22,
+      avg_self_correction = $23,
+      avg_concept_revisit = $24,
       last_updated = NOW()
-    WHERE user_id = $18 AND student_name = $19
+    WHERE user_id = $25 AND student_name = $26
   `, [
     updatedObs.total_sessions,
     metrics.durationMinutes,
@@ -451,6 +752,13 @@ export async function updateLearningObservations(metrics: SessionMetrics): Promi
     attentionSubject,
     JSON.stringify(newFlags),
     JSON.stringify(recentFlagWindow),
+    updatedObs.avg_frustration_signals,
+    updatedObs.avg_negative_self_talk,
+    updatedObs.avg_avoidance_signals,
+    updatedObs.avg_flat_affect_score,
+    updatedObs.avg_repeated_confusion,
+    updatedObs.avg_self_correction,
+    updatedObs.avg_concept_revisit,
     metrics.userId,
     metrics.studentName
   ]);
@@ -463,7 +771,9 @@ export function renderObservationFlags(flags: ObservationFlag[], studentName: st
     processing_speed: '⏱️',
     subject_gap: '📊',
     engagement: '💬',
-    attention: '🎯'
+    attention: '🎯',
+    wellbeing: '💛',
+    learning_difficulty: '📖'
   };
 
   const flagHTML = flags.map(flag => {
