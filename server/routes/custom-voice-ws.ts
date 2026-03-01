@@ -4554,7 +4554,7 @@ HONESTY INSTRUCTIONS:
               // Language-specific greeting templates
               const greetings: Record<string, { intro: string; docAck: (count: number, titles: string) => string; closing: Record<string, string> }> = {
                 en: {
-                  intro: `Hi ${name}! I'm ${tutorName}, your AI tutor.`,
+                  intro: `Hi ${name}! I'm ${tutorName}, your tutor.`,
                   docAck: (count, titles) => count === 1 ? ` I can see you've uploaded "${titles}" - excellent!` : ` I've loaded ${count} documents for our session.`,
                   closing: {
                     'K-2': docTitles.length > 0 ? " Let's look at it together! What do you want to learn about?" : " I'm so excited to learn with you today! What would you like to explore?",
@@ -4565,7 +4565,7 @@ HONESTY INSTRUCTIONS:
                   }
                 },
                 fr: {
-                  intro: `Bonjour ${name}! Je suis ${tutorName}, ton tuteur IA.`,
+                  intro: `Bonjour ${name}! Je suis ${tutorName}, ton tuteur.`,
                   docAck: (count, titles) => count === 1 ? ` Je vois que tu as téléchargé "${titles}" - excellent!` : ` J'ai chargé ${count} documents pour notre session. Super!`,
                   closing: {
                     'K-2': docTitles.length > 0 ? " Regardons ça ensemble! Qu'est-ce que tu veux apprendre?" : " Je suis tellement content d'apprendre avec toi! Qu'est-ce qui t'intéresse?",
@@ -4576,7 +4576,7 @@ HONESTY INSTRUCTIONS:
                   }
                 },
                 es: {
-                  intro: `¡Hola ${name}! Soy ${tutorName}, tu tutor de IA.`,
+                  intro: `¡Hola ${name}! Soy ${tutorName}, tu tutor.`,
                   docAck: (count, titles) => count === 1 ? ` Veo que has subido "${titles}" - ¡excelente!` : ` He cargado ${count} documentos para nuestra sesión. ¡Genial!`,
                   closing: {
                     'K-2': docTitles.length > 0 ? " ¡Veámoslo juntos! ¿Qué quieres aprender?" : " ¡Estoy muy emocionado de aprender contigo! ¿Qué te gustaría explorar?",
@@ -4587,7 +4587,7 @@ HONESTY INSTRUCTIONS:
                   }
                 },
                 sw: {
-                  intro: `Habari ${name}! Mimi ni ${tutorName}, mwalimu wako wa AI.`,
+                  intro: `Habari ${name}! Mimi ni ${tutorName}, mwalimu wako.`,
                   docAck: (count, titles) => count === 1 ? ` Naona umepakia "${titles}" - bora!` : ` Nimepakia nyaraka ${count} kwa kipindi chetu. Vizuri!`,
                   closing: {
                     'K-2': docTitles.length > 0 ? " Tuangalie pamoja! Unataka kujifunza nini?" : " Ninafuraha sana kujifunza nawe! Unataka kuchunguza nini?",
@@ -4598,7 +4598,7 @@ HONESTY INSTRUCTIONS:
                   }
                 },
                 yo: {
-                  intro: `Bawo ni ${name}! Mo je ${tutorName}, olukọni AI rẹ.`,
+                  intro: `Bawo ni ${name}! Mo je ${tutorName}, olukọni rẹ.`,
                   docAck: (count, titles) => count === 1 ? ` Mo ri pe o ti fi "${titles}" soke - o dara!` : ` Mo ri pe o ti fi iwe ${count} soke: ${titles}. O dara pupo!`,
                   closing: {
                     'K-2': docTitles.length > 0 ? " Jẹ ki a wo papọ! Kini o fẹ lati kọ?" : " Mo dun pupọ lati kọ pẹlu rẹ! Kini o fẹ lati ṣawari?",
@@ -4609,7 +4609,7 @@ HONESTY INSTRUCTIONS:
                   }
                 },
                 ha: {
-                  intro: `Sannu ${name}! Ni ne ${tutorName}, malamin AI naka.`,
+                  intro: `Sannu ${name}! Ni ne ${tutorName}, malamin naka.`,
                   docAck: (count, titles) => count === 1 ? ` Na ga cewa ka loda "${titles}" - kyau!` : ` Na ga cewa ka loda takardun ${count}: ${titles}. Da kyau!`,
                   closing: {
                     'K-2': docTitles.length > 0 ? " Bari mu duba tare! Mene ne kake so ka koya?" : " Ina farin ciki sosai in koya tare da kai! Mene ne kake so ka bincika?",
@@ -4620,7 +4620,7 @@ HONESTY INSTRUCTIONS:
                   }
                 },
                 ar: {
-                  intro: `مرحباً ${name}! أنا ${tutorName}، معلمك الذكي.`,
+                  intro: `مرحباً ${name}! أنا ${tutorName}، معلمك.`,
                   docAck: (count, titles) => count === 1 ? ` أرى أنك رفعت "${titles}" - ممتاز!` : ` أرى أنك رفعت ${count} مستندات: ${titles}. رائع!`,
                   closing: {
                     'K-2': docTitles.length > 0 ? " لنلقي نظرة معاً! ماذا تريد أن تتعلم؟" : " أنا متحمس جداً للتعلم معك! ماذا تريد أن تستكشف؟",
@@ -4631,7 +4631,7 @@ HONESTY INSTRUCTIONS:
                   }
                 },
                 de: {
-                  intro: `Hallo ${name}! Ich bin ${tutorName}, dein KI-Tutor.`,
+                  intro: `Hallo ${name}! Ich bin ${tutorName}, dein Tutor.`,
                   docAck: (count, titles) => count === 1 ? ` Ich sehe, dass du "${titles}" hochgeladen hast - ausgezeichnet!` : ` Ich sehe, dass du ${count} Dokumente hochgeladen hast: ${titles}. Toll!`,
                   closing: {
                     'K-2': docTitles.length > 0 ? " Lass uns das zusammen ansehen! Was möchtest du lernen?" : " Ich freue mich so, mit dir zu lernen! Was möchtest du erkunden?",
@@ -4642,7 +4642,7 @@ HONESTY INSTRUCTIONS:
                   }
                 },
                 pt: {
-                  intro: `Olá ${name}! Sou ${tutorName}, seu tutor de IA.`,
+                  intro: `Olá ${name}! Sou ${tutorName}, seu tutor.`,
                   docAck: (count, titles) => count === 1 ? ` Vejo que você enviou "${titles}" - excelente!` : ` Vejo que você enviou ${count} documentos: ${titles}. Ótimo!`,
                   closing: {
                     'K-2': docTitles.length > 0 ? " Vamos olhar juntos! O que você quer aprender?" : " Estou muito animado para aprender com você! O que você gostaria de explorar?",
@@ -4653,7 +4653,7 @@ HONESTY INSTRUCTIONS:
                   }
                 },
                 zh: {
-                  intro: `你好${name}！我是${tutorName}，你的AI导师。`,
+                  intro: `你好${name}！我是${tutorName}，你的导师。`,
                   docAck: (count, titles) => count === 1 ? `我看到你上传了"${titles}" - 太棒了！` : `我看到你上传了${count}个文档：${titles}。很好！`,
                   closing: {
                     'K-2': docTitles.length > 0 ? "我们一起看看吧！你想学什么？" : "我很高兴能和你一起学习！你想探索什么？",
@@ -4664,7 +4664,7 @@ HONESTY INSTRUCTIONS:
                   }
                 },
                 ja: {
-                  intro: `こんにちは${name}さん！私は${tutorName}、あなたのAIチューターです。`,
+                  intro: `こんにちは${name}さん！私は${tutorName}、あなたのチューターです。`,
                   docAck: (count, titles) => count === 1 ? `「${titles}」をアップロードしたのが見えます - 素晴らしい！` : `${count}つのドキュメントをアップロードしたのが見えます：${titles}。いいですね！`,
                   closing: {
                     'K-2': docTitles.length > 0 ? "一緒に見てみましょう！何を学びたいですか？" : "一緒に学べてとても嬉しいです！何を探求したいですか？",
@@ -4675,7 +4675,7 @@ HONESTY INSTRUCTIONS:
                   }
                 },
                 ko: {
-                  intro: `안녕하세요 ${name}님! 저는 ${tutorName}, 당신의 AI 튜터입니다.`,
+                  intro: `안녕하세요 ${name}님! 저는 ${tutorName}, 당신의 튜터입니다.`,
                   docAck: (count, titles) => count === 1 ? `"${titles}"를 업로드하신 것을 보았습니다 - 훌륭합니다!` : `${count}개의 문서를 업로드하신 것을 보았습니다: ${titles}. 좋아요!`,
                   closing: {
                     'K-2': docTitles.length > 0 ? " 함께 살펴봐요! 무엇을 배우고 싶어요?" : " 함께 배우게 되어 너무 기뻐요! 무엇을 탐험하고 싶어요?",
@@ -4717,14 +4717,14 @@ HONESTY INSTRUCTIONS:
               // (2) CONTINUITY GREETING: If prior sessions exist and no active docs, use welcome back greeting
               if (priorExists && topic) {
                 const continuityGreetings: Record<string, (name: string, tutorName: string, topic: string) => string> = {
-                  en: (n, t, tp) => `Welcome back, ${n}! I'm ${t}, your AI tutor. Shall we continue our discussion on ${tp}? What do you remember most from last time?`,
-                  es: (n, t, tp) => `¡Bienvenido de nuevo, ${n}! Soy ${t}, tu tutor de IA. ¿Continuamos con nuestra conversación sobre ${tp}? ¿Qué recuerdas de la última vez?`,
-                  fr: (n, t, tp) => `Content de te revoir, ${n}! Je suis ${t}, ton tuteur IA. On continue notre discussion sur ${tp}? Qu'est-ce que tu te rappelles de la dernière fois?`,
-                  de: (n, t, tp) => `Willkommen zurück, ${n}! Ich bin ${t}, dein KI-Tutor. Sollen wir unsere Diskussion über ${tp} fortsetzen? Woran erinnerst du dich von letztem Mal?`,
-                  pt: (n, t, tp) => `Bem-vindo de volta, ${n}! Sou ${t}, seu tutor de IA. Vamos continuar nossa discussão sobre ${tp}? O que você lembra da última vez?`,
-                  zh: (n, t, tp) => `欢迎回来，${n}！我是${t}，你的AI导师。我们继续讨论${tp}吧？你还记得上次我们讲了什么吗？`,
-                  ar: (n, t, tp) => `أهلاً بعودتك، ${n}! أنا ${t}، معلمك الذكي. هل نستمر في مناقشة ${tp}؟ ماذا تتذكر من المرة الماضية؟`,
-                  sw: (n, t, tp) => `Karibu tena, ${n}! Mimi ni ${t}, mwalimu wako wa AI. Tuendelee na mazungumzo yetu kuhusu ${tp}? Unakumbuka nini kutoka mara ya mwisho?`,
+                  en: (n, t, tp) => `Welcome back, ${n}! I'm ${t}, your tutor. Shall we continue our discussion on ${tp}? What do you remember most from last time?`,
+                  es: (n, t, tp) => `¡Bienvenido de nuevo, ${n}! Soy ${t}, tu tutor. ¿Continuamos con nuestra conversación sobre ${tp}? ¿Qué recuerdas de la última vez?`,
+                  fr: (n, t, tp) => `Content de te revoir, ${n}! Je suis ${t}, ton tuteur. On continue notre discussion sur ${tp}? Qu'est-ce que tu te rappelles de la dernière fois?`,
+                  de: (n, t, tp) => `Willkommen zurück, ${n}! Ich bin ${t}, dein Tutor. Sollen wir unsere Diskussion über ${tp} fortsetzen? Woran erinnerst du dich von letztem Mal?`,
+                  pt: (n, t, tp) => `Bem-vindo de volta, ${n}! Sou ${t}, seu tutor. Vamos continuar nossa discussão sobre ${tp}? O que você lembra da última vez?`,
+                  zh: (n, t, tp) => `欢迎回来，${n}！我是${t}，你的导师。我们继续讨论${tp}吧？你还记得上次我们讲了什么吗？`,
+                  ar: (n, t, tp) => `أهلاً بعودتك، ${n}! أنا ${t}، معلمك. هل نستمر في مناقشة ${tp}؟ ماذا تتذكر من المرة الماضية؟`,
+                  sw: (n, t, tp) => `Karibu tena, ${n}! Mimi ni ${t}, mwalimu wako. Tuendelee na mazungumzo yetu kuhusu ${tp}? Unakumbuka nini kutoka mara ya mwisho?`,
                 };
                 const continuityFn = continuityGreetings[lang] || continuityGreetings['en'];
                 return continuityFn(name, tutorName, topic);
