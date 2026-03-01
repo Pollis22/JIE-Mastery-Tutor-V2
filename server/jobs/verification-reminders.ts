@@ -1,7 +1,10 @@
 import { db } from '../db';
 import { users, verificationReminderTracking } from '@shared/schema';
-import { and, isNull, isNotNull, eq, gt, sql } from 'drizzle-orm';
+import { and, isNull, isNotNull, eq, sql, count } from 'drizzle-orm';
 import { emailService } from '../services/email-service';
+
+const MAX_REMINDERS = 11; // 7 daily + 4 weekly
+const DAILY_PHASE_COUNT = 7; // First 7 are daily, then weekly
 
 interface ReminderStats {
   scanned: number;
@@ -9,6 +12,8 @@ interface ReminderStats {
   sent: number;
   skippedAlreadySent: number;
   skippedLoggedIn: number;
+  skippedMaxReached: number;
+  skippedTooSoon: number;
   failed: number;
 }
 
@@ -19,6 +24,8 @@ export async function processVerificationReminders(): Promise<ReminderStats> {
     sent: 0,
     skippedAlreadySent: 0,
     skippedLoggedIn: 0,
+    skippedMaxReached: 0,
+    skippedTooSoon: 0,
     failed: 0,
   };
 
@@ -55,10 +62,6 @@ export async function processVerificationReminders(): Promise<ReminderStats> {
           continue;
         }
 
-        const hasValidToken = user.emailVerificationToken &&
-          user.emailVerificationExpiry &&
-          new Date(user.emailVerificationExpiry) > now;
-
         const isUnverified = !user.emailVerified;
         const isVerifiedNoLogin = user.emailVerified && !user.firstLoginAt;
 
@@ -68,6 +71,40 @@ export async function processVerificationReminders(): Promise<ReminderStats> {
 
         stats.eligible++;
 
+        // Count how many reminders have already been sent to this user
+        const [reminderCountResult] = await db
+          .select({ total: count() })
+          .from(verificationReminderTracking)
+          .where(eq(verificationReminderTracking.userId, user.id));
+
+        const remindersSent = reminderCountResult?.total ?? 0;
+
+        // Check if max reminders reached
+        if (remindersSent >= MAX_REMINDERS) {
+          stats.skippedMaxReached++;
+          continue;
+        }
+
+        // Check interval: daily for first 7, weekly after that
+        if (remindersSent >= DAILY_PHASE_COUNT) {
+          // Weekly phase — check if at least 7 days since last reminder
+          const [lastReminder] = await db
+            .select()
+            .from(verificationReminderTracking)
+            .where(eq(verificationReminderTracking.userId, user.id))
+            .orderBy(sql`created_at DESC`)
+            .limit(1);
+
+          if (lastReminder?.createdAt) {
+            const daysSinceLast = (now.getTime() - new Date(lastReminder.createdAt).getTime()) / (1000 * 60 * 60 * 24);
+            if (daysSinceLast < 6.5) { // 6.5 days to account for cron timing drift
+              stats.skippedTooSoon++;
+              continue;
+            }
+          }
+        }
+
+        // Try to insert tracking record (unique constraint prevents same-day duplicates)
         try {
           await db.insert(verificationReminderTracking).values({
             userId: user.id,
@@ -81,18 +118,27 @@ export async function processVerificationReminders(): Promise<ReminderStats> {
           throw insertErr;
         }
 
+        const hasValidToken = user.emailVerificationToken &&
+          user.emailVerificationExpiry &&
+          new Date(user.emailVerificationExpiry) > now;
+
         const tokenExpired = !hasValidToken;
         const name = user.studentName || user.parentName || user.firstName || 'there';
+        const reminderNumber = remindersSent + 1;
 
         await emailService.sendVerificationReminder({
           email: user.email,
           name,
           verificationToken: user.emailVerificationToken,
           tokenExpired,
+          reminderNumber,
         });
 
         stats.sent++;
-        console.log(`[cron:verification-reminders] Sent reminder to: ${user.email}`);
+        console.log(`[cron:verification-reminders] Sent reminder #${reminderNumber} to: ${user.email} (${reminderNumber <= DAILY_PHASE_COUNT ? 'daily' : 'weekly'} phase)`);
+
+        // Small delay between emails to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 500));
 
       } catch (userErr: any) {
         stats.failed++;

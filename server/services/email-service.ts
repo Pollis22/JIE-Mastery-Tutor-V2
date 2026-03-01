@@ -605,19 +605,52 @@ The JIE Mastery Team`;
     name: string;
     verificationToken?: string | null;
     tokenExpired: boolean;
+    reminderNumber?: number;
   }) {
     try {
       const resend = getResendClient();
       const fromEmail = getFromEmail();
       const baseUrl = this.getBaseUrl();
+      const reminderNum = params.reminderNumber ?? 1;
       
       const ctaUrl = params.tokenExpired || !params.verificationToken
         ? `${baseUrl}/start-trial?resend=1`
         : `${baseUrl}/api/auth/verify-email?token=${params.verificationToken}`;
       
+      // Escalating subject lines
+      let subject: string;
+      let headerText: string;
+      let bodyText: string;
+
+      if (reminderNum <= 2) {
+        subject = 'Your JIE Mastery free trial is waiting';
+        headerText = "🎓 Your Free Trial is Waiting";
+        bodyText = `You signed up for JIE Mastery but haven't started your free trial yet. Your <strong>30 minutes of free AI tutoring</strong> is ready and waiting!`;
+      } else if (reminderNum <= 5) {
+        subject = "Don't miss your free AI tutoring session";
+        headerText = "🎓 Your Tutor is Ready";
+        bodyText = `Students are already using JIE Mastery to get help with their schoolwork. Your <strong>free tutoring session</strong> is still available — just verify your email to get started.`;
+      } else if (reminderNum <= 7) {
+        subject = 'Last daily reminder: Your free trial is expiring soon';
+        headerText = "⏰ Don't Miss Out";
+        bodyText = `This is our last daily reminder. After today we'll only check in once a week. Your <strong>free AI tutoring session</strong> is still here — one click to get started!`;
+      } else if (reminderNum <= 10) {
+        subject = 'Still interested? Your free trial is here';
+        headerText = "🎓 Still Interested?";
+        bodyText = `We wanted to check in one more time. Your free JIE Mastery trial is still available if you'd like to give it a try. No pressure — just click below whenever you're ready.`;
+      } else {
+        subject = 'Final reminder: Your free trial offer';
+        headerText = "👋 One Last Check-In";
+        bodyText = `This is our last reminder. Your free JIE Mastery AI tutoring trial is still available, but we won't send any more emails after this. We hope to see you!`;
+      }
+
       const ctaText = params.tokenExpired || !params.verificationToken
         ? 'Get a New Verification Link'
-        : 'Verify and Start Your Trial';
+        : (reminderNum <= 3 ? 'Verify and Start Your Trial' : (reminderNum <= 7 ? 'Start My Free Trial' : 'Try It Now'));
+
+      const unsubNote = reminderNum > 7
+        ? '<p style="color: #999; font-size: 12px; margin-top: 20px;">This is a weekly check-in. If you no longer wish to receive these, simply ignore this email.</p>'
+        : '<p style="color: #999; font-size: 12px; margin-top: 20px;">If you didn\'t sign up for JIE Mastery, you can safely ignore this email.</p>';
       
       const html = `
         <!DOCTYPE html>
@@ -641,14 +674,14 @@ The JIE Mastery Team`;
         <body>
           <div class="container">
             <div class="header">
-              <h1>🎓 Your Free Trial is Waiting</h1>
+              <h1>${headerText}</h1>
               <p style="margin: 10px 0 0; opacity: 0.9;">Don't miss out on personalized AI tutoring</p>
             </div>
             
             <div class="content">
               <p>Hi ${params.name}!</p>
               
-              <p>You signed up for JIE Mastery but haven't started your free trial yet. Your <strong>30 minutes of free AI tutoring</strong> is ready and waiting!</p>
+              <p>${bodyText}</p>
               
               <div class="cta-box">
                 <a href="${ctaUrl}" class="cta-button">
@@ -666,7 +699,7 @@ The JIE Mastery Team`;
                 </ul>
               </div>
               
-              <p style="color: #666; font-size: 14px;">If you didn't sign up for JIE Mastery, you can safely ignore this email.</p>
+              ${unsubNote}
               
               <p>We'd love to help you learn!<br><strong>The JIE Mastery Team</strong></p>
             </div>
@@ -682,7 +715,7 @@ The JIE Mastery Team`;
       
       const text = `Hi ${params.name}!
 
-You signed up for JIE Mastery but haven't started your free trial yet. Your 30 minutes of free AI tutoring is ready and waiting!
+${bodyText.replace(/<[^>]*>/g, '')}
 
 ${ctaText}: ${ctaUrl}
 
@@ -699,12 +732,12 @@ The JIE Mastery Team`;
       await resend.emails.send({
         from: fromEmail,
         to: params.email,
-        subject: 'Your JIE Mastery free trial is waiting',
+        subject,
         html,
         text
       });
       
-      console.log('[EmailService] Verification reminder sent to:', params.email);
+      console.log(`[EmailService] Verification reminder #${reminderNum} sent to:`, params.email);
     } catch (error) {
       console.error('[EmailService] Failed to send verification reminder:', error);
       throw error;

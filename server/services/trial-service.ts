@@ -7,7 +7,7 @@ import { EmailService } from './email-service';
 const TRIAL_DURATION_SECONDS = 300; // Base trial: 5 minutes
 const COURTESY_EXTENSION_SECONDS = 300; // One-time courtesy extension: 5 minutes
 const TRIAL_TOKEN_EXPIRY_SECONDS = 600; // 10 minutes token validity
-const VERIFICATION_LINK_EXPIRY_DAYS = 7; // Email verification link validity
+const VERIFICATION_LINK_EXPIRY_DAYS = 31; // Email verification link validity (covers full reminder cycle)
 const IP_RATE_LIMIT_WINDOW_HOURS = 24;
 const IP_RATE_LIMIT_MAX_ATTEMPTS = 3;
 const DEVICE_COOLDOWN_DAYS = 30;
@@ -1729,19 +1729,25 @@ If you didn't request this, you can safely ignore this email.`;
   // VERIFICATION REMINDER METHODS
   // ========================================
 
-  private readonly MAX_REMINDERS = 2; // Cap reminders at 2 per lead
-  private readonly REMINDER_INTERVAL_HOURS = 6; // Minimum hours between reminders
+  private readonly MAX_REMINDERS = 11; // 7 daily + 4 weekly = ~1 month
+  private readonly DAILY_REMINDER_COUNT = 7; // First 7 reminders are daily
+  // Interval is dynamic: daily for first 7, weekly after that
+
+  // Get the minimum interval for a given reminder count
+  private getReminderIntervalHours(reminderCount: number): number {
+    // First 7 reminders: daily (24 hours apart)
+    // Reminders 8-11: weekly (168 hours apart)
+    return reminderCount < this.DAILY_REMINDER_COUNT ? 24 : 168;
+  }
 
   // Get pending trials eligible for reminders
   async getPendingTrialsForReminders(): Promise<TrialSession[]> {
     try {
-      const sixHoursAgo = new Date(Date.now() - this.REMINDER_INTERVAL_HOURS * 60 * 60 * 1000);
-      
       // Query for pending trials where:
       // - status = 'pending'
       // - verifiedAt IS NULL
       // - reminderCount < MAX_REMINDERS
-      // - lastReminderAt IS NULL OR lastReminderAt < 6 hours ago
+      // Interval check is done per-user in sendVerificationReminder
       const pendingTrials = await db.select()
         .from(trialSessions)
         .where(
@@ -1751,10 +1757,6 @@ If you didn't request this, you can safely ignore this email.`;
             or(
               isNull(trialSessions.verificationReminderCount),
               lt(trialSessions.verificationReminderCount, this.MAX_REMINDERS)
-            ),
-            or(
-              isNull(trialSessions.lastVerificationReminderAt),
-              lt(trialSessions.lastVerificationReminderAt, sixHoursAgo)
             )
           )
         );
@@ -1788,18 +1790,19 @@ If you didn't request this, you can safely ignore this email.`;
         return { success: false, error: 'Max reminders reached' };
       }
 
-      // Check time since last reminder
+      // Check time since last reminder (dynamic interval based on count)
+      const requiredIntervalHours = this.getReminderIntervalHours(currentCount);
       if (trial.lastVerificationReminderAt) {
         const hoursSinceLastReminder = (Date.now() - trial.lastVerificationReminderAt.getTime()) / (1000 * 60 * 60);
-        if (hoursSinceLastReminder < this.REMINDER_INTERVAL_HOURS) {
-          console.log(`[TrialService] Skipping reminder - too soon (${hoursSinceLastReminder.toFixed(1)}h < ${this.REMINDER_INTERVAL_HOURS}h)`);
+        if (hoursSinceLastReminder < requiredIntervalHours) {
+          console.log(`[TrialService] Skipping reminder - too soon (${hoursSinceLastReminder.toFixed(1)}h < ${requiredIntervalHours}h for reminder #${currentCount + 1})`);
           return { success: false, error: 'Too soon since last reminder' };
         }
       }
 
       // Generate a fresh verification token
       const verificationToken = crypto.randomBytes(32).toString('hex');
-      const verificationExpiry = new Date(Date.now() + VERIFICATION_LINK_EXPIRY_DAYS * 24 * 60 * 60 * 1000); // 7 days
+      const verificationExpiry = new Date(Date.now() + VERIFICATION_LINK_EXPIRY_DAYS * 24 * 60 * 60 * 1000); // 31 days
 
       // Update trial with new token and increment reminder count
       await db.update(trialSessions)
@@ -1855,15 +1858,48 @@ If you didn't request this, you can safely ignore this email.`;
     const baseUrl = this.getBaseUrl();
     const verifyUrl = `${baseUrl}/trial/verify?token=${token}`;
     
-    console.log(`[TrialService] Sending reminder email #${reminderNumber} to: ${email}`);
+    console.log(`[TrialService] Sending reminder email #${reminderNumber} to: ${email} (${reminderNumber <= 7 ? 'daily' : 'weekly'} phase)`);
 
-    const subject = reminderNumber === 1 
-      ? 'Reminder: Complete your JIE Mastery Free Trial signup'
-      : 'Final Reminder: Your JIE Mastery Free Trial is waiting';
+    // Escalating subject lines based on reminder phase
+    let subject: string;
+    let urgencyText: string;
+    let ctaButtonText: string;
 
-    const urgencyText = reminderNumber === 1
-      ? 'You started signing up for your free trial but haven\'t verified your email yet.'
-      : 'This is your final reminder. Don\'t miss out on your 5-minute free AI tutoring session!';
+    if (reminderNumber === 1) {
+      // Day 1 — friendly nudge
+      subject = 'Quick reminder: Your free trial is ready';
+      urgencyText = 'You started signing up for JIE Mastery but haven\'t verified your email yet. Your free tutoring session is ready whenever you are!';
+      ctaButtonText = 'Verify & Start Trial';
+    } else if (reminderNumber <= 3) {
+      // Days 2-3 — helpful encouragement
+      subject = 'Your AI tutor is waiting for you';
+      urgencyText = 'Just a friendly reminder — your free JIE Mastery trial is still available. One click and you can start learning with your personal AI tutor.';
+      ctaButtonText = 'Start My Free Trial';
+    } else if (reminderNumber <= 5) {
+      // Days 4-5 — value-focused
+      subject = 'Don\'t miss your free AI tutoring session';
+      urgencyText = 'Students are using JIE Mastery to get help with Math, English, and more. Your free session is still waiting — all you need to do is verify your email.';
+      ctaButtonText = 'Claim My Free Session';
+    } else if (reminderNumber <= 7) {
+      // Days 6-7 — last daily reminder
+      subject = 'Last daily reminder: Your free trial is expiring soon';
+      urgencyText = 'This is our last daily reminder. After today, we\'ll only check in once a week. Don\'t let your free AI tutoring session go to waste!';
+      ctaButtonText = 'Verify Now';
+    } else if (reminderNumber <= 10) {
+      // Weekly 1-3 — periodic check-in
+      subject = 'Still interested? Your free trial is here';
+      urgencyText = 'We wanted to check in one more time. Your free JIE Mastery trial is still available if you\'d like to give it a try. No pressure — just click below whenever you\'re ready.';
+      ctaButtonText = 'Start My Trial';
+    } else {
+      // Final weekly reminder
+      subject = 'Final reminder: Your free trial offer';
+      urgencyText = 'This is our last reminder. Your free JIE Mastery AI tutoring trial is still available, but we won\'t send any more emails after this. We hope to see you!';
+      ctaButtonText = 'Try It Now';
+    }
+
+    const phaseNote = reminderNumber > 7 
+      ? '<p style="margin:0 0 10px 0;color:#666666;font-size:14px;font-family:Arial,Helvetica,sans-serif;">This is a weekly check-in. If you no longer wish to receive these, simply ignore this email — we\'ll stop after one more.</p>'
+      : '<p style="margin:0;color:#666666;font-size:14px;font-family:Arial,Helvetica,sans-serif;">If you no longer wish to receive these reminders, simply ignore this email.</p>';
 
     const htmlContent = `<!DOCTYPE html>
 <html xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
@@ -1897,20 +1933,20 @@ If you didn't request this, you can safely ignore this email.`;
 <!--[if mso]>
 <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="${verifyUrl}" style="height:48px;v-text-anchor:middle;width:220px;" arcsize="10%" strokecolor="#dc2626" fillcolor="#dc2626">
 <w:anchorlock/>
-<center style="color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:bold;">Verify & Start Trial</center>
+<center style="color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:bold;">${ctaButtonText}</center>
 </v:roundrect>
 <![endif]-->
 <!--[if !mso]><!-->
-<a href="${verifyUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:14px 28px;font-size:16px;font-weight:bold;color:#ffffff;text-decoration:none;background-color:#dc2626;border-radius:6px;font-family:Arial,Helvetica,sans-serif;">Verify & Start Trial</a>
+<a href="${verifyUrl}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:14px 28px;font-size:16px;font-weight:bold;color:#ffffff;text-decoration:none;background-color:#dc2626;border-radius:6px;font-family:Arial,Helvetica,sans-serif;">${ctaButtonText}</a>
 <!--<![endif]-->
 </td>
 </tr>
 </table>
 <p style="margin:0 0 10px 0;color:#666666;font-size:14px;font-family:Arial,Helvetica,sans-serif;">If the button doesn't work, copy and paste this link into your browser:</p>
 <p style="margin:0 0 20px 0;color:#666666;font-size:14px;word-break:break-all;font-family:Arial,Helvetica,sans-serif;"><a href="${verifyUrl}" style="color:#dc2626;text-decoration:underline;">${verifyUrl}</a></p>
-<p style="margin:0 0 10px 0;color:#666666;font-size:14px;font-family:Arial,Helvetica,sans-serif;">This link expires in 7 days.</p>
+<p style="margin:0 0 10px 0;color:#666666;font-size:14px;font-family:Arial,Helvetica,sans-serif;">This link expires in 31 days.</p>
 <p style="margin:0 0 10px 0;color:#666666;font-size:14px;font-family:Arial,Helvetica,sans-serif;"><strong>Pro tip:</strong> Check your Spam/Junk folder if you don't see our emails in your inbox.</p>
-<p style="margin:0;color:#666666;font-size:14px;font-family:Arial,Helvetica,sans-serif;">If you no longer wish to receive these reminders, simply ignore this email.</p>
+${phaseNote}
 </td>
 </tr>
 </table>
@@ -1928,7 +1964,7 @@ Click the link below to verify your email and experience our AI tutor:
 
 ${verifyUrl}
 
-This link expires in 7 days.
+This link expires in 31 days.
 
 Pro tip: Check your Spam/Junk folder if you don't see our emails in your inbox.
 
