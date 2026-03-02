@@ -1243,6 +1243,12 @@ export function useCustomVoice() {
               (window as any).__sessionEndedReason = 'user_goodbye';
             }
             
+            // Handle trial minutes exhausted
+            if (message.reason === 'minutes_exhausted' && message.isTrial) {
+              console.log("[Custom Voice] 🎫 Trial minutes exhausted - will show paywall");
+              (window as any).__sessionEndedReason = 'trial_minutes_exhausted';
+            }
+            
             // Clear thinking indicator on session end
             setIsTutorThinking(false);
             thinkingTurnIdRef.current = null;
