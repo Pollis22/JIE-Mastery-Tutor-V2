@@ -206,7 +206,7 @@ export async function triggerLSISProcessing(sessionId: string): Promise<void> {
     // Get session info to find/create the student profile
     const sessionResult = await pool.query(
       `SELECT rs.id, rs.user_id, rs.student_id, rs.transcript, rs.subject, rs.minutes_used,
-              s.grade_band, s.student_name,
+              s.grade_band, s.name as student_name,
               ss.summary_text, ss.topics_covered, ss.concepts_mastered, ss.concepts_struggled
        FROM realtime_sessions rs
        LEFT JOIN students s ON rs.student_id = s.id
