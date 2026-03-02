@@ -946,71 +946,66 @@ export default function AuthPage() {
         </div>
       </section>
 
-      {/* THIS IS NOT CHATGPT SECTION */}
+      {/* THIS IS NOT CHATGPT — THREE WAY COMPARISON */}
       <section className="py-20 bg-muted/30">
         <div className="container mx-auto px-4">
-          <div className="max-w-4xl mx-auto">
+          <div className="max-w-5xl mx-auto">
             <div className="text-center mb-12">
               <span className="inline-block text-sm font-semibold text-primary uppercase tracking-wide bg-primary/10 px-4 py-2 rounded-full mb-4">
-                Built for Real Learning
+                Built Different
               </span>
               <h2 className="text-3xl lg:text-4xl font-bold text-foreground mb-4">
-                This is <span className="text-primary">NOT</span> ChatGPT
+                This is <span className="text-primary">NOT</span> ChatGPT. And It's Not a Traditional Tutor.
               </h2>
               <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-                We built JIE Mastery specifically for students who need to <strong>learn</strong>, 
-                not just get answers. Here's how we're different:
+                JIE Mastery combines the best of both — and adds intelligence that neither can offer.
               </p>
             </div>
 
-            {/* Comparison Table */}
+            {/* Three-Way Comparison Table */}
             <div className="bg-card rounded-2xl border border-border shadow-lg overflow-hidden">
-              <div className="grid grid-cols-4 text-center font-semibold bg-muted/50 border-b border-border">
-                <div className="p-4"></div>
-                <div className="p-4 text-muted-foreground">ChatGPT</div>
-                <div className="p-4 text-muted-foreground">YouTube</div>
-                <div className="p-4 text-primary">JIE Mastery</div>
+              {/* Header */}
+              <div className="grid grid-cols-4 text-center font-semibold border-b border-border">
+                <div className="p-4 bg-muted/50"></div>
+                <div className="p-4 bg-muted/50 text-muted-foreground text-sm">Traditional Tutoring</div>
+                <div className="p-4 bg-muted/50 text-muted-foreground text-sm">ChatGPT / Generic AI</div>
+                <div className="p-4 bg-primary/10 text-primary text-sm font-bold">JIE Mastery</div>
               </div>
               
-              {/* Row 1 */}
-              <div className="grid grid-cols-4 text-center border-b border-border">
-                <div className="p-4 text-left font-medium text-foreground bg-muted/20">Gives instant answers?</div>
-                <div className="p-4"><CheckCircle className="w-5 h-5 text-red-500 mx-auto" /></div>
-                <div className="p-4"><X className="w-5 h-5 text-muted-foreground mx-auto" /></div>
-                <div className="p-4"><X className="w-5 h-5 text-green-500 mx-auto" /></div>
-              </div>
-              
-              {/* Row 2 */}
-              <div className="grid grid-cols-4 text-center border-b border-border">
-                <div className="p-4 text-left font-medium text-foreground bg-muted/20">Guides with questions?</div>
-                <div className="p-4"><X className="w-5 h-5 text-muted-foreground mx-auto" /></div>
-                <div className="p-4"><X className="w-5 h-5 text-muted-foreground mx-auto" /></div>
-                <div className="p-4"><CheckCircle className="w-5 h-5 text-green-500 mx-auto" /></div>
-              </div>
-              
-              {/* Row 3 */}
-              <div className="grid grid-cols-4 text-center border-b border-border">
-                <div className="p-4 text-left font-medium text-foreground bg-muted/20">Voice conversations?</div>
-                <div className="p-4"><X className="w-5 h-5 text-muted-foreground mx-auto" /></div>
-                <div className="p-4"><X className="w-5 h-5 text-muted-foreground mx-auto" /></div>
-                <div className="p-4"><CheckCircle className="w-5 h-5 text-green-500 mx-auto" /></div>
-              </div>
-              
-              {/* Row 4 */}
-              <div className="grid grid-cols-4 text-center border-b border-border">
-                <div className="p-4 text-left font-medium text-foreground bg-muted/20">Age-appropriate tutoring?</div>
-                <div className="p-4"><X className="w-5 h-5 text-muted-foreground mx-auto" /></div>
-                <div className="p-4"><X className="w-5 h-5 text-muted-foreground mx-auto" /></div>
-                <div className="p-4"><CheckCircle className="w-5 h-5 text-green-500 mx-auto" /></div>
-              </div>
-              
-              {/* Row 5 */}
-              <div className="grid grid-cols-4 text-center">
-                <div className="p-4 text-left font-medium text-foreground bg-muted/20">Designed for learning?</div>
-                <div className="p-4"><X className="w-5 h-5 text-muted-foreground mx-auto" /></div>
-                <div className="p-4"><X className="w-5 h-5 text-muted-foreground mx-auto" /></div>
-                <div className="p-4"><CheckCircle className="w-5 h-5 text-green-500 mx-auto" /></div>
-              </div>
+              {[
+                { feature: "Remembers your child", trad: "Depends on the tutor", gpt: false, jie: true, jieText: "Builds a knowledge profile across every session" },
+                { feature: "Adapts teaching strategy", trad: "If you're lucky", gpt: false, jie: true, jieText: "Learns what works and adjusts automatically" },
+                { feature: "Tracks mastery over time", trad: false, gpt: false, jie: true, jieText: "0–100% mastery scoring per concept" },
+                { feature: "Every subject, one tutor", trad: false, gpt: "Any topic, no structure", jie: true, jieText: "Math, Science, English, Spanish & more" },
+                { feature: "Available 24/7", trad: false, gpt: true, jie: true, jieText: "Any time, any device, voice or text" },
+                { feature: "Guides reasoning (Socratic)", trad: "Varies by tutor", gpt: false, jie: true, jieText: "Never gives answers — builds understanding" },
+                { feature: "Voice conversations", trad: true, gpt: false, jie: true, jieText: "Natural voice in 25 languages" },
+                { feature: "Parent progress reports", trad: "Informal if any", gpt: false, jie: true, jieText: "Dashboards, session summaries, growth data" },
+                { feature: "Detects learning challenges", trad: "Depends on attentiveness", gpt: false, jie: true, jieText: "Automated flags after consistent patterns" },
+                { feature: "Consistent quality", trad: "Varies by day and tutor", gpt: "Varies by prompting", jie: true, jieText: "Same excellence every session" },
+                { feature: "Age-appropriate content", trad: true, gpt: false, jie: true, jieText: "K-2 through College, grade-matched tutors" },
+                { feature: "Safe for kids", trad: true, gpt: false, jie: true, jieText: "Content moderation, safety alerts to parents" },
+              ].map((row, i) => (
+                <div key={i} className={`grid grid-cols-4 text-center border-b border-border ${i % 2 === 0 ? '' : 'bg-muted/10'}`}>
+                  <div className="p-3 text-left font-medium text-foreground text-sm bg-muted/20">{row.feature}</div>
+                  <div className="p-3 flex items-center justify-center">
+                    {row.trad === true ? <CheckCircle className="w-4 h-4 text-muted-foreground" /> : 
+                     row.trad === false ? <X className="w-4 h-4 text-muted-foreground/40" /> :
+                     <span className="text-xs text-muted-foreground">{row.trad}</span>}
+                  </div>
+                  <div className="p-3 flex items-center justify-center">
+                    {row.gpt === true ? <CheckCircle className="w-4 h-4 text-muted-foreground" /> : 
+                     row.gpt === false ? <X className="w-4 h-4 text-muted-foreground/40" /> :
+                     <span className="text-xs text-muted-foreground">{row.gpt}</span>}
+                  </div>
+                  <div className="p-3 bg-primary/5">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
+                      <span className="text-xs text-foreground font-medium text-left">{row.jieText}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
 
             {/* Safety Callout */}
@@ -1029,6 +1024,140 @@ export default function AuthPage() {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* THE MOAT: IT GETS SMARTER EVERY SESSION */}
+      <section className="py-20 bg-background">
+        <div className="container mx-auto px-4">
+          <div className="max-w-5xl mx-auto">
+            <div className="text-center mb-12">
+              <span className="inline-block text-sm font-semibold text-green-600 uppercase tracking-wide bg-green-500/10 px-4 py-2 rounded-full mb-4">
+                What No Other AI Tool Can Do
+              </span>
+              <h2 className="text-3xl lg:text-4xl font-bold text-foreground mb-4">
+                It Gets <span className="text-primary">Smarter</span> Every Session
+              </h2>
+              <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+                ChatGPT forgets everything the moment you close the window. Traditional tutors change, call in sick, or move on. 
+                JIE Mastery builds a permanent knowledge profile of your child that compounds over time.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
+              {/* Memory */}
+              <div className="bg-card rounded-2xl border border-border p-6 shadow-sm hover:shadow-md transition-all">
+                <div className="w-14 h-14 bg-primary/10 rounded-2xl flex items-center justify-center mb-4">
+                  <Brain className="w-7 h-7 text-primary" />
+                </div>
+                <h3 className="font-bold text-foreground text-lg mb-2">It Remembers Everything</h3>
+                <p className="text-muted-foreground text-sm leading-relaxed">
+                  After 20 sessions, JIE knows your child struggles with fractions involving unlike denominators, 
+                  learns best through visual analogies, and gets frustrated after the third wrong attempt. 
+                  Every session makes the next one better.
+                </p>
+              </div>
+
+              {/* Adapts */}
+              <div className="bg-card rounded-2xl border border-border p-6 shadow-sm hover:shadow-md transition-all">
+                <div className="w-14 h-14 bg-blue-500/10 rounded-2xl flex items-center justify-center mb-4">
+                  <Sparkles className="w-7 h-7 text-blue-500" />
+                </div>
+                <h3 className="font-bold text-foreground text-lg mb-2">It Adapts Its Teaching</h3>
+                <p className="text-muted-foreground text-sm leading-relaxed">
+                  If humor helps your child relax into a tough math concept, JIE uses humor. If step-by-step 
+                  breakdowns work better than big-picture explanations, JIE adjusts. It tracks what strategies 
+                  are effective and applies them automatically.
+                </p>
+              </div>
+
+              {/* Progress */}
+              <div className="bg-card rounded-2xl border border-border p-6 shadow-sm hover:shadow-md transition-all">
+                <div className="w-14 h-14 bg-green-500/10 rounded-2xl flex items-center justify-center mb-4">
+                  <TrendingUp className="w-7 h-7 text-green-500" />
+                </div>
+                <h3 className="font-bold text-foreground text-lg mb-2">You See Real Progress</h3>
+                <p className="text-muted-foreground text-sm leading-relaxed">
+                  No more guessing whether tutoring is working. See mastery scores by concept, session summaries 
+                  after every conversation, and growth tracking over weeks and months. Replace "what did you learn 
+                  today?" with real data.
+                </p>
+              </div>
+            </div>
+
+            {/* Session 1 vs Session 20 Visual */}
+            <div className="bg-card rounded-2xl border border-border shadow-lg overflow-hidden">
+              <div className="grid md:grid-cols-2">
+                {/* Session 1 */}
+                <div className="p-8 border-b md:border-b-0 md:border-r border-border">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 bg-muted rounded-full flex items-center justify-center text-muted-foreground font-bold text-sm">
+                      1
+                    </div>
+                    <div>
+                      <p className="font-bold text-foreground">Session 1</p>
+                      <p className="text-xs text-muted-foreground">Any AI tool can do this</p>
+                    </div>
+                  </div>
+                  <div className="space-y-3 text-sm">
+                    <div className="flex items-start gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground mt-1.5 flex-shrink-0"></div>
+                      <span className="text-muted-foreground">Generic introduction, no context</span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground mt-1.5 flex-shrink-0"></div>
+                      <span className="text-muted-foreground">Doesn't know the student's level</span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground mt-1.5 flex-shrink-0"></div>
+                      <span className="text-muted-foreground">Uses default teaching approach</span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground mt-1.5 flex-shrink-0"></div>
+                      <span className="text-muted-foreground">No idea what the student already knows</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Session 20 */}
+                <div className="p-8 bg-primary/5">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 bg-primary rounded-full flex items-center justify-center text-white font-bold text-sm">
+                      20
+                    </div>
+                    <div>
+                      <p className="font-bold text-foreground">Session 20</p>
+                      <p className="text-xs text-primary font-semibold">Only JIE Mastery can do this</p>
+                    </div>
+                  </div>
+                  <div className="space-y-3 text-sm">
+                    <div className="flex items-start gap-2">
+                      <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                      <span className="text-foreground">"Welcome back! Last time we made great progress on fractions — ready to tackle mixed numbers?"</span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                      <span className="text-foreground">Knows the student learns best with visual examples</span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                      <span className="text-foreground">Skips concepts already mastered, focuses on gaps</span>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <CheckCircle className="w-4 h-4 text-green-500 mt-0.5 flex-shrink-0" />
+                      <span className="text-foreground">Detects recurring misconceptions and addresses them proactively</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <p className="text-center text-muted-foreground mt-6 text-sm">
+              A competitor starts cold. JIE Mastery has 20 sessions of intelligence about your child.
+              <br />
+              <strong className="text-foreground">That gap grows every single session.</strong>
+            </p>
           </div>
         </div>
       </section>
@@ -1211,10 +1340,22 @@ export default function AuthPage() {
                   How is this different from ChatGPT?
                 </AccordionTrigger>
                 <AccordionContent className="text-muted-foreground pb-5">
-                  ChatGPT gives instant answers — which is great for adults, but teaches kids nothing. 
-                  JIE Mastery uses the Socratic method: it asks guiding questions to help your child 
-                  think through problems step by step. Plus, our voice-based approach is more engaging 
-                  and natural for kids than typing.
+                  ChatGPT gives instant answers, forgets everything when you close the window, and has no idea who your child is. 
+                  JIE Mastery uses the Socratic method, builds a permanent knowledge profile that grows with every session, 
+                  adapts its teaching strategy based on what works for your child specifically, and gives you real progress data. 
+                  Session 20 with JIE Mastery is dramatically better than session 1. Session 20 with ChatGPT is identical to session 1.
+                </AccordionContent>
+              </AccordionItem>
+
+              <AccordionItem value="memory" className="bg-card border border-border rounded-xl px-6">
+                <AccordionTrigger className="text-left font-semibold text-foreground hover:no-underline py-5">
+                  How does the tutor remember my child?
+                </AccordionTrigger>
+                <AccordionContent className="text-muted-foreground pb-5">
+                  After every session, JIE Mastery analyzes the conversation to extract concepts discussed, mastery levels, 
+                  misconceptions, and which teaching strategies were most effective. This builds a learning profile that the 
+                  tutor uses in the next session — remembering what your child knows, what they struggle with, and how they 
+                  learn best. The more sessions, the smarter the tutor gets.
                 </AccordionContent>
               </AccordionItem>
 
