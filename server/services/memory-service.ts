@@ -321,6 +321,14 @@ export async function processPendingMemoryJobs(limit = 5): Promise<{
         stats.succeeded++;
         console.log(`[MEMORY] ✅ Successfully processed job for session ${job.sessionId}`);
         
+        // Trigger LSIS concept extraction for this session
+        try {
+          const { triggerLSISProcessing } = await import('./lsis-service');
+          await triggerLSISProcessing(job.sessionId);
+        } catch (lsisError) {
+          console.error('[MEMORY] LSIS trigger failed (non-blocking):', lsisError);
+        }
+        
       } catch (error) {
         stats.failed++;
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';

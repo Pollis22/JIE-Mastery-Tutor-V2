@@ -4377,6 +4377,23 @@ FLOW:
               // Continue without memory - non-blocking
             }
             
+            // LSIS: Inject longitudinal student knowledge profile
+            let lsisProfileBlock = '';
+            try {
+              const { getProfileForSystemPrompt } = await import('../services/lsis-service');
+              if (state.studentId) {
+                const profileSection = await getProfileForSystemPrompt(state.studentId);
+                if (profileSection) {
+                  lsisProfileBlock = profileSection;
+                  console.log(`[LSIS] 🧠 Injected student knowledge profile (${lsisProfileBlock.length} chars)`);
+                } else {
+                  console.log(`[LSIS] ℹ️ No knowledge profile yet for student ${state.studentId}`);
+                }
+              }
+            } catch (lsisError) {
+              console.warn('[LSIS] ⚠️ Profile injection failed (non-blocking):', lsisError);
+            }
+            
             // Build system instruction with personality and document context
             // NO-GHOSTING FIX: Calculate actual content length before claiming doc access
             const ragChars = state.uploadedDocuments.reduce((sum, doc) => {
@@ -4396,7 +4413,7 @@ FLOW:
               });
               
               // Create enhanced system instruction - NO-GHOSTING: Only claim access when content exists
-              state.systemInstruction = `${personality.systemPrompt}${VOICE_CONVERSATION_CONSTRAINTS}${K2_CONSTRAINTS}${continuityBlock}
+              state.systemInstruction = `${personality.systemPrompt}${VOICE_CONVERSATION_CONSTRAINTS}${K2_CONSTRAINTS}${continuityBlock}${lsisProfileBlock}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📚 DOCUMENTS LOADED FOR THIS SESSION (${ragChars} chars):
@@ -4430,7 +4447,7 @@ DOCUMENT ACKNOWLEDGMENT RULE:
                 return titleMatch ? titleMatch[1] : `file ${i + 1}`;
               });
               
-              state.systemInstruction = `${personality.systemPrompt}${VOICE_CONVERSATION_CONSTRAINTS}${K2_CONSTRAINTS}${continuityBlock}
+              state.systemInstruction = `${personality.systemPrompt}${VOICE_CONVERSATION_CONSTRAINTS}${K2_CONSTRAINTS}${continuityBlock}${lsisProfileBlock}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ⚠️ DOCUMENT UPLOAD ISSUE:
@@ -4448,7 +4465,7 @@ HONESTY INSTRUCTIONS:
               console.log(`[Custom Voice] ⚠️ Files uploaded but no content extracted (ragChars=0, files=${uploadedFilenames.join(', ')}) - using honest acknowledgment`);
             } else {
               // No documents at all - use standard prompt
-              state.systemInstruction = personality.systemPrompt + VOICE_CONVERSATION_CONSTRAINTS + K2_CONSTRAINTS + continuityBlock + STT_ARTIFACT_HARDENING;
+              state.systemInstruction = personality.systemPrompt + VOICE_CONVERSATION_CONSTRAINTS + K2_CONSTRAINTS + continuityBlock + lsisProfileBlock + STT_ARTIFACT_HARDENING;
               console.log(`[Custom Voice] No documents uploaded - using standard prompt`);
             }
             
