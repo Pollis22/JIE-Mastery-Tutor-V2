@@ -256,6 +256,12 @@ export function useCustomVoice() {
   const audioUnlockedRef = useRef<boolean>(false);
   
   const wsRef = useRef<WebSocket | null>(null);
+  const wakeLockRef = useRef<WakeLockSentinel | null>(null); // MOBILE: Screen wake lock
+  const sessionParamsRef = useRef<{                          // MOBILE: Stored for auto-reconnect
+    sessionId: string; userId: string; studentName: string;
+    ageGroup: string; systemInstruction: string; documents: string[];
+    language: string; studentId?: string; uploadedDocCount?: number;
+  } | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const processorRef = useRef<AudioWorkletNode | null>(null);
@@ -878,6 +884,25 @@ export function useCustomVoice() {
       
       // TELEMETRY: Store session ID for page unload beacon
       currentSessionIdRef.current = sessionId;
+
+      // MOBILE: Store session params for auto-reconnect on visibility restore
+      sessionParamsRef.current = {
+        sessionId, userId, studentName, ageGroup,
+        systemInstruction, documents, language, studentId, uploadedDocCount
+      };
+
+      // MOBILE: Request wake lock to prevent screen sleep during session
+      if ('wakeLock' in navigator) {
+        try {
+          wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
+          console.log('[WakeLock] 🔒 Screen wake lock acquired');
+          wakeLockRef.current.addEventListener('release', () => {
+            console.log('[WakeLock] 🔓 Screen wake lock released');
+          });
+        } catch (err) {
+          console.log('[WakeLock] ⚠️ Wake lock not available:', err);
+        }
+      }
       
       // Get WebSocket URL (use wss:// in production)
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -2962,6 +2987,14 @@ registerProcessor('audio-processor', AudioProcessor);
   const cleanup = () => {
     console.log("[VOICE_END] cleanup() — stopping all audio/mic/intervals");
     isSessionActiveRef.current = false;
+
+    // MOBILE: Release wake lock and clear session params
+    if (wakeLockRef.current) {
+      try { wakeLockRef.current.release(); } catch (_) {}
+      wakeLockRef.current = null;
+    }
+    sessionParamsRef.current = null;
+
     
     if (micMeterIntervalRef.current) {
       clearInterval(micMeterIntervalRef.current);
@@ -3371,6 +3404,29 @@ registerProcessor('audio-processor', AudioProcessor);
       // Only send end intent beacon when going hidden (as backup for WS close)
       if (document.visibilityState === 'hidden') {
         sendEndIntentBeacon('visibility_hidden');
+      }
+
+      // MOBILE: Auto-reconnect when page becomes visible and WS is dead
+      // This recovers sessions within the server's 60s grace window
+      if (document.visibilityState === 'visible') {
+        const wsState = ws?.readyState;
+        const params = sessionParamsRef.current;
+        const sessionActive = isSessionActiveRef.current;
+        if (params && sessionActive && wsState !== WebSocket.OPEN && wsState !== WebSocket.CONNECTING) {
+          console.log('[WakeLock/Reconnect] 👁️ Page visible, WS dead — attempting reconnect within grace window');
+          // Re-request wake lock after page visibility restore (iOS releases it automatically)
+          if ('wakeLock' in navigator) {
+            (navigator as any).wakeLock.request('screen').then((lock: WakeLockSentinel) => {
+              wakeLockRef.current = lock;
+              console.log('[WakeLock] 🔒 Wake lock re-acquired after visibility restore');
+            }).catch(() => {});
+          }
+          connect(
+            params.sessionId, params.userId, params.studentName,
+            params.ageGroup, params.systemInstruction, params.documents,
+            params.language, params.studentId, params.uploadedDocCount
+          ).catch(err => console.error('[Reconnect] ❌ Auto-reconnect failed:', err));
+        }
       }
     };
 
