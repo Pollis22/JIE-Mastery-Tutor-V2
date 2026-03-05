@@ -3741,10 +3741,23 @@ export function setupCustomVoiceWebSocket(server: Server) {
         // Use streaming with sentence-by-sentence TTS for minimal latency
         await new Promise<void>((resolve, reject) => {
           const callbacks: StreamingCallbacks = {
-            onSentence: async (sentence: string) => {
+            onSentence: async (sentenceRaw: string) => {
               sentenceCount++;
               const sentenceStart = Date.now();
-              
+
+              // ── VISUAL TAG PARSER ────────────────────────────────────────
+              // Strip [VISUAL: tag_name] from sentence before TTS/transcript.
+              // If found, send show_visual event to client.
+              const visualMatch = sentenceRaw.match(/\[VISUAL:\s*([a-z_]+)\]/i);
+              let sentence = sentenceRaw;
+              if (visualMatch) {
+                const visualTag = visualMatch[1].toLowerCase();
+                sentence = sentenceRaw.replace(visualMatch[0], '').trim();
+                console.log(`[Visual] 📊 Triggering visual: ${visualTag} session=${state.sessionId?.substring(0,8)}`);
+                ws.send(JSON.stringify({ type: 'show_visual', visualTag }));
+              }
+              // ── END VISUAL TAG PARSER ────────────────────────────────────
+
               if (sentenceCount === 1) {
                 firstSentenceMs = sentenceStart - claudeStart;
                 state.isTutorThinking = false;
@@ -4505,6 +4518,36 @@ FLOW:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `;
 
+            // VISUAL AID SYSTEM: Claude can optionally trigger on-screen visuals
+            const VISUAL_SYSTEM_INSTRUCTION = `
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 VISUAL AID SYSTEM (OPTIONAL — USE SPARINGLY):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+You can display an on-screen visual to the student by including a tag in your response.
+The tag will be REMOVED before your response is spoken — the student only sees the diagram.
+
+AVAILABLE VISUALS (use exact tag name):
+  [VISUAL: math_area_model]           — Distributive property / expanding brackets
+  [VISUAL: math_number_line]          — Number line for positive/negative numbers
+  [VISUAL: math_fractions]            — Fraction bars (halves, quarters, eighths)
+  [VISUAL: math_place_value]          — Place value chart (ones, tens, hundreds, thousands)
+  [VISUAL: math_multiplication_table] — Times table (1–6)
+  [VISUAL: writing_paragraph_structure] — Paragraph structure diagram
+  [VISUAL: writing_essay_outline]     — Essay outline (intro, body, conclusion)
+  [VISUAL: periodic_table_simplified] — Common chemical elements
+  [VISUAL: grammar_sentence_parts]    — Parts of a sentence (subject, predicate, etc.)
+  [VISUAL: reading_main_idea]         — Main idea and supporting details map
+
+RULES:
+✅ Place the tag at the START of a sentence, alone: "[VISUAL: math_fractions] Let me show you how fractions compare."
+✅ Only use when a visual genuinely helps — not every response
+✅ Only use ONE visual per response
+❌ Never mention the tag or the visual system to the student — just let it appear
+❌ Never invent tag names — only use the exact tags listed above
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+`;
+
             // STT_ARTIFACT_HARDENING is defined at module level (see top of file)
             
             // K2 TURN POLICY: Add response constraints for K-2 students
@@ -4573,7 +4616,7 @@ FLOW:
               });
               
               // Create enhanced system instruction - NO-GHOSTING: Only claim access when content exists
-              state.systemInstruction = `${personality.systemPrompt}${VOICE_CONVERSATION_CONSTRAINTS}${K2_CONSTRAINTS}${continuityBlock}${lsisProfileBlock}
+              state.systemInstruction = `${personality.systemPrompt}${VOICE_CONVERSATION_CONSTRAINTS}${VISUAL_SYSTEM_INSTRUCTION}${K2_CONSTRAINTS}${continuityBlock}${lsisProfileBlock}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📚 DOCUMENTS LOADED FOR THIS SESSION (${ragChars} chars):
@@ -4607,7 +4650,7 @@ DOCUMENT ACKNOWLEDGMENT RULE:
                 return titleMatch ? titleMatch[1] : `file ${i + 1}`;
               });
               
-              state.systemInstruction = `${personality.systemPrompt}${VOICE_CONVERSATION_CONSTRAINTS}${K2_CONSTRAINTS}${continuityBlock}${lsisProfileBlock}
+              state.systemInstruction = `${personality.systemPrompt}${VOICE_CONVERSATION_CONSTRAINTS}${VISUAL_SYSTEM_INSTRUCTION}${K2_CONSTRAINTS}${continuityBlock}${lsisProfileBlock}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ⚠️ DOCUMENT UPLOAD ISSUE:
@@ -4625,7 +4668,7 @@ HONESTY INSTRUCTIONS:
               console.log(`[Custom Voice] ⚠️ Files uploaded but no content extracted (ragChars=0, files=${uploadedFilenames.join(', ')}) - using honest acknowledgment`);
             } else {
               // No documents at all - use standard prompt
-              state.systemInstruction = personality.systemPrompt + VOICE_CONVERSATION_CONSTRAINTS + K2_CONSTRAINTS + continuityBlock + lsisProfileBlock + STT_ARTIFACT_HARDENING;
+              state.systemInstruction = personality.systemPrompt + VOICE_CONVERSATION_CONSTRAINTS + VISUAL_SYSTEM_INSTRUCTION + K2_CONSTRAINTS + continuityBlock + lsisProfileBlock + STT_ARTIFACT_HARDENING;
               console.log(`[Custom Voice] No documents uploaded - using standard prompt`);
             }
             

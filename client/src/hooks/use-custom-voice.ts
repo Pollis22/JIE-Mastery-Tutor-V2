@@ -216,6 +216,7 @@ const MIC_STATUS_HYSTERESIS = {
 export function useCustomVoice() {
   const [isConnected, setIsConnected] = useState(false);
   const [transcript, setTranscript] = useState<TranscriptMessage[]>([]);
+  const [currentVisual, setCurrentVisual] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [microphoneError, setMicrophoneError] = useState<MicrophoneError | null>(null);
   const [isTutorSpeaking, setIsTutorSpeaking] = useState(false);
@@ -999,6 +1000,11 @@ export function useCustomVoice() {
               }
               return prev;
             });
+            break;
+
+          case "show_visual":
+            console.log(`[Custom Voice] 📊 Visual: ${message.visualTag}`);
+            setCurrentVisual(message.visualTag || null);
             break;
 
           case "tutor_barge_in":
@@ -3396,6 +3402,8 @@ registerProcessor('audio-processor', AudioProcessor);
     unlockAudioForMobile,
     isConnected,
     transcript,
+    currentVisual,
+    setCurrentVisual,
     error,
     microphoneError,
     isTutorSpeaking,
