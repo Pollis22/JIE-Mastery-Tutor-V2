@@ -14,6 +14,8 @@ import { useAuth } from '@/hooks/use-auth';
 import { useLocation } from 'wouter';
 import { AgeThemeProvider } from '@/contexts/ThemeContext';
 import { isYoungLearner as checkYoungLearner } from '@/styles/themes';
+import { VisualPanel } from './VisualPanel';
+import type { VisualTag } from './VisualPanel';
 
 // Session Timer Component - UI only, no billing logic
 function SessionTimer({ isActive }: { isActive: boolean }) {
@@ -765,6 +767,21 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
         (window as any).__sessionEndedReason = null;
       }
       
+      // Check if session ended due to trial minutes exhausted
+      if (endReason === 'trial_minutes_exhausted') {
+        console.log('[VoiceHost] 🎫 Session ended — trial minutes exhausted');
+        toast({
+          title: "Free Trial Ended",
+          description: "Your free trial time is up! Subscribe to continue learning.",
+          duration: 8000,
+        });
+        (window as any).__sessionEndedReason = null;
+        // Navigate to pricing after a brief delay
+        setTimeout(() => {
+          window.location.href = '/pricing';
+        }, 3000);
+      }
+      
       endSession();
       previouslyConnectedRef.current = false; // Reset for next session
     }
@@ -977,6 +994,14 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
         </div>
         {/* End Top Controls Section */}
         
+        {/* Visual Aid Panel - shown when tutor triggers a visual */}
+        {customVoice.isConnected && (
+          <VisualPanel
+            visualTag={customVoice.currentVisual as VisualTag | null}
+            onDismiss={() => customVoice.setCurrentVisual(null)}
+          />
+        )}
+
         {/* Scrollable Transcript Area - Takes remaining space */}
         <div className={`${customVoice.isConnected ? 'flex-1 min-h-0 overflow-y-auto px-2' : ''}`}>
           <RealtimeVoiceTranscript

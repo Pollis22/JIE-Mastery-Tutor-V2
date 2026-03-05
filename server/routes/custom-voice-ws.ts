@@ -1377,6 +1377,9 @@ interface SessionState {
   watchdogRecoveries: number;
   lastWatchdogRecoveryAt: number;
   watchdogDisabled: boolean;
+  // TRIAL MINUTE ENFORCEMENT: Periodic check to end session when trial minutes exhausted
+  trialMinuteCheckTimerId: NodeJS.Timeout | null;
+  trialMinuteWarned: boolean; // Whether 2-minute warning has been sent
 }
 
 // Helper to send typed WebSocket events
@@ -1824,6 +1827,12 @@ async function finalizeSession(
   if (state.sttReconnectTimerId) {
     clearTimeout(state.sttReconnectTimerId);
     state.sttReconnectTimerId = null;
+  }
+  // TRIAL MINUTE ENFORCEMENT: Clear trial minute check timer
+  if (state.trialMinuteCheckTimerId) {
+    clearInterval(state.trialMinuteCheckTimerId);
+    state.trialMinuteCheckTimerId = null;
+    console.log(`[Finalize] 🧹 Cleared trial minute check timer (reason: ${reason})`);
   }
   if (state.assemblyAIWs) {
     try { state.assemblyAIWs.close(); } catch (_e) {}
@@ -2457,6 +2466,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
       watchdogRecoveries: 0,
       lastWatchdogRecoveryAt: 0,
       watchdogDisabled: false,
+      trialMinuteCheckTimerId: null,
+      trialMinuteWarned: false,
     };
 
     // FIX #3: Auto-persist every 10 seconds
@@ -2700,6 +2711,155 @@ export function setupCustomVoiceWebSocket(server: Server) {
     }, 30000); // Check every 30 seconds
 
     console.log('[Inactivity] ✅ Checker started (checks every 30 seconds)');
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // TRIAL MINUTE ENFORCEMENT: Check remaining minutes every 60s
+    // Warns at 2 minutes remaining, disconnects at 0
+    // Only runs for trial users (trialActive = true)
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    if (!isTrialSession) {
+      // For authenticated users, start a periodic check if they're a trial user
+      // We check on first tick and then every 60 seconds
+      const startTrialMinuteCheck = async () => {
+        try {
+          const user = await storage.getUser(authenticatedUserId);
+          if (!user || !user.trialActive) {
+            console.log('[TrialMinuteCheck] ℹ️ User is not a trial user, skipping enforcement');
+            return;
+          }
+
+          console.log('[TrialMinuteCheck] 🎫 Trial user detected — starting minute enforcement timer');
+
+          state.trialMinuteCheckTimerId = setInterval(async () => {
+            if (state.isSessionEnded || state.sessionFinalizing) return;
+
+            try {
+              const currentUser = await storage.getUser(authenticatedUserId);
+              if (!currentUser || !currentUser.trialActive) return;
+
+              const trialLimit = currentUser.trialMinutesLimit || 30;
+              const trialUsed = currentUser.trialMinutesUsed || 0;
+              
+              // Also account for current session time not yet deducted
+              const currentSessionMinutes = Math.ceil((Date.now() - state.sessionStartTime) / 60000);
+              const effectiveUsed = trialUsed + currentSessionMinutes;
+              const effectiveRemaining = Math.max(0, trialLimit - effectiveUsed);
+
+              console.log(`[TrialMinuteCheck] ⏱️ Trial: ${effectiveUsed}/${trialLimit} min used (DB: ${trialUsed}, session: ${currentSessionMinutes}), ${effectiveRemaining} remaining`);
+
+              // WARNING at 2 minutes remaining
+              if (effectiveRemaining <= 2 && effectiveRemaining > 0 && !state.trialMinuteWarned) {
+                state.trialMinuteWarned = true;
+                console.log('[TrialMinuteCheck] ⚠️ Trial running low — sending 2-minute warning');
+
+                const warningText = `Just a heads up — you have about ${effectiveRemaining} minute${effectiveRemaining === 1 ? '' : 's'} left in your free trial. After that, you can subscribe to keep learning!`;
+
+                state.transcript.push({
+                  speaker: "tutor",
+                  text: warningText,
+                  timestamp: new Date().toISOString(),
+                  messageId: crypto.randomUUID(),
+                });
+
+                if (ws.readyState === WebSocket.OPEN) {
+                  ws.send(JSON.stringify({
+                    type: 'transcript',
+                    speaker: 'tutor',
+                    text: warningText,
+                  }));
+
+                  // Generate speech for warning
+                  if (state.tutorAudioEnabled) {
+                    try {
+                      const audioBuffer = await generateSpeech(warningText, state.ageGroup, state.speechSpeed);
+                      if (audioBuffer && audioBuffer.length > 0) {
+                        ws.send(JSON.stringify({
+                          type: 'audio',
+                          data: audioBuffer.toString('base64'),
+                          mimeType: 'audio/pcm;rate=16000',
+                        }));
+                      }
+                    } catch (audioErr) {
+                      console.error('[TrialMinuteCheck] ❌ Warning audio error:', audioErr);
+                    }
+                  }
+                }
+              }
+
+              // END SESSION at 0 minutes remaining
+              if (effectiveRemaining <= 0) {
+                console.log('[TrialMinuteCheck] 🛑 Trial minutes exhausted — ending session');
+
+                // Clear this interval immediately
+                if (state.trialMinuteCheckTimerId) {
+                  clearInterval(state.trialMinuteCheckTimerId);
+                  state.trialMinuteCheckTimerId = null;
+                }
+
+                const endText = "Your free trial time is up! I hope you enjoyed learning with me. Subscribe to a plan to continue our sessions — I'd love to keep helping you learn!";
+
+                state.transcript.push({
+                  speaker: "tutor",
+                  text: endText,
+                  timestamp: new Date().toISOString(),
+                  messageId: crypto.randomUUID(),
+                });
+
+                if (ws.readyState === WebSocket.OPEN) {
+                  ws.send(JSON.stringify({
+                    type: 'transcript',
+                    speaker: 'tutor',
+                    text: endText,
+                  }));
+
+                  // Generate speech for end message
+                  if (state.tutorAudioEnabled) {
+                    try {
+                      const audioBuffer = await generateSpeech(endText, state.ageGroup, state.speechSpeed);
+                      if (audioBuffer && audioBuffer.length > 0) {
+                        ws.send(JSON.stringify({
+                          type: 'audio',
+                          data: audioBuffer.toString('base64'),
+                          mimeType: 'audio/pcm;rate=16000',
+                        }));
+                      }
+                    } catch (audioErr) {
+                      console.error('[TrialMinuteCheck] ❌ End audio error:', audioErr);
+                    }
+                  }
+
+                  // Wait for audio to play, then end session
+                  setTimeout(async () => {
+                    try {
+                      ws.send(JSON.stringify({
+                        type: 'session_ended',
+                        reason: 'minutes_exhausted',
+                        message: 'Your free trial has ended. Subscribe to continue learning!',
+                        isTrial: true
+                      }));
+
+                      await finalizeSession(state, 'minutes_exhausted');
+                      ws.close(1000, 'Trial minutes exhausted');
+                      console.log('[TrialMinuteCheck] ✅ Trial session ended successfully');
+                    } catch (endErr) {
+                      console.error('[TrialMinuteCheck] ❌ Error ending trial session:', endErr);
+                      ws.close(1011, 'Error ending trial session');
+                    }
+                  }, 5000);
+                }
+              }
+            } catch (checkErr) {
+              console.error('[TrialMinuteCheck] ❌ Error checking trial minutes:', checkErr);
+            }
+          }, 60000); // Check every 60 seconds
+        } catch (err) {
+          console.error('[TrialMinuteCheck] ❌ Error initializing trial check:', err);
+        }
+      };
+
+      // Fire async — don't block WS setup
+      startTrialMinuteCheck();
+    }
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // SAFETY TIMEOUT (Dec 10, 2025): Reset stuck isProcessing flag
@@ -3581,10 +3741,23 @@ export function setupCustomVoiceWebSocket(server: Server) {
         // Use streaming with sentence-by-sentence TTS for minimal latency
         await new Promise<void>((resolve, reject) => {
           const callbacks: StreamingCallbacks = {
-            onSentence: async (sentence: string) => {
+            onSentence: async (sentenceRaw: string) => {
               sentenceCount++;
               const sentenceStart = Date.now();
-              
+
+              // ── VISUAL TAG PARSER ────────────────────────────────────────
+              // Strip [VISUAL: tag_name] from sentence before TTS/transcript.
+              // If found, send show_visual event to client.
+              const visualMatch = sentenceRaw.match(/\[VISUAL:\s*([a-z_]+)\]/i);
+              let sentence = sentenceRaw;
+              if (visualMatch) {
+                const visualTag = visualMatch[1].toLowerCase();
+                sentence = sentenceRaw.replace(visualMatch[0], '').trim();
+                console.log(`[Visual] 📊 Triggering visual: ${visualTag} session=${state.sessionId?.substring(0,8)}`);
+                ws.send(JSON.stringify({ type: 'show_visual', visualTag }));
+              }
+              // ── END VISUAL TAG PARSER ────────────────────────────────────
+
               if (sentenceCount === 1) {
                 firstSentenceMs = sentenceStart - claudeStart;
                 state.isTutorThinking = false;
@@ -4345,6 +4518,36 @@ FLOW:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `;
 
+            // VISUAL AID SYSTEM: Claude can optionally trigger on-screen visuals
+            const VISUAL_SYSTEM_INSTRUCTION = `
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 VISUAL AID SYSTEM (OPTIONAL — USE SPARINGLY):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+You can display an on-screen visual to the student by including a tag in your response.
+The tag will be REMOVED before your response is spoken — the student only sees the diagram.
+
+AVAILABLE VISUALS (use exact tag name):
+  [VISUAL: math_area_model]           — Distributive property / expanding brackets
+  [VISUAL: math_number_line]          — Number line for positive/negative numbers
+  [VISUAL: math_fractions]            — Fraction bars (halves, quarters, eighths)
+  [VISUAL: math_place_value]          — Place value chart (ones, tens, hundreds, thousands)
+  [VISUAL: math_multiplication_table] — Times table (1–6)
+  [VISUAL: writing_paragraph_structure] — Paragraph structure diagram
+  [VISUAL: writing_essay_outline]     — Essay outline (intro, body, conclusion)
+  [VISUAL: periodic_table_simplified] — Common chemical elements
+  [VISUAL: grammar_sentence_parts]    — Parts of a sentence (subject, predicate, etc.)
+  [VISUAL: reading_main_idea]         — Main idea and supporting details map
+
+RULES:
+✅ Place the tag at the START of a sentence, alone: "[VISUAL: math_fractions] Let me show you how fractions compare."
+✅ Only use when a visual genuinely helps — not every response
+✅ Only use ONE visual per response
+❌ Never mention the tag or the visual system to the student — just let it appear
+❌ Never invent tag names — only use the exact tags listed above
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+`;
+
             // STT_ARTIFACT_HARDENING is defined at module level (see top of file)
             
             // K2 TURN POLICY: Add response constraints for K-2 students
@@ -4413,7 +4616,7 @@ FLOW:
               });
               
               // Create enhanced system instruction - NO-GHOSTING: Only claim access when content exists
-              state.systemInstruction = `${personality.systemPrompt}${VOICE_CONVERSATION_CONSTRAINTS}${K2_CONSTRAINTS}${continuityBlock}${lsisProfileBlock}
+              state.systemInstruction = `${personality.systemPrompt}${VOICE_CONVERSATION_CONSTRAINTS}${VISUAL_SYSTEM_INSTRUCTION}${K2_CONSTRAINTS}${continuityBlock}${lsisProfileBlock}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📚 DOCUMENTS LOADED FOR THIS SESSION (${ragChars} chars):
@@ -4447,7 +4650,7 @@ DOCUMENT ACKNOWLEDGMENT RULE:
                 return titleMatch ? titleMatch[1] : `file ${i + 1}`;
               });
               
-              state.systemInstruction = `${personality.systemPrompt}${VOICE_CONVERSATION_CONSTRAINTS}${K2_CONSTRAINTS}${continuityBlock}${lsisProfileBlock}
+              state.systemInstruction = `${personality.systemPrompt}${VOICE_CONVERSATION_CONSTRAINTS}${VISUAL_SYSTEM_INSTRUCTION}${K2_CONSTRAINTS}${continuityBlock}${lsisProfileBlock}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ⚠️ DOCUMENT UPLOAD ISSUE:
@@ -4465,7 +4668,7 @@ HONESTY INSTRUCTIONS:
               console.log(`[Custom Voice] ⚠️ Files uploaded but no content extracted (ragChars=0, files=${uploadedFilenames.join(', ')}) - using honest acknowledgment`);
             } else {
               // No documents at all - use standard prompt
-              state.systemInstruction = personality.systemPrompt + VOICE_CONVERSATION_CONSTRAINTS + K2_CONSTRAINTS + continuityBlock + lsisProfileBlock + STT_ARTIFACT_HARDENING;
+              state.systemInstruction = personality.systemPrompt + VOICE_CONVERSATION_CONSTRAINTS + VISUAL_SYSTEM_INSTRUCTION + K2_CONSTRAINTS + continuityBlock + lsisProfileBlock + STT_ARTIFACT_HARDENING;
               console.log(`[Custom Voice] No documents uploaded - using standard prompt`);
             }
             
