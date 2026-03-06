@@ -374,7 +374,7 @@ export function VisualPanel({ visualTag, onDismiss }: VisualPanelProps) {
       <div className="flex items-center justify-between px-3 py-2 bg-muted/60 border-b border-border">
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">📊 Visual Aid</span>
-          <span className="text-xs font-bold text-foreground">{label}</span>
+          <span className="text-sm font-bold text-foreground">{label}</span>
         </div>
         <button
           onClick={onDismiss}
@@ -385,7 +385,7 @@ export function VisualPanel({ visualTag, onDismiss }: VisualPanelProps) {
         </button>
       </div>
       {/* Content */}
-      <div className="p-2 overflow-x-auto">
+      <div className="p-3 overflow-x-auto">
         {content}
       </div>
     </div>

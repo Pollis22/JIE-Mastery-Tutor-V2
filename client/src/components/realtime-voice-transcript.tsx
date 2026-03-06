@@ -206,10 +206,10 @@ export function RealtimeVoiceTranscript({
                           </div>
                         )}
                         
-                        <div className={`max-w-[80%] ${isUser ? 'order-1' : 'order-2'}`}>
+                        <div className={`max-w-[90%] ${isUser ? 'order-1' : 'order-2'}`}>
                           <div
                             className={`
-                              relative px-4 py-3 text-sm shadow-md
+                              relative px-4 py-3 text-base shadow-md
                               ${isUser 
                                 ? `${theme.userBubbleClass} ml-4` 
                                 : `${theme.messageBubbleClass} mr-4`
@@ -244,7 +244,7 @@ export function RealtimeVoiceTranscript({
                 />
               </div>
               
-              <div className="h-20" />
+              <div className="h-4" />
             </div>
           </div>
           

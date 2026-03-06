@@ -138,6 +138,112 @@ const TESSERACT_LANGUAGE_MAP: Record<string, string> = {
   'sv': 'swe', 'da': 'dan', 'no': 'nor', 'fi': 'fin', 'sw': 'swa', 'yo': 'eng', 'ha': 'eng',
 };
 
+/**
+ * Extract rich educational content from images using Claude Vision (primary method)
+ * Falls back to Tesseract OCR if Vision fails.
+ * Returns text prefixed with [VISION]\n so the caller can detect which method was used.
+ */
+async function extractImageWithVision(
+  filePath: string,
+  mimetype: string,
+  grade: string | null,
+  subject: string | null,
+  language: string = 'en'
+): Promise<string> {
+  const CLAUDE_VISION_MIME: Record<string, 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'> = {
+    'image/jpeg': 'image/jpeg',
+    'image/jpg': 'image/jpeg',
+    'image/png': 'image/png',
+    'image/gif': 'image/gif',
+    'image/webp': 'image/webp',
+  };
+
+  const mediaType = CLAUDE_VISION_MIME[mimetype];
+  if (!mediaType) {
+    throw new Error(`Mimetype ${mimetype} not supported by Claude Vision`);
+  }
+
+  const imageBuffer = fs.readFileSync(filePath);
+  const base64Image = imageBuffer.toString('base64');
+
+  const gradeContext = grade ? `The student is in grade level: ${grade}.` : '';
+  const subjectContext = subject ? `The subject being studied is: ${subject}.` : '';
+  const languageNote = language && language !== 'en'
+    ? `The student's preferred language is ${language}. Provide your analysis in that language where appropriate.`
+    : '';
+
+  const visionPrompt = `You are assisting an AI tutor that will use your analysis to help a student learn. Analyze this image thoroughly so the tutor has everything it needs to teach from it effectively.
+
+${gradeContext} ${subjectContext} ${languageNote}
+
+ANALYSIS INSTRUCTIONS:
+
+1. TRANSCRIBE ALL TEXT EXACTLY
+   - Copy every word, number, equation, label, and heading exactly as written
+   - For handwritten content: transcribe as accurately as possible, note "[illegible]" for unclear parts
+   - Preserve the structure (e.g., numbered questions, bullet points, columns)
+
+2. DESCRIBE VISUAL ELEMENTS
+   - Diagrams: describe every component, label, arrow, and relationship
+   - Graphs/charts: describe axes, data points, trends, title, and legend
+   - Tables: reproduce the full table structure with all cell values
+   - Images/photos: describe what is shown and its educational significance
+
+3. IDENTIFY THE EDUCATIONAL CONTENT
+   - Subject area (Math, Science, English, History, etc.)
+   - Topic/concept being covered
+   - Grade-appropriate context
+   - Type of work (homework problem, test, worksheet, notes, textbook page, etc.)
+
+4. FLAG STUDENT WORK
+   - If this is completed student work, note which answers appear correct and which appear incorrect
+   - Identify specific errors or misconceptions visible in the work
+   - Note blank questions or incomplete sections
+
+5. STRUCTURE FOR TUTORING
+   Format your response as:
+   
+   CONTENT TYPE: [homework/worksheet/notes/diagram/chart/textbook/other]
+   SUBJECT: [subject area]
+   TOPIC: [specific topic/concept]
+   
+   FULL TRANSCRIPTION:
+   [complete text transcription]
+   
+   VISUAL DESCRIPTION:
+   [description of any diagrams, charts, images]
+   
+   TUTORING NOTES:
+   [key points the tutor should address, errors spotted, questions to ask the student]
+
+Be exhaustive — the tutor cannot see the original image and will rely entirely on your analysis to help the student.`;
+
+  const client = getAnthropicVisionClient();
+  const response = await client.messages.create({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 2000,
+    messages: [{
+      role: 'user',
+      content: [
+        {
+          type: 'image',
+          source: { type: 'base64', media_type: mediaType, data: base64Image }
+        },
+        { type: 'text', text: visionPrompt }
+      ]
+    }]
+  });
+
+  const description = response.content[0].type === 'text' ? response.content[0].text.trim() : '';
+  if (!description || description.length < 30) {
+    throw new Error('Claude Vision returned insufficient content');
+  }
+
+  console.log(`[Image Vision] ✅ Claude Vision extracted ${description.length} chars for tutoring`);
+  // Prefix so caller can detect vision was used
+  return `[VISION]\n${description}`;
+}
+
 async function extractTextFromImage(filePath: string, language: string = 'en'): Promise<string> {
   const tesseractLang = TESSERACT_LANGUAGE_MAP[language] || 'eng';
   
@@ -439,8 +545,17 @@ router.post('/upload', upload.single('file'), async (req, res) => {
         req.file.mimetype === 'image/gif' ||
         req.file.mimetype === 'image/bmp'
       ) {
-        console.log(`[Upload] 🖼️ Extracting text from image using OCR (language: ${documentLanguage})...`);
-        extractedText = await extractTextFromImage(req.file.path, documentLanguage);
+        console.log(`[Upload] 🖼️ Analyzing image with Claude Vision (primary)...`);
+        const imageGrade = req.body.grade || null;
+        const imageSubject = req.body.subject || null;
+        try {
+          extractedText = await extractImageWithVision(req.file.path, req.file.mimetype, imageGrade, imageSubject, documentLanguage);
+          console.log(`[Upload] ✅ Claude Vision extracted ${extractedText.length} chars`);
+        } catch (visionErr) {
+          console.warn(`[Upload] ⚠️ Claude Vision failed, falling back to Tesseract OCR:`, visionErr);
+          extractedText = await extractTextFromImage(req.file.path, documentLanguage);
+          console.log(`[Upload] ✅ Tesseract OCR extracted ${extractedText.length} chars`);
+        }
       } else {
         throw new Error(`Unsupported file type: ${req.file.mimetype}`);
       }
@@ -449,12 +564,18 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       
       // Log extraction event per spec
       const isImageType = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/bmp'].includes(req.file.mimetype);
+      // Determine if vision was used (vision descriptions contain a specific marker)
+      const usedVision = isImageType && extractedText.startsWith('[VISION]');
+      // Strip the internal marker before saving
+      if (usedVision) {
+        extractedText = extractedText.replace(/^\[VISION\]\n/, '');
+      }
       logDocExtracted({
         docId: documentId,
         mimeType: req.file.mimetype,
         extractedChars: extractedText.length,
-        extractionMethod: isImageType ? 'ocr' : 'text_extraction',
-        ocrUsed: isImageType,
+        extractionMethod: isImageType ? (usedVision ? 'claude-vision' : 'tesseract-ocr') : 'text_extraction',
+        ocrUsed: isImageType && !usedVision,
       });
       
       if (!extractedText || extractedText.trim().length === 0) {
