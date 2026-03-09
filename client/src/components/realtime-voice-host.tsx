@@ -679,16 +679,20 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
     const isImage = file.type.startsWith('image/');
     console.log(`[Chat] 📤 Uploading ${isImage ? 'image' : 'file'} from chat:`, file.name);
 
-    // Use the same upload endpoint for ALL files (images use OCR on server)
+    // Use the same upload endpoint for ALL files (images use Claude Vision on server)
     const formData = new FormData();
     formData.append('file', file);
     formData.append('studentId', studentId || '');
+    // Pass session context so Vision prompt is grade/subject-aware
+    if (subject) formData.append('subject', subject);
+    if (ageGroup) formData.append('grade', ageGroup);
+    if (language) formData.append('language', language);
 
     try {
       toast({
-        title: "Uploading...",
+        title: isImage ? "Analyzing Image..." : "Uploading...",
         description: isImage 
-          ? `Processing ${file.name} with OCR...` 
+          ? `Reading "${file.name}" with AI vision...` 
           : `Uploading ${file.name}...`,
       });
 
@@ -723,7 +727,7 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
       toast({
         title: "Upload Complete",
         description: isImage 
-          ? `AI can now read "${file.name}". Ask about it!`
+          ? `Tutor can now see and teach from "${file.name}". Ask about it!`
           : `${file.name} uploaded successfully`,
       });
 
@@ -879,28 +883,28 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
           </div>
         </div>
         
-        {/* Centered Voice Presence - Single source of truth for session state */}
+        {/* Compact Voice Presence Row - avatar + progress side by side to save vertical space */}
         {customVoice.isConnected && (
-          <div className="flex flex-col items-center gap-3 py-4">
+          <div className="flex items-center gap-3 py-1 px-1">
             <TutorAvatar 
               state={tutorAvatarState}
               amplitude={simulatedAmplitude}
-              size="large"
+              size="small"
             />
-            
-            {/* Session Progress - Gamification for K-8 students */}
-            <SessionProgress 
-              questionsAnswered={customVoice.transcript.filter(t => t.speaker === 'tutor').length}
-              xpEarned={customVoice.transcript.filter(t => t.speaker === 'tutor').length * 10}
-              streak={0}
-            />
+            <div className="flex-1 min-w-0">
+              <SessionProgress 
+                questionsAnswered={customVoice.transcript.filter(t => t.speaker === 'tutor').length}
+                xpEarned={customVoice.transcript.filter(t => t.speaker === 'tutor').length * 10}
+                streak={0}
+              />
+            </div>
           </div>
         )}
         
         {/* Minimal Audio Controls - Only shown during active session */}
         {customVoice.isConnected && (
-          <div className="bg-muted/30 border border-border/50 rounded-lg p-3">
-            <div className="flex flex-wrap items-center justify-center gap-3">
+          <div className="bg-muted/30 border border-border/50 rounded-lg py-1.5 px-2">
+            <div className="flex flex-wrap items-center justify-center gap-2">
             {Object.entries(MODES).map(([key, config]) => {
               const ModeIcon = config.icon;
               const isActive = communicationMode === key;
@@ -993,17 +997,17 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
         )}
         </div>
         {/* End Top Controls Section */}
-        
-        {/* Visual Aid Panel - shown when tutor triggers a visual */}
-        {customVoice.isConnected && (
-          <VisualPanel
-            visualTag={customVoice.currentVisual as VisualTag | null}
-            onDismiss={() => customVoice.setCurrentVisual(null)}
-          />
-        )}
 
         {/* Scrollable Transcript Area - Takes remaining space */}
         <div className={`${customVoice.isConnected ? 'flex-1 min-h-0 overflow-y-auto px-2' : ''}`}>
+
+          {/* Visual Aid Panel - inside scroll area so it's always visible on mobile */}
+          {customVoice.isConnected && (
+            <VisualPanel
+              visualTag={customVoice.currentVisual as VisualTag | null}
+              onDismiss={() => customVoice.setCurrentVisual(null)}
+            />
+          )}
           <RealtimeVoiceTranscript
             messages={customVoice.transcript.map(t => ({
               role: t.speaker === 'student' ? 'user' as const : 'assistant' as const,

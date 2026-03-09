@@ -137,3 +137,31 @@ export async function generateSpeech(
     throw error;
   }
 }
+
+/**
+ * Pre-warm the ElevenLabs connection for a given ageGroup.
+ * Called at session start BEFORE the greeting fires so the first real TTS
+ * request hits a warm HTTP/2 connection (~200ms) instead of a cold one (~1400ms).
+ * The result is discarded — this is purely a connection warm-up.
+ */
+export async function prewarmTTS(ageGroup: string): Promise<void> {
+  const start = Date.now();
+  try {
+    const client = getElevenLabsClient();
+    const voiceId = VOICE_MAP[ageGroup] || VOICE_MAP['default'];
+    // Minimal text — just enough to open the connection and get a response
+    const warmStream = await client.textToSpeech.convert(voiceId, {
+      text: 'Hi.',
+      model_id: 'eleven_turbo_v2_5',
+      output_format: 'pcm_16000',
+      voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0.0, use_speaker_boost: false, speed: 1.0 },
+    });
+    // Drain the stream (required to complete the request)
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    for await (const _chunk of warmStream) { /* discard */ }
+    console.log(`[TTS Prewarm] ✅ ElevenLabs connection warmed in ${Date.now() - start}ms (ageGroup=${ageGroup})`);
+  } catch (err) {
+    // Non-fatal — greeting will still work, just slower on first sentence
+    console.warn(`[TTS Prewarm] ⚠️ Prewarm failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`);
+  }
+}

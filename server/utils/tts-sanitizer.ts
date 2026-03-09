@@ -232,8 +232,22 @@ export function sanitizeTtsText(raw: string, gradeBand: string): {
     return { sanitized: raw, wasModified: false, skipped: false };
   }
   
-  // Step 1: Strip markdown
-  let result = stripMarkdown(raw);
+  // Step 0: Extract VISUAL tag before markdown stripping (underscores in tag names
+  // would be incorrectly stripped by the _italic_ markdown regex).
+  let visualTag = '';
+  const visualTagMatch = raw.match(/\[VISUAL:\s*[a-z0-9_]+\]/i);
+  if (visualTagMatch) {
+    visualTag = visualTagMatch[0];
+  }
+  const rawWithoutVisual = raw.replace(/\[VISUAL:\s*[a-z0-9_]+\]/gi, '').trim();
+  
+  // Step 1: Strip markdown (on text without the visual tag)
+  let result = stripMarkdown(rawWithoutVisual);
+  
+  // Restore VISUAL tag at start if it was present
+  if (visualTag) {
+    result = visualTag + (result ? ' ' + result : '');
+  }
   
   // Step 2: Normalize whitespace
   result = normalizeWhitespace(result);

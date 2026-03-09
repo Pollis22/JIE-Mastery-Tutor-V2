@@ -4,7 +4,7 @@ import { IncomingMessage } from 'http';
 import { Socket } from 'net';
 import { startDeepgramStream, DeepgramConnection } from "../services/deepgram-service";
 import { generateTutorResponse, generateTutorResponseStreaming, StreamingCallbacks } from "../services/ai-service";
-import { generateSpeech } from "../services/tts-service";
+import { generateSpeech, prewarmTTS } from "../services/tts-service";
 import { db } from "../db";
 import { realtimeSessions, contentViolations, userSuspensions, documentChunks } from "@shared/schema";
 import { eq, and, or, gte } from "drizzle-orm";
@@ -3748,7 +3748,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
               // ── VISUAL TAG PARSER ────────────────────────────────────────
               // Strip [VISUAL: tag_name] from sentence before TTS/transcript.
               // If found, send show_visual event to client.
-              const visualMatch = sentenceRaw.match(/\[VISUAL:\s*([a-z_]+)\]/i);
+              const visualMatch = sentenceRaw.match(/\[VISUAL:\s*([a-z0-9_]+)\]/i);
               let sentence = sentenceRaw;
               if (visualMatch) {
                 const visualTag = visualMatch[1].toLowerCase();
@@ -3845,7 +3845,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
               markProgress(state);
               console.log(`[Pipeline] 4. Claude response received (${claudeMs}ms), generating audio...`);
               
-              const normalizedContent = (fullText ?? "").trim();
+              // ── STRIP VISUAL TAGS from full text before saving to history/transcript ──
+              const normalizedContent = (fullText ?? "").trim().replace(/\[VISUAL:\s*[a-z0-9_]+\]/gi, '').replace(/\s{2,}/g, ' ').trim();
               const wasAborted = llmAc.signal.aborted || ttsAc.signal.aborted;
               if (normalizedContent.length === 0 || wasAborted || sentenceCount === 0) {
                 console.log(`[History] saved_assistant=false reason=${wasAborted ? 'aborted' : 'empty'} genId=${activeGenId} tokens=${sentenceCount} phase=${state.phase} len=${normalizedContent.length}`);
@@ -4192,6 +4193,9 @@ export function setupCustomVoiceWebSocket(server: Server) {
               state.language = message.language || "en";
               state.speechSpeed = 1.0;
               
+              // PRE-WARM: Fire-and-forget TTS connection warm-up so greeting first sentence is fast
+              prewarmTTS(state.ageGroup).catch(() => {});
+              
               console.log(`[Custom Voice] 🎫 Trial session initialized:`, {
                 sessionId: state.sessionId,
                 userId: state.userId,
@@ -4338,6 +4342,9 @@ export function setupCustomVoiceWebSocket(server: Server) {
               state.subject = message.subject || "General"; // SESSION: Store tutoring subject
               state.language = message.language || "en"; // LANGUAGE: Store selected language
               state.uploadedDocCount = typeof message.uploadedDocCount === 'number' ? message.uploadedDocCount : 0;
+              
+              // PRE-WARM: Fire-and-forget TTS connection warm-up so greeting first sentence is fast
+              prewarmTTS(state.ageGroup).catch(() => {});
               
               // STUDENT ISOLATION: Set studentId from init message
               // Also fall back to the session record's studentId for safety
@@ -4522,32 +4529,90 @@ FLOW:
             const VISUAL_SYSTEM_INSTRUCTION = `
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📊 VISUAL AID SYSTEM (OPTIONAL — USE SPARINGLY):
+📊 VISUAL AID SYSTEM (USE WHEN HELPFUL):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 You can display an on-screen visual to the student by including a tag in your response.
 The tag will be REMOVED before your response is spoken — the student only sees the diagram.
 
 AVAILABLE VISUALS (use exact tag name):
-  [VISUAL: math_area_model]           — Distributive property / expanding brackets
-  [VISUAL: math_number_line]          — Number line for positive/negative numbers
-  [VISUAL: math_fractions]            — Fraction bars (halves, quarters, eighths)
-  [VISUAL: math_place_value]          — Place value chart (ones, tens, hundreds, thousands)
-  [VISUAL: math_multiplication_table] — Times table (1–6)
-  [VISUAL: writing_paragraph_structure] — Paragraph structure diagram
-  [VISUAL: writing_essay_outline]     — Essay outline (intro, body, conclusion)
-  [VISUAL: periodic_table_simplified] — Common chemical elements
-  [VISUAL: grammar_sentence_parts]    — Parts of a sentence (subject, predicate, etc.)
-  [VISUAL: reading_main_idea]         — Main idea and supporting details map
+
+MATH — EARLY (K-5):
+  [VISUAL: math_counting_1_20]         — Counting numbers 1–20 with word names
+  [VISUAL: math_simple_addition_table] — Addition table 0–5
+  [VISUAL: math_simple_subtraction_table] — Subtraction table 0–5
+  [VISUAL: math_multiplication_table]  — Times table 1–6
+  [VISUAL: math_fractions]             — Fraction bars (halves, quarters, eighths)
+  [VISUAL: math_place_value]           — Place value chart (ones, tens, hundreds, thousands)
+  [VISUAL: math_number_line]           — Number line (negative to positive)
+  [VISUAL: math_shapes_basic]          — Basic 2D shapes (circle, triangle, square, etc.)
+
+MATH — INTERMEDIATE / ADVANCED:
+  [VISUAL: math_area_model]            — Distributive property / expanding brackets
+  [VISUAL: math_order_of_operations]   — PEMDAS order of operations
+  [VISUAL: math_percent_diagram]       — Part / Percent / Whole relationships
+  [VISUAL: math_algebra_balance]       — Balance scale for solving equations
+  [VISUAL: math_coordinate_plane]      — X/Y coordinate plane with quadrants
+  [VISUAL: math_geometry_shapes]       — Triangle, rectangle, circle, trapezoid formulas
+  [VISUAL: math_advanced_formulas]     — Quadratic formula, trig ratios, exponent rules
+  [VISUAL: math_trig_unit_circle]      — Unit circle Q1 with sin/cos values
+  [VISUAL: math_statistics_chart]      — Mean, median, mode, range, standard deviation
+
+WRITING / ELA:
+  [VISUAL: writing_paragraph_structure] — Topic sentence, details, conclusion
+  [VISUAL: writing_essay_outline]       — Intro, body paragraphs, conclusion
+  [VISUAL: writing_story_elements]      — Characters, setting, conflict, plot, resolution
+  [VISUAL: writing_figurative_language] — Simile, metaphor, personification, hyperbole, alliteration
+
+GRAMMAR / READING:
+  [VISUAL: grammar_sentence_parts]     — Subject, predicate, object
+  [VISUAL: grammar_parts_of_speech]    — All 8 parts of speech with examples
+  [VISUAL: reading_main_idea]          — Main idea and supporting details map
+  [VISUAL: reading_compare_contrast]   — Venn diagram for comparing two things
+  [VISUAL: reading_cause_effect]       — Cause → Effect chains
+  [VISUAL: reading_text_structure]     — Description, sequence, compare/contrast, cause/effect, problem/solution
+
+LANGUAGE — ALPHABETS:
+  [VISUAL: lang_alphabet_english]      — English alphabet (26 letters, vowels highlighted)
+  [VISUAL: lang_alphabet_spanish]      — Spanish alphabet (27 letters, Ñ and accents)
+  [VISUAL: lang_alphabet_french]       — French alphabet (26 letters + accented characters)
+  [VISUAL: lang_alphabet_japanese]     — Japanese Hiragana (first 25 characters with romaji)
+  [VISUAL: lang_alphabet_chinese]      — Chinese common characters (15 hanzi with pinyin)
+
+SCIENCE:
+  [VISUAL: science_cell_diagram]       — Plant vs Animal cell parts comparison
+  [VISUAL: science_water_cycle]        — Evaporation, condensation, precipitation, collection
+  [VISUAL: science_food_chain]         — Producer → consumer → apex predator
+  [VISUAL: science_scientific_method]  — 5-step scientific method
+  [VISUAL: science_states_of_matter]   — Solid, liquid, gas properties
+  [VISUAL: science_human_body_systems] — 6 major body systems
+  [VISUAL: science_solar_system]       — All 8 planets with key facts
+  [VISUAL: periodic_table_simplified]  — Common chemical elements
+
+HISTORY / SOCIAL STUDIES:
+  [VISUAL: history_timeline]           — Chronological event timeline
+  [VISUAL: history_cause_effect_chain] — Historical cause → short-term → long-term impact
+  [VISUAL: history_three_branches]     — Legislative, Executive, Judicial branches of US government
+  [VISUAL: history_map_compass]        — Cardinal directions and map skills
+
+GEOGRAPHY:
+  [VISUAL: geography_continents]       — All 7 continents with key facts
+
+ECONOMICS:
+  [VISUAL: economics_supply_demand]    — Supply & demand with equilibrium
+
+STUDY SKILLS:
+  [VISUAL: study_skills_kwl]           — Know / Want to know / Learned chart
+  [VISUAL: study_skills_concept_map]   — Main concept → subtopics → details
+  [VISUAL: study_skills_cornell_notes] — Cornell notes format (cue, notes, summary)
 
 RULES:
-✅ Place the tag at the START of a sentence, alone: "[VISUAL: math_fractions] Let me show you how fractions compare."
-✅ Only use when a visual genuinely helps — not every response
+✅ Place the tag at the START of a sentence: "[VISUAL: math_fractions] Let me show you fraction bars."
+✅ Use when a diagram genuinely helps — especially for new concepts, comparisons, or processes
 ✅ Only use ONE visual per response
 ❌ Never mention the tag or the visual system to the student — just let it appear
 ❌ Never invent tag names — only use the exact tags listed above
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `;
-
             // STT_ARTIFACT_HARDENING is defined at module level (see top of file)
             
             // K2 TURN POLICY: Add response constraints for K-2 students
@@ -6109,18 +6174,43 @@ HONESTY INSTRUCTIONS:
                 speaker: "tutor"
               }));
               
+              // BARGE-IN: Set phase to TUTOR_SPEAKING so hardInterruptTutor can fire during greeting.
+              // Without this the phase stays LISTENING and barge-in is completely blocked.
+              setPhase(state, 'TUTOR_SPEAKING', 'greeting_start', ws);
+              state.tutorAudioPlaying = true;
+              state.tutorAudioStartMs = Date.now();
+              
+              // BARGE-IN: Create an AbortController so the greeting loop can be cancelled mid-stream.
+              const greetingAc = new AbortController();
+              state.ttsAbortController = greetingAc;
+              
               const greetingTtsStart = Date.now();
               let totalGreetingAudioBytes = 0;
               let chunkIndex = 0;
+              let greetingInterrupted = false;
               
               try {
                 for (const sentence of greetingSentences) {
+                  // Check barge-in abort between sentences
+                  if (greetingAc.signal.aborted) {
+                    greetingInterrupted = true;
+                    console.log(`[Greeting Chunking] ⚡ Greeting interrupted by barge-in after ${chunkIndex} sentences`);
+                    break;
+                  }
+                  
                   chunkIndex++;
                   const chunkStart = Date.now();
                   
                   const audioBuffer = await generateSpeech(sentence, state.ageGroup, state.speechSpeed);
                   const chunkMs = Date.now() - chunkStart;
                   totalGreetingAudioBytes += audioBuffer.length;
+                  
+                  // Check again after TTS (barge-in may have fired while generating)
+                  if (greetingAc.signal.aborted) {
+                    greetingInterrupted = true;
+                    console.log(`[Greeting Chunking] ⚡ Greeting interrupted mid-chunk ${chunkIndex} by barge-in`);
+                    break;
+                  }
                   
                   console.log(`[Greeting Chunking] 🔊 Chunk ${chunkIndex}/${greetingSentences.length}: ${chunkMs}ms, ${audioBuffer.length} bytes | "${sentence.substring(0, 50)}..."`);
                   
@@ -6133,15 +6223,25 @@ HONESTY INSTRUCTIONS:
                   }));
                 }
                 
-                const totalGreetingMs = Date.now() - greetingTtsStart;
-                console.log(`[Greeting Chunking] ✅ All ${chunkIndex} chunks sent in ${totalGreetingMs}ms total (${totalGreetingAudioBytes} bytes)`);
+                if (!greetingInterrupted) {
+                  const totalGreetingMs = Date.now() - greetingTtsStart;
+                  console.log(`[Greeting Chunking] ✅ All ${chunkIndex} chunks sent in ${totalGreetingMs}ms total (${totalGreetingAudioBytes} bytes)`);
+                }
               } catch (error) {
                 console.error("[Custom Voice] ❌ Failed to generate greeting audio:", error);
               } finally {
+                // Only reset phase if barge-in hasn't already changed it
+                if (!greetingInterrupted) {
+                  setPhase(state, 'LISTENING', 'greeting_complete', ws);
+                  state.tutorAudioPlaying = false;
+                }
+                if (state.ttsAbortController === greetingAc) {
+                  state.ttsAbortController = null;
+                }
                 state.isProcessing = false;
                 state.processingSinceMs = null;
                 state.isTutorSpeaking = false;
-                console.log(`[Pipeline] greeting_processing_end isProcessing=false queueLen=${state.transcriptQueue.length}`);
+                console.log(`[Pipeline] greeting_processing_end isProcessing=false interrupted=${greetingInterrupted} queueLen=${state.transcriptQueue.length}`);
                 if (state.transcriptQueue.length > 0 && !state.isSessionEnded) {
                   console.log(`[Pipeline] drainQueue after greeting, queueLen=${state.transcriptQueue.length}`);
                   setImmediate(() => processTranscriptQueue());
@@ -6405,7 +6505,11 @@ HONESTY INSTRUCTIONS:
                 }
                 
                 if (!hasNonZero) {
-                  console.warn('[Custom Voice] ⚠️ Audio buffer is COMPLETELY SILENT (all zeros)!');
+                  console.warn('[Custom Voice] ⚠️ Audio buffer is COMPLETELY SILENT (all zeros)! Dropping chunk to prevent STT deadman trigger.');
+                  // Drop silent-zero chunks entirely — sending them to AssemblyAI causes
+                  // the deadman timer to fire (no STT messages returned) which triggers
+                  // unnecessary reconnect cycles at session start when mic is still initializing.
+                  return;
                 }
                 
                 // Send to appropriate STT provider
@@ -6767,7 +6871,8 @@ HONESTY INSTRUCTIONS:
                     state.isTutorThinking = false;
                     console.log(`[Custom Voice] ⏱️ Text streaming complete: ${textStreamMs}ms, ${textSentenceCount} sentences`);
                     
-                    const normalizedTextContent = (fullText ?? "").trim();
+                    // ── STRIP VISUAL TAGS from full text before saving to history/transcript ──
+                    const normalizedTextContent = (fullText ?? "").trim().replace(/\[VISUAL:\s*[a-z0-9_]+\]/gi, '').replace(/\s{2,}/g, ' ').trim();
                     const textWasAborted = textLlmAc.signal.aborted || textTtsAc.signal.aborted;
                     if (normalizedTextContent.length === 0 || textWasAborted || textSentenceCount === 0) {
                       console.warn(`[LLM] Aborted/empty assistant response (text mode) — not saving to history reason=${textWasAborted ? 'aborted' : 'empty'} sentences=${textSentenceCount}`);
