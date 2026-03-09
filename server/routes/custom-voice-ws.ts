@@ -6811,6 +6811,17 @@ HONESTY INSTRUCTIONS:
                 const textCallbacks: StreamingCallbacks = {
                   onSentence: async (sentence: string) => {
                     textSentenceCount++;
+                    
+                    // ── VISUAL TAG PARSER (text mode) ────────────────────────
+                    const textVisualMatch = sentence.match(/\[VISUAL:\s*([a-z0-9_]+)\]/i);
+                    if (textVisualMatch) {
+                      const visualTag = textVisualMatch[1].toLowerCase();
+                      sentence = sentence.replace(textVisualMatch[0], '').trim();
+                      console.log(`[Visual] 📊 Triggering visual (text mode): ${visualTag} session=${state.sessionId?.substring(0,8)}`);
+                      ws.send(JSON.stringify({ type: 'show_visual', visualTag }));
+                    }
+                    // ── END VISUAL TAG PARSER ────────────────────────────────
+                    
                     console.log(`[Custom Voice] 📤 Text sentence ${textSentenceCount}: "${sentence.substring(0, 50)}..."`);
                     
                     if (textSentenceCount === 1) {
