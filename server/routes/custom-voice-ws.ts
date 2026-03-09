@@ -3748,7 +3748,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
               // ── VISUAL TAG PARSER ────────────────────────────────────────
               // Strip [VISUAL: tag_name] from sentence before TTS/transcript.
               // If found, send show_visual event to client.
-              const visualMatch = sentenceRaw.match(/\[VISUAL:\s*([a-z_]+)\]/i);
+              const visualMatch = sentenceRaw.match(/\[VISUAL:\s*([a-z0-9_]+)\]/i);
               let sentence = sentenceRaw;
               if (visualMatch) {
                 const visualTag = visualMatch[1].toLowerCase();
@@ -3845,7 +3845,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
               markProgress(state);
               console.log(`[Pipeline] 4. Claude response received (${claudeMs}ms), generating audio...`);
               
-              const normalizedContent = (fullText ?? "").trim();
+              // ── STRIP VISUAL TAGS from full text before saving to history/transcript ──
+              const normalizedContent = (fullText ?? "").trim().replace(/\[VISUAL:\s*[a-z0-9_]+\]/gi, '').replace(/\s{2,}/g, ' ').trim();
               const wasAborted = llmAc.signal.aborted || ttsAc.signal.aborted;
               if (normalizedContent.length === 0 || wasAborted || sentenceCount === 0) {
                 console.log(`[History] saved_assistant=false reason=${wasAborted ? 'aborted' : 'empty'} genId=${activeGenId} tokens=${sentenceCount} phase=${state.phase} len=${normalizedContent.length}`);
@@ -6870,7 +6871,8 @@ HONESTY INSTRUCTIONS:
                     state.isTutorThinking = false;
                     console.log(`[Custom Voice] ⏱️ Text streaming complete: ${textStreamMs}ms, ${textSentenceCount} sentences`);
                     
-                    const normalizedTextContent = (fullText ?? "").trim();
+                    // ── STRIP VISUAL TAGS from full text before saving to history/transcript ──
+                    const normalizedTextContent = (fullText ?? "").trim().replace(/\[VISUAL:\s*[a-z0-9_]+\]/gi, '').replace(/\s{2,}/g, ' ').trim();
                     const textWasAborted = textLlmAc.signal.aborted || textTtsAc.signal.aborted;
                     if (normalizedTextContent.length === 0 || textWasAborted || textSentenceCount === 0) {
                       console.warn(`[LLM] Aborted/empty assistant response (text mode) — not saving to history reason=${textWasAborted ? 'aborted' : 'empty'} sentences=${textSentenceCount}`);
