@@ -240,7 +240,6 @@ Be exhaustive — the tutor cannot see the original image and will rely entirely
   }
 
   console.log(`[Image Vision] ✅ Claude Vision extracted ${description.length} chars for tutoring`);
-  // Prefix so caller can detect vision was used
   return `[VISION]\n${description}`;
 }
 
@@ -564,9 +563,7 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       
       // Log extraction event per spec
       const isImageType = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/bmp'].includes(req.file.mimetype);
-      // Determine if vision was used (vision descriptions contain a specific marker)
       const usedVision = isImageType && extractedText.startsWith('[VISION]');
-      // Strip the internal marker before saving
       if (usedVision) {
         extractedText = extractedText.replace(/^\[VISION\]\n/, '');
       }
