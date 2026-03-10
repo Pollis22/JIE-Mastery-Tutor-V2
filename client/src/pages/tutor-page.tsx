@@ -1083,9 +1083,9 @@ export default function TutorPage() {
               )}
             </div>
           )}
-        </div>
+          </div>{/* end tutor-page */}
 
-        {/* Student Profile Panel */}
+          {/* Student Profile Panel */}
         <StudentProfilePanel
           open={profileDrawerOpen}
           onOpenChange={setProfileDrawerOpen}
@@ -1113,7 +1113,6 @@ export default function TutorPage() {
           remainingMinutes={minutesData?.remaining}
         />
 
-        </div>{/* end tutor-page */}
         </div>{/* end branded background */}
       </TutorErrorBoundary>
     </NetworkAwareWrapper>
