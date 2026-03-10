@@ -31,6 +31,7 @@ import {
 import jieLogo from "@/assets/jie-mastery-logo-sm.jpg";
 import tutorHero from "@/assets/tutor-hero.png";
 import { TutorHeroBanner } from "@/components/TutorHeroBanner";
+import { AmbientBackground } from "@/components/AmbientBackground";
 
 interface ProgressData {
   lastLevel?: string;
@@ -651,6 +652,8 @@ export default function TutorPage() {
             overflow: "hidden",
           }}
         >
+          {/* Animated neural network ambient canvas */}
+          <AmbientBackground />
           {/* Subtle decorative blobs */}
           <div style={{
             position: "fixed", top: -120, right: -120, width: 400, height: 400,
