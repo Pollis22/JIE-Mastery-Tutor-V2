@@ -1785,7 +1785,7 @@ function GeographyUSAMap() {
     <div className="flex flex-col items-center gap-2 p-2">
       <p className="text-sm font-semibold text-muted-foreground text-center">United States — All 50 States</p>
       <div className="w-full rounded overflow-hidden border border-border" style={{background:'#b3d1e8'}}>
-        <object data="/maps/usa.svg" type="image/svg+xml" className="w-full h-auto" style={{display:'block',minHeight:'180px'}} aria-label="US States Map"/>
+        <img src="/maps/usa.svg" alt="US States Map" style={{display:"block", width:"100%", height:"auto", maxHeight:"380px", objectFit:"contain"}}/>
       </div>
       <div className="flex flex-wrap gap-x-3 gap-y-1 justify-center">
         {regions.map(({name,color})=>(
@@ -1805,7 +1805,7 @@ function GeographyWorldMap() {
     <div className="flex flex-col items-center gap-2 p-2">
       <p className="text-sm font-semibold text-muted-foreground text-center">World Map</p>
       <div className="w-full rounded overflow-hidden border border-border" style={{background:'#b3d1e8'}}>
-        <img src="/maps/world.svg" alt="World Map" className="w-full h-auto" style={{display:'block'}}/>
+        <img src="/maps/world.svg" alt="World Map" style={{display:"block", width:"100%", height:"auto", maxHeight:"380px", objectFit:"contain"}}/>
       </div>
       <div className="grid grid-cols-4 gap-1 w-full text-center" style={{fontSize:'9px'}}>
         <div className="bg-muted rounded py-0.5 text-muted-foreground">7 Continents</div>
@@ -1822,7 +1822,7 @@ function GeographyEuropeMap() {
     <div className="flex flex-col items-center gap-2 p-2">
       <p className="text-sm font-semibold text-muted-foreground text-center">Europe — Countries & Capitals</p>
       <div className="w-full rounded overflow-hidden border border-border" style={{background:'#b3d1e8'}}>
-        <img src="/maps/europe.svg" alt="Europe Map" className="w-full h-auto" style={{display:'block'}}/>
+        <img src="/maps/europe.svg" alt="Europe Map" style={{display:"block", width:"100%", height:"auto", maxHeight:"380px", objectFit:"contain"}}/>
       </div>
       <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 w-full" style={{fontSize:'9px'}}>
         {['Germany (Berlin)','France (Paris)','UK (London)','Italy (Rome)','Spain (Madrid)',
@@ -1845,7 +1845,7 @@ function GeographyAfricaMap() {
     <div className="flex flex-col items-center gap-2 p-2">
       <p className="text-sm font-semibold text-muted-foreground text-center">Africa — Countries</p>
       <div className="w-full rounded overflow-hidden border border-border" style={{background:'#b3d1e8', maxHeight:'320px'}}>
-        <img src="/maps/africa.svg" alt="Africa Map" className="w-full h-auto" style={{display:'block'}}/>
+        <img src="/maps/africa.svg" alt="Africa Map" style={{display:"block", width:"100%", height:"auto", maxHeight:"380px", objectFit:"contain"}}/>
       </div>
       <div className="grid grid-cols-3 gap-x-2 gap-y-0.5 w-full" style={{fontSize:'9px'}}>
         {['Nigeria (Abuja)','Ethiopia (Addis Ababa)','Egypt (Cairo)','South Africa (Pretoria)',
@@ -3108,7 +3108,7 @@ export function VisualPanel({ visualTag, onDismiss }: VisualPanelProps) {
           <X className="h-4 w-4" />
         </button>
       </div>
-      <div className="p-3 overflow-x-auto">{content}</div>
+      <div className="p-3 overflow-x-auto overflow-y-auto" style={{maxHeight:'420px'}}>{content}</div>
     </div>
   );
 }
