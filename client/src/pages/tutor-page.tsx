@@ -642,9 +642,36 @@ export default function TutorPage() {
   return (
     <NetworkAwareWrapper>
       <TutorErrorBoundary>
-        {/* Show verification banner if email not verified */}
-        {user && !user.emailVerified && <VerificationBanner />}
-        <div className="tutor-page max-w-3xl mx-auto p-4 space-y-4">
+        {/* Full-page branded background */}
+        <div
+          style={{
+            minHeight: "100vh",
+            background: "linear-gradient(145deg, #f9f4f5 0%, #f5f0f8 25%, #f0f4ff 55%, #fdf5f0 100%)",
+            position: "relative",
+            overflow: "hidden",
+          }}
+        >
+          {/* Subtle decorative blobs */}
+          <div style={{
+            position: "fixed", top: -120, right: -120, width: 400, height: 400,
+            borderRadius: "50%", background: "radial-gradient(circle, rgba(192,0,60,0.07) 0%, transparent 70%)",
+            pointerEvents: "none", zIndex: 0,
+          }} />
+          <div style={{
+            position: "fixed", bottom: -80, left: -80, width: 320, height: 320,
+            borderRadius: "50%", background: "radial-gradient(circle, rgba(26,26,100,0.05) 0%, transparent 70%)",
+            pointerEvents: "none", zIndex: 0,
+          }} />
+          {/* Subtle red top accent bar */}
+          <div style={{
+            position: "fixed", top: 0, left: 0, right: 0, height: 3,
+            background: "linear-gradient(90deg, #C0003C 0%, #8B001F 50%, #C0003C 100%)",
+            zIndex: 100,
+          }} />
+
+          {/* Show verification banner if email not verified */}
+          {user && !user.emailVerified && <VerificationBanner />}
+          <div className="tutor-page max-w-3xl mx-auto p-4 space-y-4" style={{ position: "relative", zIndex: 1 }}>
           {/* Header with Logo and Student Switcher */}
           <div className="mb-6">
             <div className="flex items-center justify-between mb-4">
@@ -1086,6 +1113,8 @@ export default function TutorPage() {
           remainingMinutes={minutesData?.remaining}
         />
 
+        </div>{/* end tutor-page */}
+        </div>{/* end branded background */}
       </TutorErrorBoundary>
     </NetworkAwareWrapper>
   );
