@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import jieLogo from "@/assets/jie-mastery-logo-sm.jpg";
 import tutorHero from "@/assets/tutor-hero.png";
+import { TutorHeroBanner } from "@/components/TutorHeroBanner";
 
 interface ProgressData {
   lastLevel?: string;
@@ -707,6 +708,9 @@ export default function TutorPage() {
               Age-appropriate AI tutoring with voice conversation
             </p>
           </div>
+
+          {/* Branded Hero Banner - only shown when not in active session */}
+          {!mounted && <TutorHeroBanner />}
 
           {/* Usage Display */}
           {minutesData && (
