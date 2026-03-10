@@ -22,6 +22,13 @@ export const VISUAL_TAGS = [
   'math_advanced_formulas',
   'math_trig_unit_circle',
   'math_statistics_chart',
+  // Math — Calculus & College
+  'math_calculus_derivatives',
+  'math_calculus_integrals',
+  'math_limits',
+  'math_linear_algebra',
+  'math_probability_stats',
+  'math_logarithms',
   // Writing / ELA
   'writing_paragraph_structure',
   'writing_essay_outline',
@@ -34,157 +41,7 @@ export const VISUAL_TAGS = [
   'reading_compare_contrast',
   'reading_cause_effect',
   'reading_text_structure',
-  // Language — Alphabets
-  'lang_alphabet_english',
-  'lang_alphabet_spanish',
-  'lang_alphabet_french',
-  'lang_alphabet_japanese',
-  'lang_alphabet_chinese',
-  // Science
-  'science_cell_diagram',
-  'science_water_cycle',
-  'science_food_chain',
-  'science_scientific_method',
-  'science_states_of_matter',
-  'science_human_body_systems',
-  'science_solar_system',
-  'periodic_table_simplified',
-  // History / Social Studies
-  'history_timeline',
-  'history_cause_effect_chain',
-  'history_three_branches',
-  'history_map_compass',
-  // Geography
-  'geography_continents',
-  // Economics
-  'economics_supply_demand',
-  // Study Skills
-  'study_skills_kwl',
-  'study_skills_concept_map',
-  'study_skills_cornell_notes',
-  // ── COLLEGE / ADVANCED ──────────────────────────────────────
-  // Math — College
-  'math_calculus_derivatives',
-  'math_calculus_integrals',
-  'math_calculus_limits',
-  'math_matrix_operations',
-  'math_quadratic_formula',
-  'math_logarithms',
-  'math_probability_rules',
-  'math_vector_diagram',
-  'math_complex_numbers',
-  'math_binomial_theorem',
-  // Languages — College
-  'lang_alphabet_german',
-  'lang_alphabet_korean',
-  'lang_alphabet_arabic',
-  'lang_alphabet_russian',
-  'lang_alphabet_japanese_katakana',
-  'lang_spanish_verb_conjugation',
-  'lang_french_verb_conjugation',
-  'lang_german_cases',
-  'lang_chinese_tones',
-  'lang_italian_common_phrases',
-  // Geography
-  'geography_map_usa',
-  'geography_map_world',
-  'geography_map_europe',
-  'geography_map_asia',
-  'geography_map_africa',
-  'geography_us_regions',
-  'geography_latitude_longitude',
-  // Physics
-  'physics_newtons_laws',
-  'physics_wave_properties',
-  'physics_electromagnetic_spectrum',
-  'physics_thermodynamics_laws',
-  'physics_kinematics',
-  'physics_circuit_diagram',
-  // Chemistry
-  'chem_periodic_table_full',
-  'chem_ph_scale',
-  'chem_organic_functional_groups',
-  'chem_reaction_types',
-  'chem_atomic_structure',
-  'chem_chemical_bonding',
-  'chem_mole_concept',
-  // Biology
-  'bio_dna_structure',
-  'bio_cell_division',
-  'bio_genetics_punnett',
-  'bio_photosynthesis',
-  'bio_human_anatomy',
-  // Economics — College
-  'econ_gdp_components',
-  'econ_market_structures',
-  'econ_business_cycle',
-  'econ_fiscal_monetary',
-  'econ_comparative_advantage',
-  'econ_inflation_unemployment',
-  // Political Science
-  'poli_us_constitution',
-  'poli_bill_of_rights',
-  'poli_electoral_college',
-  'poli_world_governments',
   // English — College
-  'eng_parts_of_speech_advanced',
-  'eng_sentence_types',
-  'eng_punctuation_rules',
-  'eng_thesis_development',
-  'eng_argument_structure',
-  'eng_literary_devices',
-  'eng_rhetoric_appeals',
-  'eng_research_paper_structure',
-  'eng_apa_citation',
-  'eng_mla_citation',
-  'eng_active_passive_voice',
-  'eng_reading_strategies',
-  // Study Skills — College
-  'study_blooms_taxonomy',
-  'study_academic_integrity',
-  'study_time_management',
-  'study_critical_thinking',
-  // Math — Calculus & Advanced
-  'math_calculus_derivatives',
-  'math_calculus_integrals',
-  'math_limits',
-  'math_linear_algebra',
-  'math_probability_stats',
-  'math_logarithms',
-  // Languages — College & Advanced
-  'lang_german_alphabet',
-  'lang_korean_hangul',
-  'lang_arabic_alphabet',
-  'lang_russian_cyrillic',
-  'lang_japanese_katakana',
-  'lang_spanish_verb_conjugation',
-  'lang_french_verb_conjugation',
-  'lang_chinese_tones',
-  // Geography — Maps
-  'geography_usa_map',
-  'geography_world_map',
-  'geography_europe_map',
-  'geography_lat_long',
-  // Physics
-  'physics_newtons_laws',
-  'physics_electromagnetic_spectrum',
-  'physics_formulas',
-  'physics_thermodynamics',
-  // Science — Advanced
-  'science_atomic_structure',
-  'science_chemical_bonding',
-  'science_dna_genetics',
-  'science_punnett_square',
-  // Economics — Advanced
-  'economics_gdp',
-  'economics_market_structures',
-  'economics_fiscal_monetary',
-  'economics_comparative_advantage',
-  // Political Science / History
-  'polisci_constitution',
-  'polisci_bill_of_rights',
-  'polisci_world_governments',
-  // English / Writing / Grammar / Reading — College
   'english_thesis_development',
   'english_argument_structure',
   'english_research_paper_structure',
@@ -195,7 +52,69 @@ export const VISUAL_TAGS = [
   'english_critical_reading',
   'english_parts_of_speech_advanced',
   'english_logical_fallacies',
-  // Study Skills — College
+  // Language — Alphabets & Systems
+  'lang_alphabet_english',
+  'lang_alphabet_spanish',
+  'lang_alphabet_french',
+  'lang_alphabet_japanese',
+  'lang_alphabet_chinese',
+  'lang_german_alphabet',
+  'lang_korean_hangul',
+  'lang_arabic_alphabet',
+  'lang_russian_cyrillic',
+  'lang_japanese_katakana',
+  'lang_spanish_verb_conjugation',
+  'lang_french_verb_conjugation',
+  'lang_chinese_tones',
+  // Science
+  'science_cell_diagram',
+  'science_water_cycle',
+  'science_food_chain',
+  'science_scientific_method',
+  'science_states_of_matter',
+  'science_human_body_systems',
+  'science_solar_system',
+  'periodic_table_simplified',
+  'science_atomic_structure',
+  'science_chemical_bonding',
+  'science_dna_genetics',
+  'science_punnett_square',
+  // Physics
+  'physics_newtons_laws',
+  'physics_electromagnetic_spectrum',
+  'physics_formulas',
+  'physics_thermodynamics',
+  // History / Social Studies
+  'history_timeline',
+  'history_cause_effect_chain',
+  'history_three_branches',
+  'history_map_compass',
+  // Geography — Maps
+  'geography_continents',
+  'geography_usa_map',
+  'geography_world_map',
+  'geography_europe_map',
+  'geography_africa_map',
+  'geography_north_america_map',
+  'geography_asia_map',
+  'geography_greenland_map',
+  'geography_south_america_map',
+  'geography_australia_map',
+  'geography_lat_long',
+  // Economics
+  'economics_supply_demand',
+  'economics_gdp',
+  'economics_market_structures',
+  'economics_fiscal_monetary',
+  'economics_comparative_advantage',
+  // Political Science
+  'polisci_constitution',
+  'polisci_bill_of_rights',
+  'polisci_world_governments',
+  // Study Skills
+  'study_skills_kwl',
+  'study_skills_concept_map',
+  'study_skills_cornell_notes',
   'study_blooms_taxonomy',
   'study_time_management',
 ] as const;
@@ -1856,75 +1775,324 @@ function LangChineseTones() {
 
 function GeographyUSAMap() {
   const regions = [
-    { name: 'New England', states: 'ME, NH, VT, MA, RI, CT', color: 'bg-blue-200 dark:bg-blue-800/60' },
-    { name: 'Mid-Atlantic', states: 'NY, NJ, PA, DE, MD', color: 'bg-indigo-200 dark:bg-indigo-800/60' },
-    { name: 'Southeast', states: 'VA, WV, NC, SC, GA, FL, AL, MS, TN, KY, AR, LA', color: 'bg-green-200 dark:bg-green-800/60' },
-    { name: 'Midwest', states: 'OH, IN, IL, MI, WI, MN, IA, MO, ND, SD, NE, KS', color: 'bg-yellow-200 dark:bg-yellow-800/60' },
-    { name: 'Southwest', states: 'TX, OK, NM, AZ', color: 'bg-orange-200 dark:bg-orange-800/60' },
-    { name: 'Mountain West', states: 'CO, UT, WY, MT, ID, NV', color: 'bg-red-200 dark:bg-red-800/60' },
-    { name: 'Pacific', states: 'CA, OR, WA, AK, HI', color: 'bg-teal-200 dark:bg-teal-800/60' },
+    { name: 'Northeast', color: '#5b9bd5' },
+    { name: 'Southeast', color: '#4a9e6b' },
+    { name: 'Midwest', color: '#9b7fd4' },
+    { name: 'Southwest', color: '#e8a838' },
+    { name: 'West', color: '#e05c5c' },
   ];
   return (
-    <div className="flex flex-col gap-2 p-2">
-      <p className="text-sm font-semibold text-muted-foreground text-center">United States — Regions & States</p>
-      <div className="flex flex-col gap-1.5">
-        {regions.map(({name,states,color})=>(
-          <div key={name} className={`${color} rounded px-2 py-1.5`}>
-            <div className="text-xs font-bold">{name}</div>
-            <div className="text-xs text-foreground/70">{states}</div>
+    <div className="flex flex-col items-center gap-2 p-2">
+      <p className="text-sm font-semibold text-muted-foreground text-center">United States — All 50 States</p>
+      <div className="w-full rounded overflow-hidden border border-border" style={{background:'#b3d1e8'}}>
+        <object data="/maps/usa.svg" type="image/svg+xml" className="w-full h-auto" style={{display:'block',minHeight:'180px'}} aria-label="US States Map"/>
+      </div>
+      <div className="flex flex-wrap gap-x-3 gap-y-1 justify-center">
+        {regions.map(({name,color})=>(
+          <div key={name} className="flex items-center gap-1">
+            <div className="w-2.5 h-2.5 rounded-sm shrink-0" style={{background:color}}/>
+            <span className="text-muted-foreground" style={{fontSize:'9px'}}>{name}</span>
           </div>
         ))}
       </div>
-      <div className="text-xs text-muted-foreground bg-muted rounded p-1.5 text-center">50 states total • Capital: Washington D.C.</div>
+      <div className="text-muted-foreground text-center" style={{fontSize:'9px'}}>50 states • Capital: Washington D.C.</div>
     </div>
   );
 }
 
 function GeographyWorldMap() {
-  const regions = [
-    { name: 'North America', countries: 'USA, Canada, Mexico, Cuba, + Caribbean', color: 'bg-blue-200 dark:bg-blue-800/60' },
-    { name: 'South America', countries: 'Brazil, Argentina, Colombia, Peru, Chile, + more', color: 'bg-green-200 dark:bg-green-800/60' },
-    { name: 'Europe', countries: 'Germany, France, UK, Italy, Spain, Russia (part), + more', color: 'bg-yellow-200 dark:bg-yellow-800/60' },
-    { name: 'Africa', countries: '54 countries • Nigeria, Ethiopia, Egypt, S. Africa, + more', color: 'bg-orange-200 dark:bg-orange-800/60' },
-    { name: 'Asia', countries: 'China, India, Japan, Russia (part), Saudi Arabia, + more', color: 'bg-red-200 dark:bg-red-800/60' },
-    { name: 'Oceania', countries: 'Australia, New Zealand, Papua New Guinea, + Pacific islands', color: 'bg-teal-200 dark:bg-teal-800/60' },
-    { name: 'Antarctica', countries: 'No permanent population • Research stations only', color: 'bg-slate-200 dark:bg-slate-800/60' },
-  ];
   return (
-    <div className="flex flex-col gap-2 p-2">
-      <p className="text-sm font-semibold text-muted-foreground text-center">World Map — Regions & Key Countries</p>
-      {regions.map(({name,countries,color})=>(
-        <div key={name} className={`${color} rounded px-2 py-1.5`}>
-          <div className="text-xs font-bold">{name}</div>
-          <div className="text-xs text-foreground/70">{countries}</div>
-        </div>
-      ))}
-      <div className="text-xs text-muted-foreground bg-muted rounded p-1.5 text-center">7 continents • 195 countries • 8 billion people</div>
+    <div className="flex flex-col items-center gap-2 p-2">
+      <p className="text-sm font-semibold text-muted-foreground text-center">World Map</p>
+      <div className="w-full rounded overflow-hidden border border-border" style={{background:'#b3d1e8'}}>
+        <img src="/maps/world.svg" alt="World Map" className="w-full h-auto" style={{display:'block'}}/>
+      </div>
+      <div className="grid grid-cols-4 gap-1 w-full text-center" style={{fontSize:'9px'}}>
+        <div className="bg-muted rounded py-0.5 text-muted-foreground">7 Continents</div>
+        <div className="bg-muted rounded py-0.5 text-muted-foreground">195 Countries</div>
+        <div className="bg-muted rounded py-0.5 text-muted-foreground">8B People</div>
+        <div className="bg-muted rounded py-0.5 text-muted-foreground">5 Oceans</div>
+      </div>
     </div>
   );
 }
 
 function GeographyEuropeMap() {
-  const countries = [
-    'Germany (Berlin)','France (Paris)','UK (London)','Italy (Rome)',
-    'Spain (Madrid)','Poland (Warsaw)','Netherlands (Amsterdam)',
-    'Belgium (Brussels)','Sweden (Stockholm)','Norway (Oslo)',
-    'Denmark (Copenhagen)','Portugal (Lisbon)','Greece (Athens)',
-    'Austria (Vienna)','Switzerland (Bern)','Ukraine (Kyiv)',
-    'Russia (Moscow — part)','Turkey (Ankara — part)',
-  ];
   return (
-    <div className="flex flex-col gap-2 p-2">
+    <div className="flex flex-col items-center gap-2 p-2">
       <p className="text-sm font-semibold text-muted-foreground text-center">Europe — Countries & Capitals</p>
-      <div className="grid grid-cols-2 gap-1">
-        {countries.map((c,i)=>(
-          <div key={i} className="flex items-center gap-1.5 text-xs border-b border-border/30 pb-0.5">
-            <div className="w-2 h-2 rounded-full bg-blue-400 shrink-0"/>
-            <span>{c}</span>
+      <div className="w-full rounded overflow-hidden border border-border" style={{background:'#b3d1e8'}}>
+        <img src="/maps/europe.svg" alt="Europe Map" className="w-full h-auto" style={{display:'block'}}/>
+      </div>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 w-full" style={{fontSize:'9px'}}>
+        {['Germany (Berlin)','France (Paris)','UK (London)','Italy (Rome)','Spain (Madrid)',
+          'Poland (Warsaw)','Ukraine (Kyiv)','Netherlands (Amsterdam)','Belgium (Brussels)',
+          'Sweden (Stockholm)','Norway (Oslo)','Greece (Athens)','Portugal (Lisbon)',
+          'Austria (Vienna)','Switzerland (Bern)','Romania (Bucharest)'].map(c=>(
+          <div key={c} className="flex items-center gap-1 text-muted-foreground">
+            <div className="w-1.5 h-1.5 rounded-full bg-blue-400 shrink-0"/>
+            <span className="truncate">{c}</span>
           </div>
         ))}
       </div>
-      <div className="text-xs text-muted-foreground bg-muted rounded p-1.5 text-center">44 countries in Europe • EU has 27 member states</div>
+      <div className="text-muted-foreground text-center" style={{fontSize:'9px'}}>44 countries • EU has 27 member states</div>
+    </div>
+  );
+}
+
+function GeographyAfricaMap() {
+  return (
+    <div className="flex flex-col items-center gap-2 p-2">
+      <p className="text-sm font-semibold text-muted-foreground text-center">Africa — Countries</p>
+      <div className="w-full rounded overflow-hidden border border-border" style={{background:'#b3d1e8', maxHeight:'320px'}}>
+        <img src="/maps/africa.svg" alt="Africa Map" className="w-full h-auto" style={{display:'block'}}/>
+      </div>
+      <div className="grid grid-cols-3 gap-x-2 gap-y-0.5 w-full" style={{fontSize:'9px'}}>
+        {['Nigeria (Abuja)','Ethiopia (Addis Ababa)','Egypt (Cairo)','South Africa (Pretoria)',
+          'Kenya (Nairobi)','Tanzania (Dodoma)','Algeria (Algiers)','Morocco (Rabat)',
+          'Ghana (Accra)','Angola (Luanda)','Sudan (Khartoum)','Madagascar (Antananarivo)'].map(c=>(
+          <div key={c} className="text-muted-foreground truncate">{c}</div>
+        ))}
+      </div>
+      <div className="text-muted-foreground text-center" style={{fontSize:'9px'}}>54 countries • Largest continent by country count</div>
+    </div>
+  );
+}
+
+function GeographyNorthAmericaMap() {
+  return (
+    <div className="flex flex-col items-center gap-2 p-2">
+      <p className="text-sm font-semibold text-muted-foreground text-center">North America</p>
+      <svg viewBox="0 0 520 570" className="w-full h-auto" xmlns="http://www.w3.org/2000/svg">
+        <rect width="520" height="570" fill="#b3d1e8" rx="6"/>
+        {/* Greenland */}
+        <path d="M298,15 L358,8 L395,18 L408,38 L398,58 L375,68 L348,65 L322,52 L302,35 Z" fill="#d0eaf8" stroke="#8ab8d8" strokeWidth="1"/>
+        <text x="352" y="40" fontSize="7.5" fill="#1a3a5c" textAnchor="middle" fontWeight="bold">GREENLAND</text>
+        <text x="352" y="50" fontSize="6" fill="#3a6a8c" textAnchor="middle">(Denmark)</text>
+        {/* Canada */}
+        <path d="M82,30 L175,22 L262,28 L315,35 L342,52 L346,75 L330,88 L305,85 L278,95 L258,88 L238,95 L218,88 L195,95 L175,88 L155,95 L138,88 L118,98 L100,90 L80,98 L65,88 L55,72 L58,52 Z" fill="#e8c87a" stroke="#c4a030" strokeWidth="1"/>
+        <path d="M315,35 L388,30 L415,42 L420,62 L405,78 L385,82 L365,75 L345,80 L332,72 L330,88 L342,75 Z" fill="#e8c87a" stroke="#c4a030" strokeWidth="1"/>
+        <path d="M415,55 L432,48 L442,58 L438,72 L422,75 L412,65 Z" fill="#e8c87a" stroke="#c4a030" strokeWidth="1"/>
+        {/* Alaska */}
+        <path d="M28,52 L70,45 L82,55 L80,72 L62,82 L42,78 L26,65 Z" fill="#d4845a" stroke="#904020" strokeWidth="1"/>
+        <path d="M16,78 L26,75 L33,80 L26,86 L16,83 Z" fill="#d4845a" stroke="#904020" strokeWidth="1"/>
+        {/* USA */}
+        <path d="M78,98 L138,92 L155,98 L175,92 L195,98 L218,92 L238,98 L258,92 L278,98 L305,88 L330,92 L346,108 L348,132 L342,155 L328,172 L315,182 L295,185 L272,188 L248,185 L225,188 L205,185 L182,188 L160,182 L140,172 L125,158 L112,142 L98,125 L82,112 Z" fill="#d4845a" stroke="#904020" strokeWidth="1"/>
+        {/* Florida */}
+        <path d="M295,182 L308,178 L318,188 L315,212 L305,228 L292,232 L278,220 L276,205 L282,192 Z" fill="#d4845a" stroke="#904020" strokeWidth="1"/>
+        {/* Mexico */}
+        <path d="M110,188 L182,185 L208,192 L222,208 L225,228 L212,248 L195,262 L175,268 L155,260 L140,245 L125,228 L115,210 Z" fill="#7ac47a" stroke="#3a943a" strokeWidth="1"/>
+        {/* Baja */}
+        <path d="M70,188 L90,182 L102,192 L105,215 L95,238 L80,248 L65,238 L60,215 L62,198 Z" fill="#7ac47a" stroke="#3a943a" strokeWidth="1"/>
+        {/* Central America */}
+        <path d="M175,268 L198,262 L212,272 L215,288 L205,298 L190,302 L175,292 L170,280 Z" fill="#7ac47a" stroke="#3a943a" strokeWidth="1"/>
+        {/* Cuba */}
+        <path d="M255,248 L292,242 L305,250 L302,262 L282,268 L258,262 Z" fill="#9b9bd4" stroke="#5050a0" strokeWidth="0.8"/>
+        {/* Hawaii inset */}
+        <rect x="28" y="425" width="105" height="52" fill="#7ab8d4" rx="3" opacity="0.5"/>
+        <ellipse cx="46" cy="453" rx="7" ry="5" fill="#d4845a" stroke="#904020" strokeWidth="0.8"/>
+        <ellipse cx="60" cy="448" rx="9" ry="6" fill="#d4845a" stroke="#904020" strokeWidth="0.8"/>
+        <ellipse cx="76" cy="447" rx="8" ry="5" fill="#d4845a" stroke="#904020" strokeWidth="0.8"/>
+        <ellipse cx="90" cy="451" rx="7" ry="5" fill="#d4845a" stroke="#904020" strokeWidth="0.8"/>
+        <ellipse cx="104" cy="455" rx="9" ry="6" fill="#d4845a" stroke="#904020" strokeWidth="0.8"/>
+        <text x="65" y="470" fontSize="6.5" fill="#1a3a5c" textAnchor="middle">Hawaii</text>
+        {/* Labels */}
+        <text x="212" y="62" fontSize="11" fill="#5a3a00" textAnchor="middle" fontWeight="bold">CANADA</text>
+        <text x="48" y="65" fontSize="7" fill="#5a2800" textAnchor="middle" fontWeight="bold">AK</text>
+        <text x="210" y="142" fontSize="10" fill="#5a2800" textAnchor="middle" fontWeight="bold">UNITED STATES</text>
+        <text x="160" y="225" fontSize="9" fill="#1a4a1a" textAnchor="middle" fontWeight="bold">MEXICO</text>
+        <text x="190" y="283" fontSize="7" fill="#1a4a1a" textAnchor="middle">C. AMERICA</text>
+        <text x="278" y="257" fontSize="7" fill="#2a2a6a" textAnchor="middle">CUBA</text>
+        <text x="35" y="315" fontSize="8" fill="#4a7a9a" textAnchor="middle" transform="rotate(-90,35,315)">PACIFIC OCEAN</text>
+        <text x="468" y="200" fontSize="8" fill="#4a7a9a" textAnchor="middle" transform="rotate(90,468,200)">ATLANTIC OCEAN</text>
+        <text x="262" y="340" fontSize="7.5" fill="#4a7a9a" textAnchor="middle">Gulf of Mexico</text>
+        {/* Legend */}
+        <rect x="355" y="415" width="11" height="9" fill="#d0eaf8" rx="1"/>
+        <text x="370" y="423" fontSize="7" fill="#999">Greenland</text>
+        <rect x="355" y="428" width="11" height="9" fill="#e8c87a" rx="1"/>
+        <text x="370" y="436" fontSize="7" fill="#999">Canada</text>
+        <rect x="355" y="441" width="11" height="9" fill="#d4845a" rx="1"/>
+        <text x="370" y="449" fontSize="7" fill="#999">USA / Alaska</text>
+        <rect x="355" y="454" width="11" height="9" fill="#7ac47a" rx="1"/>
+        <text x="370" y="462" fontSize="7" fill="#999">Mexico / C. America</text>
+      </svg>
+      <div className="text-muted-foreground text-center" style={{fontSize:'9px'}}>3 major countries • 23 total nations • ~600M population</div>
+    </div>
+  );
+}
+
+function GeographyAsiaMap() {
+  return (
+    <div className="flex flex-col items-center gap-2 p-2">
+      <p className="text-sm font-semibold text-muted-foreground text-center">Asia Map</p>
+      <svg viewBox="0 0 700 560" className="w-full h-auto" xmlns="http://www.w3.org/2000/svg">
+        <rect width="700" height="560" fill="#b3d1e8" rx="6"/>
+        <path d="M50,25 L680,20 L685,85 L640,95 L580,88 L520,90 L460,85 L400,88 L340,82 L280,85 L220,80 L160,82 L105,78 L55,82 Z" fill="#e8a838" stroke="#c47820" strokeWidth="1"/>
+        <path d="M52,148 L125,135 L148,142 L155,162 L138,175 L100,180 L65,172 L48,158 Z" fill="#9b7fd4" stroke="#6040b0" strokeWidth="1"/>
+        <path d="M148,130 L178,125 L192,135 L188,150 L168,155 L148,148 Z" fill="#e05c5c" stroke="#a02020" strokeWidth="0.8"/>
+        <path d="M122,175 L155,168 L165,182 L158,200 L135,205 L118,195 Z" fill="#5b9bd5" stroke="#2060a0" strokeWidth="0.8"/>
+        <path d="M142,168 L185,162 L195,178 L190,205 L168,212 L145,205 L138,188 Z" fill="#e8c87a" stroke="#a08020" strokeWidth="0.8"/>
+        <path d="M178,142 L248,132 L268,148 L272,175 L255,198 L222,208 L192,202 L178,182 L172,160 Z" fill="#4a9e6b" stroke="#206040" strokeWidth="1"/>
+        <path d="M122,202 L168,198 L195,205 L208,222 L215,248 L208,272 L192,285 L168,290 L145,278 L128,258 L118,235 L115,215 Z" fill="#e8c87a" stroke="#a08020" strokeWidth="1"/>
+        <path d="M248,142 L312,132 L328,148 L325,172 L305,185 L272,182 L255,165 Z" fill="#e05c5c" stroke="#a02020" strokeWidth="0.8"/>
+        <path d="M268,172 L328,165 L345,180 L342,205 L320,218 L292,222 L268,210 L258,192 Z" fill="#d4845a" stroke="#904020" strokeWidth="0.8"/>
+        <path d="M298,218 L358,208 L375,222 L382,248 L375,278 L358,305 L338,318 L315,308 L295,285 L288,258 L292,232 Z" fill="#5b9bd5" stroke="#2060a0" strokeWidth="1"/>
+        <path d="M345,318 L360,312 L368,322 L362,338 L346,335 Z" fill="#5b9bd5" stroke="#2060a0" strokeWidth="0.8"/>
+        <path d="M358,218 L385,212 L392,228 L385,245 L362,248 L355,232 Z" fill="#4a9e6b" stroke="#206040" strokeWidth="0.8"/>
+        <path d="M320,205 L365,200 L372,212 L340,218 L315,215 Z" fill="#e8a838" stroke="#a06010" strokeWidth="0.8"/>
+        <path d="M195,88 L368,82 L375,112 L362,138 L328,142 L278,138 L228,132 L195,118 Z" fill="#9b7fd4" stroke="#6040b0" strokeWidth="1"/>
+        <path d="M228,132 L298,128 L312,142 L305,162 L272,168 L238,158 L225,145 Z" fill="#e8c87a" stroke="#a08020" strokeWidth="0.8"/>
+        <path d="M368,85 L560,78 L578,95 L585,122 L578,158 L558,182 L528,198 L498,205 L468,198 L438,185 L412,168 L395,148 L388,125 L378,108 Z" fill="#e05c5c" stroke="#a02020" strokeWidth="1"/>
+        <path d="M368,85 L532,80 L538,108 L495,118 L432,115 L380,110 Z" fill="#e8a838" stroke="#a06010" strokeWidth="1"/>
+        <path d="M345,155 L415,148 L425,168 L408,185 L368,188 L345,175 Z" fill="#c85050" stroke="#a02020" strokeWidth="0.8" opacity="0.7"/>
+        <path d="M458,195 L495,188 L508,205 L505,235 L488,255 L465,258 L448,242 L445,218 Z" fill="#4a9e6b" stroke="#206040" strokeWidth="0.8"/>
+        <path d="M498,198 L532,192 L545,208 L542,238 L525,258 L505,262 L492,248 L495,225 Z" fill="#9b7fd4" stroke="#6040b0" strokeWidth="0.8"/>
+        <path d="M488,258 L512,252 L522,265 L515,285 L498,290 L485,278 Z" fill="#e8a838" stroke="#a06010" strokeWidth="0.8"/>
+        <path d="M462,298 L512,285 L535,295 L532,315 L505,322 L468,318 Z" fill="#e05c5c" stroke="#a02020" strokeWidth="0.8"/>
+        <path d="M572,195 L592,185 L605,198 L600,222 L582,232 L568,218 Z" fill="#5b9bd5" stroke="#2060a0" strokeWidth="0.8"/>
+        <path d="M605,108 L628,98 L642,108 L638,132 L622,142 L605,132 Z" fill="#e05c5c" stroke="#a02020" strokeWidth="0.8"/>
+        <path d="M605,88 L625,80 L638,90 L628,102 L608,100 Z" fill="#e05c5c" stroke="#a02020" strokeWidth="0.8"/>
+        <path d="M612,138 L628,132 L635,142 L628,152 L612,150 Z" fill="#e05c5c" stroke="#a02020" strokeWidth="0.8"/>
+        <path d="M562,115 L585,110 L592,128 L582,148 L562,152 L552,135 Z" fill="#9b7fd4" stroke="#6040b0" strokeWidth="0.8"/>
+        <path d="M572,165 L585,160 L592,172 L585,185 L572,182 Z" fill="#5b9bd5" stroke="#2060a0" strokeWidth="0.8"/>
+        <text x="368" y="52" fontSize="10" fill="white" textAnchor="middle" fontWeight="bold">RUSSIA (Siberia)</text>
+        <text x="98" y="158" fontSize="7.5" fill="white" textAnchor="middle" fontWeight="bold">TURKEY</text>
+        <text x="222" y="172" fontSize="7.5" fill="white" textAnchor="middle" fontWeight="bold">IRAN</text>
+        <text x="165" y="248" fontSize="8" fill="#5a4000" textAnchor="middle" fontWeight="bold">ARABIA</text>
+        <text x="295" y="162" fontSize="7" fill="white" textAnchor="middle">AFG</text>
+        <text x="305" y="198" fontSize="7" fill="white" textAnchor="middle">PAK</text>
+        <text x="335" y="265" fontSize="9" fill="white" textAnchor="middle" fontWeight="bold">INDIA</text>
+        <text x="288" y="112" fontSize="8" fill="white" textAnchor="middle">KAZAKH.</text>
+        <text x="268" y="150" fontSize="7" fill="#3a2800" textAnchor="middle">C. ASIA</text>
+        <text x="480" y="142" fontSize="11" fill="white" textAnchor="middle" fontWeight="bold">CHINA</text>
+        <text x="452" y="100" fontSize="8" fill="#3a2800" textAnchor="middle">MONGOLIA</text>
+        <text x="478" y="228" fontSize="7" fill="white" textAnchor="middle">SE ASIA</text>
+        <text x="585" y="210" fontSize="6.5" fill="white" textAnchor="middle">PHIL.</text>
+        <text x="622" y="118" fontSize="7.5" fill="white" textAnchor="middle" fontWeight="bold">JAPAN</text>
+        <text x="572" y="132" fontSize="6.5" fill="white" textAnchor="middle">KOREA</text>
+        <text x="645" y="320" fontSize="9" fill="#4a7a9a" textAnchor="middle" transform="rotate(90,645,320)">PACIFIC OCEAN</text>
+        <text x="350" y="540" fontSize="9" fill="#4a7a9a" textAnchor="middle">Indian Ocean</text>
+        <text x="350" y="505" fontSize="8" fill="#888" textAnchor="middle">48 countries • 4.7 billion people • Largest continent</text>
+      </svg>
+    </div>
+  );
+}
+
+function GeographyGreenlandMap() {
+  return (
+    <div className="flex flex-col items-center gap-2 p-2">
+      <p className="text-sm font-semibold text-muted-foreground text-center">Greenland</p>
+      <svg viewBox="0 0 400 500" className="w-full h-auto" xmlns="http://www.w3.org/2000/svg">
+        <rect width="400" height="500" fill="#b3d1e8" rx="6"/>
+        <path d="M95,45 L145,28 L198,22 L248,28 L290,42 L318,62 L325,88 L318,118 L305,145 L295,172 L298,198 L288,225 L272,248 L252,268 L228,282 L205,288 L182,282 L160,265 L142,245 L128,222 L118,198 L108,172 L98,148 L88,120 L82,92 L82,68 Z" fill="#d0eaf8" stroke="#8ab8d8" strokeWidth="1.5"/>
+        <path d="M128,75 L185,62 L238,68 L278,85 L292,112 L285,145 L272,168 L258,188 L242,205 L222,215 L200,218 L178,212 L158,198 L142,178 L132,155 L122,130 L118,105 Z" fill="#e8f4fc" stroke="none"/>
+        <path d="M88,168 L102,162 L108,172 L98,178 Z" fill="#b3d1e8"/>
+        <path d="M82,145 L96,140 L100,150 L88,155 Z" fill="#b3d1e8"/>
+        <path d="M95,205 L108,200 L115,212 L102,218 Z" fill="#b3d1e8"/>
+        <path d="M305,145 L315,148 L312,162 L302,158 Z" fill="#b3d1e8"/>
+        <path d="M298,172 L310,175 L308,188 L296,185 Z" fill="#b3d1e8"/>
+        <text x="200" y="88" fontSize="16" fill="#2a5a8a" textAnchor="middle" fontWeight="bold">GREENLAND</text>
+        <text x="200" y="105" fontSize="9" fill="#4a7a9a" textAnchor="middle">(Kalaallit Nunaat)</text>
+        <text x="200" y="158" fontSize="10" fill="#6a9abf" textAnchor="middle">Greenland</text>
+        <text x="200" y="170" fontSize="10" fill="#6a9abf" textAnchor="middle">Ice Sheet</text>
+        <circle cx="118" cy="338" r="4" fill="#e05c5c"/>
+        <text x="130" y="342" fontSize="9" fill="#1a3a5c" fontWeight="bold">Nuuk (Capital)</text>
+        <circle cx="128" cy="268" r="3" fill="#5b9bd5"/>
+        <text x="140" y="272" fontSize="7.5" fill="#1a3a5c">Kangerlussuaq</text>
+        <circle cx="145" cy="188" r="3" fill="#5b9bd5"/>
+        <text x="157" y="192" fontSize="7.5" fill="#1a3a5c">Upernavik</text>
+        <text x="45" y="200" fontSize="8" fill="#4a7a9a" textAnchor="middle" transform="rotate(-90,45,200)">Baffin Bay</text>
+        <text x="355" y="180" fontSize="8" fill="#4a7a9a" textAnchor="middle" transform="rotate(90,355,180)">Greenland Sea</text>
+        <line x1="60" y1="298" x2="340" y2="298" stroke="#e05c5c" strokeWidth="0.8" strokeDasharray="4,3" opacity="0.6"/>
+        <text x="345" y="302" fontSize="6.5" fill="#e05c5c">Arctic Circle</text>
+        <rect x="15" y="395" width="370" height="68" fill="rgba(0,0,0,0.2)" rx="4"/>
+        <text x="200" y="412" fontSize="8" fill="#ccc" textAnchor="middle" fontWeight="bold">Key Facts</text>
+        <text x="200" y="425" fontSize="7.5" fill="#bbb" textAnchor="middle">World's largest island • 836,330 mi² • 80% ice-covered</text>
+        <text x="200" y="437" fontSize="7.5" fill="#bbb" textAnchor="middle">Autonomous territory of Denmark • ~57,000 population</text>
+        <text x="200" y="449" fontSize="7.5" fill="#bbb" textAnchor="middle">Capital: Nuuk • Indigenous Inuit (Kalaallit) people</text>
+      </svg>
+    </div>
+  );
+}
+
+function GeographySouthAmericaMap() {
+  return (
+    <div className="flex flex-col items-center gap-2 p-2">
+      <p className="text-sm font-semibold text-muted-foreground text-center">South America</p>
+      <svg viewBox="0 0 400 580" className="w-full h-auto" xmlns="http://www.w3.org/2000/svg">
+        <rect width="400" height="580" fill="#b3d1e8" rx="6"/>
+        <path d="M118,52 L178,45 L205,55 L215,75 L205,92 L182,98 L158,95 L135,88 L118,75 Z" fill="#e8a838" stroke="#a06010" strokeWidth="1"/>
+        <path d="M178,45 L248,38 L275,48 L282,68 L268,85 L242,92 L215,88 L205,72 Z" fill="#e05c5c" stroke="#a02020" strokeWidth="1"/>
+        <path d="M248,42 L318,38 L335,52 L328,72 L295,78 L268,75 L252,62 Z" fill="#9b7fd4" stroke="#6040b0" strokeWidth="0.8"/>
+        <path d="M92,92 L128,88 L138,108 L128,128 L105,132 L88,118 Z" fill="#4a9e6b" stroke="#206040" strokeWidth="1"/>
+        <path d="M88,128 L155,122 L168,142 L172,178 L162,215 L145,235 L118,242 L92,228 L78,205 L75,175 L78,150 Z" fill="#5b9bd5" stroke="#2060a0" strokeWidth="1"/>
+        <path d="M155,75 L282,68 L320,82 L345,105 L355,138 L358,175 L350,215 L335,248 L315,275 L288,295 L258,308 L228,315 L198,308 L172,290 L158,268 L148,242 L142,215 L145,185 L148,155 L152,125 L155,95 Z" fill="#4a9e6b" stroke="#206040" strokeWidth="1"/>
+        <path d="M148,238 L205,228 L222,242 L225,268 L215,288 L192,298 L168,292 L152,272 L148,255 Z" fill="#e8a838" stroke="#a06010" strokeWidth="0.8"/>
+        <path d="M205,288 L248,280 L262,295 L258,318 L235,325 L212,318 L205,305 Z" fill="#9b7fd4" stroke="#6040b0" strokeWidth="0.8"/>
+        <path d="M78,242 L118,235 L132,252 L135,285 L130,318 L122,352 L112,385 L100,418 L88,448 L75,462 L62,448 L58,415 L62,382 L65,348 L68,315 L70,282 Z" fill="#e05c5c" stroke="#a02020" strokeWidth="1"/>
+        <path d="M132,255 L195,245 L215,258 L222,285 L218,318 L208,352 L195,385 L175,415 L155,438 L135,448 L115,435 L100,415 L105,382 L112,348 L118,318 L122,285 Z" fill="#d4845a" stroke="#904020" strokeWidth="1"/>
+        <path d="M215,318 L255,312 L268,328 L262,348 L238,355 L215,345 Z" fill="#5b9bd5" stroke="#2060a0" strokeWidth="0.8"/>
+        <ellipse cx="215" cy="488" rx="12" ry="8" fill="#e8c87a" stroke="#a08020" strokeWidth="0.8"/>
+        <text x="235" y="492" fontSize="6.5" fill="#5a4000">Falklands (UK)</text>
+        <path d="M118,455 L148,448 L158,462 L148,475 L122,478 L108,468 Z" fill="#e05c5c" stroke="#a02020" strokeWidth="0.8"/>
+        <text x="152" y="72" fontSize="7.5" fill="white" textAnchor="middle" fontWeight="bold">VENEZUELA</text>
+        <text x="148" y="175" fontSize="10" fill="white" textAnchor="middle" fontWeight="bold">BRAZIL</text>
+        <text x="112" y="108" fontSize="7" fill="white" textAnchor="middle">COL.</text>
+        <text x="108" y="125" fontSize="6.5" fill="white" textAnchor="middle">ECU.</text>
+        <text x="118" y="182" fontSize="8" fill="white" textAnchor="middle" fontWeight="bold">PERU</text>
+        <text x="185" y="265" fontSize="7" fill="white" textAnchor="middle">BOL.</text>
+        <text x="232" y="305" fontSize="6.5" fill="white" textAnchor="middle">PAR.</text>
+        <text x="235" y="335" fontSize="7" fill="#2a2a6a" textAnchor="middle">URU.</text>
+        <text x="82" y="358" fontSize="7.5" fill="white" textAnchor="middle" fontWeight="bold">CHILE</text>
+        <text x="168" y="358" fontSize="9" fill="white" textAnchor="middle" fontWeight="bold">ARGENTINA</text>
+        <text x="285" y="58" fontSize="6.5" fill="white" textAnchor="middle">GUYANA</text>
+        <text x="30" y="280" fontSize="8" fill="#4a7a9a" textAnchor="middle" transform="rotate(-90,30,280)">PACIFIC OCEAN</text>
+        <text x="375" y="280" fontSize="8" fill="#4a7a9a" textAnchor="middle" transform="rotate(90,375,280)">ATLANTIC OCEAN</text>
+        <text x="200" y="555" fontSize="8" fill="#888" textAnchor="middle">12 countries • 430 million people</text>
+      </svg>
+    </div>
+  );
+}
+
+function GeographyAustraliaMap() {
+  return (
+    <div className="flex flex-col items-center gap-2 p-2">
+      <p className="text-sm font-semibold text-muted-foreground text-center">Australia & Oceania</p>
+      <svg viewBox="0 0 520 440" className="w-full h-auto" xmlns="http://www.w3.org/2000/svg">
+        <rect width="520" height="440" fill="#b3d1e8" rx="6"/>
+        <path d="M72,88 L128,72 L192,65 L258,68 L315,78 L358,95 L385,118 L395,148 L392,178 L382,208 L365,232 L342,252 L315,265 L285,272 L255,268 L225,258 L198,242 L175,222 L155,198 L138,172 L122,148 L105,125 L85,108 Z" fill="#e8c87a" stroke="#a08020" strokeWidth="1.5"/>
+        <path d="M72,88 L155,75 L162,105 L158,178 L152,228 L138,258 L118,265 L95,255 L75,232 L62,205 L58,175 L62,145 L65,115 Z" fill="#e0b850" stroke="#a08020" strokeWidth="0.8" opacity="0.7"/>
+        <path d="M195,68 L268,65 L272,92 L268,155 L255,162 L238,158 L218,162 L198,155 L192,125 Z" fill="#d4a840" stroke="#a08020" strokeWidth="0.8" opacity="0.7"/>
+        <path d="M265,68 L335,75 L358,95 L362,128 L355,165 L338,182 L315,188 L295,182 L272,165 L268,135 L265,105 Z" fill="#e8b848" stroke="#a08020" strokeWidth="0.8" opacity="0.7"/>
+        <path d="M162,158 L255,152 L258,195 L248,228 L228,238 L205,242 L182,235 L162,218 L155,195 Z" fill="#d8a838" stroke="#a08020" strokeWidth="0.8" opacity="0.7"/>
+        <path d="M272,168 L338,162 L348,195 L342,228 L322,248 L298,255 L275,248 L258,228 L258,198 Z" fill="#e0b040" stroke="#a08020" strokeWidth="0.8" opacity="0.7"/>
+        <path d="M258,232 L322,225 L330,248 L315,265 L288,270 L260,265 L250,250 Z" fill="#c89828" stroke="#a08020" strokeWidth="0.8" opacity="0.7"/>
+        <path d="M275,285 L305,278 L318,292 L312,312 L292,318 L272,308 L268,295 Z" fill="#e8c87a" stroke="#a08020" strokeWidth="1"/>
+        <path d="M422,228 L448,218 L462,232 L458,258 L442,268 L425,258 L418,242 Z" fill="#4a9e6b" stroke="#206040" strokeWidth="1"/>
+        <path d="M418,268 L448,258 L462,272 L458,298 L440,312 L418,305 L408,290 L410,278 Z" fill="#4a9e6b" stroke="#206040" strokeWidth="1"/>
+        <path d="M305,28 L358,22 L385,35 L388,52 L368,62 L338,65 L312,55 L298,42 Z" fill="#9b7fd4" stroke="#6040b0" strokeWidth="1"/>
+        <path d="M52,42 L108,35 L125,48 L118,62 L88,68 L55,58 Z" fill="#e05c5c" stroke="#a02020" strokeWidth="0.8"/>
+        <path d="M120,32 L165,25 L178,38 L172,52 L145,58 L122,48 Z" fill="#e05c5c" stroke="#a02020" strokeWidth="0.8"/>
+        <ellipse cx="455" cy="155" rx="8" ry="6" fill="#5b9bd5" stroke="#2060a0" strokeWidth="0.8"/>
+        <text x="468" y="159" fontSize="6.5" fill="#2a5a8a">FIJI</text>
+        <text x="105" y="172" fontSize="7.5" fill="#3a2800" textAnchor="middle">W. AUSTRALIA</text>
+        <text x="230" y="115" fontSize="7" fill="#3a2800" textAnchor="middle">N. TERRITORY</text>
+        <text x="312" y="128" fontSize="7" fill="#3a2800" textAnchor="middle">QLD</text>
+        <text x="205" y="198" fontSize="7" fill="#3a2800" textAnchor="middle">S. AUSTRALIA</text>
+        <text x="305" y="215" fontSize="7" fill="#3a2800" textAnchor="middle">NSW</text>
+        <text x="290" y="252" fontSize="6.5" fill="#3a2800" textAnchor="middle">VIC</text>
+        <text x="292" y="300" fontSize="7" fill="#3a2800" textAnchor="middle">Tasmania</text>
+        <text x="440" y="245" fontSize="7.5" fill="white" textAnchor="middle">NZ</text>
+        <text x="348" y="42" fontSize="7.5" fill="white" textAnchor="middle">PNG</text>
+        <text x="118" y="50" fontSize="6.5" fill="white" textAnchor="middle">INDONESIA</text>
+        <circle cx="322" cy="242" r="4" fill="#e05c5c"/>
+        <text x="335" y="246" fontSize="7" fill="#1a3a5c">Canberra ★</text>
+        <line x1="50" y1="188" x2="415" y2="188" stroke="#e05c5c" strokeWidth="0.8" strokeDasharray="4,3" opacity="0.5"/>
+        <text x="420" y="192" fontSize="6" fill="#e05c5c" opacity="0.8">Tropic of Capricorn</text>
+        <text x="30" y="200" fontSize="7.5" fill="#4a7a9a" textAnchor="middle" transform="rotate(-90,30,200)">INDIAN OCEAN</text>
+        <text x="495" y="200" fontSize="7.5" fill="#4a7a9a" textAnchor="middle" transform="rotate(90,495,200)">PACIFIC OCEAN</text>
+        <text x="260" y="420" fontSize="8" fill="#888" textAnchor="middle">Australia + NZ + Pacific islands = Oceania • Pop. ~45M</text>
+      </svg>
     </div>
   );
 }
@@ -2767,6 +2935,12 @@ function renderVisual(tag: VisualTag) {
     case 'geography_usa_map': return <GeographyUSAMap />;
     case 'geography_world_map': return <GeographyWorldMap />;
     case 'geography_europe_map': return <GeographyEuropeMap />;
+    case 'geography_africa_map': return <GeographyAfricaMap />;
+    case 'geography_north_america_map': return <GeographyNorthAmericaMap />;
+    case 'geography_asia_map': return <GeographyAsiaMap />;
+    case 'geography_greenland_map': return <GeographyGreenlandMap />;
+    case 'geography_south_america_map': return <GeographySouthAmericaMap />;
+    case 'geography_australia_map': return <GeographyAustraliaMap />;
     case 'geography_lat_long': return <GeographyLatLong />;
     case 'physics_newtons_laws': return <PhysicsNewtonsLaws />;
     case 'physics_electromagnetic_spectrum': return <PhysicsElectromagneticSpectrum />;
@@ -2863,9 +3037,15 @@ const VISUAL_LABELS: Record<VisualTag, string> = {
   lang_spanish_verb_conjugation: 'Spanish Verb Conjugation',
   lang_french_verb_conjugation: 'French Verb Conjugation',
   lang_chinese_tones: 'Mandarin Tones',
-  geography_usa_map: 'USA Regions & States',
+  geography_usa_map: 'USA — All 50 States',
   geography_world_map: 'World Map',
   geography_europe_map: 'Europe — Countries',
+  geography_africa_map: 'Africa — Countries',
+  geography_north_america_map: 'North America',
+  geography_asia_map: 'Asia Map',
+  geography_greenland_map: 'Greenland',
+  geography_south_america_map: 'South America',
+  geography_australia_map: 'Australia & Oceania',
   geography_lat_long: 'Latitude & Longitude',
   physics_newtons_laws: "Newton's Laws of Motion",
   physics_electromagnetic_spectrum: 'Electromagnetic Spectrum',
