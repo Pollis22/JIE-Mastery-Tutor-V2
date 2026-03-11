@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { VoiceStatusIndicator } from "./VoiceStatusIndicator";
+import { TutorSessionAmbient } from "./TutorSessionAmbient";
 import { useAgeTheme } from "@/contexts/ThemeContext";
 import { ArrowDown } from "lucide-react";
 
@@ -162,11 +163,11 @@ export function RealtimeVoiceTranscript({
           >
             <div className="space-y-3">
               {messages.length === 0 ? (
-                <div className={`text-center text-sm py-8 ${isDark ? 'text-gray-500' : 'text-muted-foreground'}`}>
-                  {isConnected 
-                    ? "Start speaking to begin the conversation..." 
-                    : "Connecting to voice service..."}
-                </div>
+                <TutorSessionAmbient
+                  isSpeaking={isTutorSpeaking}
+                  isConnected={isConnected}
+                  hasMessages={false}
+                />
               ) : (
                 <AnimatePresence initial={false}>
                   {messages.filter(m => !m.isThinking).map((message, index, arr) => {
