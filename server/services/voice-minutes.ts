@@ -227,11 +227,14 @@ export async function deductMinutes(userId: string, minutesUsed: number): Promis
     const trialUsed = userData.trial_minutes_used || 0;
     const trialRemaining = Math.max(0, trialTotal - trialUsed);
     
-    if (trialRemaining < minutesUsed) {
-      throw new Error(`Insufficient trial minutes. You need ${minutesUsed} minutes but only have ${trialRemaining} available.`);
+    // Cap deduction at remaining minutes (don't throw — session may have run slightly over)
+    const actualDeduction = Math.min(minutesUsed, trialRemaining);
+    if (actualDeduction > 0) {
+      await deductTrialMinutes(userId, actualDeduction);
+      console.log(`⏱️ [VoiceMinutes] Trial deduction: ${actualDeduction}/${minutesUsed} min (${trialRemaining} were remaining)`);
+    } else {
+      console.log(`⏱️ [VoiceMinutes] Trial already exhausted (${trialUsed}/${trialTotal}), no deduction needed`);
     }
-    
-    await deductTrialMinutes(userId, minutesUsed);
     return;
   }
   
