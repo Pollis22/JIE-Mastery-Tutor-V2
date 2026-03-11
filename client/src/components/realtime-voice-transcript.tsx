@@ -162,13 +162,22 @@ export function RealtimeVoiceTranscript({
             data-testid="transcript-scroll-container"
           >
             <div className="space-y-3">
-              {messages.length === 0 ? (
-                <TutorSessionAmbient
-                  isSpeaking={isTutorSpeaking}
-                  isConnected={isConnected}
-                  hasMessages={false}
-                />
-              ) : (
+              <AnimatePresence>
+                {messages.length === 0 && (
+                  <motion.div
+                    key="ambient"
+                    initial={{ opacity: 1 }}
+                    exit={{ opacity: 0, transition: { duration: 0.35 } }}
+                  >
+                    <TutorSessionAmbient
+                      isSpeaking={isTutorSpeaking}
+                      isConnected={isConnected}
+                      hasMessages={false}
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+              {messages.length > 0 && (
                 <AnimatePresence initial={false}>
                   {messages.filter(m => !m.isThinking).map((message, index, arr) => {
                     const isUser = message.role === 'user';
