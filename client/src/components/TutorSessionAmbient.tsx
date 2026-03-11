@@ -135,10 +135,11 @@ export function TutorSessionAmbient({ isSpeaking = false, isConnected = false, h
         {isSpeaking ? "🔊 JIE is speaking..." : isConnected ? "✓ Connected — start speaking" : "Connecting..."}
       </div>
 
-      {/* Photo gallery card */}
+      {/* Photo gallery card — only show once connected, prevents flash before session starts */}
+      {isConnected && (
       <div
         className="w-full rounded-xl overflow-hidden relative"
-        style={{ height: 110, maxWidth: 340 }}
+        style={{ height: 110, maxWidth: 340, opacity: 1, transition: "opacity 0.5s ease" }}
       >
         {GALLERY.map((g, i) => (
           <div
@@ -160,6 +161,7 @@ export function TutorSessionAmbient({ isSpeaking = false, isConnected = false, h
           </div>
         ))}
       </div>
+      )}
 
       {/* Rotating tip */}
       <div
