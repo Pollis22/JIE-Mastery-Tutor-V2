@@ -20,7 +20,7 @@ export const ENDPOINTING_PROFILES: Record<BandName, EndpointingProfile> = {
   ELEMENTARY: {
     end_of_turn_confidence_threshold: 0.80,
     min_end_of_turn_silence_when_confident: 1200,
-    max_turn_silence: 8000,
+    max_turn_silence: 6000,
   },
   MIDDLE: {
     end_of_turn_confidence_threshold: 0.75,
@@ -29,13 +29,13 @@ export const ENDPOINTING_PROFILES: Record<BandName, EndpointingProfile> = {
   },
   HIGH: {
     end_of_turn_confidence_threshold: 0.72,
-    min_end_of_turn_silence_when_confident: 900,
-    max_turn_silence: 5000,
+    min_end_of_turn_silence_when_confident: 1200,
+    max_turn_silence: 6000,
   },
   COLLEGE: {
     end_of_turn_confidence_threshold: 0.70,
-    min_end_of_turn_silence_when_confident: 800,
-    max_turn_silence: 5000,
+    min_end_of_turn_silence_when_confident: 2800,
+    max_turn_silence: 6000,
   },
 };
 

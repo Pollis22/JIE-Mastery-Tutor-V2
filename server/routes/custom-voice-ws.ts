@@ -5908,6 +5908,15 @@ HONESTY INSTRUCTIONS:
                   return;
                 }
                 
+                // GPT rec: suppress deadman when student has spoken but not finished.
+                // pendingTranscript has content means AssemblyAI already returned text
+                // for this turn — killing STT now risks losing the partial.
+                // The continuation guard or stall escape will handle completion.
+                if (pendingTranscript.trim().length > 0) {
+                  console.log(`[STT] deadman_suppressed reason=pending_transcript text="${pendingTranscript.substring(0, 40)}" sessionId=${state.sessionId}`);
+                  return;
+                }
+                
                 const noMessageMs = Date.now() - state.sttLastMessageAtMs;
                 const audioRecentMs = state.sttLastAudioForwardAtMs > 0 ? Date.now() - state.sttLastAudioForwardAtMs : Infinity;
                 
