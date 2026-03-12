@@ -97,10 +97,12 @@ export interface TurnPolicyEvaluation {
 // Higher confidence thresholds + longer silence = fewer false triggers
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 const K2_PRESET: TurnPolicyConfig = {
-  end_of_turn_confidence_threshold: 0.78,  // Up from 0.75 for noise robustness
-  min_end_of_turn_silence_when_confident_ms: 1000,  // Up from 900ms
-  max_turn_silence_ms: 5000,  // Up from 4500ms - more thinking time
-  post_eot_grace_ms: 450,  // Up from 350ms - more grace for continuations
+  // AssemblyAI EOT confidence for natural speech is typically 0.15-0.35.
+  // Relying on silence window + trailing fragment detection for quality gating.
+  end_of_turn_confidence_threshold: 0.15,
+  min_end_of_turn_silence_when_confident_ms: 1000,
+  max_turn_silence_ms: 5000,
+  post_eot_grace_ms: 450,
 };
 
 // ADV/College preset — more patient than DEFAULT
@@ -108,17 +110,22 @@ const K2_PRESET: TurnPolicyConfig = {
 // We use 2.8s silence (was 1.2s) before firing, and 6s max silence (was 8s — too long,
 // caused stall escape to never fire when STT reconnect wiped coalescing state)
 const ADV_PRESET: TurnPolicyConfig = {
-  end_of_turn_confidence_threshold: 0.70,  // Slightly lower — adults speak in complete sentences
-  min_end_of_turn_silence_when_confident_ms: 2800,  // 2.8s silence before firing (was 1200ms)
-  max_turn_silence_ms: 6000,  // 6s max wait — enough patience without hanging (was 8s)
-  post_eot_grace_ms: 600,  // 600ms grace for continuation merging (was 400ms)
+  // AssemblyAI EOT confidence for natural conversational speech typically runs 0.15-0.35.
+  // A threshold of 0.70 was blocking every single turn commit. Lowered to 0.15 so that
+  // the 2800ms silence window and trailing fragment detection do the real gating work.
+  end_of_turn_confidence_threshold: 0.15,
+  min_end_of_turn_silence_when_confident_ms: 2800,  // 2.8s silence before firing
+  max_turn_silence_ms: 6000,  // 6s max wait
+  post_eot_grace_ms: 600,  // 600ms grace for continuation merging
 };
 
 const DEFAULT_PRESET: TurnPolicyConfig = {
-  end_of_turn_confidence_threshold: 0.72,  // Up from 0.65 for noise robustness
-  min_end_of_turn_silence_when_confident_ms: 1200,  // Up from 1000ms
-  max_turn_silence_ms: 5500,  // Up from 5000ms
-  post_eot_grace_ms: 400,  // Added grace period for merging continuations
+  // AssemblyAI EOT confidence for natural speech is typically 0.15-0.35.
+  // Relying on silence window + trailing fragment detection for quality gating.
+  end_of_turn_confidence_threshold: 0.15,
+  min_end_of_turn_silence_when_confident_ms: 1200,
+  max_turn_silence_ms: 5500,
+  post_eot_grace_ms: 400,
 };
 
 export function isK2PolicyEnabled(sessionOverride?: boolean | null): boolean {
