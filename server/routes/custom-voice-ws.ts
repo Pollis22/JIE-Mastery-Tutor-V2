@@ -5655,7 +5655,8 @@ HONESTY INSTRUCTIONS:
               
               const STT_RING_BUFFER_MAX = 16;
               const STT_DEADMAN_INTERVAL_MS = 2000;
-              const STT_DEADMAN_NO_MESSAGE_MS = 8000;
+              // PATIENCE FIX: Was 8s — too short, fired mid-utterance when student paused. AssemblyAI max_turn_silence=6s, so 15s gives ample time before treating connection as stalled.
+              const STT_DEADMAN_NO_MESSAGE_MS = 15000;
               const STT_DEADMAN_AUDIO_RECENCY_MS = 3000;
               const STT_MAX_RECONNECT_ATTEMPTS = 5;
               const STT_RECONNECT_BACKOFF = [250, 500, 1000, 2000, 4000];
@@ -5698,6 +5699,10 @@ HONESTY INSTRUCTIONS:
                     const wasAwaitingEot = state.turnPolicyState.awaitingSecondEot;
                     const savedLastEotTimestamp = state.turnPolicyState.lastEotTimestamp;
                     const savedGuardedTranscript = state.guardedTranscript;
+                    // PATIENCE FIX: Preserve pendingTranscript across STT reconnects
+                    // so partial speech before deadman is not lost
+                    const savedPendingTranscript = pendingTranscript;
+                    pendingTranscript = '';
                     const savedStallTimerStartedAt = state.stallTimerStartedAt;
                     const savedLastAudioReceivedAt = state.lastAudioReceivedAt;
                     const config = getTurnPolicyConfig(state.ageGroup as GradeBand, state.turnPolicyK2Override);
@@ -5750,7 +5755,15 @@ HONESTY INSTRUCTIONS:
                     
                     const { ws: newWs, state: newState } = createAssemblyAIConnection(
                       state.language,
-                      (text, endOfTurn, confidence) => {
+                      (rawText, endOfTurn, confidence) => {
+                        // PATIENCE FIX: Merge any transcript saved before deadman with post-reconnect text
+                        // so speech that was in-flight when deadman fired is not silently dropped
+                        const text = savedPendingTranscript
+                          ? (savedPendingTranscript + ' ' + rawText).trim()
+                          : rawText;
+                        if (savedPendingTranscript) {
+                          console.log(`[AssemblyAI-Reconnect] 🔗 Merged pre-reconnect transcript: "${savedPendingTranscript}" + "${rawText}" => "${text}"`);
+                        }
                         console.log(`[AssemblyAI-Reconnect] 📝 Complete utterance (confidence: ${confidence.toFixed(2)}): "${text}"`);
                         state.lastAudioReceivedAt = Date.now();
                         
@@ -6351,7 +6364,18 @@ HONESTY INSTRUCTIONS:
             }
             
             if (state.isReconnecting) {
-              console.warn('[Custom Voice] ⏸️ Audio dropped - reconnection in progress');
+              // PATIENCE FIX: Buffer audio during reconnect instead of dropping it.
+              // Previously ALL speech was lost while AssemblyAI reconnected (~250ms-1s).
+              // Now we push to the ring buffer so it flushes to the new connection on open.
+              if (message.data) {
+                const buf = Buffer.from(message.data, 'base64');
+                state.sttAudioRingBuffer.push(buf);
+                if (state.sttAudioRingBuffer.length > 64) {
+                  state.sttAudioRingBuffer.shift(); // keep last ~4s at 16ms/chunk
+                }
+                state.sttLastAudioForwardAtMs = Date.now(); // prevent false deadman
+                markProgress(state);
+              }
               break;
             }
             
