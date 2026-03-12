@@ -20,14 +20,14 @@ const plans = [
     features: [
       '60 minutes shared by entire family',
       'Unlimited student profiles for siblings',
-      '🧠 Socratic teaching - No direct answers!',
+      '🧠 Socratic teaching — No direct answers!',
       '🛡️ Enterprise-grade safety guardrails',
+      '🚩 Flags learning challenges automatically',
       'Math, English, Science, Spanish & More',
-      'Each child gets personalized tutoring',
-      'Real-time transcripts for parents'
+      'K–12 through College prep coverage',
+      'Real-time transcripts for parents',
     ],
     popular: false,
-    concurrentSessions: 1,
     pricePerMinute: '$0.33'
   },
   {
@@ -39,15 +39,16 @@ const plans = [
     features: [
       '240 minutes shared by entire family',
       'Unlimited student profiles for siblings',
-      '🧠 Socratic teaching - No direct answers!',
+      '🧠 Socratic teaching — No direct answers!',
       '🛡️ Enterprise-grade safety guardrails',
+      '🚩 Flags learning challenges automatically',
+      '📈 Adaptive learning that grows with each child',
       'Math, English, Science, Spanish & More',
-      'Each child gets personalized tutoring',
+      'K–12 + College Prep: SAT, ACT & more',
       'Real-time transcripts for parents',
-      'Priority support for parents'
+      'Priority support',
     ],
     popular: false,
-    concurrentSessions: 1,
     pricePerMinute: '$0.25'
   },
   {
@@ -59,16 +60,17 @@ const plans = [
     features: [
       '600 minutes shared by entire family',
       'Unlimited student profiles for siblings',
-      '🧠 Socratic teaching - No direct answers!',
+      '🧠 Socratic teaching — No direct answers!',
       '🛡️ Enterprise-grade safety guardrails',
+      '🚩 Flags learning challenges automatically',
+      '📈 Adaptive learning that grows with each child',
+      '🎯 Custom learning paths per child',
       'Math, English, Science, Spanish & More',
-      'Each child gets personalized tutoring',
+      'K–12 + College Prep: SAT, ACT, GMAT & more',
       'Real-time transcripts for parents',
-      'Priority support for parents',
-      'Custom learning paths per child'
+      'Priority support',
     ],
     popular: true,
-    concurrentSessions: 1,
     pricePerMinute: '$0.17'
   },
   {
@@ -79,19 +81,20 @@ const plans = [
     description: '👑 BEST VALUE - For large families',
     features: [
       '1,800 minutes/month (30 hours!)',
+      '🎉 3 Concurrent Sessions — Multiple kids at once!',
       'Unlimited student profiles for siblings',
-      '🎉 3 CONCURRENT DEVICES - Multiple kids learn at once!',
-      '🧠 Socratic teaching - No direct answers!',
+      '🧠 Socratic teaching — No direct answers!',
       '🛡️ Enterprise-grade safety guardrails',
+      '🚩 Flags learning challenges automatically',
+      '📈 Adaptive learning that grows with each child',
+      '🎯 Custom learning paths per child',
       'Math, English, Science, Spanish & More',
-      'Each child gets personalized tutoring',
+      '🎓 Full College Prep: SAT, ACT, GMAT, LSAT & more',
       'Real-time transcripts for parents',
       'Priority support',
-      'Custom learning paths per child'
     ],
     popular: false,
     elite: true,
-    concurrentSessions: 3,
     pricePerMinute: '$0.11',
     savings: 'Save 40% per minute!'
   },
@@ -209,8 +212,8 @@ export default function PricingPage() {
                     Device Usage Policy
                   </p>
                   <p className="text-sm text-amber-700 dark:text-amber-300">
-                    <strong>Starter, Standard & Pro:</strong> One device at a time - family members take turns.<br/>
-                    <strong>Elite Family:</strong> 3 concurrent devices - multiple kids can learn simultaneously! 🎉<br/>
+                    <strong>Starter, Standard & Pro:</strong> One session at a time — family members take turns.<br/>
+                    <strong>Elite Family:</strong> 3 concurrent sessions — multiple kids can learn simultaneously! 🎉<br/>
                     <span className="text-xs mt-1 block">Sessions automatically end after 5 minutes of inactivity.</span>
                   </p>
                 </div>
@@ -285,15 +288,15 @@ export default function PricingPage() {
                         </Badge>
                       </div>
                     )}
-                    <div className="flex items-baseline">
-                      <span className="text-5xl font-bold text-foreground">${plan.price}</span>
-                      <span className="text-xl text-muted-foreground ml-2">/month</span>
+                    <div className="flex items-baseline flex-wrap gap-x-1">
+                      <span className="text-4xl font-bold text-foreground">${plan.price}</span>
+                      <span className="text-lg text-muted-foreground">/month</span>
                     </div>
                     <p className="text-sm text-muted-foreground mt-2">
                       {plan.minutes} minutes of voice tutoring
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      {plan.pricePerMinute} per minute • {plan.concurrentSessions} device{plan.concurrentSessions > 1 ? 's' : ''}
+                      {plan.pricePerMinute} per minute
                     </p>
                   </div>
 
@@ -394,6 +397,13 @@ export default function PricingPage() {
             <CardContent className="pt-8">
               <h3 className="text-2xl font-bold text-foreground text-center mb-8">Frequently Asked Questions</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <h4 className="font-semibold text-foreground mb-2">Does it cover college prep exams?</h4>
+                  <p className="text-muted-foreground text-sm">
+                    <strong>Yes!</strong> Standard and above plans include SAT & ACT prep. Pro and Elite plans add 
+                    GMAT, LSAT, and other graduate exam prep — perfect for high schoolers and college students.
+                  </p>
+                </div>
                 <div>
                   <h4 className="font-semibold text-foreground mb-2">Can siblings share the same account?</h4>
                   <p className="text-muted-foreground text-sm">
