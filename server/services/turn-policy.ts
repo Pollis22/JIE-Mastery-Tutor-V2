@@ -322,6 +322,12 @@ export function logAdaptivePatience(
 /**
  * Sentence-level hesitation/continuation detection
  * Returns true if the text suggests the student is still thinking
+ *
+ * Catches:
+ * - Hesitation words: um, uh, wait, hmm, let me think, i think
+ * - Continuation conjunctions: and, so, because, then, but
+ * - Trailing prepositions/articles: "with the", "for the", "about the"
+ *   — these almost always mean the sentence is incomplete
  */
 export function endsWithHesitationOrContinuation(text: string): boolean {
   const sentences = text.split(/[.!?]/);
@@ -329,11 +335,18 @@ export function endsWithHesitationOrContinuation(text: string): boolean {
 
   const hesitationPattern = /\b(um|umm|uh|wait|hold on|let me think|i think|maybe|hmm)\b$/;
   const continuationPattern = /\b(and|so|because|then|but)\b$/;
+  // Trailing preposition/article: strong signal of incomplete thought
+  // e.g. "that would help with the" — always incomplete
+  const trailingFragmentPattern = /\b(with the|for the|about the|in the|on the|at the|to the|of the|with a|for a|like a|into the|from the|by the|through the|around the)\s*$/;
   const endsWithTerminalPunctuation = /[.!?]$/.test(text.trim());
 
   return (
     !endsWithTerminalPunctuation &&
-    (hesitationPattern.test(lastSentence) || continuationPattern.test(lastSentence))
+    (
+      hesitationPattern.test(lastSentence) ||
+      continuationPattern.test(lastSentence) ||
+      trailingFragmentPattern.test(lastSentence)
+    )
   );
 }
 
@@ -349,11 +362,17 @@ export interface EvaluateTurnParams {
 
 /**
  * Evaluate whether to fire Claude or wait for more input
- * 
- * When K2 policy is active and hesitation is detected:
+ *
+ * Hesitation guard is now active for ALL bands that get a patient preset:
+ * - K-2 (when K2 policy enabled): full guard
+ * - College/Adult and 9-12 (ADV band): continuation guard — same logic,
+ *   checks trailing fragments like "with the", "because", "and", "so"
+ * - Other bands: fire immediately on end_of_turn
+ *
+ * When guard is active and hesitation/continuation is detected:
  * - Do NOT fire Claude immediately
  * - Wait for either:
- *   a) another end_of_turn=true, OR
+ *   a) another end_of_turn=true (user resumed), OR
  *   b) max_turn_silence_ms elapsed (stall escape)
  */
 export function evaluateTurn(params: EvaluateTurnParams): TurnPolicyEvaluation {
@@ -370,6 +389,9 @@ export function evaluateTurn(params: EvaluateTurnParams): TurnPolicyEvaluation {
   const k2Enabled = isK2PolicyEnabled(sessionK2Override);
   const config = getTurnPolicyConfig(gradeBand, sessionK2Override);
   const isK2Active = gradeBand === 'K-2' && k2Enabled;
+  // ADV band: College/Adult and 9-12 also get continuation protection
+  const isAdvActive = gradeBand === 'College/Adult' || gradeBand === '9-12';
+  const isContinuationGuardActive = isK2Active || isAdvActive;
 
   const evaluation: TurnPolicyEvaluation = {
     grade_band: gradeBand,
@@ -391,16 +413,21 @@ export function evaluateTurn(params: EvaluateTurnParams): TurnPolicyEvaluation {
   const silenceSinceLastEot = currentTimestamp - policyState.lastEotTimestamp;
   evaluation.silence_duration_ms = silenceSinceLastEot;
 
-  if (!isK2Active) {
+  // Bands with no continuation guard: fire immediately
+  if (!isContinuationGuardActive) {
     evaluation.should_fire_claude = true;
     policyState.lastEotTimestamp = currentTimestamp;
     return evaluation;
   }
 
+  // Continuation guard active — check confidence threshold
   if (eotConfidence < config.end_of_turn_confidence_threshold) {
     return evaluation;
   }
 
+  // Check for trailing fragments / hesitation patterns
+  // endsWithHesitationOrContinuation catches: "with the", "because", "and",
+  // "so", "um", "uh", "wait", "let me think", "i think", etc.
   const hasHesitation = endsWithHesitationOrContinuation(transcript);
 
   if (hasHesitation && !policyState.awaitingSecondEot) {
@@ -408,6 +435,7 @@ export function evaluateTurn(params: EvaluateTurnParams): TurnPolicyEvaluation {
     policyState.awaitingSecondEot = true;
     policyState.lastEotTimestamp = currentTimestamp;
     evaluation.hesitation_guard_triggered = true;
+    console.log(`[TurnPolicy] continuation_guard_triggered band=${gradeBand} transcript="${transcript.slice(-40)}"`);
     return evaluation;
   }
 
