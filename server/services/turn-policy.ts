@@ -475,8 +475,11 @@ export function checkStallEscape(params: StallCheckParams): TurnPolicyEvaluation
 
   const k2Enabled = isK2PolicyEnabled(sessionK2Override);
   const isK2Active = gradeBand === 'K-2' && k2Enabled;
+  // ADV also uses continuation guard — stall escape must also cover it
+  const isAdvActive = gradeBand === 'College/Adult' || gradeBand === '9-12';
+  const isContinuationGuardActive = isK2Active || isAdvActive;
 
-  if (!isK2Active || !policyState.hesitationGuardActive || hasAudioInput) {
+  if (!isContinuationGuardActive || !policyState.hesitationGuardActive || hasAudioInput) {
     return null;
   }
 
