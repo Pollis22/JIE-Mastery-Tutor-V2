@@ -103,6 +103,17 @@ const K2_PRESET: TurnPolicyConfig = {
   post_eot_grace_ms: 450,  // Up from 350ms - more grace for continuations
 };
 
+// ADV/College preset — more patient than DEFAULT
+// Adults pause naturally mid-thought (2-4s); ElevenLabs recommends 10-30s for educational use
+// We use 3s silence (was 1.2s) before firing, and 8s max silence (was 5.5s)
+const ADV_PRESET: TurnPolicyConfig = {
+  end_of_turn_confidence_threshold: 0.70,  // Slightly lower — adults speak in complete sentences
+  min_end_of_turn_silence_when_confident_ms: 2800,  // 2.8s silence before firing (was 1200ms)
+                                                      // Adults pause mid-thought up to 3s naturally
+  max_turn_silence_ms: 8000,  // 8s max wait (was 5500ms) — gives time to gather thoughts
+  post_eot_grace_ms: 600,  // 600ms grace for continuation merging (was 400ms)
+};
+
 const DEFAULT_PRESET: TurnPolicyConfig = {
   end_of_turn_confidence_threshold: 0.72,  // Up from 0.65 for noise robustness
   min_end_of_turn_silence_when_confident_ms: 1200,  // Up from 1000ms
@@ -122,6 +133,12 @@ export function getTurnPolicyConfig(gradeBand: GradeBand, sessionOverride?: bool
   
   if (gradeBand === 'K-2' && k2Enabled) {
     return K2_PRESET;
+  }
+  
+  // ADV and College/Adult get the more patient preset
+  // These learners speak in longer sentences with natural mid-thought pauses
+  if (gradeBand === 'College/Adult' || gradeBand === '9-12') {
+    return ADV_PRESET;
   }
   
   return DEFAULT_PRESET;

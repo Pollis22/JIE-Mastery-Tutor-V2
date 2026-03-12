@@ -150,9 +150,10 @@ export const OLDER_STUDENTS_PROFILE: OlderStudentsProfile = {
   minSpeechMs: 400,                 // Minimum 400ms of continuous speech before "end" is valid
   ignoreSpeechEndUnderMs: 250,      // Ignore speech_end if duration < 250ms
   ignoreSpeechEndIfDurationZero: true,  // Hard block duration=0 events
-  coalesceWindowMs: 3200,           // 3.2s window to merge speech segments (was 2200ms)
-  continuationGraceMs: 1200,        // 1.2s extra wait on continuation cues
-  maxAdditionalWaitMs: 1500,        // Cap extra wait at 1.5s total
+  coalesceWindowMs: 4500,           // 4.5s window to merge speech segments (was 3200ms)
+                                    // Adults pause 2-4s mid-thought; 3.2s was cutting off sentences
+  continuationGraceMs: 2000,        // 2.0s extra wait on continuation cues (was 1200ms)
+  maxAdditionalWaitMs: 2500,        // Cap extra wait at 2.5s total (was 1500ms)
 };
 
 // Continuation phrases that indicate student wants more time
