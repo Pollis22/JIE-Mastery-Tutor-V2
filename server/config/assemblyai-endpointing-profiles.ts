@@ -75,7 +75,7 @@ export function getBandFromGradeLevel(gradeLevel: string | number | undefined): 
   if (['6', '7', '8'].includes(normalized)) return 'MIDDLE';
   if (normalized === '9-12' || normalized === 'high') return 'HIGH';
   if (['9', '10', '11', '12'].includes(normalized)) return 'HIGH';
-  if (normalized === 'college' || normalized === 'adult' || normalized === 'university') return 'COLLEGE';
+  if (normalized === 'college' || normalized === 'adult' || normalized === 'university' || normalized === 'college/adult') return 'COLLEGE';
   
   const numericGrade = parseInt(normalized, 10);
   if (!isNaN(numericGrade)) {
