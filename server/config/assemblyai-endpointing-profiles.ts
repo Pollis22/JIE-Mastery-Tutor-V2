@@ -20,7 +20,7 @@ export const ENDPOINTING_PROFILES: Record<BandName, EndpointingProfile> = {
   ELEMENTARY: {
     end_of_turn_confidence_threshold: 0.80,
     min_end_of_turn_silence_when_confident: 1200,
-    max_turn_silence: 8000,
+    max_turn_silence: 6000,
   },
   MIDDLE: {
     end_of_turn_confidence_threshold: 0.75,
@@ -29,13 +29,13 @@ export const ENDPOINTING_PROFILES: Record<BandName, EndpointingProfile> = {
   },
   HIGH: {
     end_of_turn_confidence_threshold: 0.72,
-    min_end_of_turn_silence_when_confident: 900,
-    max_turn_silence: 5000,
+    min_end_of_turn_silence_when_confident: 1200,
+    max_turn_silence: 6000,
   },
   COLLEGE: {
     end_of_turn_confidence_threshold: 0.70,
-    min_end_of_turn_silence_when_confident: 800,
-    max_turn_silence: 5000,
+    min_end_of_turn_silence_when_confident: 2800,
+    max_turn_silence: 6000,
   },
 };
 
@@ -75,7 +75,7 @@ export function getBandFromGradeLevel(gradeLevel: string | number | undefined): 
   if (['6', '7', '8'].includes(normalized)) return 'MIDDLE';
   if (normalized === '9-12' || normalized === 'high') return 'HIGH';
   if (['9', '10', '11', '12'].includes(normalized)) return 'HIGH';
-  if (normalized === 'college' || normalized === 'adult' || normalized === 'university') return 'COLLEGE';
+  if (normalized === 'college' || normalized === 'adult' || normalized === 'university' || normalized === 'college/adult') return 'COLLEGE';
   
   const numericGrade = parseInt(normalized, 10);
   if (!isNaN(numericGrade)) {

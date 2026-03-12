@@ -97,17 +97,35 @@ export interface TurnPolicyEvaluation {
 // Higher confidence thresholds + longer silence = fewer false triggers
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 const K2_PRESET: TurnPolicyConfig = {
-  end_of_turn_confidence_threshold: 0.78,  // Up from 0.75 for noise robustness
-  min_end_of_turn_silence_when_confident_ms: 1000,  // Up from 900ms
-  max_turn_silence_ms: 5000,  // Up from 4500ms - more thinking time
-  post_eot_grace_ms: 450,  // Up from 350ms - more grace for continuations
+  // AssemblyAI EOT confidence for natural speech is typically 0.15-0.35.
+  // Relying on silence window + trailing fragment detection for quality gating.
+  end_of_turn_confidence_threshold: 0.15,
+  min_end_of_turn_silence_when_confident_ms: 1000,
+  max_turn_silence_ms: 5000,
+  post_eot_grace_ms: 450,
+};
+
+// ADV/College preset — more patient than DEFAULT
+// Adults pause naturally mid-thought (2-4s); ElevenLabs recommends 10-30s for educational use
+// We use 2.8s silence (was 1.2s) before firing, and 6s max silence (was 8s — too long,
+// caused stall escape to never fire when STT reconnect wiped coalescing state)
+const ADV_PRESET: TurnPolicyConfig = {
+  // AssemblyAI EOT confidence for natural conversational speech typically runs 0.15-0.35.
+  // A threshold of 0.70 was blocking every single turn commit. Lowered to 0.15 so that
+  // the 2800ms silence window and trailing fragment detection do the real gating work.
+  end_of_turn_confidence_threshold: 0.15,
+  min_end_of_turn_silence_when_confident_ms: 2800,  // 2.8s silence before firing
+  max_turn_silence_ms: 6000,  // 6s max wait
+  post_eot_grace_ms: 600,  // 600ms grace for continuation merging
 };
 
 const DEFAULT_PRESET: TurnPolicyConfig = {
-  end_of_turn_confidence_threshold: 0.72,  // Up from 0.65 for noise robustness
-  min_end_of_turn_silence_when_confident_ms: 1200,  // Up from 1000ms
-  max_turn_silence_ms: 5500,  // Up from 5000ms
-  post_eot_grace_ms: 400,  // Added grace period for merging continuations
+  // AssemblyAI EOT confidence for natural speech is typically 0.15-0.35.
+  // Relying on silence window + trailing fragment detection for quality gating.
+  end_of_turn_confidence_threshold: 0.15,
+  min_end_of_turn_silence_when_confident_ms: 1200,
+  max_turn_silence_ms: 5500,
+  post_eot_grace_ms: 400,
 };
 
 export function isK2PolicyEnabled(sessionOverride?: boolean | null): boolean {
@@ -122,6 +140,12 @@ export function getTurnPolicyConfig(gradeBand: GradeBand, sessionOverride?: bool
   
   if (gradeBand === 'K-2' && k2Enabled) {
     return K2_PRESET;
+  }
+  
+  // ADV and College/Adult get the more patient preset
+  // These learners speak in longer sentences with natural mid-thought pauses
+  if (gradeBand === 'College/Adult' || gradeBand === '9-12') {
+    return ADV_PRESET;
   }
   
   return DEFAULT_PRESET;
@@ -305,6 +329,12 @@ export function logAdaptivePatience(
 /**
  * Sentence-level hesitation/continuation detection
  * Returns true if the text suggests the student is still thinking
+ *
+ * Catches:
+ * - Hesitation words: um, uh, wait, hmm, let me think, i think
+ * - Continuation conjunctions: and, so, because, then, but
+ * - Trailing prepositions/articles: "with the", "for the", "about the"
+ *   — these almost always mean the sentence is incomplete
  */
 export function endsWithHesitationOrContinuation(text: string): boolean {
   const sentences = text.split(/[.!?]/);
@@ -312,11 +342,18 @@ export function endsWithHesitationOrContinuation(text: string): boolean {
 
   const hesitationPattern = /\b(um|umm|uh|wait|hold on|let me think|i think|maybe|hmm)\b$/;
   const continuationPattern = /\b(and|so|because|then|but)\b$/;
+  // Trailing preposition/article: strong signal of incomplete thought
+  // e.g. "that would help with the" — always incomplete
+  const trailingFragmentPattern = /\b(with the|for the|about the|in the|on the|at the|to the|of the|with a|for a|like a|into the|from the|by the|through the|around the)\s*$/;
   const endsWithTerminalPunctuation = /[.!?]$/.test(text.trim());
 
   return (
     !endsWithTerminalPunctuation &&
-    (hesitationPattern.test(lastSentence) || continuationPattern.test(lastSentence))
+    (
+      hesitationPattern.test(lastSentence) ||
+      continuationPattern.test(lastSentence) ||
+      trailingFragmentPattern.test(lastSentence)
+    )
   );
 }
 
@@ -332,11 +369,17 @@ export interface EvaluateTurnParams {
 
 /**
  * Evaluate whether to fire Claude or wait for more input
- * 
- * When K2 policy is active and hesitation is detected:
+ *
+ * Hesitation guard is now active for ALL bands that get a patient preset:
+ * - K-2 (when K2 policy enabled): full guard
+ * - College/Adult and 9-12 (ADV band): continuation guard — same logic,
+ *   checks trailing fragments like "with the", "because", "and", "so"
+ * - Other bands: fire immediately on end_of_turn
+ *
+ * When guard is active and hesitation/continuation is detected:
  * - Do NOT fire Claude immediately
  * - Wait for either:
- *   a) another end_of_turn=true, OR
+ *   a) another end_of_turn=true (user resumed), OR
  *   b) max_turn_silence_ms elapsed (stall escape)
  */
 export function evaluateTurn(params: EvaluateTurnParams): TurnPolicyEvaluation {
@@ -353,6 +396,9 @@ export function evaluateTurn(params: EvaluateTurnParams): TurnPolicyEvaluation {
   const k2Enabled = isK2PolicyEnabled(sessionK2Override);
   const config = getTurnPolicyConfig(gradeBand, sessionK2Override);
   const isK2Active = gradeBand === 'K-2' && k2Enabled;
+  // ADV band: College/Adult and 9-12 also get continuation protection
+  const isAdvActive = gradeBand === 'College/Adult' || gradeBand === '9-12';
+  const isContinuationGuardActive = isK2Active || isAdvActive;
 
   const evaluation: TurnPolicyEvaluation = {
     grade_band: gradeBand,
@@ -374,16 +420,21 @@ export function evaluateTurn(params: EvaluateTurnParams): TurnPolicyEvaluation {
   const silenceSinceLastEot = currentTimestamp - policyState.lastEotTimestamp;
   evaluation.silence_duration_ms = silenceSinceLastEot;
 
-  if (!isK2Active) {
+  // Bands with no continuation guard: fire immediately
+  if (!isContinuationGuardActive) {
     evaluation.should_fire_claude = true;
     policyState.lastEotTimestamp = currentTimestamp;
     return evaluation;
   }
 
+  // Continuation guard active — check confidence threshold
   if (eotConfidence < config.end_of_turn_confidence_threshold) {
     return evaluation;
   }
 
+  // Check for trailing fragments / hesitation patterns
+  // endsWithHesitationOrContinuation catches: "with the", "because", "and",
+  // "so", "um", "uh", "wait", "let me think", "i think", etc.
   const hasHesitation = endsWithHesitationOrContinuation(transcript);
 
   if (hasHesitation && !policyState.awaitingSecondEot) {
@@ -391,6 +442,7 @@ export function evaluateTurn(params: EvaluateTurnParams): TurnPolicyEvaluation {
     policyState.awaitingSecondEot = true;
     policyState.lastEotTimestamp = currentTimestamp;
     evaluation.hesitation_guard_triggered = true;
+    console.log(`[TurnPolicy] continuation_guard_triggered band=${gradeBand} transcript="${transcript.slice(-40)}"`);
     return evaluation;
   }
 
@@ -430,8 +482,11 @@ export function checkStallEscape(params: StallCheckParams): TurnPolicyEvaluation
 
   const k2Enabled = isK2PolicyEnabled(sessionK2Override);
   const isK2Active = gradeBand === 'K-2' && k2Enabled;
+  // ADV also uses continuation guard — stall escape must also cover it
+  const isAdvActive = gradeBand === 'College/Adult' || gradeBand === '9-12';
+  const isContinuationGuardActive = isK2Active || isAdvActive;
 
-  if (!isK2Active || !policyState.hesitationGuardActive || hasAudioInput) {
+  if (!isContinuationGuardActive || !policyState.hesitationGuardActive || hasAudioInput) {
     return null;
   }
 
