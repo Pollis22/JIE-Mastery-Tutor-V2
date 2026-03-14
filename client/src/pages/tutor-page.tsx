@@ -32,6 +32,7 @@ import jieLogo from "@/assets/jie-mastery-logo-sm.jpg";
 import tutorHero from "@/assets/tutor-hero.png";
 import { TutorHeroBanner } from "@/components/TutorHeroBanner";
 import { AmbientBackground } from "@/components/AmbientBackground";
+import { FeedbackWidget } from "@/components/FeedbackWidget";
 
 interface ProgressData {
   lastLevel?: string;
@@ -1086,6 +1087,8 @@ export default function TutorPage() {
               )}
             </div>
           )}
+          {/* Feedback Widget */}
+          {user && !mounted && <FeedbackWidget />}
           </div>{/* end tutor-page */}
 
           {/* Student Profile Panel */}
