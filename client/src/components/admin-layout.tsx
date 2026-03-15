@@ -13,6 +13,7 @@ import {
   LogOut,
   Menu,
   X,
+  DollarSign,
 } from "lucide-react";
 import { useState } from "react";
 import jieLogo from "@/assets/jie-mastery-logo-sm.jpg";
@@ -35,6 +36,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     { name: "Agents", href: "/admin/agents", icon: Bot },
     { name: "Contacts", href: "/admin/contacts", icon: Mail },
     { name: "Audit Logs", href: "/admin/logs", icon: ScrollText },
+    { name: "Pricing Studio", href: "/admin/pricing-studio", icon: DollarSign },
   ];
 
   const handleLogout = () => {
