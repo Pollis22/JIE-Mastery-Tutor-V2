@@ -396,13 +396,14 @@ export default function AdminPageEnhanced() {
 
           {/* Tab Navigation */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-6">
+            <TabsList className="grid w-full grid-cols-7">
               <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
               <TabsTrigger value="users" data-testid="tab-users">Users</TabsTrigger>
               <TabsTrigger value="sessions" data-testid="tab-sessions">Sessions</TabsTrigger>
               <TabsTrigger value="trial-leads" data-testid="tab-trial-leads">Trial Leads</TabsTrigger>
               <TabsTrigger value="safety-incidents" data-testid="tab-safety-incidents">Safety</TabsTrigger>
               <TabsTrigger value="usage" data-testid="tab-usage">Usage</TabsTrigger>
+              <TabsTrigger value="pricing-studio" data-testid="tab-pricing-studio">Pricing Studio</TabsTrigger>
             </TabsList>
 
             {/* Overview Tab */}
@@ -1326,6 +1327,32 @@ export default function AdminPageEnhanced() {
                   )}
                 </CardContent>
               </Card>
+            </TabsContent>
+
+            {/* Pricing Studio Tab */}
+            <TabsContent value="pricing-studio" className="space-y-4">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900">Quote & Pricing Studio</h2>
+                  <p className="text-sm text-muted-foreground">Model institutional deals · Generate client quotes · Internal margin reports</p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => window.open("/pricing-studio.html", "_blank")}
+                  className="flex items-center gap-1.5 text-xs"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Open in New Tab
+                </Button>
+              </div>
+              <div className="rounded-lg border overflow-hidden" style={{ height: "calc(100vh - 280px)" }}>
+                <iframe
+                  src="/pricing-studio.html"
+                  className="w-full h-full border-0"
+                  title="JIE Mastery Quote & Pricing Studio"
+                />
+              </div>
             </TabsContent>
           </Tabs>
         </div>
