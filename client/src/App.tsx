@@ -18,6 +18,7 @@ import { ProtectedRoute, PublicOrAuthRoute, LazyRoute } from "./lib/protected-ro
 import AuthPage from "@/pages/auth-page";
 import { usePageTracking } from "@/hooks/use-page-tracking";
 import { useTracking } from "@/hooks/use-tracking";
+import { InstallBanner } from "@/components/InstallBanner";
 
 if (typeof window !== 'undefined' && window.location.hostname === 'jiemastery.ai') {
   window.location.replace('https://www.jiemastery.ai' + window.location.pathname + window.location.search + window.location.hash);
@@ -132,6 +133,7 @@ function App() {
       <TooltipProvider>
         <AuthProvider>
           <Toaster />
+          <InstallBanner />
           <Router />
         </AuthProvider>
       </TooltipProvider>
