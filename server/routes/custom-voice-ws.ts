@@ -311,9 +311,22 @@ function isShortDeclarative(text: string): boolean {
   return words.length < 8 && !isQuickAnswer(text);
 }
 
+// LANGUAGE PRACTICE: Helper to detect language-learning sessions
+// In these sessions, non-lexical sounds ("ah", "oh", "er") and single letters
+// are valid practice utterances and should NOT be filtered out.
+function isLanguagePracticeSession(subject?: string): boolean {
+  if (!subject) return false;
+  const languageSubjects = [
+    'Spanish', 'French', 'German', 'Italian', 'Portuguese', 'Russian',
+    'Chinese', 'Japanese', 'Korean', 'Arabic', 'Hindi', 'English as a Second Language',
+    'ESL', 'Language Arts', 'Foreign Language', 'World Languages'
+  ];
+  return languageSubjects.some(lang => subject.toLowerCase().includes(lang.toLowerCase()));
+}
+
 // P0: Centralized transcript drop decision — replaces ALL raw char-length gates
 // Allows legitimate short lexical answers like "no", "ok", "I", "2", "5", "a", "y"
-function shouldDropTranscript(text: string, state: { isSessionEnded: boolean; sessionFinalizing: boolean }): { drop: boolean; reason: string } {
+function shouldDropTranscript(text: string, state: { isSessionEnded: boolean; sessionFinalizing: boolean; subject?: string }): { drop: boolean; reason: string } {
   if (!text || !text.trim()) {
     return { drop: true, reason: 'empty' };
   }
@@ -321,6 +334,11 @@ function shouldDropTranscript(text: string, state: { isSessionEnded: boolean; se
     return { drop: true, reason: 'session_ended' };
   }
   const trimmed = text.trim();
+  
+  // LANGUAGE PRACTICE: In language-learning sessions, sounds like "ah", "oh", "er"
+  // are valid pronunciation practice and should not be filtered as non-lexical.
+  const isLanguageSession = isLanguagePracticeSession(state.subject);
+  
   const NON_LEXICAL_DROP = [
     /^(um+|uh+|hmm+|hm+|ah+|oh+|er+|erm+)$/i,
     /^\[.*\]$/,
@@ -328,6 +346,11 @@ function shouldDropTranscript(text: string, state: { isSessionEnded: boolean; se
   ];
   for (const pattern of NON_LEXICAL_DROP) {
     if (pattern.test(trimmed)) {
+      // Bypass non-lexical filter for language practice sessions
+      if (isLanguageSession && /^(ah+|oh+|er+|erm+)$/i.test(trimmed)) {
+        console.log(`[LanguagePractice] ✅ Allowing non-lexical "${trimmed}" in language session (subject: ${state.subject})`);
+        return { drop: false, reason: 'valid_language_practice' };
+      }
       return { drop: true, reason: 'non_lexical' };
     }
   }
@@ -5191,12 +5214,17 @@ HONESTY INSTRUCTIONS:
                 // FRAGMENT GUARD: Single conjunction/filler words are likely mid-sentence
                 // fragments caused by brief pauses. Don't commit — let continuation guard
                 // or next EOT accumulate the full sentence.
+                // LANGUAGE PRACTICE: Bypass for language sessions where "a", "i", etc. are valid.
+                const isLanguageSession = isLanguagePracticeSession(state.subject);
                 const FRAGMENT_WORDS = new Set(['and', 'but', 'so', 'because', 'like', 'or', 'well', 'the', 'a', 'to', 'i', 'it', 'if', 'then', 'also', 'just']);
                 const fragmentCheck = transcript.trim().toLowerCase().replace(/[.,!?]/g, '');
                 const fragmentWords = fragmentCheck.split(/\s+/).filter((w: string) => w.length > 0);
-                if (!stallPrompt && fragmentWords.length <= 2 && fragmentWords.every((w: string) => FRAGMENT_WORDS.has(w))) {
+                if (!isLanguageSession && !stallPrompt && fragmentWords.length <= 2 && fragmentWords.every((w: string) => FRAGMENT_WORDS.has(w))) {
                   console.log(`[TurnPolicy] 🔇 Fragment guard: "${transcript.trim()}" (${fragmentWords.length} word${fragmentWords.length > 1 ? 's' : ''}) - deferring as likely mid-sentence`);
                   return;
+                }
+                if (isLanguageSession && fragmentWords.length <= 2 && fragmentWords.every((w: string) => FRAGMENT_WORDS.has(w))) {
+                  console.log(`[LanguagePractice] ✅ Fragment guard bypassed for "${transcript.trim()}" in language session`);
                 }
 
                 let finalText: string;
@@ -6221,6 +6249,34 @@ HONESTY INSTRUCTIONS:
             );
             } // End of Deepgram else block
 
+            // CRITICAL: Send "ready" BEFORE greeting so client can initialize Silero VAD
+            // Otherwise, Silero VAD starts AFTER greeting audio begins playing and cannot detect
+            // speech during the first ~1-2 seconds of greeting playback (barge-in fails).
+            ws.send(JSON.stringify({ type: "ready" }));
+            console.log("[Custom Voice] ✅ Session ready - sent before greeting");
+            
+            // Send session_config for adaptive voice UX features
+            const gradeBand = normalizeGradeBand(state.ageGroup || 'G6-8');
+            const initialActivityMode: ActivityMode = 'default';
+            ws.send(JSON.stringify({ 
+              type: "session_config",
+              adaptiveBargeInEnabled: isAdaptiveBargeInEnabled(),
+              readingModeEnabled: isReadingModeEnabled(),
+              adaptivePatienceEnabled: isAdaptivePatienceEnabled(),
+              goodbyeHardStopEnabled: isGoodbyeHardStopEnabled(),
+              gradeBand,
+              activityMode: initialActivityMode
+            }));
+            console.log(`[Custom Voice] ⚙️ Session config sent: adaptiveBargeIn=${isAdaptiveBargeInEnabled()}, gradeBand=${gradeBand}`);
+            
+            // CRITICAL: 500ms delay for client to initialize microphone + Silero VAD
+            // Without this delay, greeting audio arrives before Silero VAD is ready,
+            // and barge-in detection during the greeting completely fails.
+            // Client flow: receive "ready" → startMicrophone() → MicVAD.new() → vad.start()
+            // This entire chain needs ~300-400ms, so 500ms ensures full initialization.
+            await new Promise(resolve => setTimeout(resolve, 500));
+            console.log("[Custom Voice] ⏳ Silero VAD initialization delay complete");
+
             // Generate and send greeting audio - SENTENCE-CHUNKED for faster first-audio
             // Instead of waiting for the entire greeting to synthesize, split into sentences
             // and send each chunk as it completes. First sentence (~5-10 words) synthesizes
@@ -6326,29 +6382,17 @@ HONESTY INSTRUCTIONS:
               console.log(`[Custom Voice] 🔄 Reconnect detected - skipping greeting audio`);
             }
 
-            ws.send(JSON.stringify({ type: "ready" }));
-            console.log("[Custom Voice] ✅ Session ready");
-            
-            // Send session_config for adaptive voice UX features
-            const gradeBand = normalizeGradeBand(state.ageGroup || 'G6-8');
-            const initialActivityMode: ActivityMode = 'default';
+            // NOTE: "ready" and "session_config" messages already sent BEFORE greeting (line ~6227)
+            // to ensure Silero VAD is initialized before greeting audio playback begins.
             
             // Initialize turn policy state with activity mode for reading patience overlay
             if (isReadingModeEnabled()) {
+              const initialActivityMode: ActivityMode = 'default';
               setActivityMode(state.turnPolicyState, initialActivityMode);
               console.log(`[Custom Voice] 📖 Reading mode patience enabled, initial mode: ${initialActivityMode}`);
             }
             
-            ws.send(JSON.stringify({
-              type: "session_config",
-              adaptiveBargeInEnabled: isAdaptiveBargeInEnabled(),
-              readingModeEnabled: isReadingModeEnabled(),
-              adaptivePatienceEnabled: isAdaptivePatienceEnabled(),
-              goodbyeHardStopEnabled: isGoodbyeHardStopEnabled(),
-              gradeBand,
-              activityMode: initialActivityMode,
-            }));
-            console.log(`[Custom Voice] ⚙️ Session config sent: adaptiveBargeIn=${isAdaptiveBargeInEnabled()}, gradeBand=${gradeBand}`);
+            // NOTE: "session_config" already sent BEFORE greeting (line ~6234)
             break;
 
           case "audio":
