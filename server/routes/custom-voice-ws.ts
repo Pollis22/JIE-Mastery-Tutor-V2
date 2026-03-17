@@ -6221,6 +6221,34 @@ HONESTY INSTRUCTIONS:
             );
             } // End of Deepgram else block
 
+            // CRITICAL: Send "ready" BEFORE greeting so client can initialize Silero VAD
+            // Otherwise, Silero VAD starts AFTER greeting audio begins playing and cannot detect
+            // speech during the first ~1-2 seconds of greeting playback (barge-in fails).
+            ws.send(JSON.stringify({ type: "ready" }));
+            console.log("[Custom Voice] ✅ Session ready - sent before greeting");
+            
+            // Send session_config for adaptive voice UX features
+            const gradeBand = normalizeGradeBand(state.ageGroup || 'G6-8');
+            const initialActivityMode: ActivityMode = 'default';
+            ws.send(JSON.stringify({ 
+              type: "session_config",
+              adaptiveBargeInEnabled: isAdaptiveBargeInEnabled(),
+              readingModeEnabled: isReadingModeEnabled(),
+              adaptivePatienceEnabled: isAdaptivePatienceEnabled(),
+              goodbyeHardStopEnabled: isGoodbyeHardStopEnabled(),
+              gradeBand,
+              activityMode: initialActivityMode
+            }));
+            console.log(`[Custom Voice] ⚙️ Session config sent: adaptiveBargeIn=${isAdaptiveBargeInEnabled()}, gradeBand=${gradeBand}`);
+            
+            // CRITICAL: 500ms delay for client to initialize microphone + Silero VAD
+            // Without this delay, greeting audio arrives before Silero VAD is ready,
+            // and barge-in detection during the greeting completely fails.
+            // Client flow: receive "ready" → startMicrophone() → MicVAD.new() → vad.start()
+            // This entire chain needs ~300-400ms, so 500ms ensures full initialization.
+            await new Promise(resolve => setTimeout(resolve, 500));
+            console.log("[Custom Voice] ⏳ Silero VAD initialization delay complete");
+
             // Generate and send greeting audio - SENTENCE-CHUNKED for faster first-audio
             // Instead of waiting for the entire greeting to synthesize, split into sentences
             // and send each chunk as it completes. First sentence (~5-10 words) synthesizes
@@ -6326,29 +6354,17 @@ HONESTY INSTRUCTIONS:
               console.log(`[Custom Voice] 🔄 Reconnect detected - skipping greeting audio`);
             }
 
-            ws.send(JSON.stringify({ type: "ready" }));
-            console.log("[Custom Voice] ✅ Session ready");
-            
-            // Send session_config for adaptive voice UX features
-            const gradeBand = normalizeGradeBand(state.ageGroup || 'G6-8');
-            const initialActivityMode: ActivityMode = 'default';
+            // NOTE: "ready" and "session_config" messages already sent BEFORE greeting (line ~6227)
+            // to ensure Silero VAD is initialized before greeting audio playback begins.
             
             // Initialize turn policy state with activity mode for reading patience overlay
             if (isReadingModeEnabled()) {
+              const initialActivityMode: ActivityMode = 'default';
               setActivityMode(state.turnPolicyState, initialActivityMode);
               console.log(`[Custom Voice] 📖 Reading mode patience enabled, initial mode: ${initialActivityMode}`);
             }
             
-            ws.send(JSON.stringify({
-              type: "session_config",
-              adaptiveBargeInEnabled: isAdaptiveBargeInEnabled(),
-              readingModeEnabled: isReadingModeEnabled(),
-              adaptivePatienceEnabled: isAdaptivePatienceEnabled(),
-              goodbyeHardStopEnabled: isGoodbyeHardStopEnabled(),
-              gradeBand,
-              activityMode: initialActivityMode,
-            }));
-            console.log(`[Custom Voice] ⚙️ Session config sent: adaptiveBargeIn=${isAdaptiveBargeInEnabled()}, gradeBand=${gradeBand}`);
+            // NOTE: "session_config" already sent BEFORE greeting (line ~6234)
             break;
 
           case "audio":
