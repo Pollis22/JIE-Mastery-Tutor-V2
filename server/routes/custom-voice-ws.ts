@@ -311,9 +311,22 @@ function isShortDeclarative(text: string): boolean {
   return words.length < 8 && !isQuickAnswer(text);
 }
 
+// LANGUAGE PRACTICE: Helper to detect language-learning sessions
+// In these sessions, non-lexical sounds ("ah", "oh", "er") and single letters
+// are valid practice utterances and should NOT be filtered out.
+function isLanguagePracticeSession(subject?: string): boolean {
+  if (!subject) return false;
+  const languageSubjects = [
+    'Spanish', 'French', 'German', 'Italian', 'Portuguese', 'Russian',
+    'Chinese', 'Japanese', 'Korean', 'Arabic', 'Hindi', 'English as a Second Language',
+    'ESL', 'Language Arts', 'Foreign Language', 'World Languages'
+  ];
+  return languageSubjects.some(lang => subject.toLowerCase().includes(lang.toLowerCase()));
+}
+
 // P0: Centralized transcript drop decision — replaces ALL raw char-length gates
 // Allows legitimate short lexical answers like "no", "ok", "I", "2", "5", "a", "y"
-function shouldDropTranscript(text: string, state: { isSessionEnded: boolean; sessionFinalizing: boolean }): { drop: boolean; reason: string } {
+function shouldDropTranscript(text: string, state: { isSessionEnded: boolean; sessionFinalizing: boolean; subject?: string }): { drop: boolean; reason: string } {
   if (!text || !text.trim()) {
     return { drop: true, reason: 'empty' };
   }
@@ -321,6 +334,11 @@ function shouldDropTranscript(text: string, state: { isSessionEnded: boolean; se
     return { drop: true, reason: 'session_ended' };
   }
   const trimmed = text.trim();
+  
+  // LANGUAGE PRACTICE: In language-learning sessions, sounds like "ah", "oh", "er"
+  // are valid pronunciation practice and should not be filtered as non-lexical.
+  const isLanguageSession = isLanguagePracticeSession(state.subject);
+  
   const NON_LEXICAL_DROP = [
     /^(um+|uh+|hmm+|hm+|ah+|oh+|er+|erm+)$/i,
     /^\[.*\]$/,
@@ -328,6 +346,11 @@ function shouldDropTranscript(text: string, state: { isSessionEnded: boolean; se
   ];
   for (const pattern of NON_LEXICAL_DROP) {
     if (pattern.test(trimmed)) {
+      // Bypass non-lexical filter for language practice sessions
+      if (isLanguageSession && /^(ah+|oh+|er+|erm+)$/i.test(trimmed)) {
+        console.log(`[LanguagePractice] ✅ Allowing non-lexical "${trimmed}" in language session (subject: ${state.subject})`);
+        return { drop: false, reason: 'valid_language_practice' };
+      }
       return { drop: true, reason: 'non_lexical' };
     }
   }
@@ -5191,12 +5214,17 @@ HONESTY INSTRUCTIONS:
                 // FRAGMENT GUARD: Single conjunction/filler words are likely mid-sentence
                 // fragments caused by brief pauses. Don't commit — let continuation guard
                 // or next EOT accumulate the full sentence.
+                // LANGUAGE PRACTICE: Bypass for language sessions where "a", "i", etc. are valid.
+                const isLanguageSession = isLanguagePracticeSession(state.subject);
                 const FRAGMENT_WORDS = new Set(['and', 'but', 'so', 'because', 'like', 'or', 'well', 'the', 'a', 'to', 'i', 'it', 'if', 'then', 'also', 'just']);
                 const fragmentCheck = transcript.trim().toLowerCase().replace(/[.,!?]/g, '');
                 const fragmentWords = fragmentCheck.split(/\s+/).filter((w: string) => w.length > 0);
-                if (!stallPrompt && fragmentWords.length <= 2 && fragmentWords.every((w: string) => FRAGMENT_WORDS.has(w))) {
+                if (!isLanguageSession && !stallPrompt && fragmentWords.length <= 2 && fragmentWords.every((w: string) => FRAGMENT_WORDS.has(w))) {
                   console.log(`[TurnPolicy] 🔇 Fragment guard: "${transcript.trim()}" (${fragmentWords.length} word${fragmentWords.length > 1 ? 's' : ''}) - deferring as likely mid-sentence`);
                   return;
+                }
+                if (isLanguageSession && fragmentWords.length <= 2 && fragmentWords.every((w: string) => FRAGMENT_WORDS.has(w))) {
+                  console.log(`[LanguagePractice] ✅ Fragment guard bypassed for "${transcript.trim()}" in language session`);
                 }
 
                 let finalText: string;
