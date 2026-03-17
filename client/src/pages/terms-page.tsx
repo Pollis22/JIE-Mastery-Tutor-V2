@@ -46,7 +46,7 @@ export default function TermsPage() {
               <li>Real-time voice conversations with AI tutors</li>
               <li>Progress tracking and learning analytics</li>
               <li>Optional document upload for study materials</li>
-              <li>Subscription-based access to tutoring minutes</li>
+              <li>Subscription-based access to tutoring hours</li>
             </ul>
           </section>
 
@@ -66,14 +66,14 @@ export default function TermsPage() {
             <h2 className="text-2xl font-bold mb-4">4. Subscription Plans and Pricing</h2>
             <h3 className="text-xl font-semibold mb-2">4.1 Available Plans</h3>
             <ul className="list-disc pl-6 space-y-2">
-              <li>Starter Family: $19.99/month - 60 voice minutes</li>
-              <li>Standard Family: $59.99/month - 240 voice minutes</li>
-              <li>Pro Family: $99.99/month - 600 voice minutes</li>
-              <li>Elite Family: $199.99/month - 1,800 voice minutes</li>
+              <li>Starter Family: $19.99/month - 2 hours of voice tutoring</li>
+              <li>Standard Family: $59.99/month - 7 hours of voice tutoring</li>
+              <li>Pro Family: $99.99/month - 13 hours of voice tutoring</li>
+              <li>Elite Family: $199.99/month - 25 hours of voice tutoring</li>
             </ul>
             
-            <h3 className="text-xl font-semibold mb-2 mt-4">4.2 Minute Top-ups</h3>
-            <p>Additional minutes may be purchased at $19.99 per 60-minute block.</p>
+            <h3 className="text-xl font-semibold mb-2 mt-4">4.2 Hour Top-ups</h3>
+            <p>Additional hours may be purchased in the following packages: 1 hour for $8.99, 3 hours for $24.99, or 6 hours for $44.99.</p>
             
             <h3 className="text-xl font-semibold mb-2 mt-4">4.3 Billing</h3>
             <p>Subscriptions are billed monthly in advance. By subscribing, you authorize us to charge your payment method on a recurring basis until you cancel.</p>
@@ -82,7 +82,7 @@ export default function TermsPage() {
             <p>We reserve the right to change our pricing with 30 days' notice to active subscribers. Continued use after the notice period constitutes acceptance of new prices.</p>
             
             <h3 className="text-xl font-semibold mb-2 mt-4">4.5 Usage Tracking</h3>
-            <p>Voice minutes are tracked in real-time. Unused minutes do not roll over to the next billing period. Bonus minutes from top-ups do not expire.</p>
+            <p>Tutoring hours are tracked in real-time. Unused hours do not roll over to the next billing period. Bonus hours from top-ups do not expire.</p>
           </section>
 
           <section className="mb-8">
@@ -100,7 +100,7 @@ export default function TermsPage() {
           <section className="mb-8">
             <h2 className="text-2xl font-bold mb-4">6. Cancellation and Refunds</h2>
             <h3 className="text-xl font-semibold mb-2">6.1 Cancellation by User</h3>
-            <p>You may cancel your subscription at any time through your account settings or by contacting customer support at info@jiemastery.ai. Cancellation takes effect at the end of your current billing period. You will retain access to your remaining minutes until that date.</p>
+            <p>You may cancel your subscription at any time through your account settings or by contacting customer support at info@jiemastery.ai. Cancellation takes effect at the end of your current billing period. You will retain access to your remaining hours until that date.</p>
             
             <h3 className="text-xl font-semibold mb-2 mt-4">6.2 No Refunds for Partial Months</h3>
             <p>We do not provide refunds for partial subscription periods. If you cancel mid-cycle, you will not be charged for subsequent periods, but no refund will be issued for the current period.</p>
@@ -109,7 +109,7 @@ export default function TermsPage() {
             <p>If you experience technical problems that prevent you from using the Service, contact us within 7 days. We will investigate and may issue a prorated refund or credit at our discretion.</p>
             
             <h3 className="text-xl font-semibold mb-2 mt-4">6.4 Refunds for Unused Top-ups</h3>
-            <p>Minute top-ups (60-minute blocks) are non-refundable once purchased, as they do not expire.</p>
+            <p>Hour top-up packages are non-refundable once purchased, as they do not expire.</p>
             
             <h3 className="text-xl font-semibold mb-2 mt-4">6.5 14-Day Money-Back Guarantee (First Subscription Only)</h3>
             <p>First-time subscribers may request a full refund within 14 days of their initial subscription purchase if they have used less than 15 minutes of tutoring time.</p>
@@ -245,7 +245,7 @@ export default function TermsPage() {
             <ul className="list-disc pl-6 space-y-2">
               <li>Voice conversation transcripts</li>
               <li>Session duration and frequency</li>
-              <li>Minutes used and remaining</li>
+              <li>Hours used and remaining</li>
               <li>Subject areas and grade levels accessed</li>
             </ul>
             

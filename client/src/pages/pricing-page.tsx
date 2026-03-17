@@ -15,10 +15,11 @@ const plans = [
     id: 'starter',
     name: 'Starter Family',
     price: 19.99,
-    minutes: 60,
+    minutes: 120,
     description: 'Perfect for small families',
     features: [
-      '60 minutes shared by entire family',
+      '⏱️ 2 hours of voice tutoring/month',
+      '💰 $10/hour — save 80% vs. a human tutor',
       'Unlimited student profiles for siblings',
       '🧠 Socratic teaching — No direct answers!',
       '🛡️ Enterprise-grade safety guardrails',
@@ -28,16 +29,17 @@ const plans = [
       'Real-time transcripts for parents',
     ],
     popular: false,
-    pricePerMinute: '$0.33'
+    pricePerMinute: '$10/hr'
   },
   {
     id: 'standard',
     name: 'Standard Family',
     price: 59.99,
-    minutes: 240,
+    minutes: 420,
     description: 'Great for active families',
     features: [
-      '240 minutes shared by entire family',
+      '⏱️ 7 hours of voice tutoring/month',
+      '💰 $8.57/hour — save 83% vs. a human tutor',
       'Unlimited student profiles for siblings',
       '🧠 Socratic teaching — No direct answers!',
       '🛡️ Enterprise-grade safety guardrails',
@@ -49,16 +51,17 @@ const plans = [
       'Priority support',
     ],
     popular: false,
-    pricePerMinute: '$0.25'
+    pricePerMinute: '$8.57/hr'
   },
   {
     id: 'pro',
     name: 'Pro Family',
     price: 99.99,
-    minutes: 600,
+    minutes: 780,
     description: 'Most popular for families with multiple learners',
     features: [
-      '600 minutes shared by entire family',
+      '⏱️ 13 hours of voice tutoring/month',
+      '💰 $7.69/hour — save 85% vs. a human tutor',
       'Unlimited student profiles for siblings',
       '🧠 Socratic teaching — No direct answers!',
       '🛡️ Enterprise-grade safety guardrails',
@@ -71,16 +74,17 @@ const plans = [
       'Priority support',
     ],
     popular: true,
-    pricePerMinute: '$0.17'
+    pricePerMinute: '$7.69/hr'
   },
   {
     id: 'elite',
     name: 'Elite Family',
     price: 199.99,
-    minutes: 1800,
+    minutes: 1500,
     description: '👑 BEST VALUE - For large families',
     features: [
-      '1,800 minutes/month (30 hours!)',
+      '⏱️ 25 hours of voice tutoring/month',
+      '💰 $8.00/hour — save 84% vs. a human tutor',
       '🎉 3 Concurrent Sessions — Multiple kids at once!',
       'Unlimited student profiles for siblings',
       '🧠 Socratic teaching — No direct answers!',
@@ -95,8 +99,8 @@ const plans = [
     ],
     popular: false,
     elite: true,
-    pricePerMinute: '$0.11',
-    savings: 'Save 40% per minute!'
+    pricePerMinute: '$8.00/hr',
+    savings: '25 hours of tutoring!'
   },
 ];
 
@@ -197,7 +201,7 @@ export default function PricingPage() {
               Get 50% off the first month with your discount code! <button onClick={() => setLocation("/contact")} className="underline hover:no-underline">Contact us</button> if you need the code.
             </p>
             <p className="text-xl text-muted-foreground mb-4 max-w-3xl mx-auto">
-              <strong>Save hundreds per month!</strong> Instead of separate tutors for each child, get one family plan that all siblings share. 
+              <strong>As low as $8/hour — save over 80% vs. a human tutor!</strong> Instead of separate tutors for each child, get one family plan that all siblings share.
               Create unlimited profiles - each child gets personalized tutoring from kindergarten through college.
             </p>
             
@@ -293,10 +297,10 @@ export default function PricingPage() {
                       <span className="text-lg text-muted-foreground">/month</span>
                     </div>
                     <p className="text-sm text-muted-foreground mt-2">
-                      {plan.minutes} minutes of voice tutoring
+                      {Math.round(plan.minutes / 60)} hours of voice tutoring
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
-                      {plan.pricePerMinute} per minute
+                      {plan.pricePerMinute}
                     </p>
                   </div>
 
@@ -314,7 +318,7 @@ export default function PricingPage() {
                   {/* Minute Top-Up Notice */}
                   <div className="bg-muted/50 rounded-lg p-3 mb-6 border border-border">
                     <p className="text-xs text-muted-foreground text-center">
-                      <span className="font-semibold text-foreground">Need more minutes?</span> Purchase additional 60-minute blocks for $19.99 anytime
+                      <span className="font-semibold text-foreground">Need more hours?</span> Top up anytime — 1 hr for $8.99, 3 hrs for $24.99, or 6 hrs for $44.99
                     </p>
                   </div>
 
@@ -355,7 +359,7 @@ export default function PricingPage() {
                   <div className="flex-1 text-center md:text-left">
                     <h3 className="text-3xl font-bold text-foreground mb-3">Why Families Choose Us 👨‍👩‍👧‍👦</h3>
                     <p className="text-lg text-foreground mb-4">
-                      <strong>Save $100s vs Individual Tutors!</strong> One family plan covers ALL your children. Create unlimited sibling profiles and share minutes across everyone.
+                      <strong>Save $100s vs Individual Tutors!</strong> One family plan covers ALL your children. Create unlimited sibling profiles and share hours across everyone.
                     </p>
                     <div className="grid md:grid-cols-3 gap-4 text-sm">
                       <div className="bg-white/50 dark:bg-black/20 rounded-lg p-3">
@@ -414,15 +418,15 @@ export default function PricingPage() {
                 <div>
                   <h4 className="font-semibold text-foreground mb-2">How much will I save with a family plan?</h4>
                   <p className="text-muted-foreground text-sm">
-                    Huge savings! Traditional tutors cost $50-100/hour per child. With our family plan, all siblings 
-                    share one affordable subscription - saving hundreds monthly!
+                    Massive savings! Traditional tutors cost $50-100/hour per child. Our plans start at just $10/hour — 
+                    that's over 80% savings. Plus, all siblings share one affordable subscription, saving hundreds monthly!
                   </p>
                 </div>
                 <div>
-                  <h4 className="font-semibold text-foreground mb-2">What if I run out of minutes?</h4>
+                  <h4 className="font-semibold text-foreground mb-2">What if I run out of hours?</h4>
                   <p className="text-muted-foreground text-sm">
-                    You can instantly purchase additional minutes in 60-minute increments for $19.99 each. 
-                    Alternatively, upgrade to a higher plan for better value. We'll notify you when you're running low.
+                    You can instantly top up with flexible hour packs: 1 hour ($8.99), 3 hours ($24.99), or 6 hours ($44.99). 
+                    Top-up hours never expire! Or upgrade to a higher plan for even better per-hour value. We'll notify you when you're running low.
                   </p>
                 </div>
                 <div>

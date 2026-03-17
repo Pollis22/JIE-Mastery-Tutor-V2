@@ -115,7 +115,7 @@ router.post(
                 existingUser.id,
                 plan as 'starter' | 'standard' | 'pro',
                 'active',
-                plan === 'starter' ? 60 : plan === 'standard' ? 240 : 600
+                plan === 'starter' ? 120 : plan === 'standard' ? 420 : 780
               );
               break;
             }
@@ -132,12 +132,12 @@ router.post(
 
             // Map plan to monthly minutes
             const minutesMap: Record<string, number> = {
-              'starter': 60,
-              'standard': 240,
-              'pro': 600,
-              'elite': 1800,
+              'starter': 120,
+              'standard': 420,
+              'pro': 780,
+              'elite': 1500,
             };
-            const monthlyMinutes = minutesMap[plan] || 60;
+            const monthlyMinutes = minutesMap[plan] || 120;
 
             // Create user account AFTER successful payment
             // Password is already hashed when stored in registration_tokens table
@@ -345,10 +345,10 @@ router.post(
 
           // Map plan to monthly minutes and concurrent sessions
           const minutesMap: Record<string, number> = {
-            'starter': 60,
-            'standard': 240,
-            'pro': 600,
-            'elite': 1800,
+            'starter': 120,
+            'standard': 420,
+            'pro': 780,
+            'elite': 1500,
           };
           
           const concurrentSessionsMap: Record<string, number> = {
@@ -365,7 +365,7 @@ router.post(
             'elite': 3, // Elite tier gets 3 concurrent device logins
           };
 
-          const monthlyMinutes = minutesMap[plan] || 60;
+          const monthlyMinutes = minutesMap[plan] || 120;
           const maxConcurrentSessions = concurrentSessionsMap[plan] || 1;
           const maxConcurrentLogins = concurrentLoginsMap[plan] || 1;
 
@@ -514,13 +514,13 @@ router.post(
                 console.log(`[Stripe Webhook] 📉 APPLYING SCHEDULED DOWNGRADE: ${user.subscriptionPlan} → ${scheduledPlan}`);
                 
                 const planMinutes: Record<string, number> = {
-                  'starter': 60,
-                  'standard': 240,
-                  'pro': 600,
-                  'elite': 1800,
+                  'starter': 120,
+                  'standard': 420,
+                  'pro': 780,
+                  'elite': 1500,
                 };
                 
-                const newMinutes = planMinutes[scheduledPlan] || 60;
+                const newMinutes = planMinutes[scheduledPlan] || 120;
                 
                 // Apply the downgrade now with proper billing cycle sync
                 await storage.updateUserSubscriptionWithBillingCycle(
@@ -689,15 +689,15 @@ router.post(
           const previousPriceId = previousAttributes?.items?.data?.[0]?.price?.id;
           
           const priceToPlans: Record<string, { plan: string; minutes: number }> = {
-            [process.env.STRIPE_PRICE_STARTER || '']: { plan: 'starter', minutes: 60 },
-            [process.env.STRIPE_PRICE_STANDARD || '']: { plan: 'standard', minutes: 240 },
-            [process.env.STRIPE_PRICE_PRO || '']: { plan: 'pro', minutes: 600 },
-            [process.env.STRIPE_PRICE_ELITE || '']: { plan: 'elite', minutes: 1800 },
+            [process.env.STRIPE_PRICE_STARTER || '']: { plan: 'starter', minutes: 120 },
+            [process.env.STRIPE_PRICE_STANDARD || '']: { plan: 'standard', minutes: 420 },
+            [process.env.STRIPE_PRICE_PRO || '']: { plan: 'pro', minutes: 780 },
+            [process.env.STRIPE_PRICE_ELITE || '']: { plan: 'elite', minutes: 1500 },
           };
 
           const newPlanInfo = priceToPlans[currentPriceId];
           const currentPlan = user.subscriptionPlan || 'starter';
-          const currentMinutesLimit = user.subscriptionMinutesLimit || 60;
+          const currentMinutesLimit = user.subscriptionMinutesLimit || 120;
           const usedMinutes = user.subscriptionMinutesUsed || 0;
           const remainingMinutes = Math.max(0, currentMinutesLimit - usedMinutes);
 

@@ -177,6 +177,8 @@ app.use((req, res, next) => {
       'STRIPE_PRICE_PRO': process.env.STRIPE_PRICE_PRO,
       'STRIPE_PRICE_ELITE': process.env.STRIPE_PRICE_ELITE,
       'STRIPE_PRICE_TOPUP_60': process.env.STRIPE_PRICE_TOPUP_60,
+      'STRIPE_PRICE_TOPUP_180': process.env.STRIPE_PRICE_TOPUP_180,
+      'STRIPE_PRICE_TOPUP_360': process.env.STRIPE_PRICE_TOPUP_360,
     };
 
     let hasStripeErrors = false;

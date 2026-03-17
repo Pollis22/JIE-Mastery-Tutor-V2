@@ -154,11 +154,10 @@ export default function TutorPage() {
     const topupSuccess = params.get('topup');
     
     if (topupSuccess === 'success' && typeof window !== 'undefined' && (window as any).fbq) {
-      // Top-up is $19.99 for 60 minutes
+      // Track top-up purchase (amount varies by package)
       (window as any).fbq('track', 'Purchase', {
-        value: 19.99,
         currency: 'USD',
-        content_name: '60 minute top-up',
+        content_name: 'minute top-up',
         content_type: 'minutes'
       });
       console.log('[Meta Pixel] Purchase event tracked for minute top-up');

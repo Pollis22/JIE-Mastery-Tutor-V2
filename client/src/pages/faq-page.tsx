@@ -135,16 +135,16 @@ export default function FAQPage() {
                 How do the family plans work?
               </AccordionTrigger>
               <AccordionContent className="text-muted-foreground leading-relaxed" data-testid="faq-content-5">
-                One subscription covers everyone. Each plan includes unlimited student profiles, and families share a pool of voice-minutes. The <strong>Elite Family</strong> plan supports three concurrent devices so multiple kids can learn simultaneously.
+                One subscription covers everyone. Each plan includes unlimited student profiles, and families share a pool of tutoring hours. The <strong>Elite Family</strong> plan supports three concurrent devices so multiple kids can learn simultaneously.
               </AccordionContent>
             </AccordionItem>
 
             <AccordionItem value="faq-6" className="border rounded-lg px-6 bg-card">
               <AccordionTrigger className="text-lg font-medium hover:text-primary text-left" data-testid="faq-trigger-6">
-                What happens when we run out of minutes?
+                What happens when we run out of hours?
               </AccordionTrigger>
               <AccordionContent className="text-muted-foreground leading-relaxed" data-testid="faq-content-6">
-                You can top up anytime with 60-minute add-on blocks for $19.99. The new minutes are added instantly and roll seamlessly into your family plan.
+                You can top up anytime with flexible hour packs: 1 hour for $8.99, 3 hours for $24.99, or 6 hours for $44.99. Top-up hours are added instantly and never expire — they roll seamlessly into your family plan.
               </AccordionContent>
             </AccordionItem>
 

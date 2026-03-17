@@ -48,10 +48,10 @@ const PLAN_TIERS: Record<string, number> = {
 
 // Minutes allocation per plan
 const PLAN_MINUTES: Record<string, number> = {
-  'starter': 60,
-  'standard': 240,
-  'pro': 600,
-  'elite': 1800,
+  'starter': 120,
+  'standard': 420,
+  'pro': 780,
+  'elite': 1500,
 };
 
 // Concurrent session limits per plan
@@ -294,7 +294,7 @@ router.post('/change', async (req, res) => {
         console.log('✅ [Subscription] Upgrade successful, invoice created:', updatedSubscription.latest_invoice);
 
         // Update database with new plan (payment already confirmed by Stripe)
-        const newMinutes = PLAN_MINUTES[newPlan] || 60;
+        const newMinutes = PLAN_MINUTES[newPlan] || 120;
         const maxSessions = PLAN_CONCURRENT_SESSIONS[newPlan] || 1;
         
         await storage.updateUserSubscription(
@@ -317,7 +317,7 @@ router.post('/change', async (req, res) => {
         // Send upgrade emails
         const oldPlanName = PLAN_NAMES[currentPlan] || currentPlan;
         const newPlanName = PLAN_NAMES[newPlan] || newPlan;
-        const oldMinutes = PLAN_MINUTES[currentPlan] || 60;
+        const oldMinutes = PLAN_MINUTES[currentPlan] || 120;
         const oldPrice = PLAN_PRICES[currentPlan] || 9.99;
         const newPrice = PLAN_PRICES[newPlan] || 9.99;
         const proratedCharge = Math.max(0, newPrice - oldPrice);
@@ -428,8 +428,8 @@ router.post('/change', async (req, res) => {
         // Send downgrade emails
         const currentPlanName = PLAN_NAMES[currentPlan] || currentPlan;
         const newPlanName = PLAN_NAMES[newPlan] || newPlan;
-        const currentMinutes = PLAN_MINUTES[currentPlan] || 60;
-        const newMinutes = PLAN_MINUTES[newPlan] || 60;
+        const currentMinutes = PLAN_MINUTES[currentPlan] || 120;
+        const newMinutes = PLAN_MINUTES[newPlan] || 120;
         const oldPrice = PLAN_PRICES[currentPlan] || 9.99;
         const newPrice = PLAN_PRICES[newPlan] || 9.99;
         const effectiveDateFormatted = periodEnd.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
@@ -691,7 +691,7 @@ router.post('/reactivate', async (req, res) => {
         // Send reactivation emails
         const planName = PLAN_NAMES[user.subscriptionPlan || 'starter'] || user.subscriptionPlan || 'Subscription';
         const planPrice = PLAN_PRICES[user.subscriptionPlan || 'starter'] || 9.99;
-        const minutes = PLAN_MINUTES[user.subscriptionPlan || 'starter'] || 60;
+        const minutes = PLAN_MINUTES[user.subscriptionPlan || 'starter'] || 120;
         const firstName = user.parentName?.split(' ')[0] || user.firstName || 'Customer';
         
         // Send customer reactivation email

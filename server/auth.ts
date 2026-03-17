@@ -521,9 +521,9 @@ export function setupAuth(app: Express) {
       // Set default plan and minutes for new users
       const defaultPlan = 'starter';
       const minutesMap: Record<string, number> = {
-        'starter': 60,
-        'standard': 240,
-        'pro': 600,
+        'starter': 120,
+        'standard': 420,
+        'pro': 780,
       };
       
       console.log('[Register] ✓ Creating user in database...');

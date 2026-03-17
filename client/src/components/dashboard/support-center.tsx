@@ -58,7 +58,7 @@ const faqItems = [
     questions: [
       {
         q: "What plans are available?",
-        a: "We offer four family plans: Starter Family ($19.99/month for 60 min), Standard Family ($59.99/month for 240 min), Pro Family ($99.99/month for 600 min - Most Popular), and Elite Family ($199.99/month for 1,800 min - Best Value). All plans include unlimited student profiles!"
+        a: "We offer four family plans: Starter Family ($19.99/month — 2 hours), Standard Family ($59.99/month — 7 hours), Pro Family ($99.99/month — 13 hours, Most Popular), and Elite Family ($199.99/month — 25 hours, Best Value). As low as $8/hour — over 80% savings vs. a human tutor! All plans include unlimited student profiles!"
       },
       {
         q: "Can I change my plan?",

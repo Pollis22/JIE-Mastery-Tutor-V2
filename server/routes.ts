@@ -606,6 +606,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const { default: billingRoutes } = await import('./routes/billing');
   const { default: promoRoutes } = await import('./routes/promo');
   app.use("/api/support", supportRoutes);
+  const { default: feedbackRoutes } = await import('./routes/feedback');
+  app.use("/api/feedback", feedbackRoutes);
   app.use("/api/payment-methods", paymentMethodRoutes);
   app.use("/api/billing", billingRoutes);
   app.use("/api/promo", promoRoutes);
@@ -1949,9 +1951,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Define available minute packages
       const packages: Record<string, { price: number; minutes: number; priceId: string }> = {
         '60': { 
-          price: 1999, // $19.99 in cents
+          price: 899, // $8.99 in cents
           minutes: 60, 
           priceId: process.env.STRIPE_PRICE_TOPUP_60 || ''
+        },
+        '180': { 
+          price: 2499, // $24.99 in cents
+          minutes: 180, 
+          priceId: process.env.STRIPE_PRICE_TOPUP_180 || ''
+        },
+        '360': { 
+          price: 4499, // $44.99 in cents
+          minutes: 360, 
+          priceId: process.env.STRIPE_PRICE_TOPUP_360 || ''
         }
       };
 
@@ -1962,22 +1974,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Check if Price ID is configured
       if (!pkg.priceId) {
-        console.error('❌ STRIPE_PRICE_TOPUP_60 environment variable not configured');
+        console.error(`❌ STRIPE_PRICE_TOPUP_${minutePackage} environment variable not configured`);
         return res.status(503).json({ 
-          message: "Top-up service temporarily unavailable - Stripe pricing not configured. Please set STRIPE_PRICE_TOPUP_60 environment variable." 
+          message: `Top-up service temporarily unavailable - Stripe pricing not configured. Please set STRIPE_PRICE_TOPUP_${minutePackage} environment variable.` 
         });
       }
 
       // CRITICAL VALIDATION: Ensure we have a Price ID, not a Product ID
       if (pkg.priceId.startsWith('prod_')) {
-        console.error(`❌ CRITICAL ERROR: Product ID detected instead of Price ID for top-up: ${pkg.priceId}`);
+        console.error(`❌ CRITICAL ERROR: Product ID detected instead of Price ID for ${minutePackage}-min top-up: ${pkg.priceId}`);
         return res.status(500).json({ 
-          error: `Configuration error: Top-up is using a Product ID (${pkg.priceId}) instead of a Price ID. Please update environment variable STRIPE_PRICE_TOPUP_60 with the correct Price ID from Stripe Dashboard.` 
+          error: `Configuration error: Top-up is using a Product ID (${pkg.priceId}) instead of a Price ID. Please update environment variable STRIPE_PRICE_TOPUP_${minutePackage} with the correct Price ID from Stripe Dashboard.` 
         });
       }
 
       if (!pkg.priceId.startsWith('price_')) {
-        console.error(`❌ Invalid Price ID format for top-up: ${pkg.priceId}`);
+        console.error(`❌ Invalid Price ID format for ${minutePackage}-min top-up: ${pkg.priceId}`);
         return res.status(500).json({ 
           error: `Invalid Price ID format for top-up: ${pkg.priceId}. Price IDs must start with "price_"` 
         });

@@ -132,10 +132,10 @@ const TESTIMONIALS = [
 ];
 
 const PLANS = [
-  { name: "Starter", price: "$19.99", minutes: "60 min", highlight: false, badge: "", satact: false, gmat: false },
-  { name: "Standard", price: "$59.99", minutes: "240 min", highlight: false, badge: "", satact: true, gmat: false },
-  { name: "Pro", price: "$99.99", minutes: "600 min", highlight: true, badge: "Most Popular", satact: true, gmat: false },
-  { name: "Elite", price: "$199.99", minutes: "1,800 min", highlight: false, badge: "Best Value", satact: true, gmat: true },
+  { name: "Starter", price: "$19.99", minutes: "2 hrs", highlight: false, badge: "", satact: false, gmat: false },
+  { name: "Standard", price: "$59.99", minutes: "7 hrs", highlight: false, badge: "", satact: true, gmat: false },
+  { name: "Pro", price: "$99.99", minutes: "13 hrs", highlight: true, badge: "Most Popular", satact: true, gmat: false },
+  { name: "Elite", price: "$199.99", minutes: "25 hrs", highlight: false, badge: "Best Value", satact: true, gmat: true },
 ];
 
 // ─── Component ────────────────────────────────────────────────────────────────
