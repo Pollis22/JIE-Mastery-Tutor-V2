@@ -1193,11 +1193,26 @@ interface GradeBandTimingConfig {
 }
 
 const GRADE_BAND_TIMING: Record<string, GradeBandTimingConfig> = {
-  'K2': { bargeInDebounceMs: 600, bargeInDecayMs: 300, bargeInCooldownMs: 850, shortBurstMinMs: 300, postAudioBufferMs: 2000, minMsAfterAudioStartForBargeIn: 800, continuationGraceMs: 1400, continuationHedgeGraceMs: 3000, bargeInPlaybackThreshold: 0.15, consecutiveFramesRequired: 4, bargeInConfirmDurationMs: 600 },
-  'G3-5': { bargeInDebounceMs: 500, bargeInDecayMs: 260, bargeInCooldownMs: 750, shortBurstMinMs: 260, postAudioBufferMs: 1800, minMsAfterAudioStartForBargeIn: 600, continuationGraceMs: 1200, continuationHedgeGraceMs: 2800, bargeInPlaybackThreshold: 0.14, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 500 },
-  'G6-8': { bargeInDebounceMs: 400, bargeInDecayMs: 200, bargeInCooldownMs: 650, shortBurstMinMs: 220, postAudioBufferMs: 1500, minMsAfterAudioStartForBargeIn: 500, continuationGraceMs: 1000, continuationHedgeGraceMs: 2500, bargeInPlaybackThreshold: 0.12, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 400 },
-  'G9-12': { bargeInDebounceMs: 150, bargeInDecayMs: 220, bargeInCooldownMs: 300, shortBurstMinMs: 140, postAudioBufferMs: 1400, minMsAfterAudioStartForBargeIn: 150, continuationGraceMs: 900, continuationHedgeGraceMs: 2200, bargeInPlaybackThreshold: 0.10, consecutiveFramesRequired: 2, bargeInConfirmDurationMs: 120 },
-  'ADV': { bargeInDebounceMs: 100, bargeInDecayMs: 250, bargeInCooldownMs: 200, shortBurstMinMs: 100, postAudioBufferMs: 1000, minMsAfterAudioStartForBargeIn: 100, continuationGraceMs: 800, continuationHedgeGraceMs: 2000, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 1, bargeInConfirmDurationMs: 80 },
+  // ── BARGE-IN PHILOSOPHY ──────────────────────────────────────────────────
+  // Sharp impulse noise (desk tap, toy drop, chair scrape) creates a brief
+  // high-RMS transient that dies within 50-150ms. Real speech — even a short
+  // word from a young child — sustains 250ms+. The bargeInConfirmDurationMs
+  // is the primary gate: it must exceed typical impulse duration at every band.
+  // consecutiveFramesRequired adds a second check: multiple consecutive audio
+  // frames above threshold, not just a single spike.
+  // ─────────────────────────────────────────────────────────────────────────
+  // K2: Very patient — kids are extremely fidgety. High threshold, many frames,
+  // long confirm. A child's voice is weaker and more variable so debounce stays high.
+  'K2':   { bargeInDebounceMs: 600, bargeInDecayMs: 300, bargeInCooldownMs: 850, shortBurstMinMs: 300, postAudioBufferMs: 2000, minMsAfterAudioStartForBargeIn: 800, continuationGraceMs: 1400, continuationHedgeGraceMs: 3000, bargeInPlaybackThreshold: 0.18, consecutiveFramesRequired: 5, bargeInConfirmDurationMs: 600 },
+  // G3-5: Slightly less patient but still strong impulse protection.
+  'G3-5': { bargeInDebounceMs: 500, bargeInDecayMs: 260, bargeInCooldownMs: 750, shortBurstMinMs: 260, postAudioBufferMs: 1800, minMsAfterAudioStartForBargeIn: 600, continuationGraceMs: 1200, continuationHedgeGraceMs: 2800, bargeInPlaybackThreshold: 0.16, consecutiveFramesRequired: 4, bargeInConfirmDurationMs: 500 },
+  // G6-8: Middle school — still active but more intentional when speaking.
+  'G6-8': { bargeInDebounceMs: 400, bargeInDecayMs: 200, bargeInCooldownMs: 650, shortBurstMinMs: 220, postAudioBufferMs: 1500, minMsAfterAudioStartForBargeIn: 500, continuationGraceMs: 1000, continuationHedgeGraceMs: 2500, bargeInPlaybackThreshold: 0.14, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 400 },
+  // G9-12 and ADV: Aligned to G6-8. Validated in testing — G6-8 naturally handles
+  // impulse noise via silence_decay (taps expire in ~250ms, well under the 400ms confirm)
+  // while Silero client VAD remains the fast path for genuine voice interruption.
+  'G9-12': { bargeInDebounceMs: 400, bargeInDecayMs: 200, bargeInCooldownMs: 650, shortBurstMinMs: 220, postAudioBufferMs: 1500, minMsAfterAudioStartForBargeIn: 500, continuationGraceMs: 1000, continuationHedgeGraceMs: 2500, bargeInPlaybackThreshold: 0.14, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 400 },
+  'ADV':   { bargeInDebounceMs: 400, bargeInDecayMs: 200, bargeInCooldownMs: 650, shortBurstMinMs: 220, postAudioBufferMs: 1500, minMsAfterAudioStartForBargeIn: 500, continuationGraceMs: 1000, continuationHedgeGraceMs: 2500, bargeInPlaybackThreshold: 0.14, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 400 },
 };
 const DEFAULT_GRADE_BAND_TIMING: GradeBandTimingConfig = GRADE_BAND_TIMING['G6-8'];
 

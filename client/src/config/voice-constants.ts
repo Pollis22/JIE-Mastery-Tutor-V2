@@ -48,11 +48,11 @@ export const SILERO_BARGE_IN = {
   DUCK_GAIN: 0.056, // -25dB = 10^(-25/20) ≈ 0.056
   DUCK_FADE_MS: 0.02, // 20ms fade for duck/unduck transitions
   CONFIRM_THRESHOLDS: {
-    'K2': 600,
+    'K2':   600,
     'G3-5': 500,
     'G6-8': 400,
-    'G9-12': 150,
-    'ADV': 150,
+    'G9-12': 400, // Aligned to G6-8 — validated in testing
+    'ADV':   400, // Aligned to G6-8 — validated in testing
   } as Record<GradeBandType, number>,
   DEFAULT_CONFIRM_MS: 400,
   IMMUNITY_AFTER_TURN_COMMIT_MS: {
