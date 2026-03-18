@@ -305,14 +305,26 @@ export default function PricingPage() {
                   </div>
 
                   <div className="space-y-4 mb-6">
-                    {plan.features.map((feature: string, idx: number) => (
-                      <div key={idx} className="flex items-center space-x-3" data-testid={`feature-${plan.id}-${idx}`}>
-                        <svg className="w-5 h-5 text-secondary flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
-                        </svg>
-                        <span className="text-foreground">{feature}</span>
-                      </div>
-                    ))}
+                    {plan.features.map((feature: string, idx: number) => {
+                      const isConcurrent = feature.includes('Concurrent Sessions');
+                      return isConcurrent ? (
+                        <div key={idx} className="bg-green-50 dark:bg-green-950/30 border-2 border-green-400 dark:border-green-600 rounded-lg p-3 -mx-1" data-testid={`feature-${plan.id}-${idx}`}>
+                          <div className="flex items-center space-x-3">
+                            <svg className="w-6 h-6 text-green-600 dark:text-green-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                              <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/>
+                            </svg>
+                            <span className="text-green-800 dark:text-green-200 font-semibold text-sm">{feature}</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div key={idx} className="flex items-center space-x-3" data-testid={`feature-${plan.id}-${idx}`}>
+                          <svg className="w-5 h-5 text-secondary flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
+                          </svg>
+                          <span className="text-foreground">{feature}</span>
+                        </div>
+                      );
+                    })}
                   </div>
 
                   {/* Minute Top-Up Notice */}
