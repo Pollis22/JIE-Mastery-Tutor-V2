@@ -824,6 +824,7 @@ function createAssemblyAIConnection(
               state.eotDeferredConfidence = confidence;
               // Store current transcript in state so deferred timer has latest
               state.lastAccumulatedTranscript = confirmedTranscript;
+              state.lastAccumulatedTranscriptSetAt = Date.now();
               state.lastAccumulatedConfidence = confidence;
               state.eotDeferTimerId = setTimeout(() => {
                 state.eotDeferTimerId = undefined;
@@ -850,6 +851,8 @@ function createAssemblyAIConnection(
                   onTranscript(latestTranscript, true, latestConf);
                 } else if (latestTranscript && !state.currentTurnCommitted && !meetsConfidenceFloor) {
                   console.log(`[AssemblyAI v3] 🚫 Deferred EOT DROPPED: conf=${latestConf.toFixed(2)} < 0.40 and words=${deferredWordCount} < 5 — likely noise/fragment: "${latestTranscript.substring(0, 60)}"`);
+                  // NOISE COACHING: Track dropped turns for persistent noise detection
+                  trackDroppedTurnForNoiseCoaching(ws, state);
                 }
               }, LOW_CONF_DEFER_MS);
               return; // Don't commit yet — wait for deferral or a higher-confidence EOT
@@ -1368,6 +1371,7 @@ interface SessionState {
   // FIX 1A: STT activity tracking to prevent premature turn firing
   lastSttActivityAt: number;
   lastAccumulatedTranscript: string;
+  lastAccumulatedTranscriptSetAt: number; // When transcript last changed — for stability check
   lastAccumulatedConfidence: number; // Track latest EOT confidence for state-based commit
   audioFrameCount: number; // LOG REDUCTION: Count audio frames for sampled logging
   bargeInCandidate: {
@@ -1411,6 +1415,9 @@ interface SessionState {
   // TRIAL MINUTE ENFORCEMENT: Periodic check to end session when trial minutes exhausted
   trialMinuteCheckTimerId: NodeJS.Timeout | null;
   trialMinuteWarned: boolean; // Whether 2-minute warning has been sent
+  // NOISE COACHING: Track dropped turns to detect persistently noisy sessions
+  droppedTurnTimestamps: number[]; // Rolling timestamps of noise-dropped turns
+  lastNoiseCoachingAtMs: number;  // Last time tutor gave noise coaching message
 }
 
 // Helper to send typed WebSocket events
@@ -1418,6 +1425,84 @@ function sendWsEvent(ws: WebSocket, type: string, payload: Record<string, unknow
   if (ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type, ...payload }));
     console.log(`[WS Event] ${type}`, payload.turnId || '');
+  }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// NOISE COACHING: Detect persistently noisy sessions and have
+// the tutor proactively suggest a quieter environment or text mode.
+// Triggers when N turns are dropped in a rolling window.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const NOISE_COACHING_WINDOW_MS = 60_000;   // 60-second rolling window
+const NOISE_COACHING_DROP_THRESHOLD = 4;   // 4 dropped turns triggers coaching
+const NOISE_COACHING_COOLDOWN_MS = 180_000; // 3 minutes between coaching messages
+
+async function trackDroppedTurnForNoiseCoaching(
+  ws: WebSocket,
+  state: SessionState
+): Promise<void> {
+  if (state.isSessionEnded || state.sessionFinalizing) return;
+
+  const now = Date.now();
+
+  // Add this drop to the rolling window
+  state.droppedTurnTimestamps.push(now);
+
+  // Prune drops outside the window
+  state.droppedTurnTimestamps = state.droppedTurnTimestamps.filter(
+    ts => now - ts < NOISE_COACHING_WINDOW_MS
+  );
+
+  const recentDrops = state.droppedTurnTimestamps.length;
+  const timeSinceLastCoaching = now - state.lastNoiseCoachingAtMs;
+
+  console.log(`[NoiseCoaching] Drops in ${NOISE_COACHING_WINDOW_MS / 1000}s window: ${recentDrops}/${NOISE_COACHING_DROP_THRESHOLD}, cooldown: ${Math.max(0, NOISE_COACHING_COOLDOWN_MS - timeSinceLastCoaching)}ms remaining`);
+
+  if (recentDrops < NOISE_COACHING_DROP_THRESHOLD) return;
+  if (timeSinceLastCoaching < NOISE_COACHING_COOLDOWN_MS) return;
+
+  // Check that the session isn't already processing a turn
+  if (state.isProcessing || state.phase === 'TUTOR_SPEAKING' || state.phase === 'AWAITING_RESPONSE') {
+    console.log(`[NoiseCoaching] Skipping — session busy (phase=${state.phase}, isProcessing=${state.isProcessing})`);
+    return;
+  }
+
+  state.lastNoiseCoachingAtMs = now;
+  state.droppedTurnTimestamps = []; // Reset after coaching fires
+  console.log(`[NoiseCoaching] 📢 Threshold reached — injecting noise coaching message`);
+
+  const coachingText = `I'm picking up some background noise that's making it harder for me to hear you clearly. If you can, moving to a quieter spot would help a lot. You can also switch to text mode by clicking the keyboard icon — that way background noise won't affect us at all.`;
+
+  // Add to transcript
+  state.transcript.push({
+    speaker: 'tutor',
+    text: coachingText,
+    timestamp: new Date().toISOString(),
+    messageId: crypto.randomUUID(),
+  });
+
+  // Send transcript message to client
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({
+      type: 'transcript',
+      speaker: 'tutor',
+      text: coachingText,
+    }));
+  }
+
+  // Generate and send TTS audio
+  try {
+    const audioBuffer = await generateSpeech(coachingText, state.ageGroup, state.speechSpeed);
+    if (audioBuffer && audioBuffer.length > 0 && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        type: 'audio',
+        data: audioBuffer.toString('base64'),
+        mimeType: 'audio/pcm;rate=16000',
+      }));
+      console.log(`[NoiseCoaching] ✅ Coaching audio sent`);
+    }
+  } catch (err) {
+    console.error('[NoiseCoaching] ❌ Failed to generate coaching audio:', err);
   }
 }
 
@@ -1447,6 +1532,7 @@ function creditSttActivity(state: SessionState, currentText: string, prevText: s
     const now = Date.now();
     state.lastSttActivityAt = now;
     state.lastAccumulatedTranscript = content;
+    state.lastAccumulatedTranscriptSetAt = now;
     state.lastAudioReceivedAt = now;
     state.lastActivityTime = now;
 
@@ -2461,6 +2547,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
       isTutorThinking: false,
       lastSttActivityAt: 0,
       lastAccumulatedTranscript: '',
+      lastAccumulatedTranscriptSetAt: 0,
       lastAccumulatedConfidence: 0,
       audioFrameCount: 0,
       bargeInCandidate: {
@@ -2499,6 +2586,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
       watchdogDisabled: false,
       trialMinuteCheckTimerId: null,
       trialMinuteWarned: false,
+      droppedTurnTimestamps: [],
+      lastNoiseCoachingAtMs: 0,
     };
 
     // FIX #3: Auto-persist every 10 seconds
@@ -5241,6 +5330,8 @@ HONESTY INSTRUCTIONS:
                 // Skip this gate for language practice (single words can be valid responses).
                 if (!isLanguageSession && !stallPrompt && fragmentWords.length < 3) {
                   console.log(`[TurnPolicy] 🔇 Min-word gate: "${transcript.trim()}" (${fragmentWords.length} word${fragmentWords.length > 1 ? 's' : ''} < 3) — dropping as likely noise fragment`);
+                  // NOISE COACHING: Count this drop toward coaching threshold
+                  trackDroppedTurnForNoiseCoaching(ws, state);
                   return;
                 }
 
@@ -5291,6 +5382,9 @@ HONESTY INSTRUCTIONS:
               // CRITICAL: Do NOT pass transcript through closure — read from state at fire time
               // to avoid stale-closure bug where early text ("i do") is committed instead of
               // the full accumulated transcript ("i do see a pattern but if i pause...")
+              // TRANSCRIPT STABILITY CHECK: Don't fire if transcript changed within last 300ms —
+              // this catches "show me the us by" committing before "itself" arrives.
+              const TRANSCRIPT_STABILITY_MS = 300;
               let sttDeferTimerId: NodeJS.Timeout | undefined;
               const gatedFireClaude = (stallPrompt?: string) => {
                 const sttAge = Date.now() - state.lastSttActivityAt;
@@ -5311,6 +5405,21 @@ HONESTY INSTRUCTIONS:
                         console.log(`[TurnPolicy] gated_fire_skipped - no accumulated transcript`);
                         return;
                       }
+                      // STABILITY CHECK: If transcript changed very recently, wait a bit more
+                      const transcriptAge = Date.now() - state.lastAccumulatedTranscriptSetAt;
+                      if (transcriptAge < TRANSCRIPT_STABILITY_MS) {
+                        const stabilityWait = TRANSCRIPT_STABILITY_MS - transcriptAge + 50;
+                        console.log(`[TurnPolicy] transcript_unstable - changed ${transcriptAge}ms ago, waiting ${stabilityWait}ms more`);
+                        sttDeferTimerId = setTimeout(() => {
+                          sttDeferTimerId = undefined;
+                          const stableTranscript = state.lastAccumulatedTranscript.trim();
+                          if (stableTranscript) {
+                            console.log(`[TurnPolicy] gated_fire_using_fresh_transcript: "${stableTranscript.substring(0, 60)}"`);
+                            fireClaudeWithPolicy(stableTranscript, stallPrompt);
+                          }
+                        }, stabilityWait);
+                        return;
+                      }
                       console.log(`[TurnPolicy] gated_fire_using_fresh_transcript: "${freshTranscript.substring(0, 60)}"`);
                       fireClaudeWithPolicy(freshTranscript, stallPrompt);
                     }
@@ -5321,6 +5430,21 @@ HONESTY INSTRUCTIONS:
                 const freshTranscript = state.lastAccumulatedTranscript.trim();
                 if (!freshTranscript) {
                   console.log(`[TurnPolicy] gated_fire_skipped - no accumulated transcript`);
+                  return;
+                }
+                // STABILITY CHECK: Even without STT recency gate, ensure transcript is stable
+                const transcriptAge = Date.now() - state.lastAccumulatedTranscriptSetAt;
+                if (state.lastAccumulatedTranscriptSetAt > 0 && transcriptAge < TRANSCRIPT_STABILITY_MS) {
+                  const stabilityWait = TRANSCRIPT_STABILITY_MS - transcriptAge + 50;
+                  console.log(`[TurnPolicy] transcript_unstable_direct - changed ${transcriptAge}ms ago, waiting ${stabilityWait}ms`);
+                  sttDeferTimerId = setTimeout(() => {
+                    sttDeferTimerId = undefined;
+                    const stableTranscript = state.lastAccumulatedTranscript.trim();
+                    if (stableTranscript) {
+                      console.log(`[TurnPolicy] gated_fire_stable: "${stableTranscript.substring(0, 60)}"`);
+                      fireClaudeWithPolicy(stableTranscript, stallPrompt);
+                    }
+                  }, stabilityWait);
                   return;
                 }
                 fireClaudeWithPolicy(freshTranscript, stallPrompt);
@@ -5607,6 +5731,7 @@ HONESTY INSTRUCTIONS:
                         // Ensure state has the latest text from continuation guard
                         if (finalText.trim().length > state.lastAccumulatedTranscript.trim().length) {
                           state.lastAccumulatedTranscript = finalText;
+                          state.lastAccumulatedTranscriptSetAt = Date.now();
                         }
                         gatedFireClaude();
                       }
@@ -5652,6 +5777,7 @@ HONESTY INSTRUCTIONS:
                     // Ensure state has latest text before gated fire
                     if (text.trim().length > state.lastAccumulatedTranscript.trim().length) {
                       state.lastAccumulatedTranscript = text;
+                      state.lastAccumulatedTranscriptSetAt = Date.now();
                     }
                     gatedFireClaude();
                   }
@@ -5839,6 +5965,7 @@ HONESTY INSTRUCTIONS:
                           // Ensure state has latest text before gated fire
                           if (text.trim().length > state.lastAccumulatedTranscript.trim().length) {
                             state.lastAccumulatedTranscript = text;
+                            state.lastAccumulatedTranscriptSetAt = Date.now();
                           }
                           gatedFireClaude();
                         }
