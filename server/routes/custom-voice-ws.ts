@@ -851,8 +851,8 @@ function createAssemblyAIConnection(
                   onTranscript(latestTranscript, true, latestConf);
                 } else if (latestTranscript && !state.currentTurnCommitted && !meetsConfidenceFloor) {
                   console.log(`[AssemblyAI v3] 🚫 Deferred EOT DROPPED: conf=${latestConf.toFixed(2)} < 0.40 and words=${deferredWordCount} < 5 — likely noise/fragment: "${latestTranscript.substring(0, 60)}"`);
-                  // NOISE COACHING: Track dropped turns for persistent noise detection
-                  trackDroppedTurnForNoiseCoaching(ws, state);
+                  // NOTE: Noise coaching tracking happens in the main WS handler (onTranscript callback),
+                  // NOT here — `state` in this scope is AssemblyAIState, not SessionState.
                 }
               }, LOW_CONF_DEFER_MS);
               return; // Don't commit yet — wait for deferral or a higher-confidence EOT
@@ -1457,6 +1457,12 @@ async function trackDroppedTurnForNoiseCoaching(
   state: SessionState
 ): Promise<void> {
   if (state.isSessionEnded || state.sessionFinalizing) return;
+
+  // Defensive guard: ensure droppedTurnTimestamps exists (prevents crash if called with wrong state type)
+  if (!Array.isArray(state.droppedTurnTimestamps)) {
+    console.warn(`[NoiseCoaching] ⚠️ droppedTurnTimestamps missing or invalid — skipping (state keys: ${Object.keys(state).slice(0, 5).join(', ')}...)`);
+    return;
+  }
 
   const now = Date.now();
 
