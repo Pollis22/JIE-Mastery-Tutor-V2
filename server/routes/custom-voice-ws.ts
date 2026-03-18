@@ -832,8 +832,14 @@ function createAssemblyAIConnection(
                 // Read LATEST transcript from state — not the stale closure capture
                 const latestTranscript = state.lastAccumulatedTranscript.trim();
                 const latestConf = state.lastAccumulatedConfidence || confidence;
-                if (latestTranscript && !state.currentTurnCommitted) {
-                  console.log(`[AssemblyAI v3] ✅ Deferred EOT firing now with: "${latestTranscript.substring(0, 60)}"`);
+                // DEFERRED EOT CONFIDENCE FLOOR: Don't commit genuinely low-confidence turns.
+                // The deferred timer was meant to wait for more speech; if nothing better
+                // arrived, only commit if confidence is at least 0.40 OR transcript is long
+                // enough (5+ words) to be clearly real speech regardless of confidence.
+                const deferredWordCount = latestTranscript.split(/\s+/).filter(w => w.length > 0).length;
+                const meetsConfidenceFloor = latestConf >= 0.40 || deferredWordCount >= 5;
+                if (latestTranscript && !state.currentTurnCommitted && meetsConfidenceFloor) {
+                  console.log(`[AssemblyAI v3] ✅ Deferred EOT firing now with: "${latestTranscript.substring(0, 60)}" (conf=${latestConf.toFixed(2)} words=${deferredWordCount})`);
                   if (turnOrder !== undefined) {
                     state.committedTurnOrders.add(turnOrder);
                   }
@@ -842,6 +848,8 @@ function createAssemblyAIConnection(
                   state.firstEotTimestamp = undefined;
                   state.currentTurnCommitted = false;
                   onTranscript(latestTranscript, true, latestConf);
+                } else if (latestTranscript && !state.currentTurnCommitted && !meetsConfidenceFloor) {
+                  console.log(`[AssemblyAI v3] 🚫 Deferred EOT DROPPED: conf=${latestConf.toFixed(2)} < 0.40 and words=${deferredWordCount} < 5 — likely noise/fragment: "${latestTranscript.substring(0, 60)}"`);
                 }
               }, LOW_CONF_DEFER_MS);
               return; // Don't commit yet — wait for deferral or a higher-confidence EOT
@@ -3134,8 +3142,9 @@ export function setupCustomVoiceWebSocket(server: Server) {
           const words = transcript.trim().split(/\s+/).filter(w => w.length > 0);
           const wordCount = words.length;
           
-          // Reject too short and low-signal transcripts (< 2 words)
-          if (wordCount < 2) {
+          // Reject too short and low-signal transcripts (< 3 words)
+          // Raised from 2→3: keyboard/mechanical noise typically produces short garbled fragments
+          if (wordCount < 3) {
             console.log(JSON.stringify({
               event: 'ambient_rejected',
               session_id: state.sessionId || 'unknown',
@@ -5225,6 +5234,14 @@ HONESTY INSTRUCTIONS:
                 }
                 if (isLanguageSession && fragmentWords.length <= 2 && fragmentWords.every((w: string) => FRAGMENT_WORDS.has(w))) {
                   console.log(`[LanguagePractice] ✅ Fragment guard bypassed for "${transcript.trim()}" in language session`);
+                }
+                // MINIMUM WORD GATE: Require at least 3 words before firing Claude.
+                // Keyboard noise and brief mic bleed typically produce 1-2 word fragments.
+                // Real utterances in tutoring sessions are almost always 3+ words.
+                // Skip this gate for language practice (single words can be valid responses).
+                if (!isLanguageSession && !stallPrompt && fragmentWords.length < 3) {
+                  console.log(`[TurnPolicy] 🔇 Min-word gate: "${transcript.trim()}" (${fragmentWords.length} word${fragmentWords.length > 1 ? 's' : ''} < 3) — dropping as likely noise fragment`);
+                  return;
                 }
 
                 let finalText: string;

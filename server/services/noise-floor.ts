@@ -33,7 +33,7 @@ const DEFAULT_CONFIG: NoiseFloorConfig = {
   enabled: true,
   baselineWindowMs: 1500,
   speechThresholdRatio: 2.0,
-  minSpeechDurationMs: 300,
+  minSpeechDurationMs: 500,  // Raised from 300ms — keyboard/mechanical noise bursts rarely sustain 500ms
   maxBaselineSamples: 100,
   defaultNoiseFloor: 0.01,
   silenceRmsThreshold: 0.02,
