@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { formatChicagoDateTime, formatChicagoDate } from "@/lib/date-utils";
@@ -124,6 +126,12 @@ interface SafetyIncident {
   createdAt: string | null;
   studentName?: string;
   parentEmail?: string;
+  transcript?: Array<{
+    speaker: 'tutor' | 'student';
+    text: string;
+    timestamp: string;
+    messageId: string;
+  }> | null;
 }
 
 interface SafetyIncidentsData {
@@ -191,6 +199,7 @@ export default function AdminPageEnhanced() {
   const [currentPage, setCurrentPage] = useState(1);
   const [trialLeadsPage, setTrialLeadsPage] = useState(1);
   const [safetyIncidentsPage, setSafetyIncidentsPage] = useState(1);
+  const [selectedIncident, setSelectedIncident] = useState<SafetyIncident | null>(null);
   const [sessionsPage, setSessionsPage] = useState(1);
   const [usagePage, setUsagePage] = useState(1);
   const [activeTab, setActiveTab] = useState("overview");
@@ -1086,10 +1095,13 @@ export default function AdminPageEnhanced() {
                           <TableRow>
                             <TableHead>Type</TableHead>
                             <TableHead>Severity</TableHead>
+                            <TableHead>Student</TableHead>
+                            <TableHead>Parent Email</TableHead>
                             <TableHead>Trigger Text</TableHead>
                             <TableHead>Action</TableHead>
                             <TableHead>Notified</TableHead>
                             <TableHead>Date</TableHead>
+                            <TableHead>Details</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -1115,6 +1127,12 @@ export default function AdminPageEnhanced() {
                                   {incident.severity}
                                 </Badge>
                               </TableCell>
+                              <TableCell>
+                                {incident.studentName || '-'}
+                              </TableCell>
+                              <TableCell className="max-w-xs truncate" title={incident.parentEmail || ''}>
+                                {incident.parentEmail || '-'}
+                              </TableCell>
                               <TableCell className="max-w-xs truncate" title={incident.triggerText || ''}>
                                 {incident.triggerText ? incident.triggerText.substring(0, 50) + (incident.triggerText.length > 50 ? '...' : '') : '-'}
                               </TableCell>
@@ -1131,11 +1149,22 @@ export default function AdminPageEnhanced() {
                               <TableCell>
                                 {formatChicagoDateTime(incident.createdAt)}
                               </TableCell>
+                              <TableCell>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => setSelectedIncident(incident)}
+                                  className="flex items-center gap-1"
+                                >
+                                  <Eye className="h-3 w-3" />
+                                  View
+                                </Button>
+                              </TableCell>
                             </TableRow>
                           ))}
                           {(!safetyIncidentsData?.incidents || safetyIncidentsData.incidents.length === 0) && (
                             <TableRow>
-                              <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                              <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
                                 No safety incidents recorded
                               </TableCell>
                             </TableRow>
@@ -1172,6 +1201,121 @@ export default function AdminPageEnhanced() {
                   )}
                 </CardContent>
               </Card>
+
+              {/* Safety Incident Details Dialog */}
+              <Dialog open={!!selectedIncident} onOpenChange={(open) => !open && setSelectedIncident(null)}>
+                <DialogContent className="max-w-4xl max-h-[80vh]">
+                  <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2">
+                      <AlertTriangle className={`h-5 w-5 ${
+                        selectedIncident?.severity === 'critical' ? 'text-red-500' :
+                        selectedIncident?.severity === 'alert' ? 'text-orange-500' :
+                        selectedIncident?.severity === 'warning' ? 'text-yellow-500' :
+                        'text-blue-500'
+                      }`} />
+                      Safety Incident Details
+                    </DialogTitle>
+                    <DialogDescription>
+                      {selectedIncident?.flagType.replace(/_/g, ' ')} - {formatChicagoDateTime(selectedIncident?.createdAt)}
+                    </DialogDescription>
+                  </DialogHeader>
+
+                  <ScrollArea className="max-h-[60vh] pr-4">
+                    <div className="space-y-4">
+                      {/* Incident Metadata */}
+                      <div className="grid grid-cols-2 gap-4 p-4 bg-muted/50 rounded-lg">
+                        <div>
+                          <p className="text-sm font-medium text-muted-foreground">Student Name</p>
+                          <p className="text-base font-semibold">{selectedIncident?.studentName || 'N/A'}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-muted-foreground">Parent Email</p>
+                          <p className="text-base font-semibold">{selectedIncident?.parentEmail || 'N/A'}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-muted-foreground">Severity</p>
+                          <Badge variant={
+                            selectedIncident?.severity === 'critical' ? 'destructive' :
+                            selectedIncident?.severity === 'alert' ? 'default' :
+                            selectedIncident?.severity === 'warning' ? 'secondary' : 'outline'
+                          }>
+                            {selectedIncident?.severity}
+                          </Badge>
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-muted-foreground">Action Taken</p>
+                          <p className="text-base">{selectedIncident?.actionTaken || 'N/A'}</p>
+                        </div>
+                        <div className="col-span-2">
+                          <p className="text-sm font-medium text-muted-foreground">Notifications Sent</p>
+                          <div className="flex gap-2 mt-1">
+                            {selectedIncident?.adminNotified && <Badge variant="outline">Admin</Badge>}
+                            {selectedIncident?.parentNotified && <Badge variant="outline">Parent</Badge>}
+                            {!selectedIncident?.adminNotified && !selectedIncident?.parentNotified && (
+                              <span className="text-sm text-muted-foreground">None</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Trigger Text */}
+                      {selectedIncident?.triggerText && (
+                        <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                          <p className="text-sm font-medium text-red-900 mb-2">Trigger Text</p>
+                          <p className="text-base text-red-800">{selectedIncident.triggerText}</p>
+                        </div>
+                      )}
+
+                      {/* Tutor Response */}
+                      {selectedIncident?.tutorResponse && (
+                        <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                          <p className="text-sm font-medium text-blue-900 mb-2">Tutor Response</p>
+                          <p className="text-base text-blue-800">{selectedIncident.tutorResponse}</p>
+                        </div>
+                      )}
+
+                      {/* Full Session Transcript */}
+                      {selectedIncident?.transcript && selectedIncident.transcript.length > 0 ? (
+                        <div className="p-4 bg-muted/30 border rounded-lg">
+                          <p className="text-sm font-medium mb-3">Full Session Transcript</p>
+                          <div className="space-y-3">
+                            {selectedIncident.transcript.map((message, idx) => (
+                              <div
+                                key={message.messageId || idx}
+                                className={`p-3 rounded-lg ${
+                                  message.speaker === 'tutor'
+                                    ? 'bg-blue-50 border border-blue-200'
+                                    : 'bg-green-50 border border-green-200'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className={`text-xs font-semibold uppercase ${
+                                    message.speaker === 'tutor' ? 'text-blue-700' : 'text-green-700'
+                                  }`}>
+                                    {message.speaker}
+                                  </span>
+                                  <span className="text-xs text-muted-foreground">
+                                    {new Date(message.timestamp).toLocaleTimeString()}
+                                  </span>
+                                </div>
+                                <p className={`text-sm ${
+                                  message.speaker === 'tutor' ? 'text-blue-900' : 'text-green-900'
+                                }`}>
+                                  {message.text}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-4 bg-muted/30 border rounded-lg text-center text-muted-foreground">
+                          No transcript available for this incident
+                        </div>
+                      )}
+                    </div>
+                  </ScrollArea>
+                </DialogContent>
+              </Dialog>
             </TabsContent>
 
             {/* Usage Reports Tab */}

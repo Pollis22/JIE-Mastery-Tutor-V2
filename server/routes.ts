@@ -14,7 +14,7 @@ import { auditActions } from "./middleware/audit-log";
 import { convertUsersToCSV, generateFilename } from "./utils/csv-export";
 import { sql, desc, eq } from "drizzle-orm";
 import { db } from "./db";
-import { realtimeSessions, trialSessions, safetyIncidents, users, userDocuments, documentChunks, documentEmbeddings, learningSessions } from "@shared/schema";
+import { realtimeSessions, trialSessions, safetyIncidents, users, students, userDocuments, documentChunks, documentEmbeddings, learningSessions } from "@shared/schema";
 import Stripe from "stripe";
 import { z } from "zod";
 import { createHmac, timingSafeEqual } from "crypto";
@@ -3753,8 +3753,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const limit = parseInt(req.query.limit as string) || 20;
       const offset = (page - 1) * limit;
 
-      const incidents = await db.select()
+      // Get incidents with joins to fetch student name, parent email, and transcript
+      const incidents = await db.select({
+        id: safetyIncidents.id,
+        sessionId: safetyIncidents.sessionId,
+        studentId: safetyIncidents.studentId,
+        userId: safetyIncidents.userId,
+        flagType: safetyIncidents.flagType,
+        severity: safetyIncidents.severity,
+        triggerText: safetyIncidents.triggerText,
+        tutorResponse: safetyIncidents.tutorResponse,
+        actionTaken: safetyIncidents.actionTaken,
+        adminNotified: safetyIncidents.adminNotified,
+        parentNotified: safetyIncidents.parentNotified,
+        createdAt: safetyIncidents.createdAt,
+        studentName: students.name,
+        parentEmail: users.transcriptEmail,
+        transcript: realtimeSessions.transcript,
+      })
         .from(safetyIncidents)
+        .leftJoin(students, eq(safetyIncidents.studentId, students.id))
+        .leftJoin(users, eq(safetyIncidents.userId, users.id))
+        .leftJoin(realtimeSessions, eq(safetyIncidents.sessionId, realtimeSessions.id))
         .orderBy(desc(safetyIncidents.createdAt))
         .limit(limit)
         .offset(offset);
