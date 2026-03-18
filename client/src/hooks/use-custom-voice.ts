@@ -1304,13 +1304,6 @@ export function useCustomVoice() {
               sileroDuckedRef.current = false;
             }
             updateMicStatus('processing', true);
-            
-            // Add system message to transcript to reassure user during silence
-            addTranscriptMessage({
-              speaker: 'system',
-              text: 'Thinking... one moment please!',
-              timestamp: new Date().toISOString(),
-            });
             break;
           
           case "tutor_responding":
