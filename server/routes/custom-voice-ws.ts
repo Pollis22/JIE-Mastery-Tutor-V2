@@ -837,8 +837,12 @@ function createAssemblyAIConnection(
                 // The deferred timer was meant to wait for more speech; if nothing better
                 // arrived, only commit if confidence is at least 0.40 OR transcript is long
                 // enough (5+ words) to be clearly real speech regardless of confidence.
+                // EXCEPTION: Single high-word-confidence words (like "jupiter" at 0.96 word conf
+                // but 0.37 turn conf) should pass — turn confidence is unreliable for short answers.
                 const deferredWordCount = latestTranscript.split(/\s+/).filter(w => w.length > 0).length;
-                const meetsConfidenceFloor = latestConf >= 0.40 || deferredWordCount >= 5;
+                const NON_LEXICAL_PATTERN = /^(um+|uh+|hmm+|hm+|er+|erm+|mhm+)$/i;
+                const isNonLexical = NON_LEXICAL_PATTERN.test(latestTranscript.trim().toLowerCase());
+                const meetsConfidenceFloor = latestConf >= 0.40 || deferredWordCount >= 5 || (deferredWordCount <= 2 && latestConf >= 0.15 && !isNonLexical);
                 if (latestTranscript && !state.currentTurnCommitted && meetsConfidenceFloor) {
                   console.log(`[AssemblyAI v3] ✅ Deferred EOT firing now with: "${latestTranscript.substring(0, 60)}" (conf=${latestConf.toFixed(2)} words=${deferredWordCount})`);
                   if (turnOrder !== undefined) {
