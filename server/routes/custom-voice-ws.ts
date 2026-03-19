@@ -824,6 +824,7 @@ function createAssemblyAIConnection(
               state.eotDeferredConfidence = confidence;
               // Store current transcript in state so deferred timer has latest
               state.lastAccumulatedTranscript = confirmedTranscript;
+              state.lastAccumulatedTranscriptSetAt = Date.now();
               state.lastAccumulatedConfidence = confidence;
               state.eotDeferTimerId = setTimeout(() => {
                 state.eotDeferTimerId = undefined;
@@ -850,6 +851,8 @@ function createAssemblyAIConnection(
                   onTranscript(latestTranscript, true, latestConf);
                 } else if (latestTranscript && !state.currentTurnCommitted && !meetsConfidenceFloor) {
                   console.log(`[AssemblyAI v3] 🚫 Deferred EOT DROPPED: conf=${latestConf.toFixed(2)} < 0.40 and words=${deferredWordCount} < 5 — likely noise/fragment: "${latestTranscript.substring(0, 60)}"`);
+                  // NOTE: Noise coaching tracking happens in the main WS handler (onTranscript callback),
+                  // NOT here — `state` in this scope is AssemblyAIState, not SessionState.
                 }
               }, LOW_CONF_DEFER_MS);
               return; // Don't commit yet — wait for deferral or a higher-confidence EOT
@@ -1190,11 +1193,26 @@ interface GradeBandTimingConfig {
 }
 
 const GRADE_BAND_TIMING: Record<string, GradeBandTimingConfig> = {
-  'K2': { bargeInDebounceMs: 600, bargeInDecayMs: 300, bargeInCooldownMs: 850, shortBurstMinMs: 300, postAudioBufferMs: 2000, minMsAfterAudioStartForBargeIn: 800, continuationGraceMs: 1400, continuationHedgeGraceMs: 3000, bargeInPlaybackThreshold: 0.15, consecutiveFramesRequired: 4, bargeInConfirmDurationMs: 600 },
-  'G3-5': { bargeInDebounceMs: 500, bargeInDecayMs: 260, bargeInCooldownMs: 750, shortBurstMinMs: 260, postAudioBufferMs: 1800, minMsAfterAudioStartForBargeIn: 600, continuationGraceMs: 1200, continuationHedgeGraceMs: 2800, bargeInPlaybackThreshold: 0.14, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 500 },
-  'G6-8': { bargeInDebounceMs: 400, bargeInDecayMs: 200, bargeInCooldownMs: 650, shortBurstMinMs: 220, postAudioBufferMs: 1500, minMsAfterAudioStartForBargeIn: 500, continuationGraceMs: 1000, continuationHedgeGraceMs: 2500, bargeInPlaybackThreshold: 0.12, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 400 },
-  'G9-12': { bargeInDebounceMs: 150, bargeInDecayMs: 220, bargeInCooldownMs: 300, shortBurstMinMs: 140, postAudioBufferMs: 1400, minMsAfterAudioStartForBargeIn: 150, continuationGraceMs: 900, continuationHedgeGraceMs: 2200, bargeInPlaybackThreshold: 0.10, consecutiveFramesRequired: 2, bargeInConfirmDurationMs: 120 },
-  'ADV': { bargeInDebounceMs: 100, bargeInDecayMs: 250, bargeInCooldownMs: 200, shortBurstMinMs: 100, postAudioBufferMs: 1000, minMsAfterAudioStartForBargeIn: 100, continuationGraceMs: 800, continuationHedgeGraceMs: 2000, bargeInPlaybackThreshold: 0.08, consecutiveFramesRequired: 1, bargeInConfirmDurationMs: 80 },
+  // ── BARGE-IN PHILOSOPHY ──────────────────────────────────────────────────
+  // Sharp impulse noise (desk tap, toy drop, chair scrape) creates a brief
+  // high-RMS transient that dies within 50-150ms. Real speech — even a short
+  // word from a young child — sustains 250ms+. The bargeInConfirmDurationMs
+  // is the primary gate: it must exceed typical impulse duration at every band.
+  // consecutiveFramesRequired adds a second check: multiple consecutive audio
+  // frames above threshold, not just a single spike.
+  // ─────────────────────────────────────────────────────────────────────────
+  // K2: Very patient — kids are extremely fidgety. High threshold, many frames,
+  // long confirm. A child's voice is weaker and more variable so debounce stays high.
+  'K2':   { bargeInDebounceMs: 600, bargeInDecayMs: 300, bargeInCooldownMs: 850, shortBurstMinMs: 300, postAudioBufferMs: 2000, minMsAfterAudioStartForBargeIn: 800, continuationGraceMs: 1400, continuationHedgeGraceMs: 3000, bargeInPlaybackThreshold: 0.18, consecutiveFramesRequired: 5, bargeInConfirmDurationMs: 600 },
+  // G3-5: Slightly less patient but still strong impulse protection.
+  'G3-5': { bargeInDebounceMs: 500, bargeInDecayMs: 260, bargeInCooldownMs: 750, shortBurstMinMs: 260, postAudioBufferMs: 1800, minMsAfterAudioStartForBargeIn: 600, continuationGraceMs: 1200, continuationHedgeGraceMs: 2800, bargeInPlaybackThreshold: 0.16, consecutiveFramesRequired: 4, bargeInConfirmDurationMs: 500 },
+  // G6-8: Middle school — still active but more intentional when speaking.
+  'G6-8': { bargeInDebounceMs: 400, bargeInDecayMs: 200, bargeInCooldownMs: 650, shortBurstMinMs: 220, postAudioBufferMs: 1500, minMsAfterAudioStartForBargeIn: 500, continuationGraceMs: 1000, continuationHedgeGraceMs: 2500, bargeInPlaybackThreshold: 0.14, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 400 },
+  // G9-12 and ADV: Aligned to G6-8. Validated in testing — G6-8 naturally handles
+  // impulse noise via silence_decay (taps expire in ~250ms, well under the 400ms confirm)
+  // while Silero client VAD remains the fast path for genuine voice interruption.
+  'G9-12': { bargeInDebounceMs: 400, bargeInDecayMs: 200, bargeInCooldownMs: 650, shortBurstMinMs: 220, postAudioBufferMs: 1500, minMsAfterAudioStartForBargeIn: 500, continuationGraceMs: 1000, continuationHedgeGraceMs: 2500, bargeInPlaybackThreshold: 0.14, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 400 },
+  'ADV':   { bargeInDebounceMs: 400, bargeInDecayMs: 200, bargeInCooldownMs: 650, shortBurstMinMs: 220, postAudioBufferMs: 1500, minMsAfterAudioStartForBargeIn: 500, continuationGraceMs: 1000, continuationHedgeGraceMs: 2500, bargeInPlaybackThreshold: 0.14, consecutiveFramesRequired: 3, bargeInConfirmDurationMs: 400 },
 };
 const DEFAULT_GRADE_BAND_TIMING: GradeBandTimingConfig = GRADE_BAND_TIMING['G6-8'];
 
@@ -1368,6 +1386,7 @@ interface SessionState {
   // FIX 1A: STT activity tracking to prevent premature turn firing
   lastSttActivityAt: number;
   lastAccumulatedTranscript: string;
+  lastAccumulatedTranscriptSetAt: number; // When transcript last changed — for stability check
   lastAccumulatedConfidence: number; // Track latest EOT confidence for state-based commit
   audioFrameCount: number; // LOG REDUCTION: Count audio frames for sampled logging
   bargeInCandidate: {
@@ -1411,6 +1430,9 @@ interface SessionState {
   // TRIAL MINUTE ENFORCEMENT: Periodic check to end session when trial minutes exhausted
   trialMinuteCheckTimerId: NodeJS.Timeout | null;
   trialMinuteWarned: boolean; // Whether 2-minute warning has been sent
+  // NOISE COACHING: Track dropped turns to detect persistently noisy sessions
+  droppedTurnTimestamps: number[]; // Rolling timestamps of noise-dropped turns
+  lastNoiseCoachingAtMs: number;  // Last time tutor gave noise coaching message
 }
 
 // Helper to send typed WebSocket events
@@ -1418,6 +1440,90 @@ function sendWsEvent(ws: WebSocket, type: string, payload: Record<string, unknow
   if (ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type, ...payload }));
     console.log(`[WS Event] ${type}`, payload.turnId || '');
+  }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// NOISE COACHING: Detect persistently noisy sessions and have
+// the tutor proactively suggest a quieter environment or text mode.
+// Triggers when N turns are dropped in a rolling window.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const NOISE_COACHING_WINDOW_MS = 60_000;   // 60-second rolling window
+const NOISE_COACHING_DROP_THRESHOLD = 4;   // 4 dropped turns triggers coaching
+const NOISE_COACHING_COOLDOWN_MS = 180_000; // 3 minutes between coaching messages
+
+async function trackDroppedTurnForNoiseCoaching(
+  ws: WebSocket,
+  state: SessionState
+): Promise<void> {
+  if (state.isSessionEnded || state.sessionFinalizing) return;
+
+  // Defensive guard: ensure droppedTurnTimestamps exists (prevents crash if called with wrong state type)
+  if (!Array.isArray(state.droppedTurnTimestamps)) {
+    console.warn(`[NoiseCoaching] ⚠️ droppedTurnTimestamps missing or invalid — skipping (state keys: ${Object.keys(state).slice(0, 5).join(', ')}...)`);
+    return;
+  }
+
+  const now = Date.now();
+
+  // Add this drop to the rolling window
+  state.droppedTurnTimestamps.push(now);
+
+  // Prune drops outside the window
+  state.droppedTurnTimestamps = state.droppedTurnTimestamps.filter(
+    ts => now - ts < NOISE_COACHING_WINDOW_MS
+  );
+
+  const recentDrops = state.droppedTurnTimestamps.length;
+  const timeSinceLastCoaching = now - state.lastNoiseCoachingAtMs;
+
+  console.log(`[NoiseCoaching] Drops in ${NOISE_COACHING_WINDOW_MS / 1000}s window: ${recentDrops}/${NOISE_COACHING_DROP_THRESHOLD}, cooldown: ${Math.max(0, NOISE_COACHING_COOLDOWN_MS - timeSinceLastCoaching)}ms remaining`);
+
+  if (recentDrops < NOISE_COACHING_DROP_THRESHOLD) return;
+  if (timeSinceLastCoaching < NOISE_COACHING_COOLDOWN_MS) return;
+
+  // Check that the session isn't already processing a turn
+  if (state.isProcessing || state.phase === 'TUTOR_SPEAKING' || state.phase === 'AWAITING_RESPONSE') {
+    console.log(`[NoiseCoaching] Skipping — session busy (phase=${state.phase}, isProcessing=${state.isProcessing})`);
+    return;
+  }
+
+  state.lastNoiseCoachingAtMs = now;
+  state.droppedTurnTimestamps = []; // Reset after coaching fires
+  console.log(`[NoiseCoaching] 📢 Threshold reached — injecting noise coaching message`);
+
+  const coachingText = `I'm picking up some background noise that's making it harder for me to hear you clearly. If you can, moving to a quieter spot would help a lot. You can also switch to text mode by clicking the keyboard icon — that way background noise won't affect us at all.`;
+
+  // Add to transcript
+  state.transcript.push({
+    speaker: 'tutor',
+    text: coachingText,
+    timestamp: new Date().toISOString(),
+    messageId: crypto.randomUUID(),
+  });
+
+  // Send transcript message to client
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({
+      type: 'transcript',
+      speaker: 'tutor',
+      text: coachingText,
+    }));
+  }
+
+  // Generate and send TTS audio
+  try {
+    const audioBuffer = await generateSpeech(coachingText, state.ageGroup, state.speechSpeed);
+    if (audioBuffer && audioBuffer.length > 0 && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        type: 'audio',
+        data: audioBuffer.toString('base64'),
+        mimeType: 'audio/pcm;rate=16000',
+      }));
+      console.log(`[NoiseCoaching] ✅ Coaching audio sent`);
+    }
+  } catch (err) {
+    console.error('[NoiseCoaching] ❌ Failed to generate coaching audio:', err);
   }
 }
 
@@ -1447,6 +1553,7 @@ function creditSttActivity(state: SessionState, currentText: string, prevText: s
     const now = Date.now();
     state.lastSttActivityAt = now;
     state.lastAccumulatedTranscript = content;
+    state.lastAccumulatedTranscriptSetAt = now;
     state.lastAudioReceivedAt = now;
     state.lastActivityTime = now;
 
@@ -2461,6 +2568,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
       isTutorThinking: false,
       lastSttActivityAt: 0,
       lastAccumulatedTranscript: '',
+      lastAccumulatedTranscriptSetAt: 0,
       lastAccumulatedConfidence: 0,
       audioFrameCount: 0,
       bargeInCandidate: {
@@ -2499,6 +2607,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
       watchdogDisabled: false,
       trialMinuteCheckTimerId: null,
       trialMinuteWarned: false,
+      droppedTurnTimestamps: [],
+      lastNoiseCoachingAtMs: 0,
     };
 
     // FIX #3: Auto-persist every 10 seconds
@@ -5239,9 +5349,41 @@ HONESTY INSTRUCTIONS:
                 // Keyboard noise and brief mic bleed typically produce 1-2 word fragments.
                 // Real utterances in tutoring sessions are almost always 3+ words.
                 // Skip this gate for language practice (single words can be valid responses).
+                // EXCEPTION: Valid short answers like "yes", "no", "gravity", "correct" etc.
+                // should always pass — only drop filler noise and low-confidence fragments.
                 if (!isLanguageSession && !stallPrompt && fragmentWords.length < 3) {
-                  console.log(`[TurnPolicy] 🔇 Min-word gate: "${transcript.trim()}" (${fragmentWords.length} word${fragmentWords.length > 1 ? 's' : ''} < 3) — dropping as likely noise fragment`);
-                  return;
+                  const lastConf = state.lastAccumulatedConfidence || 0;
+                  
+                  // Non-lexical filler sounds — always drop regardless of confidence
+                  const isNonLexicalNoise = /^(um+|uh+|hmm+|hm+|er+|erm+|mhm+)$/i.test(fragmentCheck);
+                  if (isNonLexicalNoise) {
+                    console.log(`[TurnPolicy] 🔇 Min-word gate: "${transcript.trim()}" (non-lexical noise) — dropping`);
+                    trackDroppedTurnForNoiseCoaching(ws, state);
+                    return;
+                  }
+                  
+                  // Common valid short answers — always pass through at any confidence
+                  const VALID_SHORT_ANSWERS = new Set([
+                    'yes', 'no', 'yeah', 'yep', 'yup', 'nah', 'nope',
+                    'sure', 'ok', 'okay', 'correct', 'right', 'wrong',
+                    'true', 'false', 'maybe', 'probably', 'definitely',
+                    'always', 'never', 'sometimes', 'both', 'neither',
+                    'done', 'ready', 'hello', 'hi', 'thanks', 'please',
+                    'stop', 'wait', 'continue', 'repeat', 'again', 'next',
+                    'help', 'skip', 'harder', 'easier',
+                  ]);
+                  const isValidShortAnswer = fragmentWords.length === 1 && VALID_SHORT_ANSWERS.has(fragmentWords[0]);
+                  
+                  if (isValidShortAnswer) {
+                    console.log(`[TurnPolicy] ✅ Min-word gate BYPASSED: "${transcript.trim()}" — recognized short answer`);
+                  } else if (lastConf >= 0.55 || (lastConf >= 0.35 && fragmentWords.length === 2)) {
+                    // Any real word with decent confidence passes (e.g. "gravity", "photosynthesis")
+                    console.log(`[TurnPolicy] ✅ Min-word gate BYPASSED: "${transcript.trim()}" (${fragmentWords.length} word${fragmentWords.length > 1 ? 's' : ''}, conf=${lastConf.toFixed(2)}) — high-confidence short answer`);
+                  } else {
+                    console.log(`[TurnPolicy] 🔇 Min-word gate: "${transcript.trim()}" (${fragmentWords.length} word${fragmentWords.length > 1 ? 's' : ''} < 3, conf=${lastConf.toFixed(2)}) — dropping as likely noise fragment`);
+                    trackDroppedTurnForNoiseCoaching(ws, state);
+                    return;
+                  }
                 }
 
                 let finalText: string;
@@ -5291,6 +5433,9 @@ HONESTY INSTRUCTIONS:
               // CRITICAL: Do NOT pass transcript through closure — read from state at fire time
               // to avoid stale-closure bug where early text ("i do") is committed instead of
               // the full accumulated transcript ("i do see a pattern but if i pause...")
+              // TRANSCRIPT STABILITY CHECK: Don't fire if transcript changed within last 300ms —
+              // this catches "show me the us by" committing before "itself" arrives.
+              const TRANSCRIPT_STABILITY_MS = 300;
               let sttDeferTimerId: NodeJS.Timeout | undefined;
               const gatedFireClaude = (stallPrompt?: string) => {
                 const sttAge = Date.now() - state.lastSttActivityAt;
@@ -5311,6 +5456,21 @@ HONESTY INSTRUCTIONS:
                         console.log(`[TurnPolicy] gated_fire_skipped - no accumulated transcript`);
                         return;
                       }
+                      // STABILITY CHECK: If transcript changed very recently, wait a bit more
+                      const transcriptAge = Date.now() - state.lastAccumulatedTranscriptSetAt;
+                      if (transcriptAge < TRANSCRIPT_STABILITY_MS) {
+                        const stabilityWait = TRANSCRIPT_STABILITY_MS - transcriptAge + 50;
+                        console.log(`[TurnPolicy] transcript_unstable - changed ${transcriptAge}ms ago, waiting ${stabilityWait}ms more`);
+                        sttDeferTimerId = setTimeout(() => {
+                          sttDeferTimerId = undefined;
+                          const stableTranscript = state.lastAccumulatedTranscript.trim();
+                          if (stableTranscript) {
+                            console.log(`[TurnPolicy] gated_fire_using_fresh_transcript: "${stableTranscript.substring(0, 60)}"`);
+                            fireClaudeWithPolicy(stableTranscript, stallPrompt);
+                          }
+                        }, stabilityWait);
+                        return;
+                      }
                       console.log(`[TurnPolicy] gated_fire_using_fresh_transcript: "${freshTranscript.substring(0, 60)}"`);
                       fireClaudeWithPolicy(freshTranscript, stallPrompt);
                     }
@@ -5321,6 +5481,21 @@ HONESTY INSTRUCTIONS:
                 const freshTranscript = state.lastAccumulatedTranscript.trim();
                 if (!freshTranscript) {
                   console.log(`[TurnPolicy] gated_fire_skipped - no accumulated transcript`);
+                  return;
+                }
+                // STABILITY CHECK: Even without STT recency gate, ensure transcript is stable
+                const transcriptAge = Date.now() - state.lastAccumulatedTranscriptSetAt;
+                if (state.lastAccumulatedTranscriptSetAt > 0 && transcriptAge < TRANSCRIPT_STABILITY_MS) {
+                  const stabilityWait = TRANSCRIPT_STABILITY_MS - transcriptAge + 50;
+                  console.log(`[TurnPolicy] transcript_unstable_direct - changed ${transcriptAge}ms ago, waiting ${stabilityWait}ms`);
+                  sttDeferTimerId = setTimeout(() => {
+                    sttDeferTimerId = undefined;
+                    const stableTranscript = state.lastAccumulatedTranscript.trim();
+                    if (stableTranscript) {
+                      console.log(`[TurnPolicy] gated_fire_stable: "${stableTranscript.substring(0, 60)}"`);
+                      fireClaudeWithPolicy(stableTranscript, stallPrompt);
+                    }
+                  }, stabilityWait);
                   return;
                 }
                 fireClaudeWithPolicy(freshTranscript, stallPrompt);
@@ -5607,6 +5782,7 @@ HONESTY INSTRUCTIONS:
                         // Ensure state has the latest text from continuation guard
                         if (finalText.trim().length > state.lastAccumulatedTranscript.trim().length) {
                           state.lastAccumulatedTranscript = finalText;
+                          state.lastAccumulatedTranscriptSetAt = Date.now();
                         }
                         gatedFireClaude();
                       }
@@ -5652,6 +5828,7 @@ HONESTY INSTRUCTIONS:
                     // Ensure state has latest text before gated fire
                     if (text.trim().length > state.lastAccumulatedTranscript.trim().length) {
                       state.lastAccumulatedTranscript = text;
+                      state.lastAccumulatedTranscriptSetAt = Date.now();
                     }
                     gatedFireClaude();
                   }
@@ -5839,6 +6016,7 @@ HONESTY INSTRUCTIONS:
                           // Ensure state has latest text before gated fire
                           if (text.trim().length > state.lastAccumulatedTranscript.trim().length) {
                             state.lastAccumulatedTranscript = text;
+                            state.lastAccumulatedTranscriptSetAt = Date.now();
                           }
                           gatedFireClaude();
                         }

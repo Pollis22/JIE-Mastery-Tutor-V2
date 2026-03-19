@@ -13,6 +13,21 @@ console.log('LOG DESTINATION CHECK: stdout is active');
 console.log('DEPLOY MARKER: ASSEMBLYAI_DIAG_V2');
 setInterval(() => console.log('[HEARTBEAT]', new Date().toISOString()), 5000).unref();
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// PROCESS-LEVEL ERROR HANDLERS: Prevent single errors from
+// crashing the entire Node process and killing all active sessions.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+process.on('uncaughtException', (error: Error) => {
+  console.error(`[UNCAUGHT_EXCEPTION] ${error.message}`);
+  console.error(error.stack);
+  // Log but do NOT exit — keep the server running for active sessions
+});
+
+process.on('unhandledRejection', (reason: unknown) => {
+  console.error(`[UNHANDLED_REJECTION]`, reason);
+  // Log but do NOT exit
+});
+
 import express, { type Request, Response, NextFunction } from "express";
 import cookieParser from "cookie-parser";
 import { registerRoutes } from "./routes";
