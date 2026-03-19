@@ -5349,11 +5349,41 @@ HONESTY INSTRUCTIONS:
                 // Keyboard noise and brief mic bleed typically produce 1-2 word fragments.
                 // Real utterances in tutoring sessions are almost always 3+ words.
                 // Skip this gate for language practice (single words can be valid responses).
+                // EXCEPTION: Valid short answers like "yes", "no", "gravity", "correct" etc.
+                // should always pass — only drop filler noise and low-confidence fragments.
                 if (!isLanguageSession && !stallPrompt && fragmentWords.length < 3) {
-                  console.log(`[TurnPolicy] 🔇 Min-word gate: "${transcript.trim()}" (${fragmentWords.length} word${fragmentWords.length > 1 ? 's' : ''} < 3) — dropping as likely noise fragment`);
-                  // NOISE COACHING: Count this drop toward coaching threshold
-                  trackDroppedTurnForNoiseCoaching(ws, state);
-                  return;
+                  const lastConf = state.lastAccumulatedConfidence || 0;
+                  
+                  // Non-lexical filler sounds — always drop regardless of confidence
+                  const isNonLexicalNoise = /^(um+|uh+|hmm+|hm+|er+|erm+|mhm+)$/i.test(fragmentCheck);
+                  if (isNonLexicalNoise) {
+                    console.log(`[TurnPolicy] 🔇 Min-word gate: "${transcript.trim()}" (non-lexical noise) — dropping`);
+                    trackDroppedTurnForNoiseCoaching(ws, state);
+                    return;
+                  }
+                  
+                  // Common valid short answers — always pass through at any confidence
+                  const VALID_SHORT_ANSWERS = new Set([
+                    'yes', 'no', 'yeah', 'yep', 'yup', 'nah', 'nope',
+                    'sure', 'ok', 'okay', 'correct', 'right', 'wrong',
+                    'true', 'false', 'maybe', 'probably', 'definitely',
+                    'always', 'never', 'sometimes', 'both', 'neither',
+                    'done', 'ready', 'hello', 'hi', 'thanks', 'please',
+                    'stop', 'wait', 'continue', 'repeat', 'again', 'next',
+                    'help', 'skip', 'harder', 'easier',
+                  ]);
+                  const isValidShortAnswer = fragmentWords.length === 1 && VALID_SHORT_ANSWERS.has(fragmentWords[0]);
+                  
+                  if (isValidShortAnswer) {
+                    console.log(`[TurnPolicy] ✅ Min-word gate BYPASSED: "${transcript.trim()}" — recognized short answer`);
+                  } else if (lastConf >= 0.55 || (lastConf >= 0.35 && fragmentWords.length === 2)) {
+                    // Any real word with decent confidence passes (e.g. "gravity", "photosynthesis")
+                    console.log(`[TurnPolicy] ✅ Min-word gate BYPASSED: "${transcript.trim()}" (${fragmentWords.length} word${fragmentWords.length > 1 ? 's' : ''}, conf=${lastConf.toFixed(2)}) — high-confidence short answer`);
+                  } else {
+                    console.log(`[TurnPolicy] 🔇 Min-word gate: "${transcript.trim()}" (${fragmentWords.length} word${fragmentWords.length > 1 ? 's' : ''} < 3, conf=${lastConf.toFixed(2)}) — dropping as likely noise fragment`);
+                    trackDroppedTurnForNoiseCoaching(ws, state);
+                    return;
+                  }
                 }
 
                 let finalText: string;
