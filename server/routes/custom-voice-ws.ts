@@ -5576,6 +5576,11 @@ HONESTY INSTRUCTIONS:
                   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                   console.log(`[AssemblyAI] 📝 Complete utterance (confidence: ${confidence.toFixed(2)}): "${text}"`);
                   
+                  // Store confidence in SessionState so downstream min-word gate can read it
+                  // (the confidence from createAssemblyAIConnection's internal AssemblyAIState
+                  // is NOT the same object as this SessionState)
+                  state.lastAccumulatedConfidence = confidence;
+                  
                   // Update last audio received time for stall detection
                   state.lastAudioReceivedAt = Date.now();
                   
@@ -5995,6 +6000,7 @@ HONESTY INSTRUCTIONS:
                           console.log(`[AssemblyAI-Reconnect] 🔗 Merged pre-reconnect transcript: "${savedPendingTranscript}" + "${rawText}" => "${text}"`);
                         }
                         console.log(`[AssemblyAI-Reconnect] 📝 Complete utterance (confidence: ${confidence.toFixed(2)}): "${text}"`);
+                        state.lastAccumulatedConfidence = confidence;
                         state.lastAudioReceivedAt = Date.now();
                         
                         const transcriptValidation = validateTranscript(text, 1);
