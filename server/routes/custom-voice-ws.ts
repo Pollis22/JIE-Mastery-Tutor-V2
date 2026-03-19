@@ -887,6 +887,10 @@ function createAssemblyAIConnection(
             
             // first_eot: Trigger Claude on FIRST end_of_turn=true, ignore formatted version
             console.log('[AssemblyAI v3] ✅ first_eot mode - committing on first EOT:', confirmedTranscript);
+            // Store confidence so downstream min-word gate can use it
+            state.lastAccumulatedConfidence = confidence;
+            state.lastAccumulatedTranscript = confirmedTranscript;
+            state.lastAccumulatedTranscriptSetAt = Date.now();
             // Mark this turn as committed to prevent double trigger from formatted version
             if (turnOrder !== undefined) {
               state.committedTurnOrders.add(turnOrder);
