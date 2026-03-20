@@ -300,7 +300,7 @@ export default function OfferPage() {
           <div className="max-w-2xl mx-auto">
             <Accordion type="single" collapsible className="space-y-2">
               {[
-                { q: "Is there a free trial?", a: "Yes! You get 30 minutes of free AI tutoring in the real app—no credit card required. Just create an account to start." },
+                { q: "Is there a free trial?", a: "Yes! You get 30 minutes of free AI tutoring at no charge. A card is required to start, but you won't be billed during your trial. Cancel anytime before the 30 minutes are up to pay nothing." },
                 { q: "What does the family plan include?", a: "All plans include unlimited student profiles. One subscription covers your whole family—perfect for homeschool tutoring or after-school help." },
                 { q: "Does it give answers or teach?", a: "JIE Mastery uses the Socratic method to guide students through problems step-by-step. It's real homework help for students—teaching thinking, not just answers." },
                 { q: "What subjects are included?", a: "Math, English, Science, and Spanish are all included. Our AI tutor for students supports K-12 and college-level content." },
