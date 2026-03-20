@@ -837,8 +837,12 @@ function createAssemblyAIConnection(
                 // The deferred timer was meant to wait for more speech; if nothing better
                 // arrived, only commit if confidence is at least 0.40 OR transcript is long
                 // enough (5+ words) to be clearly real speech regardless of confidence.
+                // EXCEPTION: Single high-word-confidence words (like "jupiter" at 0.96 word conf
+                // but 0.37 turn conf) should pass — turn confidence is unreliable for short answers.
                 const deferredWordCount = latestTranscript.split(/\s+/).filter(w => w.length > 0).length;
-                const meetsConfidenceFloor = latestConf >= 0.40 || deferredWordCount >= 5;
+                const NON_LEXICAL_PATTERN = /^(um+|uh+|hmm+|hm+|er+|erm+|mhm+)$/i;
+                const isNonLexical = NON_LEXICAL_PATTERN.test(latestTranscript.trim().toLowerCase());
+                const meetsConfidenceFloor = latestConf >= 0.40 || deferredWordCount >= 5 || (deferredWordCount <= 2 && latestConf >= 0.15 && !isNonLexical);
                 if (latestTranscript && !state.currentTurnCommitted && meetsConfidenceFloor) {
                   console.log(`[AssemblyAI v3] ✅ Deferred EOT firing now with: "${latestTranscript.substring(0, 60)}" (conf=${latestConf.toFixed(2)} words=${deferredWordCount})`);
                   if (turnOrder !== undefined) {
@@ -883,6 +887,10 @@ function createAssemblyAIConnection(
             
             // first_eot: Trigger Claude on FIRST end_of_turn=true, ignore formatted version
             console.log('[AssemblyAI v3] ✅ first_eot mode - committing on first EOT:', confirmedTranscript);
+            // Store confidence so downstream min-word gate can use it
+            state.lastAccumulatedConfidence = confidence;
+            state.lastAccumulatedTranscript = confirmedTranscript;
+            state.lastAccumulatedTranscriptSetAt = Date.now();
             // Mark this turn as committed to prevent double trigger from formatted version
             if (turnOrder !== undefined) {
               state.committedTurnOrders.add(turnOrder);
@@ -5376,8 +5384,10 @@ HONESTY INSTRUCTIONS:
                   
                   if (isValidShortAnswer) {
                     console.log(`[TurnPolicy] ✅ Min-word gate BYPASSED: "${transcript.trim()}" — recognized short answer`);
-                  } else if (lastConf >= 0.55 || (lastConf >= 0.35 && fragmentWords.length === 2)) {
-                    // Any real word with decent confidence passes (e.g. "gravity", "photosynthesis")
+                  } else if (lastConf >= 0.20 || (lastConf >= 0.20 && fragmentWords.length === 2)) {
+                    // Any real word with any meaningful confidence passes (e.g. "gravity", "everything")
+                    // AssemblyAI turn confidence for single words is typically 0.20-0.50
+                    // Filler noise (um, uh, hmm) is already caught by the non-lexical filter above
                     console.log(`[TurnPolicy] ✅ Min-word gate BYPASSED: "${transcript.trim()}" (${fragmentWords.length} word${fragmentWords.length > 1 ? 's' : ''}, conf=${lastConf.toFixed(2)}) — high-confidence short answer`);
                   } else {
                     console.log(`[TurnPolicy] 🔇 Min-word gate: "${transcript.trim()}" (${fragmentWords.length} word${fragmentWords.length > 1 ? 's' : ''} < 3, conf=${lastConf.toFixed(2)}) — dropping as likely noise fragment`);
@@ -5567,6 +5577,11 @@ HONESTY INSTRUCTIONS:
                   // Partials are hypothesis-only - no actions taken
                   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                   console.log(`[AssemblyAI] 📝 Complete utterance (confidence: ${confidence.toFixed(2)}): "${text}"`);
+                  
+                  // Store confidence in SessionState so downstream min-word gate can read it
+                  // (the confidence from createAssemblyAIConnection's internal AssemblyAIState
+                  // is NOT the same object as this SessionState)
+                  state.lastAccumulatedConfidence = confidence;
                   
                   // Update last audio received time for stall detection
                   state.lastAudioReceivedAt = Date.now();
@@ -5987,6 +6002,7 @@ HONESTY INSTRUCTIONS:
                           console.log(`[AssemblyAI-Reconnect] 🔗 Merged pre-reconnect transcript: "${savedPendingTranscript}" + "${rawText}" => "${text}"`);
                         }
                         console.log(`[AssemblyAI-Reconnect] 📝 Complete utterance (confidence: ${confidence.toFixed(2)}): "${text}"`);
+                        state.lastAccumulatedConfidence = confidence;
                         state.lastAudioReceivedAt = Date.now();
                         
                         const transcriptValidation = validateTranscript(text, 1);
