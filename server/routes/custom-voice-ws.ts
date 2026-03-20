@@ -5384,8 +5384,10 @@ HONESTY INSTRUCTIONS:
                   
                   if (isValidShortAnswer) {
                     console.log(`[TurnPolicy] ✅ Min-word gate BYPASSED: "${transcript.trim()}" — recognized short answer`);
-                  } else if (lastConf >= 0.55 || (lastConf >= 0.35 && fragmentWords.length === 2)) {
-                    // Any real word with decent confidence passes (e.g. "gravity", "photosynthesis")
+                  } else if (lastConf >= 0.20 || (lastConf >= 0.20 && fragmentWords.length === 2)) {
+                    // Any real word with any meaningful confidence passes (e.g. "gravity", "everything")
+                    // AssemblyAI turn confidence for single words is typically 0.20-0.50
+                    // Filler noise (um, uh, hmm) is already caught by the non-lexical filter above
                     console.log(`[TurnPolicy] ✅ Min-word gate BYPASSED: "${transcript.trim()}" (${fragmentWords.length} word${fragmentWords.length > 1 ? 's' : ''}, conf=${lastConf.toFixed(2)}) — high-confidence short answer`);
                   } else {
                     console.log(`[TurnPolicy] 🔇 Min-word gate: "${transcript.trim()}" (${fragmentWords.length} word${fragmentWords.length > 1 ? 's' : ''} < 3, conf=${lastConf.toFixed(2)}) — dropping as likely noise fragment`);
