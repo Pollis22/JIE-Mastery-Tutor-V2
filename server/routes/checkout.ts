@@ -319,7 +319,8 @@ router.post('/create-trial-session', async (req, res) => {
 
     const sessionConfig: any = {
       mode: 'subscription',
-      payment_method_types: ['card'],
+      // payment_method_types intentionally omitted — deprecated in Stripe API 2025-08-27.basil
+      // Stripe auto-configures payment methods based on dashboard settings
       client_reference_id: normalizedEmail,
       line_items: [{ price: starterPriceId, quantity: 1 }],
       metadata: {

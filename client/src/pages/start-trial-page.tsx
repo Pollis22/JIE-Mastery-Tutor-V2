@@ -122,10 +122,10 @@ export default function StartTrialPage() {
 
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-            Try JIE Mastery Free
+            Start Your 30-Minute Trial Free
           </h1>
           <p className="text-lg text-gray-600 dark:text-gray-400">
-            30 minutes free &mdash; card required, cancel anytime before it ends
+            No charge for 30 minutes. A payment method is required to get started.
           </p>
         </div>
 
@@ -141,7 +141,7 @@ export default function StartTrialPage() {
           <CardHeader className="space-y-1 pb-4">
             <CardTitle className="text-2xl">Create Your Account</CardTitle>
             <CardDescription>
-              You'll enter your card on the next step. No charge for 30 minutes.
+              No charge for your first 30 minutes. Add a payment method to get started.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -167,7 +167,7 @@ export default function StartTrialPage() {
                   name="accountName"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Your Name (Parent / Guardian)</FormLabel>
+                      <FormLabel>Your Name (or Parent / Guardian)</FormLabel>
                       <FormControl>
                         <Input placeholder="Jane Smith" data-testid="input-account-name" {...field} />
                       </FormControl>
@@ -314,7 +314,7 @@ export default function StartTrialPage() {
                   ) : (
                     <>
                       <CreditCard className="mr-2 h-5 w-5" />
-                      Continue to Add Card
+                      Add a Payment Method
                     </>
                   )}
                 </Button>
