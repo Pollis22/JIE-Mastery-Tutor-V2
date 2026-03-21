@@ -332,6 +332,12 @@ router.post('/create-trial-session', async (req, res) => {
       },
       subscription_data: {
         trial_end: trialEndTimestamp,
+        trial_settings: {
+          end_behavior: {
+            // If card is missing when trial ends, cancel rather than pause
+            missing_payment_method: 'cancel',
+          },
+        },
         metadata: {
           type: 'registration',
           plan: 'starter',
@@ -360,7 +366,9 @@ router.post('/create-trial-session', async (req, res) => {
     });
 
   } catch (error: any) {
-    console.error('❌ [Trial Checkout] Failed:', error);
+    console.error('❌ [Trial Checkout] Failed:', error.message || error);
+    // Log Stripe-specific error details for debugging
+    if (error.type) console.error('❌ [Trial Checkout] Stripe error type:', error.type, '| code:', error.code, '| param:', error.param);
     res.status(500).json({
       error: 'Failed to create trial checkout session',
       message: error.message,
