@@ -47,7 +47,7 @@ export function StartTrialButton({
       </Button>
       {showSubtext && (
         <p className="text-xs text-gray-500 text-center">
-          30 minutes free — card required, cancel anytime to pay nothing.
+          30-minute free trial in the real app. No credit card required.
         </p>
       )}
     </div>

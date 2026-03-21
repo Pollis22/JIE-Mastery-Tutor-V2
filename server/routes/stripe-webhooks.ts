@@ -139,15 +139,6 @@ router.post(
             };
             const monthlyMinutes = minutesMap[plan] || 120;
 
-            // Detect card-capture trial (30-min free, auto-charges Starter after trial_end)
-            const isTrial = session.metadata?.isTrial === 'true';
-            // Trial users: status=trialing, 30 min allocation.
-            // Stripe fires invoice.payment_succeeded with billing_reason=subscription_trial_end
-            // when the 30 min expires and the card is charged — that handler upgrades them to active.
-            const initialStatus = isTrial ? 'trialing' : 'active';
-            const initialMinutes = isTrial ? 30 : monthlyMinutes;
-            console.log(`[Stripe Webhook] 🎯 Account type: ${isTrial ? 'TRIAL (30 min, trialing)' : 'PAID (full minutes, active)'}`);
-
             // Create user account AFTER successful payment
             // Password is already hashed when stored in registration_tokens table
             const newUser = await storage.createUser({
@@ -164,8 +155,8 @@ router.post(
               marketingOptInDate: marketingOptIn ? new Date() : null,
               emailVerified: false, // User must verify email before accessing tutoring
               subscriptionPlan: plan as 'starter' | 'standard' | 'pro' | 'elite',
-              subscriptionStatus: initialStatus,
-              subscriptionMinutesLimit: initialMinutes,
+              subscriptionStatus: 'active',
+              subscriptionMinutesLimit: monthlyMinutes,
               subscriptionMinutesUsed: 0,
               purchasedMinutesBalance: 0,
               billingCycleStart: new Date(),
@@ -559,49 +550,6 @@ router.post(
             } catch (e) {
               console.error('[Stripe Webhook] Error checking subscription for downgrade:', e);
             }
-          }
-
-          // 🎯 TRIAL CONVERSION: fires when Stripe charges the card after trial_end passes.
-          // billing_reason is 'subscription_trial_end' on the first post-trial invoice.
-          // Upgrade user from trialing → active with full Starter plan minute allocation.
-          const isTrialConversion = billingReason === 'subscription_trial_end' ||
-            (user.subscriptionStatus === 'trialing' && billingReason === 'subscription_cycle');
-
-          if (isTrialConversion) {
-            const planMinutesOnConversion: Record<string, number> = {
-              'starter': 120,
-              'standard': 420,
-              'pro': 780,
-              'elite': 1500,
-            };
-            const convertedPlan = user.subscriptionPlan || 'starter';
-            const convertedMinutes = planMinutesOnConversion[convertedPlan] || 120;
-
-            console.log(`[Stripe Webhook] 🎉 TRIAL CONVERTED: user ${user.id} (${user.email}) → active ${convertedPlan} (${convertedMinutes} min)`);
-
-            await storage.updateUserSubscriptionWithBillingCycle(
-              user.id,
-              convertedPlan as 'starter' | 'standard' | 'pro' | 'elite',
-              'active',
-              convertedMinutes,
-              nextBillingDate,
-              convertedPlan === 'elite' ? 3 : 1,
-              convertedPlan === 'elite' ? 3 : 1
-            );
-
-            await storage.resetUserVoiceUsageWithBillingCycle(user.id, nextBillingDate);
-
-            console.log(`[Stripe Webhook] ✅ Trial conversion complete for ${user.email}`);
-
-            emailService.sendSubscriptionConfirmation({
-              email: user.email,
-              parentName: user.parentName || user.firstName || 'there',
-              studentName: user.studentName || '',
-              plan: planName,
-              minutes: convertedMinutes,
-            }).catch((err: any) => console.error('[Stripe Webhook] Trial conversion email failed:', err));
-
-            break;
           }
 
           // Normal billing cycle renewal - reset minutes and sync dates with Stripe

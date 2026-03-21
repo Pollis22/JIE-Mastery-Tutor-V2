@@ -552,10 +552,10 @@ export default function AuthPage() {
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="starter">Starter - $19.99/month (2 hours)</SelectItem>
-                        <SelectItem value="standard">Standard - $59.99/month (7 hours)</SelectItem>
-                        <SelectItem value="pro">Pro - $99.99/month (13 hours)</SelectItem>
-                        <SelectItem value="elite">Elite - $199.99/month (25 hours)</SelectItem>
+                        <SelectItem value="starter">Starter - $29/month (300 min)</SelectItem>
+                        <SelectItem value="standard">Standard - $69/month (800 min)</SelectItem>
+                        <SelectItem value="pro">Pro - $119/month (1500 min)</SelectItem>
+                        <SelectItem value="elite">Elite - $199/month (3000 min)</SelectItem>
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -784,7 +784,7 @@ export default function AuthPage() {
               
               {/* Trust Signals */}
               <p className="text-sm text-muted-foreground">
-                Card required &bull; 30 minutes free &bull; Cancel anytime to pay nothing
+                No credit card required &bull; 30 minutes free &bull; Works on any device
               </p>
 
               {/* Secondary Action */}
@@ -1241,7 +1241,7 @@ export default function AuthPage() {
                 How It Works
               </h2>
               <p className="text-lg text-muted-foreground">
-                Get started in under 2 minutes — 30 minutes free, card required
+                Get started in under 2 minutes — no credit card needed
               </p>
             </div>
 
@@ -1438,7 +1438,7 @@ export default function AuthPage() {
             </h2>
             <p className="text-lg text-muted-foreground">
               Join thousands of families who've found a better way to support their kids' learning. 
-              Start your free 30-minute trial today — card required, cancel anytime before it ends.
+              Start your free 30-minute trial today — no credit card required.
             </p>
             <StartTrialButton 
               size="lg" 

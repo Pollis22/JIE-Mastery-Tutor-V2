@@ -248,7 +248,7 @@ export default function BenefitsPage() {
                   <CheckCircle2 className="h-4 w-4 text-green-500" /> 30-min free trial
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <CheckCircle2 className="h-4 w-4 text-green-500" /> Card required, cancel anytime
+                  <CheckCircle2 className="h-4 w-4 text-green-500" /> No credit card required
                 </span>
                 <span className="flex items-center gap-1.5">
                   <CheckCircle2 className="h-4 w-4 text-green-500" /> Cancel anytime
@@ -413,7 +413,7 @@ export default function BenefitsPage() {
 
           <div className="text-center mt-12">
             <Button size="lg" variant="outline" onClick={handleCTA} className="text-lg h-12 px-8" data-testid="button-subjects-cta">
-              Try It Free — 30 Minutes, Card Required
+              Try It Free — No Card Required
               <ArrowRight className="ml-2 h-5 w-5" />
             </Button>
           </div>
@@ -612,7 +612,7 @@ export default function BenefitsPage() {
               View Pricing
             </Button>
           </div>
-          <p className="text-sm opacity-70">30-minute free trial • Card required • Cancel anytime to pay nothing</p>
+          <p className="text-sm opacity-70">30-minute free trial • No credit card • Cancel anytime</p>
         </div>
       </section>
 
