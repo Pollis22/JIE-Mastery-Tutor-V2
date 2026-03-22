@@ -899,7 +899,7 @@ export type TrialRateLimit = typeof trialRateLimits.$inferSelect;
 export const trialAbuseTracking = pgTable("trial_abuse_tracking", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   deviceHash: text("device_hash"),
-  ipHash: text("ip_hash").notNull(),
+  ipHash: text("ip_hash"),  // Nullable — device-only tracking records insert null for ipHash
   userId: varchar("user_id").references(() => users.id, { onDelete: 'set null' }),
   trialCount: integer("trial_count").notNull().default(0),
   lastTrialAt: timestamp("last_trial_at"),
