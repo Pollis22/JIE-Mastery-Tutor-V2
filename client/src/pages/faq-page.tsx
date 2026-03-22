@@ -168,7 +168,7 @@ export default function FAQPage() {
 
             <AccordionItem value="faq-9" className="border rounded-lg px-6 bg-card">
               <AccordionTrigger className="text-lg font-medium hover:text-primary text-left" data-testid="faq-trigger-9">
-                Can it replace a human tutor?
+                Can it replace a traditional tutor?
               </AccordionTrigger>
               <AccordionContent className="text-muted-foreground leading-relaxed" data-testid="faq-content-9">
                 For many families, yes. It's always available, consistent, and affordable. You get expert-level guidance without scheduling hassles or expensive hourly rates.

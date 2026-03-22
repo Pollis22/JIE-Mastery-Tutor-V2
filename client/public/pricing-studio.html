@@ -566,7 +566,7 @@ function update(){
   g('mrph').textContent=fmtHr(revPerHour);
   g('mrph2').textContent='what you charge per hour';
 
-  // Institution value — savings vs human tutor
+  // Institution value — savings vs traditional tutor
   const humanTutorAvg = getTutorRate();
   const hoursPerMonth = monthlyMin>0 ? monthlyMin/60 : 0;
   const humanCostMonthly = hoursPerMonth * humanTutorAvg;
@@ -929,7 +929,7 @@ function dlQuote(){
   });
   y+=3;
 
-  // Value Statement — institution savings vs human tutoring
+  // Value Statement — institution savings vs traditional tutoring
   const humanTutorAvg=getTutorRate();
   const hoursPerMonth=(s.students*s.usage)/60;
   const humanCostAnnual=hoursPerMonth*humanTutorAvg*12;
@@ -1315,7 +1315,7 @@ setUnit('hr');
 
 // ─── COMPETITIVE TABLE ────────────────────────────────────────────────────────
 const COMP_ROWS = [
-  // [Feature, JIE, Human Tutor, Basic AI, category]
+  // [Feature, JIE, traditional tutor, Basic AI, category]
   // category: 'pos' = JIE wins clearly, 'neu' = neutral/shared, 'hum' = human wins
   ['Availability','24/7, instant on-demand','Scheduled hours only; limited nights & weekends','24/7 text only','pos'],
   ['Interaction Style','Real-time voice conversation — natural dialogue','Voice, in-person — personal connection','Text chat only; no voice','pos'],

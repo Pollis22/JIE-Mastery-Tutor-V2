@@ -19,7 +19,7 @@ const plans = [
     description: 'Perfect for small families',
     features: [
       '⏱️ 2 hours of voice tutoring/month',
-      '💰 $10/hour — save 80% vs. a human tutor',
+      '💰 $10/hour — save 80% vs. a traditional tutor',
       'Unlimited student profiles for siblings',
       '🧠 Socratic teaching — No direct answers!',
       '🛡️ Enterprise-grade safety guardrails',
@@ -39,7 +39,7 @@ const plans = [
     description: 'Great for active families',
     features: [
       '⏱️ 7 hours of voice tutoring/month',
-      '💰 $8.57/hour — save 83% vs. a human tutor',
+      '💰 $8.57/hour — save 83% vs. a traditional tutor',
       'Unlimited student profiles for siblings',
       '🧠 Socratic teaching — No direct answers!',
       '🛡️ Enterprise-grade safety guardrails',
@@ -61,7 +61,7 @@ const plans = [
     description: 'Most popular for families with multiple learners',
     features: [
       '⏱️ 13 hours of voice tutoring/month',
-      '💰 $7.69/hour — save 85% vs. a human tutor',
+      '💰 $7.69/hour — save 85% vs. a traditional tutor',
       'Unlimited student profiles for siblings',
       '🧠 Socratic teaching — No direct answers!',
       '🛡️ Enterprise-grade safety guardrails',
@@ -84,7 +84,7 @@ const plans = [
     description: '👑 BEST VALUE - For large families',
     features: [
       '⏱️ 25 hours of voice tutoring/month',
-      '💰 $8.00/hour — save 84% vs. a human tutor',
+      '💰 $8.00/hour — save 84% vs. a traditional tutor',
       '🎉 3 Concurrent Sessions — Multiple kids at once!',
       'Unlimited student profiles for siblings',
       '🧠 Socratic teaching — No direct answers!',
@@ -201,7 +201,7 @@ export default function PricingPage() {
               Get 50% off the first month with your discount code! <button onClick={() => setLocation("/contact")} className="underline hover:no-underline">Contact us</button> if you need the code.
             </p>
             <p className="text-xl text-muted-foreground mb-4 max-w-3xl mx-auto">
-              <strong>As low as $8/hour — save over 80% vs. a human tutor!</strong> Instead of separate tutors for each child, get one family plan that all siblings share.
+              <strong>As low as $8/hour — save over 80% vs. a traditional tutor!</strong> Instead of separate tutors for each child, get one family plan that all siblings share.
               Create unlimited profiles - each child gets personalized tutoring from kindergarten through college.
             </p>
             
