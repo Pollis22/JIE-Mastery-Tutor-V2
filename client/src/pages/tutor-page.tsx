@@ -1007,6 +1007,63 @@ export default function TutorPage() {
                     <option value="college">College/Adult</option>
                   </select>
 
+                  <select
+                    id="subject"
+                    value={subject}
+                    onChange={e => setSubject(e.target.value)}
+                    className="px-3 py-2 border border-input bg-background text-foreground rounded-md focus:outline-none focus:ring-2 focus:ring-primary"
+                    data-testid="select-subject"
+                    disabled={sessionState !== 'idle'}
+                  >
+                    <option value="General">General / Homework Help</option>
+                    <option value="Mathematics">Mathematics</option>
+                    <option value="English">English / Language Arts</option>
+                    <option value="Science">Science</option>
+                    <option value="History">History / Social Studies</option>
+                    <option value="Spanish">Spanish</option>
+                    <option value="French">French</option>
+                    {(level === 'g9_12' || level === 'college') && (
+                      <>
+                        <option disabled>── Test Prep ──</option>
+                        <option value="SAT Prep">SAT Prep</option>
+                        <option value="ACT Prep">ACT Prep</option>
+                      </>
+                    )}
+                    {level === 'college' && (
+                      <>
+                        <option disabled>── Graduate Admissions ──</option>
+                        <option value="GRE Prep">GRE Prep</option>
+                        <option value="GMAT Prep">GMAT Prep</option>
+                        <option value="LSAT Prep">LSAT Prep</option>
+                        <option value="MCAT Prep">MCAT Prep</option>
+                        <option value="DAT Prep">DAT Prep</option>
+                        <option value="PCAT Prep">PCAT Prep</option>
+                        <option value="OAT Prep">OAT Prep</option>
+                        <option disabled>── Professional Certifications ──</option>
+                        <option value="CPA Prep">CPA Exam</option>
+                        <option value="CFA Prep">CFA Exam</option>
+                        <option value="Series 7 Prep">Series 7 / 66</option>
+                        <option value="NCLEX Prep">NCLEX-RN</option>
+                        <option value="FE Exam Prep">FE (Engineering)</option>
+                        <option value="PE Exam Prep">PE (Engineering)</option>
+                        <option value="Praxis Prep">Praxis (Teaching)</option>
+                        <option value="PANCE Prep">PANCE (Physician Asst)</option>
+                        <option value="ASWB Prep">ASWB (Social Work)</option>
+                        <option disabled>── College Courses ──</option>
+                        <option value="Organic Chemistry">Organic Chemistry</option>
+                        <option value="Statistics">Statistics</option>
+                        <option value="Computer Science">Computer Science</option>
+                        <option value="Physics">Physics</option>
+                        <option value="Economics">Economics</option>
+                        <option value="Accounting">Accounting</option>
+                        <option value="Psychology">Psychology</option>
+                        <option value="Engineering">Engineering</option>
+                        <option value="Nursing">Nursing</option>
+                        <option value="Business">Business</option>
+                      </>
+                    )}
+                  </select>
+
                   <select 
                     id="language" 
                     value={selectedLanguage} 
