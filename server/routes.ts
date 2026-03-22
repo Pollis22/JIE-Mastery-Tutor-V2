@@ -562,8 +562,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Document and context routes for RAG system
   const { default: documentRoutes } = await import('./routes/documents');
   const { default: contextRoutes } = await import('./routes/context');
+  const { default: guideRoutes } = await import('./routes/guides');
   app.use("/api/documents", documentRoutes);
   app.use("/api/context", contextRoutes);
+  app.use("/api/guides", guideRoutes);
   
   // Debug endpoint to verify route mounting
   app.get("/api/routes", (req, res) => {
