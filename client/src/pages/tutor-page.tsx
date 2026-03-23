@@ -6,6 +6,7 @@ import ConvaiHost, { type ConvaiMessage } from "@/components/convai-host";
 import { ConvaiTranscript } from "@/components/convai-transcript";
 import { RealtimeVoiceHost, type RealtimeVoiceHostHandle } from "@/components/realtime-voice-host";
 import { AssignmentsPanel } from "@/components/AssignmentsPanel";
+import { GuideLibrary } from "@/components/GuideLibrary";
 import { StudentSwitcher } from "@/components/StudentSwitcher";
 import { StudentProfilePanel } from "@/components/StudentProfilePanel";
 import { TopUpModal } from "@/components/TopUpModal";
@@ -988,6 +989,16 @@ export default function TutorPage() {
                       selectedDocumentIds={selectedDocumentIds}
                       onDocumentSelectionChange={setSelectedDocumentIds}
                     />
+
+                    {/* Study Guide Library */}
+                    <div className="mt-4 pt-4 border-t border-border">
+                      <GuideLibrary
+                        gradeBand={level === 'k2' ? 'K-2' : level === 'g3_5' ? '3-5' : level === 'g6_8' ? '6-8' : level === 'g9_12' ? '9-12' : 'College/Adult'}
+                        onGuideAdded={(docId) => {
+                          setSelectedDocumentIds(prev => [...prev, docId]);
+                        }}
+                      />
+                    </div>
                   </>
                 )}
 
