@@ -71,9 +71,9 @@ const FEATURES = [
   },
   {
     icon: <GraduationCap className="h-6 w-6" />,
-    title: "College Prep: SAT, ACT, GMAT, LSAT",
+    title: "College & Post-Grad Test Prep — 18 Exams",
     description:
-      "From high school juniors to grad school applicants — rigorous test prep built right into the platform. No extra subscription needed.",
+      "SAT, ACT, GRE, GMAT, LSAT, MCAT, DAT, CPA, CFA, NCLEX, and more. Direct teaching with exam-specific strategy coaching, practice question banks, and an adaptive Practice Mode that drills you and tracks progress.",
     highlight: true,
   },
   {
@@ -103,11 +103,11 @@ const SUBJECTS = [
   { icon: <Calculator className="h-5 w-5" />, label: "Mathematics", sub: "K–12 + Calculus" },
   { icon: <BookText className="h-5 w-5" />, label: "English & Writing", sub: "Reading, essays, grammar" },
   { icon: <FlaskConical className="h-5 w-5" />, label: "Science", sub: "Biology, Chemistry, Physics" },
-  { icon: <Languages className="h-5 w-5" />, label: "Spanish", sub: "Conversational + academic" },
-  { icon: <Trophy className="h-5 w-5" />, label: "SAT / ACT Prep", sub: "Standard & Pro plans" },
-  { icon: <GraduationCap className="h-5 w-5" />, label: "GMAT / LSAT", sub: "Elite plan" },
-  { icon: <Home className="h-5 w-5" />, label: "Homeschool Support", sub: "Any curriculum" },
-  { icon: <Zap className="h-5 w-5" />, label: "History & Social Studies", sub: "K–12" },
+  { icon: <Languages className="h-5 w-5" />, label: "Spanish & French", sub: "Conversational + academic" },
+  { icon: <Trophy className="h-5 w-5" />, label: "SAT / ACT Prep", sub: "College admissions" },
+  { icon: <GraduationCap className="h-5 w-5" />, label: "GRE / GMAT / LSAT / MCAT", sub: "Graduate admissions" },
+  { icon: <Zap className="h-5 w-5" />, label: "CPA / CFA / NCLEX / FE", sub: "Professional certifications" },
+  { icon: <Home className="h-5 w-5" />, label: "Homeschool Support", sub: "Any curriculum, any grade" },
 ];
 
 const TESTIMONIALS = [
@@ -391,7 +391,7 @@ export default function BenefitsPage() {
               Every Subject. Every Grade. One Subscription.
             </h2>
             <p className="text-lg text-muted-foreground">
-              From kindergarten math to LSAT prep — JIE Mastery covers the full academic journey.
+              From kindergarten math to MCAT prep and CPA certification — JIE Mastery covers the full academic journey.
             </p>
           </div>
 
@@ -554,13 +554,13 @@ export default function BenefitsPage() {
                     {plan.satact && (
                       <li className="flex items-center gap-2">
                         <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
-                        SAT / ACT prep
+                        SAT / ACT test prep
                       </li>
                     )}
                     {plan.gmat && (
                       <li className="flex items-center gap-2">
                         <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
-                        GMAT / LSAT prep
+                        Full test prep suite (18 exams)
                       </li>
                     )}
                   </ul>
