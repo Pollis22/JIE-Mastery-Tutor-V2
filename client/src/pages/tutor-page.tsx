@@ -86,6 +86,7 @@ export default function TutorPage() {
   const memo = loadProgress();
   const [level, setLevel] = useState<AgentLevel>((memo.lastLevel as AgentLevel) || "k2");
   const [subject, setSubject] = useState(memo.lastSubject || "general");
+  const [practiceMode, setPracticeMode] = useState(false);
   const [studentName, setStudentName] = useState("");
   const [gradeText, setGradeText] = useState("");
   const [mounted, setMounted] = useState(false);
@@ -1075,6 +1076,23 @@ export default function TutorPage() {
                     )}
                   </select>
 
+                  {/* Practice Mode Toggle — only visible for test prep and cert subjects */}
+                  {(subject.includes('Prep') || subject.includes('Exam')) && (
+                    <label 
+                      className="flex items-center gap-2 px-3 py-2 border border-input bg-background rounded-md cursor-pointer select-none whitespace-nowrap"
+                      data-testid="toggle-practice-mode"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={practiceMode}
+                        onChange={e => setPracticeMode(e.target.checked)}
+                        disabled={sessionState !== 'idle'}
+                        className="rounded border-input"
+                      />
+                      <span className="text-sm font-medium">Practice Mode</span>
+                    </label>
+                  )}
+
                   <select 
                     id="language" 
                     value={selectedLanguage} 
@@ -1134,6 +1152,7 @@ export default function TutorPage() {
                     studentId={selectedStudentId || undefined}
                     studentName={selectedStudent?.name || studentName}
                     subject={activeLesson?.subject || subject}
+                    practiceMode={practiceMode}
                     language={selectedLanguage}
                     ageGroup={level === 'k2' ? 'K-2' : level === 'g3_5' ? '3-5' : level === 'g6_8' ? '6-8' : level === 'g9_12' ? '9-12' : 'College/Adult'}
                     contextDocumentIds={selectedDocumentIds}

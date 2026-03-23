@@ -9,7 +9,7 @@ import { db } from "../db";
 import { realtimeSessions, contentViolations, userSuspensions, documentChunks } from "@shared/schema";
 import { eq, and, or, gte } from "drizzle-orm";
 import { getTutorPersonality } from "../config/tutor-personalities";
-import { getSpecializationPromptBlock } from '../config/subject-specializations';
+import { getSpecializationPromptBlock, getPracticeModePromptBlock } from '../config/subject-specializations';
 import { moderateContent, shouldWarnUser, getModerationResponse } from "../services/content-moderation";
 import { storage } from "../storage";
 import { validateWsSession, rejectWsUpgrade } from '../middleware/ws-session-validator';
@@ -1287,6 +1287,7 @@ interface SessionState {
   studentName: string;
   ageGroup: string;
   subject: string; // SESSION: Tutoring subject (Math, English, Science, etc.)
+  practiceMode: boolean; // SESSION: Whether practice drill mode is active
   language: string; // LANGUAGE: Tutoring language code (e.g., 'en', 'es', 'fr')
   detectedLanguage: string; // LANGUAGE: Auto-detected spoken language from Deepgram
   speechSpeed: number; // User's speech speed preference from settings
@@ -4341,6 +4342,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
               state.studentName = message.studentName || "Friend";
               state.ageGroup = message.ageGroup || "College/Adult";
               state.subject = message.subject || "General";
+              state.practiceMode = message.practiceMode || false;
               state.language = message.language || "en";
               state.speechSpeed = 1.0;
               
@@ -4491,6 +4493,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
               state.studentName = message.studentName || "Student";
               state.ageGroup = message.ageGroup || "College/Adult";
               state.subject = message.subject || "General"; // SESSION: Store tutoring subject
+              state.practiceMode = message.practiceMode || false; // SESSION: Practice drill mode
               state.language = message.language || "en"; // LANGUAGE: Store selected language
               state.uploadedDocCount = typeof message.uploadedDocCount === 'number' ? message.uploadedDocCount : 0;
               
@@ -4834,6 +4837,12 @@ RULES:
               console.log(`[Specialization] 🎯 ${state.subject} → injecting exam-specific coaching prompt (${SPECIALIZATION_BLOCK.length} chars)`);
             }
             
+            // PRACTICE MODE: Inject structured drill session prompt when enabled
+            const PRACTICE_MODE_BLOCK = state.practiceMode ? getPracticeModePromptBlock(state.subject) : '';
+            if (PRACTICE_MODE_BLOCK) {
+              console.log(`[PracticeMode] 🏋️ ${state.subject} → practice drill mode ACTIVE (${PRACTICE_MODE_BLOCK.length} chars)`);
+            }
+            
             // CONTINUITY MEMORY: Load recent session summaries for this student
             let continuityBlock = '';
             try {
@@ -4891,7 +4900,7 @@ RULES:
               });
               
               // Create enhanced system instruction - NO-GHOSTING: Only claim access when content exists
-              state.systemInstruction = `${personality.systemPrompt}${VOICE_CONVERSATION_CONSTRAINTS}${VISUAL_SYSTEM_INSTRUCTION}${K2_CONSTRAINTS}${SPECIALIZATION_BLOCK}${continuityBlock}${lsisProfileBlock}
+              state.systemInstruction = `${personality.systemPrompt}${VOICE_CONVERSATION_CONSTRAINTS}${VISUAL_SYSTEM_INSTRUCTION}${K2_CONSTRAINTS}${SPECIALIZATION_BLOCK}${PRACTICE_MODE_BLOCK}${continuityBlock}${lsisProfileBlock}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📚 DOCUMENTS LOADED FOR THIS SESSION (${ragChars} chars):
@@ -4925,7 +4934,7 @@ DOCUMENT ACKNOWLEDGMENT RULE:
                 return titleMatch ? titleMatch[1] : `file ${i + 1}`;
               });
               
-              state.systemInstruction = `${personality.systemPrompt}${VOICE_CONVERSATION_CONSTRAINTS}${VISUAL_SYSTEM_INSTRUCTION}${K2_CONSTRAINTS}${SPECIALIZATION_BLOCK}${continuityBlock}${lsisProfileBlock}
+              state.systemInstruction = `${personality.systemPrompt}${VOICE_CONVERSATION_CONSTRAINTS}${VISUAL_SYSTEM_INSTRUCTION}${K2_CONSTRAINTS}${SPECIALIZATION_BLOCK}${PRACTICE_MODE_BLOCK}${continuityBlock}${lsisProfileBlock}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ⚠️ DOCUMENT UPLOAD ISSUE:
@@ -4943,7 +4952,7 @@ HONESTY INSTRUCTIONS:
               console.log(`[Custom Voice] ⚠️ Files uploaded but no content extracted (ragChars=0, files=${uploadedFilenames.join(', ')}) - using honest acknowledgment`);
             } else {
               // No documents at all - use standard prompt
-              state.systemInstruction = personality.systemPrompt + VOICE_CONVERSATION_CONSTRAINTS + VISUAL_SYSTEM_INSTRUCTION + K2_CONSTRAINTS + SPECIALIZATION_BLOCK + continuityBlock + lsisProfileBlock + STT_ARTIFACT_HARDENING;
+              state.systemInstruction = personality.systemPrompt + VOICE_CONVERSATION_CONSTRAINTS + VISUAL_SYSTEM_INSTRUCTION + K2_CONSTRAINTS + SPECIALIZATION_BLOCK + PRACTICE_MODE_BLOCK + continuityBlock + lsisProfileBlock + STT_ARTIFACT_HARDENING;
               console.log(`[Custom Voice] No documents uploaded - using standard prompt`);
             }
             

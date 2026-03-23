@@ -142,6 +142,7 @@ interface RealtimeVoiceHostProps {
   studentId?: string;
   studentName?: string;
   subject?: string;
+  practiceMode?: boolean;
   language?: string; // LANGUAGE: Now supports all 22 languages
   ageGroup?: 'K-2' | '3-5' | '6-8' | '9-12' | 'College/Adult';
   contextDocumentIds?: string[];
@@ -163,6 +164,7 @@ export const RealtimeVoiceHost = forwardRef<RealtimeVoiceHostHandle, RealtimeVoi
   studentId,
   studentName,
   subject,
+  practiceMode = false,
   language = 'en',
   ageGroup = '3-5',
   contextDocumentIds = [],
@@ -450,6 +452,7 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
               studentId,
               studentName: studentName || 'Student',
               subject: subject || 'General',
+              practiceMode: practiceMode || false,
               language,
               ageGroup,
               voice: 'rachel',
@@ -574,7 +577,9 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
         documents,
         language,
         studentId,
-        uploadedDocCount
+        uploadedDocCount,
+        subject || 'General',
+        practiceMode
       );
       
       toast({
