@@ -175,6 +175,7 @@ export default function BenefitsPage() {
             <div className="hidden md:flex items-center space-x-6">
               {[
                 { label: "Why JIE Mastery AI Tutors", path: "#benefits" },
+                { label: "Test Prep", path: "/test-prep" },
                 { label: "Tutor Demo", path: "/demo" },
                 { label: "FAQ", path: "/faq" },
                 { label: "Live Support", path: "/support" },

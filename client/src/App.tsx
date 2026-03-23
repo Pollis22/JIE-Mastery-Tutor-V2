@@ -33,6 +33,7 @@ const PricingPage = lazy(() => import("@/pages/pricing-page"));
 const SubscribePage = lazy(() => import("@/pages/subscribe-page"));
 const TutorPage = lazy(() => import("@/pages/tutor-page"));
 const BenefitsPage = lazy(() => import("@/pages/benefits-page"));
+const TestPrepPage = lazy(() => import("@/pages/test-prep-page"));
 const UnsubscribePage = lazy(() => import("@/pages/unsubscribe-page"));
 const DemoPage = lazy(() => import("@/pages/demo-page"));
 const FAQPage = lazy(() => import("@/pages/faq-page"));
@@ -108,6 +109,7 @@ function Router() {
         <LazyRoute path="/admin-setup" component={AdminSetupPage} />
         <LazyRoute path="/pricing" component={PricingPage} />
         <LazyRoute path="/benefits" component={BenefitsPage} />
+        <LazyRoute path="/test-prep" component={TestPrepPage} />
         <LazyRoute path="/demo" component={DemoPage} />
         <LazyRoute path="/faq" component={FAQPage} />
         <LazyRoute path="/schools" component={SchoolsPage} />
