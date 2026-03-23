@@ -877,7 +877,9 @@ export function useCustomVoice() {
     documents: string[] = [],
     language: string = 'en',
     studentId?: string,
-    uploadedDocCount?: number
+    uploadedDocCount?: number,
+    subject?: string,
+    practiceMode?: boolean
   ) => {
     try {
       console.log("[Custom Voice] 🚀 Connecting...", { language });
@@ -921,6 +923,8 @@ export function useCustomVoice() {
           studentName,
           studentId: studentId || undefined,
           ageGroup,
+          subject: subject || 'General',
+          practiceMode: practiceMode || false,
           systemInstruction,
           documents,
           language,
