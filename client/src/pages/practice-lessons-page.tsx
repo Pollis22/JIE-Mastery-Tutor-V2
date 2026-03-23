@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
+import { NavigationHeader } from "@/components/navigation-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -188,6 +189,7 @@ export default function PracticeLessonsPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/30">
+      <NavigationHeader />
       <div className="container mx-auto px-4 py-8">
         <div className="mb-8">
           <div className="flex items-center gap-2 mb-2">

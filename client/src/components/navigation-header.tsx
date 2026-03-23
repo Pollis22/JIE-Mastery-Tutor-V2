@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -11,10 +12,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { UserAvatar } from "@/components/UserAvatar";
+import { Menu, X } from "lucide-react";
 
 export function NavigationHeader() {
   const { user, logoutMutation } = useAuth();
   const [location, setLocation] = useLocation();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const { data: dashboard, isLoading: isDashboardLoading } = useQuery<{
     user?: { name?: string; firstName?: string; initials?: string; plan?: string };
@@ -121,7 +124,8 @@ export function NavigationHeader() {
           </div>
           
           <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-3 text-sm">
+            {/* Usage & plan badge - hidden on small screens */}
+            <div className="hidden sm:flex items-center space-x-3 text-sm">
               <div className="flex items-center space-x-1">
                 <svg className="w-4 h-4 text-secondary" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/>
@@ -199,9 +203,53 @@ export function NavigationHeader() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+
+            {/* Mobile hamburger */}
+            <button
+              className="md:hidden p-2 rounded-md border border-border"
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            >
+              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
           </div>
         </div>
       </div>
+
+      {/* Mobile dropdown menu */}
+      {mobileMenuOpen && (
+        <div className="md:hidden border-t border-border bg-card">
+          <div className="px-4 py-3 space-y-1">
+            {[
+              { label: "Dashboard", path: "/dashboard" },
+              { label: "College Test Prep", path: "/benefits#test-prep" },
+              { label: "Settings", path: "/settings" },
+              { label: "Live Support", path: "/support" },
+              { label: "Billing", path: "/subscribe" },
+              ...(user?.isAdmin ? [{ label: "Admin", path: "/admin" }] : []),
+            ].map(item => (
+              <button
+                key={item.path}
+                onClick={() => { navigateTo(item.path); setMobileMenuOpen(false); }}
+                className="block w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors"
+                style={{
+                  color: isActive(item.path) ? "hsl(var(--primary))" : "hsl(var(--foreground))",
+                  background: isActive(item.path) ? "hsl(var(--accent))" : "transparent",
+                }}
+              >
+                {item.label}
+              </button>
+            ))}
+            <div className="border-t border-border mt-2 pt-2">
+              <button
+                onClick={() => { handleLogout(); setMobileMenuOpen(false); }}
+                className="block w-full text-left px-4 py-3 rounded-lg text-sm font-medium text-destructive"
+              >
+                Sign Out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </nav>
   );
 }

@@ -1,4 +1,5 @@
 import { useParams, useLocation } from "wouter";
+import { NavigationHeader } from "@/components/navigation-header";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -110,6 +111,8 @@ export default function SessionDetailsPage() {
   }
 
   return (
+    <>
+    <NavigationHeader />
     <div className="container mx-auto px-4 py-8">
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
@@ -264,5 +267,6 @@ export default function SessionDetailsPage() {
         </CardContent>
       </Card>
     </div>
+    </>
   );
 }
