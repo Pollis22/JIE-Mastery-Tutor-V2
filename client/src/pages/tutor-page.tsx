@@ -16,19 +16,13 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
-import { Clock, AlertCircle, Upload, File, X, Paperclip, LogOut, Settings, LayoutDashboard, User, Globe, Menu, BookOpen, GraduationCap, ChevronRight, ChevronDown } from "lucide-react";
+import { Clock, AlertCircle, Upload, File, X, Paperclip, BookOpen, GraduationCap, ChevronRight, ChevronDown } from "lucide-react";
+import { NavigationHeader } from "@/components/navigation-header";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { SUPPORTED_LANGUAGES } from "@shared/languages";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import jieLogo from "@/assets/jie-mastery-logo-sm.jpg";
 import tutorHero from "@/assets/tutor-hero.png";
 import { TutorHeroBanner } from "@/components/TutorHeroBanner";
@@ -667,78 +661,19 @@ export default function TutorPage() {
             borderRadius: "50%", background: "radial-gradient(circle, rgba(26,26,100,0.05) 0%, transparent 70%)",
             pointerEvents: "none", zIndex: 0,
           }} />
-          {/* Subtle red top accent bar */}
-          <div style={{
-            position: "fixed", top: 0, left: 0, right: 0, height: 3,
-            background: "linear-gradient(90deg, #C0003C 0%, #8B001F 50%, #C0003C 100%)",
-            zIndex: 100,
-          }} />
+          {/* Global Navigation */}
+          <NavigationHeader />
 
           {/* Show verification banner if email not verified */}
           {user && !user.emailVerified && <VerificationBanner />}
           <div className="tutor-page max-w-3xl mx-auto p-4 space-y-4" style={{ position: "relative", zIndex: 1 }}>
-          {/* Header with Logo and Student Switcher */}
-          <div className="mb-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex-1" />
-              <div className="flex items-center gap-3">
-                <img 
-                  src={jieLogo} 
-                  alt="JIE Mastery Logo" 
-                  className="h-12 w-auto"
-                  data-testid="img-jie-logo"
-                />
-                <h1 id="page-title" className="text-2xl font-bold text-foreground">
-                  JIE Mastery Tutor — Multi-Agent
-                </h1>
-              </div>
-              <div className="flex-1 flex justify-end items-center gap-2">
-                <StudentSwitcher
-                  selectedStudentId={selectedStudentId || undefined}
-                  onSelectStudent={handleStudentSwitch}
-                  onOpenProfile={handleOpenProfile}
-                />
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" data-testid="button-user-menu">
-                      <Menu className="h-4 w-4 mr-1" />
-                      Menu
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => setLocation("/dashboard")} data-testid="menu-item-dashboard">
-                      <LayoutDashboard className="mr-2 h-4 w-4" />
-                      Dashboard
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setLocation("/support")} data-testid="menu-item-support">
-                      <User className="mr-2 h-4 w-4" />
-                      Live Support
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setLocation("/settings")} data-testid="menu-item-settings">
-                      <Settings className="mr-2 h-4 w-4" />
-                      Settings
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem 
-                      onClick={() => {
-                        logoutMutation.mutate(undefined, {
-                          onSuccess: () => {
-                            setLocation('/auth');
-                          }
-                        });
-                      }}
-                      data-testid="menu-item-signout"
-                    >
-                      <LogOut className="mr-2 h-4 w-4" />
-                      Sign Out
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </div>
-            <p className="text-muted-foreground text-center">
-              Age-appropriate AI tutoring with voice conversation
-            </p>
+          {/* Student Switcher Row */}
+          <div className="flex items-center justify-end gap-2 mb-2">
+            <StudentSwitcher
+              selectedStudentId={selectedStudentId || undefined}
+              onSelectStudent={handleStudentSwitch}
+              onOpenProfile={handleOpenProfile}
+            />
           </div>
 
           {/* Branded Hero Banner - only shown when not in active session */}
