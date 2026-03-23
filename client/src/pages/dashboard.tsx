@@ -48,6 +48,7 @@ import SupportCenter from "@/components/dashboard/support-center";
 import NewsletterSubscribe from "@/components/dashboard/newsletter-subscribe";
 import { AssignmentsPanel } from "@/components/AssignmentsPanel";
 import { PracticeLessonsSection } from "@/components/dashboard/practice-lessons-section";
+import { GuideLibrary } from "@/components/GuideLibrary";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { format } from "date-fns";
@@ -417,10 +418,14 @@ export default function DashboardPage() {
                 </CardHeader>
                 <CardContent>
                   <Tabs defaultValue="practice" className="w-full">
-                    <TabsList className="grid w-full grid-cols-2 mb-4">
+                    <TabsList className="grid w-full grid-cols-3 mb-4">
                       <TabsTrigger value="practice" data-testid="tab-practice-lessons">
                         <GraduationCap className="h-4 w-4 mr-2" />
                         Practice Lessons
+                      </TabsTrigger>
+                      <TabsTrigger value="guides" data-testid="tab-study-guides">
+                        <BookOpen className="h-4 w-4 mr-2" />
+                        Study Guides
                       </TabsTrigger>
                       <TabsTrigger value="uploads" data-testid="tab-your-documents">
                         <FileText className="h-4 w-4 mr-2" />
@@ -430,6 +435,15 @@ export default function DashboardPage() {
                     
                     <TabsContent value="practice">
                       <PracticeLessonsSection />
+                    </TabsContent>
+
+                    <TabsContent value="guides">
+                      <GuideLibrary
+                        gradeBand="College/Adult"
+                        onGuideAdded={() => {
+                          // Guide was added — user can switch to "Your Documents" to see it
+                        }}
+                      />
                     </TabsContent>
                     
                     <TabsContent value="uploads">

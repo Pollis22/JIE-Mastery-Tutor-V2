@@ -1083,3 +1083,39 @@ export const verificationReminderTracking = pgTable("verification_reminder_track
 ]);
 
 export type VerificationReminderTracking = typeof verificationReminderTracking.$inferSelect;
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Study Guide Library — JIE-provided study materials
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+export const studyGuides = pgTable("study_guides", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: text("title").notNull(),
+  description: text("description"),
+  category: text("category").notNull(), // 'college_coursework', 'test_prep', 'professional_cert', 'k12'
+  subcategory: text("subcategory"), // 'LSAT', 'CPA', 'Organic Chemistry', etc.
+  gradeBands: jsonb("grade_bands").$type<string[]>().notNull(), // ['College/Adult', '9-12']
+  subject: text("subject"), // Maps to session subject for auto-suggest
+  contentText: text("content_text").notNull(), // The actual guide content (pre-written text)
+  contentTokens: integer("content_tokens"), // Estimated token count
+  fileType: text("file_type").default('guide'), // 'guide' for text-based, 'pdf' if file-backed
+  filePath: text("file_path"), // Optional: path to downloadable file
+  iconEmoji: text("icon_emoji").default('📘'),
+  sortOrder: integer("sort_order").default(0),
+  isPublished: boolean("is_published").default(true),
+  version: integer("version").default(1),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_study_guides_category").on(table.category),
+  index("idx_study_guides_published").on(table.isPublished),
+]);
+
+export const insertStudyGuideSchema = createInsertSchema(studyGuides).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type StudyGuide = typeof studyGuides.$inferSelect;
+export type InsertStudyGuide = z.infer<typeof insertStudyGuideSchema>;
