@@ -33,7 +33,26 @@ export function NavigationHeader() {
     logoutMutation.mutate();
   };
 
-  const isActive = (path: string) => location === path;
+  const isActive = (path: string) => {
+    const basePath = path.split("#")[0];
+    return location === basePath;
+  };
+
+  const navigateTo = (path: string) => {
+    if (path.includes("#")) {
+      const [basePath, hash] = path.split("#");
+      if (location === basePath) {
+        document.getElementById(hash)?.scrollIntoView({ behavior: "smooth" });
+      } else {
+        setLocation(basePath);
+        setTimeout(() => {
+          document.getElementById(hash)?.scrollIntoView({ behavior: "smooth" });
+        }, 500);
+      }
+    } else {
+      setLocation(path);
+    }
+  };
 
   return (
     <nav className="bg-card shadow-sm border-b border-border sticky top-0 z-50">
@@ -62,6 +81,14 @@ export function NavigationHeader() {
                   data-testid="nav-dashboard"
                 >
                   Dashboard
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() => navigateTo("/benefits#test-prep")}
+                  className={isActive("/benefits") ? "text-primary font-medium" : "text-muted-foreground"}
+                  data-testid="nav-test-prep"
+                >
+                  College Test Prep
                 </Button>
                 <Button
                   variant="ghost"

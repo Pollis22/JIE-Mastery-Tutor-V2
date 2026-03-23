@@ -71,9 +71,9 @@ const FEATURES = [
   },
   {
     icon: <GraduationCap className="h-6 w-6" />,
-    title: "College & Post-Grad Test Prep — 18 Exams",
+    title: "College Prep: SAT, ACT, GMAT, LSAT",
     description:
-      "SAT, ACT, GRE, GMAT, LSAT, MCAT, DAT, CPA, CFA, NCLEX, and more. Direct teaching with exam-specific strategy coaching, practice question banks, and an adaptive Practice Mode that drills you and tracks progress.",
+      "From high school juniors to grad school applicants — rigorous test prep built right into the platform. No extra subscription needed.",
     highlight: true,
   },
   {
@@ -103,11 +103,11 @@ const SUBJECTS = [
   { icon: <Calculator className="h-5 w-5" />, label: "Mathematics", sub: "K–12 + Calculus" },
   { icon: <BookText className="h-5 w-5" />, label: "English & Writing", sub: "Reading, essays, grammar" },
   { icon: <FlaskConical className="h-5 w-5" />, label: "Science", sub: "Biology, Chemistry, Physics" },
-  { icon: <Languages className="h-5 w-5" />, label: "Spanish & French", sub: "Conversational + academic" },
-  { icon: <Trophy className="h-5 w-5" />, label: "SAT / ACT Prep", sub: "College admissions" },
-  { icon: <GraduationCap className="h-5 w-5" />, label: "GRE / GMAT / LSAT / MCAT", sub: "Graduate admissions" },
-  { icon: <Zap className="h-5 w-5" />, label: "CPA / CFA / NCLEX / FE", sub: "Professional certifications" },
-  { icon: <Home className="h-5 w-5" />, label: "Homeschool Support", sub: "Any curriculum, any grade" },
+  { icon: <Languages className="h-5 w-5" />, label: "Spanish", sub: "Conversational + academic" },
+  { icon: <Trophy className="h-5 w-5" />, label: "SAT / ACT Prep", sub: "Standard & Pro plans" },
+  { icon: <GraduationCap className="h-5 w-5" />, label: "GMAT / LSAT", sub: "Elite plan" },
+  { icon: <Home className="h-5 w-5" />, label: "Homeschool Support", sub: "Any curriculum" },
+  { icon: <Zap className="h-5 w-5" />, label: "History & Social Studies", sub: "K–12" },
 ];
 
 const TESTIMONIALS = [
@@ -175,7 +175,6 @@ export default function BenefitsPage() {
             <div className="hidden md:flex items-center space-x-6">
               {[
                 { label: "Why JIE Mastery AI Tutors", path: "#benefits" },
-                { label: "Test Prep", path: "/test-prep" },
                 { label: "Tutor Demo", path: "/demo" },
                 { label: "FAQ", path: "/faq" },
                 { label: "Live Support", path: "/support" },
@@ -352,6 +351,7 @@ export default function BenefitsPage() {
             {FEATURES.map((f, i) => (
               <Card
                 key={i}
+                id={f.title.includes("College Prep") ? "test-prep" : undefined}
                 className={`relative border transition-all hover:shadow-lg hover:-translate-y-0.5 duration-200 ${
                   f.highlight
                     ? "border-primary/40 bg-gradient-to-br from-primary/5 to-background shadow-md"
@@ -391,7 +391,7 @@ export default function BenefitsPage() {
               Every Subject. Every Grade. One Subscription.
             </h2>
             <p className="text-lg text-muted-foreground">
-              From kindergarten math to MCAT prep and CPA certification — JIE Mastery covers the full academic journey.
+              From kindergarten math to LSAT prep — JIE Mastery covers the full academic journey.
             </p>
           </div>
 
@@ -554,13 +554,13 @@ export default function BenefitsPage() {
                     {plan.satact && (
                       <li className="flex items-center gap-2">
                         <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
-                        SAT / ACT test prep
+                        SAT / ACT prep
                       </li>
                     )}
                     {plan.gmat && (
                       <li className="flex items-center gap-2">
                         <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0" />
-                        Full test prep suite (18 exams)
+                        GMAT / LSAT prep
                       </li>
                     )}
                   </ul>

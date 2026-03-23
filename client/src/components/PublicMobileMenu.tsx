@@ -14,7 +14,13 @@ export function PublicMobileMenu({ onSignIn }: PublicMobileMenuProps) {
 
   const navigate = (path: string) => {
     setOpen(false);
-    setLocation(path);
+    if (path.includes("#")) {
+      const [basePath, hash] = path.split("#");
+      setLocation(basePath);
+      setTimeout(() => document.getElementById(hash)?.scrollIntoView({ behavior: "smooth" }), 500);
+    } else {
+      setLocation(path);
+    }
   };
 
   const handleSignIn = () => {
@@ -24,6 +30,7 @@ export function PublicMobileMenu({ onSignIn }: PublicMobileMenuProps) {
 
   const menuItems = [
     { label: "Why JIE Mastery", path: "/benefits", icon: Sparkles },
+    { label: "College Test Prep", path: "/benefits#test-prep", icon: GraduationCap },
     { label: "Demo", path: "/demo", icon: Play },
     { label: "Pricing", path: "/pricing", icon: DollarSign },
     { label: "FAQ", path: "/faq", icon: HelpCircle },
