@@ -286,6 +286,17 @@ export default function AuthPage() {
               <Button 
                 variant="ghost" 
                 size="sm"
+                onClick={() => {
+                  setLocation("/benefits");
+                  setTimeout(() => document.getElementById("test-prep")?.scrollIntoView({ behavior: "smooth" }), 500);
+                }}
+                data-testid="button-nav-test-prep"
+              >
+                College Test Prep
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="sm"
                 onClick={() => setLocation("/demo")} 
                 data-testid="button-nav-demo"
               >
@@ -298,14 +309,6 @@ export default function AuthPage() {
                 data-testid="button-nav-pricing"
               >
                 Pricing
-              </Button>
-              <Button 
-                variant="ghost" 
-                size="sm"
-                onClick={() => setLocation("/test-prep")} 
-                data-testid="button-nav-test-prep"
-              >
-                Test Prep
               </Button>
               <Button 
                 variant="ghost" 
@@ -984,8 +987,7 @@ export default function AuthPage() {
                 { feature: "Remembers your child", trad: "Depends on the tutor", gpt: false, jie: true, jieText: "Builds a knowledge profile across every session" },
                 { feature: "Adapts teaching strategy", trad: "If you're lucky", gpt: false, jie: true, jieText: "Learns what works and adjusts automatically" },
                 { feature: "Tracks mastery over time", trad: false, gpt: false, jie: true, jieText: "0–100% mastery scoring per concept" },
-                { feature: "Every subject, one tutor", trad: false, gpt: "Any topic, no structure", jie: true, jieText: "Math, Science, English, Spanish, History & more" },
-                { feature: "Test prep & certifications", trad: "Separate expensive service", gpt: false, jie: true, jieText: "18 exams: SAT, LSAT, MCAT, CPA, NCLEX & more" },
+                { feature: "Every subject, one tutor", trad: false, gpt: "Any topic, no structure", jie: true, jieText: "Math, Science, English, Spanish & more" },
                 { feature: "Available 24/7", trad: false, gpt: true, jie: true, jieText: "Any time, any device, voice or text" },
                 { feature: "Guides reasoning (Socratic)", trad: "Varies by tutor", gpt: false, jie: true, jieText: "Never gives answers — builds understanding" },
                 { feature: "Voice conversations", trad: true, gpt: false, jie: true, jieText: "Natural voice in 25 languages" },
@@ -1373,10 +1375,9 @@ export default function AuthPage() {
                   What subjects are supported?
                 </AccordionTrigger>
                 <AccordionContent className="text-muted-foreground pb-5">
-                  JIE Mastery supports Math, English, Science, Spanish, French, and History for grades K-12 and college level. 
-                  For college students and adults, we also offer test prep for 18 major exams including SAT, ACT, GRE, GMAT, LSAT, MCAT, CPA, CFA, NCLEX, and more — with direct teaching, practice questions, and an adaptive Practice Mode.
-                  The tutor adapts its teaching style and vocabulary based on your grade level — 
-                  a 1st grader gets a very different experience than a college student prepping for the LSAT.
+                  JIE Mastery supports Math, English, Science, and Spanish for grades K-12 and college level. 
+                  The tutor adapts its teaching style and vocabulary based on your child's grade level — 
+                  a 1st grader gets a very different experience than a high schooler.
                 </AccordionContent>
               </AccordionItem>
 
