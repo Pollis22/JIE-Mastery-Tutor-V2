@@ -1068,6 +1068,11 @@ export function useCustomVoice() {
             
             console.log(`[Custom Voice] 🔊 Received audio: ${audioBytes} chars (isChunk=${isChunk}, chunkIndex=${chunkIdx}, genId=${msgGenId || 'none'})`);
             
+            if (!isSessionActiveRef.current) {
+              console.log("[Custom Voice] 🛑 Audio dropped — session no longer active");
+              break;
+            }
+            
             if (audioEnabled) {
               console.log("[Custom Voice] 🔊 Playing audio chunk");
               lastAudioPlaybackStartRef.current = Date.now();
