@@ -1235,7 +1235,17 @@ export function useCustomVoice() {
 
           case "error":
             console.error("[Custom Voice] ❌ Error:", message.error);
-            setError(message.error);
+            // Don't show toast for retryable errors that will auto-retry server-side
+            if (message.retryable) {
+              console.log("[Custom Voice] ℹ️ Retryable error — server will auto-retry");
+            }
+            setError(message.retryable ? null : message.error);
+            break;
+
+          case "status":
+            if (message.status === "retrying") {
+              console.log(`[Custom Voice] 🔄 Server retrying: ${message.message}`);
+            }
             break;
 
           case "ended":

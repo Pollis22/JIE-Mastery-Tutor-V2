@@ -415,9 +415,26 @@ export async function generateTutorResponseStreaming(
     
     callbacks.onComplete(fullText);
     
-  } catch (error) {
+  } catch (error: any) {
     console.error("[AI Service] ❌ Streaming error:", error);
-    callbacks.onError(error instanceof Error ? error : new Error(String(error)));
+    
+    // Map API errors to user-friendly messages
+    const errorType = error?.error?.type || error?.type || '';
+    const statusCode = error?.status || error?.statusCode || 0;
+    
+    let friendlyMessage: string;
+    if (statusCode === 529 || errorType === 'overloaded_error') {
+      friendlyMessage = 'RETRYABLE:The AI service is temporarily busy. Your message will be retried automatically.';
+    } else if (statusCode === 429 || errorType === 'rate_limit_error') {
+      friendlyMessage = 'RETRYABLE:Too many requests. Your message will be retried in a moment.';
+    } else if (statusCode === 500 || errorType === 'api_error') {
+      friendlyMessage = 'RETRYABLE:The AI service encountered a temporary issue. Retrying your message.';
+    } else {
+      friendlyMessage = 'The tutor encountered an error processing your message. Please try speaking again.';
+    }
+    
+    console.error(`[AI Service] ❌ Mapped error: type=${errorType} status=${statusCode} → "${friendlyMessage}"`);
+    callbacks.onError(new Error(friendlyMessage));
   }
 }
 
