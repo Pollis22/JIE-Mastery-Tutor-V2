@@ -4144,21 +4144,54 @@ export function setupCustomVoiceWebSocket(server: Server) {
         // ECHO GUARD: Also mark playback end on error
         markPlaybackEnd(state.echoGuardState, getEchoGuardConfig());
         
+        const errorMsg = error instanceof Error ? error.message : "Unknown error";
+        const isRetryable = errorMsg.startsWith('RETRYABLE:');
+        const displayMessage = isRetryable ? errorMsg.replace('RETRYABLE:', '') : errorMsg;
+        
         // THINKING INDICATOR: Emit tutor_error to clear thinking state
         if (state.currentTurnId) {
           sendWsEvent(ws, 'tutor_error', {
             sessionId: state.sessionId,
             turnId: state.currentTurnId,
             timestamp: Date.now(),
-            message: error instanceof Error ? error.message : "Unknown error",
+            message: displayMessage,
           });
           state.currentTurnId = null;
         }
         
         ws.send(JSON.stringify({ 
           type: "error", 
-          error: error instanceof Error ? error.message : "Unknown error"
+          error: displayMessage,
+          retryable: isRetryable
         }));
+        
+        // AUTO-RETRY: Re-queue the failed transcript for retryable errors (overloaded, rate limit)
+        if (isRetryable && transcript && !state.isSessionEnded) {
+          const retryCount = (state as any)._retryCount || 0;
+          const MAX_CLIENT_RETRIES = 2;
+          if (retryCount < MAX_CLIENT_RETRIES) {
+            (state as any)._retryCount = retryCount + 1;
+            const retryDelay = 2000 * Math.pow(2, retryCount); // 2s, 4s
+            console.log(`[Retry] 🔄 Auto-requeuing transcript (attempt ${retryCount + 1}/${MAX_CLIENT_RETRIES}) in ${retryDelay}ms: "${transcript.substring(0, 50)}..."`);
+            ws.send(JSON.stringify({ 
+              type: "status", 
+              status: "retrying",
+              message: `Retrying your message (attempt ${retryCount + 2})...`,
+              retryIn: retryDelay
+            }));
+            setTimeout(() => {
+              if (!state.isSessionEnded && ws.readyState === 1) {
+                state.transcriptQueue.unshift(transcript);
+                processTranscriptQueue();
+              }
+            }, retryDelay);
+          } else {
+            console.error(`[Retry] ❌ Max retries (${MAX_CLIENT_RETRIES}) exhausted for transcript`);
+            (state as any)._retryCount = 0;
+          }
+        } else if (!isRetryable) {
+          (state as any)._retryCount = 0; // Reset on non-retryable errors
+        }
         
         // FIX #1: Process next item in queue even after error
         if (state.transcriptQueue.length > 0 && !state.isSessionEnded) {

@@ -70,7 +70,8 @@ export async function withRetryStream<T>(
 ): Promise<T> {
   return withRetry(fn, {
     ...options,
-    maxRetries: options.maxRetries ?? 2,
-    initialDelayMs: options.initialDelayMs ?? 500,
+    maxRetries: options.maxRetries ?? 3,
+    initialDelayMs: options.initialDelayMs ?? 1000,
+    maxDelayMs: options.maxDelayMs ?? 10000,
   });
 }

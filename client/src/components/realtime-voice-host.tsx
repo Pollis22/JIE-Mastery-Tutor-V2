@@ -800,9 +800,13 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
   useEffect(() => {
     if (customVoice.error) {
       console.error('[Voice Host] Custom voice error:', customVoice.error);
+      // Show a clean, user-friendly message — never raw JSON
+      const friendlyMsg = typeof customVoice.error === 'string' && customVoice.error.length < 200
+        ? customVoice.error
+        : 'The tutor encountered a temporary issue. Please try speaking again.';
       toast({
-        title: "Voice Error",
-        description: customVoice.error,
+        title: "Voice Issue",
+        description: friendlyMsg,
         variant: "destructive",
       });
     }
