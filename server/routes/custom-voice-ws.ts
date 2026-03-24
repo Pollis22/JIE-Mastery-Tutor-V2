@@ -4711,6 +4711,40 @@ MATH — INTERMEDIATE / ADVANCED:
   [VISUAL: math_trig_unit_circle]           — Unit circle Q1 with sin/cos values
   [VISUAL: math_statistics_chart]           — Mean, median, mode, range, standard deviation
 
+MATH — FORMULA REFERENCE IMAGES:
+  [VISUAL: math_order_of_operations_visual] — PEMDAS step-by-step with worked example
+  [VISUAL: math_quadratic_formula]          — Quadratic formula with discriminant and worked example
+  [VISUAL: math_area_formulas]              — Area formulas for rectangle, triangle, circle, trapezoid, parallelogram, square
+  [VISUAL: math_volume_formulas]            — Volume formulas for cube, prism, cylinder, sphere, cone
+  [VISUAL: math_trig_sohcahtoa]             — SOH-CAH-TOA right triangle reference
+  [VISUAL: math_exponent_rules]             — Product, quotient, power, zero, negative exponent rules
+  [VISUAL: math_log_rules]                  — Product, quotient, power rules for logarithms
+  [VISUAL: math_distance_midpoint]          — Distance and midpoint formulas with coordinate graph
+  [VISUAL: math_fraction_operations]        — Adding, subtracting, multiplying, dividing fractions
+  [VISUAL: math_mean_median_mode]           — Mean, median, mode, and range with examples
+  [VISUAL: math_inequality_symbols]         — Less than, greater than, ≤, ≥, ≠ with number lines
+  [VISUAL: math_coordinate_plane_quadrants] — Four quadrants (I, II, III, IV) with sign rules
+  [VISUAL: math_slope_intercept_form]       — y = mx + b with labeled graph showing slope and intercept
+  [VISUAL: math_systems_of_equations]       — Solving systems graphically (intersection point)
+  [VISUAL: math_polynomial_operations]      — FOIL method for multiplying polynomials
+
+MATH — ADDITIONAL VISUALS:
+  [VISUAL: math_3d_shapes]                  — 3D geometric shapes (cube, sphere, cylinder, cone, pyramid)
+  [VISUAL: math_angles_types]               — Types of angles (acute, right, obtuse, straight, reflex)
+  [VISUAL: math_circle_parts]               — Parts of a circle (radius, diameter, chord, tangent, arc, sector)
+  [VISUAL: math_derivative_tangent]         — Derivatives and tangent lines visual
+  [VISUAL: math_exponential_vs_linear]      — Comparing linear vs exponential growth curves
+  [VISUAL: math_fractions_pizza]            — Learning fractions with pizza slices
+  [VISUAL: math_integral_area]              — Integrals and area under the curve
+  [VISUAL: math_matrix_operations]          — Matrix addition, multiplication, determinant
+  [VISUAL: math_money_coins]                — US coins (penny, nickel, dime, quarter)
+  [VISUAL: math_normal_distribution]        — Bell curve / empirical rule (68-95-99.7%)
+  [VISUAL: math_pythagorean_theorem]        — Pythagorean theorem with visual proof
+  [VISUAL: math_quadratic_graph]            — Parabola properties (vertex, roots, axis of symmetry)
+  [VISUAL: math_slope_types]                — Four types of slopes (positive, negative, zero, undefined)
+  [VISUAL: math_telling_time]               — Clock face for learning to tell time
+  [VISUAL: math_vector_addition]            — Vector addition diagram
+
 MATH — CALCULUS & COLLEGE:
   [VISUAL: math_calculus_derivatives]       — Derivative rules (power, product, chain, trig, ln)
   [VISUAL: math_calculus_integrals]         — Common integral formulas + C
@@ -4773,18 +4807,54 @@ SCIENCE:
   [VISUAL: science_chemical_bonding]        — Ionic, covalent, polar covalent, metallic, hydrogen bonds
   [VISUAL: science_dna_genetics]            — DNA base pairing, mitosis vs meiosis
   [VISUAL: science_punnett_square]          — Punnett square example (Tt × Tt), phenotype ratios
+  [VISUAL: science_brain_regions]           — Brain regions (color-coded lobes and cerebellum)
+  [VISUAL: science_ear_anatomy]             — Ear cross-section (outer, middle, inner ear)
+  [VISUAL: science_eye_anatomy]             — Eye cross-section (cornea, lens, retina, optic nerve)
+  [VISUAL: science_heart_diagram]           — Heart 4 chambers with blood flow arrows
+  [VISUAL: science_human_muscles]           — Muscular system anterior and posterior views
+  [VISUAL: science_human_skeleton]          — Full labeled human skeleton
+  [VISUAL: science_animal_cell]             — Animal cell diagram
+  [VISUAL: science_plant_cell]              — Plant cell diagram
+  [VISUAL: science_cloud_types]             — Cloud types at different altitudes
+  [VISUAL: science_layers_of_earth]         — Earth layers (crust, mantle, outer/inner core)
+  [VISUAL: science_moon_phases]             — All 8 moon phases
+  [VISUAL: science_photosynthesis]          — Photosynthesis process diagram
+  [VISUAL: science_rock_cycle]              — Rock cycle (igneous, sedimentary, metamorphic)
+  [VISUAL: science_tides_diagram]           — Lunar gravity and ocean tides
+  [VISUAL: science_volcano_cross_section]   — Volcano cross-section
+  [VISUAL: science_water_cycle_illustrated] — Water cycle landscape illustration
+  [VISUAL: science_weather_map_symbols]     — Weather map symbols
+  [VISUAL: science_electromagnetic_wave]    — Electromagnetic wave oscillation
 
 PHYSICS:
   [VISUAL: physics_newtons_laws]            — Newton's 3 laws with formulas
   [VISUAL: physics_electromagnetic_spectrum]— Radio → Gamma ray spectrum with uses
   [VISUAL: physics_formulas]                — Motion, force, energy, waves, electricity, gravity
   [VISUAL: physics_thermodynamics]          — Laws of thermodynamics + temperature conversions
+  [VISUAL: physics_forces_diagram]          — Free body diagram (normal, gravity, friction, applied)
+  [VISUAL: physics_wave_types]              — Transverse vs longitudinal waves
+  [VISUAL: physics_doppler_effect]          — Doppler effect with ambulance
+  [VISUAL: physics_projectile_motion]       — Projectile motion parabola
+  [VISUAL: physics_pendulum_energy]         — Energy transformation in a pendulum
+  [VISUAL: physics_optics_lenses]           — Convex and concave lens ray diagrams
+  [VISUAL: physics_circuit_symbols]         — Electrical circuit symbol reference
+  [VISUAL: physics_electricity_flow]        — Simple circuit (battery, bulb, switch)
 
 HISTORY / SOCIAL STUDIES:
   [VISUAL: history_timeline]                — Chronological event timeline
   [VISUAL: history_cause_effect_chain]      — Historical cause → impact chain
   [VISUAL: history_three_branches]          — Legislative, Executive, Judicial branches
   [VISUAL: history_map_compass]             — Cardinal directions and map skills
+  [VISUAL: history_ancient_civilizations_map] — Ancient civilizations map
+  [VISUAL: history_us_expansion_map]        — US expansion map
+  [VISUAL: history_cold_war_map]            — Cold War map
+  [VISUAL: history_world_wars_map]          — World Wars alliances map
+  [VISUAL: history_civil_rights_timeline]   — Civil rights timeline
+  [VISUAL: history_amendments_visual]       — Constitutional amendments visual
+  [VISUAL: history_immigration_waves]       — Immigration waves
+  [VISUAL: history_industrial_revolution]   — Industrial Revolution
+  [VISUAL: history_colonialism_map]         — Colonialism map
+  [VISUAL: history_greek_roman_comparison]  — Greek and Roman comparison
 
 GEOGRAPHY — MAPS:
   [VISUAL: geography_continents]            — All 7 continents with key facts
@@ -4792,6 +4862,22 @@ GEOGRAPHY — MAPS:
   [VISUAL: geography_world_map]             — World regions and key countries per continent
   [VISUAL: geography_europe_map]            — European countries and capitals
   [VISUAL: geography_lat_long]              — Latitude/longitude, equator, prime meridian
+  [VISUAL: geography_biomes_world]          — World biomes map
+  [VISUAL: geography_rivers_major]          — Major world rivers
+  [VISUAL: geography_tectonic_plates]       — Tectonic plates map
+  [VISUAL: geography_ocean_currents]        — Ocean currents
+  [VISUAL: geography_time_zones]            — World time zones
+  [VISUAL: geography_us_regions]            — US regions
+  [VISUAL: geography_landforms]             — Types of landforms
+  [VISUAL: geography_population_density]    — Population density map
+  [VISUAL: geography_country_capitals]      — Country capitals reference
+
+CHEMISTRY:
+  [VISUAL: chemistry_ph_scale]              — pH scale (acids and bases)
+  [VISUAL: chemistry_types_of_bonds]        — Types of chemical bonds
+  [VISUAL: chemistry_molecular_shapes]      — VSEPR molecular geometry
+  [VISUAL: chemistry_organic_functional_groups] — Organic functional groups
+  [VISUAL: chemistry_periodic_trends]       — Periodic table trends
 
 ECONOMICS:
   [VISUAL: economics_supply_demand]         — Supply & demand with equilibrium
@@ -4799,11 +4885,43 @@ ECONOMICS:
   [VISUAL: economics_market_structures]     — Perfect competition → monopoly comparison
   [VISUAL: economics_fiscal_monetary]       — Fiscal vs monetary policy tools
   [VISUAL: economics_comparative_advantage] — Comparative advantage table and trade gains
+  [VISUAL: economics_circular_flow]         — Circular flow of economy
+  [VISUAL: economics_banking_system]        — Banking system diagram
+  [VISUAL: economics_stock_market_basics]   — Stock market basics
+  [VISUAL: economics_trade_balance]         — Trade balance
+  [VISUAL: economics_business_cycle]        — Business cycle phases
+  [VISUAL: economics_inflation_deflation]   — Inflation and deflation
+  [VISUAL: economics_taxes_types]           — Types of taxes (progressive, regressive, proportional)
 
 POLITICAL SCIENCE / GOVERNMENT:
   [VISUAL: polisci_constitution]            — 7 Articles of the U.S. Constitution
   [VISUAL: polisci_bill_of_rights]          — Amendments 1–10 with descriptions
   [VISUAL: polisci_world_governments]       — Democracy, monarchy, theocracy, authoritarian, etc.
+
+SPACE / ASTRONOMY:
+  [VISUAL: space_sun_diagram]               — Sun cross-section (core to corona)
+  [VISUAL: space_mars_surface]              — Mars surface features
+  [VISUAL: space_moon_surface]              — Moon surface with labeled features
+  [VISUAL: space_earth_detailed]            — Earth with atmosphere layers
+  [VISUAL: space_planet_sizes]              — All 8 planets to scale
+  [VISUAL: space_solar_system_distances]    — Planets with AU distances
+  [VISUAL: space_asteroid_belt]             — Solar system orbital view with asteroid belt
+  [VISUAL: space_jupiter_saturn]            — Jupiter and Saturn comparison
+  [VISUAL: space_galaxy_types]              — Galaxy types (spiral, elliptical, irregular)
+
+LANGUAGE — ADDITIONAL:
+  [VISUAL: lang_spanish_common_phrases]     — Common Spanish phrases
+  [VISUAL: lang_japanese_common_phrases]    — Common Japanese phrases
+  [VISUAL: lang_japanese_hiragana_chart]    — Hiragana chart
+  [VISUAL: lang_chinese_radicals]           — Chinese radicals
+  [VISUAL: lang_german_cases]               — German grammatical cases
+  [VISUAL: lang_ipa_chart]                  — IPA phonetic chart
+
+READING / WRITING — ADDITIONAL:
+  [VISUAL: reading_story_mountain]          — Story mountain (narrative arc)
+  [VISUAL: reading_genres_bookshelf]        — Reading genres bookshelf
+  [VISUAL: writing_persuasive_structure]    — Persuasive writing structure
+  [VISUAL: writing_types_comparison]        — Types of writing comparison
 
 STUDY SKILLS:
   [VISUAL: study_skills_kwl]                — Know / Want to know / Learned chart
@@ -4811,6 +4929,11 @@ STUDY SKILLS:
   [VISUAL: study_skills_cornell_notes]      — Cornell notes format (cue, notes, summary)
   [VISUAL: study_blooms_taxonomy]           — Bloom's 6 levels with action verbs
   [VISUAL: study_time_management]           — Pomodoro, time blocking, Eisenhower matrix
+  [VISUAL: study_pomodoro_technique]        — Pomodoro technique timer visual
+  [VISUAL: study_growth_mindset]            — Growth mindset diagram
+  [VISUAL: study_note_taking_methods]       — Note-taking methods comparison
+  [VISUAL: study_essay_writing_process]     — Essay writing process steps
+  [VISUAL: study_test_taking_strategies]    — Test-taking strategies
 
 RULES:
 ✅ Place the tag at the START of a sentence: "[VISUAL: math_calculus_derivatives] Here are the key derivative rules."
