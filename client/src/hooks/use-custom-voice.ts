@@ -1073,7 +1073,7 @@ export function useCustomVoice() {
               break;
             }
             
-            if (audioEnabled) {
+            if (audioEnabledRef.current) {
               console.log("[Custom Voice] 🔊 Playing audio chunk");
               lastAudioPlaybackStartRef.current = Date.now();
               setIsTutorSpeaking(true);

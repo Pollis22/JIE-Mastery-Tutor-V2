@@ -16,7 +16,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
-import { Clock, AlertCircle, Upload, File, X, Paperclip, BookOpen, GraduationCap, ChevronRight, ChevronDown } from "lucide-react";
+import { Clock, AlertCircle, Upload, File, X, Paperclip, BookOpen, GraduationCap, ChevronRight, ChevronDown, Mic, Headphones, Type } from "lucide-react";
 import { NavigationHeader } from "@/components/navigation-header";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { SUPPORTED_LANGUAGES } from "@shared/languages";
@@ -85,6 +85,13 @@ export default function TutorPage() {
   const [gradeText, setGradeText] = useState("");
   const [mounted, setMounted] = useState(false);
   const [sessionState, setSessionState] = useState<'idle' | 'starting' | 'active' | 'ending'>('idle');
+  const [sessionMode, setSessionMode] = useState<'voice' | 'hybrid' | 'text'>(() => {
+    try {
+      const saved = localStorage.getItem('preferred-communication-mode');
+      if (saved === 'voice' || saved === 'hybrid' || saved === 'text') return saved;
+    } catch {}
+    return 'voice';
+  });
   const voiceHostRef = useRef<RealtimeVoiceHostHandle>(null);
   const [lastSummary, setLastSummary] = useState(memo.lastSummary || "");
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
@@ -1043,6 +1050,31 @@ export default function TutorPage() {
                     ))}
                   </select>
 
+                  {/* Pre-session mode selector */}
+                  {sessionState === 'idle' && (
+                    <div className="flex items-center gap-1 bg-muted/50 rounded-lg p-1">
+                      {([
+                        { key: 'voice' as const, label: 'Voice', Icon: Mic, tip: 'Speak & hear your tutor' },
+                        { key: 'hybrid' as const, label: 'Listen', Icon: Headphones, tip: 'Type to tutor, hear responses' },
+                        { key: 'text' as const, label: 'Text', Icon: Type, tip: 'Type & read (silent)' },
+                      ]).map(({ key, label, Icon, tip }) => (
+                        <button
+                          key={key}
+                          onClick={() => { setSessionMode(key); localStorage.setItem('preferred-communication-mode', key); }}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                            sessionMode === key
+                              ? 'bg-background text-foreground shadow-sm'
+                              : 'text-muted-foreground hover:text-foreground'
+                          }`}
+                          title={tip}
+                        >
+                          <Icon className="h-3.5 w-3.5" />
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
                   <button 
                     id="start-btn" 
                     onClick={startTutor} 
@@ -1094,6 +1126,7 @@ export default function TutorPage() {
                     uploadedDocCount={uploadedDocCount}
                     activeLesson={activeLesson}
                     autoConnect={true}
+                    initialMode={sessionMode}
                     onSessionStart={() => setSessionStartTime(new Date())}
                     onSessionEnd={() => setSessionStartTime(null)}
                     onDisconnected={() => {

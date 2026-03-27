@@ -149,6 +149,7 @@ interface RealtimeVoiceHostProps {
   uploadedDocCount?: number;
   activeLesson?: ActiveLesson | null; // Practice lesson context
   autoConnect?: boolean;
+  initialMode?: 'voice' | 'hybrid' | 'text';
   onSessionStart?: () => void;
   onSessionEnd?: () => void;
   onDisconnected?: () => void;
@@ -171,6 +172,7 @@ export const RealtimeVoiceHost = forwardRef<RealtimeVoiceHostHandle, RealtimeVoi
   uploadedDocCount = 0,
   activeLesson,
   autoConnect = false,
+  initialMode = 'voice',
   onSessionStart,
   onSessionEnd,
   onDisconnected,
@@ -256,19 +258,14 @@ export const RealtimeVoiceHost = forwardRef<RealtimeVoiceHostHandle, RealtimeVoi
     return `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   };
 
-  // Always start with voice mode (mic ON) - don't restore saved preferences
-  // This ensures users always start with mic enabled for the best experience
+  // Apply initialMode from parent (pre-session selection) on mount
   useEffect(() => {
-    // Clear any saved mode that might turn mic off
-    const savedMode = localStorage.getItem('preferred-communication-mode') as CommunicationMode;
-    if (savedMode && savedMode !== 'voice') {
-      console.log('[Mode] Resetting to voice mode (mic on) - was:', savedMode);
-      localStorage.setItem('preferred-communication-mode', 'voice');
-    }
-    // Ensure we start with mic on
-    setCommunicationMode('voice');
-    setTutorAudioEnabled(true);
-    setStudentMicEnabled(true);
+    const config = MODES[initialMode];
+    console.log('[Mode] Starting with initialMode:', initialMode, config);
+    setCommunicationMode(initialMode);
+    setTutorAudioEnabled(config.tutorAudio);
+    setStudentMicEnabled(config.studentMic);
+    localStorage.setItem('preferred-communication-mode', initialMode);
   }, []);
   
   // Switch between preset modes
