@@ -34,6 +34,10 @@ import {
   Calendar,
   Volume2,
   Mic,
+  Headphones,
+  Type,
+  Zap,
+  ZapOff,
   UserCog,
   FileText,
   GraduationCap
@@ -431,11 +435,82 @@ export default function DashboardPage() {
                   <CardDescription>Customize your learning experience</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <Tabs defaultValue="appearance">
-                    <TabsList className="grid w-full grid-cols-2">
+                  <Tabs defaultValue="session">
+                    <TabsList className="grid w-full grid-cols-3">
+                      <TabsTrigger value="session">Tutor Session</TabsTrigger>
                       <TabsTrigger value="appearance">Appearance</TabsTrigger>
                       <TabsTrigger value="notifications">Notifications</TabsTrigger>
                     </TabsList>
+                    
+                    <TabsContent value="session" className="space-y-4">
+                      {/* Default Session Mode */}
+                      <div className="p-4 border rounded-lg space-y-3">
+                        <div>
+                          <h4 className="font-medium">Default Session Mode</h4>
+                          <p className="text-sm text-muted-foreground">
+                            Choose how you communicate with your tutor when starting a session
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {([
+                            { key: 'voice' as const, label: 'Voice', Icon: Mic, desc: 'Speak & hear your tutor' },
+                            { key: 'hybrid' as const, label: 'Listen Only', Icon: Headphones, desc: 'Type to tutor, hear responses' },
+                            { key: 'text' as const, label: 'Text Only', Icon: Type, desc: 'Type & read (silent)' },
+                          ]).map(({ key, label, Icon, desc }) => {
+                            const isActive = (() => {
+                              try { return (localStorage.getItem('preferred-communication-mode') || 'voice') === key; } catch { return key === 'voice'; }
+                            })();
+                            return (
+                              <button
+                                key={key}
+                                onClick={() => {
+                                  localStorage.setItem('preferred-communication-mode', key);
+                                  // Force re-render
+                                  const event = new Event('storage');
+                                  window.dispatchEvent(event);
+                                  // Trigger re-render by updating a dummy state
+                                  setActiveTab('preferences');
+                                }}
+                                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                                  isActive
+                                    ? 'bg-primary text-primary-foreground shadow-sm'
+                                    : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground border border-border'
+                                }`}
+                              >
+                                <Icon className="h-4 w-4" />
+                                <div className="text-left">
+                                  <div>{label}</div>
+                                  <div className={`text-[10px] ${isActive ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>{desc}</div>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      
+                      {/* Typewriter Effect */}
+                      <div className="flex items-center justify-between p-4 border rounded-lg">
+                        <div>
+                          <h4 className="font-medium flex items-center gap-2">
+                            Typewriter Effect
+                            <Zap className="h-4 w-4 text-blue-500" />
+                          </h4>
+                          <p className="text-sm text-muted-foreground">
+                            In text mode, tutor responses appear word-by-word instead of all at once
+                          </p>
+                        </div>
+                        <Switch
+                          checked={(() => {
+                            try { return localStorage.getItem('jie-typewriter') !== 'false'; } catch { return true; }
+                          })()}
+                          onCheckedChange={(checked) => {
+                            localStorage.setItem('jie-typewriter', String(checked));
+                            setActiveTab('preferences');
+                          }}
+                          data-testid="switch-typewriter"
+                        />
+                      </div>
+                    </TabsContent>
                     
                     <TabsContent value="appearance" className="space-y-4">
                       <div className="flex items-center justify-between">

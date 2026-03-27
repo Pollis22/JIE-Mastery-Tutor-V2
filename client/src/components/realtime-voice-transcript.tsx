@@ -28,7 +28,7 @@ interface Props {
 }
 
 const NEAR_BOTTOM_THRESHOLD = 80;
-const TYPEWRITER_WORD_DELAY = 50; // ms between words
+const TYPEWRITER_WORD_DELAY = 250; // ms between words — ChatGPT-like pacing
 
 // Render markdown bold as <strong>
 function renderMarkdown(text: string) {
@@ -213,15 +213,15 @@ export function RealtimeVoiceTranscript({
           {communicationMode !== 'voice' && (
             <button
               onClick={toggleTypewriter}
-              className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors ${
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors border ${
                 typewriterEnabled
-                  ? isDark ? 'bg-blue-900/40 text-blue-300 hover:bg-blue-900/60' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
-                  : isDark ? 'bg-gray-700 text-gray-400 hover:bg-gray-600' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                  ? isDark ? 'bg-blue-900/40 text-blue-300 border-blue-700 hover:bg-blue-900/60' : 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'
+                  : isDark ? 'bg-gray-800 text-gray-400 border-gray-600 hover:bg-gray-700' : 'bg-gray-50 text-gray-500 border-gray-200 hover:bg-gray-100'
               }`}
               title={typewriterEnabled ? 'Typewriter mode: ON — words appear one at a time' : 'Typewriter mode: OFF — full response appears instantly'}
             >
-              {typewriterEnabled ? <Zap className="h-2.5 w-2.5" /> : <ZapOff className="h-2.5 w-2.5" />}
-              {typewriterEnabled ? 'Typing' : 'Instant'}
+              {typewriterEnabled ? <Zap className="h-3 w-3" /> : <ZapOff className="h-3 w-3" />}
+              {typewriterEnabled ? 'Word by Word' : 'Instant'}
             </button>
           )}
           {language && (
