@@ -20,7 +20,8 @@ import { useEffect, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { getPlanDetails } from "@shared/plan-config";
-import { Mail, Mic, Headphones, Type, Zap, Settings } from "lucide-react";
+import { Mail, Mic, Headphones, Type, Zap, Settings, Palette } from "lucide-react";
+import ThemeToggle from "@/components/dashboard/theme-toggle";
 
 type EmailFrequency = 'off' | 'per_session' | 'daily' | 'weekly';
 
@@ -528,6 +529,27 @@ export default function SettingsPage() {
                       }}
                       data-testid="switch-typewriter"
                     />
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Appearance */}
+              <Card className="shadow-sm">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Palette className="h-5 w-5" />
+                    Appearance
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center justify-between rounded-lg border border-border p-4">
+                    <div className="space-y-0.5">
+                      <h4 className="text-base font-medium">Theme</h4>
+                      <p className="text-sm text-muted-foreground">
+                        Choose between light and dark mode
+                      </p>
+                    </div>
+                    <ThemeToggle showLabel />
                   </div>
                 </CardContent>
               </Card>
