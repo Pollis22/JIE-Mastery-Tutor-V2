@@ -7058,6 +7058,9 @@ HONESTY INSTRUCTIONS:
             // Handle text message from chat input
             console.log(`[Custom Voice] 📝 Text message from ${state.studentName}: ${message.message}`);
             
+            // WATCHDOG: Text input is valid progress — prevent watchdog from killing text-mode sessions
+            markProgress(state);
+            
             // INACTIVITY: Reset activity timer - User is typing!
             state.lastActivityTime = Date.now();
             state.inactivityWarningSent = false; // Reset warning flag
@@ -7314,6 +7317,9 @@ HONESTY INSTRUCTIONS:
               
               console.log(JSON.stringify({ event: 'tutor_reply_started', session_id: state.sessionId, gen_id: state.playbackGenId, input: 'text' }));
               
+              // WATCHDOG: Text mode LLM response is valid progress
+              markProgress(state);
+              
               // Track streaming metrics
               let textSentenceCount = 0;
               let textTotalAudioBytes = 0;
@@ -7324,6 +7330,9 @@ HONESTY INSTRUCTIONS:
                 const textCallbacks: StreamingCallbacks = {
                   onSentence: async (sentence: string) => {
                     textSentenceCount++;
+                    
+                    // WATCHDOG: Each sentence in text mode is progress
+                    markProgress(state);
                     
                     // ── VISUAL TAG PARSER (text mode) ────────────────────────
                     const textVisualMatch = sentence.match(/\[VISUAL:\s*([a-z0-9_]+)\]/i);
@@ -7393,6 +7402,10 @@ HONESTY INSTRUCTIONS:
                   onComplete: (fullText: string) => {
                     const textStreamMs = Date.now() - textStreamStart;
                     state.isTutorThinking = false;
+                    
+                    // WATCHDOG: Text mode response complete is progress
+                    markProgress(state);
+                    
                     console.log(`[Custom Voice] ⏱️ Text streaming complete: ${textStreamMs}ms, ${textSentenceCount} sentences`);
                     
                     // ── STRIP VISUAL TAGS from full text before saving to history/transcript ──
