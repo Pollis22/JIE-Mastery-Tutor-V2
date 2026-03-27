@@ -423,8 +423,6 @@ export default function DashboardPage() {
             {activeTab === "sessions" && <SessionHistory />}
             {activeTab === "analytics" && <UsageAnalytics />}
             
-            )}
-            
             {activeTab === "support" && <SupportCenter />}
           </div>
         </div>
