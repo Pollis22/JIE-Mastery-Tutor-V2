@@ -149,6 +149,7 @@ interface RealtimeVoiceHostProps {
   uploadedDocCount?: number;
   activeLesson?: ActiveLesson | null; // Practice lesson context
   autoConnect?: boolean;
+  initialMode?: 'voice' | 'hybrid' | 'text';
   onSessionStart?: () => void;
   onSessionEnd?: () => void;
   onDisconnected?: () => void;
@@ -171,6 +172,7 @@ export const RealtimeVoiceHost = forwardRef<RealtimeVoiceHostHandle, RealtimeVoi
   uploadedDocCount = 0,
   activeLesson,
   autoConnect = false,
+  initialMode = 'voice',
   onSessionStart,
   onSessionEnd,
   onDisconnected,
@@ -193,9 +195,6 @@ export const RealtimeVoiceHost = forwardRef<RealtimeVoiceHostHandle, RealtimeVoi
   
   // Communication mode state (voice, hybrid, text-only)
   type CommunicationMode = 'voice' | 'hybrid' | 'text';
-  const [communicationMode, setCommunicationMode] = useState<CommunicationMode>('voice');
-  const [tutorAudioEnabled, setTutorAudioEnabled] = useState(true);
-  const [studentMicEnabled, setStudentMicEnabled] = useState(true);
   
   // Mode configurations
   const MODES = {
@@ -224,6 +223,11 @@ export const RealtimeVoiceHost = forwardRef<RealtimeVoiceHostHandle, RealtimeVoi
       emoji: '📝'
     }
   };
+  
+  // Initialize from prop — must happen at state creation, not in useEffect
+  const [communicationMode, setCommunicationMode] = useState<CommunicationMode>(initialMode);
+  const [tutorAudioEnabled, setTutorAudioEnabled] = useState(MODES[initialMode].tutorAudio);
+  const [studentMicEnabled, setStudentMicEnabled] = useState(MODES[initialMode].studentMic);
   
   // Use Custom Voice Stack (Deepgram + Claude + ElevenLabs)
   const customVoice = useCustomVoice();
@@ -256,19 +260,11 @@ export const RealtimeVoiceHost = forwardRef<RealtimeVoiceHostHandle, RealtimeVoi
     return `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   };
 
-  // Always start with voice mode (mic ON) - don't restore saved preferences
-  // This ensures users always start with mic enabled for the best experience
+  // Log initialMode on mount for debugging
   useEffect(() => {
-    // Clear any saved mode that might turn mic off
-    const savedMode = localStorage.getItem('preferred-communication-mode') as CommunicationMode;
-    if (savedMode && savedMode !== 'voice') {
-      console.log('[Mode] Resetting to voice mode (mic on) - was:', savedMode);
-      localStorage.setItem('preferred-communication-mode', 'voice');
-    }
-    // Ensure we start with mic on
-    setCommunicationMode('voice');
-    setTutorAudioEnabled(true);
-    setStudentMicEnabled(true);
+    console.log('[Mode] Component mounted with initialMode:', initialMode, {
+      communicationMode, tutorAudioEnabled, studentMicEnabled
+    });
   }, []);
   
   // Switch between preset modes
