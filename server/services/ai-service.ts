@@ -9,7 +9,7 @@
 
 
 import Anthropic from "@anthropic-ai/sdk";
-import { withRetry, withRetryStream } from "../utils/retry";
+import OpenAI from "openai";
 import { getMaxTokensForGrade, LLM_CONFIG } from "../llm/systemPrompt";
 import { sanitizeTtsText, isOlderGradeBand } from "../utils/tts-sanitizer";
 
@@ -37,9 +37,40 @@ function getAnthropicClient(): Anthropic {
   return anthropic;
 }
 
+// Lazy initialization for OpenAI client (fallback)
+let openai: OpenAI | null = null;
+
+function getOpenAIClient(): OpenAI | null {
+  if (!openai) {
+    if (!process.env.OPENAI_API_KEY) {
+      console.warn("[AI Service] ⚠️ OPENAI_API_KEY not found - fallback unavailable");
+      return null;
+    }
+    console.log("[AI Service] ✅ OpenAI API key found (fallback ready)");
+    openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+  }
+  return openai;
+}
+
 // <important_do_not_delete>
 const DEFAULT_MODEL_STR = "claude-sonnet-4-20250514";
 // </important_do_not_delete>
+const OPENAI_FALLBACK_MODEL = "gpt-4o";
+const CLAUDE_MAX_RETRIES = 3;
+const RETRY_BASE_DELAY_MS = 1000;
+const RETRY_MAX_DELAY_MS = 8000;
+
+// Check if an error is retryable (overloaded, rate limited, or transient API error)
+function isRetryableError(error: any): boolean {
+  const errorType = error?.error?.type || error?.type || '';
+  const errorMessage = error?.message || error?.error?.message || '';
+  const statusCode = error?.status || error?.statusCode || 0;
+  return statusCode === 529 || statusCode === 429 || statusCode === 500 ||
+    errorType === 'overloaded_error' || errorType === 'rate_limit_error' || errorType === 'api_error' ||
+    errorMessage.toLowerCase().includes('overloaded') || errorMessage.toLowerCase().includes('rate limit');
+}
 
 interface Message {
   role: "user" | "assistant";
@@ -216,6 +247,8 @@ export interface StreamingCallbacks {
 }
 
 // Streaming version of generateTutorResponse - delivers sentences as they complete
+// Includes retry logic that wraps the FULL streaming flow (creation + iteration)
+// and OpenAI fallback after Claude retries exhaust (Option B: session-level)
 export async function generateTutorResponseStreaming(
   conversationHistory: Message[],
   currentTranscript: string,
@@ -225,13 +258,15 @@ export async function generateTutorResponseStreaming(
   inputModality?: "voice" | "text",
   language?: string,
   gradeLevel?: string,
-  abortSignal?: AbortSignal
+  abortSignal?: AbortSignal,
+  useFallback?: boolean  // Session-level flag: if true, skip Claude and go straight to OpenAI
 ): Promise<void> {
   
   console.log("[AI Service] 📝 Generating STREAMING response");
   console.log("[AI Service] 🎤 Input modality:", inputModality || "unknown");
   console.log("[AI Service] 📚 Documents available:", uploadedDocuments.length);
   console.log("[AI Service] 🎓 Grade level:", gradeLevel || "unknown");
+  if (useFallback) console.log("[AI Service] 🔄 Session in fallback mode — using OpenAI directly");
   
   // NO-GHOSTING: Calculate and log ragChars
   const ragChars = uploadedDocuments.reduce((sum, doc) => sum + doc.length, 0);
@@ -244,198 +279,321 @@ export async function generateTutorResponseStreaming(
   const maxTokens = getMaxTokensForGrade(gradeLevel);
   console.log(`[AI Service] 📏 Using max_tokens: ${maxTokens} for grade: ${gradeLevel || 'default'}`);
 
+  const filteredHistory = conversationHistory.filter(msg => {
+    const content = (msg.content ?? "").trim();
+    if (content.length === 0) return false;
+    return true;
+  });
+  const removedCount = conversationHistory.length - filteredHistory.length;
+  if (removedCount > 0) {
+    console.warn(`[LLM] Removed ${removedCount} empty messages from history before LLM call`);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // CLAUDE WITH RETRY (wraps full stream creation + iteration)
+  // ═══════════════════════════════════════════════════════════
+  if (!useFallback) {
+    for (let attempt = 1; attempt <= CLAUDE_MAX_RETRIES; attempt++) {
+      try {
+        await _streamFromClaude(filteredHistory, currentTranscript, systemPrompt, maxTokens, callbacks, gradeLevel, abortSignal);
+        return; // Success — exit
+      } catch (error: any) {
+        const retryable = isRetryableError(error);
+        console.error(`[Retry] Claude attempt ${attempt}/${CLAUDE_MAX_RETRIES} failed: ${error?.error?.type || error?.message || 'unknown'} (retryable=${retryable})`);
+        
+        if (!retryable) {
+          // Non-retryable error — don't retry, don't fallback
+          console.error("[AI Service] ❌ Non-retryable Claude error — failing immediately");
+          callbacks.onError(new Error('The tutor encountered an error processing your message. Please try again.'));
+          return;
+        }
+        
+        if (attempt < CLAUDE_MAX_RETRIES) {
+          const jitter = Math.random() * 500;
+          const delay = Math.min(RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1) + jitter, RETRY_MAX_DELAY_MS);
+          console.log(`[Retry] Waiting ${Math.round(delay)}ms before attempt ${attempt + 1}...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+    
+    // All Claude retries exhausted — try OpenAI fallback
+    console.error(`[Retry] ❌ All ${CLAUDE_MAX_RETRIES} Claude attempts failed — trying OpenAI fallback`);
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // OPENAI FALLBACK
+  // ═══════════════════════════════════════════════════════════
   try {
-    const anthropicClient = getAnthropicClient();
-    
-    const streamStart = Date.now();
-    console.log(`[AI Service] ⏱️ Starting Claude streaming...`);
-    
-    const filteredHistory = conversationHistory.filter(msg => {
-      const content = (msg.content ?? "").trim();
-      if (content.length === 0) return false;
-      return true;
-    });
-    const removedCount = conversationHistory.length - filteredHistory.length;
-    if (removedCount > 0) {
-      console.warn(`[LLM] Removed ${removedCount} empty messages from history before Claude call`);
+    await _streamFromOpenAI(filteredHistory, currentTranscript, systemPrompt, maxTokens, callbacks, gradeLevel, abortSignal);
+    // Signal to caller that fallback was used (they should set session flag)
+    (callbacks as any)._fallbackUsed = true;
+    return;
+  } catch (fallbackError: any) {
+    console.error("[AI Service] ❌ OpenAI fallback also failed:", fallbackError?.message || fallbackError);
+    callbacks.onError(new Error(
+      'Our AI tutor is experiencing high demand right now. Please try again in a minute.'
+    ));
+  }
+}
+
+// ─── CLAUDE STREAMING (internal) ─────────────────────────────────
+async function _streamFromClaude(
+  filteredHistory: Message[],
+  currentTranscript: string,
+  systemPrompt: string,
+  maxTokens: number,
+  callbacks: StreamingCallbacks,
+  gradeLevel?: string,
+  abortSignal?: AbortSignal
+): Promise<void> {
+  const anthropicClient = getAnthropicClient();
+  const streamStart = Date.now();
+  console.log(`[AI Service] ⏱️ Starting Claude streaming...`);
+
+  const stream = anthropicClient.messages.stream({
+    model: DEFAULT_MODEL_STR,
+    max_tokens: maxTokens,
+    system: systemPrompt,
+    messages: [
+      ...filteredHistory,
+      { role: "user", content: currentTranscript }
+    ],
+  });
+
+  await _processStream('claude', stream, streamStart, callbacks, gradeLevel, abortSignal);
+}
+
+// ─── OPENAI STREAMING (internal) ─────────────────────────────────
+async function _streamFromOpenAI(
+  filteredHistory: Message[],
+  currentTranscript: string,
+  systemPrompt: string,
+  maxTokens: number,
+  callbacks: StreamingCallbacks,
+  gradeLevel?: string,
+  abortSignal?: AbortSignal
+): Promise<void> {
+  const openaiClient = getOpenAIClient();
+  if (!openaiClient) {
+    throw new Error('OpenAI fallback unavailable — no API key configured');
+  }
+  
+  const streamStart = Date.now();
+  console.log(`[AI Service] ⏱️ Starting OpenAI fallback streaming (${OPENAI_FALLBACK_MODEL})...`);
+
+  const openaiMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+    { role: 'system', content: systemPrompt },
+    ...filteredHistory.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+    { role: 'user' as const, content: currentTranscript }
+  ];
+
+  const stream = await openaiClient.chat.completions.create({
+    model: OPENAI_FALLBACK_MODEL,
+    max_tokens: maxTokens,
+    messages: openaiMessages,
+    stream: true,
+  });
+
+  // Adapt OpenAI stream to same processing flow
+  await _processOpenAIStream(stream, streamStart, callbacks, gradeLevel, abortSignal);
+}
+
+// ─── PROCESS OPENAI STREAM ───────────────────────────────────────
+async function _processOpenAIStream(
+  stream: AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>,
+  streamStart: number,
+  callbacks: StreamingCallbacks,
+  gradeLevel?: string,
+  abortSignal?: AbortSignal
+): Promise<void> {
+  let textBuffer = '';
+  let fullText = '';
+  let firstChunkTime = 0;
+  let sentenceCount = 0;
+  let tokenCount = 0;
+
+  const splitIntoSentences = _getSentenceSplitter();
+
+  for await (const chunk of stream) {
+    if (abortSignal?.aborted) {
+      console.log(`[AI Service] 🛑 OpenAI stream aborted after ${tokenCount} tokens`);
+      callbacks.onComplete((fullText ?? "").trim());
+      return;
     }
 
-    // Use streaming API with retry logic for overloaded errors
-    const stream = await withRetryStream(async () => {
-      return anthropicClient.messages.stream({
-        model: DEFAULT_MODEL_STR,
-        max_tokens: maxTokens,  // Grade-based tokens (Step 5)
-        system: systemPrompt,
-        messages: [
-          ...filteredHistory,
-          { role: "user", content: currentTranscript }
-        ],
-      });
-    });
+    const text = chunk.choices?.[0]?.delta?.content;
+    if (!text) continue;
 
-    let textBuffer = '';
-    let fullText = '';
-    let firstChunkTime = 0;
-    let sentenceCount = 0;
+    tokenCount++;
+    if (firstChunkTime === 0) {
+      firstChunkTime = Date.now();
+      console.log(`[AI Service] ⏱️ OpenAI first token in ${firstChunkTime - streamStart}ms`);
+    }
+
+    if (tokenCount <= 10 || tokenCount % 5 === 0) {
+      console.log(`[AI Service] 🔤 OpenAI token ${tokenCount}: "${text.replace(/\n/g, '\\n')}" | Buffer: "${textBuffer.slice(-20)}..."`);
+    }
+
+    textBuffer += text;
+    fullText += text;
+
+    const { sentences, remainder } = splitIntoSentences(textBuffer);
+    for (const sentence of sentences) {
+      const { sanitized, skipped, skipReason } = sanitizeTtsText(sentence, gradeLevel || '');
+      if (skipped || sanitized.trim().length < 4) continue;
+      if (abortSignal?.aborted) break;
+      sentenceCount++;
+      console.log(`[AI Service] 📤 OpenAI sentence ${sentenceCount}: "${sanitized.substring(0, 50)}..." (${Date.now() - streamStart}ms)`);
+      await callbacks.onSentence(sanitized);
+    }
+    textBuffer = remainder;
+  }
+
+  // Flush remaining buffer
+  if (textBuffer.trim()) {
+    const { sanitized, skipped } = sanitizeTtsText(textBuffer.trim(), gradeLevel || '');
+    if (!skipped && sanitized.trim().length >= 4) {
+      sentenceCount++;
+      console.log(`[AI Service] 📤 OpenAI final sentence ${sentenceCount}: "${sanitized.substring(0, 50)}..." (${Date.now() - streamStart}ms)`);
+      await callbacks.onSentence(sanitized);
+    }
+  }
+
+  const totalMs = Date.now() - streamStart;
+  console.log(`[AI Service] ⏱️ OpenAI streaming complete: ${totalMs}ms, ${sentenceCount} sentences, ${fullText.length} chars`);
+  callbacks.onComplete(fullText);
+}
+
+// ─── SHARED SENTENCE SPLITTER ────────────────────────────────────
+function _getSentenceSplitter(): (text: string) => { sentences: string[], remainder: string } {
+  return (text: string) => {
+    const PLACEHOLDER = '\u0000NUM\u0000';
+    const protectedText = text.replace(/(\d+)\.\s/g, `$1${PLACEHOLDER}`);
     
-    // Improved sentence detection: Find sentence boundaries WITHIN the buffer
-    // Handles: "Hello! How are you?" as multiple sentences
-    // Handles: Sentences ending at EOF without trailing whitespace
-    // Handles: Punctuation followed by space OR end of buffer
-    // IMPORTANT: Does NOT split on numbered list items (1., 2., 3.) or abbreviations
-    const splitIntoSentences = (text: string): { sentences: string[], remainder: string } => {
-      // Pre-process: temporarily protect numbered list items from splitting
-      // Replace "1. " "2. " etc. with a placeholder that doesn't contain periods
-      const PLACEHOLDER = '\u0000NUM\u0000';
-      const protectedText = text.replace(/(\d+)\.\s/g, `$1${PLACEHOLDER}`);
-      
-      const rawSentences: string[] = [];
-      // Split on sentence-ending punctuation followed by whitespace or end
-      const sentencePattern = /([^.!?]*[.!?]+)(?=\s|$)/g;
-      let lastIndex = 0;
-      let match;
-      
-      // Common abbreviations that shouldn't end sentences
-      const isAbbreviation = (s: string): boolean => {
-        const abbrevs = /\b(Dr|Mr|Mrs|Ms|Prof|Jr|Sr|vs|etc|i\.e|e\.g)\.\s*$/i;
-        return abbrevs.test(s.trim());
-      };
-      
-      while ((match = sentencePattern.exec(protectedText)) !== null) {
-        const sentence = match[1].trim();
-        
-        if (sentence && !isAbbreviation(sentence)) {
-          rawSentences.push(sentence);
-        }
-        
-        // Update tracking position
-        lastIndex = sentencePattern.lastIndex;
-        while (lastIndex < protectedText.length && /\s/.test(protectedText[lastIndex])) {
-          lastIndex++;
-        }
-        sentencePattern.lastIndex = lastIndex;
-      }
-      
-      // Restore numbered list markers in the sentences
-      const sentences = rawSentences.map(s => s.replace(new RegExp(`${PLACEHOLDER}`, 'g'), '. '));
-      
-      // Calculate remainder from original text
-      // Find how much of the protected text was consumed
-      const remainderProtected = protectedText.slice(lastIndex);
-      // Restore numbered markers in remainder
-      const remainder = remainderProtected.replace(new RegExp(`${PLACEHOLDER}`, 'g'), '. ');
-      
-      return { sentences, remainder };
+    const rawSentences: string[] = [];
+    const sentencePattern = /([^.!?]*[.!?]+)(?=\s|$)/g;
+    let lastIndex = 0;
+    let match;
+    
+    const isAbbreviation = (s: string): boolean => {
+      const abbrevs = /\b(Dr|Mr|Mrs|Ms|Prof|Jr|Sr|vs|etc|i\.e|e\.g)\.\s*$/i;
+      return abbrevs.test(s.trim());
     };
     
-    let tokenCount = 0;
-    for await (const event of stream) {
-      if (abortSignal?.aborted) {
-        console.log(`[AI Service] 🛑 LLM stream aborted after ${tokenCount} tokens (${Date.now() - streamStart}ms)`);
-        try { stream.controller.abort(); } catch (_) {}
-        const abortedText = (fullText ?? "").trim();
-        console.log(`[AI Service] 🛑 Aborted with partial text: ${abortedText.length} chars (will ${abortedText.length === 0 ? 'NOT' : ''} save to history)`);
-        callbacks.onComplete(abortedText);
-        return;
+    while ((match = sentencePattern.exec(protectedText)) !== null) {
+      const sentence = match[1].trim();
+      if (sentence && !isAbbreviation(sentence)) {
+        rawSentences.push(sentence);
       }
-      if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-        const text = event.delta.text;
-        tokenCount++;
-        
-        // Log first chunk timing
-        if (firstChunkTime === 0) {
-          firstChunkTime = Date.now();
-          console.log(`[AI Service] ⏱️ First token in ${firstChunkTime - streamStart}ms`);
-        }
-        
-        // Debug: Log every 5th token to track progress (or first 10)
-        if (tokenCount <= 10 || tokenCount % 5 === 0) {
-          console.log(`[AI Service] 🔤 Token ${tokenCount}: "${text.replace(/\n/g, '\\n')}" | Buffer: "${textBuffer.slice(-20)}..."`);
-        }
-        
-        textBuffer += text;
-        fullText += text;
-        
-        // Check for complete sentences within the buffer
-        const { sentences, remainder } = splitIntoSentences(textBuffer);
-        
-        // Send each complete sentence immediately (with sanitization for grade 6+)
-        for (const sentence of sentences) {
-          // Apply TTS sanitization for older grade bands
-          const { sanitized, wasModified, skipped, skipReason } = sanitizeTtsText(sentence, gradeLevel || '');
-          
-          if (skipped) {
-            console.log(`[AI Service] ⛔ Sentence skipped: "${sentence.substring(0, 40)}..." (${skipReason})`);
-            continue; // Don't send empty/invalid sentences to TTS
-          }
-          
-          // Skip very short fragments (< 4 chars)
-          if (sanitized.trim().length < 4) {
-            console.log(`[AI Service] ⛔ Fragment skipped: "${sanitized}" (too short)`);
-            continue;
-          }
-          
-          if (abortSignal?.aborted) break;
-          sentenceCount++;
-          if (wasModified) {
-            console.log(`[AI Service] 📤 Sentence ${sentenceCount} (sanitized): "${sanitized.substring(0, 60)}..." (${Date.now() - streamStart}ms)`);
-          } else {
-            console.log(`[AI Service] 📤 Sentence ${sentenceCount}: "${sentence.substring(0, 60)}..." (${Date.now() - streamStart}ms)`);
-          }
-          await callbacks.onSentence(sanitized);
-        }
-        
-        // Keep only the incomplete remainder for next token
-        if (sentences.length > 0) {
-          textBuffer = remainder;
-        }
+      lastIndex = sentencePattern.lastIndex;
+      while (lastIndex < protectedText.length && /\s/.test(protectedText[lastIndex])) {
+        lastIndex++;
       }
+      sentencePattern.lastIndex = lastIndex;
     }
-    console.log(`[AI Service] ⏱️ Stream ended after ${tokenCount} tokens`);
     
-    // Send any remaining text as final sentence (with sanitization for grade 6+)
-    if (textBuffer.trim()) {
-      const { sanitized, wasModified, skipped, skipReason } = sanitizeTtsText(textBuffer.trim(), gradeLevel || '');
+    const sentences = rawSentences.map(s => s.replace(new RegExp(`${PLACEHOLDER}`, 'g'), '. '));
+    const remainderProtected = protectedText.slice(lastIndex);
+    const remainder = remainderProtected.replace(new RegExp(`${PLACEHOLDER}`, 'g'), '. ');
+    
+    return { sentences, remainder };
+  };
+}
+
+// ─── PROCESS CLAUDE STREAM (internal) ────────────────────────────
+// This wraps the full stream iteration — errors here bubble up to the retry loop
+async function _processStream(
+  provider: string,
+  stream: any,
+  streamStart: number,
+  callbacks: StreamingCallbacks,
+  gradeLevel?: string,
+  abortSignal?: AbortSignal
+): Promise<void> {
+  let textBuffer = '';
+  let fullText = '';
+  let firstChunkTime = 0;
+  let sentenceCount = 0;
+  let tokenCount = 0;
+
+  const splitIntoSentences = _getSentenceSplitter();
+
+  for await (const event of stream) {
+    if (abortSignal?.aborted) {
+      console.log(`[AI Service] 🛑 ${provider} stream aborted after ${tokenCount} tokens (${Date.now() - streamStart}ms)`);
+      try { stream.controller?.abort(); } catch (_) {}
+      callbacks.onComplete((fullText ?? "").trim());
+      return;
+    }
+    if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+      const text = event.delta.text;
+      tokenCount++;
       
-      if (!skipped && sanitized.trim().length >= 4) {
+      if (firstChunkTime === 0) {
+        firstChunkTime = Date.now();
+        console.log(`[AI Service] ⏱️ First token in ${firstChunkTime - streamStart}ms`);
+      }
+      
+      if (tokenCount <= 10 || tokenCount % 5 === 0) {
+        console.log(`[AI Service] 🔤 Token ${tokenCount}: "${text.replace(/\n/g, '\\n')}" | Buffer: "${textBuffer.slice(-20)}..."`);
+      }
+      
+      textBuffer += text;
+      fullText += text;
+      
+      const { sentences, remainder } = splitIntoSentences(textBuffer);
+      
+      for (const sentence of sentences) {
+        const { sanitized, wasModified, skipped, skipReason } = sanitizeTtsText(sentence, gradeLevel || '');
+        
+        if (skipped) {
+          console.log(`[AI Service] ⛔ Sentence skipped: "${sentence.substring(0, 40)}..." (${skipReason})`);
+          continue;
+        }
+        
+        if (sanitized.trim().length < 4) {
+          console.log(`[AI Service] ⛔ Fragment skipped: "${sanitized}" (too short)`);
+          continue;
+        }
+        
+        if (abortSignal?.aborted) break;
         sentenceCount++;
         if (wasModified) {
-          console.log(`[AI Service] 📤 Final sentence ${sentenceCount} (sanitized): "${sanitized.substring(0, 50)}..." (${Date.now() - streamStart}ms)`);
+          console.log(`[AI Service] 📤 Sentence ${sentenceCount} (sanitized): "${sanitized.substring(0, 60)}..." (${Date.now() - streamStart}ms)`);
         } else {
-          console.log(`[AI Service] 📤 Final sentence ${sentenceCount}: "${textBuffer.trim().substring(0, 50)}..." (${Date.now() - streamStart}ms)`);
+          console.log(`[AI Service] 📤 Sentence ${sentenceCount}: "${sentence.substring(0, 60)}..." (${Date.now() - streamStart}ms)`);
         }
         await callbacks.onSentence(sanitized);
-      } else {
-        console.log(`[AI Service] ⛔ Final sentence skipped: "${textBuffer.trim().substring(0, 40)}..." (${skipReason || 'too short'})`);
+      }
+      
+      if (sentences.length > 0) {
+        textBuffer = remainder;
       }
     }
-    
-    const totalMs = Date.now() - streamStart;
-    console.log(`[AI Service] ⏱️ Streaming complete: ${totalMs}ms, ${sentenceCount} sentences, ${fullText.length} chars`);
-    
-    callbacks.onComplete(fullText);
-    
-  } catch (error: any) {
-    console.error("[AI Service] ❌ Streaming error:", error);
-    
-    // Map API errors to user-friendly messages
-    const errorType = error?.error?.type || error?.type || '';
-    const statusCode = error?.status || error?.statusCode || 0;
-    
-    let friendlyMessage: string;
-    if (statusCode === 529 || errorType === 'overloaded_error') {
-      friendlyMessage = 'RETRYABLE:The AI service is temporarily busy. Your message will be retried automatically.';
-    } else if (statusCode === 429 || errorType === 'rate_limit_error') {
-      friendlyMessage = 'RETRYABLE:Too many requests. Your message will be retried in a moment.';
-    } else if (statusCode === 500 || errorType === 'api_error') {
-      friendlyMessage = 'RETRYABLE:The AI service encountered a temporary issue. Retrying your message.';
-    } else {
-      friendlyMessage = 'The tutor encountered an error processing your message. Please try speaking again.';
-    }
-    
-    console.error(`[AI Service] ❌ Mapped error: type=${errorType} status=${statusCode} → "${friendlyMessage}"`);
-    callbacks.onError(new Error(friendlyMessage));
   }
+  console.log(`[AI Service] ⏱️ Stream ended after ${tokenCount} tokens`);
+  
+  if (textBuffer.trim()) {
+    const { sanitized, wasModified, skipped, skipReason } = sanitizeTtsText(textBuffer.trim(), gradeLevel || '');
+    
+    if (!skipped && sanitized.trim().length >= 4) {
+      sentenceCount++;
+      if (wasModified) {
+        console.log(`[AI Service] 📤 Final sentence ${sentenceCount} (sanitized): "${sanitized.substring(0, 50)}..." (${Date.now() - streamStart}ms)`);
+      } else {
+        console.log(`[AI Service] 📤 Final sentence ${sentenceCount}: "${textBuffer.trim().substring(0, 50)}..." (${Date.now() - streamStart}ms)`);
+      }
+      await callbacks.onSentence(sanitized);
+    } else {
+      console.log(`[AI Service] ⛔ Final sentence skipped: "${textBuffer.trim().substring(0, 40)}..." (${skipReason || 'too short'})`);
+    }
+  }
+  
+  const totalMs = Date.now() - streamStart;
+  console.log(`[AI Service] ⏱️ Streaming complete: ${totalMs}ms, ${sentenceCount} sentences, ${fullText.length} chars`);
+  
+  callbacks.onComplete(fullText);
 }
 
 export async function generateTutorResponse(
@@ -445,7 +603,7 @@ export async function generateTutorResponse(
   systemInstruction?: string,
   inputModality?: "voice" | "text",
   language?: string,
-  gradeLevel?: string  // Step 5: College response-depth tweak
+  gradeLevel?: string
 ): Promise<string> {
   
   console.log("[AI Service] 📝 Generating response (non-streaming)");
@@ -453,58 +611,81 @@ export async function generateTutorResponse(
   console.log("[AI Service] 📚 Documents available:", uploadedDocuments.length);
   console.log("[AI Service] 🎓 Grade level:", gradeLevel || "unknown");
   
-  // NO-GHOSTING: Calculate and log ragChars
   const ragChars = uploadedDocuments.reduce((sum, doc) => sum + doc.length, 0);
   console.log(`[RAG] preLLM { ragChars: ${ragChars}, docCount: ${uploadedDocuments.length}, hasContent: ${ragChars > 0} }`);
   
   const systemPrompt = buildSystemPrompt(uploadedDocuments, systemInstruction, inputModality, language);
   console.log("[AI Service] 📄 System prompt length:", systemPrompt.length, "chars");
 
-  // Step 5: College response-depth tweak - use grade-based max_tokens
   const maxTokens = getMaxTokensForGrade(gradeLevel);
   console.log(`[AI Service] 📏 Using max_tokens: ${maxTokens} for grade: ${gradeLevel || 'default'}`);
 
-  try {
-    const anthropicClient = getAnthropicClient();
-    
-    // ⏱️ LATENCY TIMING: Track Claude API call
-    const apiStart = Date.now();
-    console.log(`[AI Service] ⏱️ Calling Claude API... (prompt length: ${systemPrompt.length} chars)`);
-    
-    const filteredHistory = conversationHistory.filter(msg => {
-      const content = (msg.content ?? "").trim();
-      if (content.length === 0) return false;
-      return true;
-    });
-    const removedCount = conversationHistory.length - filteredHistory.length;
-    if (removedCount > 0) {
-      console.warn(`[LLM] Removed ${removedCount} empty messages from history before Claude call (non-streaming)`);
-    }
+  const filteredHistory = conversationHistory.filter(msg => {
+    const content = (msg.content ?? "").trim();
+    return content.length > 0;
+  });
 
-    // Wrap Claude API call with retry logic for overloaded errors
-    const response = await withRetry(async () => {
-      return anthropicClient.messages.create({
-        model: DEFAULT_MODEL_STR, // "claude-sonnet-4-20250514"
-        max_tokens: maxTokens,  // Grade-based tokens (Step 5)
+  const messages = [
+    ...filteredHistory,
+    { role: "user" as const, content: currentTranscript }
+  ];
+
+  // Try Claude with retries
+  for (let attempt = 1; attempt <= CLAUDE_MAX_RETRIES; attempt++) {
+    try {
+      const anthropicClient = getAnthropicClient();
+      const apiStart = Date.now();
+      console.log(`[AI Service] ⏱️ Calling Claude API (attempt ${attempt})...`);
+      
+      const response = await anthropicClient.messages.create({
+        model: DEFAULT_MODEL_STR,
+        max_tokens: maxTokens,
         system: systemPrompt,
-        messages: [
-          ...filteredHistory,
-          { role: "user", content: currentTranscript }
-        ],
+        messages,
       });
+
+      const apiMs = Date.now() - apiStart;
+      console.log(`[AI Service] ⏱️ Claude API completed in ${apiMs}ms`);
+
+      const textContent = response.content.find(block => block.type === 'text');
+      return textContent && 'text' in textContent ? textContent.text : "I'm sorry, I didn't catch that. Could you repeat?";
+      
+    } catch (error: any) {
+      const retryable = isRetryableError(error);
+      console.error(`[Retry] Claude non-streaming attempt ${attempt}/${CLAUDE_MAX_RETRIES} failed (retryable=${retryable})`);
+      
+      if (!retryable) throw error;
+      
+      if (attempt < CLAUDE_MAX_RETRIES) {
+        const delay = Math.min(RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1) + Math.random() * 500, RETRY_MAX_DELAY_MS);
+        console.log(`[Retry] Waiting ${Math.round(delay)}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+
+  // Claude exhausted — try OpenAI fallback
+  console.error(`[Retry] ❌ All Claude attempts failed — trying OpenAI fallback (non-streaming)`);
+  try {
+    const openaiClient = getOpenAIClient();
+    if (!openaiClient) throw new Error('OpenAI fallback unavailable');
+    
+    const apiStart = Date.now();
+    const response = await openaiClient.chat.completions.create({
+      model: OPENAI_FALLBACK_MODEL,
+      max_tokens: maxTokens,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        ...filteredHistory.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+        { role: 'user' as const, content: currentTranscript }
+      ],
     });
-
-    const apiMs = Date.now() - apiStart;
-    console.log(`[AI Service] ⏱️ Claude API completed in ${apiMs}ms`);
-
-    const textContent = response.content.find(block => block.type === 'text');
-    const responseText = textContent && 'text' in textContent ? textContent.text : "I'm sorry, I didn't catch that. Could you repeat?";
-    console.log(`[AI Service] ⏱️ Response length: ${responseText.length} chars`);
     
-    return responseText;
+    console.log(`[AI Service] ⏱️ OpenAI fallback completed in ${Date.now() - apiStart}ms`);
+    return response.choices[0]?.message?.content || "I'm sorry, I didn't catch that. Could you repeat?";
     
-  } catch (error) {
-    console.error("[AI Service] ❌ Error:", error);
-    throw error;
+  } catch (fallbackError) {
+    console.error("[AI Service] ❌ OpenAI fallback also failed:", fallbackError);
+    throw fallbackError;
   }
 }
