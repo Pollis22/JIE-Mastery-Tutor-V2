@@ -135,7 +135,8 @@ function App() {
       <TooltipProvider>
         <AuthProvider>
           <Toaster />
-          <InstallBanner />
+          {/* PWA install banner disabled for now */}
+          {/* <InstallBanner /> */}
           <Router />
         </AuthProvider>
       </TooltipProvider>
