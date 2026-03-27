@@ -34,10 +34,6 @@ import {
   Calendar,
   Volume2,
   Mic,
-  Headphones,
-  Type,
-  Zap,
-  ZapOff,
   UserCog,
   FileText,
   GraduationCap
@@ -45,7 +41,6 @@ import {
 import AccountSettings from "@/components/dashboard/account-settings";
 import SubscriptionManager from "@/components/dashboard/subscription-manager";
 import PaymentMethods from "@/components/dashboard/payment-methods";
-import ThemeToggle from "@/components/dashboard/theme-toggle";
 import LanguageSelector from "@/components/dashboard/language-selector";
 import SessionHistory from "@/components/dashboard/session-history";
 import UsageAnalytics from "@/components/dashboard/usage-analytics";
@@ -178,7 +173,6 @@ export default function DashboardPage() {
     { id: "sessions", label: "Transcripts", icon: BookOpen },
     { id: "analytics", label: "Usage Analytics", icon: BarChart3 },
     { id: "settings", label: "Settings", icon: Settings },
-    { id: "preferences", label: "Preferences", icon: Settings },
     { id: "support", label: "Support & Help", icon: HelpCircle },
   ];
 
@@ -428,142 +422,7 @@ export default function DashboardPage() {
             )}
             {activeTab === "sessions" && <SessionHistory />}
             {activeTab === "analytics" && <UsageAnalytics />}
-            {activeTab === "preferences" && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Preferences</CardTitle>
-                  <CardDescription>Customize your learning experience</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Tabs defaultValue="session">
-                    <TabsList className="grid w-full grid-cols-3">
-                      <TabsTrigger value="session">Tutor Session</TabsTrigger>
-                      <TabsTrigger value="appearance">Appearance</TabsTrigger>
-                      <TabsTrigger value="notifications">Notifications</TabsTrigger>
-                    </TabsList>
-                    
-                    <TabsContent value="session" className="space-y-4">
-                      {/* Default Session Mode */}
-                      <div className="p-4 border rounded-lg space-y-3">
-                        <div>
-                          <h4 className="font-medium">Default Session Mode</h4>
-                          <p className="text-sm text-muted-foreground">
-                            Choose how you communicate with your tutor when starting a session
-                          </p>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          {([
-                            { key: 'voice' as const, label: 'Voice', Icon: Mic, desc: 'Speak & hear your tutor' },
-                            { key: 'hybrid' as const, label: 'Listen Only', Icon: Headphones, desc: 'Type to tutor, hear responses' },
-                            { key: 'text' as const, label: 'Text Only', Icon: Type, desc: 'Type & read (silent)' },
-                          ]).map(({ key, label, Icon, desc }) => {
-                            const isActive = (() => {
-                              try { return (localStorage.getItem('preferred-communication-mode') || 'voice') === key; } catch { return key === 'voice'; }
-                            })();
-                            return (
-                              <button
-                                key={key}
-                                onClick={() => {
-                                  localStorage.setItem('preferred-communication-mode', key);
-                                  // Force re-render
-                                  const event = new Event('storage');
-                                  window.dispatchEvent(event);
-                                  // Trigger re-render by updating a dummy state
-                                  setActiveTab('preferences');
-                                }}
-                                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                                  isActive
-                                    ? 'bg-primary text-primary-foreground shadow-sm'
-                                    : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground border border-border'
-                                }`}
-                              >
-                                <Icon className="h-4 w-4" />
-                                <div className="text-left">
-                                  <div>{label}</div>
-                                  <div className={`text-[10px] ${isActive ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>{desc}</div>
-                                </div>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                      
-                      {/* Typewriter Effect */}
-                      <div className="flex items-center justify-between p-4 border rounded-lg">
-                        <div>
-                          <h4 className="font-medium flex items-center gap-2">
-                            Typewriter Effect
-                            <Zap className="h-4 w-4 text-blue-500" />
-                          </h4>
-                          <p className="text-sm text-muted-foreground">
-                            In text mode, tutor responses appear word-by-word instead of all at once
-                          </p>
-                        </div>
-                        <Switch
-                          checked={(() => {
-                            try { return localStorage.getItem('jie-typewriter') !== 'false'; } catch { return true; }
-                          })()}
-                          onCheckedChange={(checked) => {
-                            localStorage.setItem('jie-typewriter', String(checked));
-                            setActiveTab('preferences');
-                          }}
-                          data-testid="switch-typewriter"
-                        />
-                      </div>
-                    </TabsContent>
-                    
-                    <TabsContent value="appearance" className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h4 className="font-medium">Theme</h4>
-                          <p className="text-sm text-muted-foreground">
-                            Choose between light and dark mode
-                          </p>
-                        </div>
-                        <ThemeToggle showLabel />
-                      </div>
-                    </TabsContent>
-
-                    <TabsContent value="notifications" className="space-y-4">
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between p-4 border rounded-lg">
-                          <div>
-                            <h4 className="font-medium">Email Notifications</h4>
-                            <p className="text-sm text-muted-foreground">
-                              Receive updates about your tutoring sessions
-                            </p>
-                          </div>
-                          <Switch
-                            checked={preferences?.emailNotifications ?? true}
-                            onCheckedChange={(checked) => 
-                              updateNotificationsMutation.mutate({ emailNotifications: checked })
-                            }
-                            disabled={updateNotificationsMutation.isPending}
-                            data-testid="switch-email-notifications"
-                          />
-                        </div>
-                        
-                        <div className="flex items-center justify-between p-4 border rounded-lg">
-                          <div>
-                            <h4 className="font-medium">Marketing Emails</h4>
-                            <p className="text-sm text-muted-foreground">
-                              Receive newsletters and promotional offers
-                            </p>
-                          </div>
-                          <Switch
-                            checked={preferences?.marketingEmails ?? false}
-                            onCheckedChange={(checked) => 
-                              updateNotificationsMutation.mutate({ marketingEmails: checked })
-                            }
-                            disabled={updateNotificationsMutation.isPending}
-                            data-testid="switch-marketing-emails"
-                          />
-                        </div>
-                      </div>
-                    </TabsContent>
-                  </Tabs>
-                </CardContent>
-              </Card>
+            
             )}
             
             {activeTab === "support" && <SupportCenter />}

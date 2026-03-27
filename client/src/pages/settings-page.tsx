@@ -20,7 +20,7 @@ import { useEffect, useState } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { getPlanDetails } from "@shared/plan-config";
-import { Mail } from "lucide-react";
+import { Mail, Mic, Headphones, Type, Zap, Settings } from "lucide-react";
 
 type EmailFrequency = 'off' | 'per_session' | 'daily' | 'weekly';
 
@@ -55,6 +55,18 @@ export default function SettingsPage() {
   const [additionalEmails, setAdditionalEmails] = useState<string[]>([]);
   const [savingEmailPrefs, setSavingEmailPrefs] = useState(false);
   const [savingTranscriptEmail, setSavingTranscriptEmail] = useState(false);
+  
+  // Tutor session preferences (localStorage-backed)
+  const [sessionMode, setSessionMode] = useState<'voice' | 'hybrid' | 'text'>(() => {
+    try {
+      const saved = localStorage.getItem('preferred-communication-mode');
+      if (saved === 'voice' || saved === 'hybrid' || saved === 'text') return saved;
+    } catch {}
+    return 'voice';
+  });
+  const [typewriterEnabled, setTypewriterEnabled] = useState(() => {
+    try { return localStorage.getItem('jie-typewriter') !== 'false'; } catch { return true; }
+  });
 
   const { data: dashboard, isLoading: isDashboardLoading } = useQuery<DashboardData>({
     queryKey: ["/api/dashboard"],
@@ -446,6 +458,79 @@ export default function SettingsPage() {
 
               {/* Audio Device Settings */}
               <AudioSettings />
+
+              {/* Tutor Session Preferences */}
+              <Card className="shadow-sm">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Settings className="h-5 w-5" />
+                    Tutor Session Preferences
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {/* Default Session Mode */}
+                  <div className="space-y-3">
+                    <div>
+                      <h4 className="text-base font-medium">Default Session Mode</h4>
+                      <p className="text-sm text-muted-foreground">
+                        Choose how you communicate with your tutor when starting a session
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      {([
+                        { key: 'voice' as const, label: 'Voice', Icon: Mic, desc: 'Speak & hear your tutor' },
+                        { key: 'hybrid' as const, label: 'Listen Only', Icon: Headphones, desc: 'Type to tutor, hear responses' },
+                        { key: 'text' as const, label: 'Text Only', Icon: Type, desc: 'Type & read (silent)' },
+                      ]).map(({ key, label, Icon, desc }) => (
+                        <button
+                          key={key}
+                          onClick={() => {
+                            setSessionMode(key);
+                            localStorage.setItem('preferred-communication-mode', key);
+                            toast({ title: "Session mode updated", description: `Default mode set to ${label}` });
+                          }}
+                          className={`flex items-center gap-3 p-4 rounded-lg border text-left transition-colors ${
+                            sessionMode === key
+                              ? 'border-primary bg-primary/5'
+                              : 'border-border hover:bg-muted/50'
+                          }`}
+                        >
+                          <Icon className={`h-5 w-5 flex-shrink-0 ${sessionMode === key ? 'text-primary' : 'text-muted-foreground'}`} />
+                          <div>
+                            <div className={`font-medium ${sessionMode === key ? 'text-primary' : ''}`}>{label}</div>
+                            <div className="text-xs text-muted-foreground">{desc}</div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      You can always switch modes during a session using the mode tabs.
+                    </p>
+                  </div>
+                  
+                  {/* Typewriter Effect */}
+                  <div className="flex items-center justify-between rounded-lg border border-border p-4">
+                    <div className="space-y-0.5">
+                      <h4 className="text-base font-medium flex items-center gap-2">
+                        Typewriter Effect
+                        <Zap className="h-4 w-4 text-blue-500" />
+                      </h4>
+                      <p className="text-sm text-muted-foreground">
+                        In text mode, tutor responses appear word-by-word instead of all at once
+                      </p>
+                    </div>
+                    <Switch
+                      checked={typewriterEnabled}
+                      onCheckedChange={(checked) => {
+                        setTypewriterEnabled(checked);
+                        localStorage.setItem('jie-typewriter', String(checked));
+                        toast({ title: "Typewriter effect " + (checked ? "enabled" : "disabled") });
+                      }}
+                      data-testid="switch-typewriter"
+                    />
+                  </div>
+                </CardContent>
+              </Card>
 
               {/* Email Preferences */}
               <Card className="shadow-sm">
