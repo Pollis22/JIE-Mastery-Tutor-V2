@@ -311,6 +311,7 @@ const IMAGE_VISUALS: Record<string, string> = {
   reading_genres_bookshelf: '/visuals/reading_genres_bookshelf.webp',
   reading_story_mountain: '/visuals/reading_story_mountain.webp',
   science_animal_cell: '/visuals/science_animal_cell.webp',
+  science_solar_system: '/visuals/space_planet_sizes.webp',
   science_brain_regions: '/visuals/science_brain_regions.webp',
   science_cloud_types: '/visuals/science_cloud_types.webp',
   science_ear_anatomy: '/visuals/science_ear_anatomy.webp',
