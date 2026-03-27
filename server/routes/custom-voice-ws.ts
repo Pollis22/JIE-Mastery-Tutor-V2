@@ -1342,6 +1342,7 @@ interface SessionState {
     severity: 'info' | 'warning' | 'alert' | 'critical';
   }>; // SAFETY: Track safety incidents in session
   terminatedForSafety: boolean; // SAFETY: Whether session was ended due to safety violations
+  useFallbackLLM: boolean; // FALLBACK: Session switched to OpenAI after Claude failures
   parentEmail?: string; // SAFETY: Parent email for alerts
   hasGreeted: boolean; // GREETING: Prevent duplicate greetings on reconnect
   hasAcknowledgedDocs: boolean; // DOCS: One-time doc acknowledgment flag per session
@@ -2542,6 +2543,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
       safetyStrikeCount: 0, // SAFETY: Initialize strike count
       safetyFlags: [], // SAFETY: Initialize safety flags array
       terminatedForSafety: false, // SAFETY: Not terminated initially
+      useFallbackLLM: false, // FALLBACK: Start with Claude, switch to OpenAI on failure
       parentEmail: undefined, // SAFETY: Will be set from user data
       studentId: undefined, // SAFETY: Will be set from session data
       // RECONNECT GRACE WINDOW: Initialize reconnect tracking
@@ -4079,8 +4081,15 @@ export function setupCustomVoiceWebSocket(server: Server) {
             "voice",
             responseLanguage,
             state.ageGroup,
-            llmAc.signal
-          ).catch(reject);
+            llmAc.signal,
+            state.useFallbackLLM
+          ).then(() => {
+            // Check if fallback was triggered during this call
+            if ((callbacks as any)._fallbackUsed && !state.useFallbackLLM) {
+              state.useFallbackLLM = true;
+              console.log(`[LLM Fallback] 🔄 Switching to OpenAI for rest of session ${state.sessionId}`);
+            }
+          }).catch(reject);
         });
 
         console.log("[Custom Voice] 🔊 Streaming response sent, waiting for user...");
@@ -7471,8 +7480,15 @@ HONESTY INSTRUCTIONS:
                   "text",
                   textResponseLanguage,
                   state.ageGroup,
-                  textLlmAc.signal
-                ).catch(textReject);
+                  textLlmAc.signal,
+                  state.useFallbackLLM
+                ).then(() => {
+                  // Check if fallback was triggered during this call
+                  if ((textCallbacks as any)._fallbackUsed && !state.useFallbackLLM) {
+                    state.useFallbackLLM = true;
+                    console.log(`[LLM Fallback] 🔄 Switching to OpenAI for rest of session ${state.sessionId}`);
+                  }
+                }).catch(textReject);
               });
               
               console.log(`[Custom Voice] 🔊 Sent streamed tutor voice response (${textSentenceCount} chunks)`);
