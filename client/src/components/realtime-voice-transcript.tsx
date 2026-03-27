@@ -69,6 +69,7 @@ export function RealtimeVoiceTranscript({
   const [typingMsgIndex, setTypingMsgIndex] = useState<number | null>(null);
   const [typingWordCount, setTypingWordCount] = useState(0);
   const typingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const typewriterPrevLenRef = useRef(0); // Separate ref — scroll effect uses prevMessagesLenRef
   
   // Toggle typewriter and persist
   const toggleTypewriter = useCallback(() => {
@@ -84,14 +85,16 @@ export function RealtimeVoiceTranscript({
   
   // Start typewriter when a new assistant message arrives (text/hybrid mode only)
   useEffect(() => {
-    if (!typewriterEnabled) return;
-    if (communicationMode === 'voice') return; // No typewriter in voice mode
+    const filtered = messages.filter(m => !m.isThinking);
+    const len = filtered.length;
+    const prevLen = typewriterPrevLenRef.current;
+    typewriterPrevLenRef.current = len; // Always update
     
-    const len = messages.filter(m => !m.isThinking).length;
-    const prevLen = prevMessagesLenRef.current;
+    if (!typewriterEnabled) return;
+    if (communicationMode === 'voice') return;
     
     if (len > prevLen && len > 0) {
-      const lastMsg = messages.filter(m => !m.isThinking)[len - 1];
+      const lastMsg = filtered[len - 1];
       if (lastMsg && lastMsg.role === 'assistant') {
         const words = lastMsg.content.split(/\s+/).filter(w => w.length > 0);
         if (words.length > 1) {
@@ -106,7 +109,6 @@ export function RealtimeVoiceTranscript({
             if (count >= words.length) {
               if (typingTimerRef.current) clearInterval(typingTimerRef.current);
               typingTimerRef.current = null;
-              // Small delay then clear typing state
               setTimeout(() => setTypingMsgIndex(null), 100);
             }
           }, TYPEWRITER_WORD_DELAY);
