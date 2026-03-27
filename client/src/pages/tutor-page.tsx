@@ -1050,42 +1050,60 @@ export default function TutorPage() {
                     ))}
                   </select>
 
-                  {/* Pre-session mode selector */}
-                  {sessionState === 'idle' && (
-                    <div className="flex items-center gap-1 bg-muted/50 rounded-lg p-1">
-                      {([
-                        { key: 'voice' as const, label: 'Voice', Icon: Mic, tip: 'Speak & hear your tutor' },
-                        { key: 'hybrid' as const, label: 'Listen', Icon: Headphones, tip: 'Type to tutor, hear responses' },
-                        { key: 'text' as const, label: 'Text', Icon: Type, tip: 'Type & read (silent)' },
-                      ]).map(({ key, label, Icon, tip }) => (
-                        <button
-                          key={key}
-                          onClick={() => { setSessionMode(key); localStorage.setItem('preferred-communication-mode', key); }}
-                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                            sessionMode === key
-                              ? 'bg-background text-foreground shadow-sm'
-                              : 'text-muted-foreground hover:text-foreground'
-                          }`}
-                          title={tip}
-                        >
-                          <Icon className="h-3.5 w-3.5" />
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  <button 
-                    id="start-btn" 
-                    onClick={startTutor} 
-                    disabled={!scriptReady || !selectedStudentId || sessionState !== 'idle'}
-                    className={`px-6 py-2.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary font-semibold text-base sm:ml-auto ${sessionState !== 'idle' ? 'hidden' : ''}`}
-                    data-testid="button-start-tutor"
-                    title={!selectedStudentId ? "Please select a student profile to connect" : ""}
-                  >
-                    Start Tutor Session
-                  </button>
                 </div>
+
+                {/* Pre-session mode selector — own row, aligned under dropdowns */}
+                {sessionState === 'idle' && (
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mt-4">
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1.5">Session Mode</p>
+                      <div className="flex items-center gap-1 border border-border rounded-lg p-1 bg-muted/30">
+                        {([
+                          { key: 'voice' as const, label: 'Voice', Icon: Mic, tip: 'Speak & hear your tutor' },
+                          { key: 'hybrid' as const, label: 'Listen Only', Icon: Headphones, tip: 'Type to tutor, hear responses' },
+                          { key: 'text' as const, label: 'Text Only', Icon: Type, tip: 'Type & read (silent)' },
+                        ]).map(({ key, label, Icon, tip }) => (
+                          <button
+                            key={key}
+                            onClick={() => { setSessionMode(key); localStorage.setItem('preferred-communication-mode', key); }}
+                            className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                              sessionMode === key
+                                ? 'bg-background text-foreground shadow-sm border border-border'
+                                : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
+                            }`}
+                            title={tip}
+                          >
+                            <Icon className="h-4 w-4" />
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <button 
+                      id="start-btn" 
+                      onClick={startTutor} 
+                      disabled={!scriptReady || !selectedStudentId || sessionState !== 'idle'}
+                      className="px-6 py-2.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary font-semibold text-base"
+                      data-testid="button-start-tutor"
+                      title={!selectedStudentId ? "Please select a student profile to connect" : ""}
+                    >
+                      Start Tutor Session
+                    </button>
+                  </div>
+                )}
+
+                {/* Start button when session is starting (hidden during idle — shown above) */}
+                {sessionState !== 'idle' && sessionState !== 'active' && (
+                  <div className="mt-4">
+                    <button 
+                      disabled
+                      className="px-6 py-2.5 bg-primary text-primary-foreground rounded-md opacity-50 cursor-not-allowed font-semibold text-base"
+                    >
+                      Starting...
+                    </button>
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}

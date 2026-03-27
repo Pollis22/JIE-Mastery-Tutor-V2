@@ -195,9 +195,6 @@ export const RealtimeVoiceHost = forwardRef<RealtimeVoiceHostHandle, RealtimeVoi
   
   // Communication mode state (voice, hybrid, text-only)
   type CommunicationMode = 'voice' | 'hybrid' | 'text';
-  const [communicationMode, setCommunicationMode] = useState<CommunicationMode>('voice');
-  const [tutorAudioEnabled, setTutorAudioEnabled] = useState(true);
-  const [studentMicEnabled, setStudentMicEnabled] = useState(true);
   
   // Mode configurations
   const MODES = {
@@ -226,6 +223,11 @@ export const RealtimeVoiceHost = forwardRef<RealtimeVoiceHostHandle, RealtimeVoi
       emoji: '📝'
     }
   };
+  
+  // Initialize from prop — must happen at state creation, not in useEffect
+  const [communicationMode, setCommunicationMode] = useState<CommunicationMode>(initialMode);
+  const [tutorAudioEnabled, setTutorAudioEnabled] = useState(MODES[initialMode].tutorAudio);
+  const [studentMicEnabled, setStudentMicEnabled] = useState(MODES[initialMode].studentMic);
   
   // Use Custom Voice Stack (Deepgram + Claude + ElevenLabs)
   const customVoice = useCustomVoice();
@@ -258,14 +260,11 @@ export const RealtimeVoiceHost = forwardRef<RealtimeVoiceHostHandle, RealtimeVoi
     return `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   };
 
-  // Apply initialMode from parent (pre-session selection) on mount
+  // Log initialMode on mount for debugging
   useEffect(() => {
-    const config = MODES[initialMode];
-    console.log('[Mode] Starting with initialMode:', initialMode, config);
-    setCommunicationMode(initialMode);
-    setTutorAudioEnabled(config.tutorAudio);
-    setStudentMicEnabled(config.studentMic);
-    localStorage.setItem('preferred-communication-mode', initialMode);
+    console.log('[Mode] Component mounted with initialMode:', initialMode, {
+      communicationMode, tutorAudioEnabled, studentMicEnabled
+    });
   }, []);
   
   // Switch between preset modes
