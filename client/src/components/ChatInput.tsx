@@ -140,8 +140,8 @@ export const ChatInput = ({
               : "Type a message, paste text or images, or drag & drop files..."
           }
           disabled={disabled}
-          className="flex-1 min-h-[40px] max-h-[150px] px-3 py-2 bg-transparent border-none outline-none resize-none font-inherit text-sm leading-relaxed disabled:cursor-not-allowed placeholder:text-gray-400 dark:placeholder:text-gray-500 text-gray-900 dark:text-gray-100"
-          rows={1}
+          className="flex-1 min-h-[56px] max-h-[150px] px-3 py-2 bg-transparent border-none outline-none resize-none font-inherit text-sm leading-relaxed disabled:cursor-not-allowed placeholder:text-gray-400 dark:placeholder:text-gray-500 text-gray-900 dark:text-gray-100"
+          rows={2}
           data-testid="input-chat-message"
         />
 

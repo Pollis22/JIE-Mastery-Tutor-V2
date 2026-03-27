@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { VoiceStatusIndicator } from "./VoiceStatusIndicator";
 import { TutorSessionAmbient } from "./TutorSessionAmbient";
 import { useAgeTheme } from "@/contexts/ThemeContext";
-import { ArrowDown } from "lucide-react";
+import { ArrowDown, Zap, ZapOff } from "lucide-react";
 
 interface RealtimeMessage {
   role: 'user' | 'assistant' | 'system';
@@ -28,6 +28,18 @@ interface Props {
 }
 
 const NEAR_BOTTOM_THRESHOLD = 80;
+const TYPEWRITER_WORD_DELAY = 50; // ms between words
+
+// Render markdown bold as <strong>
+function renderMarkdown(text: string) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={i}>{part.slice(2, -2)}</strong>;
+    }
+    return part;
+  });
+}
 
 export function RealtimeVoiceTranscript({ 
   messages, 
@@ -49,6 +61,64 @@ export function RealtimeVoiceTranscript({
   const autoScrollRef = useRef(true);
   const programmaticScrollRef = useRef(false);
   const prevMessagesLenRef = useRef(0);
+  
+  // Typewriter effect state
+  const [typewriterEnabled, setTypewriterEnabled] = useState(() => {
+    try { return localStorage.getItem('jie-typewriter') !== 'false'; } catch { return true; }
+  });
+  const [typingMsgIndex, setTypingMsgIndex] = useState<number | null>(null);
+  const [typingWordCount, setTypingWordCount] = useState(0);
+  const typingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Toggle typewriter and persist
+  const toggleTypewriter = useCallback(() => {
+    setTypewriterEnabled(prev => {
+      const next = !prev;
+      try { localStorage.setItem('jie-typewriter', String(next)); } catch {}
+      return next;
+    });
+    // Cancel any active typing animation
+    if (typingTimerRef.current) { clearInterval(typingTimerRef.current); typingTimerRef.current = null; }
+    setTypingMsgIndex(null);
+  }, []);
+  
+  // Start typewriter when a new assistant message arrives (text/hybrid mode only)
+  useEffect(() => {
+    if (!typewriterEnabled) return;
+    if (communicationMode === 'voice') return; // No typewriter in voice mode
+    
+    const len = messages.filter(m => !m.isThinking).length;
+    const prevLen = prevMessagesLenRef.current;
+    
+    if (len > prevLen && len > 0) {
+      const lastMsg = messages.filter(m => !m.isThinking)[len - 1];
+      if (lastMsg && lastMsg.role === 'assistant') {
+        const words = lastMsg.content.split(/\s+/).filter(w => w.length > 0);
+        if (words.length > 1) {
+          setTypingMsgIndex(len - 1);
+          setTypingWordCount(0);
+          
+          if (typingTimerRef.current) clearInterval(typingTimerRef.current);
+          let count = 0;
+          typingTimerRef.current = setInterval(() => {
+            count++;
+            setTypingWordCount(count);
+            if (count >= words.length) {
+              if (typingTimerRef.current) clearInterval(typingTimerRef.current);
+              typingTimerRef.current = null;
+              // Small delay then clear typing state
+              setTimeout(() => setTypingMsgIndex(null), 100);
+            }
+          }, TYPEWRITER_WORD_DELAY);
+        }
+      }
+    }
+  }, [messages, typewriterEnabled, communicationMode]);
+  
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => { if (typingTimerRef.current) clearInterval(typingTimerRef.current); };
+  }, []);
   
   const prefersReducedMotion = typeof window !== 'undefined' 
     ? window.matchMedia('(prefers-reduced-motion: reduce)').matches 
@@ -139,6 +209,21 @@ export function RealtimeVoiceTranscript({
           Voice Conversation Transcript
         </h3>
         <div className="flex items-center gap-2">
+          {/* Typewriter toggle — only show in text/hybrid mode */}
+          {communicationMode !== 'voice' && (
+            <button
+              onClick={toggleTypewriter}
+              className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors ${
+                typewriterEnabled
+                  ? isDark ? 'bg-blue-900/40 text-blue-300 hover:bg-blue-900/60' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'
+                  : isDark ? 'bg-gray-700 text-gray-400 hover:bg-gray-600' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+              }`}
+              title={typewriterEnabled ? 'Typewriter mode: ON — words appear one at a time' : 'Typewriter mode: OFF — full response appears instantly'}
+            >
+              {typewriterEnabled ? <Zap className="h-2.5 w-2.5" /> : <ZapOff className="h-2.5 w-2.5" />}
+              {typewriterEnabled ? 'Typing' : 'Instant'}
+            </button>
+          )}
           {language && (
             <Badge variant="outline" className={`text-xs ${isDark ? 'border-gray-600 text-gray-300' : ''}`}>
               {language.toUpperCase()}
@@ -230,7 +315,20 @@ export function RealtimeVoiceTranscript({
                             }}
                           >
                             <div className="whitespace-pre-wrap break-words leading-relaxed">
-                              {message.content}
+                              {(() => {
+                                const text = message.content;
+                                
+                                // Typewriter: show partial text word-by-word for active typing message
+                                const isTyping = typingMsgIndex === index && !isUser;
+                                const displayText = isTyping
+                                  ? text.split(/\s+/).slice(0, typingWordCount).join(' ')
+                                  : text;
+                                
+                                return renderMarkdown(displayText);
+                              })()}
+                              {typingMsgIndex === index && !isUser && (
+                                <span className="inline-block w-1.5 h-4 bg-current opacity-60 animate-pulse ml-0.5 align-text-bottom" />
+                              )}
                             </div>
                           </div>
                           <div className={`text-[10px] mt-1 ${isUser ? 'text-right' : 'text-left ml-2'} ${theme.isDark ? 'text-gray-500' : 'text-muted-foreground'}`}>
