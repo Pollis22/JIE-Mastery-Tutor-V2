@@ -837,7 +837,10 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
 
   return (
     <AgeThemeProvider ageGroup={ageGroup}>
-      <div className={`w-full relative ${customVoice.isConnected ? 'h-[100dvh] min-h-[500px] flex flex-col overflow-hidden' : 'space-y-4'}`}>
+      <div
+        data-voice-active={customVoice.isConnected ? "true" : undefined}
+        className={`w-full relative ${customVoice.isConnected ? 'h-[100dvh] min-h-[500px] flex flex-col overflow-hidden' : 'space-y-4'}`}
+      >
         {/* Animated Background for young learners */}
         {isYoungLearner && customVoice.isConnected && <AnimatedBackground />}
         

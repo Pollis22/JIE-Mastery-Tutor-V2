@@ -1,4 +1,4 @@
-import { createContext, ReactNode, useContext } from "react";
+import { createContext, ReactNode, useContext, useEffect } from "react";
 import {
   useQuery,
   useMutation,
@@ -7,6 +7,8 @@ import {
 import { insertUserSchema, User as SelectUser, InsertUser } from "@shared/schema";
 import { getQueryFn, apiRequest, queryClient } from "../lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useInactivityTimeout } from "@/hooks/use-inactivity-timeout";
+import { InactivityWarningModal } from "@/components/inactivity-warning-modal";
 
 type AuthContextType = {
   user: SelectUser | null;
@@ -139,6 +141,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
   });
 
+  // ── Inactivity auto-logout ────────────────────────────────────────────
+  const isAuthenticated = !!user && !isLoading;
+  const { showWarning, secondsLeft, isExpired, dismissWarning } =
+    useInactivityTimeout(isAuthenticated);
+
+  // Auto-logout when countdown expires
+  useEffect(() => {
+    if (isExpired) {
+      console.log('[AUTH] ⏰ Inactivity timeout — logging out');
+      logoutMutation.mutate();
+    }
+  }, [isExpired]);
+
   return (
     <AuthContext.Provider
       value={{
@@ -151,6 +166,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }}
     >
       {children}
+      <InactivityWarningModal
+        open={showWarning && !isExpired}
+        secondsLeft={secondsLeft}
+        onStayLoggedIn={dismissWarning}
+        onLogout={() => logoutMutation.mutate()}
+      />
     </AuthContext.Provider>
   );
 }

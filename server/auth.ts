@@ -99,7 +99,7 @@ export function setupAuth(app: Express) {
       sameSite: cookieSameSite,
       domain: cookieDomain,
       path: '/', // Explicit path for consistency
-      maxAge: 30 * 24 * 60 * 60 * 1000 // 30 days for better iOS Safari persistence
+      maxAge: 8 * 60 * 60 * 1000 // 8 hours — auto-logout after inactivity (rolling extends on each request)
     }
   };
 
