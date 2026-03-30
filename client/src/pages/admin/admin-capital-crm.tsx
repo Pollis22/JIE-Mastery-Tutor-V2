@@ -645,10 +645,20 @@ function KPICard({ title, value, icon, format = "number", alert = false, highlig
 
 // ============ OPPORTUNITIES TAB ============
 function OpportunitiesTab() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [stageFilter, setStageFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [selectedOpp, setSelectedOpp] = useState<Opportunity | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
+  const [newOpp, setNewOpp] = useState({
+    name: "", fundingSource: "", programName: "", fundingCategory: "Government Grant",
+    capitalType: "Non-dilutive", geography: "National", website: "", applicationUrl: "",
+    description: "", stage: "Identified", expectedAmount: "", minAmount: "", maxAmount: "",
+    contactEmail: "", contactPhone: "", sourceUrl: "", notes: "",
+    strategicFitScore: 5, speedScore: 5, probabilityScore: 5, effortScore: 5, amountScore: 5,
+  });
 
   const queryParams = new URLSearchParams();
   if (search) queryParams.set("search", search);
@@ -660,12 +670,33 @@ function OpportunitiesTab() {
     queryFn: () => apiRequest("GET", `${API_BASE}/opportunities?${queryParams.toString()}`),
   });
 
+  const createMutation = useMutation({
+    mutationFn: (data: any) => apiRequest("POST", `${API_BASE}/opportunities`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`${API_BASE}/opportunities`] });
+      queryClient.invalidateQueries({ queryKey: [`${API_BASE}/dashboard`] });
+      queryClient.invalidateQueries({ queryKey: [`${API_BASE}/today`] });
+      setShowAdd(false);
+      setNewOpp({
+        name: "", fundingSource: "", programName: "", fundingCategory: "Government Grant",
+        capitalType: "Non-dilutive", geography: "National", website: "", applicationUrl: "",
+        description: "", stage: "Identified", expectedAmount: "", minAmount: "", maxAmount: "",
+        contactEmail: "", contactPhone: "", sourceUrl: "", notes: "",
+        strategicFitScore: 5, speedScore: 5, probabilityScore: 5, effortScore: 5, amountScore: 5,
+      });
+      toast({ title: "Opportunity created" });
+    },
+    onError: (err: any) => { toast({ title: "Error", description: err.message, variant: "destructive" }); },
+  });
+
   const stages = ["Identified","Researching","Qualified","Contact Identified","Outreach Drafted","Outreach Sent","Intro Call Scheduled","In Discussion","Application In Progress","Submitted","Follow-Up Pending","Due Diligence","Verbal Interest","Negotiation","Awarded","Closed Lost","Deferred"];
   const categories = ["Government Grant","Foundation","Accelerator","Venture Capital","Strategic Partner","Loan/Debt","Competition","Fellowship"];
+  const capitalTypes = ["Non-dilutive", "Dilutive", "Debt", "Hybrid"];
+  const geographies = ["National", "Illinois", "Chicago", "Midwest", "Other"];
 
   return (
     <div className="space-y-4">
-      {/* Filters */}
+      {/* Filters + Add Button */}
       <div className="flex flex-wrap gap-3">
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -685,7 +716,140 @@ function OpportunitiesTab() {
             {categories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
           </SelectContent>
         </Select>
+        <Button size="sm" onClick={() => setShowAdd(!showAdd)}>
+          <Plus className="h-4 w-4 mr-1" /> New Opportunity
+        </Button>
       </div>
+
+      {/* Add Opportunity Form */}
+      {showAdd && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold">New Funding Opportunity</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Row 1: Name + Source */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <Label>Opportunity Name *</Label>
+                <Input value={newOpp.name} onChange={e => setNewOpp({...newOpp, name: e.target.value})} placeholder="e.g. SBIR Phase I — NSF" />
+              </div>
+              <div>
+                <Label>Funding Source *</Label>
+                <Input value={newOpp.fundingSource} onChange={e => setNewOpp({...newOpp, fundingSource: e.target.value})} placeholder="e.g. National Science Foundation" />
+              </div>
+            </div>
+
+            {/* Row 2: Category + Capital Type + Geography + Stage */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div>
+                <Label>Category *</Label>
+                <Select value={newOpp.fundingCategory} onValueChange={v => setNewOpp({...newOpp, fundingCategory: v})}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {categories.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Capital Type *</Label>
+                <Select value={newOpp.capitalType} onValueChange={v => setNewOpp({...newOpp, capitalType: v})}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {capitalTypes.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Geography</Label>
+                <Select value={newOpp.geography} onValueChange={v => setNewOpp({...newOpp, geography: v})}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {geographies.map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Stage</Label>
+                <Select value={newOpp.stage} onValueChange={v => setNewOpp({...newOpp, stage: v})}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {stages.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Row 3: Amounts */}
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <Label>Min Amount ($)</Label>
+                <Input type="number" value={newOpp.minAmount} onChange={e => setNewOpp({...newOpp, minAmount: e.target.value})} placeholder="e.g. 50000" />
+              </div>
+              <div>
+                <Label>Max Amount ($)</Label>
+                <Input type="number" value={newOpp.maxAmount} onChange={e => setNewOpp({...newOpp, maxAmount: e.target.value})} placeholder="e.g. 275000" />
+              </div>
+              <div>
+                <Label>Expected Amount ($)</Label>
+                <Input type="number" value={newOpp.expectedAmount} onChange={e => setNewOpp({...newOpp, expectedAmount: e.target.value})} placeholder="e.g. 150000" />
+              </div>
+            </div>
+
+            {/* Row 4: URLs */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <Label>Website</Label>
+                <Input value={newOpp.website} onChange={e => setNewOpp({...newOpp, website: e.target.value})} placeholder="https://..." />
+              </div>
+              <div>
+                <Label>Application URL</Label>
+                <Input value={newOpp.applicationUrl} onChange={e => setNewOpp({...newOpp, applicationUrl: e.target.value})} placeholder="https://..." />
+              </div>
+              <div>
+                <Label>Source URL</Label>
+                <Input value={newOpp.sourceUrl} onChange={e => setNewOpp({...newOpp, sourceUrl: e.target.value})} placeholder="https://..." />
+              </div>
+            </div>
+
+            {/* Row 5: Contact */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <Label>Contact Email</Label>
+                <Input value={newOpp.contactEmail} onChange={e => setNewOpp({...newOpp, contactEmail: e.target.value})} placeholder="contact@example.com" />
+              </div>
+              <div>
+                <Label>Contact Phone</Label>
+                <Input value={newOpp.contactPhone} onChange={e => setNewOpp({...newOpp, contactPhone: e.target.value})} placeholder="(555) 123-4567" />
+              </div>
+            </div>
+
+            {/* Row 6: Description */}
+            <div>
+              <Label>Description</Label>
+              <Textarea value={newOpp.description} onChange={e => setNewOpp({...newOpp, description: e.target.value})} placeholder="Describe the opportunity..." rows={3} />
+            </div>
+
+            {/* Row 7: Notes */}
+            <div>
+              <Label>Notes</Label>
+              <Textarea value={newOpp.notes} onChange={e => setNewOpp({...newOpp, notes: e.target.value})} placeholder="Internal notes..." rows={2} />
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-2 pt-2">
+              <Button
+                size="sm"
+                onClick={() => createMutation.mutate(newOpp)}
+                disabled={!newOpp.name || !newOpp.fundingSource || createMutation.isPending}
+              >
+                {createMutation.isPending ? "Creating..." : "Create Opportunity"}
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setShowAdd(false)}>Cancel</Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Count */}
       <p className="text-sm text-muted-foreground">{opps?.length ?? 0} opportunities</p>
