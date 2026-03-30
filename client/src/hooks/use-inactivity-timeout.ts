@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 
 // ── TEST MODE: Set to true to use 30-second timeout instead of 30 minutes ──
-const TEST_MODE = true;
+const TEST_MODE = false;
 
 const IDLE_TIMEOUT_MS = TEST_MODE ? 30 * 1000 : 30 * 60 * 1000;
 const WARNING_DURATION_MS = TEST_MODE ? 15 * 1000 : 2 * 60 * 1000;
@@ -54,32 +54,22 @@ export function useInactivityTimeout(isAuthenticated: boolean) {
     }
 
     // Don't start timer if not authenticated
-    if (!isAuthenticatedRef.current) {
-      console.log('[Inactivity] ⏸️ Not authenticated — skipping timer');
-      return;
-    }
+    if (!isAuthenticatedRef.current) return;
 
     // Check if a voice session is active — skip idle timeout during tutoring
     const voiceActive = document.querySelector('[data-voice-active="true"]');
-    if (voiceActive) {
-      console.log('[Inactivity] 🎤 Voice session active — skipping timer');
-      return;
-    }
-
-    const timeoutSec = Math.round(IDLE_TIMEOUT_MS / 1000);
-    console.log(`[Inactivity] ⏱️ Starting ${timeoutSec}s idle timer (${TEST_MODE ? 'TEST MODE' : 'production'})`);
+    if (voiceActive) return;
 
     // Start new idle timer
     idleTimerRef.current = setTimeout(() => {
       // Double-check voice isn't active when timer fires
       const voiceStillActive = document.querySelector('[data-voice-active="true"]');
       if (voiceStillActive) {
-        console.log('[Inactivity] 🎤 Voice became active — restarting timer');
         startIdleTimer();
         return;
       }
       
-      console.log('[Inactivity] ⚠️ Idle timeout reached — showing warning modal');
+      console.log('[Inactivity] ⚠️ 30 minutes idle — showing warning modal');
       setShowWarning(true);
       showWarningRef.current = true;
       setSecondsLeft(Math.floor(WARNING_DURATION_MS / 1000));
@@ -107,7 +97,6 @@ export function useInactivityTimeout(isAuthenticated: boolean) {
   const handleActivity = useCallback(() => {
     // If warning is showing, user activity dismisses it
     if (showWarningRef.current) {
-      console.log('[Inactivity] ✅ User activity detected — dismissing warning');
       setShowWarning(false);
       showWarningRef.current = false;
       warningStartRef.current = null;
@@ -126,7 +115,6 @@ export function useInactivityTimeout(isAuthenticated: boolean) {
 
   // Dismiss warning (user clicked "I'm still here")
   const dismissWarning = useCallback(() => {
-    console.log('[Inactivity] 👍 User clicked "I\'m still here" — resetting');
     setShowWarning(false);
     showWarningRef.current = false;
     warningStartRef.current = null;
@@ -139,14 +127,11 @@ export function useInactivityTimeout(isAuthenticated: boolean) {
 
   useEffect(() => {
     if (!isAuthenticated) {
-      console.log('[Inactivity] 🔴 User not authenticated — clearing timers');
       clearAllTimers();
       setShowWarning(false);
       showWarningRef.current = false;
       return;
     }
-
-    console.log(`[Inactivity] 🟢 Inactivity monitor ACTIVE — ${Math.round(IDLE_TIMEOUT_MS/1000)}s idle → ${Math.round(WARNING_DURATION_MS/1000)}s warning${TEST_MODE ? ' (TEST MODE)' : ''}`);
 
     const events: (keyof WindowEventMap)[] = [
       "mousemove", "mousedown", "keydown", "touchstart", "scroll", "click"
@@ -168,7 +153,6 @@ export function useInactivityTimeout(isAuthenticated: boolean) {
     startIdleTimer();
 
     return () => {
-      console.log('[Inactivity] 🧹 Cleaning up inactivity monitor');
       events.forEach((event) => window.removeEventListener(event, throttledReset));
       clearAllTimers();
     };
