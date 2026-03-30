@@ -1119,3 +1119,302 @@ export const insertStudyGuideSchema = createInsertSchema(studyGuides).omit({
 
 export type StudyGuide = typeof studyGuides.$inferSelect;
 export type InsertStudyGuide = z.infer<typeof insertStudyGuideSchema>;
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Capital CRM — Funding Pipeline Tracker (Admin Only)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// ============ CAPITAL OPPORTUNITIES ============
+export const capitalOpportunities = pgTable("capital_opportunities", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  fundingSource: text("funding_source").notNull(),
+  programName: text("program_name"),
+  fundingCategory: text("funding_category").notNull(), // Government Grant, Foundation, Accelerator, Venture Capital, Strategic Partner, Loan/Debt, Competition, Fellowship
+  capitalType: text("capital_type").notNull(), // Non-dilutive, Dilutive, Debt, Hybrid
+  geography: text("geography").default("National"), // National, Illinois, Chicago, Midwest, Other
+  website: text("website"),
+  applicationUrl: text("application_url"),
+  description: text("description"),
+  strategicFitNotes: text("strategic_fit_notes"),
+  // Financial
+  minAmount: decimal("min_amount"),
+  maxAmount: decimal("max_amount"),
+  expectedAmount: decimal("expected_amount"),
+  probabilityToClose: integer("probability_to_close").default(0), // 0-100
+  useOfFunds: text("use_of_funds"),
+  matchRequirement: text("match_requirement"),
+  equityRequired: boolean("equity_required").default(false),
+  repaymentRequired: boolean("repayment_required").default(false),
+  // Timing
+  openDate: text("open_date"),
+  deadlineDate: text("deadline_date"),
+  estimatedDecisionDate: text("estimated_decision_date"),
+  nextFollowUpDate: text("next_follow_up_date"),
+  submissionDate: text("submission_date"),
+  meetingDate: text("meeting_date"),
+  lastContactDate: text("last_contact_date"),
+  // Stage
+  stage: text("stage").notNull().default("Identified"),
+  // Scoring
+  strategicFitScore: integer("strategic_fit_score").default(5),
+  speedScore: integer("speed_score").default(5),
+  probabilityScore: integer("probability_score").default(5),
+  effortScore: integer("effort_score").default(5),
+  amountScore: integer("amount_score").default(5),
+  weightedScore: decimal("weighted_score").default("5.0"),
+  priorityTier: text("priority_tier").default("Tier 2 Near-Term"),
+  eligible30_60: boolean("eligible_30_60").default(false),
+  warmIntroAvailable: boolean("warm_intro_available").default(false),
+  requiresResearchPartner: boolean("requires_research_partner").default(false),
+  requiresPilotData: boolean("requires_pilot_data").default(false),
+  // Meta
+  contactEmail: text("contact_email"),
+  contactPhone: text("contact_phone"),
+  sourceUrl: text("source_url"),
+  notes: text("notes"),
+  founderNotes: text("founder_notes"),
+  healthStatus: text("health_status").default("Healthy"), // Healthy, At Risk, Stalled, Closed
+  nextAction: text("next_action"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  index("idx_capital_opps_stage").on(table.stage),
+  index("idx_capital_opps_category").on(table.fundingCategory),
+  index("idx_capital_opps_health").on(table.healthStatus),
+  index("idx_capital_opps_priority").on(table.priorityTier),
+  index("idx_capital_opps_deadline").on(table.deadlineDate),
+]);
+
+export const insertCapitalOpportunitySchema = createInsertSchema(capitalOpportunities).omit({ id: true });
+export type InsertCapitalOpportunity = z.infer<typeof insertCapitalOpportunitySchema>;
+export type CapitalOpportunity = typeof capitalOpportunities.$inferSelect;
+
+// ============ CAPITAL CONTACTS ============
+export const capitalContacts = pgTable("capital_contacts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  organization: text("organization"),
+  title: text("title"),
+  email: text("email"),
+  phone: text("phone"),
+  linkedin: text("linkedin"),
+  roleInProcess: text("role_in_process"),
+  relationshipStrength: text("relationship_strength").default("Cold"), // Warm, Cold, Referral
+  notes: text("notes"),
+  lastInteraction: text("last_interaction"),
+  nextAction: text("next_action"),
+  createdAt: text("created_at").notNull(),
+}, (table) => [
+  index("idx_capital_contacts_org").on(table.organization),
+]);
+
+export const insertCapitalContactSchema = createInsertSchema(capitalContacts).omit({ id: true });
+export type InsertCapitalContact = z.infer<typeof insertCapitalContactSchema>;
+export type CapitalContact = typeof capitalContacts.$inferSelect;
+
+// ============ CAPITAL CONTACT <-> OPPORTUNITY LINK ============
+export const capitalContactOpportunities = pgTable("capital_contact_opportunities", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  contactId: varchar("contact_id").notNull().references(() => capitalContacts.id, { onDelete: 'cascade' }),
+  opportunityId: varchar("opportunity_id").notNull().references(() => capitalOpportunities.id, { onDelete: 'cascade' }),
+}, (table) => [
+  index("idx_capital_contact_opps_contact").on(table.contactId),
+  index("idx_capital_contact_opps_opp").on(table.opportunityId),
+]);
+
+// ============ CAPITAL ACTIVITIES ============
+export const capitalActivities = pgTable("capital_activities", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  opportunityId: varchar("opportunity_id").references(() => capitalOpportunities.id, { onDelete: 'set null' }),
+  contactId: varchar("contact_id").references(() => capitalContacts.id, { onDelete: 'set null' }),
+  activityType: text("activity_type").notNull(), // Email Sent, Email Received, Call Completed, Meeting Completed, Application Started, etc.
+  notes: text("notes"),
+  createdAt: text("created_at").notNull(),
+}, (table) => [
+  index("idx_capital_activities_opp").on(table.opportunityId),
+  index("idx_capital_activities_contact").on(table.contactId),
+]);
+
+export const insertCapitalActivitySchema = createInsertSchema(capitalActivities).omit({ id: true });
+export type InsertCapitalActivity = z.infer<typeof insertCapitalActivitySchema>;
+export type CapitalActivity = typeof capitalActivities.$inferSelect;
+
+// ============ CAPITAL TASKS ============
+export const capitalTasks = pgTable("capital_tasks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: text("title").notNull(),
+  opportunityId: varchar("opportunity_id").references(() => capitalOpportunities.id, { onDelete: 'set null' }),
+  contactId: varchar("contact_id").references(() => capitalContacts.id, { onDelete: 'set null' }),
+  taskType: text("task_type").default("General"), // General, Follow-Up, Application, Research, Meeting, Document, Outreach
+  dueDate: text("due_date"),
+  priority: text("priority").default("Medium"), // High, Medium, Low
+  status: text("status").default("Pending"), // Pending, In Progress, Completed
+  notes: text("notes"),
+  completedDate: text("completed_date"),
+  createdAt: text("created_at").notNull(),
+}, (table) => [
+  index("idx_capital_tasks_opp").on(table.opportunityId),
+  index("idx_capital_tasks_status").on(table.status),
+  index("idx_capital_tasks_due").on(table.dueDate),
+]);
+
+export const insertCapitalTaskSchema = createInsertSchema(capitalTasks).omit({ id: true });
+export type InsertCapitalTask = z.infer<typeof insertCapitalTaskSchema>;
+export type CapitalTask = typeof capitalTasks.$inferSelect;
+
+// ============ CAPITAL DOCUMENTS ============
+export const capitalDocuments = pgTable("capital_documents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  fileName: text("file_name").notNull(),
+  documentType: text("document_type").notNull(), // Pitch Deck, Executive Summary, One-Pager, Financial Model, Budget, Grant Narrative, etc.
+  version: text("version").default("1.0"),
+  opportunityId: varchar("opportunity_id").references(() => capitalOpportunities.id, { onDelete: 'set null' }),
+  status: text("status").default("Draft"), // Draft, In Review, Final, Submitted
+  notes: text("notes"),
+  createdAt: text("created_at").notNull(),
+}, (table) => [
+  index("idx_capital_docs_opp").on(table.opportunityId),
+  index("idx_capital_docs_type").on(table.documentType),
+]);
+
+export const insertCapitalDocumentSchema = createInsertSchema(capitalDocuments).omit({ id: true });
+export type InsertCapitalDocument = z.infer<typeof insertCapitalDocumentSchema>;
+export type CapitalDocument = typeof capitalDocuments.$inferSelect;
+
+// ============ CAPITAL CRM CONSTANTS ============
+export const CAPITAL_STAGES = [
+  "Identified",
+  "Researching",
+  "Qualified",
+  "Contact Identified",
+  "Outreach Drafted",
+  "Outreach Sent",
+  "Intro Call Scheduled",
+  "In Discussion",
+  "Application In Progress",
+  "Submitted",
+  "Follow-Up Pending",
+  "Due Diligence",
+  "Verbal Interest",
+  "Negotiation",
+  "Awarded",
+  "Closed Lost",
+  "Deferred",
+] as const;
+
+export const CAPITAL_CLOSED_STAGES = ["Awarded", "Closed Lost", "Deferred"] as const;
+
+export const CAPITAL_FUNDING_CATEGORIES = [
+  "Government Grant",
+  "Foundation",
+  "Accelerator",
+  "Venture Capital",
+  "Strategic Partner",
+  "Loan/Debt",
+  "Competition",
+  "Fellowship",
+] as const;
+
+export const CAPITAL_TYPES = ["Non-dilutive", "Dilutive", "Debt", "Hybrid"] as const;
+
+export const CAPITAL_GEOGRAPHIES = ["National", "Illinois", "Chicago", "Midwest", "Other"] as const;
+
+export const CAPITAL_PRIORITY_TIERS = ["Tier 1 Immediate", "Tier 2 Near-Term", "Tier 3 Later"] as const;
+
+export const CAPITAL_HEALTH_STATUSES = ["Healthy", "At Risk", "Stalled", "Closed"] as const;
+
+export const CAPITAL_TASK_TYPES = [
+  "General",
+  "Follow-Up",
+  "Application",
+  "Research",
+  "Meeting",
+  "Document",
+  "Outreach",
+] as const;
+
+export const CAPITAL_ACTIVITY_TYPES = [
+  "Email Sent",
+  "Email Received",
+  "Call Completed",
+  "Meeting Completed",
+  "Application Started",
+  "Application Submitted",
+  "Document Uploaded",
+  "Reminder Set",
+  "Internal Note",
+  "Follow-up Completed",
+  "Status Changed",
+  "Stage Changed",
+] as const;
+
+export const CAPITAL_DOCUMENT_TYPES = [
+  "Pitch Deck",
+  "Executive Summary",
+  "One-Pager",
+  "Financial Model",
+  "Budget",
+  "Grant Narrative",
+  "Letter of Support",
+  "Application Draft",
+  "Submitted Material",
+  "Follow-up Notes",
+] as const;
+
+// ============ CAPITAL SCORING UTILITIES ============
+export function calculateCapitalWeightedScore(opp: {
+  strategicFitScore?: number | null;
+  speedScore?: number | null;
+  probabilityScore?: number | null;
+  amountScore?: number | null;
+  effortScore?: number | null;
+}): number {
+  const strategicFit = opp.strategicFitScore ?? 5;
+  const speed = opp.speedScore ?? 5;
+  const probability = opp.probabilityScore ?? 5;
+  const amount = opp.amountScore ?? 5;
+  const effort = opp.effortScore ?? 5;
+  return (
+    strategicFit * 0.30 +
+    speed * 0.25 +
+    probability * 0.20 +
+    amount * 0.15 +
+    (11 - effort) * 0.10
+  );
+}
+
+export function calculateCapitalPriorityTier(weightedScore: number): string {
+  if (weightedScore >= 8.0) return "Tier 1 Immediate";
+  if (weightedScore >= 6.5) return "Tier 2 Near-Term";
+  return "Tier 3 Later";
+}
+
+export function calculateCapitalHealthStatus(opp: {
+  stage: string;
+  lastContactDate?: string | null;
+  nextFollowUpDate?: string | null;
+  updatedAt: string;
+}): string {
+  if (["Awarded", "Closed Lost", "Deferred"].includes(opp.stage)) {
+    return "Closed";
+  }
+
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+
+  const lastDate = opp.lastContactDate || opp.updatedAt;
+  if (lastDate) {
+    const last = new Date(lastDate + "T00:00:00");
+    const daysSince = Math.floor((now.getTime() - last.getTime()) / (1000 * 60 * 60 * 24));
+    if (daysSince >= 14) return "Stalled";
+    if (daysSince >= 7) return "At Risk";
+  }
+
+  if (opp.nextFollowUpDate) {
+    const followUp = new Date(opp.nextFollowUpDate + "T00:00:00");
+    if (followUp < now) return "At Risk";
+  }
+
+  return "Healthy";
+}
