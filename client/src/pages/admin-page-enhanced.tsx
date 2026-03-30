@@ -14,7 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { formatChicagoDateTime, formatChicagoDate } from "@/lib/date-utils";
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { Download, Users, Clock, Activity, TrendingUp, FileText, DollarSign, Mail, Shield, AlertTriangle, Eye, BarChart3, Calendar } from "lucide-react";
+import { Download, Users, Clock, Activity, TrendingUp, FileText, DollarSign, Mail, Shield, AlertTriangle, Eye, BarChart3, Calendar, ExternalLink } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
 interface PageViewsStats {
@@ -405,7 +405,7 @@ export default function AdminPageEnhanced() {
 
           {/* Tab Navigation */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-7">
+            <TabsList className="grid w-full grid-cols-8">
               <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
               <TabsTrigger value="users" data-testid="tab-users">Users</TabsTrigger>
               <TabsTrigger value="sessions" data-testid="tab-sessions">Sessions</TabsTrigger>
@@ -413,6 +413,7 @@ export default function AdminPageEnhanced() {
               <TabsTrigger value="safety-incidents" data-testid="tab-safety-incidents">Safety</TabsTrigger>
               <TabsTrigger value="usage" data-testid="tab-usage">Usage</TabsTrigger>
               <TabsTrigger value="pricing-studio" data-testid="tab-pricing-studio">Pricing Studio</TabsTrigger>
+              <TabsTrigger value="capital-crm" data-testid="tab-capital-crm">Capital CRM</TabsTrigger>
             </TabsList>
 
             {/* Overview Tab */}
@@ -1495,6 +1496,32 @@ export default function AdminPageEnhanced() {
                   src="/pricing-studio.html"
                   className="w-full h-full border-0"
                   title="JIE Mastery Quote & Pricing Studio"
+                />
+              </div>
+            </TabsContent>
+
+            {/* Capital CRM Tab */}
+            <TabsContent value="capital-crm" className="space-y-4">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900">Capital CRM</h2>
+                  <p className="text-sm text-muted-foreground">Funding pipeline tracker · 141 opportunities across grants, VCs, accelerators & foundations</p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => window.location.href = "/admin/capital"}
+                  className="flex items-center gap-1.5 text-xs"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Open Full View
+                </Button>
+              </div>
+              <div className="rounded-lg border overflow-hidden" style={{ height: "calc(100vh - 280px)" }}>
+                <iframe
+                  src="/admin/capital"
+                  className="w-full h-full border-0"
+                  title="JIE Mastery Capital CRM"
                 />
               </div>
             </TabsContent>
