@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 
-const IDLE_TIMEOUT_MS = 30 * 60 * 1000;   // 30 minutes of no activity
-const WARNING_DURATION_MS = 2 * 60 * 1000; // 2-minute countdown before auto-logout
+// ── TEST MODE: Set to true to use 30-second timeout instead of 30 minutes ──
+const TEST_MODE = true;
+
+const IDLE_TIMEOUT_MS = TEST_MODE ? 30 * 1000 : 30 * 60 * 1000;
+const WARNING_DURATION_MS = TEST_MODE ? 15 * 1000 : 2 * 60 * 1000;
 
 /**
  * Tracks user inactivity (mouse, keyboard, touch, scroll).
@@ -23,9 +26,14 @@ export function useInactivityTimeout(isAuthenticated: boolean) {
   const showWarningRef = useRef(false);
   const isAuthenticatedRef = useRef(isAuthenticated);
 
-  // Keep refs in sync
-  isAuthenticatedRef.current = isAuthenticated;
-  showWarningRef.current = showWarning;
+  // Keep refs in sync with latest values
+  useEffect(() => {
+    isAuthenticatedRef.current = isAuthenticated;
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    showWarningRef.current = showWarning;
+  }, [showWarning]);
 
   const clearAllTimers = useCallback(() => {
     if (idleTimerRef.current) {
@@ -39,29 +47,39 @@ export function useInactivityTimeout(isAuthenticated: boolean) {
   }, []);
 
   const startIdleTimer = useCallback(() => {
-    // Clear any existing idle timer
+    // Clear any existing idle timer first
     if (idleTimerRef.current) {
       clearTimeout(idleTimerRef.current);
       idleTimerRef.current = null;
     }
 
     // Don't start timer if not authenticated
-    if (!isAuthenticatedRef.current) return;
+    if (!isAuthenticatedRef.current) {
+      console.log('[Inactivity] ⏸️ Not authenticated — skipping timer');
+      return;
+    }
 
     // Check if a voice session is active — skip idle timeout during tutoring
     const voiceActive = document.querySelector('[data-voice-active="true"]');
-    if (voiceActive) return;
+    if (voiceActive) {
+      console.log('[Inactivity] 🎤 Voice session active — skipping timer');
+      return;
+    }
+
+    const timeoutSec = Math.round(IDLE_TIMEOUT_MS / 1000);
+    console.log(`[Inactivity] ⏱️ Starting ${timeoutSec}s idle timer (${TEST_MODE ? 'TEST MODE' : 'production'})`);
 
     // Start new idle timer
     idleTimerRef.current = setTimeout(() => {
       // Double-check voice isn't active when timer fires
       const voiceStillActive = document.querySelector('[data-voice-active="true"]');
       if (voiceStillActive) {
+        console.log('[Inactivity] 🎤 Voice became active — restarting timer');
         startIdleTimer();
         return;
       }
       
-      console.log('[Inactivity] ⚠️ 30 minutes idle — showing warning modal');
+      console.log('[Inactivity] ⚠️ Idle timeout reached — showing warning modal');
       setShowWarning(true);
       showWarningRef.current = true;
       setSecondsLeft(Math.floor(WARNING_DURATION_MS / 1000));
@@ -121,11 +139,14 @@ export function useInactivityTimeout(isAuthenticated: boolean) {
 
   useEffect(() => {
     if (!isAuthenticated) {
+      console.log('[Inactivity] 🔴 User not authenticated — clearing timers');
       clearAllTimers();
       setShowWarning(false);
       showWarningRef.current = false;
       return;
     }
+
+    console.log(`[Inactivity] 🟢 Inactivity monitor ACTIVE — ${Math.round(IDLE_TIMEOUT_MS/1000)}s idle → ${Math.round(WARNING_DURATION_MS/1000)}s warning${TEST_MODE ? ' (TEST MODE)' : ''}`);
 
     const events: (keyof WindowEventMap)[] = [
       "mousemove", "mousedown", "keydown", "touchstart", "scroll", "click"
@@ -144,14 +165,14 @@ export function useInactivityTimeout(isAuthenticated: boolean) {
     events.forEach((event) => window.addEventListener(event, throttledReset, { passive: true }));
 
     // Initial timer start
-    console.log('[Inactivity] 🟢 Inactivity monitor started (30 min idle → 2 min warning)');
     startIdleTimer();
 
     return () => {
+      console.log('[Inactivity] 🧹 Cleaning up inactivity monitor');
       events.forEach((event) => window.removeEventListener(event, throttledReset));
       clearAllTimers();
     };
-  }, [isAuthenticated]); // Only re-run when auth state changes — callbacks are stable via refs
+  }, [isAuthenticated]); // Only re-run when auth state changes
 
   return { showWarning, secondsLeft, isExpired, dismissWarning };
 }
