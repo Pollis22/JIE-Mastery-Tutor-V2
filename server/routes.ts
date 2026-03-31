@@ -626,6 +626,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const { default: capitalRoutes } = await import('./routes/capital');
   app.use("/api/admin/capital", requireAdmin, capitalRoutes);
 
+  const { default: prospectsRoutes } = await import('./routes/prospects');
+  app.use("/api/admin/prospects", requireAdmin, prospectsRoutes);
+
   // Legacy voice API routes (for compatibility)
   // Note: live-token endpoint is now handled in voiceRoutes
 
