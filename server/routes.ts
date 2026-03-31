@@ -629,6 +629,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const { default: prospectsRoutes } = await import('./routes/prospects');
   app.use("/api/admin/prospects", requireAdmin, prospectsRoutes);
 
+  // Family Academic Command Center routes
+  const { familyAcademicRouter, familyAcademicAdminRouter } = await import('./routes/family-academic');
+  app.use("/api/family-academic", familyAcademicRouter);
+  app.use("/api/admin/family-academic", requireAdmin, familyAcademicAdminRouter);
+
   // Legacy voice API routes (for compatibility)
   // Note: live-token endpoint is now handled in voiceRoutes
 
