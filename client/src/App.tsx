@@ -50,6 +50,7 @@ const AdminContacts = lazy(() => import("@/pages/admin/admin-contacts-page"));
 const AdminAgents = lazy(() => import("@/pages/admin/admin-agents-page"));
 const AdminPricingStudio = lazy(() => import("@/pages/admin/admin-pricing-studio"));
 const AdminCapitalCRM = lazy(() => import("@/pages/admin/admin-capital-crm"));
+const AdminProspectsCRM = lazy(() => import("@/pages/admin/admin-prospects-crm"));
 const TermsPage = lazy(() => import("@/pages/terms-page"));
 const PrivacyPage = lazy(() => import("@/pages/privacy-page"));
 const TrustSafetyPage = lazy(() => import("@/pages/trust-safety-page"));
@@ -100,6 +101,7 @@ function Router() {
         <ProtectedRoute path="/admin/pricing-studio" component={AdminPricingStudio} />
         <ProtectedRoute path="/admin/contacts" component={AdminContacts} />
         <ProtectedRoute path="/admin/capital" component={AdminCapitalCRM} />
+        <ProtectedRoute path="/admin/prospects" component={AdminProspectsCRM} />
         <ProtectedRoute path="/admin/logs" component={AdminLogs} />
         <ProtectedRoute path="/subscribe" component={SubscribePage} />
         <ProtectedRoute path="/personality-test" component={PersonalityTestPage} />

@@ -1418,3 +1418,224 @@ export function calculateCapitalHealthStatus(opp: {
 
   return "Healthy";
 }
+
+// Sales / Prospects CRM — Customer & Institutional Pipeline (Admin Only)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+export const salesProspects = pgTable("sales_prospects", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  institutionName: text("institution_name").notNull(),
+  institutionType: text("institution_type").notNull(),
+  sector: text("sector"),
+  subsector: text("subsector"),
+  website: text("website"),
+  phone: text("phone"),
+  email: text("email"),
+  address: text("address"),
+  city: text("city"),
+  state: text("state"),
+  zip: text("zip"),
+  region: text("region"),
+  country: text("country").default("USA"),
+  estimatedStudents: integer("estimated_students"),
+  estimatedStaff: integer("estimated_staff"),
+  numberOfSchools: integer("number_of_schools"),
+  annualBudget: text("annual_budget"),
+  icpFitScore: integer("icp_fit_score"),
+  stage: text("stage").notNull().default("Identified"),
+  dealSize: decimal("deal_size"),
+  probability: integer("probability").default(0),
+  weightedValue: decimal("weighted_value"),
+  forecastCategory: text("forecast_category").default("Pipeline"),
+  closeDate: text("close_date"),
+  pilotStartDate: text("pilot_start_date"),
+  pilotEndDate: text("pilot_end_date"),
+  contractStartDate: text("contract_start_date"),
+  contractEndDate: text("contract_end_date"),
+  lastActivityDate: text("last_activity_date"),
+  nextFollowUpDate: text("next_follow_up_date"),
+  nextMeetingDate: text("next_meeting_date"),
+  currentSolution: text("current_solution"),
+  painPoints: text("pain_points"),
+  buyingProcess: text("buying_process"),
+  budgetStatus: text("budget_status"),
+  decisionTimeline: text("decision_timeline"),
+  championIdentified: boolean("champion_identified").default(false),
+  pilotRequired: boolean("pilot_required").default(false),
+  competitorPresent: text("competitor_present"),
+  urgencyScore: integer("urgency_score").default(5),
+  engagementScore: integer("engagement_score").default(5),
+  fitScore: integer("fit_score").default(5),
+  budgetScore: integer("budget_score").default(5),
+  authorityScore: integer("authority_score").default(5),
+  weightedScore: decimal("weighted_score").default("5.0"),
+  priorityTier: text("priority_tier").default("Tier 2"),
+  source: text("source"),
+  territory: text("territory"),
+  ownerId: text("owner_id"),
+  healthStatus: text("health_status").default("Healthy"),
+  nextAction: text("next_action"),
+  strategicNotes: text("strategic_notes"),
+  founderNotes: text("founder_notes"),
+  notes: text("notes"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  index("idx_sales_prospects_stage").on(table.stage),
+  index("idx_sales_prospects_type").on(table.institutionType),
+  index("idx_sales_prospects_health").on(table.healthStatus),
+  index("idx_sales_prospects_priority").on(table.priorityTier),
+  index("idx_sales_prospects_region").on(table.region),
+  index("idx_sales_prospects_forecast").on(table.forecastCategory),
+]);
+
+export const insertSalesProspectSchema = createInsertSchema(salesProspects).omit({ id: true });
+export type InsertSalesProspect = z.infer<typeof insertSalesProspectSchema>;
+export type SalesProspect = typeof salesProspects.$inferSelect;
+
+export const salesContacts = pgTable("sales_contacts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  prospectId: varchar("prospect_id").references(() => salesProspects.id, { onDelete: 'cascade' }),
+  firstName: text("first_name").notNull(),
+  lastName: text("last_name").notNull(),
+  title: text("title"),
+  department: text("department"),
+  email: text("email"),
+  phone: text("phone"),
+  linkedin: text("linkedin"),
+  buyingRole: text("buying_role"),
+  relationshipStrength: text("relationship_strength").default("Cold"),
+  preferredContactMethod: text("preferred_contact_method"),
+  lastContactDate: text("last_contact_date"),
+  nextContactDate: text("next_contact_date"),
+  notes: text("notes"),
+  createdAt: text("created_at").notNull(),
+}, (table) => [
+  index("idx_sales_contacts_prospect").on(table.prospectId),
+  index("idx_sales_contacts_role").on(table.buyingRole),
+]);
+
+export const insertSalesContactSchema = createInsertSchema(salesContacts).omit({ id: true });
+export type InsertSalesContact = z.infer<typeof insertSalesContactSchema>;
+export type SalesContact = typeof salesContacts.$inferSelect;
+
+export const salesActivities = pgTable("sales_activities", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  prospectId: varchar("prospect_id").references(() => salesProspects.id, { onDelete: 'set null' }),
+  contactId: varchar("contact_id").references(() => salesContacts.id, { onDelete: 'set null' }),
+  activityType: text("activity_type").notNull(),
+  subject: text("subject"),
+  notes: text("notes"),
+  outcome: text("outcome"),
+  nextAction: text("next_action"),
+  createdAt: text("created_at").notNull(),
+}, (table) => [
+  index("idx_sales_activities_prospect").on(table.prospectId),
+  index("idx_sales_activities_contact").on(table.contactId),
+  index("idx_sales_activities_type").on(table.activityType),
+]);
+
+export const insertSalesActivitySchema = createInsertSchema(salesActivities).omit({ id: true });
+export type InsertSalesActivity = z.infer<typeof insertSalesActivitySchema>;
+export type SalesActivity = typeof salesActivities.$inferSelect;
+
+export const salesTasks = pgTable("sales_tasks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: text("title").notNull(),
+  prospectId: varchar("prospect_id").references(() => salesProspects.id, { onDelete: 'set null' }),
+  contactId: varchar("contact_id").references(() => salesContacts.id, { onDelete: 'set null' }),
+  taskType: text("task_type").default("General"),
+  dueDate: text("due_date"),
+  priority: text("priority").default("Medium"),
+  status: text("status").default("Pending"),
+  notes: text("notes"),
+  completedDate: text("completed_date"),
+  createdAt: text("created_at").notNull(),
+}, (table) => [
+  index("idx_sales_tasks_prospect").on(table.prospectId),
+  index("idx_sales_tasks_status").on(table.status),
+  index("idx_sales_tasks_due").on(table.dueDate),
+]);
+
+export const insertSalesTaskSchema = createInsertSchema(salesTasks).omit({ id: true });
+export type InsertSalesTask = z.infer<typeof insertSalesTaskSchema>;
+export type SalesTask = typeof salesTasks.$inferSelect;
+
+export const salesDocuments = pgTable("sales_documents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  fileName: text("file_name").notNull(),
+  documentType: text("document_type").notNull(),
+  version: text("version").default("1.0"),
+  prospectId: varchar("prospect_id").references(() => salesProspects.id, { onDelete: 'set null' }),
+  status: text("status").default("Draft"),
+  notes: text("notes"),
+  createdAt: text("created_at").notNull(),
+}, (table) => [
+  index("idx_sales_docs_prospect").on(table.prospectId),
+  index("idx_sales_docs_type").on(table.documentType),
+]);
+
+export const insertSalesDocumentSchema = createInsertSchema(salesDocuments).omit({ id: true });
+export type InsertSalesDocument = z.infer<typeof insertSalesDocumentSchema>;
+export type SalesDocument = typeof salesDocuments.$inferSelect;
+
+export const SALES_STAGES = [
+  "Identified", "Researching", "Outreach Sent", "Intro Scheduled",
+  "Discovery", "Qualified", "Demo Scheduled", "Demo Completed",
+  "Needs Analysis", "Proposal In Progress", "Proposal Sent",
+  "Pilot Discussion", "Pilot Active", "Pilot Review",
+  "Procurement Review", "Contract Sent", "Contract Review",
+  "Verbal Commit", "Closed Won", "Closed Lost", "Nurture / Deferred",
+] as const;
+
+export const SALES_CLOSED_STAGES = ["Closed Won", "Closed Lost", "Nurture / Deferred"] as const;
+
+export const SALES_INSTITUTION_TYPES = [
+  "K-12 District", "Charter School", "Private School", "University",
+  "Community College", "Corporate L&D", "Government Agency",
+  "Nonprofit", "Tutoring Company", "Other",
+] as const;
+
+export function calculateSalesWeightedScore(prospect: {
+  urgencyScore?: number | null;
+  engagementScore?: number | null;
+  fitScore?: number | null;
+  budgetScore?: number | null;
+  authorityScore?: number | null;
+}): number {
+  const urgency = prospect.urgencyScore ?? 5;
+  const engagement = prospect.engagementScore ?? 5;
+  const fit = prospect.fitScore ?? 5;
+  const budget = prospect.budgetScore ?? 5;
+  const authority = prospect.authorityScore ?? 5;
+  return fit * 0.25 + urgency * 0.25 + engagement * 0.20 + budget * 0.15 + authority * 0.15;
+}
+
+export function calculateSalesPriorityTier(weightedScore: number): string {
+  if (weightedScore >= 8.0) return "Tier 1";
+  if (weightedScore >= 6.0) return "Tier 2";
+  return "Tier 3";
+}
+
+export function calculateSalesHealthStatus(prospect: {
+  stage: string;
+  lastActivityDate?: string | null;
+  nextFollowUpDate?: string | null;
+  updatedAt: string;
+}): string {
+  if (["Closed Won", "Closed Lost", "Nurture / Deferred"].includes(prospect.stage)) return "Closed";
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const lastDate = prospect.lastActivityDate || prospect.updatedAt;
+  if (lastDate) {
+    const last = new Date(lastDate.includes("T") ? lastDate : lastDate + "T00:00:00");
+    const daysSince = Math.floor((now.getTime() - last.getTime()) / (1000 * 60 * 60 * 24));
+    if (daysSince >= 14) return "Stalled";
+    if (daysSince >= 7) return "At Risk";
+  }
+  if (prospect.nextFollowUpDate) {
+    const followUp = new Date(prospect.nextFollowUpDate.includes("T") ? prospect.nextFollowUpDate : prospect.nextFollowUpDate + "T00:00:00");
+    if (followUp < now) return "At Risk";
+  }
+  return "Healthy";
+}
