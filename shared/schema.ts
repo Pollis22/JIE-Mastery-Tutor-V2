@@ -1639,3 +1639,249 @@ export function calculateSalesHealthStatus(prospect: {
   }
   return "Healthy";
 }
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Family Academic Command Center — K-12 Consumer Family Edition
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// 1. family_children — Child profiles under a parent account
+export const familyChildren = pgTable("family_children", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  parentUserId: varchar("parent_user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  childName: text("child_name").notNull(),
+  childAge: integer("child_age"),
+  gradeLevel: text("grade_level"),
+  avatarEmoji: text("avatar_emoji"),
+  color: text("color"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_family_children_parent").on(table.parentUserId),
+]);
+
+export const insertFamilyChildSchema = createInsertSchema(familyChildren).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type FamilyChild = typeof familyChildren.$inferSelect;
+export type InsertFamilyChild = z.infer<typeof insertFamilyChildSchema>;
+
+// 2. family_courses — Classes/subjects per child
+export const familyCourses = pgTable("family_courses", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  childId: varchar("child_id").notNull().references(() => familyChildren.id, { onDelete: 'cascade' }),
+  parentUserId: varchar("parent_user_id").notNull().references(() => users.id),
+  courseName: text("course_name").notNull(),
+  teacherName: text("teacher_name"),
+  schoolName: text("school_name"),
+  semester: text("semester"),
+  scheduleText: text("schedule_text"),
+  color: text("color"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_family_courses_child").on(table.childId),
+  index("idx_family_courses_parent").on(table.parentUserId),
+]);
+
+export const insertFamilyCourseSchema = createInsertSchema(familyCourses).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type FamilyCourse = typeof familyCourses.$inferSelect;
+export type InsertFamilyCourse = z.infer<typeof insertFamilyCourseSchema>;
+
+// 3. family_calendar_events — Tests, homework, projects per child
+export const familyCalendarEvents = pgTable("family_calendar_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  childId: varchar("child_id").notNull().references(() => familyChildren.id, { onDelete: 'cascade' }),
+  parentUserId: varchar("parent_user_id").notNull().references(() => users.id),
+  courseId: varchar("course_id").references(() => familyCourses.id, { onDelete: 'set null' }),
+  title: text("title").notNull(),
+  eventType: text("event_type"),
+  description: text("description"),
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date"),
+  startTime: text("start_time"),
+  endTime: text("end_time"),
+  isFromSchedule: boolean("is_from_schedule").default(false),
+  priority: text("priority"),
+  status: text("status").default("upcoming"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_family_events_child").on(table.childId),
+  index("idx_family_events_parent").on(table.parentUserId),
+  index("idx_family_events_date").on(table.childId, table.startDate),
+]);
+
+export const insertFamilyCalendarEventSchema = createInsertSchema(familyCalendarEvents).omit({
+  id: true,
+  createdAt: true,
+});
+export type FamilyCalendarEvent = typeof familyCalendarEvents.$inferSelect;
+export type InsertFamilyCalendarEvent = z.infer<typeof insertFamilyCalendarEventSchema>;
+
+// 4. family_tasks — Auto-generated + manual study tasks per child
+export const familyTasks = pgTable("family_tasks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  childId: varchar("child_id").notNull().references(() => familyChildren.id, { onDelete: 'cascade' }),
+  parentUserId: varchar("parent_user_id").notNull().references(() => users.id),
+  courseId: varchar("course_id").references(() => familyCourses.id, { onDelete: 'set null' }),
+  eventId: varchar("event_id").references(() => familyCalendarEvents.id, { onDelete: 'set null' }),
+  title: text("title").notNull(),
+  taskType: text("task_type"),
+  dueDate: date("due_date"),
+  priority: text("priority"),
+  status: text("status").default("pending"),
+  estimatedMinutes: integer("estimated_minutes"),
+  actualMinutes: integer("actual_minutes"),
+  xpReward: integer("xp_reward").default(10),
+  notes: text("notes"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_family_tasks_child").on(table.childId),
+  index("idx_family_tasks_parent").on(table.parentUserId),
+  index("idx_family_tasks_status").on(table.childId, table.status),
+]);
+
+export const insertFamilyTaskSchema = createInsertSchema(familyTasks).omit({
+  id: true,
+  createdAt: true,
+  completedAt: true,
+});
+export type FamilyTask = typeof familyTasks.$inferSelect;
+export type InsertFamilyTask = z.infer<typeof insertFamilyTaskSchema>;
+
+// 5. family_reminders — Notifications for parent + child
+export const familyReminders = pgTable("family_reminders", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  childId: varchar("child_id").notNull().references(() => familyChildren.id, { onDelete: 'cascade' }),
+  parentUserId: varchar("parent_user_id").notNull().references(() => users.id),
+  eventId: varchar("event_id").references(() => familyCalendarEvents.id, { onDelete: 'set null' }),
+  taskId: varchar("task_id").references(() => familyTasks.id, { onDelete: 'set null' }),
+  reminderType: text("reminder_type"),
+  reminderDate: date("reminder_date"),
+  message: text("message"),
+  delivered: boolean("delivered").default(false),
+  deliveredAt: timestamp("delivered_at"),
+  deliveryMethod: text("delivery_method").default("in_app"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_family_reminders_child").on(table.childId),
+  index("idx_family_reminders_date").on(table.reminderDate, table.delivered),
+]);
+
+export const insertFamilyReminderSchema = createInsertSchema(familyReminders).omit({
+  id: true,
+  createdAt: true,
+  deliveredAt: true,
+});
+export type FamilyReminder = typeof familyReminders.$inferSelect;
+export type InsertFamilyReminder = z.infer<typeof insertFamilyReminderSchema>;
+
+// 6. family_engagement_scores — Weekly engagement per child
+export const familyEngagementScores = pgTable("family_engagement_scores", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  childId: varchar("child_id").notNull().references(() => familyChildren.id, { onDelete: 'cascade' }),
+  parentUserId: varchar("parent_user_id").notNull().references(() => users.id),
+  courseId: varchar("course_id").references(() => familyCourses.id, { onDelete: 'set null' }),
+  weekStart: date("week_start"),
+  sessionsCompleted: integer("sessions_completed").default(0),
+  tasksCompleted: integer("tasks_completed").default(0),
+  tasksPending: integer("tasks_pending").default(0),
+  tasksMissed: integer("tasks_missed").default(0),
+  totalStudyMinutes: integer("total_study_minutes").default(0),
+  engagementScore: decimal("engagement_score").default("0"),
+  trend: text("trend").default("stable"),
+  riskLevel: text("risk_level").default("on_track"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_family_engagement_child").on(table.childId),
+  index("idx_family_engagement_week").on(table.childId, table.weekStart),
+]);
+
+export const insertFamilyEngagementScoreSchema = createInsertSchema(familyEngagementScores).omit({
+  id: true,
+  createdAt: true,
+});
+export type FamilyEngagementScore = typeof familyEngagementScores.$inferSelect;
+export type InsertFamilyEngagementScore = z.infer<typeof insertFamilyEngagementScoreSchema>;
+
+// 7. family_study_goals — Parent-set weekly goals per child
+export const familyStudyGoals = pgTable("family_study_goals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  childId: varchar("child_id").notNull().references(() => familyChildren.id, { onDelete: 'cascade' }),
+  parentUserId: varchar("parent_user_id").notNull().references(() => users.id),
+  goalType: text("goal_type").notNull(),
+  targetValue: integer("target_value").notNull(),
+  currentValue: integer("current_value").default(0),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_family_goals_child").on(table.childId),
+]);
+
+export const insertFamilyStudyGoalSchema = createInsertSchema(familyStudyGoals).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type FamilyStudyGoal = typeof familyStudyGoals.$inferSelect;
+export type InsertFamilyStudyGoal = z.infer<typeof insertFamilyStudyGoalSchema>;
+
+// 8. family_achievements — Badges and milestones per child
+export const familyAchievements = pgTable("family_achievements", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  childId: varchar("child_id").notNull().references(() => familyChildren.id, { onDelete: 'cascade' }),
+  achievementType: text("achievement_type").notNull(),
+  achievementName: text("achievement_name").notNull(),
+  achievementEmoji: text("achievement_emoji"),
+  earnedAt: timestamp("earned_at").defaultNow(),
+}, (table) => [
+  index("idx_family_achievements_child").on(table.childId),
+]);
+
+export const insertFamilyAchievementSchema = createInsertSchema(familyAchievements).omit({
+  id: true,
+  earnedAt: true,
+});
+export type FamilyAchievement = typeof familyAchievements.$inferSelect;
+export type InsertFamilyAchievement = z.infer<typeof insertFamilyAchievementSchema>;
+
+// 9. family_streaks — Daily activity tracking
+export const familyStreaks = pgTable("family_streaks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  childId: varchar("child_id").notNull().references(() => familyChildren.id, { onDelete: 'cascade' }),
+  activityDate: date("activity_date").notNull(),
+  hadSession: boolean("had_session").default(false),
+  hadTaskCompletion: boolean("had_task_completion").default(false),
+  studyMinutes: integer("study_minutes").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  uniqueIndex("idx_family_streaks_unique").on(table.childId, table.activityDate),
+  index("idx_family_streaks_child").on(table.childId, table.activityDate),
+]);
+
+export type FamilyStreak = typeof familyStreaks.$inferSelect;
+
+// 10. family_weekly_reports — Cached weekly digest data for parent emails
+export const familyWeeklyReports = pgTable("family_weekly_reports", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  childId: varchar("child_id").notNull().references(() => familyChildren.id, { onDelete: 'cascade' }),
+  parentUserId: varchar("parent_user_id").notNull().references(() => users.id),
+  weekStart: date("week_start"),
+  reportData: jsonb("report_data"),
+  sentAt: timestamp("sent_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_family_reports_parent").on(table.parentUserId, table.weekStart),
+]);
+
+export type FamilyWeeklyReport = typeof familyWeeklyReports.$inferSelect;
