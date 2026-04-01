@@ -132,19 +132,19 @@ export default function FamilyCalendarPage() {
   return (
     <>
       <NavigationHeader />
-      <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50">
+      <div className="min-h-screen bg-background">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           {/* Header */}
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">📅 Family Calendar</h1>
+              <h1 className="text-2xl font-bold text-gray-900">📅 Study Calendar</h1>
               <p className="text-sm text-gray-500">Tests, homework, and events for all children</p>
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setLocation("/family")}>← Family Hub</Button>
+              <Button variant="outline" onClick={() => setLocation("/family")}>← Study Tracker</Button>
               <Dialog open={showAddEvent} onOpenChange={setShowAddEvent}>
                 <DialogTrigger asChild>
-                  <Button className="bg-indigo-600 hover:bg-indigo-700">+ Add Event</Button>
+                  <Button className="bg-primary hover:bg-primary/90">+ Add Event</Button>
                 </DialogTrigger>
                 <DialogContent>
                   <DialogHeader><DialogTitle>Add Calendar Event</DialogTitle></DialogHeader>
@@ -221,7 +221,7 @@ export default function FamilyCalendarPage() {
                       />
                     </div>
                     <Button
-                      className="w-full bg-indigo-600 hover:bg-indigo-700"
+                      className="w-full bg-primary hover:bg-primary/90"
                       disabled={!newEvent.childId || !newEvent.title || !newEvent.startDate || addEventMutation.isPending}
                       onClick={() => addEventMutation.mutate(newEvent)}
                     >
@@ -284,13 +284,13 @@ export default function FamilyCalendarPage() {
                         onClick={() => setSelectedDate(dateStr)}
                         className={`h-20 p-1 rounded-lg text-left transition-all border ${
                           isSelected
-                            ? "border-indigo-500 bg-indigo-50"
+                            ? "border-primary bg-primary/5"
                             : isToday
-                            ? "border-indigo-300 bg-indigo-50/50"
+                            ? "border-primary/50 bg-primary/5/50"
                             : "border-transparent hover:bg-gray-50"
                         }`}
                       >
-                        <div className={`text-xs font-medium ${isToday ? "text-indigo-600 font-bold" : "text-gray-600"}`}>
+                        <div className={`text-xs font-medium ${isToday ? "text-primary font-bold" : "text-gray-600"}`}>
                           {day}
                         </div>
                         <div className="space-y-0.5 mt-1">
@@ -338,7 +338,7 @@ export default function FamilyCalendarPage() {
                     <p className="text-sm text-gray-500">No events on this day.</p>
                     <Button
                       size="sm"
-                      className="mt-3 bg-indigo-600 hover:bg-indigo-700"
+                      className="mt-3 bg-primary hover:bg-primary/90"
                       onClick={() => {
                         setNewEvent({ ...newEvent, startDate: selectedDate });
                         setShowAddEvent(true);

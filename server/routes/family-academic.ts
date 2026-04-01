@@ -20,6 +20,7 @@ import {
   familyStreaks,
   familyWeeklyReports,
   users,
+  students,
   insertFamilyChildSchema,
   insertFamilyCourseSchema,
   insertFamilyCalendarEventSchema,
@@ -343,19 +344,66 @@ familyAcademicRouter.get("/children", async (req, res) => {
 
 familyAcademicRouter.post("/children", async (req, res) => {
   try {
-    const data = insertFamilyChildSchema.parse({ ...req.body, parentUserId: getUserId(req) });
-    const [child] = await db.insert(familyChildren).values(data).returning();
+    const userId = getUserId(req);
+    const data = insertFamilyChildSchema.parse({ ...req.body, parentUserId: userId });
+    
+    // Map grade level text to grade band for tutor profile
+    const gradeBandMap: Record<string, string> = {
+      "Kindergarten": "k-2", "1st": "k-2", "2nd": "k-2",
+      "3rd": "3-5", "4th": "3-5", "5th": "3-5",
+      "6th": "6-8", "7th": "6-8", "8th": "6-8",
+      "9th": "9-12", "10th": "9-12", "11th": "9-12", "12th": "9-12",
+    };
+    const gradeBand = gradeBandMap[data.gradeLevel || ""] || "6-8";
+    
+    // Auto-create a linked student (tutor) profile
+    const [studentProfile] = await db.insert(students).values({
+      ownerUserId: userId,
+      name: data.childName,
+      gradeBand,
+      age: data.childAge || null,
+      avatarType: "default",
+    }).returning();
+    
+    // Create family child linked to the student profile
+    const [child] = await db.insert(familyChildren).values({
+      ...data,
+      studentId: studentProfile.id,
+    }).returning();
+    
+    console.log(`[Family] Created child "${data.childName}" linked to student profile ${studentProfile.id}`);
     res.status(201).json(child);
   } catch (err) { handleError(res, err, "Failed to create child"); }
 });
 
 familyAcademicRouter.patch("/children/:id", async (req, res) => {
   try {
+    const userId = getUserId(req);
     const [child] = await db.update(familyChildren)
       .set({ ...req.body, updatedAt: new Date() })
-      .where(and(eq(familyChildren.id, req.params.id), eq(familyChildren.parentUserId, getUserId(req))))
+      .where(and(eq(familyChildren.id, req.params.id), eq(familyChildren.parentUserId, userId)))
       .returning();
     if (!child) return res.status(404).json({ message: "Child not found" });
+    
+    // Sync changes back to linked student profile
+    if (child.studentId) {
+      const syncData: Record<string, any> = { updatedAt: new Date() };
+      if (req.body.childName) syncData.name = req.body.childName;
+      if (req.body.childAge) syncData.age = req.body.childAge;
+      if (req.body.gradeLevel) {
+        const gradeBandMap: Record<string, string> = {
+          "Kindergarten": "k-2", "1st": "k-2", "2nd": "k-2",
+          "3rd": "3-5", "4th": "3-5", "5th": "3-5",
+          "6th": "6-8", "7th": "6-8", "8th": "6-8",
+          "9th": "9-12", "10th": "9-12", "11th": "9-12", "12th": "9-12",
+        };
+        syncData.gradeBand = gradeBandMap[req.body.gradeLevel] || "6-8";
+      }
+      if (req.body.photoUrl) syncData.avatarUrl = req.body.photoUrl;
+      await db.update(students).set(syncData).where(eq(students.id, child.studentId));
+      console.log(`[Family] Synced profile changes to student ${child.studentId}`);
+    }
+    
     res.json(child);
   } catch (err) { handleError(res, err, "Failed to update child"); }
 });

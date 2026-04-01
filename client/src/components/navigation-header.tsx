@@ -91,7 +91,7 @@ export function NavigationHeader() {
                   className={isActive("/family") ? "text-primary font-medium" : "text-muted-foreground"}
                   data-testid="nav-family"
                 >
-                  Family
+                  Study Tracker
                 </Button>
                 <Button
                   variant="ghost"
@@ -229,7 +229,7 @@ export function NavigationHeader() {
           <div className="px-4 py-3 space-y-1">
             {[
               { label: "Dashboard", path: "/dashboard" },
-              { label: "Family", path: "/family" },
+              { label: "Study Tracker", path: "/family" },
               { label: "College Test Prep", path: "/benefits#test-prep" },
               { label: "Settings", path: "/settings" },
               { label: "Live Support", path: "/support" },

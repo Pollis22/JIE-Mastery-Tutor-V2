@@ -1648,10 +1648,12 @@ export function calculateSalesHealthStatus(prospect: {
 export const familyChildren = pgTable("family_children", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   parentUserId: varchar("parent_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  studentId: varchar("student_id").references(() => students.id, { onDelete: "set null" }),
   childName: text("child_name").notNull(),
   childAge: integer("child_age"),
   gradeLevel: text("grade_level"),
   avatarEmoji: text("avatar_emoji"),
+  photoUrl: text("photo_url"),
   color: text("color"),
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow(),

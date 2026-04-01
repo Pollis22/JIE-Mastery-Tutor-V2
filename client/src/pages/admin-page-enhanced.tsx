@@ -415,7 +415,7 @@ export default function AdminPageEnhanced() {
               <TabsTrigger value="pricing-studio" data-testid="tab-pricing-studio">Pricing Studio</TabsTrigger>
               <TabsTrigger value="capital-crm" data-testid="tab-capital-crm">Capital CRM</TabsTrigger>
               <TabsTrigger value="sales-crm" data-testid="tab-sales-crm">Sales CRM</TabsTrigger>
-              <TabsTrigger value="family-tracker" data-testid="tab-family-tracker">Family Tracker</TabsTrigger>
+              <TabsTrigger value="family-tracker" data-testid="tab-family-tracker">Study Tracker</TabsTrigger>
             </TabsList>
 
             {/* Overview Tab */}
@@ -1558,8 +1558,8 @@ export default function AdminPageEnhanced() {
             <TabsContent value="family-tracker" className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-lg font-semibold">Family Academic Tracker</h3>
-                  <p className="text-sm text-muted-foreground">Monitor family engagement, student progress, and intervention needs</p>
+                  <h3 className="text-lg font-semibold">Study Tracker</h3>
+                  <p className="text-sm text-muted-foreground">Monitor student engagement, progress, and intervention needs</p>
                 </div>
                 <Button
                   variant="outline"
@@ -1575,7 +1575,7 @@ export default function AdminPageEnhanced() {
                 <iframe
                   src="/admin/family-tracker"
                   className="w-full h-full border-0"
-                  title="Family Academic Tracker"
+                  title="Study Tracker"
                 />
               </div>
             </TabsContent>

@@ -22,6 +22,8 @@ interface ChildDashboard {
     childAge: number | null;
     gradeLevel: string | null;
     avatarEmoji: string | null;
+    photoUrl: string | null;
+    studentId: string | null;
     color: string | null;
   };
   courses: Array<{ id: string; courseName: string; teacherName: string | null; color: string | null; isActive: boolean }>;
@@ -100,8 +102,8 @@ export default function FamilyChildDashboardPage() {
     return (
       <>
         <NavigationHeader />
-        <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex items-center justify-center">
-          <div className="animate-pulse text-lg text-indigo-600">Loading dashboard...</div>
+        <div className="min-h-screen bg-background flex items-center justify-center">
+          <div className="animate-pulse text-lg text-primary">Loading dashboard...</div>
         </div>
       </>
     );
@@ -127,7 +129,7 @@ export default function FamilyChildDashboardPage() {
       streakLabel: "🔥 Day Streak!",
     },
     "68": {
-      bg: "from-cyan-50 via-blue-50 to-indigo-50",
+      bg: "from-primary/5 via-background to-primary/10",
       accent: "text-blue-600",
       button: "bg-blue-600 hover:bg-blue-700",
       card: "border-blue-200",
@@ -155,7 +157,11 @@ export default function FamilyChildDashboardPage() {
           {/* Header */}
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 gap-4">
             <div className="flex items-center gap-4">
-              <div className="text-5xl">{child.avatarEmoji || "🧒"}</div>
+              {child.photoUrl ? (
+                <img src={child.photoUrl} alt={child.childName} className="w-14 h-14 rounded-full object-cover border-2" style={{ borderColor: child.color || "#6366f1" }} />
+              ) : (
+                <div className="text-5xl">{child.avatarEmoji || "🧒"}</div>
+              )}
               <div>
                 <h1 className={`text-2xl font-bold ${theme.accent}`}>{theme.header}</h1>
                 <div className="flex items-center gap-2 text-sm text-gray-500 mt-1">
@@ -166,8 +172,8 @@ export default function FamilyChildDashboardPage() {
               </div>
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setLocation("/family")}>← Family Hub</Button>
-              <Button className={theme.button} onClick={() => setLocation("/tutor")}>
+              <Button variant="outline" onClick={() => setLocation("/family")}>← Study Tracker</Button>
+              <Button className={theme.button} onClick={() => setLocation(child.studentId ? `/tutor?student=${child.studentId}` : "/tutor")}>
                 🎓 Study with JIE
               </Button>
             </div>

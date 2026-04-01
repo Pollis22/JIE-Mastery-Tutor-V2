@@ -12,7 +12,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { useState } from "react";
+import { useState, useRef } from "react";
+import { Camera } from "lucide-react";
 
 interface ChildSummary {
   id: string;
@@ -20,6 +21,7 @@ interface ChildSummary {
   childAge: number | null;
   gradeLevel: string | null;
   avatarEmoji: string | null;
+  photoUrl: string | null;
   color: string | null;
   pendingTasks: number;
   completedTasksThisWeek: number;
@@ -60,7 +62,8 @@ export default function FamilyDashboardPage() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [showAddChild, setShowAddChild] = useState(false);
-  const [newChild, setNewChild] = useState({ childName: "", childAge: "", gradeLevel: "", avatarEmoji: "🧒", color: "#6366f1" });
+  const [newChild, setNewChild] = useState({ childName: "", childAge: "", gradeLevel: "", avatarEmoji: "🧒", color: "#6366f1", photoUrl: "" });
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data, isLoading } = useQuery<FamilyDashboard>({
     queryKey: ["/api/family-academic/dashboard"],
@@ -72,7 +75,7 @@ export default function FamilyDashboardPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/family-academic/dashboard"] });
       setShowAddChild(false);
-      setNewChild({ childName: "", childAge: "", gradeLevel: "", avatarEmoji: "🧒", color: "#6366f1" });
+      setNewChild({ childName: "", childAge: "", gradeLevel: "", avatarEmoji: "🧒", color: "#6366f1", photoUrl: "" });
       toast({ title: "Child added!", description: "Your child's profile has been created." });
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
@@ -88,8 +91,8 @@ export default function FamilyDashboardPage() {
     return (
       <>
         <NavigationHeader />
-        <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex items-center justify-center">
-          <div className="animate-pulse text-lg text-indigo-600">Loading your family dashboard...</div>
+        <div className="min-h-screen bg-background flex items-center justify-center">
+          <div className="animate-pulse text-lg text-primary">Loading your study tracker...</div>
         </div>
       </>
     );
@@ -103,18 +106,18 @@ export default function FamilyDashboardPage() {
   return (
     <>
       <NavigationHeader />
-      <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50">
+      <div className="min-h-screen bg-background">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           {/* Header */}
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 gap-4">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">
-                {dashboard?.isSummerMode ? "☀️ Summer Learning Hub" : "👨‍👩‍👧‍👦 Family Command Center"}
+                {dashboard?.isSummerMode ? "☀️ Summer Learning Hub" : "📚 Study Tracker"}
               </h1>
               <p className="text-gray-500 mt-1">
                 {dashboard?.isSummerMode
                   ? "Keep the learning going all summer long!"
-                  : "Track your family's learning journey"}
+                  : "Track your children's academic progress"}
               </p>
             </div>
             <div className="flex gap-2">
@@ -126,7 +129,7 @@ export default function FamilyDashboardPage() {
               </Button>
               <Dialog open={showAddChild} onOpenChange={setShowAddChild}>
                 <DialogTrigger asChild>
-                  <Button className="bg-indigo-600 hover:bg-indigo-700">+ Add Child</Button>
+                  <Button className="bg-primary hover:bg-primary/90">+ Add Child</Button>
                 </DialogTrigger>
                 <DialogContent>
                   <DialogHeader>
@@ -164,6 +167,46 @@ export default function FamilyDashboardPage() {
                       </Select>
                     </div>
                     <div>
+                      <Label>Photo (optional)</Label>
+                      <div className="flex items-center gap-3 mt-1">
+                        {newChild.photoUrl ? (
+                          <div className="relative">
+                            <img src={newChild.photoUrl} alt="Child" className="w-16 h-16 rounded-full object-cover border-2 border-primary" />
+                            <button
+                              onClick={() => setNewChild({ ...newChild, photoUrl: "" })}
+                              className="absolute -top-1 -right-1 w-5 h-5 bg-destructive text-white rounded-full text-xs flex items-center justify-center"
+                            >×</button>
+                          </div>
+                        ) : (
+                          <div
+                            onClick={() => fileInputRef.current?.click()}
+                            className="w-16 h-16 rounded-full border-2 border-dashed border-muted-foreground/30 flex flex-col items-center justify-center cursor-pointer hover:border-primary/50 transition-colors"
+                          >
+                            <Camera className="w-5 h-5 text-muted-foreground" />
+                            <span className="text-[10px] text-muted-foreground">Upload</span>
+                          </div>
+                        )}
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            if (file.size > 2 * 1024 * 1024) {
+                              toast({ title: "File too large", description: "Please use an image under 2MB", variant: "destructive" });
+                              return;
+                            }
+                            const reader = new FileReader();
+                            reader.onload = () => setNewChild({ ...newChild, photoUrl: reader.result as string });
+                            reader.readAsDataURL(file);
+                          }}
+                        />
+                        <p className="text-xs text-muted-foreground">Upload a photo or pick an avatar below</p>
+                      </div>
+                    </div>
+                    <div>
                       <Label>Avatar</Label>
                       <div className="flex flex-wrap gap-2 mt-1">
                         {AVATAR_EMOJIS.map((emoji) => (
@@ -171,7 +214,7 @@ export default function FamilyDashboardPage() {
                             key={emoji}
                             onClick={() => setNewChild({ ...newChild, avatarEmoji: emoji })}
                             className={`text-2xl p-1 rounded-lg border-2 transition-all ${
-                              newChild.avatarEmoji === emoji ? "border-indigo-500 bg-indigo-50" : "border-transparent hover:border-gray-200"
+                              newChild.avatarEmoji === emoji ? "border-primary bg-primary/5" : "border-transparent hover:border-gray-200"
                             }`}
                           >
                             {emoji}
@@ -196,7 +239,7 @@ export default function FamilyDashboardPage() {
                       </div>
                     </div>
                     <Button
-                      className="w-full bg-indigo-600 hover:bg-indigo-700"
+                      className="w-full bg-primary hover:bg-primary/90"
                       disabled={!newChild.childName || addChildMutation.isPending}
                       onClick={() =>
                         addChildMutation.mutate({
@@ -204,6 +247,7 @@ export default function FamilyDashboardPage() {
                           childAge: newChild.childAge ? parseInt(newChild.childAge) : null,
                           gradeLevel: newChild.gradeLevel || null,
                           avatarEmoji: newChild.avatarEmoji,
+                          photoUrl: newChild.photoUrl || null,
                           color: newChild.color,
                         })
                       }
@@ -219,15 +263,15 @@ export default function FamilyDashboardPage() {
           {/* Weekly Summary Bar */}
           {summary && (
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-              <Card className="bg-white/80 backdrop-blur border-indigo-100">
+              <Card className="bg-white/80 backdrop-blur border-primary/20">
                 <CardContent className="p-4 text-center">
-                  <div className="text-3xl font-bold text-indigo-600">{summary.totalTasksCompleted}</div>
+                  <div className="text-3xl font-bold text-primary">{summary.totalTasksCompleted}</div>
                   <div className="text-sm text-gray-500">Tasks Completed This Week</div>
                 </CardContent>
               </Card>
-              <Card className="bg-white/80 backdrop-blur border-purple-100">
+              <Card className="bg-white/80 backdrop-blur border-primary/20">
                 <CardContent className="p-4 text-center">
-                  <div className="text-3xl font-bold text-purple-600">{summary.totalUpcoming}</div>
+                  <div className="text-3xl font-bold text-primary">{summary.totalUpcoming}</div>
                   <div className="text-sm text-gray-500">Upcoming Deadlines</div>
                 </CardContent>
               </Card>
@@ -246,10 +290,10 @@ export default function FamilyDashboardPage() {
               {children.length === 0 ? (
                 <Card className="bg-white/80 backdrop-blur">
                   <CardContent className="p-12 text-center">
-                    <div className="text-6xl mb-4">👨‍👩‍👧‍👦</div>
-                    <h3 className="text-xl font-semibold text-gray-700 mb-2">Welcome to Your Family Hub!</h3>
+                    <div className="text-6xl mb-4">📚</div>
+                    <h3 className="text-xl font-semibold text-gray-700 mb-2">Welcome to Your Study Tracker!</h3>
                     <p className="text-gray-500 mb-6">Add your children to start tracking their learning journey.</p>
-                    <Button className="bg-indigo-600 hover:bg-indigo-700" onClick={() => setShowAddChild(true)}>
+                    <Button className="bg-primary hover:bg-primary/90" onClick={() => setShowAddChild(true)}>
                       + Add Your First Child
                     </Button>
                   </CardContent>
@@ -264,7 +308,11 @@ export default function FamilyDashboardPage() {
                     <CardContent className="p-6">
                       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                         <div className="flex items-center gap-4">
-                          <div className="text-4xl">{child.avatarEmoji || "🧒"}</div>
+                          {child.photoUrl ? (
+                            <img src={child.photoUrl} alt={child.childName} className="w-12 h-12 rounded-full object-cover border-2" style={{ borderColor: child.color || "#6366f1" }} />
+                          ) : (
+                            <div className="text-4xl">{child.avatarEmoji || "🧒"}</div>
+                          )}
                           <div>
                             <h3 className="text-lg font-semibold text-gray-900">{child.childName}</h3>
                             <div className="flex items-center gap-2 text-sm text-gray-500">
@@ -286,7 +334,7 @@ export default function FamilyDashboardPage() {
 
                           {/* XP */}
                           <div className="text-center">
-                            <div className="text-lg font-bold text-indigo-600">{child.totalXp} XP</div>
+                            <div className="text-lg font-bold text-primary">{child.totalXp} XP</div>
                             <div className="text-xs text-gray-500">Level {child.level}</div>
                           </div>
 
@@ -319,8 +367,8 @@ export default function FamilyDashboardPage() {
                       <div className="flex gap-2 mt-4">
                         <Button
                           size="sm"
-                          className="bg-indigo-600 hover:bg-indigo-700"
-                          onClick={(e) => { e.stopPropagation(); setLocation("/tutor"); }}
+                          className="bg-primary hover:bg-primary/90"
+                          onClick={(e) => { e.stopPropagation(); setLocation(child.studentId ? `/tutor?student=${child.studentId}` : "/tutor"); }}
                         >
                           🎓 Study with JIE
                         </Button>
@@ -350,7 +398,7 @@ export default function FamilyDashboardPage() {
               {leaderboard.length > 1 && (
                 <Card className="bg-white/90 backdrop-blur">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-lg">🏆 Family Leaderboard</CardTitle>
+                    <CardTitle className="text-lg">🏆 Leaderboard</CardTitle>
                     <p className="text-xs text-gray-500">Weekly XP rankings</p>
                   </CardHeader>
                   <CardContent>
@@ -377,10 +425,10 @@ export default function FamilyDashboardPage() {
               )}
 
               {/* Quick Stats */}
-              <Card className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white">
+              <Card className="bg-gradient-to-br from-primary to-primary/80 text-white">
                 <CardContent className="p-6">
                   <h3 className="font-semibold text-lg mb-3">Quick Tips</h3>
-                  <ul className="space-y-2 text-sm text-indigo-100">
+                  <ul className="space-y-2 text-sm text-primary-foreground/80">
                     <li>📅 Add calendar events to auto-generate study tasks</li>
                     <li>🎯 Set weekly goals for each child</li>
                     <li>🔥 Daily activity builds streaks and earns badges</li>

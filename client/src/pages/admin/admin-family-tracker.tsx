@@ -98,8 +98,8 @@ export default function AdminFamilyTracker() {
           {/* Header */}
           <div className="flex items-center justify-between mb-8">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">👨‍👩‍👧‍👦 Family Academic Tracker</h1>
-              <p className="text-sm text-gray-500">Monitor family engagement, identify at-risk students, and track platform usage</p>
+              <h1 className="text-2xl font-bold text-gray-900">📚 Study Tracker — Admin</h1>
+              <p className="text-sm text-gray-500">Monitor student engagement, identify at-risk students, and track platform usage</p>
             </div>
             <Button variant="outline" onClick={() => setLocation("/admin")}>← Admin Dashboard</Button>
           </div>
@@ -109,7 +109,7 @@ export default function AdminFamilyTracker() {
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
               <Card>
                 <CardContent className="p-4 text-center">
-                  <div className="text-2xl font-bold text-indigo-600">{overview.totalFamilies}</div>
+                  <div className="text-2xl font-bold text-primary">{overview.totalFamilies}</div>
                   <div className="text-xs text-gray-500">Families</div>
                 </CardContent>
               </Card>
@@ -133,7 +133,7 @@ export default function AdminFamilyTracker() {
               </Card>
               <Card>
                 <CardContent className="p-4 text-center">
-                  <div className="text-2xl font-bold text-purple-600">{overview.totalEvents}</div>
+                  <div className="text-2xl font-bold text-primary">{overview.totalEvents}</div>
                   <div className="text-xs text-gray-500">Calendar Events</div>
                 </CardContent>
               </Card>
