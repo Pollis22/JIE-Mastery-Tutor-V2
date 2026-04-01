@@ -1150,7 +1150,6 @@ export default function AuthPage() {
                 <p className="text-xs opacity-80 mt-1">No other AI tutor includes academic planning, engagement tracking, or proactive session prep.</p>
               </div>
             </div>
-            </div>
 
             {/* Safety Callout */}
             <div className="mt-8 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-6">

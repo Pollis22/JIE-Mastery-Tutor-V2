@@ -123,11 +123,14 @@ export default function FamilyDashboardPage() {
                 </p>
               </div>
             </div>
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setLocation("/family/calendar")}>
+            <div className="flex gap-2 flex-wrap">
+              <Button variant="outline" size="sm" onClick={() => setLocation("/about-study-tracker")}>
+                ❓ How It Works
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setLocation("/family/calendar")}>
                 📅 Calendar
               </Button>
-              <Button variant="outline" onClick={() => reportMutation.mutate()} disabled={reportMutation.isPending}>
+              <Button variant="outline" size="sm" onClick={() => reportMutation.mutate()} disabled={reportMutation.isPending}>
                 {reportMutation.isPending ? "Sending..." : "📊 Weekly Report"}
               </Button>
               <Dialog open={showAddChild} onOpenChange={setShowAddChild}>

@@ -226,6 +226,7 @@ export function NavigationHeader() {
             {[
               { label: "Dashboard", path: "/dashboard" },
               { label: "Study Tracker", path: "/family" },
+              { label: "About Study Tracker", path: "/about-study-tracker" },
               { label: "College Test Prep", path: "/benefits#test-prep" },
               { label: "Settings", path: "/settings" },
               { label: "Live Support", path: "/support" },
