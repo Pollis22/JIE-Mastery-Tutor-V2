@@ -38,6 +38,7 @@ const UnsubscribePage = lazy(() => import("@/pages/unsubscribe-page"));
 const DemoPage = lazy(() => import("@/pages/demo-page"));
 const FAQPage = lazy(() => import("@/pages/faq-page"));
 const SchoolsPage = lazy(() => import("@/pages/schools-page"));
+const StudyTrackerInfoPage = lazy(() => import("@/pages/study-tracker-info"));
 const SupportPage = lazy(() => import("@/pages/support-page"));
 const ContactPage = lazy(() => import("@/pages/contact-page"));
 const AdminUsers = lazy(() => import("@/pages/admin-users"));
@@ -125,6 +126,7 @@ function Router() {
         <LazyRoute path="/demo" component={DemoPage} />
         <LazyRoute path="/faq" component={FAQPage} />
         <LazyRoute path="/schools" component={SchoolsPage} />
+        <LazyRoute path="/study-tracker" component={StudyTrackerInfoPage} />
         <LazyRoute path="/support" component={SupportPage} />
         <LazyRoute path="/contact" component={ContactPage} />
         <LazyRoute path="/terms" component={TermsPage} />

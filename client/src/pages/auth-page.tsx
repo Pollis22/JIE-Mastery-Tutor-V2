@@ -286,6 +286,14 @@ export default function AuthPage() {
               <Button 
                 variant="ghost" 
                 size="sm"
+                onClick={() => setLocation("/study-tracker")} 
+                data-testid="button-nav-study-tracker"
+              >
+                Study Tracker
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="sm"
                 onClick={() => {
                   setLocation("/benefits");
                   setTimeout(() => document.getElementById("test-prep")?.scrollIntoView({ behavior: "smooth" }), 500);
@@ -774,14 +782,14 @@ export default function AuthPage() {
             <div className="space-y-6 text-center lg:text-left order-2 lg:order-1">
               {/* Emotional Headline */}
               <h1 className="text-4xl md:text-5xl lg:text-5xl xl:text-6xl font-bold text-foreground leading-tight">
-                End Homework Stress.{' '}
-                <span className="text-primary">Real Learning Starts Here.</span>
+                Not Just a Tutor.{' '}
+                <span className="text-primary">A Complete Academic System.</span>
               </h1>
               
               {/* Clarifying Subheadline */}
               <p className="text-lg md:text-xl text-muted-foreground leading-relaxed">
-                A patient, voice-based AI tutor that <strong>guides</strong> your child through problems — 
-                never gives away answers. One subscription covers your whole family.
+                Voice-powered AI tutoring <strong>plus</strong> academic calendars, study tasks, engagement tracking, 
+                and weekly progress reports — for every child in your family. One subscription.
               </p>
 
               {/* Primary CTA */}
@@ -858,6 +866,56 @@ export default function AuthPage() {
                 allowFullScreen
                 data-testid="video-hero-youtube"
               />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* STUDY TRACKER CALLOUT */}
+      <section className="py-16 bg-gradient-to-r from-primary/5 to-primary/10 border-y border-primary/20">
+        <div className="container mx-auto px-4">
+          <div className="max-w-5xl mx-auto">
+            <div className="grid md:grid-cols-2 gap-8 items-center">
+              <div>
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20 mb-4">
+                  <span className="text-xs font-bold text-primary uppercase tracking-wider">New: Study Tracker</span>
+                </div>
+                <h2 className="text-2xl lg:text-3xl font-bold text-foreground mb-4">
+                  The Only AI Tutor With a Built-In Academic Command Center
+                </h2>
+                <p className="text-muted-foreground mb-6 leading-relaxed">
+                  Add your children, their courses, and key dates. JIE auto-generates study tasks,
+                  tracks streaks and XP, sends you weekly progress reports, and the tutor
+                  proactively prepares your kids for upcoming exams.
+                </p>
+                <div className="grid grid-cols-2 gap-3 mb-6">
+                  {["Multi-child profiles", "Academic calendar", "Auto study tasks", "Engagement scoring", "Streaks & badges", "Weekly reports"].map((f) => (
+                    <div key={f} className="flex items-center gap-2 text-sm text-foreground">
+                      <svg className="w-4 h-4 text-green-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+                      {f}
+                    </div>
+                  ))}
+                </div>
+                <Button variant="outline" onClick={() => setLocation("/study-tracker")} data-testid="button-study-tracker-learn">
+                  Learn More About Study Tracker →
+                </Button>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                {[
+                  { emoji: "📅", label: "Academic Calendar", desc: "Every deadline, one view" },
+                  { emoji: "🔥", label: "Streaks & XP", desc: "Gamified daily study habits" },
+                  { emoji: "📊", label: "Engagement Scores", desc: "0-100 weekly per child" },
+                  { emoji: "📧", label: "Weekly Reports", desc: "Smart insights to your inbox" },
+                ].map((card, i) => (
+                  <Card key={i} className="bg-card/80 backdrop-blur">
+                    <CardContent className="p-4 text-center space-y-1">
+                      <div className="text-2xl">{card.emoji}</div>
+                      <div className="text-sm font-bold text-foreground">{card.label}</div>
+                      <div className="text-xs text-muted-foreground">{card.desc}</div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
             </div>
           </div>
         </div>
