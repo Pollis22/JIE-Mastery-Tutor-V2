@@ -1,10 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 
-// ── TEST MODE: Set to true to use 30-second timeout instead of 30 minutes ──
-const TEST_MODE = false;
-
-const IDLE_TIMEOUT_MS = TEST_MODE ? 30 * 1000 : 30 * 60 * 1000;
-const WARNING_DURATION_MS = TEST_MODE ? 15 * 1000 : 2 * 60 * 1000;
+const IDLE_TIMEOUT_MS = 30 * 60 * 1000;   // 30 minutes of no activity
+const WARNING_DURATION_MS = 2 * 60 * 1000; // 2-minute countdown before auto-logout
 
 /**
  * Tracks user inactivity (mouse, keyboard, touch, scroll).
@@ -26,14 +23,10 @@ export function useInactivityTimeout(isAuthenticated: boolean) {
   const showWarningRef = useRef(false);
   const isAuthenticatedRef = useRef(isAuthenticated);
 
-  // Keep refs in sync with latest values
-  useEffect(() => {
-    isAuthenticatedRef.current = isAuthenticated;
-  }, [isAuthenticated]);
-
-  useEffect(() => {
-    showWarningRef.current = showWarning;
-  }, [showWarning]);
+  // Keep refs in sync — MUST be direct assignment, NOT useEffect
+  // useEffect runs after render, but startIdleTimer reads these synchronously
+  isAuthenticatedRef.current = isAuthenticated;
+  showWarningRef.current = showWarning;
 
   const clearAllTimers = useCallback(() => {
     if (idleTimerRef.current) {
@@ -47,7 +40,7 @@ export function useInactivityTimeout(isAuthenticated: boolean) {
   }, []);
 
   const startIdleTimer = useCallback(() => {
-    // Clear any existing idle timer first
+    // Clear any existing idle timer
     if (idleTimerRef.current) {
       clearTimeout(idleTimerRef.current);
       idleTimerRef.current = null;
@@ -97,6 +90,7 @@ export function useInactivityTimeout(isAuthenticated: boolean) {
   const handleActivity = useCallback(() => {
     // If warning is showing, user activity dismisses it
     if (showWarningRef.current) {
+      console.log('[Inactivity] ✅ User activity detected — dismissing warning');
       setShowWarning(false);
       showWarningRef.current = false;
       warningStartRef.current = null;
@@ -115,6 +109,7 @@ export function useInactivityTimeout(isAuthenticated: boolean) {
 
   // Dismiss warning (user clicked "I'm still here")
   const dismissWarning = useCallback(() => {
+    console.log('[Inactivity] 👍 User clicked "I\'m still here" — resetting');
     setShowWarning(false);
     showWarningRef.current = false;
     warningStartRef.current = null;
@@ -150,13 +145,14 @@ export function useInactivityTimeout(isAuthenticated: boolean) {
     events.forEach((event) => window.addEventListener(event, throttledReset, { passive: true }));
 
     // Initial timer start
+    console.log('[Inactivity] 🟢 Inactivity monitor started (30 min idle → 2 min warning)');
     startIdleTimer();
 
     return () => {
       events.forEach((event) => window.removeEventListener(event, throttledReset));
       clearAllTimers();
     };
-  }, [isAuthenticated]); // Only re-run when auth state changes
+  }, [isAuthenticated]); // Only re-run when auth state changes — callbacks are stable via refs
 
   return { showWarning, secondsLeft, isExpired, dismissWarning };
 }
