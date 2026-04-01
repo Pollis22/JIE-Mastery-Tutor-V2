@@ -137,7 +137,10 @@ export default function FamilyCalendarPage() {
           {/* Header */}
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">📅 Study Calendar</h1>
+              <div className="flex items-center gap-3">
+                <img src="/jie-logo-nav.png" alt="JIE Mastery" className="w-8 h-8 object-contain" />
+                <h1 className="text-2xl font-bold text-foreground">Study Calendar</h1>
+              </div>
               <p className="text-sm text-gray-500">Tests, homework, and events for all children</p>
             </div>
             <div className="flex gap-2">
