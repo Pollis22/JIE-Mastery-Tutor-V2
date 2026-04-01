@@ -871,51 +871,82 @@ export default function AuthPage() {
         </div>
       </section>
 
-      {/* STUDY TRACKER CALLOUT */}
-      <section className="py-16 bg-gradient-to-r from-primary/5 to-primary/10 border-y border-primary/20">
+      {/* STUDY TRACKER — 2 IN 1 SYSTEM */}
+      <section className="py-20 bg-gradient-to-r from-primary/5 to-primary/10 border-y border-primary/20">
         <div className="container mx-auto px-4">
           <div className="max-w-5xl mx-auto">
-            <div className="grid md:grid-cols-2 gap-8 items-center">
-              <div>
-                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20 mb-4">
-                  <span className="text-xs font-bold text-primary uppercase tracking-wider">New: Study Tracker</span>
+            {/* Badge + Headline */}
+            <div className="text-center mb-12">
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary text-primary-foreground mb-5">
+                <span className="text-xs font-bold uppercase tracking-wider">AI Tutor + SRM · Two in One</span>
+              </div>
+              <h2 className="text-3xl lg:text-4xl font-bold text-foreground mb-4">
+                The Only AI Tutor That Knows Your Child's Entire Academic Life
+              </h2>
+              <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+                Students don't struggle because they can't learn. They struggle because they don't have a system — 
+                missed homework, forgotten tests, and no one sees the problem until the report card. JIE Mastery fixes this.
+              </p>
+            </div>
+
+            {/* How It Works — 5-Step Flow */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-12">
+              {[
+                { step: "1", title: "Add Classes", desc: "Parents add courses and key dates — tests, projects, homework." },
+                { step: "2", title: "Calendar Fills In", desc: "Every deadline on one color-coded calendar." },
+                { step: "3", title: "Tasks Auto-Generate", desc: "Study reminders 7, 5, 3, 1 days before tests." },
+                { step: "4", title: "Tutor Knows Schedule", desc: "Sessions open with what's due this week." },
+                { step: "5", title: "Track Engagement", desc: "0-100 weekly score tracks consistency." },
+              ].map((item, i) => (
+                <div key={i} className="text-center">
+                  <div className="w-10 h-10 rounded-full bg-primary text-primary-foreground font-bold text-sm flex items-center justify-center mx-auto mb-2">
+                    {item.step}
+                  </div>
+                  <h4 className="text-sm font-bold text-foreground mb-1">{item.title}</h4>
+                  <p className="text-xs text-muted-foreground">{item.desc}</p>
                 </div>
-                <h2 className="text-2xl lg:text-3xl font-bold text-foreground mb-4">
-                  The Only AI Tutor With a Built-In Academic Command Center
-                </h2>
-                <p className="text-muted-foreground mb-6 leading-relaxed">
-                  Add your children, their courses, and key dates. JIE auto-generates study tasks,
-                  tracks streaks and XP, sends you weekly progress reports, and the tutor
-                  proactively prepares your kids for upcoming exams.
-                </p>
+              ))}
+            </div>
+
+            {/* Two Columns: Features + Tutor Quote */}
+            <div className="grid md:grid-cols-2 gap-8 items-start">
+              <div>
                 <div className="grid grid-cols-2 gap-3 mb-6">
-                  {["Multi-child profiles", "Academic calendar", "Auto study tasks", "Engagement scoring", "Streaks & badges", "Weekly reports"].map((f) => (
+                  {[
+                    "Multi-child profiles", "Academic calendar", "Auto study tasks", "Engagement scoring",
+                    "Streaks, XP & badges", "Family leaderboard", "Parent-set goals", "Weekly progress reports",
+                    "Early intervention alerts", "Summer learning mode"
+                  ].map((f) => (
                     <div key={f} className="flex items-center gap-2 text-sm text-foreground">
-                      <svg className="w-4 h-4 text-green-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+                      <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
                       {f}
                     </div>
                   ))}
                 </div>
-                <Button variant="outline" onClick={() => setLocation("/study-tracker")} data-testid="button-study-tracker-learn">
-                  Learn More About Study Tracker →
-                </Button>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <Button onClick={() => setLocation("/study-tracker")} data-testid="button-study-tracker-learn">
+                    About Study Tracker
+                  </Button>
+                  <StartTrialButton size="default" className="h-10" />
+                </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                {[
-                  { emoji: "📅", label: "Academic Calendar", desc: "Every deadline, one view" },
-                  { emoji: "🔥", label: "Streaks & XP", desc: "Gamified daily study habits" },
-                  { emoji: "📊", label: "Engagement Scores", desc: "0-100 weekly per child" },
-                  { emoji: "📧", label: "Weekly Reports", desc: "Smart insights to your inbox" },
-                ].map((card, i) => (
-                  <Card key={i} className="bg-card/80 backdrop-blur">
-                    <CardContent className="p-4 text-center space-y-1">
-                      <div className="text-2xl">{card.emoji}</div>
-                      <div className="text-sm font-bold text-foreground">{card.label}</div>
-                      <div className="text-xs text-muted-foreground">{card.desc}</div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
+
+              {/* Tutor Comparison Quote */}
+              <Card className="border-primary/30 bg-card shadow-lg">
+                <CardContent className="p-6">
+                  <h3 className="font-bold text-foreground mb-4">Your Child's Tutor Doesn't Just Know the Subject — It Knows Their Schedule</h3>
+                  <div className="space-y-4">
+                    <div className="p-3 rounded-lg bg-muted/50">
+                      <p className="text-xs font-semibold text-muted-foreground mb-1">Other AI:</p>
+                      <p className="text-sm text-muted-foreground italic">"How can I help you today?"</p>
+                    </div>
+                    <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
+                      <p className="text-xs font-semibold text-primary mb-1">JIE Mastery:</p>
+                      <p className="text-sm text-foreground italic">"You have a math test on Thursday covering fractions and decimals. You finished 2 of 3 practice sets. Want to work on the one you haven't done yet?"</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           </div>
         </div>
@@ -1038,24 +1069,27 @@ export default function AuthPage() {
                 <div className="p-4 bg-muted/50"></div>
                 <div className="p-4 bg-muted/50 text-muted-foreground text-sm">Traditional Tutoring</div>
                 <div className="p-4 bg-muted/50 text-muted-foreground text-sm">ChatGPT / Generic AI</div>
-                <div className="p-4 bg-primary/10 text-primary text-sm font-bold">JIE Mastery</div>
+                <div className="p-4 bg-primary/10 text-primary text-sm font-bold">JIE Mastery AI</div>
               </div>
               
+              {/* Section: AI Tutor */}
+              <div className="grid grid-cols-4 border-b border-border bg-muted/30">
+                <div className="col-span-4 px-4 py-2 text-xs font-bold text-primary uppercase tracking-wider">AI Tutor</div>
+              </div>
               {[
-                { feature: "Remembers your child", trad: "Depends on the tutor", gpt: false, jie: true, jieText: "Builds a knowledge profile across every session" },
-                { feature: "Adapts teaching strategy", trad: "If you're lucky", gpt: false, jie: true, jieText: "Learns what works and adjusts automatically" },
-                { feature: "Tracks mastery over time", trad: false, gpt: false, jie: true, jieText: "0–100% mastery scoring per concept" },
-                { feature: "Every subject, one tutor", trad: false, gpt: "Any topic, no structure", jie: true, jieText: "Math, Science, English, Spanish & more" },
-                { feature: "Available 24/7", trad: false, gpt: true, jie: true, jieText: "Any time, any device, voice or text" },
-                { feature: "Guides reasoning (Socratic)", trad: "Varies by tutor", gpt: false, jie: true, jieText: "Never gives answers — builds understanding" },
-                { feature: "Voice conversations", trad: true, gpt: false, jie: true, jieText: "Natural voice in 25 languages" },
-                { feature: "Parent progress reports", trad: "Informal if any", gpt: false, jie: true, jieText: "Dashboards, session summaries, growth data" },
-                { feature: "Detects learning challenges", trad: "Depends on attentiveness", gpt: false, jie: true, jieText: "Automated flags after consistent patterns" },
-                { feature: "Consistent quality", trad: "Varies by day and tutor", gpt: "Varies by prompting", jie: true, jieText: "Same excellence every session" },
-                { feature: "Age-appropriate content", trad: true, gpt: false, jie: true, jieText: "K-2 through College, grade-matched tutors" },
-                { feature: "Safe for kids", trad: true, gpt: false, jie: true, jieText: "Content moderation, safety alerts to parents" },
+                { feature: "Remembers your child", trad: "Depends on the tutor", gpt: false, jieText: "Permanent knowledge profile across every session" },
+                { feature: "Adapts teaching strategy", trad: "If you're lucky", gpt: false, jieText: "Learns what works and adjusts automatically" },
+                { feature: "Tracks mastery over time", trad: false, gpt: false, jieText: "0–100% mastery scoring per concept" },
+                { feature: "Every subject, one tutor", trad: false, gpt: "Any topic, no structure", jieText: "Full course load K–12 through college" },
+                { feature: "Available 24/7", trad: false, gpt: true, jieText: "Any time, any device, voice or text" },
+                { feature: "Guides reasoning (Socratic)", trad: "Varies by tutor", gpt: false, jieText: "Never gives answers — builds understanding" },
+                { feature: "Voice conversations", trad: true, gpt: false, jieText: "Natural voice in 25 languages" },
+                { feature: "Age-appropriate interaction", trad: true, gpt: false, jieText: "Adapts vocabulary and style by grade level" },
+                { feature: "Document upload", trad: false, gpt: true, jieText: "Homework, worksheets, photos — step-by-step help" },
+                { feature: "SAT/ACT/AP test prep", trad: "Separate service", gpt: "Generic help", jieText: "SAT, ACT, AP + 15 professional exams" },
+                { feature: "Safe for kids", trad: true, gpt: false, jieText: "Content moderation + safety alerts to parents" },
               ].map((row, i) => (
-                <div key={i} className={`grid grid-cols-4 text-center border-b border-border ${i % 2 === 0 ? '' : 'bg-muted/10'}`}>
+                <div key={`tutor-${i}`} className={`grid grid-cols-4 border-b border-border ${i % 2 === 0 ? '' : 'bg-muted/10'}`}>
                   <div className="p-3 text-left font-medium text-foreground text-sm bg-muted/20">{row.feature}</div>
                   <div className="p-3 flex items-center justify-center">
                     {row.trad === true ? <CheckCircle className="w-4 h-4 text-muted-foreground" /> : 
@@ -1068,13 +1102,54 @@ export default function AuthPage() {
                      <span className="text-xs text-muted-foreground">{row.gpt}</span>}
                   </div>
                   <div className="p-3 bg-primary/5">
-                    <div className="flex items-center justify-center gap-1.5">
+                    <div className="flex items-center gap-2">
                       <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
-                      <span className="text-xs text-foreground font-medium text-left">{row.jieText}</span>
+                      <span className="text-xs text-foreground font-medium">{row.jieText}</span>
                     </div>
                   </div>
                 </div>
               ))}
+
+              {/* Section: Study Tracker (SRM) */}
+              <div className="grid grid-cols-4 border-b border-border bg-primary/10">
+                <div className="col-span-4 px-4 py-2 text-xs font-bold text-primary uppercase tracking-wider">Study Tracker — Academic Command Center</div>
+              </div>
+              {[
+                { feature: "Academic calendar & planning", trad: false, gpt: false, jieText: "Auto-built from syllabi or manual entry" },
+                { feature: "Knows upcoming tests", trad: "If parent mentions it", gpt: false, jieText: "Opens sessions with what's due this week" },
+                { feature: "Engagement scoring", trad: false, gpt: false, jieText: "0–100 weekly score with parent/teacher alerts" },
+                { feature: "Study task generation", trad: false, gpt: false, jieText: "7/5/3/1 day auto-generated tasks before exams" },
+                { feature: "Streaks, XP & gamification", trad: false, gpt: false, jieText: "Daily streaks, badges, levels, family leaderboard" },
+                { feature: "Parent weekly reports", trad: "Informal if any", gpt: false, jieText: "Smart email digest with per-child insights" },
+                { feature: "Parent/teacher dashboards", trad: "Manual notes", gpt: false, jieText: "Mastery reports + intervention alerts" },
+              ].map((row, i) => (
+                <div key={`srm-${i}`} className={`grid grid-cols-4 border-b border-border ${i % 2 === 0 ? '' : 'bg-muted/10'}`}>
+                  <div className="p-3 text-left font-medium text-foreground text-sm bg-muted/20">{row.feature}</div>
+                  <div className="p-3 flex items-center justify-center">
+                    {row.trad === true ? <CheckCircle className="w-4 h-4 text-muted-foreground" /> : 
+                     row.trad === false ? <X className="w-4 h-4 text-muted-foreground/40" /> :
+                     <span className="text-xs text-muted-foreground">{row.trad}</span>}
+                  </div>
+                  <div className="p-3 flex items-center justify-center">
+                    {row.gpt === true ? <CheckCircle className="w-4 h-4 text-muted-foreground" /> : 
+                     row.gpt === false ? <X className="w-4 h-4 text-muted-foreground/40" /> :
+                     <span className="text-xs text-muted-foreground">{row.gpt}</span>}
+                  </div>
+                  <div className="p-3 bg-primary/5">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
+                      <span className="text-xs text-foreground font-medium">{row.jieText}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {/* 2-in-1 Banner */}
+              <div className="bg-primary text-primary-foreground p-4 text-center">
+                <p className="font-bold text-sm">AI Tutor + Study Tracker — Two Systems in One Platform</p>
+                <p className="text-xs opacity-80 mt-1">No other AI tutor includes academic planning, engagement tracking, or proactive session prep.</p>
+              </div>
+            </div>
             </div>
 
             {/* Safety Callout */}
