@@ -87,6 +87,14 @@ export function NavigationHeader() {
                 </Button>
                 <Button
                   variant="ghost"
+                  onClick={() => setLocation("/family")}
+                  className={isActive("/family") ? "text-primary font-medium" : "text-muted-foreground"}
+                  data-testid="nav-family"
+                >
+                  Family
+                </Button>
+                <Button
+                  variant="ghost"
                   onClick={() => navigateTo("/benefits#test-prep")}
                   className={isActive("/benefits") ? "text-primary font-medium" : "text-muted-foreground"}
                   data-testid="nav-test-prep"
@@ -221,6 +229,7 @@ export function NavigationHeader() {
           <div className="px-4 py-3 space-y-1">
             {[
               { label: "Dashboard", path: "/dashboard" },
+              { label: "Family", path: "/family" },
               { label: "College Test Prep", path: "/benefits#test-prep" },
               { label: "Settings", path: "/settings" },
               { label: "Live Support", path: "/support" },

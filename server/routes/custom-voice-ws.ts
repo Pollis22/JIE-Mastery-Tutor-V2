@@ -5121,6 +5121,20 @@ HONESTY INSTRUCTIONS:
               console.log(`[Custom Voice] No documents uploaded - using standard prompt`);
             }
             
+            // Family Academic Context injection (non-blocking)
+            try {
+              if (state.userId && state.studentId) {
+                const { getFamilyAcademicContextForVoice } = await import('./family-academic');
+                const familyContext = await getFamilyAcademicContextForVoice(state.userId, state.studentId);
+                if (familyContext) {
+                  state.systemInstruction += familyContext;
+                  console.log(`[Family Academic] Injected voice context for child ${state.studentId} (${familyContext.length} chars)`);
+                }
+              }
+            } catch (familyErr) {
+              console.warn('[Family Academic] Voice context injection failed (non-blocking):', familyErr);
+            }
+
             // Generate enhanced personalized greeting with LANGUAGE SUPPORT
             let greeting: string = '';
             

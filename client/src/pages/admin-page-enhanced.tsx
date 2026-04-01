@@ -405,7 +405,7 @@ export default function AdminPageEnhanced() {
 
           {/* Tab Navigation */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-9">
+            <TabsList className="grid w-full grid-cols-10">
               <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
               <TabsTrigger value="users" data-testid="tab-users">Users</TabsTrigger>
               <TabsTrigger value="sessions" data-testid="tab-sessions">Sessions</TabsTrigger>
@@ -415,6 +415,7 @@ export default function AdminPageEnhanced() {
               <TabsTrigger value="pricing-studio" data-testid="tab-pricing-studio">Pricing Studio</TabsTrigger>
               <TabsTrigger value="capital-crm" data-testid="tab-capital-crm">Capital CRM</TabsTrigger>
               <TabsTrigger value="sales-crm" data-testid="tab-sales-crm">Sales CRM</TabsTrigger>
+              <TabsTrigger value="family-tracker" data-testid="tab-family-tracker">Family Tracker</TabsTrigger>
             </TabsList>
 
             {/* Overview Tab */}
@@ -1549,6 +1550,32 @@ export default function AdminPageEnhanced() {
                   src="/admin/prospects"
                   className="w-full h-full border-0"
                   title="JIE Mastery Sales CRM"
+                />
+              </div>
+            </TabsContent>
+
+            {/* Family Tracker Tab */}
+            <TabsContent value="family-tracker" className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold">Family Academic Tracker</h3>
+                  <p className="text-sm text-muted-foreground">Monitor family engagement, student progress, and intervention needs</p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => window.location.href = "/admin/family-tracker"}
+                  className="flex items-center gap-1.5 text-xs"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Open Full View
+                </Button>
+              </div>
+              <div className="rounded-lg border overflow-hidden" style={{ height: "calc(100vh - 280px)" }}>
+                <iframe
+                  src="/admin/family-tracker"
+                  className="w-full h-full border-0"
+                  title="Family Academic Tracker"
                 />
               </div>
             </TabsContent>
