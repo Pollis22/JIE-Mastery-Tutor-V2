@@ -1639,3 +1639,395 @@ export function calculateSalesHealthStatus(prospect: {
   }
   return "Healthy";
 }
+
+// ============================================================
+// Family Academic Command Center Tables (K-12 Consumer Edition)
+// ============================================================
+
+// 1. family_children — Child profiles under a parent account
+export const familyChildren = pgTable("family_children", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  parentUserId: varchar("parent_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  studentId: varchar("student_id").references(() => students.id, { onDelete: "set null" }),
+  childName: text("child_name").notNull(),
+  childAge: integer("child_age"),
+  gradeLevel: text("grade_level"),
+  avatarEmoji: text("avatar_emoji"),
+  photoUrl: text("photo_url"),
+  color: text("color"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_family_children_parent").on(table.parentUserId),
+]);
+
+// 2. family_courses — Classes/subjects per child
+export const familyCourses = pgTable("family_courses", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  childId: varchar("child_id").notNull().references(() => familyChildren.id, { onDelete: "cascade" }),
+  parentUserId: varchar("parent_user_id").notNull().references(() => users.id),
+  courseName: text("course_name").notNull(),
+  teacherName: text("teacher_name"),
+  schoolName: text("school_name"),
+  semester: text("semester"),
+  scheduleText: text("schedule_text"),
+  syllabusText: text("syllabus_text"),
+  syllabusUploadedAt: timestamp("syllabus_uploaded_at"),
+  color: text("color"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_family_courses_child").on(table.childId),
+  index("idx_family_courses_parent").on(table.parentUserId),
+]);
+
+// 3. family_calendar_events — Tests, homework, projects per child
+export const familyCalendarEvents = pgTable("family_calendar_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  childId: varchar("child_id").notNull().references(() => familyChildren.id, { onDelete: "cascade" }),
+  parentUserId: varchar("parent_user_id").notNull().references(() => users.id),
+  courseId: varchar("course_id").references(() => familyCourses.id, { onDelete: "set null" }),
+  title: text("title").notNull(),
+  eventType: text("event_type"),
+  description: text("description"),
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date"),
+  startTime: text("start_time"),
+  endTime: text("end_time"),
+  isFromSchedule: boolean("is_from_schedule").default(false),
+  priority: text("priority"),
+  status: text("status").default("upcoming"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_family_events_child").on(table.childId),
+  index("idx_family_events_parent").on(table.parentUserId),
+  index("idx_family_events_date").on(table.childId, table.startDate),
+]);
+
+// 4. family_tasks — Auto-generated + manual study tasks per child
+export const familyTasks = pgTable("family_tasks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  childId: varchar("child_id").notNull().references(() => familyChildren.id, { onDelete: "cascade" }),
+  parentUserId: varchar("parent_user_id").notNull().references(() => users.id),
+  courseId: varchar("course_id").references(() => familyCourses.id, { onDelete: "set null" }),
+  eventId: varchar("event_id").references(() => familyCalendarEvents.id, { onDelete: "set null" }),
+  title: text("title").notNull(),
+  taskType: text("task_type"),
+  dueDate: date("due_date"),
+  priority: text("priority"),
+  status: text("status").default("pending"),
+  estimatedMinutes: integer("estimated_minutes"),
+  actualMinutes: integer("actual_minutes"),
+  xpReward: integer("xp_reward").default(10),
+  notes: text("notes"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_family_tasks_child").on(table.childId),
+  index("idx_family_tasks_parent").on(table.parentUserId),
+  index("idx_family_tasks_status").on(table.childId, table.status),
+]);
+
+// 5. family_reminders — Notifications for parent + child
+export const familyReminders = pgTable("family_reminders", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  childId: varchar("child_id").notNull().references(() => familyChildren.id, { onDelete: "cascade" }),
+  parentUserId: varchar("parent_user_id").notNull().references(() => users.id),
+  eventId: varchar("event_id").references(() => familyCalendarEvents.id, { onDelete: "set null" }),
+  taskId: varchar("task_id").references(() => familyTasks.id, { onDelete: "set null" }),
+  reminderType: text("reminder_type"),
+  reminderDate: date("reminder_date"),
+  message: text("message"),
+  delivered: boolean("delivered").default(false),
+  deliveredAt: timestamp("delivered_at"),
+  deliveryMethod: text("delivery_method").default("in_app"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_family_reminders_child").on(table.childId),
+  index("idx_family_reminders_date").on(table.reminderDate, table.delivered),
+]);
+
+// 6. family_engagement_scores — Weekly engagement per child
+export const familyEngagementScores = pgTable("family_engagement_scores", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  childId: varchar("child_id").notNull().references(() => familyChildren.id, { onDelete: "cascade" }),
+  parentUserId: varchar("parent_user_id").notNull().references(() => users.id),
+  courseId: varchar("course_id").references(() => familyCourses.id, { onDelete: "set null" }),
+  weekStart: date("week_start"),
+  sessionsCompleted: integer("sessions_completed").default(0),
+  tasksCompleted: integer("tasks_completed").default(0),
+  tasksPending: integer("tasks_pending").default(0),
+  tasksMissed: integer("tasks_missed").default(0),
+  totalStudyMinutes: integer("total_study_minutes").default(0),
+  engagementScore: decimal("engagement_score").default("0"),
+  trend: text("trend").default("stable"),
+  riskLevel: text("risk_level").default("on_track"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_family_engagement_child").on(table.childId),
+  index("idx_family_engagement_week").on(table.childId, table.weekStart),
+]);
+
+// 7. family_study_goals — Parent-set weekly goals per child
+export const familyStudyGoals = pgTable("family_study_goals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  childId: varchar("child_id").notNull().references(() => familyChildren.id, { onDelete: "cascade" }),
+  parentUserId: varchar("parent_user_id").notNull().references(() => users.id),
+  goalType: text("goal_type").notNull(),
+  targetValue: integer("target_value").notNull(),
+  currentValue: integer("current_value").default(0),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_family_goals_child").on(table.childId),
+]);
+
+// 8. family_achievements — Badges and milestones per child
+export const familyAchievements = pgTable("family_achievements", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  childId: varchar("child_id").notNull().references(() => familyChildren.id, { onDelete: "cascade" }),
+  achievementType: text("achievement_type").notNull(),
+  achievementName: text("achievement_name").notNull(),
+  achievementEmoji: text("achievement_emoji"),
+  earnedAt: timestamp("earned_at").defaultNow(),
+}, (table) => [
+  index("idx_family_achievements_child").on(table.childId),
+]);
+
+// 9. family_streaks — Daily activity tracking
+export const familyStreaks = pgTable("family_streaks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  childId: varchar("child_id").notNull().references(() => familyChildren.id, { onDelete: "cascade" }),
+  activityDate: date("activity_date").notNull(),
+  hadSession: boolean("had_session").default(false),
+  hadTaskCompletion: boolean("had_task_completion").default(false),
+  studyMinutes: integer("study_minutes").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  uniqueIndex("idx_family_streaks_unique").on(table.childId, table.activityDate),
+  index("idx_family_streaks_child").on(table.childId, table.activityDate),
+]);
+
+// 10. family_weekly_reports — Cached weekly digest data for parent emails
+export const familyWeeklyReports = pgTable("family_weekly_reports", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  childId: varchar("child_id").notNull().references(() => familyChildren.id, { onDelete: "cascade" }),
+  parentUserId: varchar("parent_user_id").notNull().references(() => users.id),
+  weekStart: date("week_start"),
+  reportData: jsonb("report_data"),
+  sentAt: timestamp("sent_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_family_reports_parent").on(table.parentUserId, table.weekStart),
+]);
+
+// Family Academic Relations
+export const familyChildrenRelations = relations(familyChildren, ({ one, many }) => ({
+  parent: one(users, { fields: [familyChildren.parentUserId], references: [users.id] }),
+  courses: many(familyCourses),
+  events: many(familyCalendarEvents),
+  tasks: many(familyTasks),
+  reminders: many(familyReminders),
+  engagementScores: many(familyEngagementScores),
+  goals: many(familyStudyGoals),
+  achievements: many(familyAchievements),
+  streaks: many(familyStreaks),
+  weeklyReports: many(familyWeeklyReports),
+}));
+
+export const familyCoursesRelations = relations(familyCourses, ({ one }) => ({
+  child: one(familyChildren, { fields: [familyCourses.childId], references: [familyChildren.id] }),
+  parent: one(users, { fields: [familyCourses.parentUserId], references: [users.id] }),
+}));
+
+export const familyCalendarEventsRelations = relations(familyCalendarEvents, ({ one }) => ({
+  child: one(familyChildren, { fields: [familyCalendarEvents.childId], references: [familyChildren.id] }),
+  parent: one(users, { fields: [familyCalendarEvents.parentUserId], references: [users.id] }),
+  course: one(familyCourses, { fields: [familyCalendarEvents.courseId], references: [familyCourses.id] }),
+}));
+
+export const familyTasksRelations = relations(familyTasks, ({ one }) => ({
+  child: one(familyChildren, { fields: [familyTasks.childId], references: [familyChildren.id] }),
+  parent: one(users, { fields: [familyTasks.parentUserId], references: [users.id] }),
+  course: one(familyCourses, { fields: [familyTasks.courseId], references: [familyCourses.id] }),
+  event: one(familyCalendarEvents, { fields: [familyTasks.eventId], references: [familyCalendarEvents.id] }),
+}));
+
+export const familyRemindersRelations = relations(familyReminders, ({ one }) => ({
+  child: one(familyChildren, { fields: [familyReminders.childId], references: [familyChildren.id] }),
+  parent: one(users, { fields: [familyReminders.parentUserId], references: [users.id] }),
+  event: one(familyCalendarEvents, { fields: [familyReminders.eventId], references: [familyCalendarEvents.id] }),
+  task: one(familyTasks, { fields: [familyReminders.taskId], references: [familyTasks.id] }),
+}));
+
+export const familyEngagementScoresRelations = relations(familyEngagementScores, ({ one }) => ({
+  child: one(familyChildren, { fields: [familyEngagementScores.childId], references: [familyChildren.id] }),
+  parent: one(users, { fields: [familyEngagementScores.parentUserId], references: [users.id] }),
+  course: one(familyCourses, { fields: [familyEngagementScores.courseId], references: [familyCourses.id] }),
+}));
+
+export const familyStudyGoalsRelations = relations(familyStudyGoals, ({ one }) => ({
+  child: one(familyChildren, { fields: [familyStudyGoals.childId], references: [familyChildren.id] }),
+  parent: one(users, { fields: [familyStudyGoals.parentUserId], references: [users.id] }),
+}));
+
+export const familyAchievementsRelations = relations(familyAchievements, ({ one }) => ({
+  child: one(familyChildren, { fields: [familyAchievements.childId], references: [familyChildren.id] }),
+}));
+
+export const familyStreaksRelations = relations(familyStreaks, ({ one }) => ({
+  child: one(familyChildren, { fields: [familyStreaks.childId], references: [familyChildren.id] }),
+}));
+
+export const familyWeeklyReportsRelations = relations(familyWeeklyReports, ({ one }) => ({
+  child: one(familyChildren, { fields: [familyWeeklyReports.childId], references: [familyChildren.id] }),
+  parent: one(users, { fields: [familyWeeklyReports.parentUserId], references: [users.id] }),
+}));
+
+// Family Academic Insert Schemas
+export const insertFamilyChildSchema = createInsertSchema(familyChildren).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertFamilyCourseSchema = createInsertSchema(familyCourses).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertFamilyCalendarEventSchema = createInsertSchema(familyCalendarEvents).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertFamilyTaskSchema = createInsertSchema(familyTasks).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertFamilyReminderSchema = createInsertSchema(familyReminders).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertFamilyEngagementScoreSchema = createInsertSchema(familyEngagementScores).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertFamilyStudyGoalSchema = createInsertSchema(familyStudyGoals).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertFamilyAchievementSchema = createInsertSchema(familyAchievements).omit({
+  id: true,
+  earnedAt: true,
+});
+
+export const insertFamilyStreakSchema = createInsertSchema(familyStreaks).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertFamilyWeeklyReportSchema = createInsertSchema(familyWeeklyReports).omit({
+  id: true,
+  createdAt: true,
+});
+
+// Family Academic Types
+export type FamilyChild = typeof familyChildren.$inferSelect;
+export type InsertFamilyChild = z.infer<typeof insertFamilyChildSchema>;
+export type FamilyCourse = typeof familyCourses.$inferSelect;
+export type InsertFamilyCourse = z.infer<typeof insertFamilyCourseSchema>;
+export type FamilyCalendarEvent = typeof familyCalendarEvents.$inferSelect;
+export type InsertFamilyCalendarEvent = z.infer<typeof insertFamilyCalendarEventSchema>;
+export type FamilyTask = typeof familyTasks.$inferSelect;
+export type InsertFamilyTask = z.infer<typeof insertFamilyTaskSchema>;
+export type FamilyReminder = typeof familyReminders.$inferSelect;
+export type InsertFamilyReminder = z.infer<typeof insertFamilyReminderSchema>;
+export type FamilyEngagementScore = typeof familyEngagementScores.$inferSelect;
+export type InsertFamilyEngagementScore = z.infer<typeof insertFamilyEngagementScoreSchema>;
+export type FamilyStudyGoal = typeof familyStudyGoals.$inferSelect;
+export type InsertFamilyStudyGoal = z.infer<typeof insertFamilyStudyGoalSchema>;
+export type FamilyAchievement = typeof familyAchievements.$inferSelect;
+export type InsertFamilyAchievement = z.infer<typeof insertFamilyAchievementSchema>;
+export type FamilyStreak = typeof familyStreaks.$inferSelect;
+export type InsertFamilyStreak = z.infer<typeof insertFamilyStreakSchema>;
+export type FamilyWeeklyReport = typeof familyWeeklyReports.$inferSelect;
+export type InsertFamilyWeeklyReport = z.infer<typeof insertFamilyWeeklyReportSchema>;
+
+// Family XP and Gamification Constants
+export const FAMILY_XP = {
+  TASK_COMPLETE: 10,
+  SESSION_COMPLETE: 25,
+  WEEKLY_TASK_BONUS: 50,
+  PERFECT_WEEK: 100,
+} as const;
+
+export const FAMILY_STREAK_BADGES = [
+  { days: 3, name: "On Fire!", emoji: "🔥" },
+  { days: 7, name: "Star Learner", emoji: "⭐" },
+  { days: 14, name: "Trophy Winner", emoji: "🏆" },
+  { days: 30, name: "Royal Scholar", emoji: "👑" },
+] as const;
+
+export const FAMILY_ACHIEVEMENTS = [
+  { type: "first_session", name: "First Session", emoji: "🎉" },
+  { type: "task_machine", name: "Task Machine", emoji: "⚙️", threshold: 50 },
+  { type: "streak_master", name: "Streak Master", emoji: "🏅", threshold: 30 },
+  { type: "goal_crusher", name: "Goal Crusher", emoji: "💪" },
+  { type: "early_bird", name: "Early Bird", emoji: "🌅" },
+  { type: "night_owl", name: "Night Owl", emoji: "🦉" },
+  { type: "multi_subject_hero", name: "Multi-Subject Hero", emoji: "🦸" },
+  { type: "summer_scholar", name: "Summer Scholar", emoji: "☀️" },
+] as const;
+
+export function calculateFamilyXpLevel(totalXp: number): number {
+  let level = 1;
+  let xpNeeded = 100;
+  let remaining = totalXp;
+  while (remaining >= xpNeeded) {
+    remaining -= xpNeeded;
+    level++;
+    xpNeeded = level * 100;
+  }
+  return level;
+}
+
+export function calculateFamilyEngagement(data: {
+  sessionsCompleted: number;
+  sessionsTarget: number;
+  tasksCompleted: number;
+  totalTasks: number;
+  studyMinutes: number;
+  recommendedMinutes: number;
+  activeDays: number;
+}): { score: number; riskLevel: string } {
+  const sessionPts = data.sessionsTarget > 0
+    ? Math.min(40, (data.sessionsCompleted / data.sessionsTarget) * 40)
+    : 0;
+  const taskPts = data.totalTasks > 0
+    ? Math.min(30, (data.tasksCompleted / data.totalTasks) * 30)
+    : 0;
+  const minutePts = data.recommendedMinutes > 0
+    ? Math.min(20, (data.studyMinutes / data.recommendedMinutes) * 20)
+    : 0;
+  const consistencyPts = data.activeDays >= 4 ? 10 : (data.activeDays / 4) * 10;
+
+  const score = Math.round(sessionPts + taskPts + minutePts + consistencyPts);
+
+  let riskLevel = "on_track";
+  if (score < 30) riskLevel = "critical";
+  else if (score < 50) riskLevel = "at_risk";
+  else if (score < 70) riskLevel = "needs_attention";
+
+  return { score, riskLevel };
+}
