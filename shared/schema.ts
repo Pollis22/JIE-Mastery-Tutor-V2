@@ -1672,6 +1672,8 @@ export const familyCourses = pgTable("family_courses", {
   schoolName: text("school_name"),
   semester: text("semester"),
   scheduleText: text("schedule_text"),
+  syllabusText: text("syllabus_text"),
+  syllabusUploadedAt: timestamp("syllabus_uploaded_at"),
   color: text("color"),
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow(),

@@ -128,6 +128,60 @@ async function generateStudyTasks(
   return tasks.length;
 }
 
+// ============ AUTO REMINDER GENERATION ============
+
+async function generateReminders(
+  event: { id: string; childId: string; parentUserId: string; title: string; eventType: string | null; startDate: string }
+) {
+  const eventDate = new Date(event.startDate);
+  const now = new Date();
+  const reminders: Array<{
+    childId: string;
+    parentUserId: string;
+    eventId: string;
+    reminderType: string;
+    reminderDate: string;
+    message: string;
+    deliveryMethod: string;
+  }> = [];
+
+  function subDays(date: Date, days: number): string {
+    const d = new Date(date);
+    d.setDate(d.getDate() - days);
+    return d.toISOString().split("T")[0];
+  }
+
+  function isFuture(dateStr: string): boolean {
+    return new Date(dateStr) >= now;
+  }
+
+  const type = (event.eventType || "").toLowerCase();
+  if (type === "test" || type === "exam") {
+    const d7 = subDays(eventDate, 7);
+    const d3 = subDays(eventDate, 3);
+    const d1 = subDays(eventDate, 1);
+    if (isFuture(d7)) reminders.push({ childId: event.childId, parentUserId: event.parentUserId, eventId: event.id, reminderType: "exam_7day", reminderDate: d7, message: `${event.title} is in 7 days — start reviewing!`, deliveryMethod: "both" });
+    if (isFuture(d3)) reminders.push({ childId: event.childId, parentUserId: event.parentUserId, eventId: event.id, reminderType: "exam_3day", reminderDate: d3, message: `${event.title} is in 3 days — time for intensive review`, deliveryMethod: "both" });
+    if (isFuture(d1)) reminders.push({ childId: event.childId, parentUserId: event.parentUserId, eventId: event.id, reminderType: "exam_1day", reminderDate: d1, message: `${event.title} is tomorrow — final review time!`, deliveryMethod: "both" });
+  } else if (type === "homework" || type === "assignment" || type === "project") {
+    const d3 = subDays(eventDate, 3);
+    const d1 = subDays(eventDate, 1);
+    if (isFuture(d3)) reminders.push({ childId: event.childId, parentUserId: event.parentUserId, eventId: event.id, reminderType: "assignment_3day", reminderDate: d3, message: `${event.title} is due in 3 days`, deliveryMethod: "in_app" });
+    if (isFuture(d1)) reminders.push({ childId: event.childId, parentUserId: event.parentUserId, eventId: event.id, reminderType: "assignment_1day", reminderDate: d1, message: `${event.title} is due tomorrow!`, deliveryMethod: "both" });
+  } else if (type === "quiz") {
+    const d3 = subDays(eventDate, 3);
+    const d1 = subDays(eventDate, 1);
+    if (isFuture(d3)) reminders.push({ childId: event.childId, parentUserId: event.parentUserId, eventId: event.id, reminderType: "study_reminder", reminderDate: d3, message: `${event.title} is in 3 days — review time`, deliveryMethod: "in_app" });
+    if (isFuture(d1)) reminders.push({ childId: event.childId, parentUserId: event.parentUserId, eventId: event.id, reminderType: "study_reminder", reminderDate: d1, message: `${event.title} is tomorrow!`, deliveryMethod: "both" });
+  }
+
+  if (reminders.length > 0) {
+    await db.insert(familyReminders).values(reminders);
+  }
+
+  return reminders.length;
+}
+
 // ============ STREAK / ACHIEVEMENT HELPERS ============
 
 async function updateStreak(childId: string, type: "session" | "task") {
@@ -458,6 +512,154 @@ familyAcademicRouter.delete("/courses/:id", async (req, res) => {
   } catch (err) { handleError(res, err, "Failed to delete course"); }
 });
 
+// --- Syllabus Processing with Claude AI ---
+familyAcademicRouter.post("/courses/:id/syllabus", async (req, res) => {
+  const userId = getUserId(req);
+  try {
+    const { id } = req.params;
+    const { syllabusText } = req.body;
+    if (!syllabusText) return res.status(400).json({ error: "syllabusText is required" });
+
+    // Verify course belongs to user
+    const [course] = await db.select().from(familyCourses)
+      .where(and(eq(familyCourses.id, id), eq(familyCourses.parentUserId, userId)));
+    if (!course) return res.status(404).json({ error: "Course not found" });
+
+    // Save syllabus text
+    await db.update(familyCourses)
+      .set({ syllabusText, syllabusUploadedAt: new Date(), updatedAt: new Date() })
+      .where(eq(familyCourses.id, id));
+
+    // Call Claude to extract structured data
+    const Anthropic = (await import("@anthropic-ai/sdk")).default;
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const response = await anthropic.messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 4096,
+      system: "You are an academic syllabus parser. Extract structured information from course syllabi. Return ONLY valid JSON, no markdown or explanation.",
+      messages: [{
+        role: "user",
+        content: `Extract the following from this syllabus and return as JSON:
+{
+  "courseName": "string or null",
+  "courseCode": "string or null",
+  "instructor": "string or null",
+  "events": [
+    {
+      "title": "string - descriptive name like 'Midterm Exam' or 'Problem Set 3 Due'",
+      "eventType": "test|exam|homework|assignment|quiz|project|lab|presentation",
+      "startDate": "YYYY-MM-DD",
+      "endDate": "YYYY-MM-DD or null",
+      "startTime": "HH:MM or null",
+      "endTime": "HH:MM or null",
+      "description": "string or null",
+      "priority": "high|medium|low"
+    }
+  ]
+}
+
+Rules:
+- Exams, tests, and midterms are priority "high"
+- Assignments, homework, and projects are priority "medium"
+- Quizzes are priority "medium"
+- If year is not specified, assume 2026
+- Include ALL dated events: exams, quizzes, homework, projects, presentations, labs
+- Do NOT include weekly recurring events like lectures (only one-off deadlines)
+- For events without specific times, leave startTime and endTime as null
+
+Syllabus text:
+${syllabusText}`
+      }],
+    });
+
+    // Parse Claude response
+    const textBlock = response.content.find((b: any) => b.type === "text");
+    if (!textBlock || textBlock.type !== "text") {
+      return res.status(500).json({ error: "Failed to parse syllabus" });
+    }
+
+    let parsed: any;
+    try {
+      let jsonText = textBlock.text.trim();
+      if (jsonText.startsWith("```")) {
+        jsonText = jsonText.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
+      }
+      parsed = JSON.parse(jsonText);
+    } catch {
+      return res.status(500).json({ error: "Failed to parse AI response as JSON" });
+    }
+
+    // Update course with extracted info (only fill in blanks)
+    if (parsed.courseName || parsed.courseCode || parsed.instructor) {
+      await db.update(familyCourses).set({
+        ...(parsed.courseName && !course.courseName && { courseName: parsed.courseName }),
+        ...(parsed.instructor && !course.teacherName && { teacherName: parsed.instructor }),
+        updatedAt: new Date(),
+      }).where(eq(familyCourses.id, id));
+    }
+
+    // Create calendar events, study tasks, and reminders
+    let eventsCreated = 0;
+    let tasksCreated = 0;
+    let remindersCreated = 0;
+
+    if (parsed.events && Array.isArray(parsed.events)) {
+      for (const evt of parsed.events) {
+        if (!evt.title || !evt.startDate) continue;
+        const [calEvent] = await db.insert(familyCalendarEvents).values({
+          childId: course.childId,
+          parentUserId: userId,
+          courseId: id,
+          title: evt.title,
+          eventType: evt.eventType || "custom",
+          description: evt.description || null,
+          startDate: evt.startDate,
+          endDate: evt.endDate || null,
+          startTime: evt.startTime || null,
+          endTime: evt.endTime || null,
+          isFromSchedule: true,
+          priority: evt.priority || "medium",
+          status: "upcoming",
+        }).returning();
+        eventsCreated++;
+
+        // Auto-generate study tasks
+        const taskCount = await generateStudyTasks({
+          id: calEvent.id,
+          childId: course.childId,
+          parentUserId: userId,
+          courseId: id,
+          title: calEvent.title,
+          eventType: calEvent.eventType,
+          startDate: calEvent.startDate,
+        });
+        tasksCreated += taskCount;
+
+        // Auto-generate reminders
+        const reminderCount = await generateReminders({
+          id: calEvent.id,
+          childId: course.childId,
+          parentUserId: userId,
+          title: calEvent.title,
+          eventType: calEvent.eventType,
+          startDate: calEvent.startDate,
+        });
+        remindersCreated += reminderCount;
+      }
+    }
+
+    res.json({
+      extracted: parsed,
+      eventsCreated,
+      tasksCreated,
+      remindersCreated,
+    });
+  } catch (error: any) {
+    console.error("[Family Academic] Syllabus processing error:", error);
+    res.status(500).json({ error: "Failed to process syllabus" });
+  }
+});
+
 // --- Calendar Events CRUD (with auto-task generation) ---
 familyAcademicRouter.get("/events", async (req, res) => {
   try {
@@ -487,7 +689,10 @@ familyAcademicRouter.post("/events", async (req, res) => {
     // Auto-generate study tasks
     const tasksCreated = await generateStudyTasks(event);
 
-    res.status(201).json({ ...event, autoTasksCreated: tasksCreated });
+    // Auto-generate reminders
+    const remindersCreated = await generateReminders(event);
+
+    res.status(201).json({ ...event, autoTasksCreated: tasksCreated, autoRemindersCreated: remindersCreated });
   } catch (err) { handleError(res, err, "Failed to create event"); }
 });
 
