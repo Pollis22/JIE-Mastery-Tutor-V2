@@ -1,7 +1,7 @@
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { StartTrialButton } from "@/components/start-trial-button";
+import { StartTrialButton } from "@/components/StartTrialButton";
 import {
   BookOpen, Calendar, Target, TrendingUp, Users, Bell, BarChart3,
   Flame, Award, GraduationCap, ArrowRight, CheckCircle, Clock,
