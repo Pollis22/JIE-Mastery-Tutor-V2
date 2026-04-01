@@ -14,8 +14,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { useState } from "react";
-import { Sparkles, Plus, Trash2 } from "lucide-react";
+import { useState, useRef } from "react";
+import { Sparkles, Plus, Trash2, Upload, FileText, X } from "lucide-react";
 
 interface ChildDashboard {
   child: {
@@ -62,14 +62,20 @@ export default function FamilyChildDashboardPage() {
   // Course dialog state (2-step)
   const [showAddCourse, setShowAddCourse] = useState(false);
   const [addCourseStep, setAddCourseStep] = useState<"info" | "syllabus">("info");
-  const [newCourse, setNewCourse] = useState({ courseName: "", teacherName: "", schoolName: "", color: COURSE_COLORS[0] });
+  const [newCourse, setNewCourse] = useState({ courseName: "", teacherName: "", schoolName: "" });
   const [newlyCreatedCourseId, setNewlyCreatedCourseId] = useState<string | null>(null);
   const [syllabusText, setSyllabusText] = useState("");
+  const [syllabusUploadMode, setSyllabusUploadMode] = useState<"paste" | "file">("paste");
+  const [syllabusFile, setSyllabusFile] = useState<File | null>(null);
+  const syllabusFileRef = useRef<HTMLInputElement>(null);
 
   // Syllabus upload on existing course
   const [showSyllabusDialog, setShowSyllabusDialog] = useState(false);
   const [selectedCourseForSyllabus, setSelectedCourseForSyllabus] = useState<string | null>(null);
   const [existingSyllabusText, setExistingSyllabusText] = useState("");
+  const [existingSyllabusUploadMode, setExistingSyllabusUploadMode] = useState<"paste" | "file">("paste");
+  const [existingSyllabusFile, setExistingSyllabusFile] = useState<File | null>(null);
+  const existingSyllabusFileRef = useRef<HTMLInputElement>(null);
 
   // Event/Assignment dialog state
   const [showAddEvent, setShowAddEvent] = useState(false);
@@ -119,6 +125,42 @@ export default function FamilyChildDashboardPage() {
       queryClient.invalidateQueries({ queryKey: [dashboardKey] });
       toast({ title: "Course removed" });
     },
+  });
+
+  // File upload mutation — uploads to /api/documents/upload so it appears in Study Materials
+  const uploadFileMutation = useMutation({
+    mutationFn: async ({ file, courseId }: { file: File; courseId: string }) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("title", `Syllabus: ${file.name}`);
+      formData.append("subject", "syllabus");
+      const uploadRes = await fetch("/api/documents/upload", { method: "POST", body: formData, credentials: "include" });
+      if (!uploadRes.ok) throw new Error("File upload failed");
+      const uploadData = await uploadRes.json();
+
+      const contentRes = await fetch(`/api/documents/${uploadData.id}/content`, { credentials: "include" });
+      if (!contentRes.ok) throw new Error("Could not read uploaded file");
+      const contentData = await contentRes.json();
+      const extractedText = contentData.content || contentData.text || "";
+
+      if (!extractedText || extractedText.length < 20) {
+        throw new Error("Could not extract enough text from the file. Try pasting the syllabus text instead.");
+      }
+
+      const parseRes = await apiRequest("POST", `/api/family-academic/courses/${courseId}/syllabus`, { syllabusText: extractedText });
+      return parseRes.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: [dashboardKey] });
+      queryClient.invalidateQueries({ queryKey: ["documents"] });
+      setShowSyllabusDialog(false);
+      setShowAddCourse(false);
+      setAddCourseStep("info");
+      setSyllabusFile(null);
+      setExistingSyllabusFile(null);
+      toast({ title: "Syllabus processed!", description: `Created ${data.eventsCreated} events, ${data.tasksCreated} study tasks. File saved to Study Materials.` });
+    },
+    onError: (err: Error) => toast({ title: "Error processing file", description: err.message, variant: "destructive" }),
   });
 
   const processSyllabusMutation = useMutation({
@@ -550,14 +592,14 @@ export default function FamilyChildDashboardPage() {
       {/* ━━━ DIALOGS ━━━ */}
 
       {/* Add Course Dialog — 2-step: course info → optional syllabus */}
-      <Dialog open={showAddCourse} onOpenChange={(open) => { setShowAddCourse(open); if (!open) { setAddCourseStep("info"); setSyllabusText(""); } }}>
+      <Dialog open={showAddCourse} onOpenChange={(open) => { setShowAddCourse(open); if (!open) { setAddCourseStep("info"); setSyllabusText(""); setSyllabusFile(null); setSyllabusUploadMode("paste"); } }}>
         <DialogContent className={addCourseStep === "syllabus" ? "max-w-2xl" : ""}>
           <DialogHeader>
             <DialogTitle>{addCourseStep === "info" ? "Add a Course" : "Upload Syllabus (Optional)"}</DialogTitle>
             <DialogDescription>
               {addCourseStep === "info"
-                ? "Add a class — then optionally paste a syllabus for AI to extract all dates."
-                : "Paste your syllabus text and AI will extract all exams, assignments, quizzes, and deadlines automatically."}
+                ? "Add a class — then optionally upload a syllabus for your tutor to extract all dates."
+                : "Upload a file or paste your syllabus text. Your tutor will extract all exams, assignments, quizzes, and deadlines automatically."}
             </DialogDescription>
           </DialogHeader>
 
@@ -580,84 +622,136 @@ export default function FamilyChildDashboardPage() {
                     placeholder="e.g., Mrs. Smith"
                   />
                 </div>
-                <div>
-                  <Label>Color</Label>
-                  <div className="flex gap-2 mt-1">
-                    {COURSE_COLORS.map(c => (
-                      <button
-                        key={c}
-                        className={`w-8 h-8 rounded-full ${newCourse.color === c ? "ring-2 ring-offset-2 ring-primary" : ""}`}
-                        style={{ background: c }}
-                        onClick={() => setNewCourse({ ...newCourse, color: c })}
-                      />
-                    ))}
+              </div>
+              <DialogFooter>
+                <div className="flex w-full justify-between gap-2">
+                  <Button variant="outline" onClick={() => setShowAddCourse(false)}>Cancel</Button>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => addCourseMutation.mutate(newCourse)}
+                      disabled={!newCourse.courseName || addCourseMutation.isPending}
+                    >
+                      {addCourseMutation.isPending ? "Adding..." : "Skip Syllabus"}
+                    </Button>
+                    <Button
+                      onClick={async () => {
+                        if (!newCourse.courseName) return;
+                        try {
+                          const res = await apiRequest("POST", `/api/family-academic/children/${childId}/courses`, newCourse);
+                          const created = await res.json();
+                          queryClient.invalidateQueries({ queryKey: [dashboardKey] });
+                          setNewlyCreatedCourseId(created.id);
+                          setAddCourseStep("syllabus");
+                          toast({ title: "Course created! Now add your syllabus." });
+                        } catch (err: any) {
+                          toast({ title: "Error", description: err.message, variant: "destructive" });
+                        }
+                      }}
+                      disabled={!newCourse.courseName}
+                    >
+                      <Sparkles className="h-4 w-4 mr-1" /> Next: Add Syllabus
+                    </Button>
                   </div>
                 </div>
-              </div>
-              <DialogFooter className="flex-col sm:flex-row gap-2">
-                <Button variant="outline" onClick={() => setShowAddCourse(false)}>Cancel</Button>
-                <Button
-                  variant="outline"
-                  onClick={() => addCourseMutation.mutate(newCourse)}
-                  disabled={!newCourse.courseName || addCourseMutation.isPending}
-                >
-                  {addCourseMutation.isPending ? "Adding..." : "Add Course (Skip Syllabus)"}
-                </Button>
-                <Button
-                  onClick={async () => {
-                    if (!newCourse.courseName) return;
-                    try {
-                      const res = await apiRequest("POST", `/api/family-academic/children/${childId}/courses`, newCourse);
-                      const created = await res.json();
-                      queryClient.invalidateQueries({ queryKey: [dashboardKey] });
-                      setNewlyCreatedCourseId(created.id);
-                      setAddCourseStep("syllabus");
-                      toast({ title: "Course created! Now add your syllabus." });
-                    } catch (err: any) {
-                      toast({ title: "Error", description: err.message, variant: "destructive" });
-                    }
-                  }}
-                  disabled={!newCourse.courseName}
-                >
-                  <Sparkles className="h-4 w-4 mr-1" /> Next: Add Syllabus
-                </Button>
               </DialogFooter>
             </>
           ) : (
             <>
-              <div className="space-y-3">
-                <div className="bg-muted/50 rounded-lg p-3 text-sm">
-                  <p className="font-medium mb-1">How it works:</p>
-                  <p className="text-muted-foreground">Paste your syllabus text below. AI will extract all exams, assignments, quizzes, projects, and deadlines — then automatically create your calendar events, study tasks, and reminders.</p>
+              <div className="space-y-4">
+                {/* Toggle: Paste vs Upload */}
+                <div className="flex gap-2">
+                  <Button variant={syllabusUploadMode === "paste" ? "default" : "outline"} size="sm" onClick={() => setSyllabusUploadMode("paste")}>
+                    <FileText className="h-4 w-4 mr-1" /> Paste Text
+                  </Button>
+                  <Button variant={syllabusUploadMode === "file" ? "default" : "outline"} size="sm" onClick={() => setSyllabusUploadMode("file")}>
+                    <Upload className="h-4 w-4 mr-1" /> Upload File
+                  </Button>
                 </div>
-                <Textarea
-                  value={syllabusText}
-                  onChange={e => setSyllabusText(e.target.value)}
-                  placeholder="Paste your full syllabus text here — include all dates, assignments, exams, and deadlines..."
-                  className="min-h-[280px] font-mono text-sm"
-                />
-                {syllabusText && (
-                  <p className="text-xs text-muted-foreground">{syllabusText.length.toLocaleString()} characters</p>
+
+                {syllabusUploadMode === "paste" ? (
+                  <>
+                    <Textarea
+                      value={syllabusText}
+                      onChange={e => setSyllabusText(e.target.value)}
+                      placeholder="Paste your full syllabus text here — include all dates, assignments, exams, and deadlines..."
+                      className="min-h-[250px] font-mono text-sm"
+                    />
+                    {syllabusText && (
+                      <p className="text-xs text-muted-foreground">{syllabusText.length.toLocaleString()} characters</p>
+                    )}
+                  </>
+                ) : (
+                  <div className="space-y-3">
+                    <div
+                      className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:border-primary/50 transition-colors"
+                      onClick={() => syllabusFileRef.current?.click()}
+                    >
+                      {syllabusFile ? (
+                        <div className="flex items-center justify-center gap-2">
+                          <FileText className="h-6 w-6 text-primary" />
+                          <span className="font-medium">{syllabusFile.name}</span>
+                          <span className="text-sm text-muted-foreground">({(syllabusFile.size / 1024).toFixed(0)} KB)</span>
+                          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={(e) => { e.stopPropagation(); setSyllabusFile(null); }}>
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <>
+                          <Upload className="h-10 w-10 mx-auto mb-2 text-muted-foreground" />
+                          <p className="font-medium">Click to upload syllabus</p>
+                          <p className="text-sm text-muted-foreground mt-1">PDF, Word, PowerPoint, Text, Images, or Excel</p>
+                        </>
+                      )}
+                    </div>
+                    <input
+                      ref={syllabusFileRef}
+                      type="file"
+                      className="hidden"
+                      accept=".pdf,.docx,.doc,.pptx,.ppt,.txt,.csv,.xlsx,.xls,.png,.jpg,.jpeg,.gif,.bmp"
+                      onChange={(e) => { if (e.target.files?.[0]) setSyllabusFile(e.target.files[0]); }}
+                    />
+                    <p className="text-xs text-muted-foreground">File will also be saved to your Study Materials for use during tutoring sessions.</p>
+                  </div>
                 )}
               </div>
-              <DialogFooter className="flex-col sm:flex-row gap-2">
-                <Button variant="outline" onClick={() => { setShowAddCourse(false); setAddCourseStep("info"); setSyllabusText(""); setNewCourse({ courseName: "", teacherName: "", schoolName: "", color: COURSE_COLORS[0] }); }}>
-                  Skip — I'll Add Later
-                </Button>
-                <Button
-                  onClick={() => {
-                    if (newlyCreatedCourseId && syllabusText) {
-                      processSyllabusMutation.mutate({ courseId: newlyCreatedCourseId, syllabusText });
-                    }
-                  }}
-                  disabled={!syllabusText || processSyllabusMutation.isPending}
-                >
-                  {processSyllabusMutation.isPending ? (
-                    <><Sparkles className="h-4 w-4 mr-1 animate-pulse" /> Processing Syllabus...</>
+              <DialogFooter>
+                <div className="flex w-full justify-between gap-2">
+                  <Button variant="outline" onClick={() => { setShowAddCourse(false); setAddCourseStep("info"); setSyllabusText(""); setSyllabusFile(null); setNewCourse({ courseName: "", teacherName: "", schoolName: "" }); }}>
+                    Skip — I'll Add Later
+                  </Button>
+                  {syllabusUploadMode === "paste" ? (
+                    <Button
+                      onClick={() => {
+                        if (newlyCreatedCourseId && syllabusText) {
+                          processSyllabusMutation.mutate({ courseId: newlyCreatedCourseId, syllabusText });
+                        }
+                      }}
+                      disabled={!syllabusText || processSyllabusMutation.isPending}
+                    >
+                      {processSyllabusMutation.isPending ? (
+                        <><Sparkles className="h-4 w-4 mr-1 animate-pulse" /> Processing...</>
+                      ) : (
+                        <><Sparkles className="h-4 w-4 mr-1" /> Process with Tutor</>
+                      )}
+                    </Button>
                   ) : (
-                    <><Sparkles className="h-4 w-4 mr-1" /> Process with AI</>
+                    <Button
+                      onClick={() => {
+                        if (newlyCreatedCourseId && syllabusFile) {
+                          uploadFileMutation.mutate({ file: syllabusFile, courseId: newlyCreatedCourseId });
+                        }
+                      }}
+                      disabled={!syllabusFile || uploadFileMutation.isPending}
+                    >
+                      {uploadFileMutation.isPending ? (
+                        <><Sparkles className="h-4 w-4 mr-1 animate-pulse" /> Uploading &amp; Processing...</>
+                      ) : (
+                        <><Upload className="h-4 w-4 mr-1" /> Upload &amp; Process</>
+                      )}
+                    </Button>
                   )}
-                </Button>
+                </div>
               </DialogFooter>
             </>
           )}
@@ -665,41 +759,105 @@ export default function FamilyChildDashboardPage() {
       </Dialog>
 
       {/* Syllabus Upload Dialog (for existing courses) */}
-      <Dialog open={showSyllabusDialog} onOpenChange={(open) => { setShowSyllabusDialog(open); if (!open) setExistingSyllabusText(""); }}>
+      <Dialog open={showSyllabusDialog} onOpenChange={(open) => { setShowSyllabusDialog(open); if (!open) { setExistingSyllabusText(""); setExistingSyllabusFile(null); setExistingSyllabusUploadMode("paste"); } }}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Process Syllabus with AI</DialogTitle>
+            <DialogTitle>Upload Syllabus</DialogTitle>
             <DialogDescription>
-              Paste your syllabus text below. AI will extract all dates, exams, assignments, and create your calendar and study plan automatically.
+              Upload a file or paste your syllabus text. Your tutor will extract all dates, exams, assignments, and create your calendar and study plan automatically.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <Textarea
-              value={existingSyllabusText}
-              onChange={e => setExistingSyllabusText(e.target.value)}
-              placeholder="Paste your full syllabus text here..."
-              className="min-h-[300px] font-mono text-sm"
-            />
-            {existingSyllabusText && (
-              <p className="text-xs text-muted-foreground">{existingSyllabusText.length.toLocaleString()} characters</p>
+          <div className="space-y-4">
+            <div className="flex gap-2">
+              <Button variant={existingSyllabusUploadMode === "paste" ? "default" : "outline"} size="sm" onClick={() => setExistingSyllabusUploadMode("paste")}>
+                <FileText className="h-4 w-4 mr-1" /> Paste Text
+              </Button>
+              <Button variant={existingSyllabusUploadMode === "file" ? "default" : "outline"} size="sm" onClick={() => setExistingSyllabusUploadMode("file")}>
+                <Upload className="h-4 w-4 mr-1" /> Upload File
+              </Button>
+            </div>
+
+            {existingSyllabusUploadMode === "paste" ? (
+              <>
+                <Textarea
+                  value={existingSyllabusText}
+                  onChange={e => setExistingSyllabusText(e.target.value)}
+                  placeholder="Paste your full syllabus text here..."
+                  className="min-h-[280px] font-mono text-sm"
+                />
+                {existingSyllabusText && (
+                  <p className="text-xs text-muted-foreground">{existingSyllabusText.length.toLocaleString()} characters</p>
+                )}
+              </>
+            ) : (
+              <div className="space-y-3">
+                <div
+                  className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:border-primary/50 transition-colors"
+                  onClick={() => existingSyllabusFileRef.current?.click()}
+                >
+                  {existingSyllabusFile ? (
+                    <div className="flex items-center justify-center gap-2">
+                      <FileText className="h-6 w-6 text-primary" />
+                      <span className="font-medium">{existingSyllabusFile.name}</span>
+                      <span className="text-sm text-muted-foreground">({(existingSyllabusFile.size / 1024).toFixed(0)} KB)</span>
+                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={(e) => { e.stopPropagation(); setExistingSyllabusFile(null); }}>
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <>
+                      <Upload className="h-10 w-10 mx-auto mb-2 text-muted-foreground" />
+                      <p className="font-medium">Click to upload syllabus</p>
+                      <p className="text-sm text-muted-foreground mt-1">PDF, Word, PowerPoint, Text, Images, or Excel</p>
+                    </>
+                  )}
+                </div>
+                <input
+                  ref={existingSyllabusFileRef}
+                  type="file"
+                  className="hidden"
+                  accept=".pdf,.docx,.doc,.pptx,.ppt,.txt,.csv,.xlsx,.xls,.png,.jpg,.jpeg,.gif,.bmp"
+                  onChange={(e) => { if (e.target.files?.[0]) setExistingSyllabusFile(e.target.files[0]); }}
+                />
+                <p className="text-xs text-muted-foreground">File will also be saved to your Study Materials for use during tutoring sessions.</p>
+              </div>
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowSyllabusDialog(false); setExistingSyllabusText(""); }}>Cancel</Button>
-            <Button
-              onClick={() => {
-                if (selectedCourseForSyllabus && existingSyllabusText) {
-                  processSyllabusMutation.mutate({ courseId: selectedCourseForSyllabus, syllabusText: existingSyllabusText });
-                }
-              }}
-              disabled={!existingSyllabusText || processSyllabusMutation.isPending}
-            >
-              {processSyllabusMutation.isPending ? (
-                <><Sparkles className="h-4 w-4 mr-1 animate-pulse" /> Processing...</>
+            <div className="flex w-full justify-between gap-2">
+              <Button variant="outline" onClick={() => { setShowSyllabusDialog(false); setExistingSyllabusText(""); setExistingSyllabusFile(null); }}>Cancel</Button>
+              {existingSyllabusUploadMode === "paste" ? (
+                <Button
+                  onClick={() => {
+                    if (selectedCourseForSyllabus && existingSyllabusText) {
+                      processSyllabusMutation.mutate({ courseId: selectedCourseForSyllabus, syllabusText: existingSyllabusText });
+                    }
+                  }}
+                  disabled={!existingSyllabusText || processSyllabusMutation.isPending}
+                >
+                  {processSyllabusMutation.isPending ? (
+                    <><Sparkles className="h-4 w-4 mr-1 animate-pulse" /> Processing...</>
+                  ) : (
+                    <><Sparkles className="h-4 w-4 mr-1" /> Process with Tutor</>
+                  )}
+                </Button>
               ) : (
-                <><Sparkles className="h-4 w-4 mr-1" /> Process with AI</>
+                <Button
+                  onClick={() => {
+                    if (selectedCourseForSyllabus && existingSyllabusFile) {
+                      uploadFileMutation.mutate({ file: existingSyllabusFile, courseId: selectedCourseForSyllabus });
+                    }
+                  }}
+                  disabled={!existingSyllabusFile || uploadFileMutation.isPending}
+                >
+                  {uploadFileMutation.isPending ? (
+                    <><Sparkles className="h-4 w-4 mr-1 animate-pulse" /> Uploading &amp; Processing...</>
+                  ) : (
+                    <><Upload className="h-4 w-4 mr-1" /> Upload &amp; Process</>
+                  )}
+                </Button>
               )}
-            </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
