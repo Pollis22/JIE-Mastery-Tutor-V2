@@ -38,6 +38,7 @@ const UnsubscribePage = lazy(() => import("@/pages/unsubscribe-page"));
 const DemoPage = lazy(() => import("@/pages/demo-page"));
 const FAQPage = lazy(() => import("@/pages/faq-page"));
 const SchoolsPage = lazy(() => import("@/pages/schools-page"));
+const StudyTrackerInfoPage = lazy(() => import("@/pages/study-tracker-info"));
 const SupportPage = lazy(() => import("@/pages/support-page"));
 const ContactPage = lazy(() => import("@/pages/contact-page"));
 const AdminUsers = lazy(() => import("@/pages/admin-users"));
@@ -68,6 +69,11 @@ const TrialEndedPage = lazy(() => import("@/pages/trial-ended-page"));
 const TrialTutorPage = lazy(() => import("@/pages/trial-tutor-page"));
 const MagicLinkPage = lazy(() => import("@/pages/magic-link-page"));
 const StartTrialPage = lazy(() => import("@/pages/start-trial-page"));
+const FamilyDashboardPage = lazy(() => import("@/pages/family-dashboard"));
+const AboutStudyTrackerPage = lazy(() => import("@/pages/about-study-tracker"));
+const FamilyChildDashboardPage = lazy(() => import("@/pages/family-child-dashboard"));
+const FamilyCalendarPage = lazy(() => import("@/pages/family-calendar"));
+const AdminFamilyTracker = lazy(() => import("@/pages/admin/admin-family-tracker"));
 
 function PageTracking() {
   usePageTracking();
@@ -102,7 +108,12 @@ function Router() {
         <ProtectedRoute path="/admin/contacts" component={AdminContacts} />
         <ProtectedRoute path="/admin/capital" component={AdminCapitalCRM} />
         <ProtectedRoute path="/admin/prospects" component={AdminProspectsCRM} />
+        <ProtectedRoute path="/admin/family-tracker" component={AdminFamilyTracker} />
         <ProtectedRoute path="/admin/logs" component={AdminLogs} />
+        <ProtectedRoute path="/family" component={FamilyDashboardPage} />
+        <ProtectedRoute path="/about-study-tracker" component={AboutStudyTrackerPage} />
+        <ProtectedRoute path="/family/child/:childId" component={FamilyChildDashboardPage} />
+        <ProtectedRoute path="/family/calendar" component={FamilyCalendarPage} />
         <ProtectedRoute path="/subscribe" component={SubscribePage} />
         <ProtectedRoute path="/personality-test" component={PersonalityTestPage} />
         <LazyRoute path="/auth/registration-success" component={RegistrationSuccessPage} />
@@ -117,6 +128,7 @@ function Router() {
         <LazyRoute path="/demo" component={DemoPage} />
         <LazyRoute path="/faq" component={FAQPage} />
         <LazyRoute path="/schools" component={SchoolsPage} />
+        <LazyRoute path="/study-tracker" component={StudyTrackerInfoPage} />
         <LazyRoute path="/support" component={SupportPage} />
         <LazyRoute path="/contact" component={ContactPage} />
         <LazyRoute path="/terms" component={TermsPage} />

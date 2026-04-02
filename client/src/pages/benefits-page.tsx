@@ -29,6 +29,8 @@ import {
   Trophy,
   BookOpen,
   ChevronDown,
+  Calendar,
+  Flame,
 } from "lucide-react";
 
 // ─── Data ────────────────────────────────────────────────────────────────────
@@ -41,6 +43,14 @@ const STATS = [
 ];
 
 const FEATURES = [
+  {
+    icon: <Calendar className="h-6 w-6" />,
+    title: "Study Tracker — Academic Command Center",
+    description:
+      "Add every child, their courses, and key dates. Auto-generated study tasks, engagement scoring, streaks, XP, and weekly progress reports — all connected to the AI tutor.",
+    highlight: true,
+    link: "/study-tracker",
+  },
   {
     icon: <Brain className="h-6 w-6" />,
     title: "Socratic Teaching — No Cheating",
@@ -175,6 +185,7 @@ export default function BenefitsPage() {
             <div className="hidden md:flex items-center space-x-6">
               {[
                 { label: "Why JIE Mastery AI Tutors", path: "#benefits" },
+                { label: "Study Tracker", path: "/study-tracker" },
                 { label: "Tutor Demo", path: "/demo" },
                 { label: "FAQ", path: "/faq" },
                 { label: "Live Support", path: "/support" },
@@ -340,7 +351,7 @@ export default function BenefitsPage() {
               Why JIE Mastery Works
             </span>
             <h2 className="text-3xl md:text-4xl font-bold tracking-tight mt-5 mb-4">
-              More Than Homework Help — A Complete Learning System
+              Not Just a Tutor — A Complete Academic System
             </h2>
             <p className="text-lg text-muted-foreground">
               Built for families who want their kids to actually understand — not just finish assignments.
@@ -379,6 +390,76 @@ export default function BenefitsPage() {
               View Plans & Pricing
               <ArrowRight className="ml-2 h-5 w-5" />
             </Button>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Study Tracker — Game Changer ── */}
+      <section className="py-24 bg-gradient-to-br from-primary/5 via-background to-primary/10 border-y border-primary/20">
+        <div className="container mx-auto px-4">
+          <div className="max-w-5xl mx-auto">
+            <div className="text-center mb-14">
+              <span className="text-sm font-semibold text-primary uppercase tracking-widest bg-primary/10 px-4 py-2 rounded-full">
+                Game Changer
+              </span>
+              <h2 className="text-3xl md:text-4xl font-bold tracking-tight mt-5 mb-4">
+                Study Tracker: The Feature No Other AI Tutor Has
+              </h2>
+              <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+                Every AI tutor answers questions. Only JIE Mastery manages your children's entire academic life
+                and connects it to a tutor that knows what's due, what's been studied, and what needs attention next.
+              </p>
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-8 items-center mb-12">
+              <div className="space-y-4">
+                {[
+                  { icon: <Users className="h-5 w-5" />, text: "Multi-child family dashboard — one parent account manages everyone" },
+                  { icon: <Calendar className="h-5 w-5" />, text: "Academic calendar with every test, project, and deadline" },
+                  { icon: <BookOpen className="h-5 w-5" />, text: "Auto-generated study tasks: 7, 5, 3, and 1 day before exams" },
+                  { icon: <Flame className="h-5 w-5" />, text: "Streaks, XP, badges, and a family leaderboard that makes studying competitive" },
+                  { icon: <TrendingUp className="h-5 w-5" />, text: "Engagement scoring (0-100) with risk-level alerts for parents" },
+                  { icon: <Target className="h-5 w-5" />, text: "Parent-set study goals the tutor references during sessions" },
+                ].map((item, i) => (
+                  <div key={i} className="flex items-start gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary flex-shrink-0 mt-0.5">
+                      {item.icon}
+                    </div>
+                    <p className="text-foreground text-sm leading-relaxed">{item.text}</p>
+                  </div>
+                ))}
+              </div>
+
+              <Card className="border-primary/30 bg-card shadow-xl">
+                <CardContent className="p-8 space-y-6">
+                  <div className="text-center">
+                    <div className="text-4xl mb-2">🎓</div>
+                    <h3 className="text-xl font-bold text-foreground">The Tutor Knows Everything</h3>
+                    <p className="text-sm text-muted-foreground mt-2">When your child starts a session, the AI already knows:</p>
+                  </div>
+                  <div className="space-y-3">
+                    {[
+                      "\"You have a chemistry test in 3 days — let's review reaction types.\"",
+                      "\"You missed 2 study tasks this week. Let's catch up on fractions.\"",
+                      "\"Your streak is at 12 days! Let's keep it going.\"",
+                      "\"Your mom set a goal of 3 math sessions per week. This is session 2.\"",
+                    ].map((quote, i) => (
+                      <div key={i} className="flex items-start gap-2">
+                        <CheckCircle2 className="h-4 w-4 text-green-600 mt-0.5 flex-shrink-0" />
+                        <p className="text-sm text-foreground italic">{quote}</p>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="text-center">
+              <Button size="lg" onClick={() => setLocation("/study-tracker")} className="text-lg h-12 px-8">
+                Learn More About Study Tracker
+                <ArrowRight className="ml-2 h-5 w-5" />
+              </Button>
+            </div>
           </div>
         </div>
       </section>
