@@ -579,7 +579,7 @@ function createAssemblyAIConnection(
   );
   const speechModel = isNonEnglish
     ? 'universal-streaming-multilingual'
-    : 'universal-streaming-english';
+    : 'u3-rt-pro';
   console.log(`[AssemblyAI v3] 🌍 Language detection: input="${language}" isNonEnglish=${isNonEnglish} model=${speechModel}`);
   
   // Get token and connect asynchronously
