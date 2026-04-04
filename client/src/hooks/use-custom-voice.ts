@@ -690,9 +690,9 @@ export function useCustomVoice() {
                 deviceId: { exact: selectedMicrophoneIdRef.current },
                 sampleRate: 16000,
                 channelCount: 1,
-                echoCancellation: true,
-                noiseSuppression: true,  // ECHO GUARD
-                autoGainControl: true,
+                noiseSuppression: { ideal: true },
+                echoCancellation: { ideal: true },
+                autoGainControl: { ideal: true },
               }
             });
             
@@ -733,9 +733,9 @@ export function useCustomVoice() {
                   deviceId: { exact: matchedDeviceId },
                   sampleRate: 16000,
                   channelCount: 1,
-                  echoCancellation: true,
-                  noiseSuppression: true,  // ECHO GUARD
-                  autoGainControl: true,
+                  noiseSuppression: { ideal: true },
+                  echoCancellation: { ideal: true },
+                  autoGainControl: { ideal: true },
                 }
               });
               
@@ -776,9 +776,9 @@ export function useCustomVoice() {
                   deviceId: { exact: bestMicId },
                   sampleRate: 16000,
                   channelCount: 1,
-                  echoCancellation: true,
-                  noiseSuppression: true,  // ECHO GUARD
-                  autoGainControl: true,
+                  noiseSuppression: { ideal: true },
+                  echoCancellation: { ideal: true },
+                  autoGainControl: { ideal: true },
                 }
               });
               
@@ -1568,16 +1568,16 @@ export function useCustomVoice() {
             deviceId: { exact: targetDeviceId },
             sampleRate: 16000,
             channelCount: 1,
-            echoCancellation: true,   // ECHO GUARD: Essential for preventing speaker-to-mic feedback
-            noiseSuppression: true,   // ECHO GUARD: Helps filter ambient noise and echo artifacts
-            autoGainControl: true,    // ECHO GUARD: Prevents mic from boosting echo
+            noiseSuppression: { ideal: true },
+            echoCancellation: { ideal: true },
+            autoGainControl: { ideal: true },
           }
         : {
             sampleRate: 16000,
             channelCount: 1,
-            echoCancellation: true,   // ECHO GUARD: Essential for preventing speaker-to-mic feedback
-            noiseSuppression: true,   // ECHO GUARD: Helps filter ambient noise and echo artifacts
-            autoGainControl: true,    // ECHO GUARD: Prevents mic from boosting echo
+            noiseSuppression: { ideal: true },
+            echoCancellation: { ideal: true },
+            autoGainControl: { ideal: true },
           };
       
       let stream: MediaStream;
@@ -1592,9 +1592,9 @@ export function useCustomVoice() {
             audio: {
               sampleRate: 16000,
               channelCount: 1,
-              echoCancellation: true,   // ECHO GUARD
-              noiseSuppression: true,   // ECHO GUARD
-              autoGainControl: true,    // ECHO GUARD
+              noiseSuppression: { ideal: true },
+              echoCancellation: { ideal: true },
+              autoGainControl: { ideal: true },
             }
           });
         } else {
@@ -1642,9 +1642,9 @@ export function useCustomVoice() {
                 deviceId: { exact: realMicId },
                 sampleRate: 16000,
                 channelCount: 1,
-                echoCancellation: true,
-                noiseSuppression: true,  // ECHO GUARD
-                autoGainControl: true,
+                noiseSuppression: { ideal: true },
+                echoCancellation: { ideal: true },
+                autoGainControl: { ideal: true },
               }
             });
             mediaStreamRef.current = realStream;
