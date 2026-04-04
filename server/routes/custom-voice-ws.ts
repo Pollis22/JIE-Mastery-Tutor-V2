@@ -5170,33 +5170,32 @@ HONESTY INSTRUCTIONS:
             // Helper: Pick safe topic from summary (NEVER uses summary_text)
             const pickContinuationTopic = (summary: { subject?: string | null; topicsCovered?: string[] | null }): { topic: string; reason: 'subject' | 'topic' | 'fallback' } => {
               const FALLBACK = 'what we worked on last time';
-              
-              // Try subject first
-              if (summary.subject && summary.subject.length > 0 && summary.subject !== 'general' && summary.subject !== 'unknown') {
-                let topic = summary.subject
-                  .replace(/[\n\r"'`]/g, '') // Strip newlines, quotes, backticks
-                  .replace(/\[[^\]]*\]/g, '') // Strip bracketed content like [email@example.com]
-                  .replace(/\b(name|email|phone|address|password|ssn|credit|card)\b/gi, '') // Remove PII keywords
-                  .trim()
-                  .substring(0, 60);
-                if (topic.length >= 3) {
-                  return { topic, reason: 'subject' };
-                }
-              }
-              
-              // Try first topic from topicsCovered
+              const sanitize = (raw: string) => raw
+                .replace(/[\n\r"'`]/g, '')
+                .replace(/\[[^\]]*\]/g, '')
+                .replace(/\b(name|email|phone|address|password|ssn|credit|card)\b/gi, '')
+                .trim()
+                .substring(0, 60);
+
+              // Try topicsCovered FIRST — these are the actual topics from the last session
               if (summary.topicsCovered && summary.topicsCovered.length > 0 && summary.topicsCovered[0]) {
-                let topic = summary.topicsCovered[0]
-                  .replace(/[\n\r"'`]/g, '')
-                  .replace(/\[[^\]]*\]/g, '')
-                  .replace(/\b(name|email|phone|address|password|ssn|credit|card)\b/gi, '')
-                  .trim()
-                  .substring(0, 60);
+                const topic = sanitize(summary.topicsCovered[0]);
                 if (topic.length >= 3) {
                   return { topic, reason: 'topic' };
                 }
               }
-              
+
+              // Fall back to subject only if it's specific (not generic like "General")
+              if (summary.subject && summary.subject.length > 0) {
+                const subjectLower = summary.subject.toLowerCase();
+                if (subjectLower !== 'general' && subjectLower !== 'unknown') {
+                  const topic = sanitize(summary.subject);
+                  if (topic.length >= 3) {
+                    return { topic, reason: 'subject' };
+                  }
+                }
+              }
+
               return { topic: FALLBACK, reason: 'fallback' };
             };
             
@@ -5400,14 +5399,14 @@ HONESTY INSTRUCTIONS:
               // (2) CONTINUITY GREETING: If prior sessions exist and no active docs, use welcome back greeting
               if (priorExists && topic) {
                 const continuityGreetings: Record<string, (name: string, tutorName: string, topic: string) => string> = {
-                  en: (n, t, tp) => `Welcome back, ${n}! I'm ${t}, your tutor. Shall we continue our discussion on ${tp}? What do you remember most from last time?`,
-                  es: (n, t, tp) => `¡Bienvenido de nuevo, ${n}! Soy ${t}, tu tutor. ¿Continuamos con nuestra conversación sobre ${tp}? ¿Qué recuerdas de la última vez?`,
-                  fr: (n, t, tp) => `Content de te revoir, ${n}! Je suis ${t}, ton tuteur. On continue notre discussion sur ${tp}? Qu'est-ce que tu te rappelles de la dernière fois?`,
-                  de: (n, t, tp) => `Willkommen zurück, ${n}! Ich bin ${t}, dein Tutor. Sollen wir unsere Diskussion über ${tp} fortsetzen? Woran erinnerst du dich von letztem Mal?`,
-                  pt: (n, t, tp) => `Bem-vindo de volta, ${n}! Sou ${t}, seu tutor. Vamos continuar nossa discussão sobre ${tp}? O que você lembra da última vez?`,
-                  zh: (n, t, tp) => `欢迎回来，${n}！我是${t}，你的导师。我们继续讨论${tp}吧？你还记得上次我们讲了什么吗？`,
-                  ar: (n, t, tp) => `أهلاً بعودتك، ${n}! أنا ${t}، معلمك. هل نستمر في مناقشة ${tp}؟ ماذا تتذكر من المرة الماضية؟`,
-                  sw: (n, t, tp) => `Karibu tena, ${n}! Mimi ni ${t}, mwalimu wako. Tuendelee na mazungumzo yetu kuhusu ${tp}? Unakumbuka nini kutoka mara ya mwisho?`,
+                  en: (n, t, tp) => `Welcome back, ${n}! I'm ${t}, your tutor. Last time we were exploring ${tp}. Want to pick up where we left off, or start something new?`,
+                  es: (n, t, tp) => `¡Bienvenido de nuevo, ${n}! Soy ${t}, tu tutor. La última vez estábamos explorando ${tp}. ¿Quieres continuar donde lo dejamos o empezar algo nuevo?`,
+                  fr: (n, t, tp) => `Content de te revoir, ${n}! Je suis ${t}, ton tuteur. La dernière fois, on explorait ${tp}. Tu veux reprendre là où on s'est arrêtés ou commencer quelque chose de nouveau?`,
+                  de: (n, t, tp) => `Willkommen zurück, ${n}! Ich bin ${t}, dein Tutor. Letztes Mal haben wir ${tp} erkundet. Möchtest du dort weitermachen oder etwas Neues anfangen?`,
+                  pt: (n, t, tp) => `Bem-vindo de volta, ${n}! Sou ${t}, seu tutor. Da última vez estávamos explorando ${tp}. Quer continuar de onde paramos ou começar algo novo?`,
+                  zh: (n, t, tp) => `欢迎回来，${n}！我是${t}，你的导师。上次我们在探索${tp}。想继续上次的内容，还是开始新的话题？`,
+                  ar: (n, t, tp) => `أهلاً بعودتك، ${n}! أنا ${t}، معلمك. في المرة الماضية كنا نستكشف ${tp}. هل تريد المتابعة من حيث توقفنا أم البدء بشيء جديد؟`,
+                  sw: (n, t, tp) => `Karibu tena, ${n}! Mimi ni ${t}, mwalimu wako. Mara ya mwisho tulikuwa tukichunguza ${tp}. Unataka kuendelea tulipoacha au kuanza kitu kipya?`,
                 };
                 const continuityFn = continuityGreetings[lang] || continuityGreetings['en'];
                 return continuityFn(name, tutorName, topic);
