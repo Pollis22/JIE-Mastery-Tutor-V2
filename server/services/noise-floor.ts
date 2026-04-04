@@ -31,10 +31,10 @@ export interface NoiseFloorConfig {
 
 const DEFAULT_CONFIG: NoiseFloorConfig = {
   enabled: true,
-  baselineWindowMs: 1500,
+  baselineWindowMs: 5000,
   speechThresholdRatio: 2.0,
   minSpeechDurationMs: 500,  // Raised from 300ms — keyboard/mechanical noise bursts rarely sustain 500ms
-  maxBaselineSamples: 100,
+  maxBaselineSamples: 300,
   defaultNoiseFloor: 0.01,
   silenceRmsThreshold: 0.02,
   onsetLatchMs: 300,
