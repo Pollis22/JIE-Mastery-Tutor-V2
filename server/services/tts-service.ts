@@ -104,7 +104,7 @@ export async function generateSpeech(
     
     const audioStream = await elevenlabsClient.textToSpeech.convert(voiceId, {
       text: text,
-      model_id: "eleven_turbo_v2_5",
+      model_id: "eleven_flash_v2_5",
       output_format: "pcm_16000",
       voice_settings: {
         stability: voiceSettings.stability,
@@ -152,7 +152,7 @@ export async function prewarmTTS(ageGroup: string): Promise<void> {
     // Minimal text — just enough to open the connection and get a response
     const warmStream = await client.textToSpeech.convert(voiceId, {
       text: 'Hi.',
-      model_id: 'eleven_turbo_v2_5',
+      model_id: 'eleven_flash_v2_5',
       output_format: 'pcm_16000',
       voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0.0, use_speaker_boost: false, speed: 1.0 },
     });
