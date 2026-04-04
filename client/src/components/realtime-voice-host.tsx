@@ -1009,13 +1009,12 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
         {/* Scrollable Transcript Area - Takes remaining space */}
         <div className={`${customVoice.isConnected ? 'flex-1 min-h-0 overflow-y-auto px-2' : ''}`}>
 
-          {/* Visual Aid Panel - inside scroll area so it's always visible on mobile */}
-          {customVoice.isConnected && (
-            <VisualPanel
-              visualTag={customVoice.currentVisual as VisualTag | null}
-              onDismiss={() => customVoice.setCurrentVisual(null)}
-            />
-          )}
+          {/* Visual Aid Panel - rendered unconditionally so it survives brief connection hiccups.
+              VisualPanel internally latches the tag and returns null when nothing to show. */}
+          <VisualPanel
+            visualTag={customVoice.currentVisual as VisualTag | null}
+            onDismiss={() => customVoice.setCurrentVisual(null)}
+          />
           <RealtimeVoiceTranscript
             messages={customVoice.transcript.map(t => ({
               role: t.speaker === 'student' ? 'user' as const : 'assistant' as const,
