@@ -15,10 +15,10 @@ class AudioProcessor extends AudioWorkletProcessor {
     // Very short silence threshold - only 10 frames (~25ms) before speech_end
     this.silenceThreshold = 10;
     // AGGRESSIVE: Very low RMS threshold to catch any voice activity
-    this.vadThreshold = 0.003;
+    this.vadThreshold = 0.008;
     // Track consecutive speech frames to avoid single-frame false positives
     this.speechFrames = 0;
-    this.minSpeechFrames = 2; // Require 2 consecutive frames (~5ms) to trigger
+    this.minSpeechFrames = 4; // Require 4 consecutive frames (~10ms) to trigger
   }
 
   process(inputs, outputs, parameters) {
@@ -57,7 +57,7 @@ class AudioProcessor extends AudioWorkletProcessor {
     }
 
     // Speech detected if RMS OR peak amplitude exceeds threshold
-    const isSpeech = rms > this.vadThreshold || maxAmp > 0.02;
+    const isSpeech = rms > this.vadThreshold || maxAmp > 0.04;
 
     if (isSpeech) {
       this.speechFrames++;

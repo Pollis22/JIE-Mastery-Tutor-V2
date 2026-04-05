@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useRef } from 'react';
 import { X } from 'lucide-react';
 
 // ─── Visual Tag Registry ───────────────────────────────────────────────────
@@ -3358,18 +3358,25 @@ interface VisualPanelProps {
 }
 
 export function VisualPanel({ visualTag, onDismiss }: VisualPanelProps) {
-  const [visible, setVisible] = useState(false);
+  // Latch the last valid visual tag so brief null flickers during re-renders
+  // don't cause the panel to disappear. Only an explicit dismiss clears it.
+  const latchedTagRef = useRef<VisualTag | null>(null);
 
-  useEffect(() => {
-    if (visualTag) setVisible(true);
-    else setVisible(false);
-  }, [visualTag]);
+  if (visualTag) {
+    latchedTagRef.current = visualTag;
+  }
 
-  if (!visualTag || !visible) return null;
+  const activeTag = latchedTagRef.current;
+  if (!activeTag) return null;
 
-  const label = VISUAL_LABELS[visualTag] ?? visualTag;
-  const content = renderVisual(visualTag);
+  const label = VISUAL_LABELS[activeTag] ?? activeTag;
+  const content = renderVisual(activeTag);
   if (!content) return null;
+
+  const handleDismiss = () => {
+    latchedTagRef.current = null;
+    onDismiss();
+  };
 
   return (
     <div className="mx-2 mb-3 border border-border rounded-xl bg-background shadow-md overflow-hidden animate-in slide-in-from-top-2 duration-300">
@@ -3378,7 +3385,7 @@ export function VisualPanel({ visualTag, onDismiss }: VisualPanelProps) {
           <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">📊 Visual Aid</span>
           <span className="text-sm font-bold text-foreground">{label}</span>
         </div>
-        <button onClick={onDismiss} className="text-muted-foreground hover:text-foreground transition-colors" aria-label="Dismiss visual">
+        <button onClick={handleDismiss} className="text-muted-foreground hover:text-foreground transition-colors" aria-label="Dismiss visual">
           <X className="h-4 w-4" />
         </button>
       </div>

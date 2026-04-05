@@ -579,7 +579,7 @@ function createAssemblyAIConnection(
   );
   const speechModel = isNonEnglish
     ? 'universal-streaming-multilingual'
-    : 'universal-streaming-english';
+    : 'u3-rt-pro';
   console.log(`[AssemblyAI v3] 🌍 Language detection: input="${language}" isNonEnglish=${isNonEnglish} model=${speechModel}`);
   
   // Get token and connect asynchronously
@@ -3328,7 +3328,11 @@ export function setupCustomVoiceWebSocket(server: Server) {
         // Feature flag: COHERENCE_GATE_ENABLED (default: false)
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         const coherenceConfig = getCoherenceGateConfig();
-        if (coherenceConfig.enabled) {
+        const completedStudentTurns = state.conversationHistory.filter(m => m.role === "user").length;
+        if (coherenceConfig.enabled && completedStudentTurns < 3) {
+          console.log(`[CoherenceGate] ⏭️ Skipped — insufficient conversation context (turn ${completedStudentTurns} < 3)`);
+        }
+        if (coherenceConfig.enabled && completedStudentTurns >= 3) {
           const conversationContext = extractConversationContext(
             state.conversationHistory,
             state.subject,
@@ -5168,42 +5172,62 @@ HONESTY INSTRUCTIONS:
             // CONTINUITY GREETING: Check for prior sessions
             // ============================================
             // Helper: Pick safe topic from summary (NEVER uses summary_text)
-            const pickContinuationTopic = (summary: { subject?: string | null; topicsCovered?: string[] | null }): { topic: string; reason: 'subject' | 'topic' | 'fallback' } => {
+            const pickContinuationTopic = (summary: { subject?: string | null; topicsCovered?: string[] | null }): { topic: string; lastTopic: string; multiTopic: boolean; reason: 'subject' | 'topic' | 'fallback' } => {
               const FALLBACK = 'what we worked on last time';
-              
-              // Try subject first
-              if (summary.subject && summary.subject.length > 0 && summary.subject !== 'general' && summary.subject !== 'unknown') {
-                let topic = summary.subject
-                  .replace(/[\n\r"'`]/g, '') // Strip newlines, quotes, backticks
-                  .replace(/\[[^\]]*\]/g, '') // Strip bracketed content like [email@example.com]
-                  .replace(/\b(name|email|phone|address|password|ssn|credit|card)\b/gi, '') // Remove PII keywords
-                  .trim()
-                  .substring(0, 60);
-                if (topic.length >= 3) {
-                  return { topic, reason: 'subject' };
+              const sanitize = (raw: string) => raw
+                .replace(/[\n\r"'`]/g, '')
+                .replace(/\[[^\]]*\]/g, '')
+                .replace(/\b(name|email|phone|address|password|ssn|credit|card)\b/gi, '')
+                .trim()
+                .substring(0, 60);
+
+              // Try topicsCovered FIRST — these are the actual topics from the last session
+              if (summary.topicsCovered && summary.topicsCovered.length > 0) {
+                const validTopics = summary.topicsCovered
+                  .map(t => sanitize(t))
+                  .filter(t => t.length >= 3);
+
+                if (validTopics.length === 1) {
+                  return { topic: validTopics[0], lastTopic: validTopics[0], multiTopic: false, reason: 'topic' };
+                }
+
+                if (validTopics.length >= 2) {
+                  // For 4+ topics, take only the last 3
+                  const useTopics = validTopics.length > 3 ? validTopics.slice(-3) : validTopics;
+                  const prefix = validTopics.length > 3 ? 'among other things, ' : '';
+                  const last = useTopics[useTopics.length - 1];
+
+                  let topicStr: string;
+                  if (useTopics.length === 2) {
+                    topicStr = `${prefix}${useTopics[0]}, and then ${useTopics[1]}`;
+                  } else {
+                    // 3 topics
+                    topicStr = `${prefix}${useTopics[0]}, then ${useTopics[1]}, and ended with ${useTopics[2]}`;
+                  }
+                  return { topic: topicStr, lastTopic: last, multiTopic: true, reason: 'topic' };
                 }
               }
-              
-              // Try first topic from topicsCovered
-              if (summary.topicsCovered && summary.topicsCovered.length > 0 && summary.topicsCovered[0]) {
-                let topic = summary.topicsCovered[0]
-                  .replace(/[\n\r"'`]/g, '')
-                  .replace(/\[[^\]]*\]/g, '')
-                  .replace(/\b(name|email|phone|address|password|ssn|credit|card)\b/gi, '')
-                  .trim()
-                  .substring(0, 60);
-                if (topic.length >= 3) {
-                  return { topic, reason: 'topic' };
+
+              // Fall back to subject only if it's specific (not generic like "General")
+              if (summary.subject && summary.subject.length > 0) {
+                const subjectLower = summary.subject.toLowerCase();
+                if (subjectLower !== 'general' && subjectLower !== 'unknown') {
+                  const topic = sanitize(summary.subject);
+                  if (topic.length >= 3) {
+                    return { topic, lastTopic: topic, multiTopic: false, reason: 'subject' };
+                  }
                 }
               }
-              
-              return { topic: FALLBACK, reason: 'fallback' };
+
+              return { topic: FALLBACK, lastTopic: FALLBACK, multiTopic: false, reason: 'fallback' };
             };
             
             let continuityTopic: string | null = null;
+            let continuityLastTopic: string | null = null;
+            let continuityMultiTopic = false;
             let hasPriorSessions = false;
             let topicReason: 'subject' | 'topic' | 'fallback' | 'none' = 'none';
-            
+
             // FIRST-TURN-ONLY: Skip greeting lookup if already greeted (reconnect protection)
             if (!shouldSkipGreeting) {
               try {
@@ -5213,12 +5237,14 @@ HONESTY INSTRUCTIONS:
                   studentId: state.studentId || null,
                   limit: 1
                 });
-                
+
                 hasPriorSessions = priorSummaries.length > 0;
-                
+
                 if (hasPriorSessions) {
                   const result = pickContinuationTopic(priorSummaries[0]);
                   continuityTopic = result.topic;
+                  continuityLastTopic = result.lastTopic;
+                  continuityMultiTopic = result.multiTopic;
                   topicReason = result.reason;
                 }
                 
@@ -5233,7 +5259,7 @@ HONESTY INSTRUCTIONS:
             }
             
             // LANGUAGE: Generate greetings in the selected language
-            const getLocalizedGreeting = (lang: string, name: string, tutorName: string, ageGroup: string, docTitles: string[], priorExists: boolean, topic: string | null): string => {
+            const getLocalizedGreeting = (lang: string, name: string, tutorName: string, ageGroup: string, docTitles: string[], priorExists: boolean, topic: string | null, lastTopic: string | null = null, multiTopic: boolean = false): string => {
               // Language-specific greeting templates
               const greetings: Record<string, { intro: string; docAck: (count: number, titles: string) => string; closing: Record<string, string> }> = {
                 en: {
@@ -5399,15 +5425,31 @@ HONESTY INSTRUCTIONS:
               
               // (2) CONTINUITY GREETING: If prior sessions exist and no active docs, use welcome back greeting
               if (priorExists && topic) {
+                if (multiTopic && lastTopic) {
+                  // Multi-topic greeting: "Last time we covered X, then Y, and ended with Z. Want to pick up where we left off with Z, or start something new?"
+                  const multiGreetings: Record<string, (n: string, t: string, tp: string, lt: string) => string> = {
+                    en: (n, t, tp, lt) => `Welcome back, ${n}! I'm ${t}, your tutor. Last time we covered ${tp}. Want to pick up where we left off with ${lt}, or start something new?`,
+                    es: (n, t, tp, lt) => `¡Bienvenido de nuevo, ${n}! Soy ${t}, tu tutor. La última vez cubrimos ${tp}. ¿Quieres continuar con ${lt} o empezar algo nuevo?`,
+                    fr: (n, t, tp, lt) => `Content de te revoir, ${n}! Je suis ${t}, ton tuteur. La dernière fois, on a couvert ${tp}. Tu veux reprendre avec ${lt} ou commencer quelque chose de nouveau?`,
+                    de: (n, t, tp, lt) => `Willkommen zurück, ${n}! Ich bin ${t}, dein Tutor. Letztes Mal haben wir ${tp} behandelt. Möchtest du mit ${lt} weitermachen oder etwas Neues anfangen?`,
+                    pt: (n, t, tp, lt) => `Bem-vindo de volta, ${n}! Sou ${t}, seu tutor. Da última vez cobrimos ${tp}. Quer continuar com ${lt} ou começar algo novo?`,
+                    zh: (n, t, tp, lt) => `欢迎回来，${n}！我是${t}，你的导师。上次我们学习了${tp}。想继续${lt}，还是开始新的话题？`,
+                    ar: (n, t, tp, lt) => `أهلاً بعودتك، ${n}! أنا ${t}، معلمك. في المرة الماضية تناولنا ${tp}. هل تريد المتابعة مع ${lt} أم البدء بشيء جديد؟`,
+                    sw: (n, t, tp, lt) => `Karibu tena, ${n}! Mimi ni ${t}, mwalimu wako. Mara ya mwisho tulisoma ${tp}. Unataka kuendelea na ${lt} au kuanza kitu kipya?`,
+                  };
+                  const multiFn = multiGreetings[lang] || multiGreetings['en'];
+                  return multiFn(name, tutorName, topic, lastTopic);
+                }
+                // Single-topic greeting
                 const continuityGreetings: Record<string, (name: string, tutorName: string, topic: string) => string> = {
-                  en: (n, t, tp) => `Welcome back, ${n}! I'm ${t}, your tutor. Shall we continue our discussion on ${tp}? What do you remember most from last time?`,
-                  es: (n, t, tp) => `¡Bienvenido de nuevo, ${n}! Soy ${t}, tu tutor. ¿Continuamos con nuestra conversación sobre ${tp}? ¿Qué recuerdas de la última vez?`,
-                  fr: (n, t, tp) => `Content de te revoir, ${n}! Je suis ${t}, ton tuteur. On continue notre discussion sur ${tp}? Qu'est-ce que tu te rappelles de la dernière fois?`,
-                  de: (n, t, tp) => `Willkommen zurück, ${n}! Ich bin ${t}, dein Tutor. Sollen wir unsere Diskussion über ${tp} fortsetzen? Woran erinnerst du dich von letztem Mal?`,
-                  pt: (n, t, tp) => `Bem-vindo de volta, ${n}! Sou ${t}, seu tutor. Vamos continuar nossa discussão sobre ${tp}? O que você lembra da última vez?`,
-                  zh: (n, t, tp) => `欢迎回来，${n}！我是${t}，你的导师。我们继续讨论${tp}吧？你还记得上次我们讲了什么吗？`,
-                  ar: (n, t, tp) => `أهلاً بعودتك، ${n}! أنا ${t}، معلمك. هل نستمر في مناقشة ${tp}؟ ماذا تتذكر من المرة الماضية؟`,
-                  sw: (n, t, tp) => `Karibu tena, ${n}! Mimi ni ${t}, mwalimu wako. Tuendelee na mazungumzo yetu kuhusu ${tp}? Unakumbuka nini kutoka mara ya mwisho?`,
+                  en: (n, t, tp) => `Welcome back, ${n}! I'm ${t}, your tutor. Last time we were exploring ${tp}. Want to pick up where we left off, or start something new?`,
+                  es: (n, t, tp) => `¡Bienvenido de nuevo, ${n}! Soy ${t}, tu tutor. La última vez estábamos explorando ${tp}. ¿Quieres continuar donde lo dejamos o empezar algo nuevo?`,
+                  fr: (n, t, tp) => `Content de te revoir, ${n}! Je suis ${t}, ton tuteur. La dernière fois, on explorait ${tp}. Tu veux reprendre là où on s'est arrêtés ou commencer quelque chose de nouveau?`,
+                  de: (n, t, tp) => `Willkommen zurück, ${n}! Ich bin ${t}, dein Tutor. Letztes Mal haben wir ${tp} erkundet. Möchtest du dort weitermachen oder etwas Neues anfangen?`,
+                  pt: (n, t, tp) => `Bem-vindo de volta, ${n}! Sou ${t}, seu tutor. Da última vez estávamos explorando ${tp}. Quer continuar de onde paramos ou começar algo novo?`,
+                  zh: (n, t, tp) => `欢迎回来，${n}！我是${t}，你的导师。上次我们在探索${tp}。想继续上次的内容，还是开始新的话题？`,
+                  ar: (n, t, tp) => `أهلاً بعودتك، ${n}! أنا ${t}، معلمك. في المرة الماضية كنا نستكشف ${tp}. هل تريد المتابعة من حيث توقفنا أم البدء بشيء جديد؟`,
+                  sw: (n, t, tp) => `Karibu tena, ${n}! Mimi ni ${t}, mwalimu wako. Mara ya mwisho tulikuwa tukichunguza ${tp}. Unataka kuendelea tulipoacha au kuanza kitu kipya?`,
                 };
                 const continuityFn = continuityGreetings[lang] || continuityGreetings['en'];
                 return continuityFn(name, tutorName, topic);
@@ -5422,7 +5464,7 @@ HONESTY INSTRUCTIONS:
             if (!shouldSkipGreeting) {
               const greetingMode = greetingDocTitles.length > 0 ? 'ACTIVE_DOCS' : (hasPriorSessions && continuityTopic ? 'CONTINUITY' : 'GENERIC');
               console.log(`[GREETING_PRIORITY] mode=${greetingMode}, activeDocTitles=${greetingDocTitles.length}, hasPrior=${hasPriorSessions}, topic=${continuityTopic || 'none'}`);
-              greeting = getLocalizedGreeting(state.language, state.studentName, personality.name, state.ageGroup, greetingDocTitles, hasPriorSessions, continuityTopic);
+              greeting = getLocalizedGreeting(state.language, state.studentName, personality.name, state.ageGroup, greetingDocTitles, hasPriorSessions, continuityTopic, continuityLastTopic, continuityMultiTopic);
               console.log(`[Custom Voice] 🌍 Generated greeting in language: ${state.language}`);
               
               console.log(`[Custom Voice] 👋 Greeting: "${greeting}"`);

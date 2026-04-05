@@ -10,7 +10,7 @@
  * Uses a lightweight lexical similarity approach:
  * - Builds topic context from recent conversation
  * - Calculates token overlap (Jaccard similarity)
- * - Rejects low-similarity utterances with household chatter indicators
+ * - Rejects only near-zero similarity utterances (likely TV/background noise)
  */
 
 export interface CoherenceGateConfig {
@@ -33,20 +33,6 @@ export interface CoherenceCheckResult {
   rejectedReason?: string;
   transcript: string;
 }
-
-const HOUSEHOLD_CHATTER_INDICATORS = new Set([
-  'backyard', 'slider', 'door', 'tv', 'television', 'remote', 'kitchen',
-  'microwave', 'dinner', 'lunch', 'breakfast', 'mom', 'dad', 'honey',
-  'sweetie', 'babe', 'hun', 'phone', 'doorbell', 'dog', 'cat', 'pet',
-  'bathroom', 'shower', 'laundry', 'dishes', 'groceries', 'garbage',
-  'trash', 'recycling', 'mail', 'package', 'delivery', 'pizza', 'food',
-  'snack', 'drink', 'water', 'juice', 'soda', 'coffee', 'tea',
-  'bedroom', 'living room', 'garage', 'car', 'keys', 'wallet', 'purse',
-  'upstairs', 'downstairs', 'outside', 'inside', 'neighbor', 'friend',
-  'coming over', 'going out', 'be right back', 'hold on', 'one second',
-  'just a minute', 'coming', 'leaving', 'drive', 'pick up', 'drop off',
-  'game', 'show', 'movie', 'channel', 'volume', 'pause', 'play'
-]);
 
 const EDUCATIONAL_CONTEXT_WORDS = new Set([
   'math', 'algebra', 'geometry', 'calculus', 'equation', 'formula', 'solve',
@@ -142,18 +128,6 @@ function extractKeywords(tokens: string[], n: number = 5): string[] {
 }
 
 /**
- * Check if transcript contains household chatter indicators
- */
-function hasHouseholdIndicators(tokens: string[]): boolean {
-  for (const token of tokens) {
-    if (HOUSEHOLD_CHATTER_INDICATORS.has(token)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/**
  * Check if transcript contains educational context words
  */
 function hasEducationalContext(tokens: string[]): boolean {
@@ -214,23 +188,15 @@ export function checkCoherence(
     };
   }
 
-  // Check for household chatter indicators
-  const hasHousehold = hasHouseholdIndicators(transcriptTokens);
-
-  // Decision: reject if low similarity AND (has household indicators OR very low similarity)
-  const veryLowThreshold = config.threshold * 0.5;
-  const shouldReject = 
-    (similarityScore < config.threshold && hasHousehold) ||
-    (similarityScore < veryLowThreshold && transcriptTokens.length > 3);
-
-  if (shouldReject) {
+  // Only reject near-zero similarity (< 0.01) with enough words to be meaningful.
+  // Scores of 0.02-0.04 are common for real student speech about non-subject topics.
+  // Near-zero means virtually no word overlap — almost certainly TV/background noise.
+  if (similarityScore < 0.01 && transcriptTokens.length > 5) {
     return {
       isCoherent: false,
       similarityScore,
       topicKeywords,
-      rejectedReason: hasHousehold 
-        ? 'household_chatter_detected' 
-        : 'off_topic_low_similarity',
+      rejectedReason: 'off_topic_near_zero_similarity',
       transcript,
     };
   }
