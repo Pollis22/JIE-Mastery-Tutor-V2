@@ -3328,7 +3328,11 @@ export function setupCustomVoiceWebSocket(server: Server) {
         // Feature flag: COHERENCE_GATE_ENABLED (default: false)
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         const coherenceConfig = getCoherenceGateConfig();
-        if (coherenceConfig.enabled) {
+        const completedStudentTurns = state.conversationHistory.filter(m => m.role === "user").length;
+        if (coherenceConfig.enabled && completedStudentTurns < 3) {
+          console.log(`[CoherenceGate] ⏭️ Skipped — insufficient conversation context (turn ${completedStudentTurns} < 3)`);
+        }
+        if (coherenceConfig.enabled && completedStudentTurns >= 3) {
           const conversationContext = extractConversationContext(
             state.conversationHistory,
             state.subject,
