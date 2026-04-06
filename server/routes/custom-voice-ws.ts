@@ -1703,18 +1703,9 @@ function hardInterruptTutor(
     timestamp: now,
   }));
 
-  // Proactive STT reconnect: close the AssemblyAI WS so the existing close→handleSttDisconnect→sttReconnect
-  // chain fires immediately. Without this, a stale STT connection can silently drop student speech for 15+ seconds
-  // until the deadman timer finally catches it.
-  if (state.assemblyAIWs && state.sttReconnectEnabled) {
-    setImmediate(() => {
-      if (state.assemblyAIWs) {
-        console.log(`[BargeIn] proactive_stt_reconnect reason=barge_in_confirmed session=${state.sessionId}`);
-        state.sttConnected = false;
-        try { state.assemblyAIWs.close(); } catch (_e) {}
-      }
-    });
-  }
+  // NOTE: proactive STT reconnect after barge-in REMOVED — it was destroying the connection
+  // faster than reconnect could rebuild, causing permanent "Cannot forward audio" failures.
+  // The original stale-STT issue was caused by u3-rt-pro model, which has been removed.
 
   return true;
 }
@@ -7098,20 +7089,8 @@ HONESTY INSTRUCTIONS:
                   if (state.phase === 'LISTENING') {
                     setPhase(state, 'SPEECH_DETECTED', 'vad_speech_onset', ws);
                   }
-                  // SPEECH WATCHDOG: Start/reset 6s timer on every speech onset
-                  state.speechWatchdogSegments++;
-                  if (state.speechWatchdogTimerId) clearTimeout(state.speechWatchdogTimerId);
-                  state.speechWatchdogTimerId = setTimeout(() => {
-                    state.speechWatchdogTimerId = null;
-                    if (state.isSessionEnded || !state.sttReconnectEnabled || state.phase === 'FINALIZING') return;
-                    const noTranscriptMs = state.sttLastMessageAtMs > 0 ? Date.now() - state.sttLastMessageAtMs : Date.now() - (state.lastUserSpeechAtMs || Date.now());
-                    console.log(`[SpeechWatchdog] forced_reconnect noTranscriptMs=${noTranscriptMs} speechSegments=${state.speechWatchdogSegments} session=${state.sessionId}`);
-                    state.speechWatchdogSegments = 0;
-                    if (state.assemblyAIWs) {
-                      state.sttConnected = false;
-                      try { state.assemblyAIWs.close(); } catch (_e) {}
-                    }
-                  }, 6000);
+                  // SPEECH WATCHDOG: Removed — was racing with reconnect logic and killing connections.
+                  // The underlying stale-STT issue was caused by u3-rt-pro model, now removed.
                 } else if (!speechDetection.isSpeech && state.lastSpeechNotificationSent) {
                   state.lastSpeechNotificationSent = false;
                   ws.send(JSON.stringify({ type: "speech_ended" }));
@@ -7119,18 +7098,7 @@ HONESTY INSTRUCTIONS:
                   if (state.phase === 'SPEECH_DETECTED') {
                     setPhase(state, 'LISTENING', 'vad_speech_ended', ws);
                   }
-                  // SPEECH WATCHDOG: Cancel after 2s if no new speech resumes
-                  if (state.speechWatchdogTimerId) {
-                    const currentTimerId = state.speechWatchdogTimerId;
-                    setTimeout(() => {
-                      // Only cancel if no new speech onset has replaced the timer
-                      if (state.speechWatchdogTimerId === currentTimerId) {
-                        clearTimeout(state.speechWatchdogTimerId);
-                        state.speechWatchdogTimerId = null;
-                        state.speechWatchdogSegments = 0;
-                      }
-                    }, 2000);
-                  }
+                  // SPEECH WATCHDOG: Removed (see speech onset comment above)
                 }
                 
                 // Only log detailed audio analysis occasionally (every ~50th chunk to reduce noise)
