@@ -1432,6 +1432,9 @@ interface SessionState {
   sttSendFailureLoggedAt: number;
   sttSendFailureTotalDropped: number;
   sttSendFailureStartedAt: number;
+  // SPEECH WATCHDOG: Detect VAD speech with no STT transcripts
+  speechWatchdogTimerId: NodeJS.Timeout | null;
+  speechWatchdogSegments: number; // VAD speech segments since last transcript
   // NO-PROGRESS WATCHDOG: Detect stalled sessions and auto-recover
   lastProgressAt: number;
   watchdogTimerId: NodeJS.Timeout | null;
@@ -1989,6 +1992,10 @@ async function finalizeSession(
   if (state.sttReconnectTimerId) {
     clearTimeout(state.sttReconnectTimerId);
     state.sttReconnectTimerId = null;
+  }
+  if (state.speechWatchdogTimerId) {
+    clearTimeout(state.speechWatchdogTimerId);
+    state.speechWatchdogTimerId = null;
   }
   // TRIAL MINUTE ENFORCEMENT: Clear trial minute check timer
   if (state.trialMinuteCheckTimerId) {
@@ -2625,6 +2632,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
       sttSendFailureLoggedAt: 0,
       sttSendFailureTotalDropped: 0,
       sttSendFailureStartedAt: 0,
+      speechWatchdogTimerId: null,
+      speechWatchdogSegments: 0,
       lastProgressAt: Date.now(),
       watchdogTimerId: null,
       watchdogRecoveries: 0,
@@ -3115,6 +3124,12 @@ export function setupCustomVoiceWebSocket(server: Server) {
       }
 
       setPhase(state, 'TURN_COMMITTED', `commit_${source}`, ws);
+      // SPEECH WATCHDOG: Turn committed — cancel watchdog, speech was successfully transcribed
+      if (state.speechWatchdogTimerId) {
+        clearTimeout(state.speechWatchdogTimerId);
+        state.speechWatchdogTimerId = null;
+      }
+      state.speechWatchdogSegments = 0;
 
       if (state.isProcessing) {
         // QUEUE COALESCING: Merge with last queued item if processing
@@ -6131,10 +6146,16 @@ HONESTY INSTRUCTIONS:
                   state.sttLastMessageAtMs = Date.now();
                   state.sttConsecutiveSendFailures = 0;
                   markProgress(state);
+                  // SPEECH WATCHDOG: Transcript arrived — reset timer and segment count
+                  if (state.speechWatchdogTimerId) {
+                    clearTimeout(state.speechWatchdogTimerId);
+                    state.speechWatchdogTimerId = null;
+                  }
+                  state.speechWatchdogSegments = 0;
                 },
                 state.sttKeytermsDisabledForSession ? null : state.sttKeytermsJson
               );
-              
+
               console.log('[AssemblyAI] createAssemblyAIConnection returned successfully');
               state.assemblyAIWs = assemblyWs;
               state.assemblyAIState = assemblyState;
@@ -6320,6 +6341,12 @@ HONESTY INSTRUCTIONS:
                         state.sttLastMessageAtMs = Date.now();
                         state.sttConsecutiveSendFailures = 0;
                         markProgress(state);
+                        // SPEECH WATCHDOG: Transcript arrived — reset timer and segment count
+                        if (state.speechWatchdogTimerId) {
+                          clearTimeout(state.speechWatchdogTimerId);
+                          state.speechWatchdogTimerId = null;
+                        }
+                        state.speechWatchdogSegments = 0;
                       },
                       // P0.5: Reconnect preserves keyterms when valid, omits when disabled
                       state.sttKeytermsDisabledForSession ? null : state.sttKeytermsJson
@@ -7073,12 +7100,38 @@ HONESTY INSTRUCTIONS:
                   if (state.phase === 'LISTENING') {
                     setPhase(state, 'SPEECH_DETECTED', 'vad_speech_onset', ws);
                   }
+                  // SPEECH WATCHDOG: Start/reset 6s timer on every speech onset
+                  state.speechWatchdogSegments++;
+                  if (state.speechWatchdogTimerId) clearTimeout(state.speechWatchdogTimerId);
+                  state.speechWatchdogTimerId = setTimeout(() => {
+                    state.speechWatchdogTimerId = null;
+                    if (state.isSessionEnded || !state.sttReconnectEnabled || state.phase === 'FINALIZING') return;
+                    const noTranscriptMs = state.sttLastMessageAtMs > 0 ? Date.now() - state.sttLastMessageAtMs : Date.now() - (state.lastUserSpeechAtMs || Date.now());
+                    console.log(`[SpeechWatchdog] forced_reconnect noTranscriptMs=${noTranscriptMs} speechSegments=${state.speechWatchdogSegments} session=${state.sessionId}`);
+                    state.speechWatchdogSegments = 0;
+                    if (state.assemblyAIWs) {
+                      state.sttConnected = false;
+                      try { state.assemblyAIWs.close(); } catch (_e) {}
+                    }
+                  }, 6000);
                 } else if (!speechDetection.isSpeech && state.lastSpeechNotificationSent) {
                   state.lastSpeechNotificationSent = false;
                   ws.send(JSON.stringify({ type: "speech_ended" }));
                   cancelBargeInCandidate(state, 'speech_ended', ws);
                   if (state.phase === 'SPEECH_DETECTED') {
                     setPhase(state, 'LISTENING', 'vad_speech_ended', ws);
+                  }
+                  // SPEECH WATCHDOG: Cancel after 2s if no new speech resumes
+                  if (state.speechWatchdogTimerId) {
+                    const currentTimerId = state.speechWatchdogTimerId;
+                    setTimeout(() => {
+                      // Only cancel if no new speech onset has replaced the timer
+                      if (state.speechWatchdogTimerId === currentTimerId) {
+                        clearTimeout(state.speechWatchdogTimerId);
+                        state.speechWatchdogTimerId = null;
+                        state.speechWatchdogSegments = 0;
+                      }
+                    }, 2000);
                   }
                 }
                 
