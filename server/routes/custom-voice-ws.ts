@@ -648,7 +648,7 @@ function createAssemblyAIConnection(
     // A) Use routed base URL
     const wsUrl = `${baseUrl}/v3/ws?${urlParams.toString()}`;
     console.log('[AssemblyAI v3] 🌐 Connecting to:', wsUrl);
-    console.log('[AssemblyAI v3] Speech model:', speechModel);
+    console.log('[AssemblyAI v3] Speech model: default (no override)');
     console.log('[AssemblyAI v3] Turn commit mode:', ASSEMBLYAI_TURN_COMMIT_MODE);
     console.log('[AssemblyAI CONNECT URL]', wsUrl);
     
