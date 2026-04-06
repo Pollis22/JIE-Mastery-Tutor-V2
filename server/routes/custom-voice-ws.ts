@@ -1054,11 +1054,6 @@ const STT_SEND_FAILURE_LOG_RATE_LIMIT_MS = 1000;
 const STT_SEND_FAILURE_LOG_MAX_PER_FRAME = 10;
 
 function sendAudioToAssemblyAI(ws: WebSocket | null, audioBuffer: Buffer, state?: AssemblyAIState, sessionState?: SessionState): boolean {
-  if (sessionState) {
-    sessionState.sttLastAudioForwardAtMs = Date.now();
-    markProgress(sessionState);
-  }
-  
   if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
     if (sessionState) {
       sessionState.sttAudioRingBuffer.push(audioBuffer);
@@ -1104,6 +1099,12 @@ function sendAudioToAssemblyAI(ws: WebSocket | null, audioBuffer: Buffer, state?
     sessionState.sttSendFailureStartedAt = 0;
   }
   
+  // Update liveness timestamp only on actual successful send (after readyState=OPEN confirmed)
+  if (sessionState) {
+    sessionState.sttLastAudioForwardAtMs = Date.now();
+    markProgress(sessionState);
+  }
+
   if (!didLogFirstAssemblyAIAudio) {
     console.log('[AssemblyAI] 🎵 First audio chunk bytes:', audioBuffer.length);
     didLogFirstAssemblyAIAudio = true;
@@ -1435,6 +1436,9 @@ interface SessionState {
   sttSendFailureLoggedAt: number;
   sttSendFailureTotalDropped: number;
   sttSendFailureStartedAt: number;
+  // STT AUDIO GATING: Prevent forwarding echo/noise during tutor playback
+  sttBeginReceived: boolean;
+  sttLastUserSpeechSentAtMs: number;
   // SPEECH WATCHDOG: Detect VAD speech with no STT transcripts
   speechWatchdogTimerId: NodeJS.Timeout | null;
   speechWatchdogSegments: number; // VAD speech segments since last transcript
@@ -2630,6 +2634,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
       sttSendFailureTotalDropped: 0,
       sttSendFailureStartedAt: 0,
       speechWatchdogTimerId: null,
+      sttBeginReceived: false,
+      sttLastUserSpeechSentAtMs: 0,
       speechWatchdogSegments: 0,
       lastProgressAt: Date.now(),
       watchdogTimerId: null,
@@ -6120,6 +6126,7 @@ HONESTY INSTRUCTIONS:
                 },
                 (sessionId) => {
                   console.log('[AssemblyAI] 🎬 Session started:', sessionId);
+                  state.sttBeginReceived = true;
                 },
                 undefined,
                 state.ageGroup,
@@ -6310,7 +6317,10 @@ HONESTY INSTRUCTIONS:
                         }
                       },
                       (error) => console.error('[STT] reconnect_error:', error),
-                      (sessionId) => console.log('[STT] reconnected sttSessionId:', sessionId),
+                      (sessionId) => {
+                        console.log('[STT] reconnected sttSessionId:', sessionId);
+                        state.sttBeginReceived = true;
+                      },
                       undefined,
                       state.ageGroup,
                       (text, prevText) => creditSttActivity(state, text, prevText),
@@ -6369,6 +6379,7 @@ HONESTY INSTRUCTIONS:
               
               const handleSttDisconnect = (code?: number, reason?: string) => {
                 state.sttConnected = false;
+                state.sttBeginReceived = false;
                 state.sttDisconnectedSinceMs = Date.now();
                 // P0.4: Clear ws reference on disconnect to prevent stale sends
                 state.assemblyAIWs = null;
@@ -7136,9 +7147,19 @@ HONESTY INSTRUCTIONS:
                 
                 // Send to appropriate STT provider
                 if (USE_ASSEMBLYAI) {
-                  const sent = sendAudioToAssemblyAI(state.assemblyAIWs, audioBuffer, state.assemblyAIState || undefined, state);
-                  if (sent && (state.audioFrameCount <= 2 || state.audioFrameCount % 100 === 0)) {
-                    console.log('[Custom Voice] ✅ Audio forwarded to AssemblyAI');
+                  // Do NOT forward audio before AssemblyAI session is ready
+                  // Do NOT forward audio during tutor playback — it poisons the STT recognizer
+                  // with echo/silence/noise, causing it to produce no transcripts when real speech arrives
+                  const shouldGateAudio = !state.sttBeginReceived || state.phase === 'TUTOR_SPEAKING' || state.tutorAudioPlaying;
+                  if (!shouldGateAudio) {
+                    const sent = sendAudioToAssemblyAI(state.assemblyAIWs, audioBuffer, state.assemblyAIState || undefined, state);
+                    if (sent && (state.audioFrameCount <= 2 || state.audioFrameCount % 100 === 0)) {
+                      console.log('[Custom Voice] ✅ Audio forwarded to AssemblyAI');
+                    }
+                    // Track when actual user speech is forwarded
+                    if (sent && speechDetection.isSpeech) {
+                      state.sttLastUserSpeechSentAtMs = Date.now();
+                    }
                   }
                   // P0.4: Send failures are tracked inside sendAudioToAssemblyAI with rate-limited logging
                 } else {
