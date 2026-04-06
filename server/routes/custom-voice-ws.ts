@@ -841,7 +841,12 @@ function createAssemblyAIConnection(
                 const deferredWordCount = latestTranscript.split(/\s+/).filter(w => w.length > 0).length;
                 const NON_LEXICAL_PATTERN = /^(um+|uh+|hmm+|hm+|er+|erm+|mhm+)$/i;
                 const isNonLexical = NON_LEXICAL_PATTERN.test(latestTranscript.trim().toLowerCase());
-                const meetsConfidenceFloor = latestConf >= 0.40 || deferredWordCount >= 5 || (deferredWordCount <= 2 && latestConf >= 0.15 && !isNonLexical);
+                // CONFIDENCE FLOOR: Always accept real words. The 900ms deferral already
+                // filters noise — if a coherent word survives 900ms with end_of_turn:true,
+                // it's real speech. Only reject pure filler (um/uh/hmm).
+                // Previous versions dropped "Beetlejuice" (1 word, 0.23 conf), "I said beetlejuice"
+                // (3 words, 0.23 conf), "jupiter" (1 word, 0.37 conf) — all legitimate answers.
+                const meetsConfidenceFloor = !isNonLexical;
                 if (latestTranscript && !state.currentTurnCommitted && meetsConfidenceFloor) {
                   console.log(`[AssemblyAI v3] ✅ Deferred EOT firing now with: "${latestTranscript.substring(0, 60)}" (conf=${latestConf.toFixed(2)} words=${deferredWordCount})`);
                   if (turnOrder !== undefined) {
