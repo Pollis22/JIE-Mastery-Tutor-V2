@@ -4155,6 +4155,10 @@ export function setupCustomVoiceWebSocket(server: Server) {
           if (state.phase !== 'FINALIZING') {
             setPhase(state, 'LISTENING', 'audio_playback_complete', ws);
           }
+          // Reset STT deadman baseline — during tutor speech no transcripts arrive,
+          // so sttLastMessageAtMs gets stale (20+ seconds). Without this reset the
+          // deadman fires instantly when the tutor stops speaking.
+          state.sttLastMessageAtMs = Date.now();
           
           // ECHO GUARD: Mark playback end and start echo tail guard
           markPlaybackEnd(state.echoGuardState, echoConfig);
