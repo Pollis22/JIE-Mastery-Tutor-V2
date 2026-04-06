@@ -496,6 +496,100 @@ async function getAssemblyAIStreamingToken(): Promise<string> {
   return data.token;
 }
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// STT ARCHITECTURE FIX: Ring buffer, epoch fencing, ForceEndpoint, replay
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const PCM_RING_CAPACITY_FRAMES = 47; // ~3s at ~64ms/frame (2048-byte PCM16 @ 16kHz mono)
+const STT_REPLAY_FRAME_INTERVAL_MS = 20;
+const STT_REPLAY_FRAME_COUNT = 12; // ~800ms replay window
+const STT_FAST_WATCHDOG_NO_MESSAGE_MS = 3000;
+const STT_FAST_WATCHDOG_SPEECH_RECENT_MS = 5000;
+const STT_FALLBACK_DEADMAN_MS = 30000;
+
+class PcmRingBuffer {
+  private readonly frames: Buffer[] = [];
+  private readonly capacityFrames: number;
+
+  constructor(capacityFrames: number = PCM_RING_CAPACITY_FRAMES) {
+    this.capacityFrames = capacityFrames;
+  }
+
+  push(frame: Buffer): void {
+    this.frames.push(Buffer.from(frame));
+    if (this.frames.length > this.capacityFrames) {
+      this.frames.splice(0, this.frames.length - this.capacityFrames);
+    }
+  }
+
+  tail(frameCount: number): Buffer[] {
+    if (frameCount <= 0) return [];
+    return this.frames.slice(-frameCount).map((f) => Buffer.from(f));
+  }
+
+  clear(): void {
+    this.frames.length = 0;
+  }
+
+  get size(): number {
+    return this.frames.length;
+  }
+}
+
+function sttSleep(ms: number): Promise<void> {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+function sendAssemblyAIControl(
+  sessionState: SessionState,
+  controlType: 'ForceEndpoint' | 'Terminate',
+  expectedEpoch: number = sessionState.sttEpoch,
+): boolean {
+  if (expectedEpoch !== sessionState.sttEpoch) return false;
+  const ws = sessionState.assemblyAIWs;
+  if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+  try {
+    ws.send(JSON.stringify({ type: controlType }));
+    console.log(`[AssemblyAI] Sent ${controlType} session=${sessionState.sessionId?.substring(0, 8)} epoch=${expectedEpoch}`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function sendAssemblyAIForceEndpoint(sessionState: SessionState, expectedEpoch?: number): boolean {
+  return sendAssemblyAIControl(sessionState, 'ForceEndpoint', expectedEpoch);
+}
+
+function sendAssemblyAITerminate(sessionState: SessionState, expectedEpoch?: number): boolean {
+  return sendAssemblyAIControl(sessionState, 'Terminate', expectedEpoch);
+}
+
+async function replayRecentAudioAfterBegin(
+  sessionState: SessionState,
+  expectedEpoch: number,
+): Promise<void> {
+  if (expectedEpoch !== sessionState.sttEpoch) return;
+  if (!sessionState.sttBeginReceived) return;
+  const ws = sessionState.assemblyAIWs;
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+  const replayFrames = sessionState.sttAudioRingBuffer.tail(STT_REPLAY_FRAME_COUNT);
+  if (replayFrames.length === 0) return;
+
+  console.log(`[STT] replaying ${replayFrames.length} frames after Begin epoch=${expectedEpoch}`);
+  for (const frame of replayFrames) {
+    if (expectedEpoch !== sessionState.sttEpoch) return;
+    const currentWs = sessionState.assemblyAIWs;
+    if (!currentWs || currentWs.readyState !== WebSocket.OPEN) return;
+    try {
+      currentWs.send(frame);
+      await sttSleep(STT_REPLAY_FRAME_INTERVAL_MS);
+    } catch {
+      return;
+    }
+  }
+}
+
 function createAssemblyAIConnection(
   language: string,
   onTranscript: (text: string, endOfTurn: boolean, confidence: number) => void,
@@ -1053,16 +1147,27 @@ const STT_SEND_FAILURE_WATCHDOG_THRESHOLD = 50;
 const STT_SEND_FAILURE_LOG_RATE_LIMIT_MS = 1000;
 const STT_SEND_FAILURE_LOG_MAX_PER_FRAME = 10;
 
-function sendAudioToAssemblyAI(ws: WebSocket | null, audioBuffer: Buffer, state?: AssemblyAIState, sessionState?: SessionState): boolean {
-  if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
-    if (sessionState) {
+function sendAudioToAssemblyAI(ws: WebSocket | null, audioBuffer: Buffer, state?: AssemblyAIState, sessionState?: SessionState, isSpeechFrame: boolean = false): boolean {
+  // Always keep the ring buffer warm (PcmRingBuffer handles overflow internally).
+  // During tutor playback, only retain frames classified as speech for barge-in replay.
+  if (sessionState) {
+    if (sessionState.phase !== 'TUTOR_SPEAKING' || isSpeechFrame) {
       sessionState.sttAudioRingBuffer.push(audioBuffer);
-      if (sessionState.sttAudioRingBuffer.length > 16) {
-        sessionState.sttAudioRingBuffer.shift();
-      }
-      // P0.4: Track send failures
-      trackSendFailure(sessionState);
     }
+  }
+
+  // Phase 1 guard: do NOT forward audio during tutor playback
+  if (sessionState && (sessionState.phase === 'TUTOR_SPEAKING' || sessionState.tutorAudioPlaying)) {
+    return false;
+  }
+
+  // Epoch + connection readiness checks
+  if (sessionState && (!sessionState.sttBeginReceived || sessionState.reconnectInFlight)) {
+    return false;
+  }
+
+  if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+    if (sessionState) trackSendFailure(sessionState);
     return false;
   }
   
@@ -1078,13 +1183,7 @@ function sendAudioToAssemblyAI(ws: WebSocket | null, audioBuffer: Buffer, state?
   }
   
   if (ws.readyState !== WebSocket.OPEN) {
-    if (sessionState) {
-      sessionState.sttAudioRingBuffer.push(audioBuffer);
-      if (sessionState.sttAudioRingBuffer.length > 16) {
-        sessionState.sttAudioRingBuffer.shift();
-      }
-      trackSendFailure(sessionState);
-    }
+    if (sessionState) trackSendFailure(sessionState);
     return false;
   }
   
@@ -1101,8 +1200,12 @@ function sendAudioToAssemblyAI(ws: WebSocket | null, audioBuffer: Buffer, state?
   
   // Update liveness timestamp only on actual successful send (after readyState=OPEN confirmed)
   if (sessionState) {
-    sessionState.sttLastAudioForwardAtMs = Date.now();
+    const now = Date.now();
+    sessionState.sttLastAudioForwardAtMs = now;
     markProgress(sessionState);
+    if (isSpeechFrame) {
+      sessionState.sttLastUserSpeechSentAtMs = now;
+    }
   }
 
   if (!didLogFirstAssemblyAIAudio) {
@@ -1426,7 +1529,7 @@ interface SessionState {
   sttReconnectTimerId: NodeJS.Timeout | null;
   sttDeadmanTimerId: NodeJS.Timeout | null;
   sttConnectionId: number;
-  sttAudioRingBuffer: Buffer[];
+  sttAudioRingBuffer: PcmRingBuffer;
   sttDisconnectedSinceMs: number | null;
   // P0.3: Session-sticky keyterms disable after 3005 config error
   sttKeytermsDisabledForSession: boolean;
@@ -1439,6 +1542,9 @@ interface SessionState {
   // STT AUDIO GATING: Prevent forwarding echo/noise during tutor playback
   sttBeginReceived: boolean;
   sttLastUserSpeechSentAtMs: number;
+  // STT EPOCH FENCING: Prevent stale callback race conditions
+  sttEpoch: number;
+  reconnectInFlight: boolean;
   // SPEECH WATCHDOG: Detect VAD speech with no STT transcripts
   speechWatchdogTimerId: NodeJS.Timeout | null;
   speechWatchdogSegments: number; // VAD speech segments since last transcript
@@ -1657,9 +1763,10 @@ function hardInterruptTutor(
   state.lastBargeInAt = now;
   state.wasInterrupted = true;
   state.lastInterruptionTime = now;
-  // Reset STT deadman baseline so it gets a full 15s from barge-in,
-  // not stale timing from the previous turn's last transcript message.
+  // Reset STT deadman baseline so it gets a full window from barge-in
   state.sttLastMessageAtMs = now;
+  // Flush any in-flight partial from AssemblyAI before switching to LISTENING
+  sendAssemblyAIForceEndpoint(state);
   setPhase(state, 'LISTENING', `barge_in_${reason}`, ws);
 
   let llmAborted = false;
@@ -2625,7 +2732,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
       sttReconnectTimerId: null,
       sttDeadmanTimerId: null,
       sttConnectionId: 0,
-      sttAudioRingBuffer: [],
+      sttAudioRingBuffer: new PcmRingBuffer(),
       sttDisconnectedSinceMs: null,
       sttKeytermsDisabledForSession: false,
       sttKeytermsJson: null,
@@ -2636,6 +2743,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
       speechWatchdogTimerId: null,
       sttBeginReceived: false,
       sttLastUserSpeechSentAtMs: 0,
+      sttEpoch: 0,
+      reconnectInFlight: false,
       speechWatchdogSegments: 0,
       lastProgressAt: Date.now(),
       watchdogTimerId: null,
@@ -3952,6 +4061,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
                 state.isTutorThinking = false;
                 state.llmInFlight = false;
                 setPhase(state, 'TUTOR_SPEAKING', 'first_sentence', ws);
+                state.sttLastUserSpeechSentAtMs = 0; // Reset for watchdog correctness
                 console.log(`[LLM] first_token_ms=${firstSentenceMs} session=${state.sessionId || 'unknown'}`);
                 
                 // TURN FALLBACK: Cancel fallback timer since we're producing a response
@@ -6127,28 +6237,31 @@ HONESTY INSTRUCTIONS:
                 (sessionId) => {
                   console.log('[AssemblyAI] 🎬 Session started:', sessionId);
                   state.sttBeginReceived = true;
+                  // Trigger paced replay of recent audio after Begin
+                  const epoch = state.sttEpoch;
+                  if (state.reconnectInFlight) {
+                    void replayRecentAudioAfterBegin(state, epoch).then(() => {
+                      if (epoch === state.sttEpoch) {
+                        state.reconnectInFlight = false;
+                        state.sttReconnectAttempts = 0;
+                      }
+                    });
+                  }
                 },
                 undefined,
                 state.ageGroup,
                 (text, prevText) => creditSttActivity(state, text, prevText),
                 () => {
+                  state.sttEpoch++;
                   state.sttConnected = true;
                   state.sttLastMessageAtMs = Date.now();
                   state.sttReconnectAttempts = 0;
                   state.sttDisconnectedSinceMs = null;
                   markProgress(state);
                   state.sttConnectionId++;
-                  console.log(`[STT] connected sessionId=${state.sessionId} connectionId=${state.sttConnectionId}`);
+                  console.log(`[STT] connected sessionId=${state.sessionId} connectionId=${state.sttConnectionId} epoch=${state.sttEpoch}`);
                   sendWsEvent(ws, 'stt_status', { status: 'connected' });
-                  if (state.sttAudioRingBuffer.length > 0) {
-                    console.log(`[STT] flushing ${state.sttAudioRingBuffer.length} buffered audio chunks after reconnect`);
-                    for (const chunk of state.sttAudioRingBuffer) {
-                      if (state.assemblyAIWs && state.assemblyAIWs.readyState === WebSocket.OPEN) {
-                        state.assemblyAIWs.send(chunk);
-                      }
-                    }
-                    state.sttAudioRingBuffer = [];
-                  }
+                  // Replay moved to replayRecentAudioAfterBegin() — runs after Begin, not onOpen
                 },
                 () => {
                   state.sttLastMessageAtMs = Date.now();
@@ -6169,11 +6282,9 @@ HONESTY INSTRUCTIONS:
               state.assemblyAIState = assemblyState;
               console.log('[AssemblyAI] AssemblyAI WS assigned to state');
               
-              const STT_RING_BUFFER_MAX = 16;
               const STT_DEADMAN_INTERVAL_MS = 2000;
-              // PATIENCE FIX: Was 8s — too short, fired mid-utterance when student paused. AssemblyAI max_turn_silence=6s, so 15s gives ample time before treating connection as stalled.
-              const STT_DEADMAN_NO_MESSAGE_MS = 15000;
-              const STT_DEADMAN_AUDIO_RECENCY_MS = 3000;
+              // Speech-aware watchdog constants defined at file level:
+              // STT_FAST_WATCHDOG_NO_MESSAGE_MS, STT_FAST_WATCHDOG_SPEECH_RECENT_MS, STT_FALLBACK_DEADMAN_MS
               const STT_MAX_RECONNECT_ATTEMPTS = 5;
               const STT_RECONNECT_BACKOFF = [250, 500, 1000, 2000, 4000];
               
@@ -6183,6 +6294,7 @@ HONESTY INSTRUCTIONS:
                   return;
                 }
                 if (state.sttReconnectTimerId) return;
+                if (state.reconnectInFlight) return;
                 
                 state.sttReconnectAttempts++;
                 const attempt = state.sttReconnectAttempts;
@@ -6190,10 +6302,17 @@ HONESTY INSTRUCTIONS:
                 if (attempt > STT_MAX_RECONNECT_ATTEMPTS) {
                   console.error(`[STT] reconnect_exhausted attempts=${attempt} sessionId=${state.sessionId}`);
                   state.isReconnecting = false;
+                  state.reconnectInFlight = false;
                   sendWsEvent(ws, 'stt_status', { status: 'failed', attempts: attempt });
                   ws.send(JSON.stringify({ type: "error", error: "Speech service connection lost. Please restart the session." }));
                   return;
                 }
+
+                // Send ForceEndpoint + Terminate before closing old connection
+                const closingEpoch = state.sttEpoch;
+                sendAssemblyAIForceEndpoint(state, closingEpoch);
+                sendAssemblyAITerminate(state, closingEpoch);
+                state.reconnectInFlight = true;
                 
                 const backoffMs = STT_RECONNECT_BACKOFF[Math.min(attempt - 1, STT_RECONNECT_BACKOFF.length - 1)];
                 console.log(`[STT] reconnecting attempt=${attempt}/${STT_MAX_RECONNECT_ATTEMPTS} backoffMs=${backoffMs} sessionId=${state.sessionId}`);
@@ -6320,32 +6439,33 @@ HONESTY INSTRUCTIONS:
                       (sessionId) => {
                         console.log('[STT] reconnected sttSessionId:', sessionId);
                         state.sttBeginReceived = true;
+                        // Trigger paced replay after Begin
+                        const epoch = state.sttEpoch;
+                        void replayRecentAudioAfterBegin(state, epoch).then(() => {
+                          if (epoch === state.sttEpoch) {
+                            state.reconnectInFlight = false;
+                            state.sttReconnectAttempts = 0;
+                          }
+                        });
                       },
                       undefined,
                       state.ageGroup,
                       (text, prevText) => creditSttActivity(state, text, prevText),
                       () => {
+                        state.sttEpoch++;
                         state.sttConnected = true;
                         state.sttLastMessageAtMs = Date.now();
                         state.sttReconnectAttempts = 0;
                         state.sttDisconnectedSinceMs = null;
                         markProgress(state);
                         state.sttConnectionId++;
-                        console.log(`[STT] reconnected sessionId=${state.sessionId} connectionId=${state.sttConnectionId}`);
+                        console.log(`[STT] reconnected sessionId=${state.sessionId} connectionId=${state.sttConnectionId} epoch=${state.sttEpoch}`);
                         if (state.watchdogRecoveries > 0) {
                           console.log(`[WATCHDOG_RECOVERY_SUCCESS] sessionId=${state.sessionId} recovery=${state.watchdogRecoveries}`);
                           sendWsEvent(ws, 'voice_status', { status: 'audio_restored' });
                         }
                         sendWsEvent(ws, 'stt_status', { status: 'connected' });
-                        if (state.sttAudioRingBuffer.length > 0) {
-                          console.log(`[STT] flushing ${state.sttAudioRingBuffer.length} buffered audio chunks after reconnect`);
-                          for (const chunk of state.sttAudioRingBuffer) {
-                            if (state.assemblyAIWs && state.assemblyAIWs.readyState === WebSocket.OPEN) {
-                              state.assemblyAIWs.send(chunk);
-                            }
-                          }
-                          state.sttAudioRingBuffer = [];
-                        }
+                        // Replay moved to replayRecentAudioAfterBegin() — runs after Begin, not onOpen
                         state.isReconnecting = false;
                       },
                       () => {
@@ -6383,7 +6503,11 @@ HONESTY INSTRUCTIONS:
                 state.sttDisconnectedSinceMs = Date.now();
                 // P0.4: Clear ws reference on disconnect to prevent stale sends
                 state.assemblyAIWs = null;
-                console.log(`[STT] disconnected code=${code} reason=${reason || 'none'} sessionId=${state.sessionId}`);
+                // Clear reconnectInFlight if Begin was never received for this connection
+                if (state.reconnectInFlight) {
+                  state.reconnectInFlight = false;
+                }
+                console.log(`[STT] disconnected code=${code} reason=${reason || 'none'} epoch=${state.sttEpoch} sessionId=${state.sessionId}`);
                 sendWsEvent(ws, 'stt_status', { status: 'disconnected', code, reason });
                 
                 // P0.3: Handle 3005 as fatal config error (keyterms validation failure)
@@ -6423,39 +6547,44 @@ HONESTY INSTRUCTIONS:
               });
               
               state.sttDeadmanTimerId = setInterval(() => {
+                const now = Date.now();
+
                 if (state.isSessionEnded || !state.sttConnected || state.phase === 'FINALIZING' || !state.sttReconnectEnabled || state.sessionFinalizing) return;
                 
-                if (state.tutorAudioPlaying) {
-                  console.log(`[STT] deadman_suppressed reason=tutor_speaking phase=${state.phase} sessionId=${state.sessionId}`);
-                  return;
-                }
+                if (state.phase === 'TUTOR_SPEAKING' || state.tutorAudioPlaying) return;
+
+                if (state.reconnectInFlight) return;
                 
-                const msSinceLastBargeIn = Date.now() - state.lastBargeInAt;
-                if (state.lastBargeInAt > 0 && msSinceLastBargeIn < 5000) {
-                  console.log(`[STT] deadman_suppressed reason=barge_in_recovery msSinceBargeIn=${msSinceLastBargeIn} sessionId=${state.sessionId}`);
-                  return;
-                }
+                const msSinceLastBargeIn = now - state.lastBargeInAt;
+                if (state.lastBargeInAt > 0 && msSinceLastBargeIn < 5000) return;
                 
-                // GPT rec: suppress deadman when student has spoken but not finished.
-                // pendingTranscript has content means AssemblyAI already returned text
-                // for this turn — killing STT now risks losing the partial.
-                // The continuation guard or stall escape will handle completion.
-                if (pendingTranscript.trim().length > 0) {
-                  console.log(`[STT] deadman_suppressed reason=pending_transcript text="${pendingTranscript.substring(0, 40)}" sessionId=${state.sessionId}`);
-                  return;
-                }
+                // Suppress when student has spoken but not finished
+                if (pendingTranscript.trim().length > 0) return;
                 
-                const noMessageMs = Date.now() - state.sttLastMessageAtMs;
-                const audioRecentMs = state.sttLastAudioForwardAtMs > 0 ? Date.now() - state.sttLastAudioForwardAtMs : Infinity;
-                
-                if (noMessageMs > STT_DEADMAN_NO_MESSAGE_MS && audioRecentMs < STT_DEADMAN_AUDIO_RECENCY_MS) {
-                  console.log(`[STT] deadman_trigger noMessageMs=${noMessageMs} audioRecentMs=${audioRecentMs.toFixed(0)} sessionId=${state.sessionId}`);
-                  state.sttConnected = false;
-                  if (state.assemblyAIWs) {
-                    try { state.assemblyAIWs.close(); } catch (_e) {}
-                  }
-                  handleSttDisconnect(undefined, 'deadman_trigger');
+                const noMessageMs = now - state.sttLastMessageAtMs;
+                const audioRecentMs = state.sttLastAudioForwardAtMs > 0 ? now - state.sttLastAudioForwardAtMs : Infinity;
+                const userSpeechRecentMs = state.sttLastUserSpeechSentAtMs > 0 ? now - state.sttLastUserSpeechSentAtMs : Infinity;
+
+                const phaseAllowsFastRecovery = state.phase === 'LISTENING' || state.phase === 'SPEECH_DETECTED';
+
+                // FAST WATCHDOG: Real speech was sent recently but no transcript came back
+                const speechAwareRecovery =
+                  phaseAllowsFastRecovery &&
+                  userSpeechRecentMs <= STT_FAST_WATCHDOG_SPEECH_RECENT_MS &&
+                  noMessageMs >= STT_FAST_WATCHDOG_NO_MESSAGE_MS;
+
+                // FALLBACK DEADMAN: 30s with no messages and recent audio forwarding
+                const fallbackDeadman = noMessageMs >= STT_FALLBACK_DEADMAN_MS && audioRecentMs < 3000;
+
+                if (!speechAwareRecovery && !fallbackDeadman) return;
+
+                const reason = speechAwareRecovery ? 'speech_watchdog' : 'stt_deadman_fallback';
+                console.log(`[STT] ${reason} noMessageMs=${noMessageMs} userSpeechRecentMs=${userSpeechRecentMs.toFixed(0)} audioRecentMs=${audioRecentMs.toFixed(0)} sessionId=${state.sessionId}`);
+                state.sttConnected = false;
+                if (state.assemblyAIWs) {
+                  try { state.assemblyAIWs.close(); } catch (_e) {}
                 }
+                handleSttDisconnect(undefined, reason);
               }, STT_DEADMAN_INTERVAL_MS);
               
             } else {
@@ -6808,6 +6937,7 @@ HONESTY INSTRUCTIONS:
               // BARGE-IN: Set phase to TUTOR_SPEAKING so hardInterruptTutor can fire during greeting.
               // Without this the phase stays LISTENING and barge-in is completely blocked.
               setPhase(state, 'TUTOR_SPEAKING', 'greeting_start', ws);
+              state.sttLastUserSpeechSentAtMs = 0; // Reset for watchdog correctness
               state.tutorAudioPlaying = true;
               state.tutorAudioStartMs = Date.now();
               
@@ -6921,14 +7051,10 @@ HONESTY INSTRUCTIONS:
             
             if (state.isReconnecting) {
               // PATIENCE FIX: Buffer audio during reconnect instead of dropping it.
-              // Previously ALL speech was lost while AssemblyAI reconnected (~250ms-1s).
-              // Now we push to the ring buffer so it flushes to the new connection on open.
+              // PcmRingBuffer handles overflow internally.
               if (message.data) {
                 const buf = Buffer.from(message.data, 'base64');
                 state.sttAudioRingBuffer.push(buf);
-                if (state.sttAudioRingBuffer.length > 64) {
-                  state.sttAudioRingBuffer.shift(); // keep last ~4s at 16ms/chunk
-                }
                 state.sttLastAudioForwardAtMs = Date.now(); // prevent false deadman
                 markProgress(state);
               }
@@ -7121,6 +7247,8 @@ HONESTY INSTRUCTIONS:
                   state.lastSpeechNotificationSent = false;
                   ws.send(JSON.stringify({ type: "speech_ended" }));
                   cancelBargeInCandidate(state, 'speech_ended', ws);
+                  // Flush AssemblyAI turn boundary at the exact moment our VAD says speech stopped
+                  sendAssemblyAIForceEndpoint(state);
                   if (state.phase === 'SPEECH_DETECTED') {
                     setPhase(state, 'LISTENING', 'vad_speech_ended', ws);
                   }
@@ -7150,19 +7278,12 @@ HONESTY INSTRUCTIONS:
                 
                 // Send to appropriate STT provider
                 if (USE_ASSEMBLYAI) {
-                  // Do NOT forward audio before AssemblyAI session is ready
-                  // Do NOT forward audio during tutor playback — it poisons the STT recognizer
-                  // with echo/silence/noise, causing it to produce no transcripts when real speech arrives
-                  const shouldGateAudio = !state.sttBeginReceived || state.phase === 'TUTOR_SPEAKING' || state.tutorAudioPlaying;
-                  if (!shouldGateAudio) {
-                    const sent = sendAudioToAssemblyAI(state.assemblyAIWs, audioBuffer, state.assemblyAIState || undefined, state);
-                    if (sent && (state.audioFrameCount <= 2 || state.audioFrameCount % 100 === 0)) {
-                      console.log('[Custom Voice] ✅ Audio forwarded to AssemblyAI');
-                    }
-                    // Track when actual user speech is forwarded
-                    if (sent && speechDetection.isSpeech) {
-                      state.sttLastUserSpeechSentAtMs = Date.now();
-                    }
+                  // Guards (TUTOR_SPEAKING, sttBeginReceived, epoch, reconnectInFlight)
+                  // are now inside sendAudioToAssemblyAI. Ring buffer is always kept warm.
+                  const isSpeechFrame = Boolean(speechDetection?.isSpeech);
+                  const sent = sendAudioToAssemblyAI(state.assemblyAIWs, audioBuffer, state.assemblyAIState || undefined, state, isSpeechFrame);
+                  if (sent && (state.audioFrameCount <= 2 || state.audioFrameCount % 100 === 0)) {
+                    console.log('[Custom Voice] ✅ Audio forwarded to AssemblyAI');
                   }
                   // P0.4: Send failures are tracked inside sendAudioToAssemblyAI with rate-limited logging
                 } else {
