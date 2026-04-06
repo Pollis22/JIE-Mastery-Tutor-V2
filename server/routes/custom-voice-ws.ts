@@ -502,8 +502,8 @@ async function getAssemblyAIStreamingToken(): Promise<string> {
 const PCM_RING_CAPACITY_FRAMES = 47; // ~3s at ~64ms/frame (2048-byte PCM16 @ 16kHz mono)
 const STT_REPLAY_FRAME_INTERVAL_MS = 20;
 const STT_REPLAY_FRAME_COUNT = 12; // ~800ms replay window
-const STT_FAST_WATCHDOG_NO_MESSAGE_MS = 3000;
-const STT_FAST_WATCHDOG_SPEECH_RECENT_MS = 5000;
+const STT_FAST_WATCHDOG_NO_MESSAGE_MS = 8000;  // Was 3000 — too aggressive, killed connections before AssemblyAI could finalize single-word turns (max_turn_silence=6000ms)
+const STT_FAST_WATCHDOG_SPEECH_RECENT_MS = 10000; // Was 5000 — brief VAD blips caused false positives
 const STT_FALLBACK_DEADMAN_MS = 30000;
 
 class PcmRingBuffer {
