@@ -7283,8 +7283,10 @@ HONESTY INSTRUCTIONS:
                   state.lastSpeechNotificationSent = false;
                   ws.send(JSON.stringify({ type: "speech_ended" }));
                   cancelBargeInCandidate(state, 'speech_ended', ws);
-                  // Flush AssemblyAI turn boundary at the exact moment our VAD says speech stopped
-                  sendAssemblyAIForceEndpoint(state);
+                  // DO NOT send ForceEndpoint here — our energy-based VAD fires on micro-pauses
+                  // in natural speech (breathing, hesitation between words). Forcing AssemblyAI
+                  // to commit at each pause splits utterances mid-sentence ("I said" without "math").
+                  // Let AssemblyAI's own turn detection (semantic + acoustic) own turn boundaries.
                   if (state.phase === 'SPEECH_DETECTED') {
                     setPhase(state, 'LISTENING', 'vad_speech_ended', ws);
                   }
