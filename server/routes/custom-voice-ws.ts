@@ -577,9 +577,10 @@ function createAssemblyAIConnection(
   const isNonEnglish = language && NON_ENGLISH_LANGUAGES.some(
     lang => language.toLowerCase().startsWith(lang) || language.toLowerCase() === lang
   );
+  // REVERTED from u3-rt-pro — model stalls mid-turn, sends one partial then goes silent for 15+ seconds
   const speechModel = isNonEnglish
     ? 'universal-streaming-multilingual'
-    : 'u3-rt-pro';
+    : 'universal';
   console.log(`[AssemblyAI v3] 🌍 Language detection: input="${language}" isNonEnglish=${isNonEnglish} model=${speechModel}`);
   
   // Get token and connect asynchronously
