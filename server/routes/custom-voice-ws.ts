@@ -4,7 +4,7 @@ import { IncomingMessage } from 'http';
 import { Socket } from 'net';
 import { startDeepgramStream, DeepgramConnection } from "../services/deepgram-service";
 import { generateTutorResponse, generateTutorResponseStreaming, StreamingCallbacks } from "../services/ai-service";
-import { generateSpeech, generateSpeechStream, prewarmTTS } from "../services/tts-service";
+import { generateSpeech, prewarmTTS } from "../services/tts-service";
 import { db } from "../db";
 import { realtimeSessions, contentViolations, userSuspensions, documentChunks } from "@shared/schema";
 import { eq, and, or, gte } from "drizzle-orm";
@@ -3956,41 +3956,40 @@ export function setupCustomVoiceWebSocket(server: Server) {
                 }));
               }
               
-              // Generate TTS for this sentence immediately (streaming — chunks sent as they arrive)
+              // Generate TTS for this sentence immediately
               if (state.tutorAudioEnabled) {
                 const ttsStart = Date.now();
                 try {
-                  let sentenceBytes = 0;
-                  for await (const chunk of generateSpeechStream(sentence, state.ageGroup, state.speechSpeed)) {
-                    if (state.ttsAbortController?.signal.aborted) {
-                      console.log(JSON.stringify({ event: 'audio_dropped_stale_gen', session_id: state.sessionId, sentence: sentenceCount }));
-                      return;
-                    }
-                    if (!state.tutorAudioPlaying) {
-                      state.tutorAudioPlaying = true;
-                      state.tutorAudioStartMs = Date.now();
-                      // Only cancel idle barge-in candidates - if already ducked/confirming, user is actively speaking
-                      if (!state.bargeInCandidate.isActive || state.bargeInCandidate.stage === 'idle') {
-                        cancelBargeInCandidate(state, 'first_audio_chunk', ws);
-                      } else {
-                        console.log(`[BargeIn] preserved_active_candidate_on_audio_start stage=${state.bargeInCandidate.stage} rms=${state.bargeInCandidate.peakRms.toFixed(4)}`);
-                      }
-                      console.log(`[Phase] tutorAudioPlaying=true genId=${state.playbackGenId} session=${state.sessionId?.substring(0, 8) || 'unknown'}`);
-                    }
-                    sentenceBytes += chunk.length;
-                    ws.send(JSON.stringify({
-                      type: "audio",
-                      data: chunk.toString("base64"),
-                      mimeType: "audio/pcm;rate=16000",
-                      isChunk: true,
-                      chunkIndex: sentenceCount,
-                      genId: state.playbackGenId,
-                    }));
-                  }
+                  const audioBuffer = await generateSpeech(sentence, state.ageGroup, state.speechSpeed);
                   const ttsMs = Date.now() - ttsStart;
                   totalTtsMs += ttsMs;
-                  totalAudioBytes += sentenceBytes;
-                  console.log(`[Custom Voice] 🔊 Sentence ${sentenceCount} TTS (streamed): ${ttsMs}ms, ${sentenceBytes} bytes`);
+                  totalAudioBytes += audioBuffer.length;
+
+                  console.log(`[Custom Voice] 🔊 Sentence ${sentenceCount} TTS: ${ttsMs}ms, ${audioBuffer.length} bytes`);
+
+                  if (state.ttsAbortController?.signal.aborted) {
+                    console.log(JSON.stringify({ event: 'audio_dropped_stale_gen', session_id: state.sessionId, sentence: sentenceCount }));
+                    return;
+                  }
+                  if (!state.tutorAudioPlaying) {
+                    state.tutorAudioPlaying = true;
+                    state.tutorAudioStartMs = Date.now();
+                    // Only cancel idle barge-in candidates - if already ducked/confirming, user is actively speaking
+                    if (!state.bargeInCandidate.isActive || state.bargeInCandidate.stage === 'idle') {
+                      cancelBargeInCandidate(state, 'first_audio_chunk', ws);
+                    } else {
+                      console.log(`[BargeIn] preserved_active_candidate_on_audio_start stage=${state.bargeInCandidate.stage} rms=${state.bargeInCandidate.peakRms.toFixed(4)}`);
+                    }
+                    console.log(`[Phase] tutorAudioPlaying=true genId=${state.playbackGenId} session=${state.sessionId?.substring(0, 8) || 'unknown'}`);
+                  }
+                  ws.send(JSON.stringify({
+                    type: "audio",
+                    data: audioBuffer.toString("base64"),
+                    mimeType: "audio/pcm;rate=16000",
+                    isChunk: true,
+                    chunkIndex: sentenceCount,
+                    genId: state.playbackGenId,
+                  }));
                   markProgress(state);
                 } catch (ttsError) {
                   console.error(`[Custom Voice] ❌ TTS error for sentence ${sentenceCount}:`, ttsError);
@@ -6780,29 +6779,27 @@ HONESTY INSTRUCTIONS:
                   
                   chunkIndex++;
                   const chunkStart = Date.now();
-                  let sentenceBytes = 0;
 
-                  for await (const chunk of generateSpeechStream(sentence, state.ageGroup, state.speechSpeed)) {
-                    if (greetingAc.signal.aborted) {
-                      greetingInterrupted = true;
-                      console.log(`[Greeting Chunking] ⚡ Greeting interrupted mid-chunk ${chunkIndex} by barge-in`);
-                      break;
-                    }
-                    sentenceBytes += chunk.length;
-                    ws.send(JSON.stringify({
-                      type: "audio",
-                      data: chunk.toString("base64"),
-                      audioFormat: "pcm_s16le",
-                      sampleRate: 16000,
-                      channels: 1
-                    }));
+                  const audioBuffer = await generateSpeech(sentence, state.ageGroup, state.speechSpeed);
+                  const chunkMs = Date.now() - chunkStart;
+                  totalGreetingAudioBytes += audioBuffer.length;
+
+                  // Check again after TTS (barge-in may have fired while generating)
+                  if (greetingAc.signal.aborted) {
+                    greetingInterrupted = true;
+                    console.log(`[Greeting Chunking] ⚡ Greeting interrupted mid-chunk ${chunkIndex} by barge-in`);
+                    break;
                   }
 
-                  if (greetingInterrupted) break;
+                  console.log(`[Greeting Chunking] 🔊 Chunk ${chunkIndex}/${greetingSentences.length}: ${chunkMs}ms, ${audioBuffer.length} bytes | "${sentence.substring(0, 50)}..."`);
 
-                  const chunkMs = Date.now() - chunkStart;
-                  totalGreetingAudioBytes += sentenceBytes;
-                  console.log(`[Greeting Chunking] 🔊 Chunk ${chunkIndex}/${greetingSentences.length}: ${chunkMs}ms, ${sentenceBytes} bytes (streamed) | "${sentence.substring(0, 50)}..."`);
+                  ws.send(JSON.stringify({
+                    type: "audio",
+                    data: audioBuffer.toString("base64"),
+                    audioFormat: "pcm_s16le",
+                    sampleRate: 16000,
+                    channels: 1
+                  }));
                 }
                 
                 if (!greetingInterrupted) {
