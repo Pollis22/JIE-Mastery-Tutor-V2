@@ -139,6 +139,81 @@ export async function generateSpeech(
 }
 
 /**
+ * Streaming variant of generateSpeech(). Yields each audio chunk as it arrives
+ * from ElevenLabs instead of buffering the entire response. Saves 200-500ms
+ * of latency per sentence for the voice pipeline.
+ *
+ * Same voice selection, speed parsing, and voice settings logic as generateSpeech().
+ * Use generateSpeech() for short one-off messages (warnings, goodbyes, coaching).
+ * Use generateSpeechStream() for tutoring responses piped through the WS voice pipeline.
+ */
+export async function* generateSpeechStream(
+  text: string,
+  ageGroup: string = 'default',
+  userSpeechSpeed?: number | string
+): AsyncGenerator<Buffer> {
+
+  const elevenlabsClient = getElevenLabsClient();
+  const voiceId = VOICE_MAP[ageGroup] || VOICE_MAP['default'];
+
+  const voiceName = ageGroup === 'k-2' || ageGroup === 'K-2' ? 'Rachel' :
+                    ageGroup === '3-5' ? 'Sarah' :
+                    ageGroup === '6-8' ? 'Antoni' :
+                    ageGroup === '9-12' ? 'Arnold' :
+                    (ageGroup === 'college' || ageGroup === 'College/Adult' || ageGroup === 'college/adult') ? 'Bill' : 'Rachel (default)';
+
+  const voiceSettings = VOICE_SETTINGS_MAP[voiceId] || { stability: 0.5, similarity_boost: 0.75 };
+
+  let speed = 1.0;
+  if (userSpeechSpeed !== undefined && userSpeechSpeed !== null) {
+    speed = typeof userSpeechSpeed === 'string' ? parseFloat(userSpeechSpeed) : userSpeechSpeed;
+    if (!Number.isFinite(speed)) {
+      console.warn(`[ElevenLabs Stream] ⚠️ Invalid speechSpeed value: "${userSpeechSpeed}" (parsed as ${speed}), using default 1.0`);
+      speed = 1.0;
+    } else {
+      const originalSpeed = speed;
+      speed = Math.max(0.7, Math.min(1.2, speed));
+      if (speed !== originalSpeed) {
+        console.log(`[ElevenLabs Stream] ⚙️ Speed clamped from ${originalSpeed} to ${speed} (ElevenLabs valid range: 0.7-1.2)`);
+      }
+    }
+  }
+
+  console.log(`[ElevenLabs Stream] 🎤 Streaming speech | Age Group: "${ageGroup}" | Voice: ${voiceName} | Voice ID: ${voiceId} | Stability: ${voiceSettings.stability} | Speed: ${speed} | Text: "${text.substring(0, 50)}..."`);
+
+  const apiStart = Date.now();
+
+  const audioStream = await elevenlabsClient.textToSpeech.convert(voiceId, {
+    text: text,
+    model_id: "eleven_flash_v2_5",
+    output_format: "pcm_16000",
+    voice_settings: {
+      stability: voiceSettings.stability,
+      similarity_boost: voiceSettings.similarity_boost,
+      style: 0.0,
+      use_speaker_boost: true,
+      speed: speed,
+    },
+  });
+
+  let firstChunkLogged = false;
+  let totalChunks = 0;
+  let totalBytes = 0;
+
+  for await (const chunk of audioStream) {
+    if (!firstChunkLogged) {
+      console.log(`[ElevenLabs Stream] ⏱️ First chunk in ${Date.now() - apiStart}ms`);
+      firstChunkLogged = true;
+    }
+    totalChunks++;
+    totalBytes += chunk.length;
+    yield chunk;
+  }
+
+  console.log(`[ElevenLabs Stream] ⏱️ Done | ${totalChunks} chunks | ${totalBytes} bytes | ${Date.now() - apiStart}ms total`);
+}
+
+/**
  * Pre-warm the ElevenLabs connection for a given ageGroup.
  * Called at session start BEFORE the greeting fires so the first real TTS
  * request hits a warm HTTP/2 connection (~200ms) instead of a cold one (~1400ms).

@@ -577,10 +577,9 @@ function createAssemblyAIConnection(
   const isNonEnglish = language && NON_ENGLISH_LANGUAGES.some(
     lang => language.toLowerCase().startsWith(lang) || language.toLowerCase() === lang
   );
-  const speechModel = isNonEnglish
-    ? 'universal-streaming-multilingual'
-    : 'u3-rt-pro';
-  console.log(`[AssemblyAI v3] 🌍 Language detection: input="${language}" isNonEnglish=${isNonEnglish} model=${speechModel}`);
+  // speech_model omitted — let AssemblyAI use default streaming model.
+  // u3-rt-pro stalled mid-turn, 'universal' returned 1011.
+  console.log(`[AssemblyAI v3] 🌍 Language detection: input="${language}" isNonEnglish=${isNonEnglish} model=default (no override)`);
   
   // Get token and connect asynchronously
   // A) Use routed base URL for lowest latency
@@ -628,7 +627,6 @@ function createAssemblyAIConnection(
     const urlParams = new URLSearchParams({
       sample_rate: '16000',
       encoding: 'pcm_s16le',
-      speech_model: speechModel,
       format_turns: 'true',
       ...endpointingParams,
     });
@@ -650,7 +648,7 @@ function createAssemblyAIConnection(
     // A) Use routed base URL
     const wsUrl = `${baseUrl}/v3/ws?${urlParams.toString()}`;
     console.log('[AssemblyAI v3] 🌐 Connecting to:', wsUrl);
-    console.log('[AssemblyAI v3] Speech model:', speechModel);
+    console.log('[AssemblyAI v3] Speech model: default (no override)');
     console.log('[AssemblyAI v3] Turn commit mode:', ASSEMBLYAI_TURN_COMMIT_MODE);
     console.log('[AssemblyAI CONNECT URL]', wsUrl);
     
@@ -1432,6 +1430,9 @@ interface SessionState {
   sttSendFailureLoggedAt: number;
   sttSendFailureTotalDropped: number;
   sttSendFailureStartedAt: number;
+  // SPEECH WATCHDOG: Detect VAD speech with no STT transcripts
+  speechWatchdogTimerId: NodeJS.Timeout | null;
+  speechWatchdogSegments: number; // VAD speech segments since last transcript
   // NO-PROGRESS WATCHDOG: Detect stalled sessions and auto-recover
   lastProgressAt: number;
   watchdogTimerId: NodeJS.Timeout | null;
@@ -1701,6 +1702,10 @@ function hardInterruptTutor(
     client_side_stop: !llmAborted && !ttsAborted,
     timestamp: now,
   }));
+
+  // NOTE: proactive STT reconnect after barge-in REMOVED — it was destroying the connection
+  // faster than reconnect could rebuild, causing permanent "Cannot forward audio" failures.
+  // The original stale-STT issue was caused by u3-rt-pro model, which has been removed.
 
   return true;
 }
@@ -1976,6 +1981,10 @@ async function finalizeSession(
   if (state.sttReconnectTimerId) {
     clearTimeout(state.sttReconnectTimerId);
     state.sttReconnectTimerId = null;
+  }
+  if (state.speechWatchdogTimerId) {
+    clearTimeout(state.speechWatchdogTimerId);
+    state.speechWatchdogTimerId = null;
   }
   // TRIAL MINUTE ENFORCEMENT: Clear trial minute check timer
   if (state.trialMinuteCheckTimerId) {
@@ -2612,6 +2621,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
       sttSendFailureLoggedAt: 0,
       sttSendFailureTotalDropped: 0,
       sttSendFailureStartedAt: 0,
+      speechWatchdogTimerId: null,
+      speechWatchdogSegments: 0,
       lastProgressAt: Date.now(),
       watchdogTimerId: null,
       watchdogRecoveries: 0,
@@ -3102,6 +3113,12 @@ export function setupCustomVoiceWebSocket(server: Server) {
       }
 
       setPhase(state, 'TURN_COMMITTED', `commit_${source}`, ws);
+      // SPEECH WATCHDOG: Turn committed — cancel watchdog, speech was successfully transcribed
+      if (state.speechWatchdogTimerId) {
+        clearTimeout(state.speechWatchdogTimerId);
+        state.speechWatchdogTimerId = null;
+      }
+      state.speechWatchdogSegments = 0;
 
       if (state.isProcessing) {
         // QUEUE COALESCING: Merge with last queued item if processing
@@ -3964,9 +3981,9 @@ export function setupCustomVoiceWebSocket(server: Server) {
                   const ttsMs = Date.now() - ttsStart;
                   totalTtsMs += ttsMs;
                   totalAudioBytes += audioBuffer.length;
-                  
+
                   console.log(`[Custom Voice] 🔊 Sentence ${sentenceCount} TTS: ${ttsMs}ms, ${audioBuffer.length} bytes`);
-                  
+
                   if (state.ttsAbortController?.signal.aborted) {
                     console.log(JSON.stringify({ event: 'audio_dropped_stale_gen', session_id: state.sessionId, sentence: sentenceCount }));
                     return;
@@ -6118,10 +6135,16 @@ HONESTY INSTRUCTIONS:
                   state.sttLastMessageAtMs = Date.now();
                   state.sttConsecutiveSendFailures = 0;
                   markProgress(state);
+                  // SPEECH WATCHDOG: Transcript arrived — reset timer and segment count
+                  if (state.speechWatchdogTimerId) {
+                    clearTimeout(state.speechWatchdogTimerId);
+                    state.speechWatchdogTimerId = null;
+                  }
+                  state.speechWatchdogSegments = 0;
                 },
                 state.sttKeytermsDisabledForSession ? null : state.sttKeytermsJson
               );
-              
+
               console.log('[AssemblyAI] createAssemblyAIConnection returned successfully');
               state.assemblyAIWs = assemblyWs;
               state.assemblyAIState = assemblyState;
@@ -6307,6 +6330,12 @@ HONESTY INSTRUCTIONS:
                         state.sttLastMessageAtMs = Date.now();
                         state.sttConsecutiveSendFailures = 0;
                         markProgress(state);
+                        // SPEECH WATCHDOG: Transcript arrived — reset timer and segment count
+                        if (state.speechWatchdogTimerId) {
+                          clearTimeout(state.speechWatchdogTimerId);
+                          state.speechWatchdogTimerId = null;
+                        }
+                        state.speechWatchdogSegments = 0;
                       },
                       // P0.5: Reconnect preserves keyterms when valid, omits when disabled
                       state.sttKeytermsDisabledForSession ? null : state.sttKeytermsJson
@@ -6779,20 +6808,20 @@ HONESTY INSTRUCTIONS:
                   
                   chunkIndex++;
                   const chunkStart = Date.now();
-                  
+
                   const audioBuffer = await generateSpeech(sentence, state.ageGroup, state.speechSpeed);
                   const chunkMs = Date.now() - chunkStart;
                   totalGreetingAudioBytes += audioBuffer.length;
-                  
+
                   // Check again after TTS (barge-in may have fired while generating)
                   if (greetingAc.signal.aborted) {
                     greetingInterrupted = true;
                     console.log(`[Greeting Chunking] ⚡ Greeting interrupted mid-chunk ${chunkIndex} by barge-in`);
                     break;
                   }
-                  
+
                   console.log(`[Greeting Chunking] 🔊 Chunk ${chunkIndex}/${greetingSentences.length}: ${chunkMs}ms, ${audioBuffer.length} bytes | "${sentence.substring(0, 50)}..."`);
-                  
+
                   ws.send(JSON.stringify({
                     type: "audio",
                     data: audioBuffer.toString("base64"),
@@ -7060,6 +7089,8 @@ HONESTY INSTRUCTIONS:
                   if (state.phase === 'LISTENING') {
                     setPhase(state, 'SPEECH_DETECTED', 'vad_speech_onset', ws);
                   }
+                  // SPEECH WATCHDOG: Removed — was racing with reconnect logic and killing connections.
+                  // The underlying stale-STT issue was caused by u3-rt-pro model, now removed.
                 } else if (!speechDetection.isSpeech && state.lastSpeechNotificationSent) {
                   state.lastSpeechNotificationSent = false;
                   ws.send(JSON.stringify({ type: "speech_ended" }));
@@ -7067,6 +7098,7 @@ HONESTY INSTRUCTIONS:
                   if (state.phase === 'SPEECH_DETECTED') {
                     setPhase(state, 'LISTENING', 'vad_speech_ended', ws);
                   }
+                  // SPEECH WATCHDOG: Removed (see speech onset comment above)
                 }
                 
                 // Only log detailed audio analysis occasionally (every ~50th chunk to reduce noise)
