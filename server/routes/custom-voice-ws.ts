@@ -6865,6 +6865,9 @@ HONESTY INSTRUCTIONS:
                 if (!greetingInterrupted) {
                   setPhase(state, 'LISTENING', 'greeting_complete', ws);
                   state.tutorAudioPlaying = false;
+                  // Reset STT deadman baseline — greeting just finished, give student
+                  // a full 15s to respond before deadman fires
+                  state.sttLastMessageAtMs = Date.now();
                 }
                 if (state.ttsAbortController === greetingAc) {
                   state.ttsAbortController = null;
