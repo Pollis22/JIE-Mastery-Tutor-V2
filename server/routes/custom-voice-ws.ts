@@ -1653,6 +1653,9 @@ function hardInterruptTutor(
   state.lastBargeInAt = now;
   state.wasInterrupted = true;
   state.lastInterruptionTime = now;
+  // Reset STT deadman baseline so it gets a full 15s from barge-in,
+  // not stale timing from the previous turn's last transcript message.
+  state.sttLastMessageAtMs = now;
   setPhase(state, 'LISTENING', `barge_in_${reason}`, ws);
 
   let llmAborted = false;
