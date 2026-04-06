@@ -5754,13 +5754,49 @@ HONESTY INSTRUCTIONS:
                   
                   // Common valid short answers — always pass through at any confidence
                   const VALID_SHORT_ANSWERS = new Set([
+                    // Affirmations & negations
                     'yes', 'no', 'yeah', 'yep', 'yup', 'nah', 'nope',
                     'sure', 'ok', 'okay', 'correct', 'right', 'wrong',
                     'true', 'false', 'maybe', 'probably', 'definitely',
+                    'absolutely', 'exactly', 'indeed', 'certainly',
+                    // Frequency & quantity
                     'always', 'never', 'sometimes', 'both', 'neither',
-                    'done', 'ready', 'hello', 'hi', 'thanks', 'please',
+                    'all', 'none', 'some', 'many', 'few', 'most',
+                    'less', 'more', 'each', 'every', 'enough',
+                    // Pronouns & determiners as answers
+                    'nothing', 'everything', 'something', 'anything',
+                    'everyone', 'nobody', 'somebody', 'anybody',
+                    'here', 'there', 'this', 'that', 'those', 'these',
+                    'me', 'him', 'her', 'them', 'us', 'it', 'mine',
+                    // Question words (student repeating/confirming)
+                    'what', 'who', 'why', 'how', 'when', 'where', 'which',
+                    // Session control
                     'stop', 'wait', 'continue', 'repeat', 'again', 'next',
-                    'help', 'skip', 'harder', 'easier',
+                    'help', 'skip', 'harder', 'easier', 'slower', 'faster',
+                    'done', 'ready', 'start', 'finish', 'quit', 'back',
+                    // Greetings & politeness
+                    'hello', 'hi', 'hey', 'bye', 'goodbye', 'thanks',
+                    'please', 'sorry', 'welcome',
+                    // Reactions & feelings
+                    'wow', 'cool', 'nice', 'great', 'awesome', 'perfect',
+                    'good', 'bad', 'fine', 'amazing', 'interesting',
+                    'confused', 'lost', 'stuck', 'unsure', 'understand',
+                    // Academic responses
+                    'agree', 'disagree', 'forgot', 'remember', 'know',
+                    'think', 'guess', 'believe', 'depends', 'different',
+                    'same', 'similar', 'opposite', 'equal', 'zero',
+                    // Ordinals & comparisons
+                    'first', 'second', 'third', 'last',
+                    'bigger', 'smaller', 'higher', 'lower',
+                    // Common single-word subject answers
+                    'water', 'earth', 'sun', 'moon', 'gravity',
+                    'energy', 'light', 'sound', 'heat', 'oxygen',
+                    'north', 'south', 'east', 'west',
+                    'addition', 'subtraction', 'multiplication', 'division',
+                    // Numbers as words
+                    'one', 'two', 'three', 'four', 'five',
+                    'six', 'seven', 'eight', 'nine', 'ten',
+                    'hundred', 'thousand', 'million', 'half', 'double',
                   ]);
                   const isValidShortAnswer = fragmentWords.length === 1 && VALID_SHORT_ANSWERS.has(fragmentWords[0]);
                   
