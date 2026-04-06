@@ -577,11 +577,9 @@ function createAssemblyAIConnection(
   const isNonEnglish = language && NON_ENGLISH_LANGUAGES.some(
     lang => language.toLowerCase().startsWith(lang) || language.toLowerCase() === lang
   );
-  // REVERTED from u3-rt-pro — model stalls mid-turn, sends one partial then goes silent for 15+ seconds
-  const speechModel = isNonEnglish
-    ? 'universal-streaming-multilingual'
-    : 'universal';
-  console.log(`[AssemblyAI v3] 🌍 Language detection: input="${language}" isNonEnglish=${isNonEnglish} model=${speechModel}`);
+  // speech_model omitted — let AssemblyAI use default streaming model.
+  // u3-rt-pro stalled mid-turn, 'universal' returned 1011.
+  console.log(`[AssemblyAI v3] 🌍 Language detection: input="${language}" isNonEnglish=${isNonEnglish} model=default (no override)`);
   
   // Get token and connect asynchronously
   // A) Use routed base URL for lowest latency
@@ -629,7 +627,6 @@ function createAssemblyAIConnection(
     const urlParams = new URLSearchParams({
       sample_rate: '16000',
       encoding: 'pcm_s16le',
-      speech_model: speechModel,
       format_turns: 'true',
       ...endpointingParams,
     });
