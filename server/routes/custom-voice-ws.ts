@@ -1702,6 +1702,19 @@ function hardInterruptTutor(
     timestamp: now,
   }));
 
+  // Proactive STT reconnect: close the AssemblyAI WS so the existing close→handleSttDisconnect→sttReconnect
+  // chain fires immediately. Without this, a stale STT connection can silently drop student speech for 15+ seconds
+  // until the deadman timer finally catches it.
+  if (state.assemblyAIWs && state.sttReconnectEnabled) {
+    setImmediate(() => {
+      if (state.assemblyAIWs) {
+        console.log(`[BargeIn] proactive_stt_reconnect reason=barge_in_confirmed session=${state.sessionId}`);
+        state.sttConnected = false;
+        try { state.assemblyAIWs.close(); } catch (_e) {}
+      }
+    });
+  }
+
   return true;
 }
 
