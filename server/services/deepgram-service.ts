@@ -123,8 +123,8 @@ export async function startDeepgramStream(
     // Students need 2-3+ seconds to formulate complex thoughts without interruption
     // Previous settings (2000/2500ms) still triggered AI mid-sentence during thinking pauses
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    endpointing: 2500,          // 2.5s for end-of-speech detection (Dec 11, 2025: was 2000ms, before that 1200ms)
-    utterance_end_ms: 3000,     // 3s total wait before finalizing utterance (was 2500ms)
+    endpointing: 3500,          // 3.5s for end-of-speech detection (Apr 7: was 2500ms, increased since Nova-3 handles single words natively)
+    utterance_end_ms: 5000,     // 5s total wait before finalizing utterance (was 3000ms, safe to increase with Nova-3)
     vad_events: true,           // Enable voice activity detection events
     vad_threshold: 0.15,        // VERY LOW threshold for quiet speech detection (was 0.3)
 
