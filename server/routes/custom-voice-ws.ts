@@ -501,9 +501,9 @@ async function getAssemblyAIStreamingToken(): Promise<string> {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 const PCM_RING_CAPACITY_FRAMES = 47; // ~3s at ~64ms/frame (2048-byte PCM16 @ 16kHz mono)
 const STT_REPLAY_FRAME_INTERVAL_MS = 20;
-const STT_REPLAY_FRAME_COUNT = 12; // ~800ms replay window
-const STT_FAST_WATCHDOG_NO_MESSAGE_MS = 8000;  // Was 3000 — too aggressive, killed connections before AssemblyAI could finalize single-word turns (max_turn_silence=6000ms)
-const STT_FAST_WATCHDOG_SPEECH_RECENT_MS = 10000; // Was 5000 — brief VAD blips caused false positives
+const STT_REPLAY_FRAME_COUNT = 16; // ~1s replay window (was 12/~800ms)
+// Speech watchdog removed — fresh STT per listening window eliminates stale connections.
+// Only the 30s fallback deadman remains as a safety net.
 const STT_FALLBACK_DEADMAN_MS = 30000;
 
 class PcmRingBuffer {
@@ -562,6 +562,33 @@ function sendAssemblyAIForceEndpoint(sessionState: SessionState, expectedEpoch?:
 
 function sendAssemblyAITerminate(sessionState: SessionState, expectedEpoch?: number): boolean {
   return sendAssemblyAIControl(sessionState, 'Terminate', expectedEpoch);
+}
+
+/**
+ * Cleanly close the current STT connection when entering TUTOR_SPEAKING.
+ * The connection will be re-opened fresh when entering LISTENING.
+ * This eliminates the stale-connection problem entirely.
+ */
+function teardownSttConnection(sessionState: SessionState, reason: string): void {
+  const epoch = sessionState.sttEpoch;
+  console.log(`[STT] teardown reason=${reason} epoch=${epoch} session=${sessionState.sessionId?.substring(0, 8)}`);
+
+  // Flush and terminate gracefully
+  sendAssemblyAIForceEndpoint(sessionState, epoch);
+  sendAssemblyAITerminate(sessionState, epoch);
+
+  // Close the WebSocket
+  const ws = sessionState.assemblyAIWs;
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+    try { ws.close(4001, `teardown:${reason}`); } catch {}
+  }
+
+  // Clear state — connection will be re-created on LISTENING entry
+  sessionState.assemblyAIWs = null;
+  sessionState.sttConnected = false;
+  sessionState.sttBeginReceived = false;
+  sessionState.reconnectInFlight = false;
+  sessionState.sttLastUserSpeechSentAtMs = 0;
 }
 
 async function replayRecentAudioAfterBegin(
@@ -4061,7 +4088,10 @@ export function setupCustomVoiceWebSocket(server: Server) {
                 state.isTutorThinking = false;
                 state.llmInFlight = false;
                 setPhase(state, 'TUTOR_SPEAKING', 'first_sentence', ws);
-                state.sttLastUserSpeechSentAtMs = 0; // Reset for watchdog correctness
+                state.sttLastUserSpeechSentAtMs = 0;
+                // FRESH STT PER LISTENING WINDOW: Close STT during tutor speech.
+                // Eliminates stale connection problem — no need to keep pipe warm.
+                teardownSttConnection(state, 'tutor_speaking_start');
                 console.log(`[LLM] first_token_ms=${firstSentenceMs} session=${state.sessionId || 'unknown'}`);
                 
                 // TURN FALLBACK: Cancel fallback timer since we're producing a response
@@ -4270,6 +4300,12 @@ export function setupCustomVoiceWebSocket(server: Server) {
           state.tutorAudioPlaying = false;
           if (state.phase !== 'FINALIZING') {
             setPhase(state, 'LISTENING', 'audio_playback_complete', ws);
+            // FRESH STT PER LISTENING WINDOW: Open new connection for the next student turn.
+            // sttReconnect handles creating the connection, waiting for Begin, and replaying buffer.
+            if (USE_ASSEMBLYAI && !state.assemblyAIWs && !state.reconnectInFlight) {
+              state.sttReconnectAttempts = 0;
+              sttReconnect();
+            }
           }
           // Reset STT deadman baseline — during tutor speech no transcripts arrive,
           // so sttLastMessageAtMs gets stale (20+ seconds). Without this reset the
@@ -6319,8 +6355,8 @@ HONESTY INSTRUCTIONS:
               console.log('[AssemblyAI] AssemblyAI WS assigned to state');
               
               const STT_DEADMAN_INTERVAL_MS = 2000;
-              // Speech-aware watchdog constants defined at file level:
-              // STT_FAST_WATCHDOG_NO_MESSAGE_MS, STT_FAST_WATCHDOG_SPEECH_RECENT_MS, STT_FALLBACK_DEADMAN_MS
+              // Deadman constants: STT_FALLBACK_DEADMAN_MS (30s safety net)
+              // Speech watchdog removed — fresh STT per listening window eliminates stale connections
               const STT_MAX_RECONNECT_ATTEMPTS = 5;
               const STT_RECONNECT_BACKOFF = [250, 500, 1000, 2000, 4000];
               
@@ -6599,28 +6635,20 @@ HONESTY INSTRUCTIONS:
                 
                 const noMessageMs = now - state.sttLastMessageAtMs;
                 const audioRecentMs = state.sttLastAudioForwardAtMs > 0 ? now - state.sttLastAudioForwardAtMs : Infinity;
-                const userSpeechRecentMs = state.sttLastUserSpeechSentAtMs > 0 ? now - state.sttLastUserSpeechSentAtMs : Infinity;
 
-                const phaseAllowsFastRecovery = state.phase === 'LISTENING' || state.phase === 'SPEECH_DETECTED';
-
-                // FAST WATCHDOG: Real speech was sent recently but no transcript came back
-                const speechAwareRecovery =
-                  phaseAllowsFastRecovery &&
-                  userSpeechRecentMs <= STT_FAST_WATCHDOG_SPEECH_RECENT_MS &&
-                  noMessageMs >= STT_FAST_WATCHDOG_NO_MESSAGE_MS;
-
-                // FALLBACK DEADMAN: 30s with no messages and recent audio forwarding
+                // FALLBACK DEADMAN ONLY: 30s with no messages and recent audio forwarding.
+                // The speech_watchdog was removed — fresh STT per listening window eliminates
+                // the stale-connection problem it was compensating for.
                 const fallbackDeadman = noMessageMs >= STT_FALLBACK_DEADMAN_MS && audioRecentMs < 3000;
 
-                if (!speechAwareRecovery && !fallbackDeadman) return;
+                if (!fallbackDeadman) return;
 
-                const reason = speechAwareRecovery ? 'speech_watchdog' : 'stt_deadman_fallback';
-                console.log(`[STT] ${reason} noMessageMs=${noMessageMs} userSpeechRecentMs=${userSpeechRecentMs.toFixed(0)} audioRecentMs=${audioRecentMs.toFixed(0)} sessionId=${state.sessionId}`);
+                console.log(`[STT] stt_deadman_fallback noMessageMs=${noMessageMs} audioRecentMs=${audioRecentMs.toFixed(0)} sessionId=${state.sessionId}`);
                 state.sttConnected = false;
                 if (state.assemblyAIWs) {
                   try { state.assemblyAIWs.close(); } catch (_e) {}
                 }
-                handleSttDisconnect(undefined, reason);
+                handleSttDisconnect(undefined, 'stt_deadman_fallback');
               }, STT_DEADMAN_INTERVAL_MS);
               
             } else {
@@ -6973,7 +7001,9 @@ HONESTY INSTRUCTIONS:
               // BARGE-IN: Set phase to TUTOR_SPEAKING so hardInterruptTutor can fire during greeting.
               // Without this the phase stays LISTENING and barge-in is completely blocked.
               setPhase(state, 'TUTOR_SPEAKING', 'greeting_start', ws);
-              state.sttLastUserSpeechSentAtMs = 0; // Reset for watchdog correctness
+              state.sttLastUserSpeechSentAtMs = 0;
+              // FRESH STT PER LISTENING WINDOW: Close STT during greeting playback.
+              teardownSttConnection(state, 'greeting_start');
               state.tutorAudioPlaying = true;
               state.tutorAudioStartMs = Date.now();
               
@@ -7031,9 +7061,12 @@ HONESTY INSTRUCTIONS:
                 if (!greetingInterrupted) {
                   setPhase(state, 'LISTENING', 'greeting_complete', ws);
                   state.tutorAudioPlaying = false;
-                  // Reset STT deadman baseline — greeting just finished, give student
-                  // a full 15s to respond before deadman fires
                   state.sttLastMessageAtMs = Date.now();
+                  // FRESH STT PER LISTENING WINDOW: Open new connection after greeting.
+                  if (USE_ASSEMBLYAI && !state.assemblyAIWs && !state.reconnectInFlight) {
+                    state.sttReconnectAttempts = 0;
+                    sttReconnect();
+                  }
                 }
                 if (state.ttsAbortController === greetingAc) {
                   state.ttsAbortController = null;
