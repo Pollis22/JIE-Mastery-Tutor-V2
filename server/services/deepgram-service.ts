@@ -102,7 +102,7 @@ export async function startDeepgramStream(
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // MODEL & LANGUAGE SETTINGS - MULTI-LANGUAGE AUTO-DETECTION
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    model: "nova-2",            // Best accuracy model with multi-language support
+    model: "nova-3",            // Nova-3: best accuracy, single-word detection, 45+ languages
     language: effectiveLanguage, // 'multi' enables seamless language switching
     smart_format: true,         // Auto-format numbers, dates, etc.
     interim_results: true,      // Get real-time partial transcripts
