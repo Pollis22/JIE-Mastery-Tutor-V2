@@ -1581,6 +1581,8 @@ interface SessionState {
   watchdogRecoveries: number;
   lastWatchdogRecoveryAt: number;
   watchdogDisabled: boolean;
+  // STT LIFECYCLE: Reconnect function stored on state for cross-scope access
+  sttReconnectFn: (() => void) | null;
   // TRIAL MINUTE ENFORCEMENT: Periodic check to end session when trial minutes exhausted
   trialMinuteCheckTimerId: NodeJS.Timeout | null;
   trialMinuteWarned: boolean; // Whether 2-minute warning has been sent
@@ -2778,6 +2780,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
       watchdogRecoveries: 0,
       lastWatchdogRecoveryAt: 0,
       watchdogDisabled: false,
+      sttReconnectFn: null,
       trialMinuteCheckTimerId: null,
       trialMinuteWarned: false,
       droppedTurnTimestamps: [],
@@ -4301,10 +4304,9 @@ export function setupCustomVoiceWebSocket(server: Server) {
           if (state.phase !== 'FINALIZING') {
             setPhase(state, 'LISTENING', 'audio_playback_complete', ws);
             // FRESH STT PER LISTENING WINDOW: Open new connection for the next student turn.
-            // sttReconnect handles creating the connection, waiting for Begin, and replaying buffer.
-            if (USE_ASSEMBLYAI && !state.assemblyAIWs && !state.reconnectInFlight) {
+            if (USE_ASSEMBLYAI && !state.assemblyAIWs && !state.reconnectInFlight && state.sttReconnectFn) {
               state.sttReconnectAttempts = 0;
-              sttReconnect();
+              state.sttReconnectFn();
             }
           }
           // Reset STT deadman baseline — during tutor speech no transcripts arrive,
@@ -6569,6 +6571,10 @@ HONESTY INSTRUCTIONS:
                 }, backoffMs);
               };
               
+              // Store reconnect function on state so it's accessible from processTranscriptQueue
+              // (which is defined earlier in the file and can't access this const directly)
+              state.sttReconnectFn = sttReconnect;
+              
               const handleSttDisconnect = (code?: number, reason?: string) => {
                 state.sttConnected = false;
                 state.sttBeginReceived = false;
@@ -7063,9 +7069,9 @@ HONESTY INSTRUCTIONS:
                   state.tutorAudioPlaying = false;
                   state.sttLastMessageAtMs = Date.now();
                   // FRESH STT PER LISTENING WINDOW: Open new connection after greeting.
-                  if (USE_ASSEMBLYAI && !state.assemblyAIWs && !state.reconnectInFlight) {
+                  if (USE_ASSEMBLYAI && !state.assemblyAIWs && !state.reconnectInFlight && state.sttReconnectFn) {
                     state.sttReconnectAttempts = 0;
-                    sttReconnect();
+                    state.sttReconnectFn();
                   }
                 }
                 if (state.ttsAbortController === greetingAc) {
