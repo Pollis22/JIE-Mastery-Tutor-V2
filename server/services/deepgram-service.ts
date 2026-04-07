@@ -83,18 +83,50 @@ export function getDeepgramLanguageCode(lang: string): string {
   return mapped;
 }
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// DEEPGRAM ENDPOINTING PROFILES PER GRADE BAND
+// Nova-3 handles single words natively, so we can be MORE
+// patient than AssemblyAI. Younger students get extra time.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const DEEPGRAM_ENDPOINTING: Record<string, { endpointing: number; utterance_end_ms: number }> = {
+  'K-2':           { endpointing: 5500, utterance_end_ms: 7000 },  // Very patient — young kids pause between words
+  'Elementary':    { endpointing: 4500, utterance_end_ms: 6000 },  // Patient — still forming thoughts slowly
+  'Middle School': { endpointing: 4000, utterance_end_ms: 5500 },  // Moderate patience
+  'High School':   { endpointing: 3500, utterance_end_ms: 5000 },  // Standard patience
+  'College/Adult': { endpointing: 3500, utterance_end_ms: 5000 },  // Standard patience
+};
+
+const DEFAULT_ENDPOINTING = { endpointing: 3500, utterance_end_ms: 5000 };
+
+function getDeepgramEndpointing(ageGroup?: string) {
+  if (!ageGroup) return DEFAULT_ENDPOINTING;
+  const profile = DEEPGRAM_ENDPOINTING[ageGroup];
+  if (profile) return profile;
+  // Fuzzy match for variations
+  const lower = ageGroup.toLowerCase();
+  if (lower.includes('k-2') || lower.includes('k2')) return DEEPGRAM_ENDPOINTING['K-2'];
+  if (lower.includes('elem')) return DEEPGRAM_ENDPOINTING['Elementary'];
+  if (lower.includes('middle')) return DEEPGRAM_ENDPOINTING['Middle School'];
+  if (lower.includes('high')) return DEEPGRAM_ENDPOINTING['High School'];
+  if (lower.includes('college') || lower.includes('adult')) return DEEPGRAM_ENDPOINTING['College/Adult'];
+  return DEFAULT_ENDPOINTING;
+}
+
 export async function startDeepgramStream(
   onTranscript: (text: string, isFinal: boolean, detectedLanguage?: string) => void,
   onError: (error: Error) => void,
   onClose?: () => void,
-  language: string = "en-US"
+  language: string = "en-US",
+  ageGroup?: string
 ): Promise<DeepgramConnection> {
   
   // Use 'multi' for seamless language switching, fall back to specific language if needed
   const useMultiLanguage = true; // Enable auto-detection for all sessions
   const effectiveLanguage = useMultiLanguage ? 'multi' : language;
+  const timing = getDeepgramEndpointing(ageGroup);
   
-  console.log("[Deepgram] 🎤 Starting stream with language:", effectiveLanguage, "(selected:", language, ")");
+  console.log("[Deepgram] 🎤 Starting stream with language:", effectiveLanguage, "(selected:", language, ") ageGroup:", ageGroup || 'default');
+  console.log("[Deepgram] ⏱️ Endpointing:", timing.endpointing, "ms, Utterance end:", timing.utterance_end_ms, "ms");
   
   try {
     const deepgramClient = getDeepgramClient();
@@ -123,8 +155,8 @@ export async function startDeepgramStream(
     // Students need 2-3+ seconds to formulate complex thoughts without interruption
     // Previous settings (2000/2500ms) still triggered AI mid-sentence during thinking pauses
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    endpointing: 3500,          // 3.5s for end-of-speech detection (Apr 7: was 2500ms, increased since Nova-3 handles single words natively)
-    utterance_end_ms: 5000,     // 5s total wait before finalizing utterance (was 3000ms, safe to increase with Nova-3)
+    endpointing: timing.endpointing,
+    utterance_end_ms: timing.utterance_end_ms,
     vad_events: true,           // Enable voice activity detection events
     vad_threshold: 0.15,        // VERY LOW threshold for quiet speech detection (was 0.3)
 

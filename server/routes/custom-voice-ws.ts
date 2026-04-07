@@ -101,13 +101,13 @@ import {
 
 // ============================================
 // FEATURE FLAG: STT PROVIDER SELECTION
-// Set STT_PROVIDER=deepgram to use Deepgram Nova-2
+// Set STT_PROVIDER=deepgram to use Deepgram Nova-3
 // Set STT_PROVIDER=assemblyai (or leave unset) to use AssemblyAI Universal-Streaming (DEFAULT)
 // ============================================
 const USE_ASSEMBLYAI = process.env.STT_PROVIDER !== 'deepgram';
 console.log('[STT] Provider config:', process.env.STT_PROVIDER);
 console.log('[STT] USE_ASSEMBLYAI flag:', USE_ASSEMBLYAI);
-console.log(`[STT] Provider: ${USE_ASSEMBLYAI ? 'AssemblyAI Universal-Streaming' : 'Deepgram Nova-2'}`);
+console.log(`[STT] Provider: ${USE_ASSEMBLYAI ? 'AssemblyAI Universal-Streaming' : 'Deepgram Nova-3'}`);
 
 // ============================================
 // ASSEMBLYAI UNIVERSAL-STREAMING (RFC APPROVED)
@@ -2642,7 +2642,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     let pendingTranscript = '';
     let transcriptAccumulationTimer: NodeJS.Timeout | null = null;
-    const UTTERANCE_COMPLETE_DELAY_MS = 2500; // Wait 2.5s after last transcript before AI call
+    const UTTERANCE_COMPLETE_DELAY_MS = 4000; // Wait 4s after last transcript before AI call (Apr 7: was 2500ms, Nova-3 handles single words so we can be patient)
     
     // FIX (Dec 10, 2025): Track reconnection attempts to prevent infinite loops
     let reconnectAttempts = 0;
@@ -4550,7 +4550,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
           console.log("[Custom Voice] 🔌 Reconnected Deepgram connection closed");
           // onClose triggers reconnect logic via the main handler
         },
-        deepgramLanguage
+        deepgramLanguage,
+        state.ageGroup
       );
     }
 
@@ -6661,7 +6662,7 @@ HONESTY INSTRUCTIONS:
               // ============================================
               // DEEPGRAM NOVA-2 (ORIGINAL)
               // ============================================
-              console.log('[STT] 🚀 Using Deepgram Nova-2');
+              console.log('[STT] 🚀 Using Deepgram Nova-3');
               state.deepgramConnection = await startDeepgramStream(
               async (transcript: string, isFinal: boolean, detectedLanguage?: string) => {
                 // Log EVERYTHING for debugging - including detected language
@@ -6944,7 +6945,8 @@ HONESTY INSTRUCTIONS:
                   }, backoffDelay); // Exponential backoff
                 }
               },
-              deepgramLanguage // LANGUAGE: Pass selected language for speech recognition
+              deepgramLanguage, // LANGUAGE: Pass selected language for speech recognition
+              state.ageGroup   // GRADE BAND: Per-band endpointing patience
             );
             } // End of Deepgram else block
 
