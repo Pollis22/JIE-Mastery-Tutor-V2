@@ -4304,7 +4304,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
           if (state.phase !== 'FINALIZING') {
             setPhase(state, 'LISTENING', 'audio_playback_complete', ws);
             // FRESH STT PER LISTENING WINDOW: Open new connection for the next student turn.
-            if (USE_ASSEMBLYAI && !state.assemblyAIWs && !state.reconnectInFlight && state.sttReconnectFn) {
+            if (USE_ASSEMBLYAI && !state.reconnectInFlight && state.sttReconnectFn) {
               state.sttReconnectAttempts = 0;
               state.sttReconnectFn();
             }
@@ -6608,10 +6608,10 @@ HONESTY INSTRUCTIONS:
                   persistTranscript(state.sessionId, state.transcript).catch(() => {});
                 }
                 
-                if (!state.isSessionEnded && state.sessionId && state.sttReconnectEnabled && state.phase !== 'FINALIZING') {
+                if (!state.isSessionEnded && state.sessionId && state.sttReconnectEnabled && state.phase !== 'FINALIZING' && state.phase !== 'TUTOR_SPEAKING') {
                   sttReconnect();
                 } else {
-                  console.log(`[STT] reconnect_skipped reason=${state.isSessionEnded ? 'session_ended' : !state.sttReconnectEnabled ? 'reconnect_disabled' : 'finalizing'} phase=${state.phase}`);
+                  console.log(`[STT] reconnect_skipped reason=${state.isSessionEnded ? 'session_ended' : !state.sttReconnectEnabled ? 'reconnect_disabled' : state.phase === 'TUTOR_SPEAKING' ? 'tutor_speaking_teardown' : 'finalizing'} phase=${state.phase}`);
                 }
               };
               
@@ -7069,7 +7069,7 @@ HONESTY INSTRUCTIONS:
                   state.tutorAudioPlaying = false;
                   state.sttLastMessageAtMs = Date.now();
                   // FRESH STT PER LISTENING WINDOW: Open new connection after greeting.
-                  if (USE_ASSEMBLYAI && !state.assemblyAIWs && !state.reconnectInFlight && state.sttReconnectFn) {
+                  if (USE_ASSEMBLYAI && !state.reconnectInFlight && state.sttReconnectFn) {
                     state.sttReconnectAttempts = 0;
                     state.sttReconnectFn();
                   }
