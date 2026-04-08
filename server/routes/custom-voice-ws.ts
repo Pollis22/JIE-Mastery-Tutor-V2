@@ -4063,6 +4063,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
         state.llmInFlight = true;
         cancelBargeInCandidate(state, 'awaiting_response', ws);
         setPhase(state, 'AWAITING_RESPONSE', 'llm_request_start', ws);
+        markProgress(state); // Keep watchdog alive during LLM call
         console.log(`[LLM] request_start session=${state.sessionId || 'unknown'} turnId=${turnId} messageCount=${state.conversationHistory.length} phase=${state.phase}`);
         
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -4126,6 +4127,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
                 state.isTutorThinking = false;
                 state.llmInFlight = false;
                 setPhase(state, 'TUTOR_SPEAKING', 'first_sentence', ws);
+                markProgress(state); // Keep watchdog alive during TTS playback
                 state.sttLastUserSpeechSentAtMs = 0;
                 // FRESH STT PER LISTENING WINDOW: Close STT during tutor speech.
                 // Eliminates stale connection problem — no need to keep pipe warm.
@@ -4175,6 +4177,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
                   totalAudioBytes += audioBuffer.length;
 
                   console.log(`[Custom Voice] 🔊 Sentence ${sentenceCount} TTS: ${ttsMs}ms, ${audioBuffer.length} bytes`);
+                  markProgress(state); // Keep watchdog alive during multi-sentence TTS
 
                   if (state.ttsAbortController?.signal.aborted) {
                     console.log(JSON.stringify({ event: 'audio_dropped_stale_gen', session_id: state.sessionId, sentence: sentenceCount }));
@@ -4338,6 +4341,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
           state.tutorAudioPlaying = false;
           if (state.phase !== 'FINALIZING') {
             setPhase(state, 'LISTENING', 'audio_playback_complete', ws);
+            markProgress(state); // Keep watchdog alive after playback
             // FRESH STT PER LISTENING WINDOW: Open new connection for the next student turn.
             if (USE_ASSEMBLYAI && !state.reconnectInFlight && state.sttReconnectFn) {
               state.sttReconnectAttempts = 0;
