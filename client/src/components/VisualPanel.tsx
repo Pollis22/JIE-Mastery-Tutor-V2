@@ -3379,8 +3379,9 @@ export function VisualPanel({ visualTag, onDismiss }: VisualPanelProps) {
   };
 
   return (
-    <div className="mx-2 mb-3 border border-border rounded-xl bg-background shadow-md overflow-hidden animate-in slide-in-from-top-2 duration-300">
-      <div className="flex items-center justify-between px-3 py-2 bg-muted/60 border-b border-border">
+    <div className="w-[44%] flex-shrink-0 flex flex-col border-r border-border bg-background overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-3 py-2 bg-muted/60 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">📊 Visual Aid</span>
           <span className="text-sm font-bold text-foreground">{label}</span>
@@ -3389,7 +3390,8 @@ export function VisualPanel({ visualTag, onDismiss }: VisualPanelProps) {
           <X className="h-4 w-4" />
         </button>
       </div>
-      <div className="p-3 overflow-x-auto overflow-y-auto" style={{maxHeight:'420px'}}>{content}</div>
+      {/* Content — scrolls independently, fills full column height */}
+      <div className="flex-1 overflow-y-auto overflow-x-auto p-3">{content}</div>
     </div>
   );
 }
