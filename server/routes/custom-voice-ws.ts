@@ -2638,11 +2638,46 @@ export function setupCustomVoiceWebSocket(server: Server) {
     // FIX (Dec 10, 2025): Server-side transcript accumulation
     // Don't process each transcript separately - accumulate and wait for gap
     // This prevents cutting off students mid-sentence when they pause to think
-    // 2.5 seconds catches natural thinking pauses without feeling sluggish
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // THREE-SIGNAL TURN DETECTION (Apr 7, 2026)
+    // Based on ChatGPT architecture analysis:
+    // 1. is_final → accumulate text (segment locked, NOT turn end)
+    // 2. speech_final → student silent for endpointing ms (primary turn signal)
+    // 3. UtteranceEnd → definitive turn end (safety net, commit immediately)
+    // Interims with text → CANCEL all timers (student still talking)
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     let pendingTranscript = '';
     let transcriptAccumulationTimer: NodeJS.Timeout | null = null;
-    const UTTERANCE_COMPLETE_DELAY_MS = 4000; // Wait 4s after last transcript before AI call (Apr 7: was 2500ms, Nova-3 handles single words so we can be patient)
+    let speechFinalCommitTimer: NodeJS.Timeout | null = null;
+    let quickAnswerTimer: NodeJS.Timeout | null = null;
+    let lastSpeechActivityAt = 0; // Tracks any non-empty transcript (interim or final)
+    
+    // Timing constants for three-signal architecture
+    const QUICK_ANSWER_WORD_LIMIT = 2;      // Single/double word answers get fast path
+    const QUICK_ANSWER_DELAY_MS = 1200;      // 1.2s after short is_final with no more speech
+    const SPEECH_FINAL_COMMIT_MS = 500;      // 500ms after speech_final (3.5s silence already happened)
+    const UTTERANCE_COMPLETE_DELAY_MS = 4000; // Legacy fallback — only used for AssemblyAI path
+    
+    // Incomplete sentence heuristic — extends patience when thought is clearly unfinished
+    const INCOMPLETE_ENDINGS = /\b(to|the|a|an|and|or|but|in|on|at|for|with|of|as|it|is|that|was|were|been|be|are|am|will|would|could|should|can|may|might|have|has|had|do|does|did|not|if|when|while|than|then|so|because|since|about|into|from|by|up|just|also|very|really|like|um|uh)$/i;
+    
+    function cancelAllCommitTimers(reason: string) {
+      if (transcriptAccumulationTimer) {
+        clearTimeout(transcriptAccumulationTimer);
+        transcriptAccumulationTimer = null;
+      }
+      if (speechFinalCommitTimer) {
+        clearTimeout(speechFinalCommitTimer);
+        speechFinalCommitTimer = null;
+      }
+      if (quickAnswerTimer) {
+        clearTimeout(quickAnswerTimer);
+        quickAnswerTimer = null;
+      }
+      if (reason) {
+        console.log(`[TurnDetect] ⏰ Cancelled all timers: ${reason}`);
+      }
+    }
     
     // FIX (Dec 10, 2025): Track reconnection attempts to prevent infinite loops
     let reconnectAttempts = 0;
@@ -4430,10 +4465,10 @@ export function setupCustomVoiceWebSocket(server: Server) {
       const { getDeepgramLanguageCode } = await import("../services/deepgram-service");
       const deepgramLanguage = getDeepgramLanguageCode(state.language);
       
-      // Shared transcript handler - same logic as original connection with NOISE ROBUSTNESS
-      const handleTranscript = async (transcript: string, isFinal: boolean, detectedLanguage?: string) => {
+      // Shared transcript handler - THREE-SIGNAL architecture (reconnect path)
+      const handleTranscript = async (transcript: string, isFinal: boolean, speechFinal: boolean, detectedLanguage?: string) => {
         const spokenLang = detectedLanguage || state.language;
-        console.log(`[Deepgram] ${isFinal ? '✅ FINAL' : '⏳ interim'}: "${transcript}" (reconnected, lang=${spokenLang})`);
+        console.log(`[Deepgram] ${speechFinal ? '🔚 SPEECH_FINAL' : isFinal ? '✅ FINAL' : '⏳ interim'}: "${transcript}" (reconnected, lang=${spokenLang})`);
         
         if (!state.userId) return;
         
@@ -4480,61 +4515,92 @@ export function setupCustomVoiceWebSocket(server: Server) {
           }
         }
         
-        if (!isFinal) return;
-        // P0: Use shouldDropTranscript instead of raw char-length gate (reconnected STT path)
-        const reconnDropCheck = shouldDropTranscript(transcript, state);
-        if (reconnDropCheck.drop) {
-          console.log(`[GhostTurn] dropped reason=${reconnDropCheck.reason} text="${(transcript || '').substring(0, 30)}" len=${(transcript || '').trim().length} path=reconnected`);
-          return;
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+        // THREE-SIGNAL TURN DETECTION (reconnect path)
+        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+        // Any non-empty transcript = student active, cancel timers
+        if (transcript && transcript.trim().length > 0) {
+          lastSpeechActivityAt = now;
+          cancelAllCommitTimers('speech activity (reconnected)');
+          state.lastActivityTime = now;
+          state.inactivityWarningSent = false;
         }
-        
-        state.lastActivityTime = Date.now();
-        state.inactivityWarningSent = false;
-        
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        // FIX (Dec 10, 2025): DON'T drop transcripts when isProcessing!
-        // Previous bug: transcripts were silently dropped causing "tutor not responding"
-        // Now: ALWAYS accumulate transcripts, let the queue handle serialization
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        console.log(`[Pipeline] 1. Transcript received (reconnected): "${transcript}", isProcessing=${state.isProcessing}`);
-        
-        // Skip duplicates only (not based on isProcessing!)
-        if (state.lastTranscript === transcript) {
-          console.log("[Pipeline] ⏭️ Duplicate transcript, skipping");
-          return;
-        }
-        
-        state.lastTranscript = transcript;
-        if (spokenLang) state.detectedLanguage = spokenLang;
-        
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        // FIX (Dec 10, 2025): Server-side transcript ACCUMULATION (reconnected handler)
-        // ALWAYS accumulate - don't gate on isProcessing!
-        // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-        
-        pendingTranscript = (pendingTranscript + ' ' + transcript).trim();
-        console.log(`[Custom Voice] 📝 Accumulated transcript (reconnected): "${pendingTranscript}"`);
-        
-        if (transcriptAccumulationTimer) {
-          clearTimeout(transcriptAccumulationTimer);
-          transcriptAccumulationTimer = null;
-        }
-        
-        if (responseTimer) {
-          clearTimeout(responseTimer);
-          responseTimer = null;
-        }
-        
-        transcriptAccumulationTimer = setTimeout(() => {
-          if (pendingTranscript && !state.isSessionEnded) {
-            const completeUtterance = pendingTranscript;
-            console.log(`[Custom Voice] ✅ Utterance complete (reconnected): "${completeUtterance}"`);
-            pendingTranscript = '';
-            state.lastEndOfTurnTime = Date.now();
-            commitUserTurn(completeUtterance, 'eot');
+
+        // Interims: timers cancelled above, don't process for AI
+        if (!isFinal && !speechFinal) return;
+
+        // speech_final with empty text = student stopped
+        if (speechFinal && (!transcript || transcript.trim().length === 0)) {
+          if (pendingTranscript.trim().length > 0) {
+            const isIncomplete = INCOMPLETE_ENDINGS.test(pendingTranscript.trim());
+            if (!isIncomplete) {
+              speechFinalCommitTimer = setTimeout(() => {
+                if (pendingTranscript && !state.isSessionEnded) {
+                  const completeUtterance = pendingTranscript;
+                  console.log(`[TurnDetect] ✅ speech_final commit (reconnected): "${completeUtterance}"`);
+                  pendingTranscript = '';
+                  state.lastEndOfTurnTime = Date.now();
+                  commitUserTurn(completeUtterance, 'eot');
+                }
+                speechFinalCommitTimer = null;
+              }, SPEECH_FINAL_COMMIT_MS);
+            } else {
+              console.log(`[TurnDetect] ⚠️ Incomplete sentence (reconnected), waiting for UtteranceEnd`);
+            }
           }
-          transcriptAccumulationTimer = null;
-        }, UTTERANCE_COMPLETE_DELAY_MS);
+          return;
+        }
+
+        // is_final with text: validate, accumulate, quick-answer path
+        if (isFinal && transcript && transcript.trim().length > 0) {
+          const reconnDropCheck = shouldDropTranscript(transcript, state);
+          if (reconnDropCheck.drop) {
+            console.log(`[GhostTurn] dropped reason=${reconnDropCheck.reason} text="${(transcript || '').substring(0, 30)}" path=reconnected`);
+            return;
+          }
+
+          if (state.lastTranscript === transcript) return;
+          state.lastTranscript = transcript;
+          if (spokenLang) state.detectedLanguage = spokenLang;
+          
+          pendingTranscript = (pendingTranscript + ' ' + transcript).trim();
+          console.log(`[TurnDetect] 📝 Accumulated (reconnected): "${pendingTranscript}"`);
+
+          if (responseTimer) { clearTimeout(responseTimer); responseTimer = null; }
+
+          const wordCount = pendingTranscript.trim().split(/\s+/).length;
+          if (wordCount <= QUICK_ANSWER_WORD_LIMIT) {
+            quickAnswerTimer = setTimeout(() => {
+              if (pendingTranscript && !state.isSessionEnded) {
+                console.log(`[TurnDetect] ✅ Quick answer commit (reconnected): "${pendingTranscript}"`);
+                pendingTranscript = '';
+                state.lastEndOfTurnTime = Date.now();
+                commitUserTurn(pendingTranscript, 'eot');
+              }
+              quickAnswerTimer = null;
+            }, QUICK_ANSWER_DELAY_MS);
+          }
+
+          if (speechFinal) {
+            cancelAllCommitTimers('speech_final on is_final (reconnected)');
+            const isIncomplete = INCOMPLETE_ENDINGS.test(pendingTranscript.trim());
+            if (!isIncomplete) {
+              speechFinalCommitTimer = setTimeout(() => {
+                if (pendingTranscript && !state.isSessionEnded) {
+                  console.log(`[TurnDetect] ✅ speech_final commit (reconnected): "${pendingTranscript}"`);
+                  const completeUtterance = pendingTranscript;
+                  pendingTranscript = '';
+                  state.lastEndOfTurnTime = Date.now();
+                  commitUserTurn(completeUtterance, 'eot');
+                }
+                speechFinalCommitTimer = null;
+              }, SPEECH_FINAL_COMMIT_MS);
+            } else {
+              console.log(`[TurnDetect] ⚠️ Incomplete sentence (reconnected), extending patience`);
+            }
+          }
+        }
       };
       
       return await startDeepgramStream(
@@ -4548,10 +4614,21 @@ export function setupCustomVoiceWebSocket(server: Server) {
         },
         async () => {
           console.log("[Custom Voice] 🔌 Reconnected Deepgram connection closed");
-          // onClose triggers reconnect logic via the main handler
         },
         deepgramLanguage,
-        state.ageGroup
+        state.ageGroup,
+        // UtteranceEnd (reconnect path) — definitive turn end
+        () => {
+          console.log('[TurnDetect] 🔚 UtteranceEnd (reconnected)');
+          cancelAllCommitTimers('UtteranceEnd (reconnected)');
+          if (pendingTranscript.trim().length > 0 && !state.isSessionEnded) {
+            const completeUtterance = pendingTranscript;
+            console.log(`[TurnDetect] ✅ UtteranceEnd commit (reconnected): "${completeUtterance}"`);
+            pendingTranscript = '';
+            state.lastEndOfTurnTime = Date.now();
+            commitUserTurn(completeUtterance, 'eot');
+          }
+        }
       );
     }
 
@@ -6664,10 +6741,10 @@ HONESTY INSTRUCTIONS:
               // ============================================
               console.log('[STT] 🚀 Using Deepgram Nova-3');
               state.deepgramConnection = await startDeepgramStream(
-              async (transcript: string, isFinal: boolean, detectedLanguage?: string) => {
+              async (transcript: string, isFinal: boolean, speechFinal: boolean, detectedLanguage?: string) => {
                 // Log EVERYTHING for debugging - including detected language
                 const spokenLang = detectedLanguage || state.language;
-                console.log(`[Deepgram] ${isFinal ? '✅ FINAL' : '⏳ interim'}: "${transcript}" (isFinal=${isFinal}, detectedLang=${spokenLang})`);
+                console.log(`[Deepgram] ${speechFinal ? '🔚 SPEECH_FINAL' : isFinal ? '✅ FINAL' : '⏳ interim'}: "${transcript}" (isFinal=${isFinal}, speechFinal=${speechFinal}, detectedLang=${spokenLang})`);
                 
                 // CRITICAL FIX (Nov 14, 2025): Check userId FIRST to debug 401 auth issues
                 if (!state.userId) {
@@ -6683,16 +6760,12 @@ HONESTY INSTRUCTIONS:
                 }
                 
                 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                // NOISE ROBUSTNESS: For Deepgram, only act on final transcripts
-                // Interim transcripts are hypothesis-only
+                // NOISE ROBUSTNESS: Ghost turn prevention & validation
                 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                 const now = Date.now();
                 const timeSinceLastAudio = now - state.lastAudioSentAt;
                 const noiseFloor = getNoiseFloor(state.noiseFloorState);
                 
-                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                // GHOST TURN PREVENTION: Validate transcript
-                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                 const transcriptValidation = validateTranscript(transcript, 1);
                 if (!transcriptValidation.isValid && isFinal) {
                   logGhostTurnPrevention(state.sessionId || 'unknown', transcript, transcriptValidation);
@@ -6751,88 +6824,127 @@ HONESTY INSTRUCTIONS:
                   state.bargeInDucking = false;
                 }
 
-                // Only process for AI response on FINAL transcripts
-                if (!isFinal) {
-                  console.log("[Custom Voice] ⏭️ Skipping interim for AI processing (hypothesis only)");
+                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                // THREE-SIGNAL TURN DETECTION ARCHITECTURE
+                // Signal 1: Any non-empty transcript (interim or final) = student active
+                // Signal 2: is_final = accumulate text (segment locked)
+                // Signal 3: speech_final = student silent for endpointing ms
+                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+                // SIGNAL 0: Any transcript with text = student is ACTIVELY SPEAKING
+                // Cancel ALL running commit timers — student isn't done yet
+                if (transcript && transcript.trim().length > 0) {
+                  lastSpeechActivityAt = now;
+                  cancelAllCommitTimers('speech activity detected');
+                  
+                  // Inactivity reset
+                  state.lastActivityTime = now;
+                  state.inactivityWarningSent = false;
+                }
+
+                // INTERIMS: Don't process for AI, but they already cancelled timers above
+                if (!isFinal && !speechFinal) {
+                  console.log("[TurnDetect] ⏳ Interim — timers cancelled, waiting for more speech");
                   return;
                 }
 
-                // P0: Use shouldDropTranscript instead of raw char-length gate (Deepgram path)
-                const deepgramDropCheck = shouldDropTranscript(transcript, state);
-                if (deepgramDropCheck.drop) {
-                  console.log(`[GhostTurn] dropped reason=${deepgramDropCheck.reason} text="${(transcript || '').substring(0, 30)}" len=${(transcript || '').trim().length}`);
-                  return;
-                }
-
-                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                // INACTIVITY: Reset activity timer - User is speaking!
-                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                state.lastActivityTime = Date.now();
-                state.inactivityWarningSent = false; // Reset warning flag
-                console.log('[Inactivity] 🎤 User activity detected, timer reset');
-                
-                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                // FIX (Dec 10, 2025): DON'T drop transcripts when isProcessing!
-                // Previous bug: transcripts were silently dropped causing "tutor not responding"
-                // Now: ALWAYS accumulate transcripts, let the queue handle serialization
-                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                console.log(`[Pipeline] 1. Transcript received: "${transcript}", isProcessing=${state.isProcessing}`);
-                
-                // Skip duplicates only (not based on isProcessing!)
-                if (state.lastTranscript === transcript) {
-                  console.log("[Pipeline] ⏭️ Duplicate transcript, skipping");
-                  return;
-                }
-                
-                state.lastTranscript = transcript;
-                
-                // LANGUAGE AUTO-DETECT: Update detected language for AI response
-                if (spokenLang && spokenLang !== state.language) {
-                  console.log(`[Custom Voice] 🌍 Language switch detected: ${state.language} → ${spokenLang}`);
-                  state.detectedLanguage = spokenLang;
-                } else if (spokenLang) {
-                  state.detectedLanguage = spokenLang;
-                }
-                
-                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                // FIX (Dec 10, 2025): Server-side transcript ACCUMULATION
-                // Don't process each transcript separately - accumulate them!
-                // This fixes students being cut off when they pause mid-sentence
-                // Example: "To get my answer," [pause] "apple" → "To get my answer, apple"
-                // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                
-                // Accumulate this transcript with previous pending text
-                pendingTranscript = (pendingTranscript + ' ' + transcript).trim();
-                console.log(`[Custom Voice] 📝 Accumulated transcript: "${pendingTranscript}"`);
-                
-                // Clear any existing accumulation timer (we got new speech!)
-                if (transcriptAccumulationTimer) {
-                  clearTimeout(transcriptAccumulationTimer);
-                  transcriptAccumulationTimer = null;
-                  console.log(`[Custom Voice] ⏰ Reset accumulation timer (more speech incoming)`);
-                }
-                
-                // Also clear the old response timer if it exists
-                if (responseTimer) {
-                  clearTimeout(responseTimer);
-                  responseTimer = null;
-                }
-                
-                // Wait 1.5 seconds after the LAST transcript before sending to AI
-                // This gives students time to complete their thought
-                transcriptAccumulationTimer = setTimeout(() => {
-                  if (pendingTranscript && !state.isSessionEnded) {
-                    const completeUtterance = pendingTranscript;
-                    console.log(`[Custom Voice] ✅ Utterance complete after ${UTTERANCE_COMPLETE_DELAY_MS}ms silence: "${completeUtterance}"`);
-                    
-                    // Clear pending transcript
-                    pendingTranscript = '';
-                    
-                    state.lastEndOfTurnTime = Date.now();
-                    commitUserTurn(completeUtterance, 'eot');
+                // SIGNAL 2: speech_final with empty text = student stopped speaking
+                // (The endpointing silence already happened — commit quickly)
+                if (speechFinal && (!transcript || transcript.trim().length === 0)) {
+                  if (pendingTranscript.trim().length > 0) {
+                    console.log(`[TurnDetect] 🔚 speech_final (empty) — committing pending: "${pendingTranscript}"`);
+                    const isIncomplete = INCOMPLETE_ENDINGS.test(pendingTranscript.trim());
+                    if (isIncomplete) {
+                      console.log(`[TurnDetect] ⚠️ Incomplete sentence detected, extending patience — waiting for UtteranceEnd`);
+                      // Don't commit yet — wait for UtteranceEnd as safety net
+                    } else {
+                      speechFinalCommitTimer = setTimeout(() => {
+                        if (pendingTranscript && !state.isSessionEnded) {
+                          const completeUtterance = pendingTranscript;
+                          console.log(`[TurnDetect] ✅ speech_final commit (${SPEECH_FINAL_COMMIT_MS}ms): "${completeUtterance}"`);
+                          pendingTranscript = '';
+                          state.lastEndOfTurnTime = Date.now();
+                          commitUserTurn(completeUtterance, 'eot');
+                        }
+                        speechFinalCommitTimer = null;
+                      }, SPEECH_FINAL_COMMIT_MS);
+                    }
                   }
-                  transcriptAccumulationTimer = null;
-                }, UTTERANCE_COMPLETE_DELAY_MS);
+                  return;
+                }
+
+                // is_final validation (drop checks, duplicate detection)
+                if (isFinal && transcript && transcript.trim().length > 0) {
+                  const deepgramDropCheck = shouldDropTranscript(transcript, state);
+                  if (deepgramDropCheck.drop) {
+                    console.log(`[GhostTurn] dropped reason=${deepgramDropCheck.reason} text="${(transcript || '').substring(0, 30)}" len=${(transcript || '').trim().length}`);
+                    return;
+                  }
+
+                  if (state.lastTranscript === transcript) {
+                    console.log("[Pipeline] ⏭️ Duplicate transcript, skipping");
+                    return;
+                  }
+                  state.lastTranscript = transcript;
+
+                  // Language auto-detect
+                  if (spokenLang && spokenLang !== state.language) {
+                    console.log(`[Custom Voice] 🌍 Language switch detected: ${state.language} → ${spokenLang}`);
+                    state.detectedLanguage = spokenLang;
+                  } else if (spokenLang) {
+                    state.detectedLanguage = spokenLang;
+                  }
+
+                  // SIGNAL 2: is_final = accumulate text into pending buffer
+                  pendingTranscript = (pendingTranscript + ' ' + transcript).trim();
+                  console.log(`[TurnDetect] 📝 Accumulated: "${pendingTranscript}"`);
+
+                  // Also clear old response timer
+                  if (responseTimer) {
+                    clearTimeout(responseTimer);
+                    responseTimer = null;
+                  }
+
+                  // QUICK ANSWER PATH: ≤2 words get a fast commit timer
+                  const wordCount = pendingTranscript.trim().split(/\s+/).length;
+                  if (wordCount <= QUICK_ANSWER_WORD_LIMIT) {
+                    console.log(`[TurnDetect] ⚡ Quick answer path (${wordCount} words) — ${QUICK_ANSWER_DELAY_MS}ms timer`);
+                    quickAnswerTimer = setTimeout(() => {
+                      if (pendingTranscript && !state.isSessionEnded) {
+                        const completeUtterance = pendingTranscript;
+                        console.log(`[TurnDetect] ✅ Quick answer commit: "${completeUtterance}"`);
+                        pendingTranscript = '';
+                        state.lastEndOfTurnTime = Date.now();
+                        commitUserTurn(completeUtterance, 'eot');
+                      }
+                      quickAnswerTimer = null;
+                    }, QUICK_ANSWER_DELAY_MS);
+                  } else {
+                    // Multi-word: do NOT start any timer — wait for speech_final
+                    console.log(`[TurnDetect] 📝 Multi-word (${wordCount}) — waiting for speech_final`);
+                  }
+
+                  // If this is_final ALSO has speech_final, process the turn end
+                  if (speechFinal) {
+                    cancelAllCommitTimers('speech_final on is_final');
+                    const isIncomplete = INCOMPLETE_ENDINGS.test(pendingTranscript.trim());
+                    if (isIncomplete) {
+                      console.log(`[TurnDetect] ⚠️ speech_final but incomplete sentence "${pendingTranscript}" — extending patience`);
+                    } else {
+                      console.log(`[TurnDetect] 🔚 speech_final — starting ${SPEECH_FINAL_COMMIT_MS}ms commit timer`);
+                      speechFinalCommitTimer = setTimeout(() => {
+                        if (pendingTranscript && !state.isSessionEnded) {
+                          const completeUtterance = pendingTranscript;
+                          console.log(`[TurnDetect] ✅ speech_final commit: "${completeUtterance}"`);
+                          pendingTranscript = '';
+                          state.lastEndOfTurnTime = Date.now();
+                          commitUserTurn(completeUtterance, 'eot');
+                        }
+                        speechFinalCommitTimer = null;
+                      }, SPEECH_FINAL_COMMIT_MS);
+                    }
+                  }
+                }
               },
               async (error: Error) => {
                 console.error("[Custom Voice] ❌ Deepgram error:", error);
@@ -6946,7 +7058,19 @@ HONESTY INSTRUCTIONS:
                 }
               },
               deepgramLanguage, // LANGUAGE: Pass selected language for speech recognition
-              state.ageGroup   // GRADE BAND: Per-band endpointing patience
+              state.ageGroup,  // GRADE BAND: Per-band endpointing patience
+              // UTTERANCE END: Definitive turn-end signal — commit immediately
+              () => {
+                console.log('[TurnDetect] 🔚 UtteranceEnd — definitive turn end');
+                cancelAllCommitTimers('UtteranceEnd');
+                if (pendingTranscript.trim().length > 0 && !state.isSessionEnded) {
+                  const completeUtterance = pendingTranscript;
+                  console.log(`[TurnDetect] ✅ UtteranceEnd commit: "${completeUtterance}"`);
+                  pendingTranscript = '';
+                  state.lastEndOfTurnTime = Date.now();
+                  commitUserTurn(completeUtterance, 'eot');
+                }
+              }
             );
             } // End of Deepgram else block
 
