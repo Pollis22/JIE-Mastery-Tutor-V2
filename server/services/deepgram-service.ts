@@ -83,18 +83,53 @@ export function getDeepgramLanguageCode(lang: string): string {
   return mapped;
 }
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// DEEPGRAM ENDPOINTING PROFILES PER GRADE BAND
+// These control when speech_final fires (silence after speech).
+// Nova-3 handles single words natively, so we tune for patience.
+// ChatGPT analysis: once speech_final is properly wired, these
+// values control the ACTUAL turn detection, not is_final.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const DEEPGRAM_ENDPOINTING: Record<string, { endpointing: number; utterance_end_ms: number }> = {
+  'K-2':           { endpointing: 4000, utterance_end_ms: 6000 },  // Young kids pause a lot between words
+  'Elementary':    { endpointing: 3500, utterance_end_ms: 5000 },  // Moderate patience
+  'Middle School': { endpointing: 3000, utterance_end_ms: 4500 },  // Standard
+  'High School':   { endpointing: 2500, utterance_end_ms: 4000 },  // Teens speak more fluidly
+  'College/Adult': { endpointing: 2500, utterance_end_ms: 4000 },  // Fastest natural pace
+};
+
+const DEFAULT_ENDPOINTING = { endpointing: 2500, utterance_end_ms: 4000 };
+
+function getDeepgramEndpointing(ageGroup?: string) {
+  if (!ageGroup) return DEFAULT_ENDPOINTING;
+  const profile = DEEPGRAM_ENDPOINTING[ageGroup];
+  if (profile) return profile;
+  // Fuzzy match for variations
+  const lower = ageGroup.toLowerCase();
+  if (lower.includes('k-2') || lower.includes('k2')) return DEEPGRAM_ENDPOINTING['K-2'];
+  if (lower.includes('elem')) return DEEPGRAM_ENDPOINTING['Elementary'];
+  if (lower.includes('middle')) return DEEPGRAM_ENDPOINTING['Middle School'];
+  if (lower.includes('high')) return DEEPGRAM_ENDPOINTING['High School'];
+  if (lower.includes('college') || lower.includes('adult')) return DEEPGRAM_ENDPOINTING['College/Adult'];
+  return DEFAULT_ENDPOINTING;
+}
+
 export async function startDeepgramStream(
-  onTranscript: (text: string, isFinal: boolean, detectedLanguage?: string) => void,
+  onTranscript: (text: string, isFinal: boolean, speechFinal: boolean, detectedLanguage?: string) => void,
   onError: (error: Error) => void,
   onClose?: () => void,
-  language: string = "en-US"
+  language: string = "en-US",
+  ageGroup?: string,
+  onUtteranceEnd?: () => void
 ): Promise<DeepgramConnection> {
   
   // Use 'multi' for seamless language switching, fall back to specific language if needed
   const useMultiLanguage = true; // Enable auto-detection for all sessions
   const effectiveLanguage = useMultiLanguage ? 'multi' : language;
+  const timing = getDeepgramEndpointing(ageGroup);
   
-  console.log("[Deepgram] 🎤 Starting stream with language:", effectiveLanguage, "(selected:", language, ")");
+  console.log("[Deepgram] 🎤 Starting stream with language:", effectiveLanguage, "(selected:", language, ") ageGroup:", ageGroup || 'default');
+  console.log("[Deepgram] ⏱️ Endpointing:", timing.endpointing, "ms, Utterance end:", timing.utterance_end_ms, "ms");
   
   try {
     const deepgramClient = getDeepgramClient();
@@ -102,7 +137,7 @@ export async function startDeepgramStream(
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // MODEL & LANGUAGE SETTINGS - MULTI-LANGUAGE AUTO-DETECTION
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    model: "nova-2",            // Best accuracy model with multi-language support
+    model: "nova-3",            // Nova-3: best accuracy, single-word detection, 45+ languages
     language: effectiveLanguage, // 'multi' enables seamless language switching
     smart_format: true,         // Auto-format numbers, dates, etc.
     interim_results: true,      // Get real-time partial transcripts
@@ -123,8 +158,8 @@ export async function startDeepgramStream(
     // Students need 2-3+ seconds to formulate complex thoughts without interruption
     // Previous settings (2000/2500ms) still triggered AI mid-sentence during thinking pauses
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    endpointing: 2500,          // 2.5s for end-of-speech detection (Dec 11, 2025: was 2000ms, before that 1200ms)
-    utterance_end_ms: 3000,     // 3s total wait before finalizing utterance (was 2500ms)
+    endpointing: timing.endpointing,
+    utterance_end_ms: timing.utterance_end_ms,
     vad_events: true,           // Enable voice activity detection events
     vad_threshold: 0.15,        // VERY LOW threshold for quiet speech detection (was 0.3)
 
@@ -187,22 +222,40 @@ export async function startDeepgramStream(
       
       const transcript = data.channel?.alternatives?.[0]?.transcript;
       const isFinal = data.is_final;
+      const speechFinal = (data as any).speech_final || false;
       
       console.log('[Deepgram] 📝 Parsed transcript data:', {
         text: transcript,
         textLength: transcript?.length || 0,
         isFinal: isFinal,
+        speechFinal: speechFinal,
         hasText: !!transcript,
         isEmpty: !transcript || transcript.trim().length === 0,
         detectedLanguage: detectedLanguage
       });
       
       if (transcript && transcript.length > 0) {
-        console.log(`[Deepgram] ✅ VALID TRANSCRIPT: ${isFinal ? '📝 FINAL' : '⏳ interim'}: "${transcript}" [lang: ${detectedLanguage}]`);
-        onTranscript(transcript, isFinal, detectedLanguage);
+        console.log(`[Deepgram] ✅ VALID TRANSCRIPT: ${speechFinal ? '🔚 SPEECH_FINAL' : isFinal ? '📝 FINAL' : '⏳ interim'}: "${transcript}" [lang: ${detectedLanguage}]`);
+        onTranscript(transcript, isFinal, speechFinal, detectedLanguage);
       } else {
-        console.log('[Deepgram] ⚠️ Empty or null transcript, skipping');
+        // Still notify for speech_final on empty transcripts (silence detected)
+        if (speechFinal) {
+          console.log('[Deepgram] 🔚 speech_final with empty transcript — signaling turn end');
+          onTranscript('', false, true, detectedLanguage);
+        } else {
+          console.log('[Deepgram] ⚠️ Empty or null transcript, skipping');
+        }
       }
+    });
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // UTTERANCE END: Definitive "student is done" signal
+    // Fires after utterance_end_ms of no words detected
+    // This is the safety net — commit immediately
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    connection.on(LiveTranscriptionEvents.UtteranceEnd, () => {
+      console.log('[Deepgram] 🔚 UtteranceEnd event — definitive turn end');
+      if (onUtteranceEnd) onUtteranceEnd();
     });
 
     connection.on(LiveTranscriptionEvents.Error, (error) => {
