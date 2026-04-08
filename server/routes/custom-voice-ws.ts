@@ -2875,17 +2875,26 @@ export function setupCustomVoiceWebSocket(server: Server) {
 
     // ============================================
     // NO-PROGRESS WATCHDOG: Detect stalled sessions and auto-recover STT
-    // Runs every 3s, triggers after 15s of no progress, max 2 recoveries per 60s
+    // Runs every 3s, triggers after 15s (AssemblyAI) or 45s (Deepgram) of no progress
+    // Deepgram has its own health monitoring, so watchdog is less aggressive
     // ============================================
+    const WATCHDOG_THRESHOLD = USE_ASSEMBLYAI ? WATCHDOG_STALL_THRESHOLD_MS : 45_000; // 45s for Deepgram (students think!)
+    const WATCHDOG_MAX_RECOVERIES = USE_ASSEMBLYAI ? WATCHDOG_MAX_RECOVERIES_PER_WINDOW : 3;
+    
     state.watchdogTimerId = setInterval(() => {
       if (state.isSessionEnded || state.sessionFinalizing || state.watchdogDisabled || state.isPendingReconnect) {
+        return;
+      }
+      
+      // Skip watchdog during active tutor phases — the system IS making progress
+      if (state.phase === 'TUTOR_SPEAKING' || state.phase === 'AWAITING_RESPONSE' || state.phase === 'TURN_COMMITTED') {
         return;
       }
       
       const now = Date.now();
       const sinceProgress = now - state.lastProgressAt;
       
-      if (sinceProgress < WATCHDOG_STALL_THRESHOLD_MS) {
+      if (sinceProgress < WATCHDOG_THRESHOLD) {
         return;
       }
       
@@ -2893,10 +2902,10 @@ export function setupCustomVoiceWebSocket(server: Server) {
         ? state.watchdogRecoveries
         : 0;
       
-      console.log(`[WATCHDOG_STALL_DETECTED] sessionId=${state.sessionId} userId=${state.userId} studentId=${state.studentId || 'n/a'} sttProvider=${USE_ASSEMBLYAI ? 'assemblyai' : 'deepgram'} reconnectCount=${state.reconnectCount} secondsSinceProgress=${Math.round(sinceProgress / 1000)} recoveries=${recoveriesInWindow}/${WATCHDOG_MAX_RECOVERIES_PER_WINDOW}`);
+      console.log(`[WATCHDOG_STALL_DETECTED] sessionId=${state.sessionId} userId=${state.userId} studentId=${state.studentId || 'n/a'} sttProvider=${USE_ASSEMBLYAI ? 'assemblyai' : 'deepgram'} reconnectCount=${state.reconnectCount} secondsSinceProgress=${Math.round(sinceProgress / 1000)} recoveries=${recoveriesInWindow}/${WATCHDOG_MAX_RECOVERIES} phase=${state.phase}`);
       
-      if (recoveriesInWindow >= WATCHDOG_MAX_RECOVERIES_PER_WINDOW) {
-        console.error(`[WATCHDOG] ❌ Max recoveries (${WATCHDOG_MAX_RECOVERIES_PER_WINDOW}) exhausted within ${WATCHDOG_RECOVERY_WINDOW_MS / 1000}s - ending session`);
+      if (recoveriesInWindow >= WATCHDOG_MAX_RECOVERIES) {
+        console.error(`[WATCHDOG] ❌ Max recoveries (${WATCHDOG_MAX_RECOVERIES}) exhausted within ${WATCHDOG_RECOVERY_WINDOW_MS / 1000}s - ending session`);
         state.watchdogDisabled = true;
         sendWsEvent(ws, 'voice_status', { status: 'audio_reconnect_failed' });
         ws.send(JSON.stringify({
@@ -2912,9 +2921,18 @@ export function setupCustomVoiceWebSocket(server: Server) {
       
       sendWsEvent(ws, 'voice_status', { status: 'reconnecting_audio' });
       
-      if (state.assemblyAIWs) {
-        try { state.assemblyAIWs.close(); } catch (_e) {}
-        state.assemblyAIWs = null;
+      // Provider-specific recovery
+      if (USE_ASSEMBLYAI) {
+        if (state.assemblyAIWs) {
+          try { state.assemblyAIWs.close(); } catch (_e) {}
+          state.assemblyAIWs = null;
+        }
+      } else {
+        // Deepgram: close and reconnect
+        if (state.deepgramConnection) {
+          try { state.deepgramConnection.close(); } catch (_e) {}
+          state.deepgramConnection = null;
+        }
       }
       state.sttConnected = false;
       
@@ -2926,7 +2944,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
       state.lastWatchdogRecoveryAt = now;
       markProgress(state);
       
-      console.log(`[WATCHDOG] 🔄 Triggering STT reconnect (recovery ${state.watchdogRecoveries}/${WATCHDOG_MAX_RECOVERIES_PER_WINDOW})`);
+      console.log(`[WATCHDOG] 🔄 Triggering STT reconnect (recovery ${state.watchdogRecoveries}/${WATCHDOG_MAX_RECOVERIES})`);
     }, WATCHDOG_CHECK_INTERVAL_MS);
 
     // INACTIVITY: Check for user inactivity every 30 seconds
