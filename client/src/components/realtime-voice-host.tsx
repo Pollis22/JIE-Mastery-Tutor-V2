@@ -1006,15 +1006,18 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
         </div>
         {/* End Top Controls Section */}
 
-        {/* Scrollable Transcript Area - Takes remaining space */}
-        <div className={`${customVoice.isConnected ? 'flex-1 min-h-0 overflow-y-auto px-2' : ''}`}>
+        {/* Main content area — side-by-side when visual is active, full-width transcript when not */}
+        <div className={`${customVoice.isConnected ? 'flex-1 min-h-0 flex overflow-hidden' : ''}`}>
 
-          {/* Visual Aid Panel - rendered unconditionally so it survives brief connection hiccups.
-              VisualPanel internally latches the tag and returns null when nothing to show. */}
+          {/* Visual Aid Panel — left column, static, scrolls independently.
+              Returns null when no visual, transcript expands to fill full width. */}
           <VisualPanel
             visualTag={customVoice.currentVisual as VisualTag | null}
             onDismiss={() => customVoice.setCurrentVisual(null)}
           />
+
+          {/* Transcript — takes remaining space, always scrollable */}
+          <div className={`${customVoice.isConnected ? 'flex-1 min-h-0 overflow-y-auto px-2' : 'w-full'}`}>
           <RealtimeVoiceTranscript
             messages={customVoice.transcript.map(t => ({
               role: t.speaker === 'student' ? 'user' as const : 'assistant' as const,
@@ -1031,7 +1034,8 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
             studentMicEnabled={studentMicEnabled}
             isHearingStudent={customVoice.micStatus === 'hearing_you'}
           />
-        </div>
+          </div>{/* end transcript scroll wrapper */}
+        </div>{/* end side-by-side content area */}
       
       {/* Sticky Chat Input + End Session - Always visible at bottom */}
       {customVoice.isConnected && (
