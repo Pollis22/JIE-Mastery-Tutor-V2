@@ -2893,7 +2893,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
         ? state.watchdogRecoveries
         : 0;
       
-      console.log(`[WATCHDOG_STALL_DETECTED] sessionId=${state.sessionId} userId=${state.userId} studentId=${state.studentId || 'n/a'} sttProvider=assemblyai reconnectCount=${state.reconnectCount} secondsSinceProgress=${Math.round(sinceProgress / 1000)} recoveries=${recoveriesInWindow}/${WATCHDOG_MAX_RECOVERIES_PER_WINDOW}`);
+      console.log(`[WATCHDOG_STALL_DETECTED] sessionId=${state.sessionId} userId=${state.userId} studentId=${state.studentId || 'n/a'} sttProvider=${USE_ASSEMBLYAI ? 'assemblyai' : 'deepgram'} reconnectCount=${state.reconnectCount} secondsSinceProgress=${Math.round(sinceProgress / 1000)} recoveries=${recoveriesInWindow}/${WATCHDOG_MAX_RECOVERIES_PER_WINDOW}`);
       
       if (recoveriesInWindow >= WATCHDOG_MAX_RECOVERIES_PER_WINDOW) {
         console.error(`[WATCHDOG] ❌ Max recoveries (${WATCHDOG_MAX_RECOVERIES_PER_WINDOW}) exhausted within ${WATCHDOG_RECOVERY_WINDOW_MS / 1000}s - ending session`);
@@ -4523,6 +4523,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
         if (transcript && transcript.trim().length > 0) {
           lastSpeechActivityAt = now;
           cancelAllCommitTimers('speech activity (reconnected)');
+          markProgress(state); // Keep watchdog alive
           state.lastActivityTime = now;
           state.inactivityWarningSent = false;
         }
@@ -6836,6 +6837,7 @@ HONESTY INSTRUCTIONS:
                 if (transcript && transcript.trim().length > 0) {
                   lastSpeechActivityAt = now;
                   cancelAllCommitTimers('speech activity detected');
+                  markProgress(state); // Keep watchdog alive
                   
                   // Inactivity reset
                   state.lastActivityTime = now;
