@@ -5293,6 +5293,145 @@ RULES:
 ✅ Only use ONE visual per response
 ❌ Never mention the tag or the visual system to the student — just let it appear
 ❌ Never invent tag names — only use the exact tags listed above
+
+NEW VISUALS — APRIL 2026 BATCH (use these for richer diagrams):
+
+MATH — K-2:
+  [VISUAL: new_counting_bears_sorting]    — Counting bears sorted by color into bowls
+  [VISUAL: new_ten_frame_empty]           — Empty 2×5 ten frame grid
+  [VISUAL: new_ten_frame_7]               — Ten frame filled with 7 dots
+  [VISUAL: new_part_part_whole]           — Part-part-whole mat
+  [VISUAL: new_ordinal_numbers_parade]    — Animals in line: 1st, 2nd, 3rd, 4th, 5th
+  [VISUAL: new_clock_analog_blank]        — Analog clock face (no hands)
+  [VISUAL: new_clock_hour_only]           — Clock showing 3 o'clock
+  [VISUAL: new_coin_chart]                — Penny, nickel, dime, quarter identification
+  [VISUAL: new_greater_less_alligator]    — Alligator mouth showing greater/less than
+
+MATH — ELEMENTARY:
+  [VISUAL: new_skip_count_2s]             — Number line 0–20, skip counting by 2s
+  [VISUAL: new_skip_count_5s]             — Number line 0–50, skip counting by 5s
+  [VISUAL: new_multiplication_array_3x4]  — Dot array showing 3×4 multiplication
+  [VISUAL: new_area_model_mult]           — Area model / box method for multiplication
+  [VISUAL: new_long_division_steps]       — Divide, multiply, subtract, bring down steps
+  [VISUAL: new_fraction_wall]             — Fraction wall: halves through tenths
+  [VISUAL: new_improper_to_mixed]         — Converting improper fractions to mixed numbers
+  [VISUAL: new_decimal_place_value]       — Place value chart: hundreds through thousandths
+
+MATH — MIDDLE SCHOOL:
+  [VISUAL: new_coordinate_plane_blank]    — Blank coordinate plane, all 4 quadrants, -10 to 10
+  [VISUAL: new_slope_rise_run]            — Rise over run diagram on a coordinate grid
+  [VISUAL: new_angle_types]               — Acute, right, obtuse, straight, reflex angles
+  [VISUAL: new_parallel_lines_angles]     — Parallel lines cut by transversal, angle pairs
+  [VISUAL: new_triangle_types_sides]      — Equilateral, isosceles, scalene triangles
+  [VISUAL: new_triangle_types_angles]     — Acute, right, obtuse triangles
+  [VISUAL: new_pythagorean_visual]        — a²+b²=c² with squares on each side
+  [VISUAL: new_pemdas_diagram]            — PEMDAS order of operations infographic
+  [VISUAL: new_integer_number_line]       — Number line -15 to 15, negatives red positives blue
+  [VISUAL: new_box_plot]                  — Box and whisker plot: min, Q1, median, Q3, max
+  [VISUAL: new_stem_leaf_plot]            — Back-to-back stem and leaf plot
+  [VISUAL: new_volume_3d_formulas]        — Volume formulas for cube, prism, cylinder, cone, sphere
+  [VISUAL: new_surface_area_nets]         — 3D shapes unfolded as nets
+  [VISUAL: new_probability_scale]         — Probability scale: impossible to certain
+  [VISUAL: new_probability_tree]          — Tree diagram for coin flip probability
+  [VISUAL: new_transformations_grid]      — Translation, reflection, rotation, dilation examples
+  [VISUAL: new_absolute_value_line]       — Absolute value as distance from zero
+  [VISUAL: new_ratio_proportion]          — Tape diagram showing ratio and proportion
+  [VISUAL: new_percent_circle]            — Percent as part of a whole circle
+
+MATH — HIGH SCHOOL / COLLEGE:
+  [VISUAL: new_scientific_notation]       — Scientific notation conversion steps
+  [VISUAL: new_parabola_features]         — Parabola: vertex, axis of symmetry, roots, y-intercept
+  [VISUAL: new_completing_square]         — Completing the square algebraic + geometric visual
+  [VISUAL: new_unit_circle]               — Full unit circle: all 16 angles, sin/cos values
+  [VISUAL: new_soh_cah_toa]               — SOH-CAH-TOA right triangle diagram
+  [VISUAL: new_log_exp_graph]             — Logarithm and exponential graphs as inverses
+  [VISUAL: new_derivative_power_rule]     — Power rule for derivatives step-by-step
+  [VISUAL: new_riemann_sum]               — Left and right Riemann sum approximation
+  [VISUAL: new_limit_visual]              — Limit approaching a point from left and right
+  [VISUAL: new_matrix_mult]               — 2×2 matrix multiplication with dot product arrows
+  [VISUAL: new_normal_distribution]       — Bell curve with standard deviations labeled
+
+SCIENCE — BIOLOGY:
+  [VISUAL: new_animal_cell]               — Animal cell with all organelles labeled
+  [VISUAL: new_plant_cell]                — Plant cell with cell wall, chloroplast, vacuole
+  [VISUAL: new_cell_membrane]             — Fluid mosaic model of cell membrane
+  [VISUAL: new_mitosis_stages]            — All stages of mitosis in circular diagram
+  [VISUAL: new_meiosis_vs_mitosis]        — Side-by-side comparison of meiosis and mitosis
+  [VISUAL: new_dna_structure]             — DNA double helix with base pairs labeled
+  [VISUAL: new_protein_synthesis]         — Transcription and translation diagram
+  [VISUAL: new_food_web_forest]           — Temperate forest food web with energy arrows
+  [VISUAL: new_nitrogen_cycle]            — Nitrogen cycle: fixation, nitrification, denitrification
+  [VISUAL: new_carbon_cycle]              — Carbon cycle: atmosphere, ocean, land, fossil fuels
+  [VISUAL: new_darwin_finches]            — Darwin's finches with different beak adaptations
+  [VISUAL: new_photosynthesis_diagram]    — Photosynthesis: sunlight + water + CO2 → glucose + O2
+
+SCIENCE — CHEMISTRY & PHYSICS:
+  [VISUAL: new_bohr_model_oxygen]         — Bohr model of oxygen atom
+  [VISUAL: new_periodic_table_color]      — Color-coded periodic table by element category
+  [VISUAL: new_ionic_covalent_bond]       — Ionic vs covalent bonding comparison
+  [VISUAL: new_balance_equation]          — Balancing chemical equations step-by-step
+  [VISUAL: new_states_of_matter]          — Solid, liquid, gas, plasma particle models
+  [VISUAL: new_heating_curve]             — Temperature vs heat added with phase plateaus
+  [VISUAL: new_newtons_laws]              — Newton's 1st, 2nd, 3rd laws illustrated
+  [VISUAL: new_wave_properties]           — Transverse wave: crest, trough, wavelength, amplitude
+  [VISUAL: new_em_spectrum]               — Electromagnetic spectrum: radio to gamma rays
+  [VISUAL: new_circuit_series_parallel]   — Series vs parallel circuit diagrams
+
+SCIENCE — EARTH & SPACE:
+  [VISUAL: new_rock_cycle]                — Igneous, sedimentary, metamorphic rock cycle
+  [VISUAL: new_earth_layers]              — Earth layers: crust, mantle, outer/inner core
+  [VISUAL: new_tectonic_plates]           — World tectonic plates with boundary types
+  [VISUAL: new_solar_system]              — All 8 planets in order with size comparison
+  [VISUAL: new_moon_phases]               — All 8 moon phases in circular diagram
+
+SCIENCE — HUMAN BODY:
+  [VISUAL: new_human_skeleton]            — Labeled human skeleton diagram
+  [VISUAL: new_digestive_system]          — Human digestive system from mouth to intestine
+  [VISUAL: new_respiratory_system]        — Lungs, trachea, bronchi, alveoli, diaphragm
+  [VISUAL: new_neuron_structure]          — Neuron: dendrites, axon, myelin sheath, terminals
+
+ELA — READING & WRITING:
+  [VISUAL: new_story_elements]            — Characters, setting, plot, conflict, resolution
+  [VISUAL: new_plot_mountain]             — Story arc: exposition → climax → resolution
+  [VISUAL: new_figurative_language]       — Simile, metaphor, personification, hyperbole, alliteration, onomatopoeia
+  [VISUAL: new_text_structures]           — 5 nonfiction text structures with signal words
+  [VISUAL: new_paragraph_structure]       — Topic sentence, supporting details, conclusion
+  [VISUAL: new_main_idea_details]         — Main idea with 3 supporting detail boxes
+  [VISUAL: new_parts_of_speech_wheel]     — All 8 parts of speech in color-coded wheel
+  [VISUAL: new_point_of_view]             — First, second, third person POV comparison
+  [VISUAL: new_venn_diagram_compare]      — Venn diagram for compare and contrast
+  [VISUAL: new_authors_purpose_pie]       — Author's purpose: Persuade, Inform, Entertain
+  [VISUAL: new_argument_structure]        — Claim, warrant, evidence, counterclaim, rebuttal
+  [VISUAL: new_thesis_builder]            — Thesis statement components diagram
+  [VISUAL: new_essay_structure]           — Five-paragraph essay structure
+  [VISUAL: new_citation_mla_apa]          — MLA vs APA citation format comparison
+
+HISTORY / SOCIAL STUDIES:
+  [VISUAL: new_us_govt_three_branches]    — Legislative, Executive, Judicial branches
+  [VISUAL: new_checks_balances_web]       — Checks and balances between all three branches
+  [VISUAL: new_bill_to_law]               — How a bill becomes a law flowchart
+  [VISUAL: new_ancient_civ_timeline]      — Ancient civilizations timeline 3500 BCE–500 CE
+  [VISUAL: new_feudal_pyramid]            — Medieval feudal system pyramid
+  [VISUAL: new_wwi_main_causes]           — MAIN causes of WWI infographic
+  [VISUAL: new_civil_rights_timeline]     — Civil Rights Movement timeline 1954–1968
+  [VISUAL: new_supply_demand_graph]       — Supply and demand curves with equilibrium
+  [VISUAL: new_constitution_structure]    — US Constitution: Preamble, 7 Articles, Amendments
+  [VISUAL: new_cold_war_map]              — Cold War map: NATO blue, Warsaw Pact red
+
+HEALTH & ANATOMY:
+  [VISUAL: new_myplate_food_groups]       — MyPlate: fruits, vegetables, grains, protein, dairy
+  [VISUAL: new_heart_anatomy]             — Heart four chambers with blood flow arrows
+  [VISUAL: new_blood_pressure_guide]      — Systolic/diastolic blood pressure ranges
+  [VISUAL: new_eye_anatomy]               — Eye cross-section: cornea, lens, retina, optic nerve
+  [VISUAL: new_sleep_cycle]               — Sleep stages: NREM 1-3 and REM across 8 hours
+  [VISUAL: new_fight_flight]              — Fight or flight stress response diagram
+
+ECONOMICS:
+  [VISUAL: new_circular_flow_econ]        — Circular flow: households and firms exchange
+  [VISUAL: new_economic_systems]          — Traditional, Command, Market, Mixed economies
+  [VISUAL: new_gdp_components]            — GDP: Consumption + Investment + Government + Net Exports
+  [VISUAL: new_maslow_hierarchy]          — Maslow's 5-level hierarchy of needs pyramid
+  [VISUAL: new_supply_demand_policy]      — Supply-side vs demand-side economic policy
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `;
             // STT_ARTIFACT_HARDENING is defined at module level (see top of file)
