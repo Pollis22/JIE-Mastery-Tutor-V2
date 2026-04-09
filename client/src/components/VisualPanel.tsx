@@ -3741,7 +3741,7 @@ export function VisualPanel({ visualTag, onDismiss }: VisualPanelProps) {
   };
 
   return (
-    <div className="w-full flex-shrink-0 flex flex-col border-b-2 border-border bg-background overflow-hidden" style={{maxHeight: '270px'}}>
+    <div className="w-full flex-shrink-0 flex flex-col border-b-2 border-border bg-background overflow-hidden" style={{maxHeight: '420px'}}>
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 bg-muted/60 border-b border-border flex-shrink-0">
         <div className="flex items-center gap-2">
