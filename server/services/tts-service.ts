@@ -55,6 +55,128 @@ const VOICE_SETTINGS_MAP: Record<string, { stability: number; similarity_boost: 
   'pqHfZKP75CvOlQylNhV4': { stability: 0.35, similarity_boost: 0.85 },   // Bill - professional yet natural
 };
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// TTS TEXT SANITIZER — Convert symbols/math to spoken English
+// ElevenLabs garbles mathematical notation, superscripts,
+// and special characters. This converts them to natural speech.
+// Apr 9, 2026: Added after "3²" was read as "32" in Pythagorean session
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function sanitizeForTTS(text: string): string {
+  let result = text;
+
+  // ── Superscript numbers (must come before general number patterns) ──
+  // "3²" → "3 squared", "x³" → "x cubed", "n⁴" → "n to the 4th"
+  result = result.replace(/([a-zA-Z0-9])²/g, '$1 squared');
+  result = result.replace(/([a-zA-Z0-9])³/g, '$1 cubed');
+  result = result.replace(/([a-zA-Z0-9])⁴/g, '$1 to the 4th');
+  result = result.replace(/([a-zA-Z0-9])⁵/g, '$1 to the 5th');
+  result = result.replace(/([a-zA-Z0-9])⁶/g, '$1 to the 6th');
+  result = result.replace(/([a-zA-Z0-9])⁷/g, '$1 to the 7th');
+  result = result.replace(/([a-zA-Z0-9])⁸/g, '$1 to the 8th');
+  result = result.replace(/([a-zA-Z0-9])⁹/g, '$1 to the 9th');
+  result = result.replace(/([a-zA-Z0-9])ⁿ/g, '$1 to the nth');
+  // Standalone superscripts without preceding character
+  result = result.replace(/²/g, ' squared');
+  result = result.replace(/³/g, ' cubed');
+
+  // ── Subscript numbers ──
+  result = result.replace(/₀/g, ' sub 0');
+  result = result.replace(/₁/g, ' sub 1');
+  result = result.replace(/₂/g, ' sub 2');
+  result = result.replace(/₃/g, ' sub 3');
+  result = result.replace(/₄/g, ' sub 4');
+
+  // ── Unicode fraction characters ──
+  result = result.replace(/½/g, 'one half');
+  result = result.replace(/⅓/g, 'one third');
+  result = result.replace(/⅔/g, 'two thirds');
+  result = result.replace(/¼/g, 'one quarter');
+  result = result.replace(/¾/g, 'three quarters');
+  result = result.replace(/⅕/g, 'one fifth');
+  result = result.replace(/⅛/g, 'one eighth');
+
+  // ── Slash fractions: "1/4" → "1 over 4", but not in dates or URLs ──
+  result = result.replace(/\b(\d+)\s*\/\s*(\d+)\b/g, '$1 over $2');
+
+  // ── Math operators (with spacing for natural speech) ──
+  result = result.replace(/\s*×\s*/g, ' times ');
+  result = result.replace(/\s*÷\s*/g, ' divided by ');
+  result = result.replace(/\s*±\s*/g, ' plus or minus ');
+  result = result.replace(/\s*≈\s*/g, ' approximately equals ');
+  result = result.replace(/\s*≠\s*/g, ' is not equal to ');
+  result = result.replace(/\s*≥\s*/g, ' is greater than or equal to ');
+  result = result.replace(/\s*≤\s*/g, ' is less than or equal to ');
+  // + and = only when between math terms (letters/numbers)
+  result = result.replace(/([a-zA-Z0-9])\s*\+\s*([a-zA-Z0-9])/g, '$1 plus $2');
+  result = result.replace(/([a-zA-Z0-9])\s*=\s*([a-zA-Z0-9])/g, '$1 equals $2');
+  result = result.replace(/\s=\s/g, ' equals ');
+
+  // ── Comparison operators ──
+  result = result.replace(/\s*>\s*/g, ' is greater than ');
+  result = result.replace(/\s*<\s*/g, ' is less than ');
+
+  // ── Special math symbols ──
+  result = result.replace(/√(\d+)/g, 'the square root of $1');
+  result = result.replace(/√([a-zA-Z])/g, 'the square root of $1');
+  result = result.replace(/√/g, 'square root');
+  result = result.replace(/π/g, 'pi');
+  result = result.replace(/∞/g, 'infinity');
+  result = result.replace(/Δ/g, 'delta');
+  result = result.replace(/θ/g, 'theta');
+  result = result.replace(/α/g, 'alpha');
+  result = result.replace(/β/g, 'beta');
+  result = result.replace(/γ/g, 'gamma');
+  result = result.replace(/σ/g, 'sigma');
+  result = result.replace(/μ/g, 'mu');
+  result = result.replace(/λ/g, 'lambda');
+  result = result.replace(/Σ/g, 'sigma');
+  result = result.replace(/∫/g, 'the integral of');
+
+  // ── Units and symbols ──
+  result = result.replace(/(\d+)\s*°\s*([CF])\b/g, '$1 degrees $2');
+  result = result.replace(/(\d+)\s*°/g, '$1 degrees');
+  result = result.replace(/(\d+)\s*%/g, '$1 percent');
+  result = result.replace(/\$(\d[\d,.]*)/g, '$1 dollars');
+  result = result.replace(/(\d[\d,.]*)\s*km\/h/gi, '$1 kilometers per hour');
+  result = result.replace(/(\d[\d,.]*)\s*mph/gi, '$1 miles per hour');
+  result = result.replace(/(\d[\d,.]*)\s*m\/s/gi, '$1 meters per second');
+  result = result.replace(/(\d[\d,.]*)\s*cm\b/gi, '$1 centimeters');
+  result = result.replace(/(\d[\d,.]*)\s*mm\b/gi, '$1 millimeters');
+  result = result.replace(/(\d[\d,.]*)\s*kg\b/gi, '$1 kilograms');
+  result = result.replace(/(\d[\d,.]*)\s*lbs?\b/gi, '$1 pounds');
+  result = result.replace(/(\d[\d,.]*)\s*oz\b/gi, '$1 ounces');
+  result = result.replace(/(\d[\d,.]*)\s*ml\b/gi, '$1 milliliters');
+
+  // ── Negative/minus sign (em dash, en dash, minus) ──
+  result = result.replace(/[−–—]\s*(\d)/g, 'negative $1');
+
+  // ── Ampersand ──
+  result = result.replace(/\s*&\s*/g, ' and ');
+
+  // ── Arrows ──
+  result = result.replace(/→/g, ' leads to ');
+  result = result.replace(/←/g, ' comes from ');
+  result = result.replace(/↔/g, ' goes both ways ');
+  result = result.replace(/->/g, ' leads to ');
+
+  // ── Exponent notation: 10^6 → "10 to the 6th" ──
+  result = result.replace(/(\d+)\s*\^\s*(\d+)/g, (_, base, exp) => {
+    if (exp === '2') return `${base} squared`;
+    if (exp === '3') return `${base} cubed`;
+    return `${base} to the ${exp}th`;
+  });
+  result = result.replace(/([a-zA-Z])\s*\^\s*(\d+)/g, (_, base, exp) => {
+    if (exp === '2') return `${base} squared`;
+    if (exp === '3') return `${base} cubed`;
+    return `${base} to the ${exp}th`;
+  });
+
+  // ── Clean up extra spaces ──
+  result = result.replace(/\s{2,}/g, ' ').trim();
+
+  return result;
+}
+
 export async function generateSpeech(
   text: string,
   ageGroup: string = 'default',
@@ -62,6 +184,13 @@ export async function generateSpeech(
 ): Promise<Buffer> {
   
   try {
+    // Sanitize text for TTS — convert math symbols, superscripts, etc. to spoken English
+    const originalText = text;
+    text = sanitizeForTTS(text);
+    if (text !== originalText) {
+      console.log(`[TTS Sanitizer] 🧹 "${originalText.substring(0, 60)}" → "${text.substring(0, 60)}"`);
+    }
+    
     const elevenlabsClient = getElevenLabsClient();
     const voiceId = VOICE_MAP[ageGroup] || VOICE_MAP['default'];
     
@@ -152,6 +281,13 @@ export async function* generateSpeechStream(
   ageGroup: string = 'default',
   userSpeechSpeed?: number | string
 ): AsyncGenerator<Buffer> {
+
+  // Sanitize text for TTS — convert math symbols, superscripts, etc. to spoken English
+  const originalText = text;
+  text = sanitizeForTTS(text);
+  if (text !== originalText) {
+    console.log(`[TTS Sanitizer Stream] 🧹 "${originalText.substring(0, 60)}" → "${text.substring(0, 60)}"`);
+  }
 
   const elevenlabsClient = getElevenLabsClient();
   const voiceId = VOICE_MAP[ageGroup] || VOICE_MAP['default'];
