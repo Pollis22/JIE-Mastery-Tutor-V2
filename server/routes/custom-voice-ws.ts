@@ -3293,6 +3293,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
       console.log(`[TurnCommit] text="${text.substring(0, 60)}" source=${source} isProcessing=${state.isProcessing} queueLen=${state.transcriptQueue.length} phase=${state.phase}`);
 
       state.lastTurnCommittedAtMs = Date.now();
+      state.lastTranscript = ''; // Reset duplicate filter — allows same word in next turn
       cancelBargeInCandidate(state, `turn_committed_${source}`, ws);
 
       // P1.5: Phase discipline — queue only if tutor is speaking or thinking
@@ -4569,7 +4570,17 @@ export function setupCustomVoiceWebSocket(server: Server) {
                 speechFinalCommitTimer = null;
               }, SPEECH_FINAL_COMMIT_MS);
             } else {
-              console.log(`[TurnDetect] ⚠️ Incomplete sentence (reconnected), waiting for UtteranceEnd`);
+              console.log(`[TurnDetect] ⚠️ Incomplete sentence (reconnected), waiting for UtteranceEnd (8s fallback)`);
+              transcriptAccumulationTimer = setTimeout(() => {
+                if (pendingTranscript && !state.isSessionEnded) {
+                  const completeUtterance = pendingTranscript;
+                  console.log(`[TurnDetect] ✅ Incomplete fallback commit (reconnected, 8s): "${completeUtterance}"`);
+                  pendingTranscript = '';
+                  state.lastEndOfTurnTime = Date.now();
+                  commitUserTurn(completeUtterance, 'eot');
+                }
+                transcriptAccumulationTimer = null;
+              }, 8000);
             }
           }
           return;
@@ -4596,10 +4607,11 @@ export function setupCustomVoiceWebSocket(server: Server) {
           if (wordCount <= QUICK_ANSWER_WORD_LIMIT) {
             quickAnswerTimer = setTimeout(() => {
               if (pendingTranscript && !state.isSessionEnded) {
-                console.log(`[TurnDetect] ✅ Quick answer commit (reconnected): "${pendingTranscript}"`);
+                const completeUtterance = pendingTranscript;
+                console.log(`[TurnDetect] ✅ Quick answer commit (reconnected): "${completeUtterance}"`);
                 pendingTranscript = '';
                 state.lastEndOfTurnTime = Date.now();
-                commitUserTurn(pendingTranscript, 'eot');
+                commitUserTurn(completeUtterance, 'eot');
               }
               quickAnswerTimer = null;
             }, QUICK_ANSWER_DELAY_MS);
@@ -4620,7 +4632,17 @@ export function setupCustomVoiceWebSocket(server: Server) {
                 speechFinalCommitTimer = null;
               }, SPEECH_FINAL_COMMIT_MS);
             } else {
-              console.log(`[TurnDetect] ⚠️ Incomplete sentence (reconnected), extending patience`);
+              console.log(`[TurnDetect] ⚠️ Incomplete sentence (reconnected), extending patience (8s fallback)`);
+              transcriptAccumulationTimer = setTimeout(() => {
+                if (pendingTranscript && !state.isSessionEnded) {
+                  const completeUtterance = pendingTranscript;
+                  console.log(`[TurnDetect] ✅ Incomplete fallback commit (reconnected, 8s): "${completeUtterance}"`);
+                  pendingTranscript = '';
+                  state.lastEndOfTurnTime = Date.now();
+                  commitUserTurn(completeUtterance, 'eot');
+                }
+                transcriptAccumulationTimer = null;
+              }, 8000);
             }
           }
         }
@@ -6879,8 +6901,18 @@ HONESTY INSTRUCTIONS:
                     console.log(`[TurnDetect] 🔚 speech_final (empty) — committing pending: "${pendingTranscript}"`);
                     const isIncomplete = INCOMPLETE_ENDINGS.test(pendingTranscript.trim());
                     if (isIncomplete) {
-                      console.log(`[TurnDetect] ⚠️ Incomplete sentence detected, extending patience — waiting for UtteranceEnd`);
-                      // Don't commit yet — wait for UtteranceEnd as safety net
+                      console.log(`[TurnDetect] ⚠️ Incomplete sentence detected, extending patience — waiting for UtteranceEnd (8s fallback)`);
+                      // Fallback: if UtteranceEnd never arrives, commit after 8 seconds
+                      transcriptAccumulationTimer = setTimeout(() => {
+                        if (pendingTranscript && !state.isSessionEnded) {
+                          const completeUtterance = pendingTranscript;
+                          console.log(`[TurnDetect] ✅ Incomplete sentence fallback commit (8s): "${completeUtterance}"`);
+                          pendingTranscript = '';
+                          state.lastEndOfTurnTime = Date.now();
+                          commitUserTurn(completeUtterance, 'eot');
+                        }
+                        transcriptAccumulationTimer = null;
+                      }, 8000);
                     } else {
                       speechFinalCommitTimer = setTimeout(() => {
                         if (pendingTranscript && !state.isSessionEnded) {
@@ -6953,7 +6985,17 @@ HONESTY INSTRUCTIONS:
                     cancelAllCommitTimers('speech_final on is_final');
                     const isIncomplete = INCOMPLETE_ENDINGS.test(pendingTranscript.trim());
                     if (isIncomplete) {
-                      console.log(`[TurnDetect] ⚠️ speech_final but incomplete sentence "${pendingTranscript}" — extending patience`);
+                      console.log(`[TurnDetect] ⚠️ speech_final but incomplete sentence "${pendingTranscript}" — extending patience (8s fallback)`);
+                      transcriptAccumulationTimer = setTimeout(() => {
+                        if (pendingTranscript && !state.isSessionEnded) {
+                          const completeUtterance = pendingTranscript;
+                          console.log(`[TurnDetect] ✅ Incomplete sentence fallback commit (8s): "${completeUtterance}"`);
+                          pendingTranscript = '';
+                          state.lastEndOfTurnTime = Date.now();
+                          commitUserTurn(completeUtterance, 'eot');
+                        }
+                        transcriptAccumulationTimer = null;
+                      }, 8000);
                     } else {
                       console.log(`[TurnDetect] 🔚 speech_final — starting ${SPEECH_FINAL_COMMIT_MS}ms commit timer`);
                       speechFinalCommitTimer = setTimeout(() => {
@@ -6982,6 +7024,7 @@ HONESTY INSTRUCTIONS:
               },
               async () => {
                 console.log("[Custom Voice] 🔌 Deepgram connection closed");
+                cancelAllCommitTimers('deepgram_connection_closed'); // Prevent stale timer commits during reconnect
                 
                 // FIX #3: Critical - Persist on Deepgram close
                 if (state.sessionId && state.transcript.length > 0) {
