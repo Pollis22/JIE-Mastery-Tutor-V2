@@ -1006,17 +1006,17 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
         </div>
         {/* End Top Controls Section */}
 
-        {/* Main content area — side-by-side when visual is active, full-width transcript when not */}
-        <div className={`${customVoice.isConnected ? 'flex-1 min-h-0 flex overflow-hidden' : ''}`}>
+        {/* Main content area — stacked: visual fixed at top, transcript scrolls below */}
+        <div className={`${customVoice.isConnected ? 'flex-1 min-h-0 flex flex-col overflow-hidden' : ''}`}>
 
-          {/* Visual Aid Panel — left column, static, scrolls independently.
-              Returns null when no visual, transcript expands to fill full width. */}
+          {/* Visual Aid Panel — static at top, full width, capped height.
+              Returns null when no visual, transcript expands to fill full height. */}
           <VisualPanel
             visualTag={customVoice.currentVisual as VisualTag | null}
             onDismiss={() => customVoice.setCurrentVisual(null)}
           />
 
-          {/* Transcript — takes remaining space, always scrollable */}
+          {/* Transcript — takes all remaining space below visual, always scrollable */}
           <div className={`${customVoice.isConnected ? 'flex-1 min-h-0 overflow-y-auto px-2' : 'w-full'}`}>
           <RealtimeVoiceTranscript
             messages={customVoice.transcript.map(t => ({
