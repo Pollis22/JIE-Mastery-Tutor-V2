@@ -2,49 +2,43 @@
 import { Request, Response, NextFunction } from 'express';
 
 export function setupSecurityHeaders(req: Request, res: Response, next: NextFunction) {
-  // TEMPORARILY DISABLED CSP TO GET ELEVENLABS WORKING
-  // We'll re-enable security headers once the voice agent is functional
-  
-  // Only set minimal security headers that won't interfere with ElevenLabs
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  
-  // Permissions Policy for microphone access (still needed)
   res.setHeader('Permissions-Policy', [
     'microphone=(self)',
     'camera=()',
     'geolocation=()',
     'payment=(self "https://js.stripe.com")'
   ].join(', '));
-
   next();
 }
 
 export function setupCORS(req: Request, res: Response, next: NextFunction) {
-  // Build allowed origins list - support Replit, Railway, and custom domains
+  const envOrigins = process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map((o: string) => o.trim()).filter(Boolean)
+    : [];
+
   const allowedOrigins = [
     'http://localhost:5000',
     'http://localhost:3000',
     'https://www.jiemastery.ai',
     'https://jiemastery.ai',
     'https://jie-mastery-tutor-v2-production.up.railway.app',
+    'https://jie-mobile-tutor-app-production.up.railway.app', // JIE Mobile App
     process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : '',
-    process.env.CUSTOM_DOMAIN || ''
+    process.env.CUSTOM_DOMAIN || '',
+    ...envOrigins,
   ].filter(Boolean);
 
   const origin = req.headers.origin;
-  
-  // For requests with origin header that matches allowed origins, set CORS headers
+
   if (origin && allowedOrigins.includes(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
-  } else if (!origin) {
-    // Same-origin requests don't need CORS headers
-    // Don't set any Access-Control headers for same-origin
   }
-  
+
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
