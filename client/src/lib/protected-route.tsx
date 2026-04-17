@@ -130,6 +130,15 @@ export function PublicOrAuthRoute({
     );
   }
 
+  // Admins visiting the root should land on the admin dashboard, not the tutor
+  if (user && (user as any).isAdmin) {
+    return (
+      <Route path={path}>
+        <Redirect to="/admin" />
+      </Route>
+    );
+  }
+
   return (
     <Route path={path}>
       {user ? <ComponentWrapper Component={AuthComponent} /> : <ComponentWrapper Component={PublicComponent} />}
