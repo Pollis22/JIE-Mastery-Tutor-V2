@@ -70,7 +70,7 @@ async function testVoiceSystem() {
     });
     
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514", // Using Claude Sonnet 4
+      model: "claude-sonnet-4-6", // Using Claude Sonnet 4.6
       max_tokens: 50,
       messages: [
         { role: "user", content: "Say 'Hello, test successful!' in exactly those words." }

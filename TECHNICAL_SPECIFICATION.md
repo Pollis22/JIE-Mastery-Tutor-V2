@@ -97,7 +97,7 @@ JIE Mastery AI is a production-grade voice-first AI tutoring platform serving K-
 | Setting | Value | Notes |
 |---------|-------|-------|
 | Provider | Anthropic | |
-| Model | claude-sonnet-4-20250514 | Latest version |
+| Model | claude-sonnet-4-6 | Latest version |
 | Max Tokens | 1024 | Response limit |
 | Temperature | default | Controlled randomness |
 | System Prompt | ~7728 chars | Adaptive Socratic Method |

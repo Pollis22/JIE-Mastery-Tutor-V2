@@ -384,7 +384,7 @@ Each tutor response gets a monotonic `playbackGenId`. All streaming audio includ
 
 ### Model Configuration
 
-- **Model**: Claude Sonnet 4 (`claude-sonnet-4-20250514`)
+- **Model**: Claude Sonnet 4.6 (`claude-sonnet-4-6`)
 - **Context Window**: 200k tokens
 - **Temperature**: 0.7
 - **Method**: Modified Adaptive Socratic Method

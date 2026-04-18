@@ -25,7 +25,7 @@ A balanced, context-aware moderation system uses keyword whitelists and multi-la
 The `finalizeSession()` function ensures robust session completion. Minute enforcement prioritizes trial status, subscription limits, monthly allocation, and bonus minutes. A session-first data priority model allows per-session configuration for grade level, subject, and language, facilitating flexible family sharing.
 
 ### AI & Learning Engine
-The primary AI model is Claude Sonnet 4 (`claude-sonnet-4-20250514`) with a 200k token context window and a temperature of 0.7. It implements a Modified Adaptive Socratic Method with Guided Discovery, Direct Instruction, understanding checks, and frustration detection. Five distinct tutor personalities cater to specific age groups.
+The primary AI model is Claude Sonnet 4.6 (`claude-sonnet-4-6`) with a 200k token context window and a temperature of 0.7. It implements a Modified Adaptive Socratic Method with Guided Discovery, Direct Instruction, understanding checks, and frustration detection. Five distinct tutor personalities cater to specific age groups.
 
 ### Age-Based Visual Engagement System
 The platform features five distinct age themes (K-2, Grades 3-5, 6-8, 9-12, College) that define colors, fonts, emojis, and avatar styles. Age-specific visual components include `TutorAvatar`, `AnimatedBackground`, `SessionProgress`, and `Celebration` effects, built with Framer Motion and respecting `prefers-reduced-motion`. The voice session UI maintains a consistent layout with controls, tutor avatar, progress, mode selector, transcript, and sticky chat input.

@@ -220,7 +220,7 @@ Be exhaustive — the tutor cannot see the original image and will rely entirely
 
   const client = getAnthropicVisionClient();
   const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-6',
     max_tokens: 2000,
     messages: [{
       role: 'user',
@@ -790,7 +790,7 @@ router.post('/analyze-image', uploadMemory.single('file'), async (req, res) => {
     const client = getAnthropicVisionClient();
     
     const response = await client.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',
       max_tokens: 1024,
       messages: [{
         role: 'user',
