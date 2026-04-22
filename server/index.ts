@@ -230,7 +230,7 @@ app.use((req, res, next) => {
     // Setup Custom Voice WebSocket (Deepgram + Claude + ElevenLabs)
     console.log('Setting up Custom Voice WebSocket...');
     const { setupCustomVoiceWebSocket } = await import('./routes/custom-voice-ws');
-    setupCustomVoiceWebSocket(server);
+    const voiceWss = setupCustomVoiceWebSocket(server);
     console.log('✓ Custom Voice WebSocket ready at /api/custom-voice-ws');
 
     // Start embedding worker ONLY in development (requires vector DB configuration)
@@ -312,6 +312,113 @@ app.use((req, res, next) => {
       }
       process.exit(1);
     });
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // GRACEFUL SHUTDOWN v1 (Apr 22, 2026)
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // Before this handler existed, SIGTERM from Railway (on every
+    // deploy or infra restart) killed the Node process instantly,
+    // dropping active voice sessions mid-sentence. See Log 2 from
+    // 2026-04-22T16:36:49Z: user was mid-turn, LLM was streaming,
+    // ElevenLabs was generating audio — then SIGTERM, dead.
+    //
+    // This handler:
+    //   1. Stops accepting NEW HTTP connections immediately.
+    //   2. Notifies every active voice WebSocket with a
+    //      'server_shutdown' message so the client knows to
+    //      reconnect (client already has reconnect logic).
+    //   3. Gives active sessions up to 60 seconds to finish their
+    //      current turn naturally (typical turn is 15-25s).
+    //   4. Force-closes any sockets still open at the deadline.
+    //   5. Exits cleanly so Railway doesn't have to SIGKILL.
+    //
+    // Pairs with railway.json's `overlapSeconds: 60` which tells
+    // Railway to let this old container live for 60s after the
+    // new container is marked healthy — preventing traffic to a
+    // draining container while still giving us time to finish.
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    const SHUTDOWN_GRACE_MS = 60_000;
+    let shuttingDown = false;
+
+    const gracefulShutdown = async (signal: string) => {
+      if (shuttingDown) {
+        console.log(`[Shutdown] ⚠️ Received ${signal} during shutdown — ignoring`);
+        return;
+      }
+      shuttingDown = true;
+
+      const startedAt = Date.now();
+      console.log(`[Shutdown] 🛑 Received ${signal}, beginning graceful shutdown`);
+      console.log(`[Shutdown] Active voice sessions: ${voiceWss.clients.size}`);
+      console.log(`[Shutdown] Grace period: ${SHUTDOWN_GRACE_MS / 1000}s`);
+
+      // Step 1: Stop accepting new HTTP connections. Existing connections
+      // (including upgraded WebSockets) keep working.
+      server.close((err) => {
+        if (err) {
+          console.error('[Shutdown] ❌ Error closing HTTP server:', err);
+        } else {
+          console.log('[Shutdown] ✅ HTTP server closed to new connections');
+        }
+      });
+
+      // Step 2: Notify each active voice WebSocket that the server is
+      // restarting. The client-side code in use-custom-voice.ts has
+      // existing auto-reconnect logic that will handle the rest.
+      let notifiedCount = 0;
+      voiceWss.clients.forEach((ws: any) => {
+        try {
+          if (ws.readyState === 1 /* OPEN */) {
+            ws.send(JSON.stringify({
+              type: 'server_shutdown',
+              reason: 'deploy_restart',
+              message: 'Server is restarting for a new version. Your session will reconnect automatically.',
+              reconnect_hint: true,
+              grace_period_seconds: SHUTDOWN_GRACE_MS / 1000,
+            }));
+            notifiedCount++;
+          }
+        } catch (err) {
+          console.error('[Shutdown] ❌ Error notifying client:', err);
+        }
+      });
+      console.log(`[Shutdown] 📢 Notified ${notifiedCount} active voice session(s)`);
+
+      // Step 3: Poll for active sessions to finish naturally. Checks
+      // every 500ms and exits early if everyone drains.
+      const deadline = startedAt + SHUTDOWN_GRACE_MS;
+      const drainCheck = setInterval(() => {
+        const remaining = voiceWss.clients.size;
+        const elapsed = Date.now() - startedAt;
+        if (remaining === 0) {
+          clearInterval(drainCheck);
+          console.log(`[Shutdown] ✅ All sessions drained after ${elapsed}ms`);
+          console.log('[Shutdown] 👋 Exiting cleanly');
+          process.exit(0);
+        }
+        if (Date.now() >= deadline) {
+          clearInterval(drainCheck);
+          console.log(`[Shutdown] ⏰ Grace period expired with ${remaining} session(s) still active`);
+          // Step 4: Force-close any sockets still open.
+          voiceWss.clients.forEach((ws: any) => {
+            try {
+              ws.terminate();
+            } catch {}
+          });
+          console.log('[Shutdown] 🔪 Force-closed remaining sockets');
+          console.log('[Shutdown] 👋 Exiting');
+          process.exit(0);
+        }
+        // Progress log every 10 seconds so the deploy log shows life.
+        if (elapsed > 0 && elapsed % 10_000 < 500) {
+          console.log(`[Shutdown] ⏳ ${remaining} session(s) still active at ${elapsed}ms / ${SHUTDOWN_GRACE_MS}ms`);
+        }
+      }, 500);
+    };
+
+    process.on('SIGTERM', () => { void gracefulShutdown('SIGTERM'); });
+    process.on('SIGINT',  () => { void gracefulShutdown('SIGINT'); });
+    console.log('✓ Graceful shutdown handler registered (60s grace period)');
 
   } catch (error) {
     console.error('❌ FATAL ERROR during server startup:');
