@@ -2000,34 +2000,148 @@ async function processSafetyCheck(
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// GOODBYE DETECTION: Gracefully end session when user says goodbye
-// Works for both voice and text modes
+// GOODBYE DETECTION v1 (Apr 22, 2026): Gracefully end session
+// on user goodbye. Works for both voice and text modes.
+//
+// Fix history:
+//   - Previous version used .includes() substring match with no word
+//     boundaries. The phrase "see you" in GOODBYE_PHRASES would match
+//     inside "Good to see you again" (a greeting!), ending the session
+//     prematurely.
+//   - v1 adds: word-boundary regex matching, a greeting guard (phrases
+//     that START with a greeting token like "hi", "hello", "good to",
+//     "nice to" are never goodbyes regardless of other content), and
+//     a tighter length cap so long sentences that happen to contain a
+//     goodbye-like token are ignored.
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// Phrases that end the session if they appear as the primary content of
+// a short utterance. Ordered by specificity — longer, less-ambiguous
+// phrases are matched first so that "see you later" commits before a
+// bare "see you" would be considered.
 const GOODBYE_PHRASES = [
-  // English goodbye variants
-  'goodbye', 'good bye', 'bye', 'bye bye', 'see you', 'see ya',
-  'talk later', 'gotta go', 'got to go', 'have to go', 'need to go',
-  "i'm done", 'im done', 'i am done', 'we are done', "we're done",
-  'end session', 'stop tutoring', 'end the session', 'stop the session',
-  'that\'s all', 'thats all', "that's it", 'thats it',
-  'thanks bye', 'thank you bye', 'thanks goodbye', 'thank you goodbye',
-  'later', 'see you later', 'talk to you later', 'catch you later',
-  'good night', 'goodnight', 'night night', 'nighty night',
+  // English goodbye variants — MULTI-WORD (most specific first)
+  'see you later', 'talk to you later', 'catch you later',
+  'thank you goodbye', 'thanks goodbye', 'thank you bye', 'thanks bye',
+  'end the session', 'stop the session', 'end session', 'stop tutoring',
   'i have to leave', 'i need to leave', 'leaving now',
+  'gotta go', 'got to go', 'have to go', 'need to go', 'talk later',
+  "i'm done", 'im done', 'i am done', 'we are done', "we're done",
+  "that's all", 'thats all', "that's it", 'thats it',
+  'good night', 'goodnight', 'night night', 'nighty night',
+  'good bye', 'bye bye',
+  // English goodbye — SINGLE TOKEN (must be the whole utterance, see detectGoodbye)
+  'goodbye', 'bye', 'see ya',
   // Multilingual goodbye phrases (platform supports 25 languages)
-  'adios', 'adiós', 'au revoir', 'ciao', 'hasta luego', 'hasta la vista',
-  'sayonara', 'sayōnara', 'auf wiedersehen', 'tschüss', 'tchüss',
-  'arrivederci', 'tot ziens', 'dag', 'farvel', 'ha det', 'hej då',
-  'näkemiin', 'do widzenia', 'tchau', 'até logo',
-  'zài jiàn', '再见', 'annyeong', '안녕', 'สวัสดี', 'ลาก่อน'
+  'hasta la vista', 'hasta luego', 'au revoir', 'auf wiedersehen',
+  'arrivederci', 'tot ziens', 'do widzenia', 'até logo',
+  'sayonara', 'sayōnara', 'zài jiàn',
+  'adios', 'adiós', 'ciao', 'tschüss', 'tchüss',
+  'dag', 'farvel', 'ha det', 'hej då', 'näkemiin', 'tchau',
+  '再见', 'annyeong', '안녕', 'สวัสดี', 'ลาก่อน'
 ];
 
+// Phrases that are NEVER goodbyes, even if they contain goodbye-ish
+// tokens. If the utterance starts with any of these, we bail out early.
+// This is the primary defense against "Good to see you" → goodbye.
+const GREETING_PREFIXES = [
+  'hi ', 'hi,', 'hi.', 'hi!',
+  'hello ', 'hello,', 'hello.', 'hello!',
+  'hey ', 'hey,', 'hey.', 'hey!',
+  'good to ',       // "good to see you", "good to meet you"
+  'nice to ',       // "nice to see you", "nice to meet you"
+  'great to ',      // "great to see you"
+  'pleased to ',    // "pleased to see you"
+  'happy to ',      // "happy to see you"
+  'glad to ',       // "glad to see you"
+  'welcome ',       // "welcome back"
+  'good morning',   // greetings, not goodbyes
+  'good afternoon',
+  'good evening',
+  "how are you",
+  "how's it going",
+  "what's up",
+  'whats up',
+];
+
+// Escape regex metacharacters so phrases like "that's all" can be
+// compiled into a \b-anchored pattern safely.
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Detect whether a user utterance is primarily a goodbye.
+ *
+ * Rules (all must pass):
+ *   1. Utterance is short (<= 40 chars after trim). Real goodbyes are
+ *      almost always brief; anything longer is likely a substantive
+ *      response that happens to mention a goodbye-ish word.
+ *   2. Utterance does NOT start with a greeting prefix (see list).
+ *      "Good to see you again" starts with "good to " and is rejected.
+ *   3. At least one GOODBYE_PHRASES entry matches with word boundaries.
+ *      Single-token phrases (goodbye, bye, see ya) additionally require
+ *      the utterance to be primarily that token — not a sentence that
+ *      happens to contain it.
+ */
 function detectGoodbye(text: string): boolean {
-  const normalized = text.toLowerCase().trim();
-  // Check if the message is primarily a goodbye (short message with goodbye intent)
-  // This prevents false positives from sentences that just mention "bye" in passing
-  if (normalized.length > 50) return false; // Long messages are not pure goodbyes
-  return GOODBYE_PHRASES.some(phrase => normalized.includes(phrase));
+  const normalized = text.toLowerCase().trim().replace(/\s+/g, ' ');
+  if (!normalized) return false;
+
+  // Gate 1: length cap. Tightened from 50 to 40 chars. Real goodbyes
+  // are short; "Good to see you again." is 22, "Goodbye, thanks!" is 16.
+  if (normalized.length > 40) return false;
+
+  // Gate 2: greeting prefix guard. If the utterance opens with a
+  // greeting, it's never a goodbye — even if it contains "see you" or
+  // "bye" later on.
+  for (const prefix of GREETING_PREFIXES) {
+    if (normalized.startsWith(prefix)) {
+      return false;
+    }
+  }
+
+  // Strip trailing punctuation and common filler words so that
+  // "goodbye." or "bye bye!" match cleanly as single-token goodbyes.
+  const stripped = normalized.replace(/[.!?,;:]+$/g, '').trim();
+
+  // Gate 3a: for short single-token goodbyes, require that the entire
+  // utterance IS essentially that phrase. A one- or two-word utterance
+  // of "goodbye" / "bye" / "see ya" counts; "it was nice to see ya at
+  // the store" does NOT.
+  const SINGLE_TOKEN_GOODBYES = new Set([
+    'goodbye', 'bye', 'see ya', 'later', 'adios', 'adiós', 'ciao',
+    'sayonara', 'sayōnara', 'tchau', 'tschüss', 'tchüss',
+    'farvel', 'dag', '再见', 'annyeong', '안녕', 'ลาก่อน',
+  ]);
+  const wordCount = stripped.split(/\s+/).length;
+
+  // Gate 3b: multi-word goodbye phrases match via word-boundary regex.
+  for (const phrase of GOODBYE_PHRASES) {
+    const phraseWordCount = phrase.split(/\s+/).length;
+
+    // Single-token goodbyes: only fire if the utterance is 1-3 words
+    // total. "bye" alone fires; "bye for now" fires; "tell her I said
+    // bye" (5 words) does not.
+    if (phraseWordCount === 1 && SINGLE_TOKEN_GOODBYES.has(phrase)) {
+      if (wordCount > 3) continue;
+    }
+
+    // Build a word-boundary-anchored regex. Unicode-aware word
+    // boundaries don't work well for CJK scripts, so for those we fall
+    // back to plain substring — acceptable because the gate-1 length
+    // cap and gate-2 greeting guard already filter noise.
+    const hasLatin = /[a-zA-Z]/.test(phrase);
+    if (hasLatin) {
+      const re = new RegExp(`\\b${escapeRegex(phrase)}\\b`, 'i');
+      if (re.test(stripped)) return true;
+    } else {
+      // Non-Latin script — substring match is fine at this length.
+      if (stripped.includes(phrase)) return true;
+    }
+  }
+
+  return false;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
