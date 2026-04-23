@@ -126,7 +126,7 @@ async function loadUpcomingItems(
   // Events (exams, quizzes, projects, etc.)
   const eventsSql = childId
     ? `SELECT e.title, e.event_type AS type, e.start_date::text AS due_date,
-              e.priority, e.status, c.name AS course_name
+              e.priority, e.status, c.course_name AS course_name
          FROM family_calendar_events e
          LEFT JOIN family_courses c ON c.id = e.course_id
         WHERE e.child_id = $1
@@ -135,7 +135,7 @@ async function loadUpcomingItems(
           AND (e.status IS NULL OR e.status <> 'completed')
         ORDER BY e.start_date ASC`
     : `SELECT e.title, e.event_type AS type, e.start_date::text AS due_date,
-              e.priority, e.status, c.name AS course_name
+              e.priority, e.status, c.course_name AS course_name
          FROM family_calendar_events e
          LEFT JOIN family_courses c ON c.id = e.course_id
         WHERE e.parent_user_id = $1
@@ -149,7 +149,7 @@ async function loadUpcomingItems(
   // Tasks
   const tasksSql = childId
     ? `SELECT t.title, t.task_type AS type, t.due_date::text AS due_date,
-              t.priority, t.status, c.name AS course_name
+              t.priority, t.status, c.course_name AS course_name
          FROM family_tasks t
          LEFT JOIN family_courses c ON c.id = t.course_id
         WHERE t.child_id = $1
@@ -159,7 +159,7 @@ async function loadUpcomingItems(
           AND (t.status IS NULL OR t.status NOT IN ('completed','cancelled'))
         ORDER BY t.due_date ASC`
     : `SELECT t.title, t.task_type AS type, t.due_date::text AS due_date,
-              t.priority, t.status, c.name AS course_name
+              t.priority, t.status, c.course_name AS course_name
          FROM family_tasks t
          LEFT JOIN family_courses c ON c.id = t.course_id
         WHERE t.parent_user_id = $1
