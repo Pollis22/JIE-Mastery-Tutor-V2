@@ -634,6 +634,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/api/family-academic", familyAcademicRouter);
   app.use("/api/admin/family-academic", requireAdmin, familyAcademicAdminRouter);
 
+  // SRM notification preferences (upcoming-work digests, opt-in per user)
+  const { default: notificationsRouter } = await import('./routes/notifications');
+  app.use("/api/notifications", notificationsRouter);
+
+  // External cron trigger for upcoming-digest (for Railway autoscale safety)
+  app.post("/api/cron/upcoming-digest", async (req, res) => {
+    const secret = process.env.CRON_SECRET;
+    const provided = req.headers['x-cron-secret'] || req.query.secret;
+    if (secret && provided !== secret) {
+      console.warn('[Cron] Invalid secret provided for upcoming-digest');
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    try {
+      const { sendUpcomingDigests } = await import('./jobs/upcoming-digest');
+      const result = await sendUpcomingDigests();
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      console.error('[Cron] upcoming-digest error', err?.message || err);
+      res.status(500).json({ error: 'Internal error' });
+    }
+  });
+
   // Legacy voice API routes (for compatibility)
   // Note: live-token endpoint is now handled in voiceRoutes
 

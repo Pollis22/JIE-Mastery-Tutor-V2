@@ -130,6 +130,9 @@ export default function FamilyDashboardPage() {
               <Button variant="outline" size="sm" onClick={() => setLocation("/family/calendar")}>
                 📅 Calendar
               </Button>
+              <Button variant="outline" size="sm" onClick={() => setLocation("/family/notifications")}>
+                🔔 Notifications
+              </Button>
               <Button variant="outline" size="sm" onClick={() => reportMutation.mutate()} disabled={reportMutation.isPending}>
                 {reportMutation.isPending ? "Sending..." : "📊 Weekly Report"}
               </Button>
