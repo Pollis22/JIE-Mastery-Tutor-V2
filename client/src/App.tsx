@@ -73,6 +73,7 @@ const FamilyDashboardPage = lazy(() => import("@/pages/family-dashboard"));
 const AboutStudyTrackerPage = lazy(() => import("@/pages/about-study-tracker"));
 const FamilyChildDashboardPage = lazy(() => import("@/pages/family-child-dashboard"));
 const FamilyCalendarPage = lazy(() => import("@/pages/family-calendar"));
+const FamilyNotificationSettingsPage = lazy(() => import("@/pages/family-notification-settings"));
 const AdminFamilyTracker = lazy(() => import("@/pages/admin/admin-family-tracker"));
 
 function PageTracking() {
@@ -114,6 +115,7 @@ function Router() {
         <ProtectedRoute path="/about-study-tracker" component={AboutStudyTrackerPage} />
         <ProtectedRoute path="/family/child/:childId" component={FamilyChildDashboardPage} />
         <ProtectedRoute path="/family/calendar" component={FamilyCalendarPage} />
+        <ProtectedRoute path="/family/notifications" component={FamilyNotificationSettingsPage} />
         <ProtectedRoute path="/subscribe" component={SubscribePage} />
         <ProtectedRoute path="/personality-test" component={PersonalityTestPage} />
         <LazyRoute path="/auth/registration-success" component={RegistrationSuccessPage} />

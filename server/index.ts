@@ -258,6 +258,12 @@ app.use((req, res, next) => {
     startWeeklyDigestJob();
     log('Email digest jobs started (daily at 8 PM, weekly on Sundays)');
 
+    // Start upcoming-work digest job (SRM notifications — off-by-default per-user)
+    console.log('Starting upcoming-work digest job...');
+    const { startUpcomingDigestJob } = await import('./jobs/upcoming-digest');
+    startUpcomingDigestJob();
+    log('Upcoming-work digest job started (hourly tick, per-user opt-in)');
+
     // Start trial verification reminder job (every 6 hours)
     console.log('Starting trial reminder job...');
     const { startTrialReminderJob } = await import('./jobs/trial-reminders');
