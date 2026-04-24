@@ -42,6 +42,7 @@ interface FamilyDashboard {
 const GRADE_OPTIONS = [
   "Kindergarten", "1st", "2nd", "3rd", "4th", "5th",
   "6th", "7th", "8th", "9th", "10th", "11th", "12th",
+  "College", "Adult",
 ];
 
 const AVATAR_EMOJIS = ["🧒", "👧", "👦", "🧒🏽", "👧🏾", "👦🏻", "🧒🏿", "👧🏼", "🦸", "🧙", "🐱", "🐶", "🦊", "🐼", "🦄", "🐸"];
@@ -76,7 +77,7 @@ export default function FamilyDashboardPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/family-academic/dashboard"] });
       setShowAddChild(false);
       setNewChild({ childName: "", childAge: "", gradeLevel: "", avatarEmoji: "🧒", color: "#6366f1", photoUrl: "" });
-      toast({ title: "Child added!", description: "Your child's profile has been created." });
+      toast({ title: "Student added!", description: "Your student's profile has been created." });
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
@@ -119,7 +120,7 @@ export default function FamilyDashboardPage() {
                 <p className="text-muted-foreground mt-1">
                   {dashboard?.isSummerMode
                     ? "Keep the learning going all summer long!"
-                    : "Track your children's academic progress"}
+                    : "Track your students' academic progress"}
                 </p>
               </div>
             </div>
@@ -138,11 +139,11 @@ export default function FamilyDashboardPage() {
               </Button>
               <Dialog open={showAddChild} onOpenChange={setShowAddChild}>
                 <DialogTrigger asChild>
-                  <Button className="bg-primary hover:bg-primary/90">+ Add Child</Button>
+                  <Button className="bg-primary hover:bg-primary/90">+ Add Student</Button>
                 </DialogTrigger>
                 <DialogContent>
                   <DialogHeader>
-                    <DialogTitle>Add a Child</DialogTitle>
+                    <DialogTitle>Add a Student</DialogTitle>
                   </DialogHeader>
                   <div className="space-y-4 mt-4">
                     <div>
@@ -150,7 +151,7 @@ export default function FamilyDashboardPage() {
                       <Input
                         value={newChild.childName}
                         onChange={(e) => setNewChild({ ...newChild, childName: e.target.value })}
-                        placeholder="Child's name"
+                        placeholder="Student's name"
                       />
                     </div>
                     <div>
@@ -161,7 +162,7 @@ export default function FamilyDashboardPage() {
                         onChange={(e) => setNewChild({ ...newChild, childAge: e.target.value })}
                         placeholder="Age"
                         min={4}
-                        max={18}
+                        max={99}
                       />
                     </div>
                     <div>
@@ -180,7 +181,7 @@ export default function FamilyDashboardPage() {
                       <div className="flex items-center gap-3 mt-1">
                         {newChild.photoUrl ? (
                           <div className="relative">
-                            <img src={newChild.photoUrl} alt="Child" className="w-16 h-16 rounded-full object-cover border-2 border-primary" />
+                            <img src={newChild.photoUrl} alt="Student" className="w-16 h-16 rounded-full object-cover border-2 border-primary" />
                             <button
                               onClick={() => setNewChild({ ...newChild, photoUrl: "" })}
                               className="absolute -top-1 -right-1 w-5 h-5 bg-destructive text-white rounded-full text-xs flex items-center justify-center"
@@ -261,7 +262,7 @@ export default function FamilyDashboardPage() {
                         })
                       }
                     >
-                      {addChildMutation.isPending ? "Adding..." : "Add Child"}
+                      {addChildMutation.isPending ? "Adding..." : "Add Student"}
                     </Button>
                   </div>
                 </DialogContent>
@@ -301,9 +302,9 @@ export default function FamilyDashboardPage() {
                   <CardContent className="p-12 text-center">
                     <div className="text-6xl mb-4">📚</div>
                     <h3 className="text-xl font-semibold text-gray-700 mb-2">Welcome to Your Study Tracker!</h3>
-                    <p className="text-gray-500 mb-6">Add your children to start tracking their learning journey.</p>
+                    <p className="text-gray-500 mb-6">Add your students to start tracking their learning journey.</p>
                     <Button className="bg-primary hover:bg-primary/90" onClick={() => setShowAddChild(true)}>
-                      + Add Your First Child
+                      + Add Your First Student
                     </Button>
                   </CardContent>
                 </Card>
@@ -439,7 +440,7 @@ export default function FamilyDashboardPage() {
                   <h3 className="font-semibold text-lg mb-3">Quick Tips</h3>
                   <ul className="space-y-2 text-sm text-primary-foreground/80">
                     <li>📅 Add calendar events to auto-generate study tasks</li>
-                    <li>🎯 Set weekly goals for each child</li>
+                    <li>🎯 Set weekly goals for each student</li>
                     <li>🔥 Daily activity builds streaks and earns badges</li>
                     <li>📊 Get weekly email reports on progress</li>
                   </ul>
