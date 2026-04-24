@@ -48,7 +48,7 @@ export default function AboutStudyTrackerPage() {
             engagement scoring, and progress reports — all in one place.
           </p>
           <p className="text-muted-foreground leading-relaxed">
-            When your child starts a tutoring session, the AI already knows what classes they're taking,
+            When your student starts a tutoring session, the AI already knows what classes they're taking,
             what tests are coming up, which study tasks they've completed, and where they need to focus.
             No other AI tutor can do this.
           </p>
@@ -59,9 +59,9 @@ export default function AboutStudyTrackerPage() {
           <h2 className="text-2xl font-bold text-foreground mb-6">How It Works</h2>
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             {[
-              { step: "1", icon: <Users className="h-5 w-5" />, title: "Add Your Children", desc: "Create a profile for each child with their name, grade level, and avatar. Each child gets their own dashboard, calendar, and tutor profile." },
+              { step: "1", icon: <Users className="h-5 w-5" />, title: "Add Your Students", desc: "Create a profile for each student with their name, grade level, and avatar. Each student gets their own dashboard, calendar, and tutor profile." },
               { step: "2", icon: <BookOpen className="h-5 w-5" />, title: "Add Courses & Dates", desc: "Enter their classes and key dates — tests, projects, homework deadlines. The AI can also extract dates from uploaded syllabi." },
-              { step: "3", icon: <Calendar className="h-5 w-5" />, title: "Calendar Fills In", desc: "Every deadline appears on a color-coded calendar. View all children at once or filter by child and course." },
+              { step: "3", icon: <Calendar className="h-5 w-5" />, title: "Calendar Fills In", desc: "Every deadline appears on a color-coded calendar. View all students at once or filter by student and course." },
               { step: "4", icon: <CheckCircle className="h-5 w-5" />, title: "Tasks Auto-Generate", desc: "Study reminders appear automatically: 7 days (start reviewing), 5 days (deep study), 3 days (practice), 1 day (final review)." },
               { step: "5", icon: <MessageCircle className="h-5 w-5" />, title: "Tutor Uses It All", desc: "Sessions open with context: \"You have a math test Thursday — let's review fractions.\" The tutor knows their entire schedule." },
             ].map((item, i) => (
@@ -85,8 +85,8 @@ export default function AboutStudyTrackerPage() {
             {[
               {
                 icon: <Users className="h-5 w-5" />,
-                title: "Multi-Child Profiles",
-                desc: "Add every child in your family. Each gets their own avatar, color, grade level, courses, calendar, and engagement score. One parent account manages everything. Each child's profile is automatically linked to their AI tutor profile — so the tutor knows their name, grade, and preferences."
+                title: "Multi-Student Profiles",
+                desc: "Add every student in your family. Each gets their own avatar, color, grade level, courses, calendar, and engagement score. One parent account manages everything. Each student's profile is automatically linked to their AI tutor profile — so the tutor knows their name, grade, and preferences."
               },
               {
                 icon: <Calendar className="h-5 w-5" />,
@@ -101,7 +101,7 @@ export default function AboutStudyTrackerPage() {
               {
                 icon: <BarChart3 className="h-5 w-5" />,
                 title: "Engagement Scoring",
-                desc: "Each child receives a weekly engagement score from 0 to 100 based on sessions completed, tasks finished, study minutes, and consistency. Risk levels: On Track (70+), Needs Attention (50–69), At Risk (30–49), Critical (0–29). Parents and admins see alerts when scores drop."
+                desc: "Each student receives a weekly engagement score from 0 to 100 based on sessions completed, tasks finished, study minutes, and consistency. Risk levels: On Track (70+), Needs Attention (50–69), At Risk (30–49), Critical (0–29). Parents and admins see alerts when scores drop."
               },
               {
                 icon: <Flame className="h-5 w-5" />,
@@ -116,17 +116,17 @@ export default function AboutStudyTrackerPage() {
               {
                 icon: <Target className="h-5 w-5" />,
                 title: "Parent-Set Study Goals",
-                desc: "Set goals like \"30 minutes of math, 3 times per week\" for each child. Progress bars show how close they are to meeting each goal. The AI tutor references these goals during sessions — \"Your mom set a goal of 3 math sessions this week. This is session 2.\""
+                desc: "Set goals like \"30 minutes of math, 3 times per week\" for each student. Progress bars show how close they are to meeting each goal. The AI tutor references these goals during sessions — \"Your goal is 3 math sessions this week. This is session 2.\""
               },
               {
                 icon: <Bell className="h-5 w-5" />,
                 title: "Smart Reminders",
-                desc: "Automatic reminders before deadlines — both in-app and via email. Parents and children both get notified. Reminders escalate as deadlines approach so nothing gets missed."
+                desc: "Automatic reminders before deadlines — both in-app and via email. Parents and students both get notified. Reminders escalate as deadlines approach so nothing gets missed."
               },
               {
                 icon: <Mail className="h-5 w-5" />,
                 title: "Weekly Progress Reports",
-                desc: "One email per family each week with per-child sections. Includes specific insights like \"Emma mastered fraction multiplication this week and is ready for division\" — not just generic usage stats. Engagement scores, upcoming deadlines, and session summaries included."
+                desc: "One email per family each week with per-student sections. Includes specific insights like \"Emma mastered fraction multiplication this week and is ready for division\" — not just generic usage stats. Engagement scores, upcoming deadlines, and session summaries included."
               },
               {
                 icon: <TrendingUp className="h-5 w-5" />,
@@ -157,7 +157,7 @@ export default function AboutStudyTrackerPage() {
           <Card className="border-primary/30">
             <CardContent className="p-6">
               <p className="text-muted-foreground mb-6">
-                When your child clicks "Study with JIE" from their profile, the tutor automatically receives their full academic context. Here's what changes:
+                When your student clicks "Study with JIE" from their profile, the tutor automatically receives their full academic context. Here's what changes:
               </p>
               <div className="grid md:grid-cols-2 gap-6">
                 <div>
@@ -202,7 +202,7 @@ export default function AboutStudyTrackerPage() {
         <section className="mb-12">
           <h2 className="text-2xl font-bold text-foreground mb-6">Tutor Personality by Grade Level</h2>
           <p className="text-muted-foreground mb-6">
-            The voice tutor automatically adapts its teaching style to match each child's grade level. Same tutor, different personality.
+            The voice tutor automatically adapts its teaching style to match each student's grade level. Same tutor, different personality.
           </p>
           <div className="grid md:grid-cols-3 gap-4">
             {[
@@ -252,13 +252,13 @@ export default function AboutStudyTrackerPage() {
                 </div>
                 <div>
                   <div className="w-12 h-12 rounded-full bg-primary text-primary-foreground font-bold text-lg flex items-center justify-center mx-auto mb-3">2</div>
-                  <h3 className="font-bold text-foreground mb-1">Add a Child</h3>
-                  <p className="text-sm text-muted-foreground">Click "+ Add Child" and fill in their name, grade, and pick an avatar or upload a photo.</p>
+                  <h3 className="font-bold text-foreground mb-1">Add a Student</h3>
+                  <p className="text-sm text-muted-foreground">Click "+ Add Student" and fill in their name, grade, and pick an avatar or upload a photo.</p>
                 </div>
                 <div>
                   <div className="w-12 h-12 rounded-full bg-primary text-primary-foreground font-bold text-lg flex items-center justify-center mx-auto mb-3">3</div>
                   <h3 className="font-bold text-foreground mb-1">Add Courses & Dates</h3>
-                  <p className="text-sm text-muted-foreground">Click into the child's dashboard, add their courses, then add test dates and homework deadlines. Everything else is automatic.</p>
+                  <p className="text-sm text-muted-foreground">Click into the student's dashboard, add their courses, then add test dates and homework deadlines. Everything else is automatic.</p>
                 </div>
               </div>
               <div className="text-center mt-6">
