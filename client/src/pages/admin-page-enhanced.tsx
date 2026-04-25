@@ -405,7 +405,7 @@ export default function AdminPageEnhanced() {
 
           {/* Tab Navigation */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-10">
+            <TabsList className="grid w-full grid-cols-11">
               <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
               <TabsTrigger value="users" data-testid="tab-users">Users</TabsTrigger>
               <TabsTrigger value="sessions" data-testid="tab-sessions">Sessions</TabsTrigger>
@@ -413,6 +413,7 @@ export default function AdminPageEnhanced() {
               <TabsTrigger value="safety-incidents" data-testid="tab-safety-incidents">Safety</TabsTrigger>
               <TabsTrigger value="usage" data-testid="tab-usage">Usage</TabsTrigger>
               <TabsTrigger value="pricing-studio" data-testid="tab-pricing-studio">Pricing Studio</TabsTrigger>
+              <TabsTrigger value="investment-console" data-testid="tab-investment-console">Investment</TabsTrigger>
               <TabsTrigger value="capital-crm" data-testid="tab-capital-crm">Capital CRM</TabsTrigger>
               <TabsTrigger value="sales-crm" data-testid="tab-sales-crm">Sales CRM</TabsTrigger>
               <TabsTrigger value="family-tracker" data-testid="tab-family-tracker">Study Tracker</TabsTrigger>
@@ -1498,6 +1499,32 @@ export default function AdminPageEnhanced() {
                   src="/pricing-studio.html"
                   className="w-full h-full border-0"
                   title="JIE Mastery Quote & Pricing Studio"
+                />
+              </div>
+            </TabsContent>
+
+            {/* Investment Console Tab */}
+            <TabsContent value="investment-console" className="space-y-4">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900">Investment Console</h2>
+                  <p className="text-sm text-muted-foreground">Pro forma · Sources & uses · Runway scenarios · Investor-deck financials</p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => window.open("/investment-console.html", "_blank")}
+                  className="flex items-center gap-1.5 text-xs"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Open in New Tab
+                </Button>
+              </div>
+              <div className="rounded-lg border overflow-hidden" style={{ height: "calc(100vh - 280px)" }}>
+                <iframe
+                  src="/investment-console.html"
+                  className="w-full h-full border-0"
+                  title="JIE Mastery Investment Console"
                 />
               </div>
             </TabsContent>
