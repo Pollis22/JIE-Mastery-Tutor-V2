@@ -91,6 +91,14 @@ export function NavigationHeader() {
                 </Button>
                 <Button
                   variant="ghost"
+                  onClick={() => setLocation("/about-lsis")}
+                  className={isActive("/about-lsis") ? "text-primary font-medium" : "text-muted-foreground"}
+                  data-testid="nav-about-lsis"
+                >
+                  What is LSIS?
+                </Button>
+                <Button
+                  variant="ghost"
                   onClick={() => navigateTo("/benefits#test-prep")}
                   className={isActive("/benefits") ? "text-primary font-medium" : "text-muted-foreground"}
                   data-testid="nav-test-prep"
@@ -227,6 +235,7 @@ export function NavigationHeader() {
               { label: "Dashboard", path: "/dashboard" },
               { label: "Study Tracker", path: "/family" },
               { label: "About Study Tracker", path: "/about-study-tracker" },
+              { label: "What is LSIS?", path: "/about-lsis" },
               { label: "College Test Prep", path: "/benefits#test-prep" },
               { label: "Settings", path: "/settings" },
               { label: "Live Support", path: "/support" },
