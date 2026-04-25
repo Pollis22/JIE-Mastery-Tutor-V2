@@ -1,0 +1,1446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https:; frame-src 'self' blob: data:; worker-src blob:;">
+<title>JIE Mastery — Investment Console</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Figtree:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --red:#C81C1C;--rdp:#8B1010;--rm:#A81515;
+  --r10:rgba(200,28,28,.10);--r05:rgba(200,28,28,.05);
+  --bg:#F7F7F8;--sf:#FFFFFF;--sf2:#F2F2F4;
+  --bo:#E2E2E6;--bo2:#CACACE;
+  --tx:#0F0F10;--tx2:#4A4A55;--tx3:#9A9AA8;
+  --gr:#15803d;--grb:#f0fdf4;--grbo:#bbf7d0;
+  --am:#b45309;--amb:#fffbeb;--ambo:#fde68a;
+  --dg:#b91c1c;--dgb:#fef2f2;--dgbo:#fecaca;
+  --bl:#1e40af;--blb:#eff6ff;--blbo:#bfdbfe;
+  --r:10px;
+}
+body{font-family:'Figtree',system-ui,sans-serif;background:var(--bg);color:var(--tx);font-size:14px;line-height:1.5}
+
+/* TOPBAR */
+.tb{background:#fff;border-bottom:1px solid var(--bo);height:56px;padding:0 28px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:200;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.tl{display:flex;align-items:center;gap:12px}
+.bn{font-size:15px;font-weight:800;letter-spacing:-.02em}
+.bn em{color:var(--red);font-style:normal}
+.bs{font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--tx3)}
+.tpill{background:var(--r10);color:var(--red);font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:5px 12px;border-radius:20px;border:1px solid rgba(200,28,28,.2)}
+
+/* WRAP */
+.wrap{max-width:1240px;margin:0 auto;padding:26px 20px 72px}
+
+/* HERO */
+.hero{background:linear-gradient(135deg,#8B1010 0%,#C81C1C 55%,#E53535 100%);border-radius:14px;padding:26px 30px;margin-bottom:22px;display:flex;align-items:center;justify-content:space-between;gap:22px;position:relative;overflow:hidden}
+.hero::before{content:"";position:absolute;inset:0;background:repeating-linear-gradient(45deg,transparent,transparent 20px,rgba(255,255,255,.025) 20px,rgba(255,255,255,.025) 21px)}
+.hc{position:relative;z-index:1}
+.hc h1{font-family:'DM Serif Display',serif;font-size:24px;color:#fff;letter-spacing:-.02em;line-height:1.15;margin-bottom:4px}
+.hc p{font-size:12.5px;color:rgba(255,255,255,.78);font-weight:500;max-width:560px}
+.hero-stats{position:relative;z-index:1;display:flex;gap:18px}
+.hero-stat{text-align:right}
+.hero-stat .lbl{font-size:9.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.7);margin-bottom:2px}
+.hero-stat .val{font-family:'DM Serif Display',serif;font-size:22px;color:#fff;line-height:1}
+
+/* TABS */
+.ptabs{display:flex;gap:4px;background:#fff;border:1px solid var(--bo);border-radius:10px;padding:4px;margin-bottom:20px;width:fit-content;box-shadow:0 1px 3px rgba(0,0,0,.06);flex-wrap:wrap}
+.ptab{padding:9px 18px;border-radius:7px;font-size:12.5px;font-weight:700;cursor:pointer;color:var(--tx2);transition:all .18s;border:none;background:transparent;user-select:none}
+.ptab.on{background:var(--red);color:#fff;box-shadow:0 2px 8px rgba(200,28,28,.3)}
+.tab-s{display:none}
+.tab-s.on{display:block}
+
+/* SCENARIO BAR */
+.sc-bar{display:flex;align-items:center;gap:14px;padding:12px 18px;background:#fff;border:1px solid var(--bo);border-radius:10px;margin-bottom:18px;flex-wrap:wrap}
+.sc-bar-lbl{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--tx3)}
+.sc-pills{display:flex;gap:6px}
+.sc-pill{padding:7px 14px;font-size:11.5px;font-weight:700;border-radius:7px;cursor:pointer;border:1.5px solid var(--bo);background:var(--sf2);color:var(--tx2);transition:all .15s}
+.sc-pill.on{background:var(--red);color:#fff;border-color:var(--red);box-shadow:0 2px 6px rgba(200,28,28,.25)}
+.sc-pill:hover:not(.on){border-color:var(--red);color:var(--red)}
+.sc-actions{margin-left:auto;display:flex;gap:8px}
+
+/* GRID */
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px;margin-bottom:18px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px}
+.g21{display:grid;grid-template-columns:2fr 1fr;gap:18px;margin-bottom:18px}
+.sp2{grid-column:span 2}
+@media(max-width:960px){.g3{grid-template-columns:1fr 1fr}.g21{grid-template-columns:1fr}.sp2{grid-column:span 1}}
+@media(max-width:580px){.g3,.g2{grid-template-columns:1fr}}
+
+/* CARD */
+.card{background:#fff;border:1px solid var(--bo);border-radius:var(--r);padding:22px;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+.ch{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--tx3);margin-bottom:16px;display:flex;align-items:center;gap:7px}
+.chdot{width:6px;height:6px;border-radius:50%;background:var(--red);flex-shrink:0}
+.card h3{font-size:15px;font-weight:800;color:var(--tx);margin-bottom:4px;letter-spacing:-.01em}
+.card-sub{font-size:11px;color:var(--tx3);margin-bottom:16px}
+
+/* FIELDS */
+.f{margin-bottom:14px}
+.f:last-child{margin-bottom:0}
+.fl{font-size:11.5px;font-weight:600;color:var(--tx2);margin-bottom:6px;display:flex;justify-content:space-between;align-items:center}
+.fv{font-size:12.5px;font-weight:700;color:var(--red)}
+input[type=text],input[type=number],select{width:100%;background:var(--sf2);border:1.5px solid var(--bo);color:var(--tx);font-family:'Figtree',sans-serif;font-size:13px;font-weight:500;padding:9px 12px;border-radius:8px;outline:none;transition:all .15s}
+input:focus,select:focus{border-color:var(--red);background:#fff;box-shadow:0 0 0 3px rgba(200,28,28,.06)}
+.pfx{position:relative}
+.pfx span{position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--tx3);font-size:13px;pointer-events:none;font-weight:600}
+.pfx input{padding-left:22px}
+.sfx{position:relative}
+.sfx span{position:absolute;right:11px;top:50%;transform:translateY(-50%);color:var(--tx3);font-size:13px;pointer-events:none;font-weight:600}
+.sfx input{padding-right:30px}
+.fhint{font-size:10.5px;color:var(--tx3);margin-top:4px}
+
+/* BUTTONS */
+.btn{display:inline-flex;align-items:center;gap:7px;padding:9px 16px;border-radius:7px;font-family:'Figtree',sans-serif;font-size:11.5px;font-weight:700;cursor:pointer;border:none;transition:all .18s;letter-spacing:.02em;text-decoration:none;white-space:nowrap}
+.btn-pri{background:var(--red);color:#fff;box-shadow:0 2px 6px rgba(200,28,28,.25)}
+.btn-pri:hover{background:var(--rdp);box-shadow:0 3px 10px rgba(200,28,28,.35)}
+.btn-sec{background:var(--sf2);color:var(--tx);border:1px solid var(--bo)}
+.btn-sec:hover{border-color:var(--red);color:var(--red);background:#fff}
+.btn-out{background:#fff;color:var(--red);border:1.5px solid var(--red)}
+.btn-out:hover{background:var(--red);color:#fff}
+.btn-sm{padding:6px 12px;font-size:10.5px}
+.btn-ghost{background:transparent;color:var(--tx3);padding:6px 10px;font-size:11px;font-weight:600}
+.btn-ghost:hover{color:var(--red);background:var(--r05)}
+
+/* TABLE */
+.tbl{width:100%;border-collapse:collapse;font-size:12px}
+.tbl thead th{background:var(--sf2);font-weight:700;color:var(--tx2);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;padding:10px 12px;border-bottom:1.5px solid var(--bo);text-align:left}
+.tbl thead th.r{text-align:right}
+.tbl tbody td{padding:10px 12px;border-bottom:1px solid var(--bo);color:var(--tx)}
+.tbl tbody td.r{text-align:right;font-variant-numeric:tabular-nums}
+.tbl tbody tr:hover{background:var(--sf2)}
+.tbl tfoot td{padding:12px;font-weight:800;background:var(--sf2);border-top:2px solid var(--bo)}
+.tbl tfoot td.r{text-align:right;font-variant-numeric:tabular-nums}
+.tbl input[type=text],.tbl input[type=number]{padding:6px 9px;font-size:12px;border-radius:6px;border-width:1px}
+.row-del{color:var(--tx3);cursor:pointer;font-size:14px;padding:2px 6px;border-radius:4px;transition:all .15s;background:none;border:none}
+.row-del:hover{color:var(--red);background:var(--r05)}
+
+/* BALANCE INDICATOR */
+.bal{padding:14px 18px;border-radius:10px;display:flex;align-items:center;justify-content:space-between;margin-top:14px;border:1.5px solid}
+.bal.ok{background:var(--grb);border-color:var(--grbo);color:var(--gr)}
+.bal.over{background:var(--dgb);border-color:var(--dgbo);color:var(--dg)}
+.bal.under{background:var(--amb);border-color:var(--ambo);color:var(--am)}
+.bal-lbl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em}
+.bal-val{font-family:'DM Serif Display',serif;font-size:18px;font-variant-numeric:tabular-nums}
+
+/* VERDICT BOX */
+.verdict{padding:24px;border-radius:14px;border:2px solid;margin-bottom:18px;position:relative;overflow:hidden}
+.verdict.ok{background:var(--grb);border-color:var(--grbo)}
+.verdict.under{background:var(--amb);border-color:var(--ambo)}
+.verdict.over{background:var(--blb);border-color:var(--blbo)}
+.verdict-head{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;margin-bottom:6px}
+.verdict.ok .verdict-head{color:var(--gr)}
+.verdict.under .verdict-head{color:var(--am)}
+.verdict.over .verdict-head{color:var(--bl)}
+.verdict-title{font-family:'DM Serif Display',serif;font-size:26px;line-height:1.15;margin-bottom:8px;letter-spacing:-.01em}
+.verdict.ok .verdict-title{color:#0f5e2a}
+.verdict.under .verdict-title{color:#7a3a06}
+.verdict.over .verdict-title{color:#1e3a8a}
+.verdict-body{font-size:13px;color:var(--tx);line-height:1.55;max-width:760px}
+.verdict-stats{display:flex;gap:24px;margin-top:14px;flex-wrap:wrap}
+.verdict-stat .lbl{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--tx3);margin-bottom:2px}
+.verdict-stat .val{font-family:'DM Serif Display',serif;font-size:20px;color:var(--tx);line-height:1}
+
+/* CHART */
+.chart-wrap{position:relative;width:100%;height:340px;background:#fff;border:1px solid var(--bo);border-radius:10px;padding:18px}
+.chart-wrap svg{width:100%;height:100%}
+.chart-legend{display:flex;gap:18px;margin-top:10px;font-size:11px;color:var(--tx2);flex-wrap:wrap}
+.chart-legend-item{display:flex;align-items:center;gap:6px}
+.chart-legend-swatch{width:14px;height:3px;border-radius:2px}
+
+/* PROFORMA TABLE */
+.pf-wrap{overflow-x:auto;border:1px solid var(--bo);border-radius:10px;background:#fff}
+.pf{width:100%;border-collapse:collapse;font-size:11.5px;min-width:800px}
+.pf thead th{background:var(--sf2);font-weight:700;color:var(--tx2);font-size:10px;text-transform:uppercase;letter-spacing:.06em;padding:10px;border-bottom:1.5px solid var(--bo);text-align:right;white-space:nowrap}
+.pf thead th:first-child{text-align:left;background:#fff;position:sticky;left:0;z-index:2}
+.pf tbody td{padding:9px 10px;border-bottom:1px solid var(--bo);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.pf tbody td:first-child{text-align:left;font-weight:600;background:#fff;position:sticky;left:0;color:var(--tx);box-shadow:1px 0 0 var(--bo)}
+.pf .grp{background:var(--sf2);font-weight:800;text-transform:uppercase;font-size:10px;letter-spacing:.08em;color:var(--tx3)}
+.pf .grp td{padding:8px 10px}
+.pf .total{background:var(--r05);font-weight:800}
+.pf .total td:first-child{background:var(--r05)}
+.pf .indent td:first-child{padding-left:24px;font-weight:500;color:var(--tx2)}
+.pf .neg{color:var(--dg)}
+.pf .pos{color:var(--gr)}
+
+/* SCENARIO COMPARISON */
+.sc-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:18px}
+@media(max-width:880px){.sc-grid{grid-template-columns:1fr}}
+.sc-card{background:#fff;border:1.5px solid var(--bo);border-radius:12px;padding:20px;transition:all .2s}
+.sc-card.active{border-color:var(--red);box-shadow:0 4px 16px rgba(200,28,28,.12)}
+.sc-card .lbl{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:var(--tx3);margin-bottom:4px}
+.sc-card .name{font-family:'DM Serif Display',serif;font-size:18px;color:var(--tx);margin-bottom:14px}
+.sc-card .metrics{display:flex;flex-direction:column;gap:11px}
+.sc-card .metric{display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid var(--bo);padding-bottom:7px}
+.sc-card .metric:last-child{border-bottom:none}
+.sc-card .metric-l{font-size:11px;color:var(--tx2);font-weight:600}
+.sc-card .metric-v{font-family:'DM Serif Display',serif;font-size:16px;color:var(--tx);font-variant-numeric:tabular-nums}
+
+/* SAVED SCENARIOS */
+.saved{background:var(--sf2);border:1px solid var(--bo);border-radius:8px;padding:10px 14px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.saved-name{font-size:12.5px;font-weight:700;color:var(--tx)}
+.saved-meta{font-size:10.5px;color:var(--tx3)}
+
+/* MODAL */
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(15,15,16,.55);z-index:1000;align-items:center;justify-content:center;padding:20px}
+.modal-bg.on{display:flex}
+.modal{background:#fff;border-radius:14px;padding:26px;max-width:480px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.25)}
+.modal h2{font-family:'DM Serif Display',serif;font-size:20px;margin-bottom:6px}
+.modal p{font-size:12.5px;color:var(--tx2);margin-bottom:16px}
+.modal-foot{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+
+/* ASSUMPTIONS BLOCK */
+.asm{background:var(--sf2);border:1px solid var(--bo);border-radius:10px;padding:18px;margin-bottom:14px}
+.asm-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.asm-title{font-size:12.5px;font-weight:800;color:var(--tx);display:flex;align-items:center;gap:8px}
+.asm-pill{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:3px 8px;border-radius:10px;background:#fff;color:var(--red);border:1px solid rgba(200,28,28,.25)}
+.asm-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:580px){.asm-grid{grid-template-columns:1fr}}
+
+/* VIEW TOGGLE */
+.view-toggle{display:flex;gap:4px;background:var(--sf2);border:1px solid var(--bo);border-radius:7px;padding:3px}
+.view-toggle button{padding:6px 12px;font-size:10.5px;font-weight:700;border-radius:5px;cursor:pointer;border:none;background:transparent;color:var(--tx2)}
+.view-toggle button.on{background:#fff;color:var(--red);box-shadow:0 1px 3px rgba(0,0,0,.1)}
+
+/* OWNER LADDER */
+.ladder{display:flex;flex-direction:column;gap:8px}
+.ladder-step{display:flex;align-items:center;gap:14px;padding:11px 14px;border-radius:8px;background:var(--sf2);border:1px solid var(--bo)}
+.ladder-num{width:26px;height:26px;border-radius:50%;background:var(--red);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;flex-shrink:0}
+.ladder-step.fired{background:var(--grb);border-color:var(--grbo)}
+.ladder-step.fired .ladder-num{background:var(--gr)}
+.ladder-comp{font-family:'DM Serif Display',serif;font-size:14px;color:var(--tx)}
+.ladder-trig{font-size:10.5px;color:var(--tx3);font-weight:600}
+.ladder-mo{margin-left:auto;font-size:10px;font-weight:700;color:var(--tx3)}
+.ladder-step.fired .ladder-mo{color:var(--gr)}
+
+@media print{body{background:#fff}.no-print{display:none!important}}
+</style>
+</head>
+<body>
+
+<div class="tb">
+  <div class="tl">
+    <div>
+      <div class="bn">JIE <em>Mastery</em></div>
+      <div class="bs">Investment Console</div>
+    </div>
+  </div>
+  <div class="tpill">Internal Planning Tool</div>
+</div>
+
+<div class="wrap">
+
+  <div class="hero">
+    <div class="hc">
+      <h1>Investment Console</h1>
+      <p>Model the raise. Build the pro forma. Stress-test scenarios. Generate sources &amp; uses and 3-year P&amp;L for the pitch deck.</p>
+    </div>
+    <div class="hero-stats">
+      <div class="hero-stat"><div class="lbl">Target Raise</div><div class="val" id="hs-raise">$3.0M</div></div>
+      <div class="hero-stat"><div class="lbl">Runway @ Base</div><div class="val" id="hs-runway">— mo</div></div>
+    </div>
+  </div>
+
+  <div class="sc-bar">
+    <span class="sc-bar-lbl">Scenario</span>
+    <div class="sc-pills">
+      <button class="sc-pill" data-sc="conservative">Conservative</button>
+      <button class="sc-pill on" data-sc="base">Base</button>
+      <button class="sc-pill" data-sc="aggressive">Aggressive</button>
+    </div>
+    <div class="sc-actions">
+      <button class="btn btn-sec btn-sm" onclick="openSaveModal()">💾 Save Scenario</button>
+      <button class="btn btn-sec btn-sm" onclick="openLoadModal()">📂 Load</button>
+      <button class="btn btn-sec btn-sm" onclick="resetDefaults()">↻ Reset</button>
+    </div>
+  </div>
+
+  <div class="ptabs">
+    <button class="ptab on" data-tab="su">Sources &amp; Uses</button>
+    <button class="ptab" data-tab="pf">Pro Forma P&amp;L</button>
+    <button class="ptab" data-tab="rw">Runway &amp; Verdict</button>
+    <button class="ptab" data-tab="cmp">Scenario Compare</button>
+  </div>
+
+  <!-- =================== TAB: SOURCES & USES =================== -->
+  <div class="tab-s on" id="tab-su">
+
+    <div class="g21">
+      <div class="card">
+        <div class="ch"><span class="chdot"></span>Capital Sources</div>
+        <div class="g2">
+          <div class="f">
+            <div class="fl"><span>Investor Raise</span><span class="fv" id="raise-fv">$3,000,000</span></div>
+            <div class="pfx"><span>$</span><input type="number" id="raise-amt" value="3000000" step="100000" oninput="onRaiseChange()"></div>
+            <div class="fhint">Slider: $1M — $10M</div>
+          </div>
+          <div class="f">
+            <div class="fl"><span>Founder Contribution</span></div>
+            <div class="pfx"><span>$</span><input type="number" id="founder-amt" value="0" step="10000" oninput="recalc()"></div>
+            <div class="fhint">Optional</div>
+          </div>
+        </div>
+        <div class="f">
+          <input type="range" min="1000000" max="10000000" step="100000" value="3000000" id="raise-slider" oninput="onRaiseSliderChange()" style="width:100%">
+        </div>
+        <table class="tbl" style="margin-top:14px">
+          <thead><tr><th>Source</th><th class="r">Amount</th></tr></thead>
+          <tbody id="src-rows"></tbody>
+          <tfoot><tr><td>Total Sources</td><td class="r" id="src-total">$0</td></tr></tfoot>
+        </table>
+      </div>
+
+      <div class="card">
+        <div class="ch"><span class="chdot"></span>Owner Salary Ladder</div>
+        <div class="ladder" id="ladder"></div>
+        <div class="fhint" style="margin-top:12px">Steps trigger automatically as the pro forma hits each milestone. Year-1 salary always starts at the base.</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+        <div>
+          <div class="ch" style="margin-bottom:4px"><span class="chdot"></span>Capital Uses (3-Year Allocation)</div>
+          <div class="card-sub">Edit any line. Add custom rows for situational expenses. All amounts are 3-year totals.</div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-out btn-sm" onclick="addUseRow()">+ Add Row</button>
+          <button class="btn btn-sec btn-sm" onclick="exportSU('csv')">⬇ CSV</button>
+          <button class="btn btn-sec btn-sm" onclick="exportSU('pdf')">⬇ PDF</button>
+        </div>
+      </div>
+
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th style="width:32%">Use of Funds</th>
+            <th style="width:18%">Category</th>
+            <th class="r" style="width:18%">3-Yr Total</th>
+            <th class="r" style="width:14%">% of Raise</th>
+            <th style="width:auto">Notes</th>
+            <th style="width:40px"></th>
+          </tr>
+        </thead>
+        <tbody id="uses-rows"></tbody>
+        <tfoot>
+          <tr><td colspan="2">Total Uses</td><td class="r" id="uses-total">$0</td><td class="r" id="uses-pct">0%</td><td colspan="2"></td></tr>
+        </tfoot>
+      </table>
+
+      <div class="bal ok" id="bal-ind">
+        <div>
+          <div class="bal-lbl">Sources &amp; Uses Balance</div>
+          <div style="font-size:11px;margin-top:2px;font-weight:600" id="bal-msg">Balanced</div>
+        </div>
+        <div class="bal-val" id="bal-val">$0</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =================== TAB: PRO FORMA =================== -->
+  <div class="tab-s" id="tab-pf">
+
+    <div class="g3">
+      <!-- Production -->
+      <div class="card">
+        <div class="ch"><span class="chdot"></span>JIE Production (Consumer)</div>
+        <div class="card-sub">Family subscriptions across Starter/Standard/Pro/Elite tiers</div>
+        <div class="f">
+          <div class="fl">Starting paying users (mo 1)</div>
+          <input type="number" id="prod-start" value="250" oninput="recalc()">
+        </div>
+        <div class="f">
+          <div class="fl">Net new users / mo — Yr 1</div>
+          <input type="number" id="prod-nn1" value="50" oninput="recalc()">
+        </div>
+        <div class="f">
+          <div class="fl">Net new users / mo — Yr 2</div>
+          <input type="number" id="prod-nn2" value="120" oninput="recalc()">
+        </div>
+        <div class="f">
+          <div class="fl">Net new users / mo — Yr 3</div>
+          <input type="number" id="prod-nn3" value="200" oninput="recalc()">
+        </div>
+        <div class="f">
+          <div class="fl">Blended ARPU / mo</div>
+          <div class="pfx"><span>$</span><input type="number" id="prod-arpu" value="60" oninput="recalc()"></div>
+        </div>
+        <div class="f">
+          <div class="fl">Monthly churn</div>
+          <div class="sfx"><input type="number" id="prod-churn" value="5" step="0.5" oninput="recalc()"><span>%</span></div>
+        </div>
+        <div class="f">
+          <div class="fl">Variable cost / user / mo</div>
+          <div class="pfx"><span>$</span><input type="number" id="prod-vc" value="8" oninput="recalc()"></div>
+        </div>
+      </div>
+
+      <!-- Institutional -->
+      <div class="card">
+        <div class="ch"><span class="chdot"></span>Schools &amp; Universities</div>
+        <div class="card-sub">Institutional white-label deployments (UW model)</div>
+        <div class="f">
+          <div class="fl">Institutions — Yr 1</div>
+          <input type="number" id="inst-y1" value="3" oninput="recalc()">
+        </div>
+        <div class="f">
+          <div class="fl">Institutions — Yr 2</div>
+          <input type="number" id="inst-y2" value="8" oninput="recalc()">
+        </div>
+        <div class="f">
+          <div class="fl">Institutions — Yr 3</div>
+          <input type="number" id="inst-y3" value="18" oninput="recalc()">
+        </div>
+        <div class="f">
+          <div class="fl">Avg ACV / institution</div>
+          <div class="pfx"><span>$</span><input type="number" id="inst-acv" value="410000" step="10000" oninput="recalc()"></div>
+        </div>
+        <div class="f">
+          <div class="fl">Ramp to full ACV (months)</div>
+          <input type="number" id="inst-ramp" value="6" oninput="recalc()">
+        </div>
+        <div class="f">
+          <div class="fl">Sales commission</div>
+          <div class="sfx"><input type="number" id="inst-comm" value="25" step="1" oninput="recalc()"><span>%</span></div>
+        </div>
+        <div class="f">
+          <div class="fl">Variable cost (% of revenue)</div>
+          <div class="sfx"><input type="number" id="inst-vc" value="15" step="1" oninput="recalc()"><span>%</span></div>
+        </div>
+      </div>
+
+      <!-- Consulting -->
+      <div class="card">
+        <div class="ch"><span class="chdot"></span>JIE AI Consulting</div>
+        <div class="card-sub">Software design &amp; AI consulting engagements</div>
+        <div class="f">
+          <div class="fl">Engagements — Yr 1</div>
+          <input type="number" id="cons-y1" value="6" oninput="recalc()">
+        </div>
+        <div class="f">
+          <div class="fl">Engagements — Yr 2</div>
+          <input type="number" id="cons-y2" value="14" oninput="recalc()">
+        </div>
+        <div class="f">
+          <div class="fl">Engagements — Yr 3</div>
+          <input type="number" id="cons-y3" value="24" oninput="recalc()">
+        </div>
+        <div class="f">
+          <div class="fl">Blended engagement value</div>
+          <div class="pfx"><span>$</span><input type="number" id="cons-val" value="66000" step="1000" oninput="recalc()"></div>
+          <div class="fhint">50% T1 ($20K) · 35% T2 ($75K) · 15% T3 ($200K)</div>
+        </div>
+        <div class="f">
+          <div class="fl">Gross margin</div>
+          <div class="sfx"><input type="number" id="cons-gm" value="60" step="1" oninput="recalc()"><span>%</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+        <div>
+          <div class="ch" style="margin-bottom:4px"><span class="chdot"></span>Pro Forma P&amp;L</div>
+          <div class="card-sub">3-year projection — all three revenue streams rolled up</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <div class="view-toggle">
+            <button class="on" data-view="annual" onclick="setView('annual')">Annual</button>
+            <button data-view="quarterly" onclick="setView('quarterly')">Quarterly</button>
+          </div>
+          <button class="btn btn-sec btn-sm" onclick="exportPF('csv')">⬇ CSV</button>
+          <button class="btn btn-sec btn-sm" onclick="exportPF('pdf')">⬇ PDF</button>
+        </div>
+      </div>
+
+      <div class="pf-wrap">
+        <table class="pf" id="pf-table"></table>
+      </div>
+    </div>
+  </div>
+
+  <!-- =================== TAB: RUNWAY =================== -->
+  <div class="tab-s" id="tab-rw">
+
+    <div id="verdict-box"></div>
+
+    <div class="g21">
+      <div class="card">
+        <div class="ch"><span class="chdot"></span>Cash on Hand — 36 Months</div>
+        <div class="chart-wrap">
+          <svg id="cash-chart" viewBox="0 0 900 300" preserveAspectRatio="none"></svg>
+        </div>
+        <div class="chart-legend">
+          <div class="chart-legend-item"><div class="chart-legend-swatch" style="background:#C81C1C"></div>Cash balance</div>
+          <div class="chart-legend-item"><div class="chart-legend-swatch" style="background:#15803d"></div>EBITDA breakeven line</div>
+          <div class="chart-legend-item"><div class="chart-legend-swatch" style="background:#9A9AA8;border:1px dashed #9A9AA8"></div>Zero line</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="ch"><span class="chdot"></span>Key Metrics</div>
+        <table class="tbl">
+          <tbody id="key-metrics"></tbody>
+        </table>
+        <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--bo)">
+          <div class="ch" style="margin-bottom:10px"><span class="chdot"></span>Right-Size Tester</div>
+          <div class="fhint" style="margin-bottom:8px">Drag to find the raise that funds 24+ months at this scenario.</div>
+          <input type="range" min="1000000" max="10000000" step="100000" value="3000000" id="rw-slider" oninput="onRwSliderChange()" style="width:100%">
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--tx3);margin-top:4px">
+            <span>$1M</span><span id="rw-slider-val" style="font-weight:800;color:var(--red)">$3.0M</span><span>$10M</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =================== TAB: SCENARIO COMPARE =================== -->
+  <div class="tab-s" id="tab-cmp">
+    <div class="card">
+      <div class="ch"><span class="chdot"></span>Side-by-Side Scenario Compare</div>
+      <div class="card-sub">All three scenarios, same assumptions, with growth/cost modifiers applied. Click a card to make it active.</div>
+      <div class="sc-grid" id="sc-cards"></div>
+
+      <div style="margin-top:8px;font-size:11.5px;color:var(--tx2);background:var(--sf2);padding:14px;border-radius:8px;border:1px solid var(--bo)">
+        <strong style="color:var(--tx)">How modifiers work:</strong>
+        Conservative = 70% of base growth, 110% of base costs. Aggressive = 140% of base growth, 90% of base costs. The active scenario drives all other tabs and exports.
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:18px">
+      <div class="ch"><span class="chdot"></span>Saved Scenarios</div>
+      <div id="saved-list"><div style="font-size:12px;color:var(--tx3);text-align:center;padding:14px">No saved scenarios yet. Use 💾 Save Scenario in the toolbar to capture the current state.</div></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- SAVE MODAL -->
+<div class="modal-bg" id="save-modal">
+  <div class="modal">
+    <h2>Save Scenario</h2>
+    <p>Capture the current assumptions. Saved to this browser only.</p>
+    <input type="text" id="save-name" placeholder="e.g. Series Seed v3, Conservative-100users">
+    <div class="modal-foot">
+      <button class="btn btn-sec" onclick="closeModal('save-modal')">Cancel</button>
+      <button class="btn btn-pri" onclick="saveScenario()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- LOAD MODAL -->
+<div class="modal-bg" id="load-modal">
+  <div class="modal">
+    <h2>Load Saved Scenario</h2>
+    <p>Pick one to overwrite the current state.</p>
+    <div id="load-list" style="max-height:340px;overflow-y:auto"></div>
+    <div class="modal-foot">
+      <button class="btn btn-sec" onclick="closeModal('load-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// =====================================================================
+// JIE Mastery — Investment Console
+// =====================================================================
+
+const fmtUSD = v => '$' + Math.round(v).toLocaleString('en-US');
+const fmtUSDK = v => Math.abs(v) >= 1e6 ? '$' + (v/1e6).toFixed(2) + 'M' : '$' + (v/1e3).toFixed(0) + 'K';
+const fmtPct = v => (v*100).toFixed(1) + '%';
+const fmtNum = v => Math.round(v).toLocaleString('en-US');
+
+// ----- DEFAULT USES -----
+const DEFAULT_USES = [
+  { id: 'owner', label: 'Owner Salary (3-yr ladder)', cat: 'salaries', amt: 525000, note: 'Auto-computed from ladder; editable.' },
+  { id: 'devTeam', label: 'Dev Team', cat: 'salaries', amt: 720000, note: '2 devs avg $120K loaded × 3 yrs' },
+  { id: 'marketing', label: 'Marketing & Advertising', cat: 'marketing', amt: 480000, note: 'Digital + content + events' },
+  { id: 'sales', label: 'Sales (BDR/AE)', cat: 'salaries', amt: 360000, note: '1 BDR + 1 AE for institutional' },
+  { id: 'infra', label: 'Infrastructure (Fixed)', cat: 'cogs', amt: 36000, note: 'Hosting, base APIs, monitoring' },
+  { id: 'legal', label: 'Legal / Accounting / Insurance', cat: 'ga', amt: 90000, note: '$30K/yr blended' },
+  { id: 'office', label: 'Office / Admin', cat: 'ga', amt: 36000, note: '$12K/yr remote-first' },
+  { id: 'tools', label: 'Software & SaaS Tools', cat: 'ga', amt: 45000, note: 'Stripe, Resend, dev tools, CRM' },
+  { id: 'contingency', label: 'Contingency Reserve', cat: 'reserve', amt: 308000, note: 'Buffer ~10% of raise' },
+];
+
+const CATEGORIES = ['salaries','marketing','sales','cogs','ga','reserve','other'];
+const CAT_LABEL = {salaries:'Salaries',marketing:'Marketing',sales:'Sales',cogs:'COGS/Infra',ga:'G&A',reserve:'Reserve',other:'Other'};
+
+// ----- SCENARIO MODIFIERS -----
+const SCEN = {
+  conservative: { growth: 0.70, cost: 1.10, label: 'Conservative' },
+  base: { growth: 1.00, cost: 1.00, label: 'Base' },
+  aggressive: { growth: 1.40, cost: 0.90, label: 'Aggressive' },
+};
+
+// ----- STATE -----
+let state = {
+  scenario: 'base',
+  view: 'annual',
+  raise: 3000000,
+  founder: 0,
+  uses: JSON.parse(JSON.stringify(DEFAULT_USES)),
+  ownerLadder: {
+    base: 150000, step2: 175000, step3: 200000, step4: 225000,
+    step2Trigger: 50000,   // monthly revenue
+    step3Trigger: 100000,
+    step4Months: 3,        // EBITDA breakeven for N consecutive months
+  },
+};
+
+const GETN = id => parseFloat(document.getElementById(id).value) || 0;
+
+// ====================================================================
+// CORE CALCULATIONS — generates the 36-month projection
+// ====================================================================
+function compute() {
+  const sc = SCEN[state.scenario];
+
+  // Pull inputs
+  const prod = {
+    start: GETN('prod-start'),
+    nn: [GETN('prod-nn1'), GETN('prod-nn2'), GETN('prod-nn3')],
+    arpu: GETN('prod-arpu'),
+    churn: GETN('prod-churn') / 100,
+    vc: GETN('prod-vc'),
+  };
+  const inst = {
+    counts: [GETN('inst-y1'), GETN('inst-y2'), GETN('inst-y3')],
+    acv: GETN('inst-acv'),
+    ramp: GETN('inst-ramp'),
+    comm: GETN('inst-comm') / 100,
+    vc: GETN('inst-vc') / 100,
+  };
+  const cons = {
+    counts: [GETN('cons-y1'), GETN('cons-y2'), GETN('cons-y3')],
+    val: GETN('cons-val'),
+    gm: GETN('cons-gm') / 100,
+  };
+
+  // Apply scenario modifiers to growth-side inputs
+  prod.nn = prod.nn.map(v => v * sc.growth);
+  inst.counts = inst.counts.map(v => v * sc.growth);
+  cons.counts = cons.counts.map(v => v * sc.growth);
+
+  // 3-year monthly arrays
+  const N = 36;
+  const months = [];
+
+  // Production user trajectory
+  let users = prod.start;
+  // Institutional pipeline: track each institution's onboard month
+  const instOnboardMonths = [];
+  for (let y = 0; y < 3; y++) {
+    const count = inst.counts[y];
+    const yStart = y * 12;
+    // distribute institutions across months in the year
+    for (let i = 0; i < count; i++) {
+      const m = yStart + Math.floor((i + 0.5) * (12 / Math.max(1, count)));
+      instOnboardMonths.push(m);
+    }
+  }
+
+  // Consulting engagements: distribute per quarter, recognize over 3 months each
+  const engMonths = [];
+  for (let y = 0; y < 3; y++) {
+    const count = cons.counts[y];
+    const yStart = y * 12;
+    for (let i = 0; i < count; i++) {
+      const m = yStart + Math.floor((i + 0.5) * (12 / Math.max(1, count)));
+      engMonths.push(m);
+    }
+  }
+
+  let cash = state.raise + state.founder;
+  let consecBreakeven = 0;
+  let ownerCurrent = state.ownerLadder.base;
+  let stepFiredAt = { 2: null, 3: null, 4: null };
+
+  // 3-year totals of fixed uses → monthly OpEx (excluding owner salary, which steps)
+  const totalFixed3yr = state.uses.reduce((s, u) => {
+    return s + (u.id === 'owner' ? 0 : u.amt);
+  }, 0);
+  const monthlyFixedOpEx = (totalFixed3yr / 36) * sc.cost;
+
+  // Variable infra is in COGS map per user/per inst — keep separate
+  for (let m = 0; m < N; m++) {
+    // PRODUCTION
+    const yr = Math.floor(m / 12);
+    users = users * (1 - prod.churn) + prod.nn[yr];
+    const revProd = users * prod.arpu;
+    const cogsProd = users * prod.vc * sc.cost;
+
+    // INSTITUTIONAL — sum of ramped institutions
+    let revInstGross = 0;
+    for (const onboardMo of instOnboardMonths) {
+      if (m < onboardMo) continue;
+      const monthsSince = m - onboardMo + 1;
+      const rampPct = Math.min(1, monthsSince / inst.ramp);
+      revInstGross += (inst.acv / 12) * rampPct;
+    }
+    const commission = revInstGross * inst.comm;
+    const revInst = revInstGross - commission;
+    const cogsInst = revInstGross * inst.vc * sc.cost;
+
+    // CONSULTING — engagements recognized over 3 months
+    let revCons = 0;
+    for (const eMo of engMonths) {
+      if (m >= eMo && m < eMo + 3) revCons += cons.val / 3;
+    }
+    const cogsCons = revCons * (1 - cons.gm) * sc.cost;
+
+    const totalRev = revProd + revInst + revCons;
+    const totalCogs = cogsProd + cogsInst + cogsCons;
+    const grossProfit = totalRev - totalCogs;
+
+    // OWNER LADDER — check triggers monthly
+    const monthlyOwner = ownerCurrent / 12;
+    if (totalRev >= state.ownerLadder.step2Trigger && stepFiredAt[2] == null) {
+      ownerCurrent = state.ownerLadder.step2;
+      stepFiredAt[2] = m + 1;
+    }
+    if (totalRev >= state.ownerLadder.step3Trigger && grossProfit > 0 && stepFiredAt[3] == null) {
+      ownerCurrent = state.ownerLadder.step3;
+      stepFiredAt[3] = m + 1;
+    }
+
+    const opEx = monthlyFixedOpEx + monthlyOwner;
+    const ebitda = grossProfit - opEx;
+
+    if (ebitda > 0) {
+      consecBreakeven++;
+      if (consecBreakeven >= state.ownerLadder.step4Months && stepFiredAt[4] == null) {
+        ownerCurrent = state.ownerLadder.step4;
+        stepFiredAt[4] = m + 1;
+      }
+    } else {
+      consecBreakeven = 0;
+    }
+
+    cash += ebitda;
+
+    months.push({
+      m: m + 1, year: yr + 1, qtr: Math.floor(m/3) + 1,
+      users, revProd, revInst, revCons, totalRev,
+      cogsProd, cogsInst, cogsCons, totalCogs,
+      grossProfit, ownerSalary: monthlyOwner, fixedOpEx: monthlyFixedOpEx,
+      opEx, ebitda, cash, instOnboarded: instOnboardMonths.filter(o => o <= m).length,
+    });
+  }
+
+  // Find runway-out month
+  let runwayMonth = null;
+  for (const r of months) {
+    if (r.cash <= 0 && runwayMonth == null) runwayMonth = r.m;
+  }
+  // Months until first EBITDA-positive
+  let firstProfitMonth = null;
+  for (const r of months) {
+    if (r.ebitda > 0 && firstProfitMonth == null) firstProfitMonth = r.m;
+  }
+
+  return {
+    months, runwayMonth, firstProfitMonth, stepFiredAt,
+    totalFixed3yr, scenario: sc,
+  };
+}
+
+// ====================================================================
+// RENDER — Sources & Uses tab
+// ====================================================================
+function renderSources() {
+  const tbody = document.getElementById('src-rows');
+  const rows = [
+    { label: 'Investor Raise', amt: state.raise },
+    { label: 'Founder Contribution', amt: state.founder },
+  ];
+  tbody.innerHTML = rows.map(r => `<tr><td>${r.label}</td><td class="r">${fmtUSD(r.amt)}</td></tr>`).join('');
+  document.getElementById('src-total').textContent = fmtUSD(state.raise + state.founder);
+}
+
+function renderUses() {
+  const tbody = document.getElementById('uses-rows');
+  tbody.innerHTML = state.uses.map((u, i) => `
+    <tr>
+      <td><input type="text" value="${u.label}" onchange="state.uses[${i}].label=this.value"></td>
+      <td>
+        <select onchange="state.uses[${i}].cat=this.value">
+          ${CATEGORIES.map(c => `<option value="${c}" ${c===u.cat?'selected':''}>${CAT_LABEL[c]}</option>`).join('')}
+        </select>
+      </td>
+      <td class="r"><div class="pfx" style="display:inline-block;width:120px"><span>$</span><input type="number" value="${u.amt}" onchange="state.uses[${i}].amt=parseFloat(this.value)||0;recalc()" style="text-align:right"></div></td>
+      <td class="r" id="use-pct-${i}">—</td>
+      <td><input type="text" value="${u.note||''}" onchange="state.uses[${i}].note=this.value" placeholder="Optional note"></td>
+      <td><button class="row-del" onclick="removeUse(${i})" title="Remove">✕</button></td>
+    </tr>
+  `).join('');
+
+  const total = state.uses.reduce((s,u) => s + u.amt, 0);
+  document.getElementById('uses-total').textContent = fmtUSD(total);
+  const pct = state.raise > 0 ? (total / state.raise) * 100 : 0;
+  document.getElementById('uses-pct').textContent = pct.toFixed(0) + '%';
+  state.uses.forEach((u,i) => {
+    const cell = document.getElementById('use-pct-' + i);
+    if (cell) cell.textContent = state.raise > 0 ? ((u.amt / state.raise) * 100).toFixed(1) + '%' : '—';
+  });
+
+  // Balance indicator
+  const sources = state.raise + state.founder;
+  const diff = sources - total;
+  const ind = document.getElementById('bal-ind');
+  const msg = document.getElementById('bal-msg');
+  const val = document.getElementById('bal-val');
+  ind.className = 'bal';
+  if (Math.abs(diff) < 1000) {
+    ind.classList.add('ok');
+    msg.textContent = 'Sources match Uses to within $1,000.';
+    val.textContent = '✓ Balanced';
+  } else if (diff > 0) {
+    ind.classList.add('under');
+    msg.textContent = `Unallocated. Add a row, increase contingency, or reduce the raise.`;
+    val.textContent = '+' + fmtUSD(diff) + ' free';
+  } else {
+    ind.classList.add('over');
+    msg.textContent = `Uses exceed Sources. Increase raise or trim allocations.`;
+    val.textContent = fmtUSD(diff);
+  }
+}
+
+function addUseRow() {
+  state.uses.push({ id: 'custom_' + Date.now(), label: 'New Use', cat: 'other', amt: 0, note: '' });
+  renderUses();
+}
+function removeUse(i) {
+  if (!confirm('Remove this use? This cannot be undone.')) return;
+  state.uses.splice(i, 1);
+  renderUses();
+  recalc();
+}
+
+function renderLadder() {
+  const r = compute();
+  const fired = r.stepFiredAt;
+  const steps = [
+    { n:1, comp: state.ownerLadder.base, trig: 'Year 1 baseline (raise close)', mo: 1, fired:true },
+    { n:2, comp: state.ownerLadder.step2, trig: `Monthly revenue ≥ ${fmtUSD(state.ownerLadder.step2Trigger)}`, mo: fired[2], fired: !!fired[2] },
+    { n:3, comp: state.ownerLadder.step3, trig: `Monthly rev ≥ ${fmtUSD(state.ownerLadder.step3Trigger)} & GP > 0`, mo: fired[3], fired: !!fired[3] },
+    { n:4, comp: state.ownerLadder.step4, trig: `EBITDA breakeven (${state.ownerLadder.step4Months} consec. months)`, mo: fired[4], fired: !!fired[4] },
+  ];
+  document.getElementById('ladder').innerHTML = steps.map(s => `
+    <div class="ladder-step ${s.fired?'fired':''}">
+      <div class="ladder-num">${s.n}</div>
+      <div style="flex:1;min-width:0">
+        <div class="ladder-comp">${fmtUSD(s.comp)} <span style="font-size:11px;color:var(--tx3);font-weight:600">/yr</span></div>
+        <div class="ladder-trig">${s.trig}</div>
+      </div>
+      <div class="ladder-mo">${s.fired ? (s.mo === 1 ? 'Active' : 'Mo ' + s.mo) : 'Not yet'}</div>
+    </div>
+  `).join('');
+}
+
+// ====================================================================
+// RENDER — Pro Forma tab
+// ====================================================================
+function renderProForma() {
+  const r = compute();
+  const months = r.months;
+
+  let cols, rows;
+  if (state.view === 'annual') {
+    cols = ['Year 1', 'Year 2', 'Year 3', '3-Yr Total'];
+    rows = buildAnnualRows(months);
+  } else {
+    cols = [];
+    for (let q = 0; q < 12; q++) cols.push(`Y${Math.floor(q/4)+1}Q${(q%4)+1}`);
+    cols.push('3-Yr Total');
+    rows = buildQuarterlyRows(months);
+  }
+
+  let html = '<thead><tr><th>Line Item</th>' + cols.map(c => `<th class="r">${c}</th>`).join('') + '</tr></thead><tbody>';
+  for (const row of rows) {
+    if (row.group) {
+      html += `<tr class="grp"><td>${row.label}</td>${cols.map(()=>'<td></td>').join('')}</tr>`;
+    } else {
+      const cls = row.total ? 'total' : (row.indent ? 'indent' : '');
+      html += `<tr class="${cls}"><td>${row.label}</td>` + row.values.map(v => {
+        const sign = (row.signClass && v < 0) ? 'neg' : (row.signClass && v > 0 ? 'pos' : '');
+        return `<td class="${sign}">${row.fmt ? row.fmt(v) : fmtUSD(v)}</td>`;
+      }).join('') + '</tr>';
+    }
+  }
+  html += '</tbody>';
+  document.getElementById('pf-table').innerHTML = html;
+}
+
+function aggregate(months, fn, periods) {
+  // periods = array of [startMonth, endMonth] (1-indexed inclusive)
+  return periods.map(([s,e]) => {
+    let sum = 0;
+    for (const m of months) {
+      if (m.m >= s && m.m <= e) sum += fn(m);
+    }
+    return sum;
+  });
+}
+function endOf(months, fn, periods) {
+  // for end-of-period values like cash balance & users
+  return periods.map(([s,e]) => {
+    const last = months.filter(m => m.m >= s && m.m <= e).pop();
+    return last ? fn(last) : 0;
+  });
+}
+
+function buildAnnualRows(months) {
+  const periods = [[1,12],[13,24],[25,36],[1,36]];
+  const sumP = fn => aggregate(months, fn, periods);
+  const endP = fn => endOf(months, fn, periods);
+
+  return [
+    { group: true, label: 'REVENUE' },
+    { label: 'JIE Production (Consumer)', values: sumP(m=>m.revProd), indent:true },
+    { label: 'Schools & Universities (net)', values: sumP(m=>m.revInst), indent:true },
+    { label: 'AI Consulting', values: sumP(m=>m.revCons), indent:true },
+    { label: 'Total Revenue', values: sumP(m=>m.totalRev), total:true },
+
+    { group: true, label: 'COST OF REVENUE' },
+    { label: 'Production COGS', values: sumP(m=>m.cogsProd), indent:true },
+    { label: 'Institutional COGS', values: sumP(m=>m.cogsInst), indent:true },
+    { label: 'Consulting COGS', values: sumP(m=>m.cogsCons), indent:true },
+    { label: 'Total COGS', values: sumP(m=>m.totalCogs), total:true },
+    { label: 'Gross Profit', values: sumP(m=>m.grossProfit), total:true, signClass:true },
+    { label: 'Gross Margin %', values: periods.map(([s,e]) => {
+        const rev = months.filter(m=>m.m>=s&&m.m<=e).reduce((a,m)=>a+m.totalRev,0);
+        const gp = months.filter(m=>m.m>=s&&m.m<=e).reduce((a,m)=>a+m.grossProfit,0);
+        return rev>0 ? gp/rev : 0;
+      }), fmt: fmtPct, indent:true },
+
+    { group: true, label: 'OPERATING EXPENSES' },
+    { label: 'Owner Salary', values: sumP(m=>m.ownerSalary), indent:true },
+    { label: 'Other OpEx (rolled from Sources & Uses)', values: sumP(m=>m.fixedOpEx), indent:true },
+    { label: 'Total OpEx', values: sumP(m=>m.opEx), total:true },
+
+    { group: true, label: 'PROFITABILITY' },
+    { label: 'EBITDA', values: sumP(m=>m.ebitda), total:true, signClass:true },
+    { label: 'Cash Balance (end of period)', values: endP(m=>m.cash), total:true, signClass:true },
+    { label: 'Paying Users (end of period)', values: endP(m=>m.users), fmt: fmtNum, indent:true },
+    { label: 'Institutions (cumulative)', values: endP(m=>m.instOnboarded), fmt: fmtNum, indent:true },
+  ];
+}
+
+function buildQuarterlyRows(months) {
+  const periods = [];
+  for (let q = 0; q < 12; q++) {
+    const s = q*3 + 1;
+    periods.push([s, s+2]);
+  }
+  periods.push([1,36]);
+  const sumP = fn => aggregate(months, fn, periods);
+  const endP = fn => endOf(months, fn, periods);
+  return [
+    { group: true, label: 'REVENUE' },
+    { label: 'Production', values: sumP(m=>m.revProd), indent:true },
+    { label: 'Schools & Universities', values: sumP(m=>m.revInst), indent:true },
+    { label: 'Consulting', values: sumP(m=>m.revCons), indent:true },
+    { label: 'Total Revenue', values: sumP(m=>m.totalRev), total:true },
+    { label: 'Total COGS', values: sumP(m=>m.totalCogs), indent:true },
+    { label: 'Gross Profit', values: sumP(m=>m.grossProfit), total:true, signClass:true },
+    { label: 'Total OpEx', values: sumP(m=>m.opEx), indent:true },
+    { label: 'EBITDA', values: sumP(m=>m.ebitda), total:true, signClass:true },
+    { label: 'Cash Balance', values: endP(m=>m.cash), total:true, signClass:true },
+  ];
+}
+
+// ====================================================================
+// RENDER — Runway tab + chart
+// ====================================================================
+function renderRunway() {
+  const r = compute();
+  drawCashChart(r.months);
+  renderVerdict(r);
+  renderKeyMetrics(r);
+  document.getElementById('hs-runway').textContent =
+    (r.runwayMonth ? r.runwayMonth + ' mo' : '36+ mo');
+}
+
+function drawCashChart(months) {
+  const svg = document.getElementById('cash-chart');
+  const W = 900, H = 300, pad = { l: 60, r: 20, t: 20, b: 30 };
+  const cashes = months.map(m => m.cash);
+  const minC = Math.min(0, ...cashes);
+  const maxC = Math.max(...cashes);
+  const range = maxC - minC || 1;
+  const xStep = (W - pad.l - pad.r) / (months.length - 1);
+  const yScale = v => pad.t + (H - pad.t - pad.b) * (1 - (v - minC) / range);
+
+  const path = months.map((m,i) => {
+    const x = pad.l + i*xStep;
+    const y = yScale(m.cash);
+    return (i===0?'M':'L') + x.toFixed(1) + ' ' + y.toFixed(1);
+  }).join(' ');
+
+  const fillPath = path + ` L ${pad.l + (months.length-1)*xStep} ${yScale(minC)} L ${pad.l} ${yScale(minC)} Z`;
+
+  // Y-axis ticks
+  const ticks = 5;
+  let yTicks = '';
+  for (let i = 0; i <= ticks; i++) {
+    const v = minC + (range * i / ticks);
+    const y = yScale(v);
+    yTicks += `<line x1="${pad.l}" y1="${y}" x2="${W-pad.r}" y2="${y}" stroke="#E2E2E6" stroke-width="1" stroke-dasharray="${v===0?'0':'2,3'}"/>`;
+    yTicks += `<text x="${pad.l-8}" y="${y+4}" text-anchor="end" fill="#9A9AA8" font-size="10" font-family="Figtree">${fmtUSDK(v)}</text>`;
+  }
+  // X-axis: month markers every 6 months
+  let xTicks = '';
+  for (let m = 0; m < months.length; m += 6) {
+    const x = pad.l + m * xStep;
+    xTicks += `<text x="${x}" y="${H-pad.b+15}" text-anchor="middle" fill="#9A9AA8" font-size="10" font-family="Figtree">M${m+1}</text>`;
+  }
+  // Zero line emphasis
+  const zeroY = yScale(0);
+  const zeroLine = (minC < 0 || maxC > 0) ? `<line x1="${pad.l}" y1="${zeroY}" x2="${W-pad.r}" y2="${zeroY}" stroke="#9A9AA8" stroke-width="1.5" stroke-dasharray="4,4"/>` : '';
+
+  svg.innerHTML = `
+    ${yTicks}
+    ${zeroLine}
+    <path d="${fillPath}" fill="rgba(200,28,28,0.08)" stroke="none"/>
+    <path d="${path}" fill="none" stroke="#C81C1C" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+    ${xTicks}
+  `;
+}
+
+function renderVerdict(r) {
+  const box = document.getElementById('verdict-box');
+  let cls, head, title, body, stats;
+  const monthsRunway = r.runwayMonth ? r.runwayMonth - 1 : 36;
+  const finalCash = r.months[35].cash;
+
+  if (r.runwayMonth && r.runwayMonth < 24) {
+    cls = 'under';
+    head = '⚠ Underfunded';
+    title = `${monthsRunway} months of runway — likely too little.`;
+    body = `Investors generally expect 18–24 months of runway. Under this scenario, cash is exhausted in month ${r.runwayMonth}. Consider raising more, trimming OpEx, or accelerating revenue.`;
+  } else if (!r.runwayMonth && finalCash > state.raise * 0.6) {
+    cls = 'over';
+    head = '◆ Likely Over-raised';
+    title = `Ending cash ${fmtUSDK(finalCash)} after 36 months — raise may be larger than needed.`;
+    body = `Excess cash on the balance sheet dilutes equity unnecessarily. A smaller raise of $${((state.raise - finalCash * 0.5)/1e6).toFixed(2)}M may still fund the plan with healthy cushion.`;
+  } else {
+    cls = 'ok';
+    head = '✓ Right-Sized';
+    title = `${r.runwayMonth ? monthsRunway + ' months runway' : '36+ months runway'} at ${fmtUSDK(state.raise)} raise — well-calibrated.`;
+    body = `This raise size funds the plan to ${r.firstProfitMonth ? 'EBITDA-positive in month ' + r.firstProfitMonth : 'a sustainable trajectory'}, with a healthy cushion. Ending cash position: ${fmtUSDK(finalCash)}.`;
+  }
+
+  stats = `
+    <div class="verdict-stat"><div class="lbl">Raise</div><div class="val">${fmtUSDK(state.raise)}</div></div>
+    <div class="verdict-stat"><div class="lbl">Runway</div><div class="val">${r.runwayMonth ? monthsRunway+' mo' : '36+ mo'}</div></div>
+    <div class="verdict-stat"><div class="lbl">First EBITDA+</div><div class="val">${r.firstProfitMonth ? 'Mo '+r.firstProfitMonth : 'Not in 36mo'}</div></div>
+    <div class="verdict-stat"><div class="lbl">3-Yr Revenue</div><div class="val">${fmtUSDK(r.months.reduce((s,m)=>s+m.totalRev,0))}</div></div>
+    <div class="verdict-stat"><div class="lbl">Ending Cash</div><div class="val">${fmtUSDK(finalCash)}</div></div>
+  `;
+
+  box.innerHTML = `
+    <div class="verdict ${cls}">
+      <div class="verdict-head">${head}</div>
+      <div class="verdict-title">${title}</div>
+      <div class="verdict-body">${body}</div>
+      <div class="verdict-stats">${stats}</div>
+    </div>
+  `;
+}
+
+function renderKeyMetrics(r) {
+  const tot3y = r.months.reduce((s,m)=>s+m.totalRev,0);
+  const totGP = r.months.reduce((s,m)=>s+m.grossProfit,0);
+  const totEB = r.months.reduce((s,m)=>s+m.ebitda,0);
+  const m12 = r.months[11], m24 = r.months[23], m36 = r.months[35];
+  const arrEnd = m36.totalRev * 12;
+  const items = [
+    { l: '3-Yr Revenue', v: fmtUSDK(tot3y) },
+    { l: '3-Yr Gross Profit', v: fmtUSDK(totGP) },
+    { l: '3-Yr EBITDA', v: fmtUSDK(totEB) },
+    { l: 'ARR @ Mo 36', v: fmtUSDK(arrEnd) },
+    { l: 'Users @ Mo 12', v: fmtNum(m12.users) },
+    { l: 'Users @ Mo 36', v: fmtNum(m36.users) },
+    { l: 'Institutions @ Mo 36', v: m36.instOnboarded },
+    { l: 'First EBITDA+ Month', v: r.firstProfitMonth ? 'Mo ' + r.firstProfitMonth : '— (none in 36)' },
+    { l: 'Min Cash Balance', v: fmtUSDK(Math.min(...r.months.map(m=>m.cash))) },
+    { l: 'Avg Burn (Yr 1)', v: fmtUSDK(r.months.slice(0,12).reduce((s,m)=>s+m.ebitda,0)/12) + '/mo' },
+  ];
+  document.getElementById('key-metrics').innerHTML = items.map(it =>
+    `<tr><td style="font-weight:600;color:var(--tx2)">${it.l}</td><td class="r" style="font-family:'DM Serif Display',serif;font-size:14px">${it.v}</td></tr>`
+  ).join('');
+}
+
+// ====================================================================
+// RENDER — Scenario comparison
+// ====================================================================
+function renderCompare() {
+  const cards = ['conservative','base','aggressive'].map(scen => {
+    const saved = state.scenario;
+    state.scenario = scen;
+    const r = compute();
+    state.scenario = saved;
+    const tot3y = r.months.reduce((s,m)=>s+m.totalRev,0);
+    const finalCash = r.months[35].cash;
+    return `
+      <div class="sc-card ${state.scenario===scen?'active':''}" onclick="setScenario('${scen}')" style="cursor:pointer">
+        <div class="lbl">Scenario</div>
+        <div class="name">${SCEN[scen].label}</div>
+        <div class="metrics">
+          <div class="metric"><div class="metric-l">3-Yr Revenue</div><div class="metric-v">${fmtUSDK(tot3y)}</div></div>
+          <div class="metric"><div class="metric-l">ARR @ Mo 36</div><div class="metric-v">${fmtUSDK(r.months[35].totalRev*12)}</div></div>
+          <div class="metric"><div class="metric-l">Runway</div><div class="metric-v">${r.runwayMonth ? (r.runwayMonth-1)+' mo' : '36+ mo'}</div></div>
+          <div class="metric"><div class="metric-l">First EBITDA+</div><div class="metric-v">${r.firstProfitMonth ? 'Mo '+r.firstProfitMonth : '—'}</div></div>
+          <div class="metric"><div class="metric-l">Ending Cash</div><div class="metric-v">${fmtUSDK(finalCash)}</div></div>
+          <div class="metric"><div class="metric-l">Users @ Yr 3</div><div class="metric-v">${fmtNum(r.months[35].users)}</div></div>
+        </div>
+      </div>
+    `;
+  }).join('');
+  document.getElementById('sc-cards').innerHTML = cards;
+
+  renderSavedList();
+}
+
+function renderSavedList() {
+  const saved = JSON.parse(localStorage.getItem('jie-inv-scenarios') || '[]');
+  const wrap = document.getElementById('saved-list');
+  if (saved.length === 0) {
+    wrap.innerHTML = '<div style="font-size:12px;color:var(--tx3);text-align:center;padding:14px">No saved scenarios yet. Use 💾 Save Scenario in the toolbar to capture the current state.</div>';
+    return;
+  }
+  wrap.innerHTML = saved.map((s,i) => `
+    <div class="saved">
+      <div>
+        <div class="saved-name">${s.name}</div>
+        <div class="saved-meta">${new Date(s.ts).toLocaleString()} · ${SCEN[s.state.scenario].label} · Raise ${fmtUSDK(s.state.raise)}</div>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-sec btn-sm" onclick="loadScenarioByIdx(${i})">Load</button>
+        <button class="btn btn-ghost btn-sm" onclick="deleteSaved(${i})">Delete</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ====================================================================
+// EXPORTS
+// ====================================================================
+function downloadCSV(filename, rows) {
+  const csv = rows.map(r => r.map(c => {
+    const s = String(c == null ? '' : c);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+  }).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function exportSU(format) {
+  const rows = [
+    ['JIE Mastery — Sources & Uses'],
+    ['Scenario', SCEN[state.scenario].label],
+    ['Generated', new Date().toLocaleString()],
+    [],
+    ['SOURCES'],
+    ['Source','Amount'],
+    ['Investor Raise', state.raise],
+    ['Founder Contribution', state.founder],
+    ['Total Sources', state.raise + state.founder],
+    [],
+    ['USES'],
+    ['Use of Funds','Category','3-Yr Total','% of Raise','Notes'],
+    ...state.uses.map(u => [u.label, CAT_LABEL[u.cat], u.amt, ((u.amt/state.raise)*100).toFixed(1)+'%', u.note||'']),
+    ['Total Uses', '', state.uses.reduce((s,u)=>s+u.amt,0), '', ''],
+  ];
+  if (format === 'csv') {
+    downloadCSV('jie-sources-uses.csv', rows);
+  } else {
+    exportSUasPDF();
+  }
+}
+
+function exportSUasPDF() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'pt', format: 'letter' });
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(18);
+  doc.setTextColor(200, 28, 28);
+  doc.text('JIE Mastery — Sources & Uses', 40, 50);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
+  doc.setTextColor(100);
+  doc.text(`Scenario: ${SCEN[state.scenario].label}  ·  ${new Date().toLocaleString()}`, 40, 68);
+
+  doc.autoTable({
+    startY: 90,
+    head: [['Sources', 'Amount']],
+    body: [
+      ['Investor Raise', fmtUSD(state.raise)],
+      ['Founder Contribution', fmtUSD(state.founder)],
+      ['Total Sources', fmtUSD(state.raise + state.founder)],
+    ],
+    headStyles: { fillColor: [200,28,28], textColor:255, fontStyle:'bold' },
+    columnStyles: { 1: { halign: 'right' } },
+    foot: [],
+  });
+
+  const total = state.uses.reduce((s,u)=>s+u.amt,0);
+  doc.autoTable({
+    startY: doc.lastAutoTable.finalY + 24,
+    head: [['Use of Funds','Category','3-Yr Total','% Raise','Notes']],
+    body: state.uses.map(u => [
+      u.label, CAT_LABEL[u.cat], fmtUSD(u.amt),
+      ((u.amt/state.raise)*100).toFixed(1)+'%', u.note||''
+    ]),
+    foot: [['Total Uses','', fmtUSD(total), ((total/state.raise)*100).toFixed(0)+'%','']],
+    headStyles: { fillColor: [200,28,28], textColor:255 },
+    footStyles: { fillColor: [242,242,244], fontStyle:'bold' },
+    columnStyles: { 2: { halign:'right' }, 3: { halign:'right' } },
+  });
+
+  doc.save('jie-sources-uses.pdf');
+}
+
+function exportPF(format) {
+  const r = compute();
+  const months = r.months;
+  const periods = state.view === 'annual'
+    ? [[1,12],[13,24],[25,36],[1,36]]
+    : Array.from({length:12},(_,q)=>[q*3+1,q*3+3]).concat([[1,36]]);
+  const colNames = state.view === 'annual'
+    ? ['Year 1','Year 2','Year 3','3-Yr Total']
+    : Array.from({length:12},(_,q)=>`Y${Math.floor(q/4)+1}Q${(q%4)+1}`).concat(['3-Yr Total']);
+
+  const sumP = fn => periods.map(([s,e]) => months.filter(m=>m.m>=s&&m.m<=e).reduce((a,m)=>a+fn(m),0));
+  const endP = fn => periods.map(([s,e]) => {
+    const last = months.filter(m=>m.m>=s&&m.m<=e).pop();
+    return last ? fn(last) : 0;
+  });
+
+  const pfRows = [
+    ['REVENUE', ...colNames.map(()=>'')],
+    ['  Production', ...sumP(m=>m.revProd)],
+    ['  Schools & Universities (net)', ...sumP(m=>m.revInst)],
+    ['  AI Consulting', ...sumP(m=>m.revCons)],
+    ['Total Revenue', ...sumP(m=>m.totalRev)],
+    [''],
+    ['COGS', ...colNames.map(()=>'')],
+    ['  Production COGS', ...sumP(m=>m.cogsProd)],
+    ['  Institutional COGS', ...sumP(m=>m.cogsInst)],
+    ['  Consulting COGS', ...sumP(m=>m.cogsCons)],
+    ['Total COGS', ...sumP(m=>m.totalCogs)],
+    ['Gross Profit', ...sumP(m=>m.grossProfit)],
+    [''],
+    ['OPERATING EXPENSES', ...colNames.map(()=>'')],
+    ['  Owner Salary', ...sumP(m=>m.ownerSalary)],
+    ['  Other OpEx', ...sumP(m=>m.fixedOpEx)],
+    ['Total OpEx', ...sumP(m=>m.opEx)],
+    [''],
+    ['EBITDA', ...sumP(m=>m.ebitda)],
+    ['Cash Balance (EOP)', ...endP(m=>m.cash)],
+    ['Paying Users (EOP)', ...endP(m=>m.users)],
+    ['Institutions (cumulative)', ...endP(m=>m.instOnboarded)],
+  ];
+
+  if (format === 'csv') {
+    const csv = [
+      ['JIE Mastery — Pro Forma P&L'],
+      ['Scenario', SCEN[state.scenario].label],
+      ['Generated', new Date().toLocaleString()],
+      [],
+      ['Line Item', ...colNames],
+      ...pfRows,
+    ];
+    downloadCSV('jie-proforma.csv', csv);
+  } else {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: 'pt', format: 'letter', orientation: state.view === 'annual' ? 'p' : 'l' });
+    doc.setFont('helvetica','bold'); doc.setFontSize(18); doc.setTextColor(200,28,28);
+    doc.text('JIE Mastery — Pro Forma P&L', 40, 50);
+    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(100);
+    doc.text(`Scenario: ${SCEN[state.scenario].label}  ·  View: ${state.view}  ·  ${new Date().toLocaleString()}`, 40, 68);
+
+    doc.autoTable({
+      startY: 90,
+      head: [['Line Item', ...colNames]],
+      body: pfRows.map(r => r.map((v,i) => i === 0 ? v : (typeof v === 'number' ? fmtUSD(v) : v))),
+      headStyles: { fillColor: [200,28,28], textColor:255, fontSize: 8 },
+      bodyStyles: { fontSize: 8 },
+      columnStyles: Object.fromEntries(colNames.map((_,i)=>[i+1,{halign:'right'}])),
+    });
+    doc.save('jie-proforma.pdf');
+  }
+}
+
+// ====================================================================
+// SAVE / LOAD
+// ====================================================================
+function openSaveModal() { document.getElementById('save-name').value = ''; document.getElementById('save-modal').classList.add('on'); }
+function openLoadModal() {
+  const saved = JSON.parse(localStorage.getItem('jie-inv-scenarios') || '[]');
+  const list = document.getElementById('load-list');
+  if (saved.length === 0) {
+    list.innerHTML = '<div style="font-size:12px;color:var(--tx3);text-align:center;padding:18px">No saved scenarios.</div>';
+  } else {
+    list.innerHTML = saved.map((s,i) => `
+      <div class="saved">
+        <div>
+          <div class="saved-name">${s.name}</div>
+          <div class="saved-meta">${new Date(s.ts).toLocaleString()}</div>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-pri btn-sm" onclick="loadScenarioByIdx(${i});closeModal('load-modal')">Load</button>
+          <button class="btn btn-ghost btn-sm" onclick="deleteSaved(${i});openLoadModal()">Delete</button>
+        </div>
+      </div>
+    `).join('');
+  }
+  document.getElementById('load-modal').classList.add('on');
+}
+function closeModal(id) { document.getElementById(id).classList.remove('on'); }
+
+function captureCurrentInputs() {
+  return {
+    raise: state.raise, founder: state.founder, scenario: state.scenario, view: state.view,
+    uses: JSON.parse(JSON.stringify(state.uses)),
+    inputs: {
+      'prod-start': GETN('prod-start'), 'prod-nn1': GETN('prod-nn1'),
+      'prod-nn2': GETN('prod-nn2'), 'prod-nn3': GETN('prod-nn3'),
+      'prod-arpu': GETN('prod-arpu'), 'prod-churn': GETN('prod-churn'), 'prod-vc': GETN('prod-vc'),
+      'inst-y1': GETN('inst-y1'), 'inst-y2': GETN('inst-y2'), 'inst-y3': GETN('inst-y3'),
+      'inst-acv': GETN('inst-acv'), 'inst-ramp': GETN('inst-ramp'),
+      'inst-comm': GETN('inst-comm'), 'inst-vc': GETN('inst-vc'),
+      'cons-y1': GETN('cons-y1'), 'cons-y2': GETN('cons-y2'), 'cons-y3': GETN('cons-y3'),
+      'cons-val': GETN('cons-val'), 'cons-gm': GETN('cons-gm'),
+    },
+  };
+}
+
+function applySavedState(s) {
+  state.raise = s.raise; state.founder = s.founder;
+  state.scenario = s.scenario; state.view = s.view;
+  state.uses = JSON.parse(JSON.stringify(s.uses));
+  Object.entries(s.inputs).forEach(([id,v]) => {
+    const el = document.getElementById(id); if (el) el.value = v;
+  });
+  document.getElementById('raise-amt').value = state.raise;
+  document.getElementById('raise-slider').value = state.raise;
+  document.getElementById('rw-slider').value = state.raise;
+  document.getElementById('founder-amt').value = state.founder;
+  document.querySelectorAll('.sc-pill').forEach(b => b.classList.toggle('on', b.dataset.sc === state.scenario));
+  document.querySelectorAll('.view-toggle button').forEach(b => b.classList.toggle('on', b.dataset.view === state.view));
+  recalc();
+}
+
+function saveScenario() {
+  const name = document.getElementById('save-name').value.trim();
+  if (!name) { alert('Please enter a name.'); return; }
+  const saved = JSON.parse(localStorage.getItem('jie-inv-scenarios') || '[]');
+  saved.unshift({ name, ts: Date.now(), state: captureCurrentInputs() });
+  localStorage.setItem('jie-inv-scenarios', JSON.stringify(saved.slice(0, 50)));
+  closeModal('save-modal');
+  renderSavedList();
+}
+
+function loadScenarioByIdx(i) {
+  const saved = JSON.parse(localStorage.getItem('jie-inv-scenarios') || '[]');
+  if (saved[i]) applySavedState(saved[i].state);
+}
+
+function deleteSaved(i) {
+  if (!confirm('Delete this saved scenario?')) return;
+  const saved = JSON.parse(localStorage.getItem('jie-inv-scenarios') || '[]');
+  saved.splice(i, 1);
+  localStorage.setItem('jie-inv-scenarios', JSON.stringify(saved));
+  renderSavedList();
+}
+
+function resetDefaults() {
+  if (!confirm('Reset all assumptions to defaults? Saved scenarios are preserved.')) return;
+  state.uses = JSON.parse(JSON.stringify(DEFAULT_USES));
+  state.raise = 3000000; state.founder = 0; state.scenario = 'base'; state.view = 'annual';
+  document.getElementById('raise-amt').value = 3000000;
+  document.getElementById('raise-slider').value = 3000000;
+  document.getElementById('rw-slider').value = 3000000;
+  document.getElementById('founder-amt').value = 0;
+  const defaults = {
+    'prod-start':250,'prod-nn1':50,'prod-nn2':120,'prod-nn3':200,
+    'prod-arpu':60,'prod-churn':5,'prod-vc':8,
+    'inst-y1':3,'inst-y2':8,'inst-y3':18,'inst-acv':410000,'inst-ramp':6,'inst-comm':25,'inst-vc':15,
+    'cons-y1':6,'cons-y2':14,'cons-y3':24,'cons-val':66000,'cons-gm':60,
+  };
+  Object.entries(defaults).forEach(([id,v]) => { const el = document.getElementById(id); if (el) el.value = v; });
+  document.querySelectorAll('.sc-pill').forEach(b => b.classList.toggle('on', b.dataset.sc === 'base'));
+  document.querySelectorAll('.view-toggle button').forEach(b => b.classList.toggle('on', b.dataset.view === 'annual'));
+  recalc();
+}
+
+// ====================================================================
+// EVENT WIRING
+// ====================================================================
+function setScenario(s) {
+  state.scenario = s;
+  document.querySelectorAll('.sc-pill').forEach(b => b.classList.toggle('on', b.dataset.sc === s));
+  recalc();
+}
+function setView(v) {
+  state.view = v;
+  document.querySelectorAll('.view-toggle button').forEach(b => b.classList.toggle('on', b.dataset.view === v));
+  renderProForma();
+}
+function onRaiseChange() {
+  state.raise = GETN('raise-amt');
+  document.getElementById('raise-slider').value = state.raise;
+  document.getElementById('rw-slider').value = state.raise;
+  document.getElementById('raise-fv').textContent = fmtUSD(state.raise);
+  document.getElementById('hs-raise').textContent = fmtUSDK(state.raise);
+  recalc();
+}
+function onRaiseSliderChange() {
+  state.raise = parseFloat(document.getElementById('raise-slider').value);
+  document.getElementById('raise-amt').value = state.raise;
+  document.getElementById('rw-slider').value = state.raise;
+  document.getElementById('raise-fv').textContent = fmtUSD(state.raise);
+  document.getElementById('hs-raise').textContent = fmtUSDK(state.raise);
+  recalc();
+}
+function onRwSliderChange() {
+  state.raise = parseFloat(document.getElementById('rw-slider').value);
+  document.getElementById('raise-amt').value = state.raise;
+  document.getElementById('raise-slider').value = state.raise;
+  document.getElementById('rw-slider-val').textContent = fmtUSDK(state.raise);
+  document.getElementById('raise-fv').textContent = fmtUSD(state.raise);
+  document.getElementById('hs-raise').textContent = fmtUSDK(state.raise);
+  recalc();
+}
+
+function recalc() {
+  state.founder = GETN('founder-amt');
+  renderSources(); renderUses(); renderLadder();
+  renderProForma(); renderRunway(); renderCompare();
+}
+
+// Tab switching
+document.querySelectorAll('.ptab').forEach(b => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('.ptab').forEach(x => x.classList.toggle('on', x === b));
+    document.querySelectorAll('.tab-s').forEach(x => x.classList.toggle('on', x.id === 'tab-' + b.dataset.tab));
+  });
+});
+
+// Scenario pills
+document.querySelectorAll('.sc-pill').forEach(b => {
+  b.addEventListener('click', () => setScenario(b.dataset.sc));
+});
+
+// Init
+recalc();
+</script>
+
+</body>
+</html>

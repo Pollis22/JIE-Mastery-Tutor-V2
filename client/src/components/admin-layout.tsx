@@ -15,6 +15,7 @@ import {
   X,
   DollarSign,
   TrendingUp,
+  Briefcase,
 } from "lucide-react";
 import { useState } from "react";
 import jieLogo from "@/assets/jie-mastery-logo-sm.jpg";
@@ -38,6 +39,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     { name: "Contacts", href: "/admin/contacts", icon: Mail },
     { name: "Audit Logs", href: "/admin/logs", icon: ScrollText },
     { name: "Pricing Studio", href: "/admin/pricing-studio", icon: DollarSign },
+    { name: "Investment Console", href: "/admin/investment-console", icon: Briefcase },
     { name: "Capital CRM", href: "/admin/capital", icon: TrendingUp },
   ];
 

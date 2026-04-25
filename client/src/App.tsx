@@ -114,7 +114,7 @@ function Router() {
         <ProtectedRoute path="/admin/logs" component={AdminLogs} />
         <ProtectedRoute path="/family" component={FamilyDashboardPage} />
         <ProtectedRoute path="/about-study-tracker" component={AboutStudyTrackerPage} />
-        <LazyRoute path="/about-lsis" component={AboutLSISPage} />
+        <ProtectedRoute path="/about-lsis" component={AboutLSISPage} />
         <ProtectedRoute path="/family/child/:childId" component={FamilyChildDashboardPage} />
         <ProtectedRoute path="/family/calendar" component={FamilyCalendarPage} />
         <ProtectedRoute path="/family/notifications" component={FamilyNotificationSettingsPage} />
