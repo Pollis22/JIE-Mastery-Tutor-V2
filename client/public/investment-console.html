@@ -210,10 +210,17 @@ input:focus,select:focus{border-color:var(--red);background:#fff;box-shadow:0 0 
 .ladder-num{width:26px;height:26px;border-radius:50%;background:var(--red);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;flex-shrink:0}
 .ladder-step.fired{background:var(--grb);border-color:var(--grbo)}
 .ladder-step.fired .ladder-num{background:var(--gr)}
-.ladder-comp{font-family:'DM Serif Display',serif;font-size:14px;color:var(--tx)}
-.ladder-trig{font-size:10.5px;color:var(--tx3);font-weight:600}
-.ladder-mo{margin-left:auto;font-size:10px;font-weight:700;color:var(--tx3)}
+.ladder-comp{font-family:'DM Serif Display',serif;font-size:14px;color:var(--tx);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.ladder-trig{font-size:10.5px;color:var(--tx3);font-weight:600;display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:3px}
+.ladder-mo{margin-left:auto;font-size:10px;font-weight:700;color:var(--tx3);white-space:nowrap}
 .ladder-step.fired .ladder-mo{color:var(--gr)}
+.ladder-input{width:90px;padding:4px 8px;font-size:12px;font-family:'Figtree',sans-serif;font-weight:700;border:1.5px solid var(--bo);border-radius:6px;background:#fff;color:var(--tx);text-align:right;outline:none;transition:all .15s}
+.ladder-input:focus{border-color:var(--red);box-shadow:0 0 0 3px rgba(200,28,28,.06)}
+.ladder-input.trig{font-size:11px;font-weight:600;width:80px;padding:3px 7px;color:var(--tx2)}
+.ladder-input.tiny{width:42px;font-size:11px;font-weight:600;padding:3px 6px;text-align:center}
+.ladder-pfx{position:relative;display:inline-block}
+.ladder-pfx span{position:absolute;left:8px;top:50%;transform:translateY(-50%);color:var(--tx3);font-size:11px;font-weight:600;pointer-events:none}
+.ladder-pfx .ladder-input{padding-left:18px}
 
 @media print{body{background:#fff}.no-print{display:none!important}}
 </style>
@@ -554,7 +561,7 @@ const fmtNum = v => Math.round(v).toLocaleString('en-US');
 
 // ----- DEFAULT USES -----
 const DEFAULT_USES = [
-  { id: 'owner', label: 'Owner Salary (3-yr ladder)', cat: 'salaries', amt: 525000, note: 'Auto-computed from ladder; editable.' },
+  { id: 'owner', label: 'Owner Salary (auto from ladder)', cat: 'salaries', amt: 0, note: 'Auto-computed from Owner Salary Ladder', locked: true },
   { id: 'devTeam', label: 'Dev Team', cat: 'salaries', amt: 720000, note: '2 devs avg $120K loaded × 3 yrs' },
   { id: 'marketing', label: 'Marketing & Advertising', cat: 'marketing', amt: 480000, note: 'Digital + content + events' },
   { id: 'sales', label: 'Sales (BDR/AE)', cat: 'salaries', amt: 360000, note: '1 BDR + 1 AE for institutional' },
@@ -761,21 +768,32 @@ function renderSources() {
 }
 
 function renderUses() {
+  // Auto-compute owner salary total from compute() and inject into the locked row
+  const r = compute();
+  const ownerTotal = Math.round(r.months.reduce((s, m) => s + m.ownerSalary, 0));
+  const ownerIdx = state.uses.findIndex(u => u.id === 'owner');
+  if (ownerIdx >= 0) state.uses[ownerIdx].amt = ownerTotal;
+
   const tbody = document.getElementById('uses-rows');
-  tbody.innerHTML = state.uses.map((u, i) => `
-    <tr>
-      <td><input type="text" value="${u.label}" onchange="state.uses[${i}].label=this.value"></td>
-      <td>
-        <select onchange="state.uses[${i}].cat=this.value">
-          ${CATEGORIES.map(c => `<option value="${c}" ${c===u.cat?'selected':''}>${CAT_LABEL[c]}</option>`).join('')}
-        </select>
-      </td>
-      <td class="r"><div class="pfx" style="display:inline-block;width:120px"><span>$</span><input type="number" value="${u.amt}" onchange="state.uses[${i}].amt=parseFloat(this.value)||0;recalc()" style="text-align:right"></div></td>
-      <td class="r" id="use-pct-${i}">—</td>
-      <td><input type="text" value="${u.note||''}" onchange="state.uses[${i}].note=this.value" placeholder="Optional note"></td>
-      <td><button class="row-del" onclick="removeUse(${i})" title="Remove">✕</button></td>
-    </tr>
-  `).join('');
+  tbody.innerHTML = state.uses.map((u, i) => {
+    const isLocked = !!u.locked;
+    const labelCell = isLocked
+      ? `<td><span style="font-size:12.5px;font-weight:700;color:var(--tx2);display:inline-flex;align-items:center;gap:6px">🔒 ${u.label}</span></td>`
+      : `<td><input type="text" value="${u.label}" onchange="state.uses[${i}].label=this.value"></td>`;
+    const catCell = isLocked
+      ? `<td><span style="font-size:12px;color:var(--tx2);font-weight:600">${CAT_LABEL[u.cat]}</span></td>`
+      : `<td><select onchange="state.uses[${i}].cat=this.value">${CATEGORIES.map(c => `<option value="${c}" ${c===u.cat?'selected':''}>${CAT_LABEL[c]}</option>`).join('')}</select></td>`;
+    const amtCell = isLocked
+      ? `<td class="r" style="font-variant-numeric:tabular-nums;font-weight:700;color:var(--tx2)">${fmtUSD(u.amt)}</td>`
+      : `<td class="r"><div class="pfx" style="display:inline-block;width:120px"><span>$</span><input type="number" value="${u.amt}" onchange="state.uses[${i}].amt=parseFloat(this.value)||0;recalc()" style="text-align:right"></div></td>`;
+    const noteCell = isLocked
+      ? `<td><span style="font-size:11.5px;color:var(--tx3);font-style:italic">${u.note||''}</span></td>`
+      : `<td><input type="text" value="${u.note||''}" onchange="state.uses[${i}].note=this.value" placeholder="Optional note"></td>`;
+    const delCell = isLocked
+      ? `<td></td>`
+      : `<td><button class="row-del" onclick="removeUse(${i})" title="Remove">✕</button></td>`;
+    return `<tr>${labelCell}${catCell}${amtCell}<td class="r" id="use-pct-${i}">—</td>${noteCell}${delCell}</tr>`;
+  }).join('');
 
   const total = state.uses.reduce((s,u) => s + u.amt, 0);
   document.getElementById('uses-total').textContent = fmtUSD(total);
@@ -822,22 +840,45 @@ function removeUse(i) {
 function renderLadder() {
   const r = compute();
   const fired = r.stepFiredAt;
+  const L = state.ownerLadder;
   const steps = [
-    { n:1, comp: state.ownerLadder.base, trig: 'Year 1 baseline (raise close)', mo: 1, fired:true },
-    { n:2, comp: state.ownerLadder.step2, trig: `Monthly revenue ≥ ${fmtUSD(state.ownerLadder.step2Trigger)}`, mo: fired[2], fired: !!fired[2] },
-    { n:3, comp: state.ownerLadder.step3, trig: `Monthly rev ≥ ${fmtUSD(state.ownerLadder.step3Trigger)} & GP > 0`, mo: fired[3], fired: !!fired[3] },
-    { n:4, comp: state.ownerLadder.step4, trig: `EBITDA breakeven (${state.ownerLadder.step4Months} consec. months)`, mo: fired[4], fired: !!fired[4] },
+    {
+      n: 1, salaryField: 'base', salary: L.base, fired: true, mo: 1,
+      trigHtml: `Year 1 baseline (raise close)`,
+    },
+    {
+      n: 2, salaryField: 'step2', salary: L.step2, fired: !!fired[2], mo: fired[2],
+      trigHtml: `Monthly revenue ≥ <span class="ladder-pfx"><span>$</span><input type="number" class="ladder-input trig" value="${L.step2Trigger}" step="5000" onchange="updateLadder('step2Trigger', this.value)"></span>`,
+    },
+    {
+      n: 3, salaryField: 'step3', salary: L.step3, fired: !!fired[3], mo: fired[3],
+      trigHtml: `Monthly rev ≥ <span class="ladder-pfx"><span>$</span><input type="number" class="ladder-input trig" value="${L.step3Trigger}" step="5000" onchange="updateLadder('step3Trigger', this.value)"></span> &amp; GP &gt; 0`,
+    },
+    {
+      n: 4, salaryField: 'step4', salary: L.step4, fired: !!fired[4], mo: fired[4],
+      trigHtml: `EBITDA breakeven (<input type="number" class="ladder-input tiny" value="${L.step4Months}" min="1" max="12" onchange="updateLadder('step4Months', this.value)"> consec. months)`,
+    },
   ];
+
   document.getElementById('ladder').innerHTML = steps.map(s => `
-    <div class="ladder-step ${s.fired?'fired':''}">
+    <div class="ladder-step ${s.fired ? 'fired' : ''}">
       <div class="ladder-num">${s.n}</div>
       <div style="flex:1;min-width:0">
-        <div class="ladder-comp">${fmtUSD(s.comp)} <span style="font-size:11px;color:var(--tx3);font-weight:600">/yr</span></div>
-        <div class="ladder-trig">${s.trig}</div>
+        <div class="ladder-comp">
+          <span class="ladder-pfx"><span>$</span><input type="number" class="ladder-input" value="${s.salary}" step="5000" onchange="updateLadder('${s.salaryField}', this.value)"></span>
+          <span style="font-size:11px;color:var(--tx3);font-weight:600">/yr</span>
+        </div>
+        <div class="ladder-trig">${s.trigHtml}</div>
       </div>
       <div class="ladder-mo">${s.fired ? (s.mo === 1 ? 'Active' : 'Mo ' + s.mo) : 'Not yet'}</div>
     </div>
   `).join('');
+}
+
+function updateLadder(field, value) {
+  const v = parseFloat(value) || 0;
+  state.ownerLadder[field] = v;
+  recalc();
 }
 
 // ====================================================================
@@ -1308,6 +1349,7 @@ function captureCurrentInputs() {
   return {
     raise: state.raise, founder: state.founder, scenario: state.scenario, view: state.view,
     uses: JSON.parse(JSON.stringify(state.uses)),
+    ownerLadder: JSON.parse(JSON.stringify(state.ownerLadder)),
     inputs: {
       'prod-start': GETN('prod-start'), 'prod-nn1': GETN('prod-nn1'),
       'prod-nn2': GETN('prod-nn2'), 'prod-nn3': GETN('prod-nn3'),
@@ -1325,6 +1367,9 @@ function applySavedState(s) {
   state.raise = s.raise; state.founder = s.founder;
   state.scenario = s.scenario; state.view = s.view;
   state.uses = JSON.parse(JSON.stringify(s.uses));
+  if (s.ownerLadder) {
+    state.ownerLadder = JSON.parse(JSON.stringify(s.ownerLadder));
+  }
   Object.entries(s.inputs).forEach(([id,v]) => {
     const el = document.getElementById(id); if (el) el.value = v;
   });
@@ -1363,6 +1408,10 @@ function deleteSaved(i) {
 function resetDefaults() {
   if (!confirm('Reset all assumptions to defaults? Saved scenarios are preserved.')) return;
   state.uses = JSON.parse(JSON.stringify(DEFAULT_USES));
+  state.ownerLadder = {
+    base: 150000, step2: 175000, step3: 200000, step4: 225000,
+    step2Trigger: 50000, step3Trigger: 100000, step4Months: 3,
+  };
   state.raise = 3000000; state.founder = 0; state.scenario = 'base'; state.view = 'annual';
   document.getElementById('raise-amt').value = 3000000;
   document.getElementById('raise-slider').value = 3000000;
