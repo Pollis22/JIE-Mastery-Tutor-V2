@@ -60,8 +60,8 @@ export function NavigationHeader() {
   return (
     <nav className="bg-card shadow-sm border-b border-border sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center h-16">
-          <div className="flex items-center">
+        <div className="flex justify-between items-center h-16 gap-2">
+          <div className="flex items-center min-w-0">
             <Button
               variant="ghost"
               onClick={() => setLocation("/tutor")}
@@ -69,46 +69,60 @@ export function NavigationHeader() {
               data-testid="logo-home"
             >
               <img src="/jie-logo-nav.png" alt="JIE Mastery" className="w-8 h-8 object-contain" />
-              <span className="ml-2 text-xl font-bold text-foreground">JIE Mastery</span>
+              <span className="ml-2 text-xl font-bold text-foreground whitespace-nowrap">JIE Mastery</span>
             </Button>
-            <div className="hidden md:block ml-10">
-              <div className="flex items-baseline space-x-4">
+            <div className="hidden md:block ml-4 lg:ml-8">
+              <div className="flex items-baseline space-x-0.5 lg:space-x-1">
                 <Button
                   variant="ghost"
+                  size="sm"
                   onClick={() => setLocation("/dashboard")}
-                  className={isActive("/dashboard") ? "text-primary font-medium" : "text-muted-foreground"}
+                  className={`px-2 lg:px-3 text-sm whitespace-nowrap ${isActive("/dashboard") ? "text-primary font-medium" : "text-muted-foreground"}`}
                   data-testid="nav-dashboard"
                 >
                   Dashboard
                 </Button>
                 <Button
                   variant="ghost"
+                  size="sm"
                   onClick={() => setLocation("/family")}
-                  className={isActive("/family") ? "text-primary font-medium" : "text-muted-foreground"}
+                  className={`px-2 lg:px-3 text-sm whitespace-nowrap ${isActive("/family") ? "text-primary font-medium" : "text-muted-foreground"}`}
                   data-testid="nav-family"
                 >
                   Study Tracker
                 </Button>
                 <Button
                   variant="ghost"
+                  size="sm"
+                  onClick={() => setLocation("/about-lsis")}
+                  className={`px-2 lg:px-3 text-sm whitespace-nowrap ${isActive("/about-lsis") ? "text-primary font-medium" : "text-muted-foreground"}`}
+                  data-testid="nav-about-lsis"
+                >
+                  What is LSIS?
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={() => navigateTo("/benefits#test-prep")}
-                  className={isActive("/benefits") ? "text-primary font-medium" : "text-muted-foreground"}
+                  className={`px-2 lg:px-3 text-sm whitespace-nowrap ${isActive("/benefits") ? "text-primary font-medium" : "text-muted-foreground"}`}
                   data-testid="nav-test-prep"
                 >
                   College Test Prep
                 </Button>
                 <Button
                   variant="ghost"
+                  size="sm"
                   onClick={() => setLocation("/settings")}
-                  className={isActive("/settings") ? "text-primary font-medium" : "text-muted-foreground"}
+                  className={`px-2 lg:px-3 text-sm whitespace-nowrap ${isActive("/settings") ? "text-primary font-medium" : "text-muted-foreground"}`}
                   data-testid="nav-settings"
                 >
                   Settings
                 </Button>
                 <Button
                   variant="ghost"
+                  size="sm"
                   onClick={() => setLocation("/support")}
-                  className={isActive("/support") ? "text-primary font-medium" : "text-muted-foreground"}
+                  className={`px-2 lg:px-3 text-sm whitespace-nowrap ${isActive("/support") ? "text-primary font-medium" : "text-muted-foreground"}`}
                   data-testid="nav-support"
                 >
                   Live Support
@@ -116,8 +130,9 @@ export function NavigationHeader() {
                 {user?.isAdmin && (
                   <Button
                     variant="ghost"
+                    size="sm"
                     onClick={() => setLocation("/admin")}
-                    className={isActive("/admin") ? "text-primary font-medium" : "text-muted-foreground"}
+                    className={`px-2 lg:px-3 text-sm whitespace-nowrap ${isActive("/admin") ? "text-primary font-medium" : "text-muted-foreground"}`}
                     data-testid="nav-admin"
                   >
                     Admin
@@ -127,44 +142,56 @@ export function NavigationHeader() {
             </div>
           </div>
           
-          <div className="flex items-center space-x-4">
-            {/* Usage & plan badge - hidden on small screens */}
-            <div className="hidden sm:flex items-center space-x-3 text-sm">
+          <div className="flex items-center gap-2 lg:gap-3 flex-shrink-0">
+            {/* Usage & plan badge - only show on xl+ screens (1280px+) where there's room */}
+            <div className="hidden xl:flex items-center space-x-3 text-sm">
               <div className="flex items-center space-x-1">
-                <svg className="w-4 h-4 text-secondary" fill="currentColor" viewBox="0 0 20 20">
+                <svg className="w-4 h-4 text-secondary flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd"/>
                 </svg>
-                <span className="text-muted-foreground" data-testid="text-usage-minutes">
+                <span className="text-muted-foreground whitespace-nowrap" data-testid="text-usage-minutes">
                   {dashboard?.usage?.voiceMinutes || '0 / 60 min'}
                 </span>
               </div>
               <div className="text-muted-foreground">|</div>
-              <Badge variant="secondary" data-testid="badge-plan">
+              <Badge variant="secondary" className="whitespace-nowrap" data-testid="badge-plan">
                 {dashboard?.user?.plan || 'Single Subject Plan'}
               </Badge>
             </div>
             
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="flex items-center space-x-2 text-sm hover:bg-accent" data-testid="button-user-menu">
+                <Button variant="ghost" className="flex items-center gap-2 text-sm hover:bg-accent px-2" data-testid="button-user-menu">
                   <UserAvatar
                     firstName={user?.firstName}
                     lastName={user?.lastName}
                     username={user?.username}
                     displayName={displayName}
                     size="sm"
-                    className="border border-primary/20"
+                    className="border border-primary/20 flex-shrink-0"
                   />
-                  <span className="text-foreground font-medium">
+                  <span className="text-foreground font-medium hidden md:inline whitespace-nowrap max-w-[120px] truncate">
                     {displayName}
                   </span>
-                  <svg className="w-4 h-4 text-muted-foreground" fill="currentColor" viewBox="0 0 20 20">
+                  <svg className="w-4 h-4 text-muted-foreground flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd"/>
                   </svg>
                 </Button>
               </DropdownMenuTrigger>
               
               <DropdownMenuContent align="end" className="w-56">
+                {/* Show usage info inside the dropdown when not visible in nav */}
+                <div className="xl:hidden px-2 py-2 border-b border-border mb-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground" data-testid="text-usage-minutes-dropdown">
+                      {dashboard?.usage?.voiceMinutes || '0 / 60 min'}
+                    </span>
+                    <Badge variant="secondary" className="text-xs" data-testid="badge-plan-dropdown">
+                      {dashboard?.user?.plan || 'Single Subject Plan'}
+                    </Badge>
+                  </div>
+                </div>
+
                 <DropdownMenuItem onClick={() => setLocation("/profile")} data-testid="menu-profile">
                   <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd"/>
@@ -210,7 +237,7 @@ export function NavigationHeader() {
 
             {/* Mobile hamburger */}
             <button
-              className="md:hidden p-2 rounded-md border border-border"
+              className="md:hidden p-2 rounded-md border border-border flex-shrink-0"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             >
               {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -227,6 +254,7 @@ export function NavigationHeader() {
               { label: "Dashboard", path: "/dashboard" },
               { label: "Study Tracker", path: "/family" },
               { label: "About Study Tracker", path: "/about-study-tracker" },
+              { label: "What is LSIS?", path: "/about-lsis" },
               { label: "College Test Prep", path: "/benefits#test-prep" },
               { label: "Settings", path: "/settings" },
               { label: "Live Support", path: "/support" },
