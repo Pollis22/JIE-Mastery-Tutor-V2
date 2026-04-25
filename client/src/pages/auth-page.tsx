@@ -296,6 +296,15 @@ export default function AuthPage() {
               <Button 
                 variant="ghost" 
                 size="sm"
+                onClick={() => setLocation("/about-lsis")} 
+                data-testid="button-nav-about-lsis"
+                className="text-primary font-semibold"
+              >
+                What is LSIS?
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="sm"
                 onClick={() => {
                   setLocation("/benefits");
                   setTimeout(() => document.getElementById("test-prep")?.scrollIntoView({ behavior: "smooth" }), 500);

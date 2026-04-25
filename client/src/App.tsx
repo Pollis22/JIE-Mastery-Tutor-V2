@@ -71,6 +71,7 @@ const MagicLinkPage = lazy(() => import("@/pages/magic-link-page"));
 const StartTrialPage = lazy(() => import("@/pages/start-trial-page"));
 const FamilyDashboardPage = lazy(() => import("@/pages/family-dashboard"));
 const AboutStudyTrackerPage = lazy(() => import("@/pages/about-study-tracker"));
+const AboutLSISPage = lazy(() => import("@/pages/about-lsis"));
 const FamilyChildDashboardPage = lazy(() => import("@/pages/family-child-dashboard"));
 const FamilyCalendarPage = lazy(() => import("@/pages/family-calendar"));
 const FamilyNotificationSettingsPage = lazy(() => import("@/pages/family-notification-settings"));
@@ -113,6 +114,7 @@ function Router() {
         <ProtectedRoute path="/admin/logs" component={AdminLogs} />
         <ProtectedRoute path="/family" component={FamilyDashboardPage} />
         <ProtectedRoute path="/about-study-tracker" component={AboutStudyTrackerPage} />
+        <LazyRoute path="/about-lsis" component={AboutLSISPage} />
         <ProtectedRoute path="/family/child/:childId" component={FamilyChildDashboardPage} />
         <ProtectedRoute path="/family/calendar" component={FamilyCalendarPage} />
         <ProtectedRoute path="/family/notifications" component={FamilyNotificationSettingsPage} />
