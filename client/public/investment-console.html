@@ -116,6 +116,12 @@ input:focus,select:focus{border-color:var(--red);background:#fff;box-shadow:0 0 
 .tbl input[type=text],.tbl input[type=number]{padding:6px 9px;font-size:12px;border-radius:6px;border-width:1px}
 .row-del{color:var(--tx3);cursor:pointer;font-size:14px;padding:2px 6px;border-radius:4px;transition:all .15s;background:none;border:none}
 .row-del:hover{color:var(--red);background:var(--r05)}
+.row-drag{width:20px;cursor:grab;color:var(--tx3);user-select:none;text-align:center;font-size:13px;font-weight:800;letter-spacing:-1px;line-height:1;padding:0 2px;transition:color .15s}
+.row-drag:hover{color:var(--red)}
+.row-drag:active{cursor:grabbing}
+.tbl tbody tr.drag-source{opacity:.35}
+.tbl tbody tr.drag-over-top{box-shadow:inset 0 2px 0 var(--red)}
+.tbl tbody tr.drag-over-bot{box-shadow:inset 0 -2px 0 var(--red)}
 
 /* BALANCE INDICATOR */
 .bal{padding:14px 18px;border-radius:10px;display:flex;align-items:center;justify-content:space-between;margin-top:14px;border:1.5px solid}
@@ -322,7 +328,8 @@ input:focus,select:focus{border-color:var(--red);background:#fff;box-shadow:0 0 
       <table class="tbl">
         <thead>
           <tr>
-            <th style="width:26%">Use of Funds</th>
+            <th style="width:24px"></th>
+            <th style="width:24%">Use of Funds</th>
             <th style="width:14%">Category</th>
             <th class="r" style="width:15%">1-Yr Input</th>
             <th class="r" style="width:15%">3-Yr Total</th>
@@ -333,7 +340,7 @@ input:focus,select:focus{border-color:var(--red);background:#fff;box-shadow:0 0 
         </thead>
         <tbody id="uses-rows"></tbody>
         <tfoot>
-          <tr><td colspan="2">Total Uses</td><td class="r" id="uses-total-1y">$0</td><td class="r" id="uses-total">$0</td><td class="r" id="uses-pct">0%</td><td colspan="2"></td></tr>
+          <tr><td colspan="3">Total Uses</td><td class="r" id="uses-total-1y">$0</td><td class="r" id="uses-total">$0</td><td class="r" id="uses-pct">0%</td><td colspan="2"></td></tr>
         </tfoot>
       </table>
 
@@ -768,6 +775,72 @@ function renderSources() {
   document.getElementById('src-total').textContent = fmtUSD(state.raise + state.founder);
 }
 
+// ---- DRAG-TO-REORDER for Uses table ----
+let dragSrcIdx = null;
+
+function onRowDragStart(e, idx) {
+  dragSrcIdx = idx;
+  const tr = e.target.closest('tr');
+  if (tr) {
+    tr.classList.add('drag-source');
+    // Use the whole row as the drag image so it looks like you're dragging the line
+    try { e.dataTransfer.setDragImage(tr, 20, tr.offsetHeight / 2); } catch(_) {}
+  }
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', String(idx));
+}
+
+function onRowDragOver(e, idx) {
+  if (dragSrcIdx === null || dragSrcIdx === idx) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  const tr = e.currentTarget;
+  const rect = tr.getBoundingClientRect();
+  const above = (e.clientY - rect.top) < rect.height / 2;
+  document.querySelectorAll('#uses-rows tr').forEach(r => {
+    r.classList.remove('drag-over-top');
+    r.classList.remove('drag-over-bot');
+  });
+  tr.classList.add(above ? 'drag-over-top' : 'drag-over-bot');
+}
+
+function onRowDragLeave(e) {
+  // Only clear if we're truly leaving the row (not just moving to a child element)
+  const tr = e.currentTarget;
+  if (!tr.contains(e.relatedTarget)) {
+    tr.classList.remove('drag-over-top');
+    tr.classList.remove('drag-over-bot');
+  }
+}
+
+function onRowDrop(e, idx) {
+  e.preventDefault();
+  if (dragSrcIdx === null || dragSrcIdx === idx) return;
+  const tr = e.currentTarget;
+  const rect = tr.getBoundingClientRect();
+  const above = (e.clientY - rect.top) < rect.height / 2;
+  let targetIdx = above ? idx : idx + 1;
+  // After splicing out the source, indices shift
+  if (dragSrcIdx < targetIdx) targetIdx -= 1;
+  // Never allow dropping above the locked owner row (always at index 0 by convention)
+  const ownerIdx = state.uses.findIndex(u => u.locked);
+  if (ownerIdx === 0 && targetIdx === 0) targetIdx = 1;
+
+  const item = state.uses.splice(dragSrcIdx, 1)[0];
+  state.uses.splice(targetIdx, 0, item);
+  dragSrcIdx = null;
+  recalc();
+}
+
+function onRowDragEnd(e) {
+  document.querySelectorAll('#uses-rows tr').forEach(r => {
+    r.classList.remove('drag-source');
+    r.classList.remove('drag-over-top');
+    r.classList.remove('drag-over-bot');
+  });
+  dragSrcIdx = null;
+}
+
 function renderUses() {
   // Auto-compute owner salary total from compute() and inject into the locked row (annual = total / 3)
   const r = compute();
@@ -779,6 +852,9 @@ function renderUses() {
   tbody.innerHTML = state.uses.map((u, i) => {
     const isLocked = !!u.locked;
     const threeYr = u.id === 'owner' ? ownerTotal : (u.annual * 3);
+    const dragCell = isLocked
+      ? `<td></td>`
+      : `<td class="row-drag" draggable="true" title="Drag to reorder" ondragstart="onRowDragStart(event,${i})" ondragend="onRowDragEnd(event)">⋮⋮</td>`;
     const labelCell = isLocked
       ? `<td><span style="font-size:12.5px;font-weight:700;color:var(--tx2);display:inline-flex;align-items:center;gap:6px">🔒 ${u.label}</span></td>`
       : `<td><input type="text" value="${u.label}" onchange="state.uses[${i}].label=this.value"></td>`;
@@ -795,7 +871,10 @@ function renderUses() {
     const delCell = isLocked
       ? `<td></td>`
       : `<td><button class="row-del" onclick="removeUse(${i})" title="Remove">✕</button></td>`;
-    return `<tr>${labelCell}${catCell}${annualCell}${threeYrCell}<td class="r" id="use-pct-${i}">—</td>${noteCell}${delCell}</tr>`;
+    const trAttrs = isLocked
+      ? `data-idx="${i}" data-locked="true"`
+      : `data-idx="${i}" ondragover="onRowDragOver(event,${i})" ondragleave="onRowDragLeave(event)" ondrop="onRowDrop(event,${i})"`;
+    return `<tr ${trAttrs}>${dragCell}${labelCell}${catCell}${annualCell}${threeYrCell}<td class="r" id="use-pct-${i}">—</td>${noteCell}${delCell}</tr>`;
   }).join('');
 
   const total1y = state.uses.reduce((s,u) => s + (u.id === 'owner' ? Math.round(ownerTotal/3) : u.annual), 0);
