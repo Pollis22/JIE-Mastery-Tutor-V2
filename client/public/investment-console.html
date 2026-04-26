@@ -310,7 +310,7 @@ input:focus,select:focus{border-color:var(--red);background:#fff;box-shadow:0 0 
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
         <div>
           <div class="ch" style="margin-bottom:4px"><span class="chdot"></span>Capital Uses (3-Year Allocation)</div>
-          <div class="card-sub">Edit any line. Add custom rows for situational expenses. All amounts are 3-year totals.</div>
+          <div class="card-sub">Enter annual amounts in the 1-Yr column. 3-Yr Total auto-computes (×3). Add custom rows as needed.</div>
         </div>
         <div style="display:flex;gap:8px">
           <button class="btn btn-out btn-sm" onclick="addUseRow()">+ Add Row</button>
@@ -322,17 +322,18 @@ input:focus,select:focus{border-color:var(--red);background:#fff;box-shadow:0 0 
       <table class="tbl">
         <thead>
           <tr>
-            <th style="width:32%">Use of Funds</th>
-            <th style="width:18%">Category</th>
-            <th class="r" style="width:18%">3-Yr Total</th>
-            <th class="r" style="width:14%">% of Raise</th>
+            <th style="width:26%">Use of Funds</th>
+            <th style="width:14%">Category</th>
+            <th class="r" style="width:15%">1-Yr Input</th>
+            <th class="r" style="width:15%">3-Yr Total</th>
+            <th class="r" style="width:11%">% Raise</th>
             <th style="width:auto">Notes</th>
             <th style="width:40px"></th>
           </tr>
         </thead>
         <tbody id="uses-rows"></tbody>
         <tfoot>
-          <tr><td colspan="2">Total Uses</td><td class="r" id="uses-total">$0</td><td class="r" id="uses-pct">0%</td><td colspan="2"></td></tr>
+          <tr><td colspan="2">Total Uses</td><td class="r" id="uses-total-1y">$0</td><td class="r" id="uses-total">$0</td><td class="r" id="uses-pct">0%</td><td colspan="2"></td></tr>
         </tfoot>
       </table>
 
@@ -559,17 +560,17 @@ const fmtUSDK = v => Math.abs(v) >= 1e6 ? '$' + (v/1e6).toFixed(2) + 'M' : '$' +
 const fmtPct = v => (v*100).toFixed(1) + '%';
 const fmtNum = v => Math.round(v).toLocaleString('en-US');
 
-// ----- DEFAULT USES -----
+// ----- DEFAULT USES (annual amounts; 3-yr total = annual × 3) -----
 const DEFAULT_USES = [
-  { id: 'owner', label: 'Owner Salary (auto from ladder)', cat: 'salaries', amt: 0, note: 'Auto-computed from Owner Salary Ladder', locked: true },
-  { id: 'devTeam', label: 'Dev Team', cat: 'salaries', amt: 720000, note: '2 devs avg $120K loaded × 3 yrs' },
-  { id: 'marketing', label: 'Marketing & Advertising', cat: 'marketing', amt: 480000, note: 'Digital + content + events' },
-  { id: 'sales', label: 'Sales (BDR/AE)', cat: 'salaries', amt: 360000, note: '1 BDR + 1 AE for institutional' },
-  { id: 'infra', label: 'Infrastructure (Fixed)', cat: 'cogs', amt: 36000, note: 'Hosting, base APIs, monitoring' },
-  { id: 'legal', label: 'Legal / Accounting / Insurance', cat: 'ga', amt: 90000, note: '$30K/yr blended' },
-  { id: 'office', label: 'Office / Admin', cat: 'ga', amt: 36000, note: '$12K/yr remote-first' },
-  { id: 'tools', label: 'Software & SaaS Tools', cat: 'ga', amt: 45000, note: 'Stripe, Resend, dev tools, CRM' },
-  { id: 'contingency', label: 'Contingency Reserve', cat: 'reserve', amt: 308000, note: 'Buffer ~10% of raise' },
+  { id: 'owner', label: 'Owner Salary (auto from ladder)', cat: 'salaries', annual: 0, note: 'Auto-computed from Owner Salary Ladder', locked: true },
+  { id: 'devTeam', label: 'Dev Team', cat: 'salaries', annual: 240000, note: '2 devs avg $120K loaded' },
+  { id: 'marketing', label: 'Marketing & Advertising', cat: 'marketing', annual: 160000, note: 'Digital + content + events' },
+  { id: 'sales', label: 'Sales (BDR/AE)', cat: 'salaries', annual: 120000, note: '1 BDR + 1 AE for institutional' },
+  { id: 'infra', label: 'Infrastructure (Fixed)', cat: 'cogs', annual: 12000, note: 'Hosting, base APIs, monitoring' },
+  { id: 'legal', label: 'Legal / Accounting / Insurance', cat: 'ga', annual: 30000, note: 'Blended annual' },
+  { id: 'office', label: 'Office / Admin', cat: 'ga', annual: 12000, note: 'Remote-first' },
+  { id: 'tools', label: 'Software & SaaS Tools', cat: 'ga', annual: 15000, note: 'Stripe, Resend, dev tools, CRM' },
+  { id: 'contingency', label: 'Contingency Reserve', cat: 'reserve', annual: 100000, note: 'Buffer ~10% of raise (annualized)' },
 ];
 
 const CATEGORIES = ['salaries','marketing','sales','cogs','ga','reserve','other'];
@@ -667,7 +668,7 @@ function compute() {
 
   // 3-year totals of fixed uses → monthly OpEx (excluding owner salary, which steps)
   const totalFixed3yr = state.uses.reduce((s, u) => {
-    return s + (u.id === 'owner' ? 0 : u.amt);
+    return s + (u.id === 'owner' ? 0 : u.annual * 3);
   }, 0);
   const monthlyFixedOpEx = (totalFixed3yr / 36) * sc.cost;
 
@@ -768,45 +769,52 @@ function renderSources() {
 }
 
 function renderUses() {
-  // Auto-compute owner salary total from compute() and inject into the locked row
+  // Auto-compute owner salary total from compute() and inject into the locked row (annual = total / 3)
   const r = compute();
   const ownerTotal = Math.round(r.months.reduce((s, m) => s + m.ownerSalary, 0));
   const ownerIdx = state.uses.findIndex(u => u.id === 'owner');
-  if (ownerIdx >= 0) state.uses[ownerIdx].amt = ownerTotal;
+  if (ownerIdx >= 0) state.uses[ownerIdx].annual = Math.round(ownerTotal / 3);
 
   const tbody = document.getElementById('uses-rows');
   tbody.innerHTML = state.uses.map((u, i) => {
     const isLocked = !!u.locked;
+    const threeYr = u.id === 'owner' ? ownerTotal : (u.annual * 3);
     const labelCell = isLocked
       ? `<td><span style="font-size:12.5px;font-weight:700;color:var(--tx2);display:inline-flex;align-items:center;gap:6px">🔒 ${u.label}</span></td>`
       : `<td><input type="text" value="${u.label}" onchange="state.uses[${i}].label=this.value"></td>`;
     const catCell = isLocked
       ? `<td><span style="font-size:12px;color:var(--tx2);font-weight:600">${CAT_LABEL[u.cat]}</span></td>`
       : `<td><select onchange="state.uses[${i}].cat=this.value">${CATEGORIES.map(c => `<option value="${c}" ${c===u.cat?'selected':''}>${CAT_LABEL[c]}</option>`).join('')}</select></td>`;
-    const amtCell = isLocked
-      ? `<td class="r" style="font-variant-numeric:tabular-nums;font-weight:700;color:var(--tx2)">${fmtUSD(u.amt)}</td>`
-      : `<td class="r"><div class="pfx" style="display:inline-block;width:120px"><span>$</span><input type="number" value="${u.amt}" onchange="state.uses[${i}].amt=parseFloat(this.value)||0;recalc()" style="text-align:right"></div></td>`;
+    const annualCell = isLocked
+      ? `<td class="r" style="font-variant-numeric:tabular-nums;font-weight:600;color:var(--tx2)">${fmtUSD(u.annual)}</td>`
+      : `<td class="r"><div class="pfx" style="display:inline-block;width:120px"><span>$</span><input type="number" value="${u.annual}" step="1000" onchange="state.uses[${i}].annual=parseFloat(this.value)||0;recalc()" style="text-align:right"></div></td>`;
+    const threeYrCell = `<td class="r" style="font-variant-numeric:tabular-nums;font-weight:700;color:var(--red)">${fmtUSD(threeYr)}</td>`;
     const noteCell = isLocked
       ? `<td><span style="font-size:11.5px;color:var(--tx3);font-style:italic">${u.note||''}</span></td>`
       : `<td><input type="text" value="${u.note||''}" onchange="state.uses[${i}].note=this.value" placeholder="Optional note"></td>`;
     const delCell = isLocked
       ? `<td></td>`
       : `<td><button class="row-del" onclick="removeUse(${i})" title="Remove">✕</button></td>`;
-    return `<tr>${labelCell}${catCell}${amtCell}<td class="r" id="use-pct-${i}">—</td>${noteCell}${delCell}</tr>`;
+    return `<tr>${labelCell}${catCell}${annualCell}${threeYrCell}<td class="r" id="use-pct-${i}">—</td>${noteCell}${delCell}</tr>`;
   }).join('');
 
-  const total = state.uses.reduce((s,u) => s + u.amt, 0);
-  document.getElementById('uses-total').textContent = fmtUSD(total);
-  const pct = state.raise > 0 ? (total / state.raise) * 100 : 0;
+  const total1y = state.uses.reduce((s,u) => s + (u.id === 'owner' ? Math.round(ownerTotal/3) : u.annual), 0);
+  const total3y = state.uses.reduce((s,u) => s + (u.id === 'owner' ? ownerTotal : u.annual * 3), 0);
+  document.getElementById('uses-total-1y').textContent = fmtUSD(total1y);
+  document.getElementById('uses-total').textContent = fmtUSD(total3y);
+  const pct = state.raise > 0 ? (total3y / state.raise) * 100 : 0;
   document.getElementById('uses-pct').textContent = pct.toFixed(0) + '%';
   state.uses.forEach((u,i) => {
     const cell = document.getElementById('use-pct-' + i);
-    if (cell) cell.textContent = state.raise > 0 ? ((u.amt / state.raise) * 100).toFixed(1) + '%' : '—';
+    if (cell) {
+      const t = u.id === 'owner' ? ownerTotal : (u.annual * 3);
+      cell.textContent = state.raise > 0 ? ((t / state.raise) * 100).toFixed(1) + '%' : '—';
+    }
   });
 
   // Balance indicator
   const sources = state.raise + state.founder;
-  const diff = sources - total;
+  const diff = sources - total3y;
   const ind = document.getElementById('bal-ind');
   const msg = document.getElementById('bal-msg');
   const val = document.getElementById('bal-val');
@@ -827,7 +835,7 @@ function renderUses() {
 }
 
 function addUseRow() {
-  state.uses.push({ id: 'custom_' + Date.now(), label: 'New Use', cat: 'other', amt: 0, note: '' });
+  state.uses.push({ id: 'custom_' + Date.now(), label: 'New Use', cat: 'other', annual: 0, note: '' });
   renderUses();
 }
 function removeUse(i) {
@@ -1184,6 +1192,8 @@ function downloadCSV(filename, rows) {
 }
 
 function exportSU(format) {
+  const total1y = state.uses.reduce((s,u)=>s+u.annual,0);
+  const total3y = state.uses.reduce((s,u)=>s+u.annual*3,0);
   const rows = [
     ['JIE Mastery — Sources & Uses'],
     ['Scenario', SCEN[state.scenario].label],
@@ -1196,9 +1206,9 @@ function exportSU(format) {
     ['Total Sources', state.raise + state.founder],
     [],
     ['USES'],
-    ['Use of Funds','Category','3-Yr Total','% of Raise','Notes'],
-    ...state.uses.map(u => [u.label, CAT_LABEL[u.cat], u.amt, ((u.amt/state.raise)*100).toFixed(1)+'%', u.note||'']),
-    ['Total Uses', '', state.uses.reduce((s,u)=>s+u.amt,0), '', ''],
+    ['Use of Funds','Category','1-Yr Input','3-Yr Total','% of Raise','Notes'],
+    ...state.uses.map(u => [u.label, CAT_LABEL[u.cat], u.annual, u.annual*3, ((u.annual*3/state.raise)*100).toFixed(1)+'%', u.note||'']),
+    ['Total Uses', '', total1y, total3y, ((total3y/state.raise)*100).toFixed(0)+'%', ''],
   ];
   if (format === 'csv') {
     downloadCSV('jie-sources-uses.csv', rows);
@@ -1230,18 +1240,19 @@ function exportSUasPDF() {
     foot: [],
   });
 
-  const total = state.uses.reduce((s,u)=>s+u.amt,0);
+  const total1y = state.uses.reduce((s,u)=>s+u.annual,0);
+  const total3y = state.uses.reduce((s,u)=>s+u.annual*3,0);
   doc.autoTable({
     startY: doc.lastAutoTable.finalY + 24,
-    head: [['Use of Funds','Category','3-Yr Total','% Raise','Notes']],
+    head: [['Use of Funds','Category','1-Yr Input','3-Yr Total','% Raise','Notes']],
     body: state.uses.map(u => [
-      u.label, CAT_LABEL[u.cat], fmtUSD(u.amt),
-      ((u.amt/state.raise)*100).toFixed(1)+'%', u.note||''
+      u.label, CAT_LABEL[u.cat], fmtUSD(u.annual), fmtUSD(u.annual*3),
+      ((u.annual*3/state.raise)*100).toFixed(1)+'%', u.note||''
     ]),
-    foot: [['Total Uses','', fmtUSD(total), ((total/state.raise)*100).toFixed(0)+'%','']],
+    foot: [['Total Uses','', fmtUSD(total1y), fmtUSD(total3y), ((total3y/state.raise)*100).toFixed(0)+'%','']],
     headStyles: { fillColor: [200,28,28], textColor:255 },
     footStyles: { fillColor: [242,242,244], fontStyle:'bold' },
-    columnStyles: { 2: { halign:'right' }, 3: { halign:'right' } },
+    columnStyles: { 2: { halign:'right' }, 3: { halign:'right' }, 4: { halign:'right' } },
   });
 
   doc.save('jie-sources-uses.pdf');
@@ -1367,6 +1378,13 @@ function applySavedState(s) {
   state.raise = s.raise; state.founder = s.founder;
   state.scenario = s.scenario; state.view = s.view;
   state.uses = JSON.parse(JSON.stringify(s.uses));
+  // Migrate v2 saved scenarios: convert `amt` (3-yr total) → `annual`
+  state.uses.forEach(u => {
+    if (u.annual === undefined) {
+      u.annual = u.amt !== undefined ? Math.round(u.amt / 3) : 0;
+      delete u.amt;
+    }
+  });
   if (s.ownerLadder) {
     state.ownerLadder = JSON.parse(JSON.stringify(s.ownerLadder));
   }
