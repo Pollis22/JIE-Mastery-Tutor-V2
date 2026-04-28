@@ -301,3 +301,139 @@ li[data-sonner-toast] * {
   color: #FFFFFF !important;
   font-weight: 600 !important;
 }
+
+/* ============================================================
+   MOBILE RESPONSIVE GLOBAL — v1 (Apr 27, 2026)
+   Applies to all JIE platforms (Mastery / UW / State / USC / Mobile)
+   Marker: JIE_MOBILE_RESPONSIVE_V1
+   Idempotent: deploy script checks for this marker before appending.
+   ============================================================ */
+
+/* ---- iOS Safari + Android base ---- */
+html {
+  -webkit-text-size-adjust: 100%;
+  overscroll-behavior-y: none;
+}
+
+body {
+  overscroll-behavior-y: none;
+}
+
+/* Kill grey tap flash on iOS Safari */
+button,
+a,
+[role="button"],
+input[type="checkbox"],
+input[type="radio"],
+label {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ---- Safe-area helpers (use on bottom-pinned elements) ---- */
+.safe-top    { padding-top:    env(safe-area-inset-top); }
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+.safe-left   { padding-left:   env(safe-area-inset-left); }
+.safe-right  { padding-right:  env(safe-area-inset-right); }
+
+/* ---- Dynamic viewport height ----
+   100vh on iOS Safari includes the disappearing toolbar region,
+   which is why End Session gets hidden. 100dvh shrinks dynamically
+   as the toolbar appears. */
+.min-h-dvh { min-height: 100vh; min-height: 100dvh; }
+.h-dvh     { height:     100vh; height:     100dvh; }
+
+/* ---- Touch targets (44x44 per Apple HIG, mobile only) ----
+   Scoped to narrow viewports so we don't inflate inline desktop UI.
+   .btn-compact / [data-compact] opt out for icon-only buttons. */
+@media (max-width: 768px) {
+  button:not(.btn-compact):not([data-compact]),
+  a[role="button"]:not(.btn-compact),
+  [role="button"]:not(.btn-compact) {
+    min-height: 44px;
+  }
+}
+
+/* ---- Tutor page: breathing room for Start Tutor Session ---- */
+@media (max-width: 768px) {
+  .tutor-page {
+    padding-bottom: calc(56px + env(safe-area-inset-bottom) + 24px);
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+}
+
+/* ---- Voice session page: End Session button visibility ----
+   Anchor it above the iOS toolbar with safe-area + dvh. */
+.voice-session-page {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+@media (max-width: 768px) {
+  .voice-session-controls {
+    position: sticky;
+    bottom: 0;
+    padding-bottom: calc(env(safe-area-inset-bottom) + 16px);
+    background: var(--background);
+    z-index: 10;
+  }
+}
+
+/* ---- Session mode buttons (Listen Only / Text Only) ----
+   Stack vertically on narrow phones so labels don't wrap awkwardly. */
+@media (max-width: 480px) {
+  .session-mode-buttons {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .session-mode-buttons > button {
+    width: 100%;
+  }
+}
+
+/* ---- Documents table: collapse to card layout on phones ----
+   Below 640px, table headers stack and each row becomes a card.
+   Apply class "responsive-table" to <table> elements that should adapt. */
+@media (max-width: 640px) {
+  .responsive-table thead {
+    display: none;
+  }
+  .responsive-table,
+  .responsive-table tbody,
+  .responsive-table tr,
+  .responsive-table td {
+    display: block;
+    width: 100%;
+  }
+  .responsive-table tr {
+    margin-bottom: 12px;
+    padding: 12px;
+    border: 1px solid var(--border, rgba(0,0,0,0.1));
+    border-radius: 8px;
+    background: var(--card, #fff);
+  }
+  .responsive-table td {
+    padding: 6px 0;
+    border: none;
+    text-align: left;
+  }
+  .responsive-table td::before {
+    content: attr(data-label);
+    display: block;
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--muted-foreground, rgba(0,0,0,0.5));
+    margin-bottom: 2px;
+  }
+}
+
+/* ---- Smooth scrolling on iOS ---- */
+.scroll-container {
+  -webkit-overflow-scrolling: touch;
+  overflow-y: auto;
+}
+
+/* ---- End MOBILE RESPONSIVE GLOBAL v1 ---- */
+
