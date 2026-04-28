@@ -4264,6 +4264,17 @@ export function setupCustomVoiceWebSocket(server: Server) {
               }
               // ── END VISUAL TAG PARSER ────────────────────────────────────
 
+              // ── ECHO GUARD: Per-sentence recording ───────────────────────
+              // Record this sentence in the echo guard buffer BEFORE TTS plays,
+              // so short echoes (e.g. "Yes." picked up while tutor is still
+              // speaking sentence 1 "Yes, I can see it clearly!") can be
+              // matched against the in-flight sentence — not just the fully
+              // assembled response which only lands in onComplete.
+              if (sentence.length > 0) {
+                recordTutorUtterance(state.echoGuardState, sentence, echoConfig);
+              }
+              // ── END ECHO GUARD ───────────────────────────────────────────
+
               if (sentenceCount === 1) {
                 firstSentenceMs = sentenceStart - claudeStart;
                 state.isTutorThinking = false;
@@ -7346,6 +7357,14 @@ HONESTY INSTRUCTIONS:
               let chunkIndex = 0;
               let greetingInterrupted = false;
               
+              // ── ECHO GUARD: Mark greeting playback start ─────────────────
+              // The greeting is the first audio the student hears, and a loud
+              // speaker can echo it straight into the mic. Hook the greeting
+              // path into echo guard the same way the turn flow does.
+              const greetingEchoConfig = getEchoGuardConfig();
+              markPlaybackStart(state.echoGuardState, greetingEchoConfig);
+              // ── END ECHO GUARD ───────────────────────────────────────────
+              
               try {
                 for (const sentence of greetingSentences) {
                   // Check barge-in abort between sentences
@@ -7357,6 +7376,12 @@ HONESTY INSTRUCTIONS:
                   
                   chunkIndex++;
                   const chunkStart = Date.now();
+
+                  // ── ECHO GUARD: Record greeting sentence before TTS ──────
+                  if (sentence.length > 0) {
+                    recordTutorUtterance(state.echoGuardState, sentence, greetingEchoConfig);
+                  }
+                  // ── END ECHO GUARD ───────────────────────────────────────
 
                   const audioBuffer = await generateSpeech(sentence, state.ageGroup, state.speechSpeed);
                   const chunkMs = Date.now() - chunkStart;
@@ -7387,6 +7412,10 @@ HONESTY INSTRUCTIONS:
               } catch (error) {
                 console.error("[Custom Voice] ❌ Failed to generate greeting audio:", error);
               } finally {
+                // ── ECHO GUARD: Mark greeting playback end (starts tail guard) ──
+                markPlaybackEnd(state.echoGuardState, greetingEchoConfig);
+                // ── END ECHO GUARD ───────────────────────────────────────────
+                
                 // Only reset phase if barge-in hasn't already changed it
                 if (!greetingInterrupted) {
                   setPhase(state, 'LISTENING', 'greeting_complete', ws);
