@@ -122,6 +122,15 @@ input:focus,select:focus{border-color:var(--red);background:#fff;box-shadow:0 0 
 .tbl tbody tr.drag-source{opacity:.35}
 .tbl tbody tr.drag-over-top{box-shadow:inset 0 2px 0 var(--red)}
 .tbl tbody tr.drag-over-bot{box-shadow:inset 0 -2px 0 var(--red)}
+.tbl tbody tr.tranche-off td{opacity:.45;text-decoration:line-through;text-decoration-color:var(--tx3);text-decoration-thickness:1px}
+.tbl tbody tr.tranche-off td:last-child,.tbl tbody tr.tranche-off td.no-strike{text-decoration:none}
+.tranche-toggle{appearance:none;-webkit-appearance:none;width:36px;height:20px;background:var(--bo2);border-radius:10px;position:relative;cursor:pointer;transition:background .2s;outline:none;border:none;flex-shrink:0;display:inline-block;vertical-align:middle}
+.tranche-toggle::after{content:"";position:absolute;width:14px;height:14px;background:#fff;border-radius:50%;top:3px;left:3px;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+.tranche-toggle:checked{background:var(--gr)}
+.tranche-toggle:checked::after{left:19px}
+.t-stat{display:inline-block;padding:2px 7px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;border-radius:10px}
+.t-stat.lit{background:var(--grb);color:var(--gr);border:1px solid var(--grbo)}
+.t-stat.dim{background:var(--sf2);color:var(--tx3);border:1px solid var(--bo)}
 
 /* BALANCE INDICATOR */
 .bal{padding:14px 18px;border-radius:10px;display:flex;align-items:center;justify-content:space-between;margin-top:14px;border:1.5px solid}
@@ -273,8 +282,10 @@ input:focus,select:focus{border-color:var(--red);background:#fff;box-shadow:0 0 
   <div class="ptabs">
     <button class="ptab on" data-tab="su">Sources &amp; Uses</button>
     <button class="ptab" data-tab="pf">Pro Forma P&amp;L</button>
+    <button class="ptab" data-tab="cf">Cash Flow</button>
     <button class="ptab" data-tab="rw">Runway &amp; Verdict</button>
     <button class="ptab" data-tab="cmp">Scenario Compare</button>
+    <button class="ptab" data-tab="eq">Equity (Internal)</button>
   </div>
 
   <!-- =================== TAB: SOURCES & USES =================== -->
@@ -312,11 +323,51 @@ input:focus,select:focus{border-color:var(--red);background:#fff;box-shadow:0 0 
       </div>
     </div>
 
+    <!-- TRANCHE SCHEDULE -->
     <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
         <div>
-          <div class="ch" style="margin-bottom:4px"><span class="chdot"></span>Capital Uses (3-Year Allocation)</div>
-          <div class="card-sub">Enter annual amounts in the 1-Yr column. 3-Yr Total auto-computes (×3). Add custom rows as needed.</div>
+          <div class="ch" style="margin-bottom:4px"><span class="chdot"></span>Tranche Schedule</div>
+          <div class="card-sub">When the cash actually lands. Each tranche closes on its scheduled month — uncheck "Enabled" to model what happens if a milestone is missed.</div>
+        </div>
+        <button class="btn btn-out btn-sm" onclick="addTranche()">+ Add Tranche</button>
+      </div>
+
+      <div id="tranche-summary" style="display:flex;gap:18px;padding:12px 16px;background:var(--sf2);border:1px solid var(--bo);border-radius:8px;margin-bottom:14px;flex-wrap:wrap"></div>
+
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th style="width:24px"></th>
+            <th style="width:24%">Tranche</th>
+            <th class="r" style="width:14%">Amount</th>
+            <th class="r" style="width:9%">Close Mo</th>
+            <th class="r" style="width:9%">Equity %</th>
+            <th style="width:auto">Trigger / Milestone</th>
+            <th class="r" style="width:7%">On?</th>
+            <th style="width:40px"></th>
+          </tr>
+        </thead>
+        <tbody id="tranche-rows"></tbody>
+        <tfoot>
+          <tr><td colspan="2">Total Committed (Enabled)</td><td class="r" id="tranche-total">$0</td><td colspan="2" class="r" id="tranche-equity">—</td><td colspan="3"></td></tr>
+        </tfoot>
+      </table>
+
+      <div class="bal ok" id="tranche-balance" style="margin-top:14px">
+        <div>
+          <div class="bal-lbl">Tranches vs Investor Raise</div>
+          <div style="font-size:11px;margin-top:2px;font-weight:600" id="tranche-bal-msg">Reconciled</div>
+        </div>
+        <div class="bal-val" id="tranche-bal-val">—</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+        <div>
+          <div class="ch" style="margin-bottom:4px"><span class="chdot"></span>Capital Uses — Year 1 Allocation</div>
+          <div class="card-sub">How the raise gets deployed in Year 1. Total Year 1 Uses must reconcile to Total Sources. Years 2 &amp; 3 are funded by revenue and detailed in the Pro Forma P&amp;L tab.</div>
         </div>
         <div style="display:flex;gap:8px">
           <button class="btn btn-out btn-sm" onclick="addUseRow()">+ Add Row</button>
@@ -329,24 +380,28 @@ input:focus,select:focus{border-color:var(--red);background:#fff;box-shadow:0 0 
         <thead>
           <tr>
             <th style="width:24px"></th>
-            <th style="width:24%">Use of Funds</th>
+            <th style="width:26%">Use of Funds</th>
             <th style="width:14%">Category</th>
-            <th class="r" style="width:15%">1-Yr Input</th>
-            <th class="r" style="width:15%">3-Yr Total</th>
-            <th class="r" style="width:11%">% Raise</th>
+            <th class="r" style="width:15%">Year 1</th>
+            <th class="r" style="width:11%">% of Raise</th>
             <th style="width:auto">Notes</th>
             <th style="width:40px"></th>
           </tr>
         </thead>
         <tbody id="uses-rows"></tbody>
         <tfoot>
-          <tr><td colspan="3">Total Uses</td><td class="r" id="uses-total-1y">$0</td><td class="r" id="uses-total">$0</td><td class="r" id="uses-pct">0%</td><td colspan="2"></td></tr>
+          <tr>
+            <td colspan="3">Total Year 1 Uses</td>
+            <td class="r" id="uses-total-y1">$0</td>
+            <td class="r" id="uses-pct">0%</td>
+            <td colspan="2"></td>
+          </tr>
         </tfoot>
       </table>
 
       <div class="bal ok" id="bal-ind">
         <div>
-          <div class="bal-lbl">Sources &amp; Uses Balance</div>
+          <div class="bal-lbl">Year 1 Allocation vs Total Sources</div>
           <div style="font-size:11px;margin-top:2px;font-weight:600" id="bal-msg">Balanced</div>
         </div>
         <div class="bal-val" id="bal-val">$0</div>
@@ -379,6 +434,14 @@ input:focus,select:focus{border-color:var(--red);background:#fff;box-shadow:0 0 
           <input type="number" id="prod-nn3" value="200" oninput="recalc()">
         </div>
         <div class="f">
+          <div class="fl">Net new users / mo — Yr 4</div>
+          <input type="number" id="prod-nn4" value="200" oninput="recalc()">
+        </div>
+        <div class="f">
+          <div class="fl">Net new users / mo — Yr 5</div>
+          <input type="number" id="prod-nn5" value="200" oninput="recalc()">
+        </div>
+        <div class="f">
           <div class="fl">Blended ARPU / mo</div>
           <div class="pfx"><span>$</span><input type="number" id="prod-arpu" value="60" oninput="recalc()"></div>
         </div>
@@ -407,6 +470,14 @@ input:focus,select:focus{border-color:var(--red);background:#fff;box-shadow:0 0 
         <div class="f">
           <div class="fl">Institutions — Yr 3</div>
           <input type="number" id="inst-y3" value="18" oninput="recalc()">
+        </div>
+        <div class="f">
+          <div class="fl">Institutions — Yr 4</div>
+          <input type="number" id="inst-y4" value="18" oninput="recalc()">
+        </div>
+        <div class="f">
+          <div class="fl">Institutions — Yr 5</div>
+          <input type="number" id="inst-y5" value="18" oninput="recalc()">
         </div>
         <div class="f">
           <div class="fl">Avg ACV / institution</div>
@@ -443,6 +514,14 @@ input:focus,select:focus{border-color:var(--red);background:#fff;box-shadow:0 0 
           <input type="number" id="cons-y3" value="24" oninput="recalc()">
         </div>
         <div class="f">
+          <div class="fl">Engagements — Yr 4</div>
+          <input type="number" id="cons-y4" value="24" oninput="recalc()">
+        </div>
+        <div class="f">
+          <div class="fl">Engagements — Yr 5</div>
+          <input type="number" id="cons-y5" value="24" oninput="recalc()">
+        </div>
+        <div class="f">
           <div class="fl">Blended engagement value</div>
           <div class="pfx"><span>$</span><input type="number" id="cons-val" value="66000" step="1000" oninput="recalc()"></div>
           <div class="fhint">50% T1 ($20K) · 35% T2 ($75K) · 15% T3 ($200K)</div>
@@ -454,17 +533,58 @@ input:focus,select:focus{border-color:var(--red);background:#fff;box-shadow:0 0 
       </div>
     </div>
 
+    <!-- OPEX ASSUMPTIONS -->
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+        <div>
+          <div class="ch" style="margin-bottom:4px"><span class="chdot"></span>Operating Expense Assumptions</div>
+          <div class="card-sub">Year 1 OpEx is auto-pulled from your Sources &amp; Uses allocation. Years 2–5 are funded by revenue — set each year here, or leave blank to inherit from the prior year.</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--tx3)">Growth Multiplier</span>
+            <div class="sfx" style="display:inline-block;width:80px"><input type="number" id="opex-mult" value="1.4" step="0.05" min="0.5" max="3" onchange="recalc()" style="text-align:right;padding-right:24px"><span>×</span></div>
+          </div>
+          <button class="btn btn-sec btn-sm" onclick="autoFillOpEx()" title="Apply multiplier Y1→Y2→Y3→Y4→Y5">⤴ Auto-fill Y2–Y5</button>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px">
+        <div>
+          <div class="fl" style="margin-bottom:6px">Year 1 (locked)</div>
+          <div style="font-size:11.5px;color:var(--red);font-weight:700;padding:9px 10px;background:var(--sf2);border:1.5px dashed var(--bo);border-radius:8px;text-align:right;font-variant-numeric:tabular-nums" id="opex-y1-locked">—</div>
+          <div class="fhint" style="margin-top:6px">From Year 1 Uses, excl. owner</div>
+        </div>
+        <div class="f" style="margin-bottom:0">
+          <div class="fl">Year 2</div>
+          <div class="pfx"><span>$</span><input type="number" id="opex-y2" value="" step="10000" placeholder="—" oninput="recalc()"></div>
+          <div class="fhint">Blank → Year 1</div>
+        </div>
+        <div class="f" style="margin-bottom:0">
+          <div class="fl">Year 3</div>
+          <div class="pfx"><span>$</span><input type="number" id="opex-y3" value="" step="10000" placeholder="—" oninput="recalc()"></div>
+          <div class="fhint">Blank → Year 2</div>
+        </div>
+        <div class="f" style="margin-bottom:0">
+          <div class="fl">Year 4</div>
+          <div class="pfx"><span>$</span><input type="number" id="opex-y4" value="" step="10000" placeholder="—" oninput="recalc()"></div>
+          <div class="fhint">Blank → Year 3</div>
+        </div>
+        <div class="f" style="margin-bottom:0">
+          <div class="fl">Year 5</div>
+          <div class="pfx"><span>$</span><input type="number" id="opex-y5" value="" step="10000" placeholder="—" oninput="recalc()"></div>
+          <div class="fhint">Blank → Year 4</div>
+        </div>
+      </div>
+    </div>
+
     <div class="card">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
         <div>
           <div class="ch" style="margin-bottom:4px"><span class="chdot"></span>Pro Forma P&amp;L</div>
-          <div class="card-sub">3-year projection — all three revenue streams rolled up</div>
+          <div class="card-sub">5-year annual projection — all three revenue streams rolled up</div>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
-          <div class="view-toggle">
-            <button class="on" data-view="annual" onclick="setView('annual')">Annual</button>
-            <button data-view="quarterly" onclick="setView('quarterly')">Quarterly</button>
-          </div>
           <button class="btn btn-sec btn-sm" onclick="exportPF('csv')">⬇ CSV</button>
           <button class="btn btn-sec btn-sm" onclick="exportPF('pdf')">⬇ PDF</button>
         </div>
@@ -472,6 +592,33 @@ input:focus,select:focus{border-color:var(--red);background:#fff;box-shadow:0 0 
 
       <div class="pf-wrap">
         <table class="pf" id="pf-table"></table>
+      </div>
+    </div>
+
+    <!-- UNIT ECONOMICS -->
+    <div class="card">
+      <div class="ch"><span class="chdot"></span>Unit Economics &amp; Capital Efficiency</div>
+      <div class="card-sub">The metrics investors stare at hardest. Computed from current P&amp;L assumptions.</div>
+      <div id="unit-econ-grid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:14px;margin-top:14px"></div>
+    </div>
+  </div>
+
+  <!-- =================== TAB: CASH FLOW =================== -->
+  <div class="tab-s" id="tab-cf">
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+        <div>
+          <div class="ch" style="margin-bottom:4px"><span class="chdot"></span>5-Year Cash Flow Statement</div>
+          <div class="card-sub">Direct method — cash from operations vs cash from financing. Shows when the business funds itself.</div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-sec btn-sm" onclick="exportCF('csv')">⬇ CSV</button>
+          <button class="btn btn-sec btn-sm" onclick="exportCF('pdf')">⬇ PDF</button>
+        </div>
+      </div>
+
+      <div class="pf-wrap">
+        <table class="pf" id="cf-table"></table>
       </div>
     </div>
   </div>
@@ -483,13 +630,13 @@ input:focus,select:focus{border-color:var(--red);background:#fff;box-shadow:0 0 
 
     <div class="g21">
       <div class="card">
-        <div class="ch"><span class="chdot"></span>Cash on Hand — 36 Months</div>
+        <div class="ch"><span class="chdot"></span>Cash on Hand — 60 Months</div>
         <div class="chart-wrap">
           <svg id="cash-chart" viewBox="0 0 900 300" preserveAspectRatio="none"></svg>
         </div>
         <div class="chart-legend">
           <div class="chart-legend-item"><div class="chart-legend-swatch" style="background:#C81C1C"></div>Cash balance</div>
-          <div class="chart-legend-item"><div class="chart-legend-swatch" style="background:#15803d"></div>EBITDA breakeven line</div>
+          <div class="chart-legend-item"><div class="chart-legend-swatch" style="background:#15803d;border-radius:50%;width:8px;height:8px"></div>Tranche close (cash injection)</div>
           <div class="chart-legend-item"><div class="chart-legend-swatch" style="background:#9A9AA8;border:1px dashed #9A9AA8"></div>Zero line</div>
         </div>
       </div>
@@ -509,6 +656,13 @@ input:focus,select:focus{border-color:var(--red);background:#fff;box-shadow:0 0 
         </div>
       </div>
     </div>
+
+    <!-- KPI DASHBOARD -->
+    <div class="card" style="margin-top:18px">
+      <div class="ch"><span class="chdot"></span>KPI Dashboard — Investor View</div>
+      <div class="card-sub">SaaS metrics across the 5-year window. Investors look at these first.</div>
+      <div id="kpi-grid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(160px, 1fr));gap:14px;margin-top:14px"></div>
+    </div>
   </div>
 
   <!-- =================== TAB: SCENARIO COMPARE =================== -->
@@ -527,6 +681,78 @@ input:focus,select:focus{border-color:var(--red);background:#fff;box-shadow:0 0 
     <div class="card" style="margin-top:18px">
       <div class="ch"><span class="chdot"></span>Saved Scenarios</div>
       <div id="saved-list"><div style="font-size:12px;color:var(--tx3);text-align:center;padding:14px">No saved scenarios yet. Use 💾 Save Scenario in the toolbar to capture the current state.</div></div>
+    </div>
+  </div>
+
+  <!-- =================== TAB: EQUITY (INTERNAL) =================== -->
+  <div class="tab-s" id="tab-eq">
+
+    <div class="card" style="background:linear-gradient(135deg,rgba(200,28,28,0.04),rgba(200,28,28,0.01));border:1.5px dashed var(--bo2)">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <div style="font-size:9.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--red);background:#fff;padding:3px 9px;border-radius:10px;border:1px solid rgba(200,28,28,0.3)">🔒 Internal Only</div>
+        <div style="font-size:11px;color:var(--tx2);font-weight:600">This view is excluded from all PDF/CSV outputs.</div>
+      </div>
+      <div style="font-size:13.5px;color:var(--tx2);line-height:1.55">
+        Models how dilution stacks across tranches and what your founder economics look like at exit. Equity %s come from the Tranche Schedule. Add a hypothetical future round below to see the full dilution picture.
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:18px">
+      <div class="ch"><span class="chdot"></span>Cap Table Evolution</div>
+      <div class="card-sub">Founder ownership at each capital event, computed from tranche equity %.</div>
+      <table class="tbl" style="margin-top:14px">
+        <thead>
+          <tr>
+            <th>Stage</th>
+            <th class="r">Equity Issued</th>
+            <th class="r">Founder %</th>
+            <th class="r">Investors %</th>
+            <th class="r">Implied Post-$ Valuation</th>
+          </tr>
+        </thead>
+        <tbody id="captable-rows"></tbody>
+      </table>
+    </div>
+
+    <div class="card" style="margin-top:18px">
+      <div class="ch"><span class="chdot"></span>Hypothetical Future Round (Series A)</div>
+      <div class="card-sub">Optional — model a follow-on raise to see post-Series-A dilution.</div>
+      <div class="g3" style="margin-top:14px">
+        <div class="f">
+          <div class="fl">Round Name</div>
+          <input type="text" id="fr-name" value="Series A" oninput="recalc()">
+        </div>
+        <div class="f">
+          <div class="fl">Round Amount</div>
+          <div class="pfx"><span>$</span><input type="number" id="fr-amount" value="0" step="500000" placeholder="0 = no round" oninput="recalc()"></div>
+        </div>
+        <div class="f">
+          <div class="fl">Equity Issued</div>
+          <div class="sfx"><input type="number" id="fr-equity" value="20" step="0.5" oninput="recalc()" style="padding-right:24px"><span>%</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:18px">
+      <div class="ch"><span class="chdot"></span>Founder Take-Home at Exit</div>
+      <div class="card-sub">Your equity value at hypothetical exit valuations, plus 5-year cumulative cash compensation.</div>
+
+      <div style="margin-top:14px;display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:14px" id="founder-summary"></div>
+
+      <table class="tbl" style="margin-top:18px">
+        <thead>
+          <tr>
+            <th>Exit Valuation</th>
+            <th class="r">Pre-Series-A Founder %</th>
+            <th class="r">Pre-Series-A Take</th>
+            <th class="r">Post-Series-A Founder %</th>
+            <th class="r">Post-Series-A Take</th>
+            <th class="r">Total (incl. 5-Yr Salary)</th>
+          </tr>
+        </thead>
+        <tbody id="exit-rows"></tbody>
+      </table>
+      <div class="fhint" style="margin-top:10px">Note: Assumes common shares with no liquidation preference. Real-world preferred-share preferences would reduce founder take-home; consult counsel before relying on these numbers for negotiation.</div>
     </div>
   </div>
 
@@ -567,21 +793,28 @@ const fmtUSDK = v => Math.abs(v) >= 1e6 ? '$' + (v/1e6).toFixed(2) + 'M' : '$' +
 const fmtPct = v => (v*100).toFixed(1) + '%';
 const fmtNum = v => Math.round(v).toLocaleString('en-US');
 
-// ----- DEFAULT USES (annual amounts; 3-yr total = annual × 3) -----
+// ----- DEFAULT USES (Year 1 only — funded by the raise) -----
 const DEFAULT_USES = [
-  { id: 'owner', label: 'Owner Salary (auto from ladder)', cat: 'salaries', annual: 0, note: 'Auto-computed from Owner Salary Ladder', locked: true },
-  { id: 'devTeam', label: 'Dev Team', cat: 'salaries', annual: 240000, note: '2 devs avg $120K loaded' },
-  { id: 'marketing', label: 'Marketing & Advertising', cat: 'marketing', annual: 160000, note: 'Digital + content + events' },
-  { id: 'sales', label: 'Sales (BDR/AE)', cat: 'salaries', annual: 120000, note: '1 BDR + 1 AE for institutional' },
-  { id: 'infra', label: 'Infrastructure (Fixed)', cat: 'cogs', annual: 12000, note: 'Hosting, base APIs, monitoring' },
-  { id: 'legal', label: 'Legal / Accounting / Insurance', cat: 'ga', annual: 30000, note: 'Blended annual' },
-  { id: 'office', label: 'Office / Admin', cat: 'ga', annual: 12000, note: 'Remote-first' },
-  { id: 'tools', label: 'Software & SaaS Tools', cat: 'ga', annual: 15000, note: 'Stripe, Resend, dev tools, CRM' },
-  { id: 'contingency', label: 'Contingency Reserve', cat: 'reserve', annual: 100000, note: 'Buffer ~10% of raise (annualized)' },
+  { id: 'owner', label: 'Owner Salary (auto from ladder)', cat: 'salaries', y1: 0, note: 'Auto-computed from Owner Salary Ladder', locked: true },
+  { id: 'devTeam', label: 'Dev Team', cat: 'salaries', y1: 240000, note: '2 devs avg $120K loaded' },
+  { id: 'marketing', label: 'Marketing & Advertising', cat: 'marketing', y1: 160000, note: 'Digital + content + events' },
+  { id: 'sales', label: 'Sales (BDR/AE)', cat: 'salaries', y1: 120000, note: '1 BDR + 1 AE for institutional' },
+  { id: 'infra', label: 'Infrastructure (Fixed)', cat: 'cogs', y1: 12000, note: 'Hosting, base APIs, monitoring' },
+  { id: 'legal', label: 'Legal / Accounting / Insurance', cat: 'ga', y1: 30000, note: 'Blended annual' },
+  { id: 'office', label: 'Office / Admin', cat: 'ga', y1: 12000, note: 'Remote-first' },
+  { id: 'tools', label: 'Software & SaaS Tools', cat: 'ga', y1: 15000, note: 'Stripe, Resend, dev tools, CRM' },
+  { id: 'contingency', label: 'Contingency Reserve', cat: 'reserve', y1: 100000, note: 'Year 1 buffer' },
 ];
 
-const CATEGORIES = ['salaries','marketing','sales','cogs','ga','reserve','other'];
-const CAT_LABEL = {salaries:'Salaries',marketing:'Marketing',sales:'Sales',cogs:'COGS/Infra',ga:'G&A',reserve:'Reserve',other:'Other'};
+const CATEGORIES = ['salaries','commissions','marketing','sales','te','cogs','ga','reserve','other'];
+const CAT_LABEL = {salaries:'Salaries',commissions:'Commissions',marketing:'Marketing',sales:'Sales',te:'T & E Expenses',cogs:'COGS/Infra',ga:'G&A',reserve:'Reserve',other:'Other'};
+
+// ----- DEFAULT TRANCHES -----
+const DEFAULT_TRANCHES = [
+  { id: 't1', name: 'Tranche 1 — Seed Close', amount: 1500000, month: 1, equity: 12, trigger: 'Raise event / closing', enabled: true },
+  { id: 't2', name: 'Tranche 2 — Pilot Validation', amount: 1000000, month: 9, equity: 6, trigger: '3 institutions signed OR 500 paying users', enabled: true },
+  { id: 't3', name: 'Tranche 3 — Growth Milestone', amount: 500000, month: 18, equity: 3, trigger: '$50K MRR sustained 3 months', enabled: true },
+];
 
 // ----- SCENARIO MODIFIERS -----
 const SCEN = {
@@ -593,10 +826,10 @@ const SCEN = {
 // ----- STATE -----
 let state = {
   scenario: 'base',
-  view: 'annual',
   raise: 3000000,
   founder: 0,
   uses: JSON.parse(JSON.stringify(DEFAULT_USES)),
+  tranches: JSON.parse(JSON.stringify(DEFAULT_TRANCHES)),
   ownerLadder: {
     base: 150000, step2: 175000, step3: 200000, step4: 225000,
     step2Trigger: 50000,   // monthly revenue
@@ -608,7 +841,7 @@ let state = {
 const GETN = id => parseFloat(document.getElementById(id).value) || 0;
 
 // ====================================================================
-// CORE CALCULATIONS — generates the 36-month projection
+// CORE CALCULATIONS — generates the 60-month projection
 // ====================================================================
 function compute() {
   const sc = SCEN[state.scenario];
@@ -616,20 +849,20 @@ function compute() {
   // Pull inputs
   const prod = {
     start: GETN('prod-start'),
-    nn: [GETN('prod-nn1'), GETN('prod-nn2'), GETN('prod-nn3')],
+    nn: [GETN('prod-nn1'), GETN('prod-nn2'), GETN('prod-nn3'), GETN('prod-nn4'), GETN('prod-nn5')],
     arpu: GETN('prod-arpu'),
     churn: GETN('prod-churn') / 100,
     vc: GETN('prod-vc'),
   };
   const inst = {
-    counts: [GETN('inst-y1'), GETN('inst-y2'), GETN('inst-y3')],
+    counts: [GETN('inst-y1'), GETN('inst-y2'), GETN('inst-y3'), GETN('inst-y4'), GETN('inst-y5')],
     acv: GETN('inst-acv'),
     ramp: GETN('inst-ramp'),
     comm: GETN('inst-comm') / 100,
     vc: GETN('inst-vc') / 100,
   };
   const cons = {
-    counts: [GETN('cons-y1'), GETN('cons-y2'), GETN('cons-y3')],
+    counts: [GETN('cons-y1'), GETN('cons-y2'), GETN('cons-y3'), GETN('cons-y4'), GETN('cons-y5')],
     val: GETN('cons-val'),
     gm: GETN('cons-gm') / 100,
   };
@@ -639,15 +872,15 @@ function compute() {
   inst.counts = inst.counts.map(v => v * sc.growth);
   cons.counts = cons.counts.map(v => v * sc.growth);
 
-  // 3-year monthly arrays
-  const N = 36;
+  // 5-year monthly arrays
+  const N = 60;
   const months = [];
 
   // Production user trajectory
   let users = prod.start;
   // Institutional pipeline: track each institution's onboard month
   const instOnboardMonths = [];
-  for (let y = 0; y < 3; y++) {
+  for (let y = 0; y < 5; y++) {
     const count = inst.counts[y];
     const yStart = y * 12;
     // distribute institutions across months in the year
@@ -659,7 +892,7 @@ function compute() {
 
   // Consulting engagements: distribute per quarter, recognize over 3 months each
   const engMonths = [];
-  for (let y = 0; y < 3; y++) {
+  for (let y = 0; y < 5; y++) {
     const count = cons.counts[y];
     const yStart = y * 12;
     for (let i = 0; i < count; i++) {
@@ -668,19 +901,55 @@ function compute() {
     }
   }
 
-  let cash = state.raise + state.founder;
+  // Build tranche cash-injection schedule keyed by month
+  // If no tranches defined or all disabled, fall back to full raise on Mo 1 (legacy behavior)
+  const enabledTranches = state.tranches.filter(t => t.enabled);
+  const tranchesByMonth = {};
+  let totalTrancheCash = 0;
+  if (enabledTranches.length > 0) {
+    for (const t of enabledTranches) {
+      const m = Math.max(1, Math.min(36, Math.round(t.month)));
+      tranchesByMonth[m] = (tranchesByMonth[m] || 0) + t.amount;
+      totalTrancheCash += t.amount;
+    }
+  } else {
+    tranchesByMonth[1] = state.raise;
+    totalTrancheCash = state.raise;
+  }
+
+  // Founder contribution treated as Mo 1 cash (separate from investor tranches)
+  let cash = state.founder;
   let consecBreakeven = 0;
   let ownerCurrent = state.ownerLadder.base;
   let stepFiredAt = { 2: null, 3: null, 4: null };
 
-  // 3-year totals of fixed uses → monthly OpEx (excluding owner salary, which steps)
-  const totalFixed3yr = state.uses.reduce((s, u) => {
-    return s + (u.id === 'owner' ? 0 : u.annual * 3);
-  }, 0);
-  const monthlyFixedOpEx = (totalFixed3yr / 36) * sc.cost;
+  // Year 1 OpEx comes from Capital Uses (excluding owner salary, which steps via the ladder).
+  // Years 2-5 OpEx come from dedicated inputs on the Pro Forma tab.
+  // Fallback chain: each blank year inherits from prior year.
+  const y1Total = state.uses.reduce((s, u) => s + (u.id === 'owner' ? 0 : (u.y1 || 0)), 0);
+  const readOpExInput = (id) => {
+    const el = document.getElementById(id);
+    if (!el || el.value === '' || el.value == null) return null;
+    const v = parseFloat(el.value);
+    return isNaN(v) ? null : v;
+  };
+  const y2Input = readOpExInput('opex-y2');
+  const y3Input = readOpExInput('opex-y3');
+  const y4Input = readOpExInput('opex-y4');
+  const y5Input = readOpExInput('opex-y5');
+  const y2Total = y2Input != null ? y2Input : y1Total;
+  const y3Total = y3Input != null ? y3Input : y2Total;
+  const y4Total = y4Input != null ? y4Input : y3Total;
+  const y5Total = y5Input != null ? y5Input : y4Total;
+  const monthlyOpExByYear = [y1Total / 12, y2Total / 12, y3Total / 12, y4Total / 12, y5Total / 12];
 
   // Variable infra is in COGS map per user/per inst — keep separate
   for (let m = 0; m < N; m++) {
+    // Inject tranche cash if any tranche closes this month (1-indexed)
+    if (tranchesByMonth[m + 1]) {
+      cash += tranchesByMonth[m + 1];
+    }
+
     // PRODUCTION
     const yr = Math.floor(m / 12);
     users = users * (1 - prod.churn) + prod.nn[yr];
@@ -721,6 +990,7 @@ function compute() {
       stepFiredAt[3] = m + 1;
     }
 
+    const monthlyFixedOpEx = monthlyOpExByYear[yr] * sc.cost;
     const opEx = monthlyFixedOpEx + monthlyOwner;
     const ebitda = grossProfit - opEx;
 
@@ -756,9 +1026,24 @@ function compute() {
     if (r.ebitda > 0 && firstProfitMonth == null) firstProfitMonth = r.m;
   }
 
+  // Min cash between any two tranches (pre-final-tranche-close window only)
+  // This is the "are we underfunded between tranches?" diagnostic
+  const closeMonths = Object.keys(tranchesByMonth).map(Number).sort((a,b) => a - b);
+  const lastClose = closeMonths[closeMonths.length - 1] || 1;
+  let minCashBetweenTranches = Infinity;
+  for (const r of months) {
+    if (r.m <= lastClose) {
+      if (r.cash < minCashBetweenTranches) minCashBetweenTranches = r.cash;
+    }
+  }
+  if (minCashBetweenTranches === Infinity) minCashBetweenTranches = months[0].cash;
+
   return {
     months, runwayMonth, firstProfitMonth, stepFiredAt,
-    totalFixed3yr, scenario: sc,
+    totalFixed3yr: y1Total + y2Total + y3Total + y4Total + y5Total, scenario: sc,
+    opExByYear: { y1: y1Total, y2: y2Total, y3: y3Total, y4: y4Total, y5: y5Total },
+    tranchesByMonth, totalTrancheCash, enabledTranches,
+    minCashBetweenTranches, lastTrancheCloseMonth: lastClose,
   };
 }
 
@@ -773,6 +1058,147 @@ function renderSources() {
   ];
   tbody.innerHTML = rows.map(r => `<tr><td>${r.label}</td><td class="r">${fmtUSD(r.amt)}</td></tr>`).join('');
   document.getElementById('src-total').textContent = fmtUSD(state.raise + state.founder);
+}
+
+// ---- TRANCHE SCHEDULE ----
+function renderTranches() {
+  const tbody = document.getElementById('tranche-rows');
+  tbody.innerHTML = state.tranches.map((t, i) => {
+    const offCls = t.enabled ? '' : 'tranche-off';
+    return `<tr class="${offCls}" data-tidx="${i}" ondragover="onTrancheDragOver(event,${i})" ondragleave="onTrancheDragLeave(event)" ondrop="onTrancheDrop(event,${i})">
+      <td class="row-drag no-strike" draggable="true" title="Drag to reorder" ondragstart="onTrancheDragStart(event,${i})" ondragend="onTrancheDragEnd(event)">⋮⋮</td>
+      <td><input type="text" value="${t.name}" onchange="state.tranches[${i}].name=this.value;recalc()"></td>
+      <td class="r"><div class="pfx" style="display:inline-block;width:120px"><span>$</span><input type="number" value="${t.amount}" step="50000" onchange="state.tranches[${i}].amount=parseFloat(this.value)||0;recalc()" style="text-align:right"></div></td>
+      <td class="r"><input type="number" min="1" max="60" value="${t.month}" onchange="state.tranches[${i}].month=Math.max(1,Math.min(60,parseInt(this.value)||1));recalc()" style="width:60px;text-align:right"></td>
+      <td class="r"><div class="sfx" style="display:inline-block;width:72px"><input type="number" value="${t.equity}" step="0.5" min="0" onchange="state.tranches[${i}].equity=parseFloat(this.value)||0;recalc()" style="text-align:right;padding-right:22px"><span>%</span></div></td>
+      <td><input type="text" value="${t.trigger||''}" onchange="state.tranches[${i}].trigger=this.value" placeholder="Trigger / milestone"></td>
+      <td class="r no-strike"><input type="checkbox" class="tranche-toggle" ${t.enabled?'checked':''} onchange="state.tranches[${i}].enabled=this.checked;recalc()"></td>
+      <td class="no-strike"><button class="row-del" onclick="removeTranche(${i})" title="Remove">✕</button></td>
+    </tr>`;
+  }).join('');
+
+  // Footer + summary
+  const enabled = state.tranches.filter(t => t.enabled);
+  const totalEnabled = enabled.reduce((s,t) => s + t.amount, 0);
+  const totalEquity = enabled.reduce((s,t) => s + (t.equity||0), 0);
+  const totalAll = state.tranches.reduce((s,t) => s + t.amount, 0);
+  document.getElementById('tranche-total').textContent = fmtUSD(totalEnabled);
+  document.getElementById('tranche-equity').textContent = totalEquity > 0 ? totalEquity.toFixed(1) + '% equity' : '—';
+
+  // Summary header — quick at-a-glance numbers
+  const sortedEnabled = [...enabled].sort((a,b) => a.month - b.month);
+  const day1 = sortedEnabled.length ? sortedEnabled[0].amount : 0;
+  const day1Mo = sortedEnabled.length ? sortedEnabled[0].month : 1;
+  const lastClose = sortedEnabled.length ? sortedEnabled[sortedEnabled.length-1].month : 1;
+  const summary = document.getElementById('tranche-summary');
+  summary.innerHTML = `
+    <div><div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--tx3)">Total Committed</div><div style="font-family:'DM Serif Display',serif;font-size:18px;color:var(--tx)">${fmtUSDK(totalEnabled)}</div></div>
+    <div><div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--tx3)">Tranches Enabled</div><div style="font-family:'DM Serif Display',serif;font-size:18px;color:var(--tx)">${enabled.length} of ${state.tranches.length}</div></div>
+    <div><div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--tx3)">Day-1 Cash (Mo ${day1Mo})</div><div style="font-family:'DM Serif Display',serif;font-size:18px;color:var(--tx)">${fmtUSDK(day1)}</div></div>
+    <div><div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--tx3)">Final Tranche</div><div style="font-family:'DM Serif Display',serif;font-size:18px;color:var(--tx)">Mo ${lastClose}</div></div>
+    <div><div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--tx3)">Total Equity Given</div><div style="font-family:'DM Serif Display',serif;font-size:18px;color:var(--tx)">${totalEquity.toFixed(1)}%</div></div>
+  `;
+
+  // Reconciliation: tranches must equal investor raise (when at least one tranche is enabled)
+  const ind = document.getElementById('tranche-balance');
+  const msg = document.getElementById('tranche-bal-msg');
+  const val = document.getElementById('tranche-bal-val');
+  ind.className = 'bal';
+  if (enabled.length === 0) {
+    ind.classList.add('under');
+    msg.textContent = 'No tranches enabled. The model will fall back to assuming full raise lands on Month 1.';
+    val.textContent = '⚠ No tranches';
+    return;
+  }
+  const diff = state.raise - totalEnabled;
+  if (Math.abs(diff) < 1000) {
+    ind.classList.add('ok');
+    msg.textContent = 'Enabled tranches sum to the Investor Raise. Reconciled.';
+    val.textContent = '✓ Matched';
+  } else if (diff > 0) {
+    ind.classList.add('under');
+    msg.textContent = `Tranches under-commit. Add or enable more to match the raise — or reduce the raise.`;
+    val.textContent = '−' + fmtUSD(diff);
+  } else {
+    ind.classList.add('over');
+    msg.textContent = `Tranches over-commit. Trim or disable some — or increase the raise.`;
+    val.textContent = '+' + fmtUSD(-diff);
+  }
+}
+
+function addTranche() {
+  // Default new tranche to next available month, modest amount
+  const lastMo = state.tranches.length ? Math.max(...state.tranches.map(t => t.month)) : 0;
+  state.tranches.push({
+    id: 't_' + Date.now(),
+    name: 'New Tranche',
+    amount: 250000,
+    month: Math.min(36, lastMo + 6),
+    equity: 0,
+    trigger: '',
+    enabled: true,
+  });
+  recalc();
+}
+
+function removeTranche(i) {
+  if (!confirm('Remove this tranche?')) return;
+  state.tranches.splice(i, 1);
+  recalc();
+}
+
+// Tranche drag-reorder (independent state from uses to avoid cross-contamination)
+let trancheDragIdx = null;
+function onTrancheDragStart(e, idx) {
+  trancheDragIdx = idx;
+  const tr = e.target.closest('tr');
+  if (tr) {
+    tr.classList.add('drag-source');
+    try { e.dataTransfer.setDragImage(tr, 20, tr.offsetHeight / 2); } catch(_) {}
+  }
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', String(idx));
+}
+function onTrancheDragOver(e, idx) {
+  if (trancheDragIdx === null || trancheDragIdx === idx) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  const tr = e.currentTarget;
+  const rect = tr.getBoundingClientRect();
+  const above = (e.clientY - rect.top) < rect.height / 2;
+  document.querySelectorAll('#tranche-rows tr').forEach(r => {
+    r.classList.remove('drag-over-top');
+    r.classList.remove('drag-over-bot');
+  });
+  tr.classList.add(above ? 'drag-over-top' : 'drag-over-bot');
+}
+function onTrancheDragLeave(e) {
+  const tr = e.currentTarget;
+  if (!tr.contains(e.relatedTarget)) {
+    tr.classList.remove('drag-over-top');
+    tr.classList.remove('drag-over-bot');
+  }
+}
+function onTrancheDrop(e, idx) {
+  e.preventDefault();
+  if (trancheDragIdx === null || trancheDragIdx === idx) return;
+  const tr = e.currentTarget;
+  const rect = tr.getBoundingClientRect();
+  const above = (e.clientY - rect.top) < rect.height / 2;
+  let targetIdx = above ? idx : idx + 1;
+  if (trancheDragIdx < targetIdx) targetIdx -= 1;
+  const item = state.tranches.splice(trancheDragIdx, 1)[0];
+  state.tranches.splice(targetIdx, 0, item);
+  trancheDragIdx = null;
+  recalc();
+}
+function onTrancheDragEnd(e) {
+  document.querySelectorAll('#tranche-rows tr').forEach(r => {
+    r.classList.remove('drag-source');
+    r.classList.remove('drag-over-top');
+    r.classList.remove('drag-over-bot');
+  });
+  trancheDragIdx = null;
 }
 
 // ---- DRAG-TO-REORDER for Uses table ----
@@ -842,16 +1268,15 @@ function onRowDragEnd(e) {
 }
 
 function renderUses() {
-  // Auto-compute owner salary total from compute() and inject into the locked row (annual = total / 3)
+  // Auto-compute owner Year-1 salary from the ladder (sum of months 1-12)
   const r = compute();
-  const ownerTotal = Math.round(r.months.reduce((s, m) => s + m.ownerSalary, 0));
+  const ownerY1 = Math.round(r.months.slice(0, 12).reduce((s, m) => s + m.ownerSalary, 0));
   const ownerIdx = state.uses.findIndex(u => u.id === 'owner');
-  if (ownerIdx >= 0) state.uses[ownerIdx].annual = Math.round(ownerTotal / 3);
+  if (ownerIdx >= 0) state.uses[ownerIdx].y1 = ownerY1;
 
   const tbody = document.getElementById('uses-rows');
   tbody.innerHTML = state.uses.map((u, i) => {
     const isLocked = !!u.locked;
-    const threeYr = u.id === 'owner' ? ownerTotal : (u.annual * 3);
     const dragCell = isLocked
       ? `<td></td>`
       : `<td class="row-drag" draggable="true" title="Drag to reorder" ondragstart="onRowDragStart(event,${i})" ondragend="onRowDragEnd(event)">⋮⋮</td>`;
@@ -861,10 +1286,9 @@ function renderUses() {
     const catCell = isLocked
       ? `<td><span style="font-size:12px;color:var(--tx2);font-weight:600">${CAT_LABEL[u.cat]}</span></td>`
       : `<td><select onchange="state.uses[${i}].cat=this.value">${CATEGORIES.map(c => `<option value="${c}" ${c===u.cat?'selected':''}>${CAT_LABEL[c]}</option>`).join('')}</select></td>`;
-    const annualCell = isLocked
-      ? `<td class="r" style="font-variant-numeric:tabular-nums;font-weight:600;color:var(--tx2)">${fmtUSD(u.annual)}</td>`
-      : `<td class="r"><div class="pfx" style="display:inline-block;width:120px"><span>$</span><input type="number" value="${u.annual}" step="1000" onchange="state.uses[${i}].annual=parseFloat(this.value)||0;recalc()" style="text-align:right"></div></td>`;
-    const threeYrCell = `<td class="r" style="font-variant-numeric:tabular-nums;font-weight:700;color:var(--red)">${fmtUSD(threeYr)}</td>`;
+    const y1Cell = isLocked
+      ? `<td class="r" style="font-variant-numeric:tabular-nums;font-weight:700;color:var(--red)">${fmtUSD(u.y1)}</td>`
+      : `<td class="r"><div class="pfx" style="display:inline-block;width:120px"><span>$</span><input type="number" value="${u.y1 || 0}" step="1000" onchange="state.uses[${i}].y1=parseFloat(this.value)||0;recalc()" style="text-align:right"></div></td>`;
     const noteCell = isLocked
       ? `<td><span style="font-size:11.5px;color:var(--tx3);font-style:italic">${u.note||''}</span></td>`
       : `<td><input type="text" value="${u.note||''}" onchange="state.uses[${i}].note=this.value" placeholder="Optional note"></td>`;
@@ -874,47 +1298,42 @@ function renderUses() {
     const trAttrs = isLocked
       ? `data-idx="${i}" data-locked="true"`
       : `data-idx="${i}" ondragover="onRowDragOver(event,${i})" ondragleave="onRowDragLeave(event)" ondrop="onRowDrop(event,${i})"`;
-    return `<tr ${trAttrs}>${dragCell}${labelCell}${catCell}${annualCell}${threeYrCell}<td class="r" id="use-pct-${i}">—</td>${noteCell}${delCell}</tr>`;
+    return `<tr ${trAttrs}>${dragCell}${labelCell}${catCell}${y1Cell}<td class="r" id="use-pct-${i}">—</td>${noteCell}${delCell}</tr>`;
   }).join('');
 
-  const total1y = state.uses.reduce((s,u) => s + (u.id === 'owner' ? Math.round(ownerTotal/3) : u.annual), 0);
-  const total3y = state.uses.reduce((s,u) => s + (u.id === 'owner' ? ownerTotal : u.annual * 3), 0);
-  document.getElementById('uses-total-1y').textContent = fmtUSD(total1y);
-  document.getElementById('uses-total').textContent = fmtUSD(total3y);
-  const pct = state.raise > 0 ? (total3y / state.raise) * 100 : 0;
+  const totY1 = state.uses.reduce((s,u) => s + (u.y1 || 0), 0);
+  document.getElementById('uses-total-y1').textContent = fmtUSD(totY1);
+  const pct = state.raise > 0 ? (totY1 / state.raise) * 100 : 0;
   document.getElementById('uses-pct').textContent = pct.toFixed(0) + '%';
   state.uses.forEach((u,i) => {
     const cell = document.getElementById('use-pct-' + i);
-    if (cell) {
-      const t = u.id === 'owner' ? ownerTotal : (u.annual * 3);
-      cell.textContent = state.raise > 0 ? ((t / state.raise) * 100).toFixed(1) + '%' : '—';
-    }
+    if (cell) cell.textContent = state.raise > 0 ? (((u.y1||0) / state.raise) * 100).toFixed(1) + '%' : '—';
   });
 
-  // Balance indicator
+  // Reconciliation: Y1 total vs Sources (raise + founder)
   const sources = state.raise + state.founder;
-  const diff = sources - total3y;
+  const diff = sources - totY1;
   const ind = document.getElementById('bal-ind');
   const msg = document.getElementById('bal-msg');
   const val = document.getElementById('bal-val');
   ind.className = 'bal';
   if (Math.abs(diff) < 1000) {
     ind.classList.add('ok');
-    msg.textContent = 'Sources match Uses to within $1,000.';
+    msg.textContent = 'Year 1 Uses match Total Sources to within $1,000.';
     val.textContent = '✓ Balanced';
   } else if (diff > 0) {
     ind.classList.add('under');
-    msg.textContent = `Unallocated. Add a row, increase contingency, or reduce the raise.`;
+    msg.textContent = `Unallocated. Push more into marketing, hires, contingency — or trim the raise.`;
     val.textContent = '+' + fmtUSD(diff) + ' free';
   } else {
     ind.classList.add('over');
-    msg.textContent = `Uses exceed Sources. Increase raise or trim allocations.`;
+    msg.textContent = `Year 1 Uses exceed Sources. Increase raise or trim allocations.`;
     val.textContent = fmtUSD(diff);
   }
 }
 
 function addUseRow() {
-  state.uses.push({ id: 'custom_' + Date.now(), label: 'New Use', cat: 'other', annual: 0, note: '' });
+  state.uses.push({ id: 'custom_' + Date.now(), label: 'New Use', cat: 'other', y1: 0, note: '' });
   renderUses();
 }
 function removeUse(i) {
@@ -975,16 +1394,8 @@ function renderProForma() {
   const r = compute();
   const months = r.months;
 
-  let cols, rows;
-  if (state.view === 'annual') {
-    cols = ['Year 1', 'Year 2', 'Year 3', '3-Yr Total'];
-    rows = buildAnnualRows(months);
-  } else {
-    cols = [];
-    for (let q = 0; q < 12; q++) cols.push(`Y${Math.floor(q/4)+1}Q${(q%4)+1}`);
-    cols.push('3-Yr Total');
-    rows = buildQuarterlyRows(months);
-  }
+  const cols = ['Year 1', 'Year 2', 'Year 3', 'Year 4', 'Year 5', '5-Yr Total'];
+  const rows = buildAnnualRows(months);
 
   let html = '<thead><tr><th>Line Item</th>' + cols.map(c => `<th class="r">${c}</th>`).join('') + '</tr></thead><tbody>';
   for (const row of rows) {
@@ -1020,8 +1431,11 @@ function endOf(months, fn, periods) {
   });
 }
 
+// 5-year annual periods + cumulative total
+const ANNUAL_PERIODS = [[1,12],[13,24],[25,36],[37,48],[49,60],[1,60]];
+
 function buildAnnualRows(months) {
-  const periods = [[1,12],[13,24],[25,36],[1,36]];
+  const periods = ANNUAL_PERIODS;
   const sumP = fn => aggregate(months, fn, periods);
   const endP = fn => endOf(months, fn, periods);
 
@@ -1046,38 +1460,339 @@ function buildAnnualRows(months) {
 
     { group: true, label: 'OPERATING EXPENSES' },
     { label: 'Owner Salary', values: sumP(m=>m.ownerSalary), indent:true },
-    { label: 'Other OpEx (rolled from Sources & Uses)', values: sumP(m=>m.fixedOpEx), indent:true },
+    { label: 'Other OpEx (Y1 from S&U; Y2-Y5 from inputs)', values: sumP(m=>m.fixedOpEx), indent:true },
     { label: 'Total OpEx', values: sumP(m=>m.opEx), total:true },
 
     { group: true, label: 'PROFITABILITY' },
     { label: 'EBITDA', values: sumP(m=>m.ebitda), total:true, signClass:true },
+    { label: 'EBITDA Margin %', values: periods.map(([s,e]) => {
+        const rev = months.filter(m=>m.m>=s&&m.m<=e).reduce((a,m)=>a+m.totalRev,0);
+        const eb = months.filter(m=>m.m>=s&&m.m<=e).reduce((a,m)=>a+m.ebitda,0);
+        return rev>0 ? eb/rev : 0;
+      }), fmt: fmtPct, indent:true, signClass:true },
     { label: 'Cash Balance (end of period)', values: endP(m=>m.cash), total:true, signClass:true },
     { label: 'Paying Users (end of period)', values: endP(m=>m.users), fmt: fmtNum, indent:true },
     { label: 'Institutions (cumulative)', values: endP(m=>m.instOnboarded), fmt: fmtNum, indent:true },
   ];
 }
 
-function buildQuarterlyRows(months) {
-  const periods = [];
-  for (let q = 0; q < 12; q++) {
-    const s = q*3 + 1;
-    periods.push([s, s+2]);
-  }
-  periods.push([1,36]);
+// ====================================================================
+// CASH FLOW STATEMENT (5-year annual, direct method)
+// ====================================================================
+function buildCashFlowRows(months, r) {
+  const periods = ANNUAL_PERIODS;
   const sumP = fn => aggregate(months, fn, periods);
   const endP = fn => endOf(months, fn, periods);
+  // Per-period tranche financing inflows
+  const tranchesByMonth = r.tranchesByMonth;
+  const trancheInflows = periods.map(([s,e]) => {
+    let sum = 0;
+    for (let m = s; m <= e; m++) if (tranchesByMonth[m]) sum += tranchesByMonth[m];
+    return sum;
+  });
+  // Founder contribution lands at Mo 1 (so only Y1 + Total see it)
+  const founderInflows = periods.map(([s,e]) => (s <= 1 && e >= 1) ? state.founder : 0);
+
+  // Net change = ending cash - opening cash for each period
+  const netChange = periods.map(([s,e]) => {
+    const last = months.filter(m=>m.m>=s&&m.m<=e).pop();
+    const startCash = s === 1 ? 0 : (months[s-2] ? months[s-2].cash : 0);
+    return (last ? last.cash : 0) - startCash;
+  });
+  const openingCash = periods.map(([s,e]) => s === 1 ? 0 : (months[s-2] ? months[s-2].cash : 0));
+
   return [
-    { group: true, label: 'REVENUE' },
-    { label: 'Production', values: sumP(m=>m.revProd), indent:true },
-    { label: 'Schools & Universities', values: sumP(m=>m.revInst), indent:true },
-    { label: 'Consulting', values: sumP(m=>m.revCons), indent:true },
-    { label: 'Total Revenue', values: sumP(m=>m.totalRev), total:true },
-    { label: 'Total COGS', values: sumP(m=>m.totalCogs), indent:true },
-    { label: 'Gross Profit', values: sumP(m=>m.grossProfit), total:true, signClass:true },
-    { label: 'Total OpEx', values: sumP(m=>m.opEx), indent:true },
-    { label: 'EBITDA', values: sumP(m=>m.ebitda), total:true, signClass:true },
-    { label: 'Cash Balance', values: endP(m=>m.cash), total:true, signClass:true },
+    { group: true, label: 'CASH FROM OPERATING ACTIVITIES' },
+    { label: 'Revenue Collected', values: sumP(m=>m.totalRev), indent:true },
+    { label: 'Cost of Revenue Paid', values: sumP(m=>-m.totalCogs), indent:true, signClass:true },
+    { label: 'Operating Expenses Paid', values: sumP(m=>-m.opEx), indent:true, signClass:true },
+    { label: 'Net Cash from Operations', values: sumP(m=>m.ebitda), total:true, signClass:true },
+
+    { group: true, label: 'CASH FROM FINANCING ACTIVITIES' },
+    { label: 'Tranche Closes (Investor Capital)', values: trancheInflows, indent:true },
+    { label: 'Founder Contribution', values: founderInflows, indent:true },
+    { label: 'Net Cash from Financing', values: trancheInflows.map((v,i) => v + founderInflows[i]), total:true },
+
+    { group: true, label: 'NET CHANGE IN CASH' },
+    { label: 'Opening Cash Balance', values: openingCash, indent:true },
+    { label: 'Net Change in Cash', values: netChange, total:true, signClass:true },
+    { label: 'Ending Cash Balance', values: endP(m=>m.cash), total:true, signClass:true },
   ];
+}
+
+function renderCashFlow() {
+  const r = compute();
+  const months = r.months;
+  const cols = ['Year 1', 'Year 2', 'Year 3', 'Year 4', 'Year 5', '5-Yr Total'];
+  const rows = buildCashFlowRows(months, r);
+
+  let html = '<thead><tr><th>Line Item</th>' + cols.map(c => `<th class="r">${c}</th>`).join('') + '</tr></thead><tbody>';
+  for (const row of rows) {
+    if (row.group) {
+      html += `<tr class="grp"><td>${row.label}</td>${cols.map(()=>'<td></td>').join('')}</tr>`;
+    } else {
+      const cls = row.total ? 'total' : (row.indent ? 'indent' : '');
+      html += `<tr class="${cls}"><td>${row.label}</td>` + row.values.map(v => {
+        const sign = (row.signClass && v < 0) ? 'neg' : (row.signClass && v > 0 ? 'pos' : '');
+        return `<td class="${sign}">${row.fmt ? row.fmt(v) : fmtUSD(v)}</td>`;
+      }).join('') + '</tr>';
+    }
+  }
+  html += '</tbody>';
+  document.getElementById('cf-table').innerHTML = html;
+}
+
+function exportCF(format) {
+  const r = compute();
+  const months = r.months;
+  const cols = ['Year 1', 'Year 2', 'Year 3', 'Year 4', 'Year 5', '5-Yr Total'];
+  const rows = buildCashFlowRows(months, r);
+
+  const flatRows = [];
+  for (const row of rows) {
+    if (row.group) {
+      flatRows.push([row.label]);
+    } else {
+      flatRows.push([(row.indent ? '  ' : '') + row.label, ...row.values.map(v => row.fmt ? row.fmt(v) : Math.round(v))]);
+    }
+  }
+
+  if (format === 'csv') {
+    const csv = [
+      ['JIE Mastery — 5-Year Cash Flow Statement (Direct Method)'],
+      ['Scenario', SCEN[state.scenario].label],
+      ['Generated', new Date().toLocaleString()],
+      [],
+      ['Line Item', ...cols],
+      ...flatRows,
+    ];
+    downloadCSV('jie-cashflow-5yr.csv', csv);
+  } else {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: 'pt', format: 'letter', orientation: 'l' });
+    doc.setFont('helvetica','bold'); doc.setFontSize(18); doc.setTextColor(200,28,28);
+    doc.text('JIE Mastery — 5-Year Cash Flow Statement', 40, 50);
+    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(100);
+    doc.text(`Scenario: ${SCEN[state.scenario].label}  ·  Direct method  ·  ${new Date().toLocaleString()}`, 40, 68);
+
+    doc.autoTable({
+      startY: 90,
+      head: [['Line Item', ...cols]],
+      body: flatRows.map(r => r.map((v,i) => i === 0 ? v : (typeof v === 'number' ? fmtUSD(v) : v))),
+      headStyles: { fillColor: [200,28,28], textColor:255, fontSize: 9 },
+      bodyStyles: { fontSize: 9 },
+      columnStyles: Object.fromEntries(cols.map((_,i)=>[i+1,{halign:'right'}])),
+    });
+    doc.save('jie-cashflow-5yr.pdf');
+  }
+}
+
+// ====================================================================
+// UNIT ECONOMICS
+// ====================================================================
+function renderUnitEcon() {
+  const r = compute();
+  const months = r.months;
+
+  // Read raw inputs
+  const arpu = GETN('prod-arpu');
+  const churn = GETN('prod-churn') / 100;
+  const vc = GETN('prod-vc');
+
+  // Gross margin per consumer user (revenue - variable cost)
+  const grossPerUser = arpu - vc;
+  const grossMarginPct = arpu > 0 ? grossPerUser / arpu : 0;
+
+  // LTV (Lifetime Value) — gross-margin-based, assumes constant churn
+  const avgLifetimeMonths = churn > 0 ? 1 / churn : 36;
+  const ltv = grossPerUser * avgLifetimeMonths;
+
+  // CAC — Year 1 marketing + sales spend per net new user added in Year 1
+  const y1MarketingSales = state.uses.reduce((s,u) => {
+    if (['marketing','sales','commissions'].includes(u.cat)) return s + (u.y1 || 0);
+    return s;
+  }, 0);
+  const y1NetNew = months.slice(0, 12).reduce((s,m,i,arr) => {
+    if (i === 0) return s + Math.max(0, m.users - GETN('prod-start'));
+    return s + Math.max(0, m.users - arr[i-1].users);
+  }, 0);
+  // Fall back to product net new input × 12 if model trajectory is weird
+  const cacDenom = Math.max(1, y1NetNew);
+  const cac = y1MarketingSales / cacDenom;
+  const ltvCac = cac > 0 ? ltv / cac : 0;
+  const paybackMonths = grossPerUser > 0 ? cac / grossPerUser : 0;
+
+  // ARR & growth
+  const m12 = months[11], m24 = months[23], m60 = months[59];
+  const arr12 = m12.totalRev * 12;
+  const arr24 = m24.totalRev * 12;
+  const arr60 = m60.totalRev * 12;
+  const arrGrowthY2 = arr12 > 0 ? (arr24 - arr12) / arr12 : 0;
+
+  // Burn multiple — Year 1 (net burn ÷ net new ARR added)
+  const y1Burn = -months.slice(0, 12).reduce((s,m) => s + m.ebitda, 0);
+  const y1NewArr = m12.totalRev * 12 - 0;  // ARR end of Y1 vs starting ARR (≈0)
+  const burnMultiple = y1NewArr > 0 ? y1Burn / y1NewArr : null;
+
+  // Rule of 40 — Year 2 (most stable measurement window)
+  const y2Rev = months.slice(12, 24).reduce((s,m) => s + m.totalRev, 0);
+  const y2EBITDA = months.slice(12, 24).reduce((s,m) => s + m.ebitda, 0);
+  const y2EBITDAMargin = y2Rev > 0 ? y2EBITDA / y2Rev : 0;
+  const ruleOf40 = arrGrowthY2 + y2EBITDAMargin;
+
+  const items = [
+    { l: 'LTV (Consumer)', v: fmtUSD(ltv), hint: `${avgLifetimeMonths.toFixed(0)}-mo avg lifetime × $${grossPerUser.toFixed(0)} GP/mo` },
+    { l: 'CAC (Year 1 blended)', v: fmtUSD(cac), hint: `Y1 marketing+sales ÷ net new users` },
+    { l: 'LTV : CAC Ratio', v: ltvCac.toFixed(1) + ':1', hint: ltvCac >= 5 ? '✓ Strong' : ltvCac >= 3 ? '✓ Healthy' : '⚠ Below 3:1', cls: ltvCac >= 3 ? 'pos' : 'neg' },
+    { l: 'CAC Payback', v: paybackMonths.toFixed(1) + ' mo', hint: paybackMonths <= 12 ? '✓ Fast' : paybackMonths <= 18 ? 'Healthy' : '⚠ Slow' },
+    { l: 'Gross Margin (Consumer)', v: fmtPct(grossMarginPct), hint: 'Revenue minus per-user variable cost' },
+    { l: 'ARR Growth Y1→Y2', v: fmtPct(arrGrowthY2), hint: arrGrowthY2 >= 1 ? '✓ Triple-digit' : 'Reference: investor target ≥100%' },
+    { l: 'Burn Multiple (Y1)', v: burnMultiple != null ? burnMultiple.toFixed(2) : '—', hint: burnMultiple != null && burnMultiple <= 2 ? '✓ Efficient' : burnMultiple != null && burnMultiple <= 4 ? 'Acceptable' : '⚠ Capital-hungry' },
+    { l: 'Rule of 40 (Y2)', v: fmtPct(ruleOf40), hint: ruleOf40 >= 0.4 ? '✓ Above 40%' : 'Below 40% threshold', cls: ruleOf40 >= 0.4 ? 'pos' : '' },
+  ];
+
+  document.getElementById('unit-econ-grid').innerHTML = items.map(it => `
+    <div style="background:var(--sf2);border:1px solid var(--bo);border-radius:10px;padding:14px">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--tx3);margin-bottom:4px">${it.l}</div>
+      <div style="font-family:'DM Serif Display',serif;font-size:22px;color:${it.cls === 'pos' ? 'var(--gr)' : it.cls === 'neg' ? 'var(--am)' : 'var(--tx)'};line-height:1;margin-bottom:6px">${it.v}</div>
+      <div style="font-size:11px;color:var(--tx3);font-weight:500">${it.hint}</div>
+    </div>
+  `).join('');
+}
+
+// ====================================================================
+// KPI DASHBOARD
+// ====================================================================
+function renderKPI() {
+  const r = compute();
+  const months = r.months;
+  const m12 = months[11], m24 = months[23], m36 = months[35], m48 = months[47], m60 = months[59];
+
+  // ARR by year-end (annualized run-rate from final month of period)
+  const arrByYear = [m12, m24, m36, m48, m60].map(m => m.totalRev * 12);
+
+  // 5-year revenue, total
+  const tot5y = months.reduce((s,m) => s+m.totalRev, 0);
+  // ARR CAGR Y1→Y5
+  const cagrFactor = arrByYear[0] > 0 ? Math.pow(arrByYear[4] / arrByYear[0], 1/4) - 1 : 0;
+
+  // Gross margin Y2 (representative steady-state)
+  const y2Rev = months.slice(12, 24).reduce((s,m) => s + m.totalRev, 0);
+  const y2GP = months.slice(12, 24).reduce((s,m) => s + m.grossProfit, 0);
+  const y2GM = y2Rev > 0 ? y2GP / y2Rev : 0;
+
+  // Magic Number proxy — new ARR / sales+marketing spend (Year 2)
+  const y2Marketing = state.uses.reduce((s,u) => {
+    if (['marketing','sales','commissions'].includes(u.cat)) return s + (u.y1 || 0);
+    return s;
+  }, 0);
+  const y2NewArr = arrByYear[1] - arrByYear[0];
+  const magicNumber = y2Marketing > 0 ? y2NewArr / y2Marketing : 0;
+
+  const items = [
+    { l: 'ARR @ Yr 1', v: fmtUSDK(arrByYear[0]) },
+    { l: 'ARR @ Yr 3', v: fmtUSDK(arrByYear[2]) },
+    { l: 'ARR @ Yr 5', v: fmtUSDK(arrByYear[4]) },
+    { l: 'ARR CAGR Y1→Y5', v: fmtPct(cagrFactor) },
+    { l: '5-Yr Cum. Revenue', v: fmtUSDK(tot5y) },
+    { l: 'Gross Margin (Y2)', v: fmtPct(y2GM) },
+    { l: 'Magic Number (Y2)', v: magicNumber.toFixed(2), hint: magicNumber >= 1 ? '✓ Efficient sales' : magicNumber >= 0.5 ? 'Acceptable' : '⚠ Low' },
+    { l: 'Mo 60 Cash', v: fmtUSDK(m60.cash) },
+  ];
+
+  document.getElementById('kpi-grid').innerHTML = items.map(it => `
+    <div style="background:#fff;border:1.5px solid var(--bo);border-radius:10px;padding:13px 15px">
+      <div style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--tx3);margin-bottom:3px">${it.l}</div>
+      <div style="font-family:'DM Serif Display',serif;font-size:20px;color:var(--tx);line-height:1">${it.v}</div>
+      ${it.hint ? `<div style="font-size:10px;color:var(--tx3);font-weight:600;margin-top:3px">${it.hint}</div>` : ''}
+    </div>
+  `).join('');
+}
+
+// ====================================================================
+// EQUITY (INTERNAL) — Cap Table + Founder Take-Home
+// ====================================================================
+function renderEquity() {
+  // Build cap table evolution from enabled tranches in close-month order
+  const enabled = [...state.tranches.filter(t => t.enabled)].sort((a,b) => a.month - b.month);
+  let founderPct = 1.0; // 100% at start
+  const stages = [{ stage: 'Pre-Raise (Founder Only)', equityIssued: 0, founderPct, investorPct: 0, postMoney: null }];
+
+  for (const t of enabled) {
+    const eq = (t.equity || 0) / 100;
+    if (eq <= 0 || eq >= 1) continue; // skip nonsense
+    // After this round, founder owns founderPct × (1 - eq)
+    founderPct = founderPct * (1 - eq);
+    const investorPct = 1 - founderPct;
+    // Implied post-money valuation: amount / equity
+    const postMoney = t.amount / eq;
+    stages.push({
+      stage: `After ${t.name} (Mo ${t.month}, $${(t.amount/1e6).toFixed(2)}M for ${(eq*100).toFixed(1)}%)`,
+      equityIssued: eq, founderPct, investorPct, postMoney,
+    });
+  }
+
+  // Optional Series A
+  const frAmount = GETN('fr-amount');
+  const frEquity = GETN('fr-equity') / 100;
+  const frName = (document.getElementById('fr-name') || {}).value || 'Series A';
+  let postSeriesAFounderPct = founderPct;
+  let postSeriesAValuation = null;
+  if (frAmount > 0 && frEquity > 0 && frEquity < 1) {
+    postSeriesAFounderPct = founderPct * (1 - frEquity);
+    postSeriesAValuation = frAmount / frEquity;
+    stages.push({
+      stage: `After ${frName} ($${(frAmount/1e6).toFixed(2)}M for ${(frEquity*100).toFixed(1)}%)`,
+      equityIssued: frEquity, founderPct: postSeriesAFounderPct, investorPct: 1 - postSeriesAFounderPct,
+      postMoney: postSeriesAValuation,
+    });
+  }
+
+  // Render cap table
+  document.getElementById('captable-rows').innerHTML = stages.map(s => `
+    <tr>
+      <td style="font-weight:600">${s.stage}</td>
+      <td class="r" style="font-variant-numeric:tabular-nums">${s.equityIssued > 0 ? (s.equityIssued * 100).toFixed(1) + '%' : '—'}</td>
+      <td class="r" style="font-variant-numeric:tabular-nums;font-weight:700;color:var(--gr)">${(s.founderPct * 100).toFixed(2)}%</td>
+      <td class="r" style="font-variant-numeric:tabular-nums">${(s.investorPct * 100).toFixed(2)}%</td>
+      <td class="r" style="font-variant-numeric:tabular-nums">${s.postMoney ? fmtUSD(s.postMoney) : '—'}</td>
+    </tr>
+  `).join('');
+
+  // Founder take-home calculator: 5-year salary + equity at exit
+  const r = compute();
+  const totalSalary5y = r.months.reduce((s,m) => s + m.ownerSalary, 0);
+
+  // Summary cards
+  const finalFounderPct = postSeriesAFounderPct;
+  const summary = [
+    { l: 'Founder % After Seed Tranches', v: (founderPct * 100).toFixed(2) + '%' },
+    { l: 'Founder % After Series A', v: frAmount > 0 ? (postSeriesAFounderPct * 100).toFixed(2) + '%' : '—' },
+    { l: '5-Yr Cumulative Salary', v: fmtUSD(totalSalary5y) },
+    { l: 'Total Capital Raised', v: fmtUSDK(enabled.reduce((s,t)=>s+t.amount,0) + frAmount) },
+  ];
+  document.getElementById('founder-summary').innerHTML = summary.map(it => `
+    <div style="background:var(--sf2);border:1px solid var(--bo);border-radius:10px;padding:14px">
+      <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--tx3);margin-bottom:4px">${it.l}</div>
+      <div style="font-family:'DM Serif Display',serif;font-size:20px;color:var(--tx);line-height:1">${it.v}</div>
+    </div>
+  `).join('');
+
+  // Exit scenarios at $50M, $100M, $250M, $500M, $1B
+  const exitVals = [50000000, 100000000, 250000000, 500000000, 1000000000];
+  document.getElementById('exit-rows').innerHTML = exitVals.map(ev => {
+    const preATake = ev * founderPct;
+    const postATake = ev * finalFounderPct;
+    const total = postATake + totalSalary5y;
+    return `<tr>
+      <td style="font-weight:700">${fmtUSDK(ev)}</td>
+      <td class="r" style="font-variant-numeric:tabular-nums">${(founderPct * 100).toFixed(1)}%</td>
+      <td class="r" style="font-variant-numeric:tabular-nums">${fmtUSDK(preATake)}</td>
+      <td class="r" style="font-variant-numeric:tabular-nums">${(finalFounderPct * 100).toFixed(1)}%</td>
+      <td class="r" style="font-variant-numeric:tabular-nums;color:var(--red);font-weight:700">${fmtUSDK(postATake)}</td>
+      <td class="r" style="font-variant-numeric:tabular-nums;font-weight:800">${fmtUSDK(total)}</td>
+    </tr>`;
+  }).join('');
 }
 
 // ====================================================================
@@ -1089,10 +1804,12 @@ function renderRunway() {
   renderVerdict(r);
   renderKeyMetrics(r);
   document.getElementById('hs-runway').textContent =
-    (r.runwayMonth ? r.runwayMonth + ' mo' : '36+ mo');
+    (r.runwayMonth ? r.runwayMonth + ' mo' : '60+ mo');
 }
 
 function drawCashChart(months) {
+  const r = compute();
+  const tranchesByMonth = r.tranchesByMonth;
   const svg = document.getElementById('cash-chart');
   const W = 900, H = 300, pad = { l: 60, r: 20, t: 20, b: 30 };
   const cashes = months.map(m => m.cash);
@@ -1119,9 +1836,9 @@ function drawCashChart(months) {
     yTicks += `<line x1="${pad.l}" y1="${y}" x2="${W-pad.r}" y2="${y}" stroke="#E2E2E6" stroke-width="1" stroke-dasharray="${v===0?'0':'2,3'}"/>`;
     yTicks += `<text x="${pad.l-8}" y="${y+4}" text-anchor="end" fill="#9A9AA8" font-size="10" font-family="Figtree">${fmtUSDK(v)}</text>`;
   }
-  // X-axis: month markers every 6 months
+  // X-axis: month markers every 12 months for the 5-year chart
   let xTicks = '';
-  for (let m = 0; m < months.length; m += 6) {
+  for (let m = 0; m < months.length; m += 12) {
     const x = pad.l + m * xStep;
     xTicks += `<text x="${x}" y="${H-pad.b+15}" text-anchor="middle" fill="#9A9AA8" font-size="10" font-family="Figtree">M${m+1}</text>`;
   }
@@ -1129,11 +1846,28 @@ function drawCashChart(months) {
   const zeroY = yScale(0);
   const zeroLine = (minC < 0 || maxC > 0) ? `<line x1="${pad.l}" y1="${zeroY}" x2="${W-pad.r}" y2="${zeroY}" stroke="#9A9AA8" stroke-width="1.5" stroke-dasharray="4,4"/>` : '';
 
+  // Tranche markers — vertical lines + labels at close months
+  let trancheMarkers = '';
+  const closeMonths = Object.keys(tranchesByMonth).map(Number).sort((a,b) => a - b);
+  closeMonths.forEach((mo, idx) => {
+    if (mo < 1 || mo > months.length) return;
+    const x = pad.l + (mo - 1) * xStep;
+    const yTop = pad.t;
+    const yBot = H - pad.b;
+    const amt = tranchesByMonth[mo];
+    const labelY = pad.t + 12 + (idx % 2) * 14; // stagger if multiple tranches
+    trancheMarkers += `<line x1="${x}" y1="${yTop}" x2="${x}" y2="${yBot}" stroke="#15803d" stroke-width="1" stroke-dasharray="3,3" opacity="0.55"/>`;
+    trancheMarkers += `<circle cx="${x}" cy="${yScale(months[mo-1].cash)}" r="4" fill="#15803d" stroke="#fff" stroke-width="1.5"/>`;
+    trancheMarkers += `<rect x="${x+5}" y="${labelY-9}" width="62" height="16" rx="3" fill="#15803d" opacity="0.95"/>`;
+    trancheMarkers += `<text x="${x+36}" y="${labelY+3}" text-anchor="middle" fill="#fff" font-size="9.5" font-weight="700" font-family="Figtree">+${fmtUSDK(amt)}</text>`;
+  });
+
   svg.innerHTML = `
     ${yTicks}
     ${zeroLine}
     <path d="${fillPath}" fill="rgba(200,28,28,0.08)" stroke="none"/>
     <path d="${path}" fill="none" stroke="#C81C1C" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+    ${trancheMarkers}
     ${xTicks}
   `;
 }
@@ -1141,10 +1875,24 @@ function drawCashChart(months) {
 function renderVerdict(r) {
   const box = document.getElementById('verdict-box');
   let cls, head, title, body, stats;
-  const monthsRunway = r.runwayMonth ? r.runwayMonth - 1 : 36;
-  const finalCash = r.months[35].cash;
+  const monthsRunway = r.runwayMonth ? r.runwayMonth - 1 : 60;
+  const finalCash = r.months[59].cash;
+  const minBetween = r.minCashBetweenTranches;
+  const trancheCount = r.enabledTranches.length;
+  const lastClose = r.lastTrancheCloseMonth;
 
-  if (r.runwayMonth && r.runwayMonth < 24) {
+  // Underfunded between tranches takes precedence — most dangerous condition
+  if (trancheCount > 1 && minBetween < 0) {
+    cls = 'under';
+    head = '⚠ Cash Gap Between Tranches';
+    title = `Cash goes negative before final tranche closes (Mo ${lastClose}).`;
+    body = `Min cash between tranches: ${fmtUSDK(minBetween)}. The current schedule means you'd run out of money waiting for a later tranche to land. Either enlarge an earlier tranche, accelerate a close month, or reduce burn before the gap.`;
+  } else if (trancheCount > 1 && minBetween < 100000) {
+    cls = 'under';
+    head = '⚠ Tight Cash Cushion';
+    title = `Min cash between tranches: ${fmtUSDK(minBetween)} — uncomfortably thin.`;
+    body = `Healthy companies keep at least $100K–$250K of cushion. Your minimum balance before final tranche close (Mo ${lastClose}) is ${fmtUSDK(minBetween)}. Consider front-loading more capital into Tranche 1 or accelerating Tranche 2.`;
+  } else if (r.runwayMonth && r.runwayMonth < 24) {
     cls = 'under';
     head = '⚠ Underfunded';
     title = `${monthsRunway} months of runway — likely too little.`;
@@ -1152,21 +1900,22 @@ function renderVerdict(r) {
   } else if (!r.runwayMonth && finalCash > state.raise * 0.6) {
     cls = 'over';
     head = '◆ Likely Over-raised';
-    title = `Ending cash ${fmtUSDK(finalCash)} after 36 months — raise may be larger than needed.`;
+    title = `Ending cash ${fmtUSDK(finalCash)} after 60 months — raise may be larger than needed.`;
     body = `Excess cash on the balance sheet dilutes equity unnecessarily. A smaller raise of $${((state.raise - finalCash * 0.5)/1e6).toFixed(2)}M may still fund the plan with healthy cushion.`;
   } else {
     cls = 'ok';
     head = '✓ Right-Sized';
-    title = `${r.runwayMonth ? monthsRunway + ' months runway' : '36+ months runway'} at ${fmtUSDK(state.raise)} raise — well-calibrated.`;
-    body = `This raise size funds the plan to ${r.firstProfitMonth ? 'EBITDA-positive in month ' + r.firstProfitMonth : 'a sustainable trajectory'}, with a healthy cushion. Ending cash position: ${fmtUSDK(finalCash)}.`;
+    title = `${r.runwayMonth ? monthsRunway + ' months runway' : '60+ months runway'} at ${fmtUSDK(state.raise)} raise — well-calibrated.`;
+    body = `This raise size funds the plan to ${r.firstProfitMonth ? 'EBITDA-positive in month ' + r.firstProfitMonth : 'a sustainable trajectory'}, with a healthy cushion. Ending cash position: ${fmtUSDK(finalCash)}.${trancheCount > 1 ? ` Min cash between tranches: ${fmtUSDK(minBetween)}.` : ''}`;
   }
 
   stats = `
     <div class="verdict-stat"><div class="lbl">Raise</div><div class="val">${fmtUSDK(state.raise)}</div></div>
-    <div class="verdict-stat"><div class="lbl">Runway</div><div class="val">${r.runwayMonth ? monthsRunway+' mo' : '36+ mo'}</div></div>
-    <div class="verdict-stat"><div class="lbl">First EBITDA+</div><div class="val">${r.firstProfitMonth ? 'Mo '+r.firstProfitMonth : 'Not in 36mo'}</div></div>
-    <div class="verdict-stat"><div class="lbl">3-Yr Revenue</div><div class="val">${fmtUSDK(r.months.reduce((s,m)=>s+m.totalRev,0))}</div></div>
-    <div class="verdict-stat"><div class="lbl">Ending Cash</div><div class="val">${fmtUSDK(finalCash)}</div></div>
+    <div class="verdict-stat"><div class="lbl">Tranches</div><div class="val">${trancheCount}</div></div>
+    <div class="verdict-stat"><div class="lbl">Runway</div><div class="val">${r.runwayMonth ? monthsRunway+' mo' : '60+ mo'}</div></div>
+    <div class="verdict-stat"><div class="lbl">First EBITDA+</div><div class="val">${r.firstProfitMonth ? 'Mo '+r.firstProfitMonth : 'Not in 60mo'}</div></div>
+    <div class="verdict-stat"><div class="lbl">Min Inter-Tranche Cash</div><div class="val">${fmtUSDK(minBetween)}</div></div>
+    <div class="verdict-stat"><div class="lbl">Ending Cash (Mo 60)</div><div class="val">${fmtUSDK(finalCash)}</div></div>
   `;
 
   box.innerHTML = `
@@ -1180,20 +1929,21 @@ function renderVerdict(r) {
 }
 
 function renderKeyMetrics(r) {
-  const tot3y = r.months.reduce((s,m)=>s+m.totalRev,0);
+  const tot5y = r.months.reduce((s,m)=>s+m.totalRev,0);
   const totGP = r.months.reduce((s,m)=>s+m.grossProfit,0);
   const totEB = r.months.reduce((s,m)=>s+m.ebitda,0);
-  const m12 = r.months[11], m24 = r.months[23], m36 = r.months[35];
-  const arrEnd = m36.totalRev * 12;
+  const m12 = r.months[11], m24 = r.months[23], m36 = r.months[35], m60 = r.months[59];
+  const arrEnd = m60.totalRev * 12;
   const items = [
-    { l: '3-Yr Revenue', v: fmtUSDK(tot3y) },
-    { l: '3-Yr Gross Profit', v: fmtUSDK(totGP) },
-    { l: '3-Yr EBITDA', v: fmtUSDK(totEB) },
-    { l: 'ARR @ Mo 36', v: fmtUSDK(arrEnd) },
+    { l: '5-Yr Revenue', v: fmtUSDK(tot5y) },
+    { l: '5-Yr Gross Profit', v: fmtUSDK(totGP) },
+    { l: '5-Yr EBITDA', v: fmtUSDK(totEB) },
+    { l: 'ARR @ Mo 60', v: fmtUSDK(arrEnd) },
     { l: 'Users @ Mo 12', v: fmtNum(m12.users) },
     { l: 'Users @ Mo 36', v: fmtNum(m36.users) },
-    { l: 'Institutions @ Mo 36', v: m36.instOnboarded },
-    { l: 'First EBITDA+ Month', v: r.firstProfitMonth ? 'Mo ' + r.firstProfitMonth : '— (none in 36)' },
+    { l: 'Users @ Mo 60', v: fmtNum(m60.users) },
+    { l: 'Institutions @ Mo 60', v: m60.instOnboarded },
+    { l: 'First EBITDA+ Month', v: r.firstProfitMonth ? 'Mo ' + r.firstProfitMonth : '— (none in 60)' },
     { l: 'Min Cash Balance', v: fmtUSDK(Math.min(...r.months.map(m=>m.cash))) },
     { l: 'Avg Burn (Yr 1)', v: fmtUSDK(r.months.slice(0,12).reduce((s,m)=>s+m.ebitda,0)/12) + '/mo' },
   ];
@@ -1211,19 +1961,19 @@ function renderCompare() {
     state.scenario = scen;
     const r = compute();
     state.scenario = saved;
-    const tot3y = r.months.reduce((s,m)=>s+m.totalRev,0);
-    const finalCash = r.months[35].cash;
+    const tot5y = r.months.reduce((s,m)=>s+m.totalRev,0);
+    const finalCash = r.months[59].cash;
     return `
       <div class="sc-card ${state.scenario===scen?'active':''}" onclick="setScenario('${scen}')" style="cursor:pointer">
         <div class="lbl">Scenario</div>
         <div class="name">${SCEN[scen].label}</div>
         <div class="metrics">
-          <div class="metric"><div class="metric-l">3-Yr Revenue</div><div class="metric-v">${fmtUSDK(tot3y)}</div></div>
-          <div class="metric"><div class="metric-l">ARR @ Mo 36</div><div class="metric-v">${fmtUSDK(r.months[35].totalRev*12)}</div></div>
-          <div class="metric"><div class="metric-l">Runway</div><div class="metric-v">${r.runwayMonth ? (r.runwayMonth-1)+' mo' : '36+ mo'}</div></div>
+          <div class="metric"><div class="metric-l">5-Yr Revenue</div><div class="metric-v">${fmtUSDK(tot5y)}</div></div>
+          <div class="metric"><div class="metric-l">ARR @ Mo 60</div><div class="metric-v">${fmtUSDK(r.months[59].totalRev*12)}</div></div>
+          <div class="metric"><div class="metric-l">Runway</div><div class="metric-v">${r.runwayMonth ? (r.runwayMonth-1)+' mo' : '60+ mo'}</div></div>
           <div class="metric"><div class="metric-l">First EBITDA+</div><div class="metric-v">${r.firstProfitMonth ? 'Mo '+r.firstProfitMonth : '—'}</div></div>
           <div class="metric"><div class="metric-l">Ending Cash</div><div class="metric-v">${fmtUSDK(finalCash)}</div></div>
-          <div class="metric"><div class="metric-l">Users @ Yr 3</div><div class="metric-v">${fmtNum(r.months[35].users)}</div></div>
+          <div class="metric"><div class="metric-l">Users @ Yr 5</div><div class="metric-v">${fmtNum(r.months[59].users)}</div></div>
         </div>
       </div>
     `;
@@ -1271,12 +2021,18 @@ function downloadCSV(filename, rows) {
 }
 
 function exportSU(format) {
-  const total1y = state.uses.reduce((s,u)=>s+u.annual,0);
-  const total3y = state.uses.reduce((s,u)=>s+u.annual*3,0);
+  const r = compute();
+  const fired = r.stepFiredAt;
+  const L = state.ownerLadder;
+  const enabled = state.tranches.filter(t => t.enabled);
+  const totalTranche = enabled.reduce((s,t)=>s+t.amount,0);
+  const totY1 = state.uses.reduce((s,u) => s + (u.y1 || 0), 0);
+
   const rows = [
-    ['JIE Mastery — Sources & Uses'],
+    ['JIE Mastery — Sources & Uses (Year 1)'],
     ['Scenario', SCEN[state.scenario].label],
     ['Generated', new Date().toLocaleString()],
+    ['Round', 'First Round (Seed)'],
     [],
     ['SOURCES'],
     ['Source','Amount'],
@@ -1284,13 +2040,34 @@ function exportSU(format) {
     ['Founder Contribution', state.founder],
     ['Total Sources', state.raise + state.founder],
     [],
-    ['USES'],
-    ['Use of Funds','Category','1-Yr Input','3-Yr Total','% of Raise','Notes'],
-    ...state.uses.map(u => [u.label, CAT_LABEL[u.cat], u.annual, u.annual*3, ((u.annual*3/state.raise)*100).toFixed(1)+'%', u.note||'']),
-    ['Total Uses', '', total1y, total3y, ((total3y/state.raise)*100).toFixed(0)+'%', ''],
+    ['TRANCHE SCHEDULE'],
+    ['Tranche','Amount','Close Month','Trigger / Milestone','Enabled'],
+    ...state.tranches.map(t => [t.name, t.amount, t.month, t.trigger||'', t.enabled ? 'Yes' : 'No']),
+    ['Total (Enabled)', totalTranche, '', '', ''],
+    [],
+    ['YEAR 1 USES (Funded by Raise)'],
+    ['Use of Funds','Category','Year 1','% of Raise','Notes'],
+    ...state.uses.map(u => [u.label, CAT_LABEL[u.cat], u.y1 || 0, state.raise > 0 ? (((u.y1||0)/state.raise)*100).toFixed(1)+'%' : '—', u.note||'']),
+    ['Total Year 1 Uses', '', totY1, state.raise > 0 ? ((totY1/state.raise)*100).toFixed(0)+'%' : '—', ''],
+    [],
+    ['OWNER SALARY LADDER'],
+    ['Step','Compensation','Trigger Condition','Status (' + SCEN[state.scenario].label + ')'],
+    ['Step 1', L.base, 'Year 1 baseline (raise close)', 'Active (Mo 1)'],
+    ['Step 2', L.step2, 'Monthly revenue >= $' + L.step2Trigger.toLocaleString(), fired[2] ? 'Fires Mo ' + fired[2] : 'Not yet'],
+    ['Step 3', L.step3, 'Monthly rev >= $' + L.step3Trigger.toLocaleString() + ' & GP > 0', fired[3] ? 'Fires Mo ' + fired[3] : 'Not yet'],
+    ['Step 4', L.step4, 'EBITDA breakeven (' + L.step4Months + ' consec. months)', fired[4] ? 'Fires Mo ' + fired[4] : 'Not yet'],
+    [],
+    ['CASH TRAJECTORY DIAGNOSTICS'],
+    ['Min Cash Between Tranches', r.minCashBetweenTranches],
+    ['First EBITDA+ Month', r.firstProfitMonth || 'Not in 60 months'],
+    ['Runway', r.runwayMonth ? (r.runwayMonth - 1) + ' months' : '60+ months'],
+    ['Ending Cash (Mo 60)', r.months[59].cash],
+    [],
+    ['NOTE'],
+    ['Year 2 & 3 OpEx assumptions are set on the Pro Forma P&L tab and reflected in the multi-year projection (separate export).'],
   ];
   if (format === 'csv') {
-    downloadCSV('jie-sources-uses.csv', rows);
+    downloadCSV('jie-sources-uses-year1.csv', rows);
   } else {
     exportSUasPDF();
   }
@@ -1301,51 +2078,93 @@ function exportSUasPDF() {
   const doc = new jsPDF({ unit: 'pt', format: 'letter' });
   doc.setFont('helvetica', 'bold'); doc.setFontSize(18);
   doc.setTextColor(200, 28, 28);
-  doc.text('JIE Mastery — Sources & Uses', 40, 50);
+  doc.text('JIE Mastery — Sources & Uses (Year 1)', 40, 50);
   doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
   doc.setTextColor(100);
-  doc.text(`Scenario: ${SCEN[state.scenario].label}  ·  ${new Date().toLocaleString()}`, 40, 68);
+  doc.text(`Scenario: ${SCEN[state.scenario].label}  ·  Round: First (Seed)  ·  ${new Date().toLocaleString()}`, 40, 68);
 
+  // ---- SOURCES ----
   doc.autoTable({
     startY: 90,
     head: [['Sources', 'Amount']],
     body: [
       ['Investor Raise', fmtUSD(state.raise)],
       ['Founder Contribution', fmtUSD(state.founder)],
-      ['Total Sources', fmtUSD(state.raise + state.founder)],
     ],
+    foot: [['Total Sources', fmtUSD(state.raise + state.founder)]],
     headStyles: { fillColor: [200,28,28], textColor:255, fontStyle:'bold' },
+    footStyles: { fillColor: [242,242,244], textColor: [15,15,16], fontStyle:'bold' },
     columnStyles: { 1: { halign: 'right' } },
-    foot: [],
   });
 
-  const total1y = state.uses.reduce((s,u)=>s+u.annual,0);
-  const total3y = state.uses.reduce((s,u)=>s+u.annual*3,0);
+  // ---- TRANCHE SCHEDULE ----
+  const enabled = state.tranches.filter(t => t.enabled);
+  const totalTranche = enabled.reduce((s,t)=>s+t.amount,0);
+
   doc.autoTable({
     startY: doc.lastAutoTable.finalY + 24,
-    head: [['Use of Funds','Category','1-Yr Input','3-Yr Total','% Raise','Notes']],
-    body: state.uses.map(u => [
-      u.label, CAT_LABEL[u.cat], fmtUSD(u.annual), fmtUSD(u.annual*3),
-      ((u.annual*3/state.raise)*100).toFixed(1)+'%', u.note||''
+    head: [['Tranche Schedule','Amount','Close Mo','Trigger / Milestone','On?']],
+    body: state.tranches.map(t => [
+      t.name, fmtUSD(t.amount), 'Mo ' + t.month, t.trigger||'—', t.enabled ? '✓' : '—'
     ]),
-    foot: [['Total Uses','', fmtUSD(total1y), fmtUSD(total3y), ((total3y/state.raise)*100).toFixed(0)+'%','']],
+    foot: [['Total Committed (Enabled)', fmtUSD(totalTranche), '', '', '']],
     headStyles: { fillColor: [200,28,28], textColor:255 },
-    footStyles: { fillColor: [242,242,244], fontStyle:'bold' },
-    columnStyles: { 2: { halign:'right' }, 3: { halign:'right' }, 4: { halign:'right' } },
+    footStyles: { fillColor: [242,242,244], textColor: [15,15,16], fontStyle:'bold' },
+    columnStyles: { 1: { halign:'right' }, 2: { halign:'right' }, 4: { halign:'center' } },
   });
 
-  doc.save('jie-sources-uses.pdf');
+  // ---- YEAR 1 USES (primary table) ----
+  const totY1 = state.uses.reduce((s,u) => s + (u.y1 || 0), 0);
+  doc.autoTable({
+    startY: doc.lastAutoTable.finalY + 24,
+    head: [['Year 1 Use of Funds','Category','Year 1','% Raise','Notes']],
+    body: state.uses.map(u => [
+      u.label, CAT_LABEL[u.cat], fmtUSD(u.y1 || 0),
+      state.raise > 0 ? (((u.y1||0)/state.raise)*100).toFixed(1)+'%' : '—', u.note||''
+    ]),
+    foot: [['Total Year 1 Uses','', fmtUSD(totY1), state.raise > 0 ? ((totY1/state.raise)*100).toFixed(0)+'%' : '—', '']],
+    headStyles: { fillColor: [200,28,28], textColor:255 },
+    footStyles: { fillColor: [242,242,244], textColor: [15,15,16], fontStyle:'bold' },
+    columnStyles: { 2: { halign:'right' }, 3: { halign:'right' } },
+  });
+
+  // ---- OWNER SALARY LADDER ----
+  const r = compute();
+  const fired = r.stepFiredAt;
+  const L = state.ownerLadder;
+  const ladderRows = [
+    ['Step 1', fmtUSD(L.base) + '/yr', 'Year 1 baseline (raise close)', 'Active (Mo 1)'],
+    ['Step 2', fmtUSD(L.step2) + '/yr', `Monthly revenue \u2265 ${fmtUSD(L.step2Trigger)}`, fired[2] ? 'Fires Mo ' + fired[2] : 'Not yet'],
+    ['Step 3', fmtUSD(L.step3) + '/yr', `Monthly rev \u2265 ${fmtUSD(L.step3Trigger)} & GP > 0`, fired[3] ? 'Fires Mo ' + fired[3] : 'Not yet'],
+    ['Step 4', fmtUSD(L.step4) + '/yr', `EBITDA breakeven (${L.step4Months} consec. months)`, fired[4] ? 'Fires Mo ' + fired[4] : 'Not yet'],
+  ];
+
+  let yPos = doc.lastAutoTable.finalY + 32;
+  if (yPos > 660) { doc.addPage(); yPos = 50; }
+
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(13);
+  doc.setTextColor(200, 28, 28);
+  doc.text('Owner Salary Ladder', 40, yPos);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
+  doc.setTextColor(100);
+  doc.text('Steps trigger automatically as the pro forma hits each milestone. Year-1 salary always starts at the base.', 40, yPos + 14);
+
+  doc.autoTable({
+    startY: yPos + 24,
+    head: [['Step', 'Compensation', 'Trigger Condition', 'Status (' + SCEN[state.scenario].label + ')']],
+    body: ladderRows,
+    headStyles: { fillColor: [200,28,28], textColor:255 },
+    columnStyles: { 1: { halign:'right' }, 3: { halign:'right' } },
+  });
+
+  doc.save('jie-sources-uses-year1.pdf');
 }
 
 function exportPF(format) {
   const r = compute();
   const months = r.months;
-  const periods = state.view === 'annual'
-    ? [[1,12],[13,24],[25,36],[1,36]]
-    : Array.from({length:12},(_,q)=>[q*3+1,q*3+3]).concat([[1,36]]);
-  const colNames = state.view === 'annual'
-    ? ['Year 1','Year 2','Year 3','3-Yr Total']
-    : Array.from({length:12},(_,q)=>`Y${Math.floor(q/4)+1}Q${(q%4)+1}`).concat(['3-Yr Total']);
+  const periods = ANNUAL_PERIODS;
+  const colNames = ['Year 1','Year 2','Year 3','Year 4','Year 5','5-Yr Total'];
 
   const sumP = fn => periods.map(([s,e]) => months.filter(m=>m.m>=s&&m.m<=e).reduce((a,m)=>a+fn(m),0));
   const endP = fn => periods.map(([s,e]) => {
@@ -1380,31 +2199,31 @@ function exportPF(format) {
 
   if (format === 'csv') {
     const csv = [
-      ['JIE Mastery — Pro Forma P&L'],
+      ['JIE Mastery — Pro Forma P&L (5-Year)'],
       ['Scenario', SCEN[state.scenario].label],
       ['Generated', new Date().toLocaleString()],
       [],
       ['Line Item', ...colNames],
       ...pfRows,
     ];
-    downloadCSV('jie-proforma.csv', csv);
+    downloadCSV('jie-proforma-5yr.csv', csv);
   } else {
     const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ unit: 'pt', format: 'letter', orientation: state.view === 'annual' ? 'p' : 'l' });
+    const doc = new jsPDF({ unit: 'pt', format: 'letter', orientation: 'l' });
     doc.setFont('helvetica','bold'); doc.setFontSize(18); doc.setTextColor(200,28,28);
-    doc.text('JIE Mastery — Pro Forma P&L', 40, 50);
+    doc.text('JIE Mastery — Pro Forma P&L (5-Year)', 40, 50);
     doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(100);
-    doc.text(`Scenario: ${SCEN[state.scenario].label}  ·  View: ${state.view}  ·  ${new Date().toLocaleString()}`, 40, 68);
+    doc.text(`Scenario: ${SCEN[state.scenario].label}  ·  ${new Date().toLocaleString()}`, 40, 68);
 
     doc.autoTable({
       startY: 90,
       head: [['Line Item', ...colNames]],
       body: pfRows.map(r => r.map((v,i) => i === 0 ? v : (typeof v === 'number' ? fmtUSD(v) : v))),
-      headStyles: { fillColor: [200,28,28], textColor:255, fontSize: 8 },
-      bodyStyles: { fontSize: 8 },
+      headStyles: { fillColor: [200,28,28], textColor:255, fontSize: 9 },
+      bodyStyles: { fontSize: 9 },
       columnStyles: Object.fromEntries(colNames.map((_,i)=>[i+1,{halign:'right'}])),
     });
-    doc.save('jie-proforma.pdf');
+    doc.save('jie-proforma-5yr.pdf');
   }
 }
 
@@ -1436,18 +2255,30 @@ function openLoadModal() {
 function closeModal(id) { document.getElementById(id).classList.remove('on'); }
 
 function captureCurrentInputs() {
+  const opex = {
+    y2: (document.getElementById('opex-y2') || {}).value || '',
+    y3: (document.getElementById('opex-y3') || {}).value || '',
+    y4: (document.getElementById('opex-y4') || {}).value || '',
+    y5: (document.getElementById('opex-y5') || {}).value || '',
+    mult: (document.getElementById('opex-mult') || {}).value || '1.4',
+  };
   return {
-    raise: state.raise, founder: state.founder, scenario: state.scenario, view: state.view,
+    raise: state.raise, founder: state.founder, scenario: state.scenario,
     uses: JSON.parse(JSON.stringify(state.uses)),
+    tranches: JSON.parse(JSON.stringify(state.tranches)),
     ownerLadder: JSON.parse(JSON.stringify(state.ownerLadder)),
+    opex,
     inputs: {
       'prod-start': GETN('prod-start'), 'prod-nn1': GETN('prod-nn1'),
       'prod-nn2': GETN('prod-nn2'), 'prod-nn3': GETN('prod-nn3'),
+      'prod-nn4': GETN('prod-nn4'), 'prod-nn5': GETN('prod-nn5'),
       'prod-arpu': GETN('prod-arpu'), 'prod-churn': GETN('prod-churn'), 'prod-vc': GETN('prod-vc'),
       'inst-y1': GETN('inst-y1'), 'inst-y2': GETN('inst-y2'), 'inst-y3': GETN('inst-y3'),
+      'inst-y4': GETN('inst-y4'), 'inst-y5': GETN('inst-y5'),
       'inst-acv': GETN('inst-acv'), 'inst-ramp': GETN('inst-ramp'),
       'inst-comm': GETN('inst-comm'), 'inst-vc': GETN('inst-vc'),
       'cons-y1': GETN('cons-y1'), 'cons-y2': GETN('cons-y2'), 'cons-y3': GETN('cons-y3'),
+      'cons-y4': GETN('cons-y4'), 'cons-y5': GETN('cons-y5'),
       'cons-val': GETN('cons-val'), 'cons-gm': GETN('cons-gm'),
     },
   };
@@ -1455,27 +2286,70 @@ function captureCurrentInputs() {
 
 function applySavedState(s) {
   state.raise = s.raise; state.founder = s.founder;
-  state.scenario = s.scenario; state.view = s.view;
+  state.scenario = s.scenario;
   state.uses = JSON.parse(JSON.stringify(s.uses));
-  // Migrate v2 saved scenarios: convert `amt` (3-yr total) → `annual`
+  // Migration chain (v9 keeps only y1 on uses; Y2/Y3 OpEx live on the Pro Forma tab):
+  //   v2 saves: `amt` = 3-yr total → y1 = amt/3
+  //   v3-v7 saves: `annual` → y1 = annual
+  //   v8 saves: y1/y2/y3 — drop y2/y3 (Y2/Y3 OpEx is now a Pro Forma input)
+  //   v9 saves: y1 only — already correct
   state.uses.forEach(u => {
-    if (u.annual === undefined) {
-      u.annual = u.amt !== undefined ? Math.round(u.amt / 3) : 0;
-      delete u.amt;
+    if (u.y1 === undefined) {
+      if (u.annual !== undefined) {
+        u.y1 = u.annual;
+      } else if (u.amt !== undefined) {
+        u.y1 = Math.round(u.amt / 3);
+      } else {
+        u.y1 = 0;
+      }
+      delete u.annual; delete u.amt;
     }
+    delete u.y2; delete u.y3;
   });
   if (s.ownerLadder) {
     state.ownerLadder = JSON.parse(JSON.stringify(s.ownerLadder));
   }
+  if (s.tranches) {
+    state.tranches = JSON.parse(JSON.stringify(s.tranches));
+  } else {
+    // Older saves predate tranches — fall back to defaults so we don't get 0-tranche state
+    state.tranches = JSON.parse(JSON.stringify(DEFAULT_TRANCHES));
+  }
   Object.entries(s.inputs).forEach(([id,v]) => {
     const el = document.getElementById(id); if (el) el.value = v;
+  });
+  // Restore Pro Forma OpEx inputs (preserve blank semantics for v9+ saves)
+  if (s.opex) {
+    const y2El = document.getElementById('opex-y2'); if (y2El) y2El.value = s.opex.y2 || '';
+    const y3El = document.getElementById('opex-y3'); if (y3El) y3El.value = s.opex.y3 || '';
+    const y4El = document.getElementById('opex-y4'); if (y4El) y4El.value = s.opex.y4 || '';
+    const y5El = document.getElementById('opex-y5'); if (y5El) y5El.value = s.opex.y5 || '';
+    const mEl = document.getElementById('opex-mult'); if (mEl) mEl.value = s.opex.mult || '1.4';
+  }
+  // For pre-v10 saves missing Y4/Y5 revenue inputs, default to Y3 (steady state)
+  ['prod-nn4','prod-nn5'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el && (s.inputs[id] === undefined)) {
+      const y3 = s.inputs['prod-nn3']; if (y3 !== undefined) el.value = y3;
+    }
+  });
+  ['inst-y4','inst-y5'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el && (s.inputs[id] === undefined)) {
+      const y3 = s.inputs['inst-y3']; if (y3 !== undefined) el.value = y3;
+    }
+  });
+  ['cons-y4','cons-y5'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el && (s.inputs[id] === undefined)) {
+      const y3 = s.inputs['cons-y3']; if (y3 !== undefined) el.value = y3;
+    }
   });
   document.getElementById('raise-amt').value = state.raise;
   document.getElementById('raise-slider').value = state.raise;
   document.getElementById('rw-slider').value = state.raise;
   document.getElementById('founder-amt').value = state.founder;
   document.querySelectorAll('.sc-pill').forEach(b => b.classList.toggle('on', b.dataset.sc === state.scenario));
-  document.querySelectorAll('.view-toggle button').forEach(b => b.classList.toggle('on', b.dataset.view === state.view));
   recalc();
 }
 
@@ -1505,11 +2379,15 @@ function deleteSaved(i) {
 function resetDefaults() {
   if (!confirm('Reset all assumptions to defaults? Saved scenarios are preserved.')) return;
   state.uses = JSON.parse(JSON.stringify(DEFAULT_USES));
+  state.tranches = JSON.parse(JSON.stringify(DEFAULT_TRANCHES));
+  const opexY2 = document.getElementById('opex-y2'); if (opexY2) opexY2.value = '';
+  const opexY3 = document.getElementById('opex-y3'); if (opexY3) opexY3.value = '';
+  const opexMult = document.getElementById('opex-mult'); if (opexMult) opexMult.value = '1.4';
   state.ownerLadder = {
     base: 150000, step2: 175000, step3: 200000, step4: 225000,
     step2Trigger: 50000, step3Trigger: 100000, step4Months: 3,
   };
-  state.raise = 3000000; state.founder = 0; state.scenario = 'base'; state.view = 'annual';
+  state.raise = 3000000; state.founder = 0; state.scenario = 'base';
   document.getElementById('raise-amt').value = 3000000;
   document.getElementById('raise-slider').value = 3000000;
   document.getElementById('rw-slider').value = 3000000;
@@ -1522,7 +2400,6 @@ function resetDefaults() {
   };
   Object.entries(defaults).forEach(([id,v]) => { const el = document.getElementById(id); if (el) el.value = v; });
   document.querySelectorAll('.sc-pill').forEach(b => b.classList.toggle('on', b.dataset.sc === 'base'));
-  document.querySelectorAll('.view-toggle button').forEach(b => b.classList.toggle('on', b.dataset.view === 'annual'));
   recalc();
 }
 
@@ -1533,11 +2410,6 @@ function setScenario(s) {
   state.scenario = s;
   document.querySelectorAll('.sc-pill').forEach(b => b.classList.toggle('on', b.dataset.sc === s));
   recalc();
-}
-function setView(v) {
-  state.view = v;
-  document.querySelectorAll('.view-toggle button').forEach(b => b.classList.toggle('on', b.dataset.view === v));
-  renderProForma();
 }
 function onRaiseChange() {
   state.raise = GETN('raise-amt');
@@ -1565,10 +2437,33 @@ function onRwSliderChange() {
   recalc();
 }
 
+
 function recalc() {
   state.founder = GETN('founder-amt');
-  renderSources(); renderUses(); renderLadder();
-  renderProForma(); renderRunway(); renderCompare();
+  renderSources(); renderTranches(); renderUses(); renderLadder();
+  renderProForma(); renderCashFlow(); renderUnitEcon();
+  renderRunway(); renderKPI(); renderCompare(); renderEquity();
+  // Update the locked Y1 OpEx display on Pro Forma tab so users see what it is right now
+  const y1Locked = document.getElementById('opex-y1-locked');
+  if (y1Locked) {
+    const y1Total = state.uses.reduce((s, u) => s + (u.id === 'owner' ? 0 : (u.y1 || 0)), 0);
+    y1Locked.textContent = fmtUSD(y1Total);
+  }
+}
+
+// Pro Forma: apply growth multiplier across Y1 (locked) → Y2 → Y3 → Y4 → Y5
+function autoFillOpEx() {
+  const mult = parseFloat(document.getElementById('opex-mult').value) || 1.4;
+  const y1Total = state.uses.reduce((s, u) => s + (u.id === 'owner' ? 0 : (u.y1 || 0)), 0);
+  const y2 = Math.round(y1Total * mult);
+  const y3 = Math.round(y2 * mult);
+  const y4 = Math.round(y3 * mult);
+  const y5 = Math.round(y4 * mult);
+  document.getElementById('opex-y2').value = y2;
+  document.getElementById('opex-y3').value = y3;
+  document.getElementById('opex-y4').value = y4;
+  document.getElementById('opex-y5').value = y5;
+  recalc();
 }
 
 // Tab switching
