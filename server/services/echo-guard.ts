@@ -25,7 +25,7 @@ const DEFAULT_CONFIG: EchoGuardConfig = {
   enabled: false,
   echoTailGuardMs: 700,
   echoSimilarityThreshold: 0.85,
-  echoWindowMs: 2500,
+  echoWindowMs: 3500,
   maxTutorUtterances: 3,
   debugMode: false,
 };
@@ -34,7 +34,7 @@ export function getEchoGuardConfig(): EchoGuardConfig {
   const enabled = process.env.ECHO_GUARD_ENABLED === 'true';
   const echoTailGuardMs = parseInt(process.env.ECHO_TAIL_GUARD_MS || '700', 10);
   const echoSimilarityThreshold = parseFloat(process.env.ECHO_SIMILARITY_THRESHOLD || '0.85');
-  const echoWindowMs = parseInt(process.env.ECHO_WINDOW_MS || '2500', 10);
+  const echoWindowMs = parseInt(process.env.ECHO_WINDOW_MS || '3500', 10);
   const debugMode = process.env.ECHO_GUARD_DEBUG === 'true';
 
   return {
@@ -319,7 +319,62 @@ export function checkForEcho(
     };
   }
   
-  // Check against recent tutor utterances
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // SHORT-TRANSCRIPT CONTAINMENT CHECK
+  // 
+  // Jaccard/Levenshtein similarity catches near-complete echoes (full sentences
+  // bouncing off speakers) but misses single-word pickups like "Yes." being
+  // transcribed when the tutor said "Yes, I can see it clearly!" — that pair
+  // gets a similarity of ~0.17 and never trips the 0.85 threshold.
+  // 
+  // Loud speakers + sensitive condenser mics (e.g. Shure MV6) frequently
+  // produce these short echoes. If the student transcript is ≤3 words AND
+  // every transcript word appears in a recent tutor utterance AND the tutor
+  // is currently speaking or just finished, treat it as an echo.
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  const transcriptWords = normalizedTranscript.split(' ').filter(w => w.length > 0);
+  if (transcriptWords.length > 0 && transcriptWords.length <= 3) {
+    for (let i = 0; i < Math.min(2, state.lastTutorUtterances.length); i++) {
+      const utterance = state.lastTutorUtterances[i];
+      
+      let deltaMs = 0;
+      let isInWindow = false;
+      
+      if (utterance.ttsPlaybackEndMs === 0) {
+        // Currently playing — always in window if tutor is speaking
+        if (state.tutorPlaybackActive) {
+          isInWindow = true;
+          deltaMs = 0;
+        } else if (state.lastPlaybackEndMs > 0) {
+          deltaMs = now - state.lastPlaybackEndMs;
+          isInWindow = deltaMs <= config.echoWindowMs;
+        }
+      } else {
+        deltaMs = now - utterance.ttsPlaybackEndMs;
+        isInWindow = deltaMs <= config.echoWindowMs;
+      }
+      
+      if (!isInWindow) continue;
+      
+      // Build a Set of utterance words for O(1) containment lookups
+      const utteranceWords = new Set(utterance.normalizedText.split(' ').filter(w => w.length > 0));
+      const allWordsContained = transcriptWords.every(w => utteranceWords.has(w));
+      
+      if (allWordsContained) {
+        console.log(`[EchoGuard] 🚫 echo_short_containment: words=${transcriptWords.length}, deltaMs=${deltaMs}, transcript="${transcript.trim()}", tutorPreview="${utterance.text.substring(0, 50)}..."`);
+        
+        return {
+          isEcho: true,
+          similarity: 1.0,
+          matchedUtterance: utterance.text.substring(0, 100),
+          deltaMs,
+          reason: 'short_containment',
+        };
+      }
+    }
+  }
+  
+  // Check against recent tutor utterances (full similarity check)
   for (let i = 0; i < Math.min(2, state.lastTutorUtterances.length); i++) {
     const utterance = state.lastTutorUtterances[i];
     
