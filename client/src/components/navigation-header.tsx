@@ -122,7 +122,7 @@ export function NavigationHeader() {
                   variant="ghost"
                   size="sm"
                   onClick={() => setLocation("/support")}
-                  className={`hidden xl:inline-flex px-2 lg:px-3 text-sm whitespace-nowrap ${isActive("/support") ? "text-primary font-medium" : "text-muted-foreground"}`}
+                  className={`hidden 2xl:inline-flex px-2 lg:px-3 text-sm whitespace-nowrap ${isActive("/support") ? "text-primary font-medium" : "text-muted-foreground"}`}
                   data-testid="nav-support"
                 >
                   Live Support
@@ -132,7 +132,7 @@ export function NavigationHeader() {
                     variant="ghost"
                     size="sm"
                     onClick={() => setLocation("/admin")}
-                    className={`hidden xl:inline-flex px-2 lg:px-3 text-sm whitespace-nowrap ${isActive("/admin") ? "text-primary font-medium" : "text-muted-foreground"}`}
+                    className={`hidden 2xl:inline-flex px-2 lg:px-3 text-sm whitespace-nowrap ${isActive("/admin") ? "text-primary font-medium" : "text-muted-foreground"}`}
                     data-testid="nav-admin"
                   >
                     Admin
@@ -217,7 +217,7 @@ export function NavigationHeader() {
                 {user?.isAdmin && (
                   <DropdownMenuItem
                     onClick={() => setLocation("/admin")}
-                    className="xl:hidden"
+                    className="2xl:hidden"
                     data-testid="menu-admin"
                   >
                     <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
