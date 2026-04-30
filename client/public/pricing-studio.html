@@ -1783,33 +1783,36 @@ function dlInternal(){
 
 // DEFAULT TERMS
 const DEFAULT_TERMS = `1. SCOPE OF SERVICES
-JIE Mastery, LLC ("Company") agrees to provide voice-first AI tutoring services, including platform access, Longitudinal Student Intelligence System (LSIS) features, administrative dashboard, and associated reporting as described in this proposal.
+JIE Mastery, LLC ("Company") agrees to provide voice-first AI tutoring services, including platform access, Longitudinal Student Intelligence System (LSIS) features, Student Relationship Manager (SRM) functionality, administrative dashboard, and associated reporting as described in this proposal.
 
-2. PAYMENT TERMS
-The annual platform license fee and any pre-purchased minute pools are due within 30 days of contract execution. Overage usage fees are calculated quarterly and invoiced within 15 days of each quarter-end. All invoices are payable within 30 days of receipt. Late payments accrue interest at 1.5% per month.
+2. PAYMENT TERMS AND BILLING
+The default billing cadence is quarterly in advance, with four equal invoices issued at the start of each contract quarter, payable Net 30 from invoice date. The Client may elect annual upfront payment in lieu of quarterly billing; when elected, the full annual amount is invoiced upon contract execution and is payable Net 30, in exchange for a 10% discount applied to that annual invoice. Multi-year commitments receive an additional discount of 5% (2-year term) or 8% (3-year term), applied to each annual invoice. Discounts stack and are reflected in the Annual Investment Proposal Summary in this proposal. Late payments accrue interest at 1.5% per month on past-due balances. Service may be suspended for accounts more than 60 days past due.
 
-3. USAGE AND MINUTE POOLS
-Included minute pools are non-transferable and expire at the end of each contract year unless otherwise agreed in writing. Overage minutes are billed at the rate specified in this proposal. The Company will provide monthly usage reports to the Client's designated administrator.
+3. USAGE POOLS AND OVERAGE
+Included tutor-hour pools are non-transferable and expire at the end of each contract year unless otherwise agreed in writing. Usage above the included pool is billed at the contract overage rate, which is 25% above the per-hour pre-purchase rate (the industry-standard premium). Overages are calculated and invoiced quarterly in arrears, payable Net 30. The Company will notify the Client when usage reaches 80% and 100% of the contracted pool.
 
 4. DATA PRIVACY AND SECURITY
 The Company complies with applicable federal and state data privacy laws including FERPA, COPPA, and applicable state regulations. Student data is used solely to deliver and improve the tutoring service. The Company maintains industry-standard encryption and security practices and will execute a Data Processing Agreement upon request.
 
 5. INTELLECTUAL PROPERTY
-All platform software, AI models, LSIS architecture, and related technology remain the exclusive intellectual property of JIE Mastery, LLC. Client data and student profiles remain the property of the Client institution. The Company is granted a limited license to process Client data solely for service delivery.
+All platform software, AI models, LSIS and SRM architecture, and related technology remain the exclusive intellectual property of JIE Mastery, LLC. Client data and student profiles remain the property of the Client institution. The Company is granted a limited license to process Client data solely for service delivery.
 
-6. TERM AND TERMINATION
-This agreement commences on the contract start date and continues for twelve (12) months. Either party may terminate for material breach with 30 days written notice if the breach is not cured. The Company may suspend service immediately for non-payment of undisputed invoices more than 60 days overdue.
+6. TERM, RENEWAL, AND PRICE ADJUSTMENT
+This agreement commences on the contract start date and continues for the contract term specified in this proposal (12, 24, or 36 months). Upon expiration of the initial term, the agreement renews automatically for successive 12-month terms unless either party provides written notice of non-renewal at least 60 days prior to the end of the then-current term. Fees may be adjusted at each renewal by the lesser of (a) the percentage change in the U.S. Consumer Price Index over the prior 12 months, or (b) 7%, with at least 60 days written notice prior to the renewal term.
 
-7. LIMITATION OF LIABILITY
+7. CANCELLATION AND SATISFACTION GUARANTEE
+The agreement is non-cancelable during the initial term except for material breach by either party that is not cured within 30 days of written notice. As an exception, on the initial contract only (not on renewals), the Client may cancel within 30 days of contract execution for a pro-rated refund. The Company may suspend or terminate service immediately for non-payment of undisputed invoices more than 60 days overdue, and may charge a reinstatement fee plus all past-due amounts to restore service.
+
+8. LIMITATION OF LIABILITY
 In no event shall either party be liable for indirect, incidental, or consequential damages. The Company's total cumulative liability shall not exceed the total fees paid by Client in the twelve months preceding the claim.
 
-8. CONFIDENTIALITY
+9. CONFIDENTIALITY
 Both parties agree to keep the terms of this agreement and any proprietary technical or financial information confidential. This proposal is intended solely for the named recipient and may not be shared without written consent.
 
-9. GOVERNING LAW
+10. GOVERNING LAW
 This agreement shall be governed by and construed in accordance with the laws of the State of Wisconsin, without regard to conflict-of-law provisions. Any disputes shall be resolved in the state or federal courts of Dane County, Wisconsin.
 
-10. ENTIRE AGREEMENT
+11. ENTIRE AGREEMENT
 This proposal, upon acceptance, constitutes the entire agreement between the parties regarding the subject matter herein and supersedes all prior negotiations and understandings.`;
 
 function resetTerms(){g('terms-edit').value=DEFAULT_TERMS;}
@@ -1885,13 +1888,34 @@ function saveQuote(){
   const quote={
     id:Date.now(),
     qn:s.qn,
+    // Client fields
     inst:s.inst,
     contact:s.contact,
+    title:s.title,
+    email:s.email,
     dept:s.dept,
+    notes:s.notes,
+    valid:s.valid,
+    instType:s.instType,
+    // Estimator inputs (the source of truth for reload)
     students:s.students,
     usage:s.usage,
+    cap:s.cap,
+    rate:s.rate,
+    over:s.over,
+    plat:s.plat,
+    targetMargin:s.targetMargin,
     model:s.model,
     modelName:s.modelName,
+    // Payment terms
+    termYears:s.termYears,
+    prepayChecked:s.prepayChecked,
+    // Tier scenarios (for side-by-side proposals)
+    scenarioCount:scenarioCount,
+    scenarios:JSON.parse(JSON.stringify(scenarios)),
+    // Display unit
+    displayUnit:displayUnit,
+    // Computed economics for the saved-quotes table display
     aRev:s.aRev,
     aCost:s.aCost,
     profit:s.profit,
@@ -1903,10 +1927,6 @@ function saveQuote(){
     netProfit:s.netProfit,
     netMargin:s.netMargin,
     otherFixed:s.otherFixed,
-    plat:s.plat,
-    rate:s.rate,
-    over:s.over,
-    cap:s.cap,
     tutorRate:s.tutorRate,
     savedAt:new Date().toISOString(),
   };
@@ -1964,31 +1984,80 @@ function deleteQuote(i){
   setSavedQuotes(quotes);
   renderSavedQuotes();
 }
+// Helper: set form field by id if it exists and the value is defined
+function setVal(id,v){const el=g(id);if(el&&v!==undefined&&v!==null)el.value=v;}
+function setChk(id,v){const el=g(id);if(el)el.checked=!!v;}
+
 function loadQuote(i){
   const quotes=getSavedQuotes();
   const q=quotes[i];
   if(!q)return;
-  // Show detail panel
-  const gmColor=q.gm>=70?'#15803d':q.gm>=50?'#b45309':'#b91c1c';
-  const netColor=q.netMargin>=60?'#0369a1':q.netMargin>=40?'#b45309':'#b91c1c';
-  const d=new Date(q.savedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
-  alert(
-    'Quote: '+q.qn+'\n'
-    +'Institution: '+q.inst+'\n'
-    +'Contact: '+(q.contact||'—')+'\n'
-    +'Students: '+q.students.toLocaleString()+'\n'
-    +'Model: '+q.modelName+'\n'
-    +'───────────────────\n'
-    +'Annual Revenue: '+fmt(q.aRev)+'\n'
-    +'Annual Cost: '+fmt(q.aCost)+'\n'
-    +'Gross Profit: '+fmt(q.profit)+' ('+q.gm.toFixed(1)+'%)\n'
-    +'Commission ('+Math.round(q.commPct*100)+'%): '+fmt(q.commissionAnnual)+'/yr ('+fmt(q.commissionMonthly)+'/mo)\n'
-    +(q.otherFixed>0?'Other Fixed: '+fmt(q.otherFixed)+'/mo ('+fmt(q.otherFixed*12)+'/yr)\n':'')
-    +'Net Revenue: '+fmt(q.netRevenue)+'\n'
-    +'Net Margin: '+q.netMargin.toFixed(1)+'%\n'
-    +'───────────────────\n'
-    +'Saved: '+d
-  );
+
+  // 1) Restore Estimator numeric inputs
+  setVal('students',q.students);
+  setVal('usage',q.usage);
+  setVal('cap',q.cap);
+  setVal('rate',q.rate);
+  setVal('overage',q.over);
+  setVal('platform',q.plat);
+  if(q.targetMargin!==undefined) setVal('margin',q.targetMargin);
+
+  // 2) Restore pricing model (Hybrid / Tiered / Metered)
+  if(q.model){ setM(q.model); }
+
+  // 3) Restore display unit (min vs hrs)
+  if(q.displayUnit){ setUnit(q.displayUnit); }
+
+  // 4) Restore institution type — match by visible text since stored value is the option text
+  if(q.instType){
+    const sel=g('insttype');
+    if(sel){
+      for(let j=0;j<sel.options.length;j++){
+        if(sel.options[j].text===q.instType){sel.selectedIndex=j;break;}
+      }
+    }
+  }
+
+  // 5) Restore Quote Builder client fields
+  setVal('q-inst',q.inst||'');
+  setVal('q-contact',q.contact||'');
+  setVal('q-title',q.title||'');
+  setVal('q-email',q.email||'');
+  setVal('q-dept',q.dept||'');
+  setVal('q-notes',q.notes||'');
+  if(q.valid) setVal('q-valid',q.valid);
+
+  // 6) Restore Payment Terms
+  if(q.termYears) setVal('q-term',String(q.termYears));
+  setChk('q-prepay',q.prepayChecked);
+
+  // 7) Restore tier scenarios
+  if(q.scenarioCount && q.scenarios && Array.isArray(q.scenarios)){
+    scenarios=JSON.parse(JSON.stringify(q.scenarios));
+    setScenarioCount(q.scenarioCount);
+  } else {
+    // Older saved quotes without tier data — reset to single tier
+    scenarios=[
+      {label:'Tier 1'},
+      {label:'Tier 2',students:null,rate:null,over:null,overSync:true},
+      {label:'Tier 3',students:null,rate:null,over:null,overSync:true},
+    ];
+    setScenarioCount(1);
+  }
+
+  // 8) Pin the original quote number (don't generate a new one)
+  if(q.qn){ quoteNum=q.qn; }
+
+  // 9) Re-run all live calculations
+  update();
+  updateQPrev();
+
+  // 10) Jump to Quote Builder tab so the user sees the loaded client info
+  showTab('q');
+
+  // 11) Status feedback in Saved Quotes status bar
+  const sq=g('genstatus');
+  if(sq){sq.className='gst on';sq.textContent='✓ Loaded quote '+q.qn+' — '+q.inst+'. Switched to Quote Builder.';setTimeout(()=>{sq.className='gst';},4000);}
 }
 function clearAllQuotes(){
   if(!confirm('Delete ALL saved quotes? This cannot be undone.'))return;
