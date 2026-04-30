@@ -959,6 +959,7 @@ const PRESETS = {
     ownerLadder: {
       base: 150000, step2: 175000, step3: 200000, step4: 225000,
       step2Trigger: 50000, step3Trigger: 100000, step4Months: 3,
+      step2Mo: 4, step3Mo: 8, step4Mo: 14,
     },
     uses: [
       { id: 'owner',       label: 'Owner Salary (auto from ladder)',      cat: 'salaries',    y1: 0,      note: 'Auto-computed', locked: true },
@@ -1009,6 +1010,7 @@ const PRESETS = {
     ownerLadder: {
       base: 150000, step2: 175000, step3: 200000, step4: 225000,
       step2Trigger: 50000, step3Trigger: 100000, step4Months: 3,
+      step2Mo: 6, step3Mo: 12, step4Mo: 24,
     },
     uses: null,  // null = use base preset's uses unchanged
     tranches: [
@@ -1039,6 +1041,7 @@ const PRESETS = {
     ownerLadder: {
       base: 150000, step2: 175000, step3: 200000, step4: 225000,
       step2Trigger: 50000, step3Trigger: 100000, step4Months: 3,
+      step2Mo: 3, step3Mo: 6, step4Mo: 10,
     },
     uses: null,  // same uses as base
     tranches: [
@@ -1106,9 +1109,12 @@ let state = {
   tranches: JSON.parse(JSON.stringify(DEFAULT_TRANCHES)),
   ownerLadder: {
     base: 150000, step2: 175000, step3: 200000, step4: 225000,
-    step2Trigger: 50000,   // monthly revenue
-    step3Trigger: 100000,
-    step4Months: 3,        // EBITDA breakeven for N consecutive months
+    step2Trigger: 50000,   // monthly revenue (descriptive label)
+    step3Trigger: 100000,  // (descriptive label)
+    step4Months: 3,        // (descriptive label)
+    step2Mo: 4,            // override: month when Step 2 fires
+    step3Mo: 8,            // override: month when Step 3 fires
+    step4Mo: 14,           // override: month when Step 4 fires
   },
 };
 
@@ -1284,27 +1290,30 @@ function compute() {
     const totalCogs = cogsProd + cogsInst + cogsCons + cogsComm;
     const grossProfit = totalRev - totalCogs;
 
-    // OWNER LADDER — check triggers monthly
+    // OWNER LADDER — fire at manually-set months (state.ownerLadder.stepNMo)
+    // These are 1-indexed (Mo 1 = first month). m is 0-indexed in the loop.
     const monthlyOwner = ownerCurrent / 12;
-    if (totalRev >= state.ownerLadder.step2Trigger && stepFiredAt[2] == null) {
+    const curMonth = m + 1;
+    if (state.ownerLadder.step2Mo && curMonth >= state.ownerLadder.step2Mo && stepFiredAt[2] == null) {
       ownerCurrent = state.ownerLadder.step2;
-      stepFiredAt[2] = m + 1;
+      stepFiredAt[2] = curMonth;
     }
-    if (totalRev >= state.ownerLadder.step3Trigger && grossProfit > 0 && stepFiredAt[3] == null) {
+    if (state.ownerLadder.step3Mo && curMonth >= state.ownerLadder.step3Mo && stepFiredAt[3] == null) {
       ownerCurrent = state.ownerLadder.step3;
-      stepFiredAt[3] = m + 1;
+      stepFiredAt[3] = curMonth;
+    }
+    if (state.ownerLadder.step4Mo && curMonth >= state.ownerLadder.step4Mo && stepFiredAt[4] == null) {
+      ownerCurrent = state.ownerLadder.step4;
+      stepFiredAt[4] = curMonth;
     }
 
     const monthlyFixedOpEx = monthlyOpExByYear[yr] * sc.cost;
     const opEx = monthlyFixedOpEx + monthlyOwner;
     const ebitda = grossProfit - opEx;
 
+    // Track consecutive EBITDA+ months for descriptive purposes
     if (ebitda > 0) {
       consecBreakeven++;
-      if (consecBreakeven >= state.ownerLadder.step4Months && stepFiredAt[4] == null) {
-        ownerCurrent = state.ownerLadder.step4;
-        stepFiredAt[4] = m + 1;
-      }
     } else {
       consecBreakeven = 0;
     }
@@ -1656,36 +1665,45 @@ function renderLadder() {
   const L = state.ownerLadder;
   const steps = [
     {
-      n: 1, salaryField: 'base', salary: L.base, fired: true, mo: 1,
+      n: 1, salaryField: 'base', salary: L.base, fired: true, mo: 1, moField: null,
       trigHtml: `Year 1 baseline (raise close)`,
     },
     {
-      n: 2, salaryField: 'step2', salary: L.step2, fired: !!fired[2], mo: fired[2],
-      trigHtml: `Monthly revenue ≥ <span class="ladder-pfx"><span>$</span><input type="number" class="ladder-input trig" value="${L.step2Trigger}" step="5000" onchange="updateLadder('step2Trigger', this.value)"></span>`,
+      n: 2, salaryField: 'step2', salary: L.step2, fired: !!fired[2], mo: L.step2Mo, moField: 'step2Mo',
+      trigHtml: `Monthly revenue ≥ <span class="ladder-pfx"><span>$</span><input type="number" class="ladder-input trig" value="${L.step2Trigger}" step="5000" onchange="updateLadder('step2Trigger', this.value)"></span> <span style="font-size:10.5px;color:var(--tx3);font-style:italic">(narrative only — month set on right)</span>`,
     },
     {
-      n: 3, salaryField: 'step3', salary: L.step3, fired: !!fired[3], mo: fired[3],
-      trigHtml: `Monthly rev ≥ <span class="ladder-pfx"><span>$</span><input type="number" class="ladder-input trig" value="${L.step3Trigger}" step="5000" onchange="updateLadder('step3Trigger', this.value)"></span> &amp; GP &gt; 0`,
+      n: 3, salaryField: 'step3', salary: L.step3, fired: !!fired[3], mo: L.step3Mo, moField: 'step3Mo',
+      trigHtml: `Monthly rev ≥ <span class="ladder-pfx"><span>$</span><input type="number" class="ladder-input trig" value="${L.step3Trigger}" step="5000" onchange="updateLadder('step3Trigger', this.value)"></span> &amp; GP &gt; 0 <span style="font-size:10.5px;color:var(--tx3);font-style:italic">(narrative only)</span>`,
     },
     {
-      n: 4, salaryField: 'step4', salary: L.step4, fired: !!fired[4], mo: fired[4],
-      trigHtml: `EBITDA breakeven (<input type="number" class="ladder-input tiny" value="${L.step4Months}" min="1" max="12" onchange="updateLadder('step4Months', this.value)"> consec. months)`,
+      n: 4, salaryField: 'step4', salary: L.step4, fired: !!fired[4], mo: L.step4Mo, moField: 'step4Mo',
+      trigHtml: `EBITDA breakeven (<input type="number" class="ladder-input tiny" value="${L.step4Months}" min="1" max="12" onchange="updateLadder('step4Months', this.value)"> consec. months) <span style="font-size:10.5px;color:var(--tx3);font-style:italic">(narrative only)</span>`,
     },
   ];
 
-  document.getElementById('ladder').innerHTML = steps.map(s => `
-    <div class="ladder-step ${s.fired ? 'fired' : ''}">
-      <div class="ladder-num">${s.n}</div>
-      <div style="flex:1;min-width:0">
-        <div class="ladder-comp">
-          <span class="ladder-pfx"><span>$</span><input type="number" class="ladder-input" value="${s.salary}" step="5000" onchange="updateLadder('${s.salaryField}', this.value)"></span>
-          <span style="font-size:11px;color:var(--tx3);font-weight:600">/yr</span>
+  document.getElementById('ladder').innerHTML = steps.map(s => {
+    // Step 1 is locked at Mo 1; others have an editable month input
+    const moHtml = s.n === 1
+      ? `<div class="ladder-mo">Active</div>`
+      : `<div class="ladder-mo" style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">
+           <span style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--tx3)">Fires Mo</span>
+           <input type="number" class="ladder-input" min="2" max="60" value="${s.mo || ''}" onchange="updateLadder('${s.moField}', this.value)" style="width:62px;text-align:center;font-size:13px;font-weight:700">
+         </div>`;
+    return `
+      <div class="ladder-step ${s.fired ? 'fired' : ''}">
+        <div class="ladder-num">${s.n}</div>
+        <div style="flex:1;min-width:0">
+          <div class="ladder-comp">
+            <span class="ladder-pfx"><span>$</span><input type="number" class="ladder-input" value="${s.salary}" step="5000" onchange="updateLadder('${s.salaryField}', this.value)"></span>
+            <span style="font-size:11px;color:var(--tx3);font-weight:600">/yr</span>
+          </div>
+          <div class="ladder-trig">${s.trigHtml}</div>
         </div>
-        <div class="ladder-trig">${s.trigHtml}</div>
+        ${moHtml}
       </div>
-      <div class="ladder-mo">${s.fired ? (s.mo === 1 ? 'Active' : 'Mo ' + s.mo) : 'Not yet'}</div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 }
 
 function updateLadder(field, value) {
@@ -1917,9 +1935,12 @@ function renderUnitEcon() {
   const avgLifetimeMonths = churn > 0 ? 1 / churn : 36;
   const ltv = grossPerUser * avgLifetimeMonths;
 
-  // CAC — Year 1 marketing + sales spend per net new user added in Year 1
-  const y1MarketingSales = state.uses.reduce((s,u) => {
-    if (['marketing','sales','commissions'].includes(u.cat)) return s + (u.y1 || 0);
+  // CAC — Year 1 CONSUMER-targeted marketing spend per consumer net new user added in Year 1.
+  // CRITICAL: previously this summed marketing+sales+commissions, but sales/commissions
+  // budgets target institutional & commercial deals (different acquisition motion), so they
+  // shouldn't count toward consumer CAC. Using marketing only gives an honest blended consumer CAC.
+  const y1ConsumerMarketing = state.uses.reduce((s,u) => {
+    if (u.cat === 'marketing') return s + (u.y1 || 0);
     return s;
   }, 0);
   const y1NetNew = months.slice(0, 12).reduce((s,m,i,arr) => {
@@ -1928,7 +1949,7 @@ function renderUnitEcon() {
   }, 0);
   // Fall back to product net new input × 12 if model trajectory is weird
   const cacDenom = Math.max(1, y1NetNew);
-  const cac = y1MarketingSales / cacDenom;
+  const cac = y1ConsumerMarketing / cacDenom;
   const ltvCac = cac > 0 ? ltv / cac : 0;
   const paybackMonths = grossPerUser > 0 ? cac / grossPerUser : 0;
 
@@ -1944,21 +1965,27 @@ function renderUnitEcon() {
   const y1NewArr = m12.totalRev * 12 - 0;  // ARR end of Y1 vs starting ARR (≈0)
   const burnMultiple = y1NewArr > 0 ? y1Burn / y1NewArr : null;
 
-  // Rule of 40 — Year 2 (most stable measurement window)
-  const y2Rev = months.slice(12, 24).reduce((s,m) => s + m.totalRev, 0);
-  const y2EBITDA = months.slice(12, 24).reduce((s,m) => s + m.ebitda, 0);
-  const y2EBITDAMargin = y2Rev > 0 ? y2EBITDA / y2Rev : 0;
-  const ruleOf40 = arrGrowthY2 + y2EBITDAMargin;
+  // Rule of 40 — computed for Y5 (mature-state) instead of Y2 (small-base distortion).
+  // Y2 Rule of 40 is mathematically real but artificially high in any early-stage company
+  // because Y1 base is tiny. Y5 shows what the business looks like at scale, which is what
+  // sophisticated investors actually want to see.
+  const m48 = months[47];
+  const arr48 = m48.totalRev * 12;
+  const arrGrowthY5 = arr48 > 0 ? (arr60 - arr48) / arr48 : 0;
+  const y5Rev = months.slice(48, 60).reduce((s,m) => s + m.totalRev, 0);
+  const y5EBITDA = months.slice(48, 60).reduce((s,m) => s + m.ebitda, 0);
+  const y5EBITDAMargin = y5Rev > 0 ? y5EBITDA / y5Rev : 0;
+  const ruleOf40Y5 = arrGrowthY5 + y5EBITDAMargin;
 
   const items = [
     { l: 'LTV (Consumer)', v: fmtUSD(ltv), hint: `${avgLifetimeMonths.toFixed(0)}-mo avg lifetime × $${grossPerUser.toFixed(0)} GP/mo` },
-    { l: 'CAC (Year 1 blended)', v: fmtUSD(cac), hint: `Y1 marketing+sales ÷ net new users` },
+    { l: 'CAC (Year 1 consumer)', v: fmtUSD(cac), hint: `Y1 consumer-targeted marketing ÷ net new consumer users` },
     { l: 'LTV : CAC Ratio', v: ltvCac.toFixed(1) + ':1', hint: ltvCac >= 5 ? '✓ Strong' : ltvCac >= 3 ? '✓ Healthy' : '⚠ Below 3:1', cls: ltvCac >= 3 ? 'pos' : 'neg' },
     { l: 'CAC Payback', v: paybackMonths.toFixed(1) + ' mo', hint: paybackMonths <= 12 ? '✓ Fast' : paybackMonths <= 18 ? 'Healthy' : '⚠ Slow' },
     { l: 'Gross Margin (Consumer)', v: fmtPct(grossMarginPct), hint: 'Revenue minus per-user variable cost' },
     { l: 'ARR Growth Y1→Y2', v: fmtPct(arrGrowthY2), hint: arrGrowthY2 >= 1 ? '✓ Triple-digit' : 'Reference: investor target ≥100%' },
     { l: 'Burn Multiple (Y1)', v: burnMultiple != null ? burnMultiple.toFixed(2) : '—', hint: burnMultiple != null && burnMultiple <= 2 ? '✓ Efficient' : burnMultiple != null && burnMultiple <= 4 ? 'Acceptable' : '⚠ Capital-hungry' },
-    { l: 'Rule of 40 (Y2)', v: fmtPct(ruleOf40), hint: ruleOf40 >= 0.4 ? '✓ Above 40%' : 'Below 40% threshold', cls: ruleOf40 >= 0.4 ? 'pos' : '' },
+    { l: 'Rule of 40 (Y5 mature)', v: fmtPct(ruleOf40Y5), hint: ruleOf40Y5 >= 0.4 ? '✓ Above 40% at maturity' : 'Below 40% at maturity', cls: ruleOf40Y5 >= 0.4 ? 'pos' : '' },
   ];
 
   document.getElementById('unit-econ-grid').innerHTML = items.map(it => `
@@ -2626,6 +2653,10 @@ function applySavedState(s) {
   });
   if (s.ownerLadder) {
     state.ownerLadder = JSON.parse(JSON.stringify(s.ownerLadder));
+    // Pre-v12.2 saves had no step2Mo/step3Mo/step4Mo. Backfill with sensible defaults.
+    if (state.ownerLadder.step2Mo == null) state.ownerLadder.step2Mo = 4;
+    if (state.ownerLadder.step3Mo == null) state.ownerLadder.step3Mo = 8;
+    if (state.ownerLadder.step4Mo == null) state.ownerLadder.step4Mo = 14;
   }
   if (s.tranches) {
     state.tranches = JSON.parse(JSON.stringify(s.tranches));
@@ -2894,6 +2925,11 @@ function buildAutoExecutiveSummary() {
   const y2Rev = months.slice(12, 24).reduce((s,m) => s + m.totalRev, 0);
   const y2GP = months.slice(12, 24).reduce((s,m) => s + m.grossProfit, 0);
   const y2GM = y2Rev > 0 ? y2GP / y2Rev : 0;
+  // Y5 revenue by stream (months 49-60) — paired with cumulative onboarded counts
+  // to avoid the "55 contracts × $250K ACV ≠ $9.4M Y5 revenue?" naive-math confusion.
+  // Y5 revenue reflects average ramp state across the cohort, not steady-state run rate.
+  const y5InstRev = months.slice(48, 60).reduce((s,m) => s + (m.revInst || 0), 0);
+  const y5CommRev = months.slice(48, 60).reduce((s,m) => s + (m.revComm || 0), 0);
   const enabled = state.tranches.filter(t => t.enabled);
   const totalTranche = enabled.reduce((s,t) => s+t.amount, 0);
 
@@ -2904,7 +2940,7 @@ function buildAutoExecutiveSummary() {
     ``,
     `Under the ${SCEN[state.scenario].label} scenario, the business reaches EBITDA-positive status in ${r.firstProfitMonth ? 'Month ' + r.firstProfitMonth : 'beyond the 60-month projection window'}. By the end of Year 5, projected ARR reaches ${fmtUSDK(arr60)}, representing a ${(arrCAGR * 100).toFixed(0)}% compound annual growth rate from end-of-Year-1 ARR. Year 2 gross margin is projected at ${(y2GM * 100).toFixed(0)}%, consistent with healthy SaaS benchmarks for AI-heavy products.`,
     ``,
-    `Cumulative 5-year revenue is projected at ${fmtUSDK(tot5y)} with cumulative EBITDA of ${fmtUSDK(totEB)}. Minimum cash balance between tranches is ${fmtUSDK(r.minCashBetweenTranches)}, providing adequate operating cushion through the funding ladder. The model assumes ${enabled.length} institutional contracts, ${m60.commOnboarded} commercial deployments, and ${fmtNum(m60.users)} paying consumer users by Month 60.`,
+    `Cumulative 5-year revenue is projected at ${fmtUSDK(tot5y)} with cumulative EBITDA of ${fmtUSDK(totEB)}. Minimum cash balance between tranches is ${fmtUSDK(r.minCashBetweenTranches)}, providing adequate operating cushion through the funding ladder. The model projects onboarding ${m60.instOnboarded} institutional contracts cumulatively (generating ${fmtUSDK(y5InstRev)} in Year 5 institutional revenue at average ramp state) and ${m60.commOnboarded} commercial deployments (generating ${fmtUSDK(y5CommRev)} in Year 5 commercial revenue), alongside ${fmtNum(m60.users)} paying consumer users by Month 60.`,
     ``,
     `This package documents the underlying assumptions, source-and-use of investor capital, multi-year operational forecast, cash flow trajectory, and unit economics supporting the raise.`,
   ].join('\n');
@@ -3277,15 +3313,15 @@ async function renderReportPDF(mode, summaryText) {
   const grossMarginPct = arpu > 0 ? grossPerUser / arpu : 0;
   const avgLifetimeMonths = churn > 0 ? 1 / churn : 36;
   const ltv = grossPerUser * avgLifetimeMonths;
-  const y1MarketingSales = state.uses.reduce((s,u) => {
-    if (['marketing','sales','commissions'].includes(u.cat)) return s + (u.y1 || 0);
+  const y1ConsumerMarketing = state.uses.reduce((s,u) => {
+    if (u.cat === 'marketing') return s + (u.y1 || 0);
     return s;
   }, 0);
   const y1NetNew = r.months.slice(0,12).reduce((s,m,i,arr) => {
     if (i === 0) return s + Math.max(0, m.users - GETN('prod-start'));
     return s + Math.max(0, m.users - arr[i-1].users);
   }, 0);
-  const cac = y1NetNew > 0 ? y1MarketingSales / y1NetNew : 0;
+  const cac = y1NetNew > 0 ? y1ConsumerMarketing / y1NetNew : 0;
   const ltvCac = cac > 0 ? ltv / cac : 0;
   const paybackMo = grossPerUser > 0 ? cac / grossPerUser : 0;
   const m12 = r.months[11], m60 = r.months[59];
@@ -3293,16 +3329,29 @@ async function renderReportPDF(mode, summaryText) {
   const arrCAGR = arr12 > 0 ? Math.pow(arr60 / arr12, 1/4) - 1 : 0;
   const y2Rev = r.months.slice(12,24).reduce((s,m)=>s+m.totalRev,0);
   const y2GP = r.months.slice(12,24).reduce((s,m)=>s+m.grossProfit,0);
-  const y2EB = r.months.slice(12,24).reduce((s,m)=>s+m.ebitda,0);
-  const y2EBM = y2Rev > 0 ? y2EB/y2Rev : 0;
-  const ruleOf40 = (arr24 => (arr24 - arr12)/Math.max(1,arr12) + y2EBM)(r.months[23].totalRev * 12);
+  // Compute Rule of 40 trajectory across all 5 years
+  // Y_n Rule of 40 = (ARR growth Y(n-1)→Yn) + (Yn EBITDA margin)
+  function r40ForYear(yr) {
+    if (yr < 2 || yr > 5) return 0;
+    const monthCurr = r.months[yr * 12 - 1].totalRev * 12;
+    const monthPrev = r.months[(yr - 1) * 12 - 1].totalRev * 12;
+    const arrGrowth = monthPrev > 0 ? (monthCurr - monthPrev) / monthPrev : 0;
+    const yrRev = r.months.slice((yr-1)*12, yr*12).reduce((s,m)=>s+m.totalRev,0);
+    const yrEB = r.months.slice((yr-1)*12, yr*12).reduce((s,m)=>s+m.ebitda,0);
+    const ebMargin = yrRev > 0 ? yrEB/yrRev : 0;
+    return arrGrowth + ebMargin;
+  }
+  const r40Y2 = r40ForYear(2);
+  const r40Y3 = r40ForYear(3);
+  const r40Y4 = r40ForYear(4);
+  const r40Y5 = r40ForYear(5);
 
   doc.autoTable({
     startY: y,
     head: [['Metric','Value','Benchmark / Notes']],
     body: [
       ['LTV (Consumer)', fmtUSD(ltv), `${avgLifetimeMonths.toFixed(0)}-mo lifetime × $${grossPerUser.toFixed(0)} GP/mo`],
-      ['CAC (Year 1 blended)', fmtUSD(cac), 'Marketing+Sales+Commissions ÷ net new users'],
+      ['CAC (Year 1 consumer)', fmtUSD(cac), 'Consumer marketing spend ÷ consumer net new users'],
       ['LTV : CAC Ratio', ltvCac.toFixed(1) + ':1', ltvCac >= 5 ? 'Strong (≥5:1)' : ltvCac >= 3 ? 'Healthy (≥3:1)' : 'Below 3:1 threshold'],
       ['CAC Payback', paybackMo.toFixed(1) + ' mo', paybackMo <= 12 ? 'Fast (≤12 mo)' : paybackMo <= 18 ? 'Healthy' : 'Slow'],
       ['Gross Margin (Consumer)', fmtPct(grossMarginPct), 'Revenue minus per-user variable cost'],
@@ -3310,7 +3359,8 @@ async function renderReportPDF(mode, summaryText) {
       ['ARR @ Year 1', fmtUSDK(arr12), 'End-of-Y1 monthly run rate × 12'],
       ['ARR @ Year 5', fmtUSDK(arr60), 'End-of-Y5 monthly run rate × 12'],
       ['ARR CAGR Y1→Y5', fmtPct(arrCAGR), 'Compound annual growth in run-rate revenue'],
-      ['Rule of 40 (Y2)', fmtPct(ruleOf40), ruleOf40 >= 0.4 ? 'Above 40% threshold' : 'Below 40% threshold'],
+      ['Rule of 40 (Y5 mature)', fmtPct(r40Y5), r40Y5 >= 0.4 ? 'Above 40% at maturity' : 'Below 40% at maturity'],
+      ['Rule of 40 trajectory', `Y2: ${fmtPct(r40Y2)} → Y3: ${fmtPct(r40Y3)} → Y4: ${fmtPct(r40Y4)} → Y5: ${fmtPct(r40Y5)}`, 'Healthy deceleration into mature efficiency'],
     ],
     headStyles: { fillColor:[200,28,28], textColor:255 },
     columnStyles: { 1: { halign:'right' } },
