@@ -203,7 +203,7 @@ tr:last-child td{border-bottom:none;font-weight:700}
 <div class="f"><div class="fl">Target Gross Margin (%)</div><input type="number" id="margin" value="70" min="1" max="99" step="0.1" placeholder="e.g. 72"></div>
 <div class="f"><div class="fl">Annual Platform / License Fee</div><div class="pfx"><span>$</span><input type="number" id="platform" value="10000" min="0" step="100" placeholder="e.g. 25000"></div><div class="fhint">Flat fee regardless of usage. Covers infra, LSIS reporting, onboarding.</div></div>
 <div class="f"><div class="fl">Traditional Tutor Rate ($/hr) <span style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— for value comparison</span></div><div class="pfx"><span>$</span><input type="number" id="tutor-rate" value="25" min="1" step="1" placeholder="25"></div><div class="fhint">D1 athletic tutors avg $15–$35/hr. Adjust to match what the institution actually pays.</div></div>
-<div class="f"><div class="fl">Commission (% of Profit)</div><div class="pfx"><span>%</span><input type="number" id="commission-pct" value="25" min="0" max="100" step="1" placeholder="25"></div><div class="fhint">Sales commission as a percentage of gross profit. Payable monthly (30-day cancellation).</div></div>
+<div class="f"><div class="fl">Commission (% of Sales)</div><div class="pfx"><span>%</span><input type="number" id="commission-pct" value="10" min="0" max="100" step="1" placeholder="10"></div><div class="fhint">Sales commission as a percentage of annual revenue. Payable monthly (30-day cancellation). Adjustable per deal.</div></div>
 <div class="f"><div class="fl">Other Fixed Costs ($/month) <span style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— optional</span></div><div class="pfx"><span>$</span><input type="number" id="other-fixed" value="0" min="0" step="50" placeholder="0"></div><div class="fhint">Wages, marketing, insurance, or other monthly overhead not captured in API costs.</div></div>
 <div class="div"></div>
 <div class="f"><div class="fl">Suggested List Price (auto-calculated)</div><div style="font-family:DM Serif Display,serif;font-size:26px;color:var(--red);font-weight:400;letter-spacing:-.02em" id="suggest-price">-</div><div class="fhint" id="suggest-note">Calculated to hit your target margin at current usage.</div></div>
@@ -723,11 +723,11 @@ function update(){
   g('macost2').textContent=fmt(mCost)+' / month';
   g('msug').textContent=fmt(suggested);
 
-  // Commission & Net Revenue
+  // Commission & Net Revenue (% of annual sales/revenue)
   const commPct = (+g('commission-pct').value||0)/100;
   const otherFixed = +g('other-fixed').value||0;
   const otherFixedAnnual = otherFixed*12;
-  const commissionAnnual = profit * commPct;
+  const commissionAnnual = aRev * commPct;
   const commissionMonthly = commissionAnnual/12;
   const netRevenue = aRev - commissionAnnual;
   const netProfit = aRev - aCost - commissionAnnual - otherFixedAnnual;
@@ -907,7 +907,7 @@ function getState(){
   const commPct=(+g('commission-pct').value||0)/100;
   const otherFixed=+g('other-fixed').value||0;
   const otherFixedAnnual=otherFixed*12;
-  const commissionAnnual=profit*commPct;
+  const commissionAnnual=aRev*commPct;
   const commissionMonthly=commissionAnnual/12;
   const netRevenue=aRev-commissionAnnual;
   const netProfit=aRev-aCost-commissionAnnual-otherFixedAnnual;
@@ -1450,7 +1450,7 @@ function dlInternal(){
     ['Client:',s.inst||'—'],['Contact:',s.contact||'—'],
     ['Students:',s.students.toLocaleString()],['Avg Usage:',s.usage+' min/user/mo'],
     ['Model:',s.modelName],['Target Margin:',s.targetMargin+'%'],
-    ['Commission:',Math.round(s.commPct*100)+'% of profit'],['Other Fixed:',s.otherFixed>0?fmt(s.otherFixed)+'/mo':'None'],
+    ['Commission:',Math.round(s.commPct*100)+'% of sales'],['Other Fixed:',s.otherFixed>0?fmt(s.otherFixed)+'/mo':'None'],
   ];
   let sx=M+4,sy=y+10;
   sumItems.forEach(([lbl,val],i)=>{
@@ -1553,7 +1553,7 @@ function dlInternal(){
   doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...GRAY);
 
   const commAnalysis=[
-    'Sales commission rate: '+Math.round(s.commPct*100)+'% of gross profit ('+fmt(s.profit)+').',
+    'Sales commission rate: '+Math.round(s.commPct*100)+'% of annual revenue ('+fmt(s.aRev)+').',
     'Commission payable: '+fmt(s.commissionAnnual)+'/yr — '+fmt(s.commissionMonthly)+'/month (payable monthly, 30-day cancellation).',
   ];
   if(s.otherFixed>0){
