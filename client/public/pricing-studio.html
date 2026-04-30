@@ -1235,11 +1235,11 @@ function dlQuote(){
     function tutorHrsCompact(c){
       if(displayUnit==='hr'){
         const monMin=c.monthlyMin, yrMin=monMin*12;
-        return (monMin/60).toLocaleString(undefined,{maximumFractionDigits:0})+' hrs/mo  ·  '
+        return (monMin/60).toLocaleString(undefined,{maximumFractionDigits:0})+' hrs/mo  |  '
               +(yrMin/60).toLocaleString(undefined,{maximumFractionDigits:0})+' hrs/yr';
       } else {
         const monMin=c.monthlyMin, yrMin=monMin*12;
-        return monMin.toLocaleString()+' min/mo  ·  '+yrMin.toLocaleString()+' min/yr';
+        return monMin.toLocaleString()+' min/mo  |  '+yrMin.toLocaleString()+' min/yr';
       }
     }
     const rows=[
@@ -1310,8 +1310,8 @@ function dlQuote(){
       case 'commit': { const mc=Math.max(c.plat,c.monthlyMin*3*c.over); return fmt(mc); }
       case 'addl': return cfOverage(c.over);
       case 'subtotal': return fmt(c.aRev);
-      case 'multiyear': return '−'+fmt(c.aRev*myPct);
-      case 'prepay': return '−'+fmt(c.aRev*ppPct);
+      case 'multiyear': return '-'+fmt(c.aRev*myPct);
+      case 'prepay': return '-'+fmt(c.aRev*ppPct);
       case 'total': return fmt(c.aRev*(1-discPct));
       default: return '';
     }
