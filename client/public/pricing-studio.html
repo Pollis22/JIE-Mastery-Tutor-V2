@@ -246,6 +246,15 @@ tr:last-child td{border-bottom:none;font-weight:700}
 <div class="card"><div class="ch"><span class="chdot"></span>Annual Cost &amp; Revenue Breakdown</div>
 <table><thead><tr><th>Line Item</th><th style="text-align:right">Monthly</th><th style="text-align:right">Annual</th></tr></thead>
 <tbody id="breakdown"></tbody></table></div>
+<div class="card" style="margin-top:14px"><div class="ch"><span class="chdot"></span>Tiered Pricing for Customer Quote <span style="text-transform:none;letter-spacing:0;color:var(--tx3);font-weight:500;margin-left:8px">— Optional. Show 1, 2 or 3 tiers side-by-side in the proposal PDF.</span></div>
+<div style="display:flex;gap:6px;margin-bottom:12px">
+<button type="button" class="chip sc-btn on" data-n="1" onclick="setScenarioCount(1)" style="padding:7px 16px;font-size:12px">1 Tier</button>
+<button type="button" class="chip sc-btn" data-n="2" onclick="setScenarioCount(2)" style="padding:7px 16px;font-size:12px">2 Tiers</button>
+<button type="button" class="chip sc-btn" data-n="3" onclick="setScenarioCount(3)" style="padding:7px 16px;font-size:12px">3 Tiers</button>
+</div>
+<div style="font-size:11px;color:var(--tx3);margin-bottom:10px;line-height:1.55"><strong style="color:var(--tx2)">Tier 1</strong> always uses your Estimator inputs above and drives the real cost / margin / commission numbers in the internal report. <strong style="color:var(--tx2)">Tier 2 and Tier 3</strong> are customer-facing only — set just the headline price and overage rate. Per-user usage inherits from Tier 1.</div>
+<div id="scenario-rows-host"></div>
+</div>
 <div class="btnrow"><button class="btn bprim" onclick="showTab('q')">&#9998; Build Quote</button><button class="btn bsec" onclick="dlInternal()">&#8595; Download Internal Report</button></div>
 </div>
 <div class="tab-s" id="ts-q">
@@ -255,16 +264,6 @@ tr:last-child td{border-bottom:none;font-weight:700}
 <div class="switch"><input type="checkbox" id="unit-toggle" onchange="setUnit(this.checked?'hr':'min')"><span class="slider"></span></div>
 <label id="lbl-hr" onclick="setUnit('hr')">Hours</label>
 <span style="font-size:11px;color:var(--tx3);margin-left:6px">Client-facing PDF output unit</span>
-</div>
-<div class="card" style="margin-bottom:16px">
-<div class="ch"><span class="chdot"></span>Pricing Scenarios <span style="text-transform:none;letter-spacing:0;color:var(--tx3);font-weight:500;margin-left:8px">— Show one quote, or compare 2-3 tiers side-by-side</span></div>
-<div style="display:flex;gap:6px;margin-bottom:14px">
-<button type="button" class="chip sc-btn on" data-n="1" onclick="setScenarioCount(1)" style="padding:7px 16px;font-size:12px">1 Scenario</button>
-<button type="button" class="chip sc-btn" data-n="2" onclick="setScenarioCount(2)" style="padding:7px 16px;font-size:12px">2 Scenarios</button>
-<button type="button" class="chip sc-btn" data-n="3" onclick="setScenarioCount(3)" style="padding:7px 16px;font-size:12px">3 Scenarios</button>
-</div>
-<div id="scenario-rows-host"></div>
-<div style="font-size:11px;color:var(--tx3);margin-top:6px;line-height:1.5">When more than one scenario is selected, the proposal PDF shows a side-by-side comparison. Scenario 1 always uses the values entered on the Estimator tab. Override the user count and per-user usage on Scenarios 2 and 3 to model tiered offers.</div>
 </div>
 <div class="g2">
 <div class="card"><div class="ch"><span class="chdot"></span>Client Information</div>
@@ -408,12 +407,14 @@ function setUnit(u){
   updateQPrev();
 }
 
-// ── Pricing Scenarios (1, 2, or 3 tiers shown side-by-side in client PDF) ──
+// ── Tiered Pricing (Tier 1 = Estimator. Tier 2 & 3 = customer-facing pricing only.) ──
 let scenarioCount=1;
+// scenarios[0] is unused — Tier 1 always reads from Estimator state.
+// scenarios[1] / scenarios[2] hold customer-facing overrides for Tier 2 / Tier 3.
 let scenarios=[
-  {label:'Tier 1',students:null,usage:null,cap:null}, // null = inherit from estimator
-  {label:'Tier 2',students:null,usage:null,cap:null},
-  {label:'Tier 3',students:null,usage:null,cap:null},
+  {label:'Tier 1'},
+  {label:'Tier 2',students:null,aRev:null,over:null},
+  {label:'Tier 3',students:null,aRev:null,over:null},
 ];
 function setScenarioCount(n){
   scenarioCount=n;
@@ -425,49 +426,110 @@ function setScenarioCount(n){
 }
 function renderScenarioRows(){
   const host=g('scenario-rows-host'); if(!host)return;
+  if(scenarioCount===1){host.innerHTML='<div style="font-size:11.5px;color:var(--tx3);font-style:italic;padding:6px 2px">Single-tier mode — the proposal PDF will use only your Estimator values above.</div>';return;}
   const baseStudents=+g('students').value||0;
-  const baseUsage=+g('usage').value||0;
-  const baseCap=+g('cap').value||baseUsage;
-  const unit=displayUnit==='hr'?'hrs':'min';
+  const baseUsage=+g('usage').value||0; // minutes
+  const baseRate=+g('rate').value||0.10;
+  const baseOver=+g('overage').value||0.14;
+  const basePlat=+g('platform').value||0;
+  // Tier 1 reference aRev (read-only display)
+  const baseMonthlyMin=baseStudents*baseUsage;
+  const baseARev=calcRev(baseStudents,baseMonthlyMin,baseUsage,baseRate,baseOver,basePlat);
   let h='';
-  for(let i=0;i<scenarioCount;i++){
+  // Tier 1 reference row (read-only summary)
+  h+='<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 14px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">';
+  h+='<div style="font-size:12px;font-weight:700;color:#15803d">&#10003; Tier 1 (from Estimator)</div>';
+  h+='<div style="font-size:11.5px;color:var(--tx2);font-weight:500">'+baseStudents.toLocaleString()+' users &middot; '+cfUsageShort(baseUsage)+'/mo &middot; '+fmt(baseARev)+'/yr &middot; '+cfOverage(baseOver)+' overage</div>';
+  h+='</div>';
+  // Tier 2 / Tier 3 editable rows
+  for(let i=1;i<scenarioCount;i++){
     const sc=scenarios[i];
-    const stuVal=sc.students!=null?sc.students:(i===0?baseStudents:Math.max(1,Math.round(baseStudents*[1,2,4][i])));
-    const useVal=sc.usage!=null?sc.usage:baseUsage;
-    const capVal=sc.cap!=null?sc.cap:baseCap;
-    const useDisp=displayUnit==='hr'?(useVal/60).toFixed(useVal%60===0?0:1):useVal;
-    const capDisp=displayUnit==='hr'?(capVal/60).toFixed(capVal%60===0?0:1):capVal;
+    // Defaults: progressively larger seat counts; aRev defaults to "natural" price at Tier 1's rate
+    const stuDefault=Math.max(1,Math.round(baseStudents*[1,2,4][i]));
+    const stuVal=sc.students!=null?sc.students:stuDefault;
+    // Natural price = same Tier 1 rate scaled to new student count
+    const natMonthlyMin=stuVal*baseUsage;
+    const natARev=calcRev(stuVal,natMonthlyMin,baseUsage,baseRate,baseOver,basePlat);
+    const aRevVal=sc.aRev!=null?sc.aRev:natARev;
+    const overVal=sc.over!=null?sc.over:baseOver;
+    // Effective $/hr at the entered price
+    const inclAnnualHrs=(stuVal*baseUsage*12)/60;
+    const effHr=inclAnnualHrs>0?(aRevVal/inclAnnualHrs):0;
+    // Overage display in current unit
+    const overDisp=displayUnit==='hr'?(overVal*60).toFixed(2):overVal.toFixed(4);
+    const overUnit=displayUnit==='hr'?'$/hr':'$/min';
     h+='<div style="background:var(--sf2);border:1px solid var(--bo);border-radius:8px;padding:12px 14px;margin-bottom:8px">';
-    h+='<div style="display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:10px;align-items:end">';
-    h+='<div class="f" style="margin:0"><div class="fl">Scenario Label</div><input type="text" value="'+(sc.label||('Tier '+(i+1)))+'" oninput="scenarios['+i+'].label=this.value;updateQPrev()"></div>';
-    h+='<div class="f" style="margin:0"><div class="fl">Users / Seats</div><input type="number" min="1" value="'+stuVal+'" oninput="scenarios['+i+'].students=+this.value||0;updateQPrev()"'+(i===0?' style="background:#f0fdf4" title="Scenario 1 inherits from Estimator. Edit here to override."':'')+'></div>';
-    h+='<div class="f" style="margin:0"><div class="fl">Usage / User ('+unit+'/mo)</div><input type="number" min="0" step="0.1" value="'+useDisp+'" oninput="scenarios['+i+'].usage='+(displayUnit==='hr'?'Math.round((+this.value||0)*60)':'+this.value||0')+';updateQPrev()"></div>';
-    h+='<div class="f" style="margin:0"><div class="fl">Cap / User ('+unit+'/mo)</div><input type="number" min="0" step="0.1" value="'+capDisp+'" oninput="scenarios['+i+'].cap='+(displayUnit==='hr'?'Math.round((+this.value||0)*60)':'+this.value||0')+';updateQPrev()"></div>';
+    h+='<div style="display:grid;grid-template-columns:1.1fr 1fr 1.2fr 1fr;gap:10px;align-items:end">';
+    h+='<div class="f" style="margin:0"><div class="fl">Tier Label</div><input type="text" value="'+(sc.label||('Tier '+(i+1)))+'" oninput="scenarios['+i+'].label=this.value;updateScenarioReadout('+i+');updateQPrev()"></div>';
+    h+='<div class="f" style="margin:0"><div class="fl">Users / Seats</div><input type="number" min="1" step="1" value="'+stuVal+'" oninput="scenarios['+i+'].students=+this.value||0;renderScenarioRows();updateQPrev()"></div>';
+    h+='<div class="f" style="margin:0"><div class="fl">Annual Investment ($) <span style="color:var(--tx3);font-weight:500;font-size:10.5px;margin-left:4px">at Tier 1 rate: '+fmt(natARev)+'</span></div><input type="number" min="0" step="1000" value="'+Math.round(aRevVal)+'" oninput="scenarios['+i+'].aRev=+this.value||0;updateScenarioReadout('+i+');updateQPrev()"></div>';
+    h+='<div class="f" style="margin:0"><div class="fl">Overage ('+overUnit+')</div><input type="number" min="0" step="0.01" value="'+overDisp+'" oninput="scenarios['+i+'].over='+(displayUnit==='hr'?'(+this.value||0)/60':'+this.value||0')+';updateScenarioReadout('+i+');updateQPrev()"></div>';
+    h+='</div>';
+    // Live readout
+    h+='<div id="sc-readout-'+i+'" style="margin-top:8px;padding:8px 12px;background:#fff;border:1px solid var(--bo);border-radius:6px;font-size:11px;color:var(--tx2);display:flex;gap:14px;flex-wrap:wrap">';
+    h+='<span><strong style="color:var(--tx)">Annual:</strong> '+fmt(aRevVal)+'</span>';
+    h+='<span><strong style="color:var(--tx)">Monthly:</strong> '+fmt(aRevVal/12)+'</span>';
+    h+='<span><strong style="color:#15803d">Effective rate:</strong> $'+effHr.toFixed(2)+'/hr</span>';
+    h+='<span><strong style="color:var(--tx)">Total tutor hours:</strong> '+(inclAnnualHrs).toLocaleString(undefined,{maximumFractionDigits:0})+' hrs/year</span>';
     h+='</div></div>';
   }
   host.innerHTML=h;
 }
-// Compute one scenario's pricing using the same formulas as the estimator
-function computeScenario(i,baseS){
+// Lightweight readout updater (avoids full re-render on every keystroke)
+function updateScenarioReadout(i){
+  const el=g('sc-readout-'+i); if(!el)return;
   const sc=scenarios[i];
-  const students=sc.students!=null?sc.students:baseS.students;
-  const usage=sc.usage!=null?sc.usage:baseS.usage;
-  const cap=sc.cap!=null?sc.cap:baseS.cap;
+  const baseStudents=+g('students').value||0;
+  const baseUsage=+g('usage').value||0;
+  const stuVal=sc.students!=null?sc.students:Math.max(1,Math.round(baseStudents*[1,2,4][i]));
+  const aRevVal=sc.aRev!=null?sc.aRev:0;
+  const inclAnnualHrs=(stuVal*baseUsage*12)/60;
+  const effHr=inclAnnualHrs>0?(aRevVal/inclAnnualHrs):0;
+  el.innerHTML=
+    '<span><strong style="color:var(--tx)">Annual:</strong> '+fmt(aRevVal)+'</span>'+
+    '<span><strong style="color:var(--tx)">Monthly:</strong> '+fmt(aRevVal/12)+'</span>'+
+    '<span><strong style="color:#15803d">Effective rate:</strong> $'+effHr.toFixed(2)+'/hr</span>'+
+    '<span><strong style="color:var(--tx)">Total tutor hours:</strong> '+(inclAnnualHrs).toLocaleString(undefined,{maximumFractionDigits:0})+' hrs/year</span>';
+}
+// Compute one tier's PDF-facing values
+function computeScenario(i,baseS){
+  if(i===0){
+    // Tier 1 always = Estimator state
+    const inclAnnualMin=baseS.students*baseS.cap*12;
+    return {
+      label:scenarios[0].label||'Tier 1',
+      students:baseS.students,usage:baseS.usage,cap:baseS.cap,
+      monthlyMin:baseS.students*baseS.usage,
+      annualMin:baseS.students*baseS.usage*12,
+      inclMonthlyMin:baseS.students*baseS.cap,
+      inclAnnualMin,
+      inclAnnualHrs:inclAnnualMin/60,
+      aRev:baseS.aRev,
+      over:baseS.over,
+      plat:baseS.plat,
+    };
+  }
+  const sc=scenarios[i];
+  const students=sc.students!=null?sc.students:Math.max(1,Math.round(baseS.students*[1,2,4][i]));
+  const usage=baseS.usage; // inherits from Tier 1
+  const cap=baseS.cap;     // inherits from Tier 1
   const monthlyMin=students*usage;
-  const aRev=calcRev(students,monthlyMin,cap,baseS.rate,baseS.over,baseS.plat);
-  const inclAnnualMin=students*cap*12;
-  const inclAnnualHrs=inclAnnualMin/60;
-  // Effective $/hr = total annual investment ÷ included annual tutor hours
-  const effHourly=inclAnnualHrs>0?(aRev/inclAnnualHrs):0;
+  const inclMonthlyMin=students*cap;
+  const inclAnnualMin=inclMonthlyMin*12;
+  // Default annual = natural price at Tier 1's rate, scaled to new student count
+  const natARev=calcRev(students,monthlyMin,cap,baseS.rate,baseS.over,baseS.plat);
+  const aRev=sc.aRev!=null?sc.aRev:natARev;
+  const over=sc.over!=null?sc.over:baseS.over;
   return {
     label:sc.label||('Tier '+(i+1)),
     students,usage,cap,monthlyMin,
     annualMin:monthlyMin*12,
-    inclMonthlyMin:students*cap,
+    inclMonthlyMin,
     inclAnnualMin,
-    inclAnnualHrs,
+    inclAnnualHrs:inclAnnualMin/60,
     aRev,
-    effHourly,
+    over,
+    plat:baseS.plat,
   };
 }
 const MDESC = {
@@ -936,15 +998,11 @@ function dlQuote(){
   const introLines=doc.splitTextToSize(intro,W-M*2);
   doc.text(introLines,M,y);y+=introLines.length*4.5+4;
 
-  // Build computed scenarios (1, 2, or 3) — Scenario 1 always uses the base estimator state
-  const sc1Base={students:s.students,usage:s.usage,cap:s.cap,rate:s.rate,over:s.over,plat:s.plat};
+  // Build computed scenarios (1, 2, or 3) — Tier 1 always uses the base estimator state.
+  // Tier 2 / Tier 3 are customer-facing overrides (Users, Annual Investment, Overage).
+  const sc1Base={students:s.students,usage:s.usage,cap:s.cap,rate:s.rate,over:s.over,plat:s.plat,aRev:s.aRev};
   const computed=[];
   for(let i=0;i<scenarioCount;i++){ computed.push(computeScenario(i,sc1Base)); }
-  // Override scenario 1's computed aRev to match the estimator's saved aRev exactly when it inherits everything
-  if(computed[0] && scenarios[0].students==null && scenarios[0].usage==null && scenarios[0].cap==null){
-    computed[0].aRev=s.aRev;
-    computed[0].effHourly=computed[0].inclAnnualHrs>0?(s.aRev/computed[0].inclAnnualHrs):0;
-  }
   const multi=scenarioCount>1;
 
   // Scope box — single scenario: existing 6-field layout. Multi: side-by-side comparison.
@@ -1031,12 +1089,12 @@ function dlQuote(){
   // Cell value helper
   function cellFor(def,c){
     switch(def.type){
-      case 'plat': return fmt(s.plat);
+      case 'plat': return fmt(c.plat);
       case 'pool': return 'Included';
       case 'effective': return cfRateHr(c.aRev,c.inclAnnualMin);
-      case 'overage': return cfOverage(s.over);
-      case 'commit': { const mc=Math.max(s.plat,c.monthlyMin*3*s.over); return fmt(mc); }
-      case 'addl': return cfOverage(s.over);
+      case 'overage': return cfOverage(c.over);
+      case 'commit': { const mc=Math.max(c.plat,c.monthlyMin*3*c.over); return fmt(mc); }
+      case 'addl': return cfOverage(c.over);
       case 'total': return fmt(c.aRev);
       default: return '';
     }
