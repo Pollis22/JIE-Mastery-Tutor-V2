@@ -8,6 +8,9 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Figtree:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>if(window['pdfjsLib']){window['pdfjsLib'].GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';}</script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -64,11 +67,13 @@ body{font-family:'Figtree',system-ui,sans-serif;background:var(--bg);color:var(-
 
 /* GRID */
 .g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px;margin-bottom:18px}
+.g4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:14px;margin-bottom:18px}
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px}
 .g21{display:grid;grid-template-columns:2fr 1fr;gap:18px;margin-bottom:18px}
 .sp2{grid-column:span 2}
+@media(max-width:1100px){.g4{grid-template-columns:1fr 1fr}}
 @media(max-width:960px){.g3{grid-template-columns:1fr 1fr}.g21{grid-template-columns:1fr}.sp2{grid-column:span 1}}
-@media(max-width:580px){.g3,.g2{grid-template-columns:1fr}}
+@media(max-width:580px){.g3,.g2,.g4{grid-template-columns:1fr}}
 
 /* CARD */
 .card{background:#fff;border:1px solid var(--bo);border-radius:var(--r);padding:22px;box-shadow:0 1px 3px rgba(0,0,0,.05)}
@@ -273,6 +278,8 @@ input:focus,select:focus{border-color:var(--red);background:#fff;box-shadow:0 0 
       <button class="sc-pill" data-sc="aggressive">Aggressive</button>
     </div>
     <div class="sc-actions">
+      <button class="btn btn-pri btn-sm" onclick="openReportModal('investor')" title="Generate Investor-Facing Report (PDF)">📄 Investor PDF</button>
+      <button class="btn btn-out btn-sm" onclick="openReportModal('internal')" title="Generate Internal &amp; Confidential Report (PDF)">🔒 Internal PDF</button>
       <button class="btn btn-sec btn-sm" onclick="openSaveModal()">💾 Save Scenario</button>
       <button class="btn btn-sec btn-sm" onclick="openLoadModal()">📂 Load</button>
       <button class="btn btn-sec btn-sm" onclick="resetDefaults()">↻ Reset</button>
@@ -412,7 +419,7 @@ input:focus,select:focus{border-color:var(--red);background:#fff;box-shadow:0 0 
   <!-- =================== TAB: PRO FORMA =================== -->
   <div class="tab-s" id="tab-pf">
 
-    <div class="g3">
+    <div class="g4">
       <!-- Production -->
       <div class="card">
         <div class="ch"><span class="chdot"></span>JIE Production (Consumer)</div>
@@ -489,7 +496,8 @@ input:focus,select:focus{border-color:var(--red);background:#fff;box-shadow:0 0 
         </div>
         <div class="f">
           <div class="fl">Sales commission</div>
-          <div class="sfx"><input type="number" id="inst-comm" value="25" step="1" oninput="recalc()"><span>%</span></div>
+          <div class="sfx"><input type="number" id="inst-comm" value="10" step="1" oninput="recalc()"><span>%</span></div>
+          <div class="fhint">% of contract value (revenue-based)</div>
         </div>
         <div class="f">
           <div class="fl">Variable cost (% of revenue)</div>
@@ -529,6 +537,49 @@ input:focus,select:focus{border-color:var(--red);background:#fff;box-shadow:0 0 
         <div class="f">
           <div class="fl">Gross margin</div>
           <div class="sfx"><input type="number" id="cons-gm" value="60" step="1" oninput="recalc()"><span>%</span></div>
+        </div>
+      </div>
+
+      <!-- Commercial -->
+      <div class="card">
+        <div class="ch"><span class="chdot"></span>JIE Commercial</div>
+        <div class="card-sub">Corporate L&amp;D + AI companion product deployments</div>
+        <div class="f">
+          <div class="fl">Contracts — Yr 1</div>
+          <input type="number" id="comm-y1" value="2" oninput="recalc()">
+        </div>
+        <div class="f">
+          <div class="fl">Contracts — Yr 2</div>
+          <input type="number" id="comm-y2" value="6" oninput="recalc()">
+        </div>
+        <div class="f">
+          <div class="fl">Contracts — Yr 3</div>
+          <input type="number" id="comm-y3" value="12" oninput="recalc()">
+        </div>
+        <div class="f">
+          <div class="fl">Contracts — Yr 4</div>
+          <input type="number" id="comm-y4" value="18" oninput="recalc()">
+        </div>
+        <div class="f">
+          <div class="fl">Contracts — Yr 5</div>
+          <input type="number" id="comm-y5" value="22" oninput="recalc()">
+        </div>
+        <div class="f">
+          <div class="fl">Avg ACV / contract</div>
+          <div class="pfx"><span>$</span><input type="number" id="comm-acv" value="200000" step="10000" oninput="recalc()"></div>
+        </div>
+        <div class="f">
+          <div class="fl">Ramp to full ACV (months)</div>
+          <input type="number" id="comm-ramp" value="4" oninput="recalc()">
+        </div>
+        <div class="f">
+          <div class="fl">Sales commission</div>
+          <div class="sfx"><input type="number" id="comm-comm" value="10" step="1" oninput="recalc()"><span>%</span></div>
+          <div class="fhint">% of contract value (revenue-based)</div>
+        </div>
+        <div class="f">
+          <div class="fl">Variable cost (% of revenue)</div>
+          <div class="sfx"><input type="number" id="comm-vc" value="15" step="1" oninput="recalc()"><span>%</span></div>
         </div>
       </div>
     </div>
@@ -783,6 +834,42 @@ input:focus,select:focus{border-color:var(--red);background:#fff;box-shadow:0 0 
   </div>
 </div>
 
+<!-- REPORT GENERATION MODAL -->
+<div class="modal-bg" id="report-modal">
+  <div class="modal" style="max-width:580px">
+    <h2 id="report-modal-title">Generate Report</h2>
+    <p id="report-modal-sub">Configure the executive summary, then generate the PDF.</p>
+
+    <div style="margin-bottom:16px">
+      <div style="font-size:11.5px;font-weight:700;color:var(--tx2);margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em">Executive Summary Source</div>
+      <label style="display:block;padding:10px 12px;border:1.5px solid var(--bo);border-radius:8px;margin-bottom:6px;cursor:pointer;font-size:13px" id="rpt-src-auto-wrap">
+        <input type="radio" name="rpt-src" value="auto" checked onchange="onReportSourceChange()" style="margin-right:8px">
+        <strong>Auto-generate from current model</strong>
+        <div style="font-size:11px;color:var(--tx3);margin-left:24px;margin-top:2px">Pulls headline numbers from the active scenario.</div>
+      </label>
+      <label style="display:block;padding:10px 12px;border:1.5px solid var(--bo);border-radius:8px;cursor:pointer;font-size:13px" id="rpt-src-upload-wrap">
+        <input type="radio" name="rpt-src" value="upload" onchange="onReportSourceChange()" style="margin-right:8px">
+        <strong>Use uploaded document</strong>
+        <div style="font-size:11px;color:var(--tx3);margin-left:24px;margin-top:2px">Replace the body with your own narrative (.txt, .md, .docx, .pdf)</div>
+      </label>
+    </div>
+
+    <div id="rpt-upload-zone" style="display:none;margin-bottom:14px">
+      <input type="file" id="rpt-file-input" accept=".txt,.md,.docx,.pdf" onchange="onReportFileChosen(event)" style="display:none">
+      <button type="button" class="btn btn-sec" onclick="document.getElementById('rpt-file-input').click()" style="width:100%;justify-content:center;padding:12px">
+        📎 Choose File
+      </button>
+      <div id="rpt-file-status" style="margin-top:8px;font-size:11.5px;color:var(--tx3);font-style:italic;min-height:18px"></div>
+      <textarea id="rpt-upload-preview" placeholder="Uploaded text will appear here for review. You can edit before generating." style="width:100%;height:140px;margin-top:10px;padding:10px;border:1.5px solid var(--bo);border-radius:8px;font-family:'Figtree',sans-serif;font-size:12px;resize:vertical;line-height:1.45"></textarea>
+    </div>
+
+    <div class="modal-foot">
+      <button class="btn btn-sec" onclick="closeModal('report-modal')">Cancel</button>
+      <button class="btn btn-pri" id="rpt-generate-btn" onclick="generateReport()">Generate PDF</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // =====================================================================
 // JIE Mastery — Investment Console
@@ -866,11 +953,19 @@ function compute() {
     val: GETN('cons-val'),
     gm: GETN('cons-gm') / 100,
   };
+  const comm = {
+    counts: [GETN('comm-y1'), GETN('comm-y2'), GETN('comm-y3'), GETN('comm-y4'), GETN('comm-y5')],
+    acv: GETN('comm-acv'),
+    ramp: GETN('comm-ramp'),
+    comm: GETN('comm-comm') / 100,
+    vc: GETN('comm-vc') / 100,
+  };
 
   // Apply scenario modifiers to growth-side inputs
   prod.nn = prod.nn.map(v => v * sc.growth);
   inst.counts = inst.counts.map(v => v * sc.growth);
   cons.counts = cons.counts.map(v => v * sc.growth);
+  comm.counts = comm.counts.map(v => v * sc.growth);
 
   // 5-year monthly arrays
   const N = 60;
@@ -887,6 +982,17 @@ function compute() {
     for (let i = 0; i < count; i++) {
       const m = yStart + Math.floor((i + 0.5) * (12 / Math.max(1, count)));
       instOnboardMonths.push(m);
+    }
+  }
+
+  // Commercial pipeline: same pattern as institutional
+  const commOnboardMonths = [];
+  for (let y = 0; y < 5; y++) {
+    const count = comm.counts[y];
+    const yStart = y * 12;
+    for (let i = 0; i < count; i++) {
+      const m = yStart + Math.floor((i + 0.5) * (12 / Math.max(1, count)));
+      commOnboardMonths.push(m);
     }
   }
 
@@ -968,6 +1074,18 @@ function compute() {
     const revInst = revInstGross - commission;
     const cogsInst = revInstGross * inst.vc * sc.cost;
 
+    // COMMERCIAL — same ramped pattern as institutional, separate stream
+    let revCommGross = 0;
+    for (const onboardMo of commOnboardMonths) {
+      if (m < onboardMo) continue;
+      const monthsSince = m - onboardMo + 1;
+      const rampPct = Math.min(1, monthsSince / comm.ramp);
+      revCommGross += (comm.acv / 12) * rampPct;
+    }
+    const commCommission = revCommGross * comm.comm;
+    const revComm = revCommGross - commCommission;
+    const cogsComm = revCommGross * comm.vc * sc.cost;
+
     // CONSULTING — engagements recognized over 3 months
     let revCons = 0;
     for (const eMo of engMonths) {
@@ -975,8 +1093,8 @@ function compute() {
     }
     const cogsCons = revCons * (1 - cons.gm) * sc.cost;
 
-    const totalRev = revProd + revInst + revCons;
-    const totalCogs = cogsProd + cogsInst + cogsCons;
+    const totalRev = revProd + revInst + revCons + revComm;
+    const totalCogs = cogsProd + cogsInst + cogsCons + cogsComm;
     const grossProfit = totalRev - totalCogs;
 
     // OWNER LADDER — check triggers monthly
@@ -1008,10 +1126,12 @@ function compute() {
 
     months.push({
       m: m + 1, year: yr + 1, qtr: Math.floor(m/3) + 1,
-      users, revProd, revInst, revCons, totalRev,
-      cogsProd, cogsInst, cogsCons, totalCogs,
+      users, revProd, revInst, revCons, revComm, totalRev,
+      cogsProd, cogsInst, cogsCons, cogsComm, totalCogs,
       grossProfit, ownerSalary: monthlyOwner, fixedOpEx: monthlyFixedOpEx,
-      opEx, ebitda, cash, instOnboarded: instOnboardMonths.filter(o => o <= m).length,
+      opEx, ebitda, cash,
+      instOnboarded: instOnboardMonths.filter(o => o <= m).length,
+      commOnboarded: commOnboardMonths.filter(o => o <= m).length,
     });
   }
 
@@ -1443,12 +1563,14 @@ function buildAnnualRows(months) {
     { group: true, label: 'REVENUE' },
     { label: 'JIE Production (Consumer)', values: sumP(m=>m.revProd), indent:true },
     { label: 'Schools & Universities (net)', values: sumP(m=>m.revInst), indent:true },
+    { label: 'JIE Commercial (net)', values: sumP(m=>m.revComm), indent:true },
     { label: 'AI Consulting', values: sumP(m=>m.revCons), indent:true },
     { label: 'Total Revenue', values: sumP(m=>m.totalRev), total:true },
 
     { group: true, label: 'COST OF REVENUE' },
     { label: 'Production COGS', values: sumP(m=>m.cogsProd), indent:true },
     { label: 'Institutional COGS', values: sumP(m=>m.cogsInst), indent:true },
+    { label: 'Commercial COGS', values: sumP(m=>m.cogsComm), indent:true },
     { label: 'Consulting COGS', values: sumP(m=>m.cogsCons), indent:true },
     { label: 'Total COGS', values: sumP(m=>m.totalCogs), total:true },
     { label: 'Gross Profit', values: sumP(m=>m.grossProfit), total:true, signClass:true },
@@ -1473,6 +1595,7 @@ function buildAnnualRows(months) {
     { label: 'Cash Balance (end of period)', values: endP(m=>m.cash), total:true, signClass:true },
     { label: 'Paying Users (end of period)', values: endP(m=>m.users), fmt: fmtNum, indent:true },
     { label: 'Institutions (cumulative)', values: endP(m=>m.instOnboarded), fmt: fmtNum, indent:true },
+    { label: 'Commercial Contracts (cumulative)', values: endP(m=>m.commOnboarded), fmt: fmtNum, indent:true },
   ];
 }
 
@@ -1943,6 +2066,7 @@ function renderKeyMetrics(r) {
     { l: 'Users @ Mo 36', v: fmtNum(m36.users) },
     { l: 'Users @ Mo 60', v: fmtNum(m60.users) },
     { l: 'Institutions @ Mo 60', v: m60.instOnboarded },
+    { l: 'Commercial Contracts @ Mo 60', v: m60.commOnboarded },
     { l: 'First EBITDA+ Month', v: r.firstProfitMonth ? 'Mo ' + r.firstProfitMonth : '— (none in 60)' },
     { l: 'Min Cash Balance', v: fmtUSDK(Math.min(...r.months.map(m=>m.cash))) },
     { l: 'Avg Burn (Yr 1)', v: fmtUSDK(r.months.slice(0,12).reduce((s,m)=>s+m.ebitda,0)/12) + '/mo' },
@@ -2176,12 +2300,14 @@ function exportPF(format) {
     ['REVENUE', ...colNames.map(()=>'')],
     ['  Production', ...sumP(m=>m.revProd)],
     ['  Schools & Universities (net)', ...sumP(m=>m.revInst)],
+    ['  JIE Commercial (net)', ...sumP(m=>m.revComm)],
     ['  AI Consulting', ...sumP(m=>m.revCons)],
     ['Total Revenue', ...sumP(m=>m.totalRev)],
     [''],
     ['COGS', ...colNames.map(()=>'')],
     ['  Production COGS', ...sumP(m=>m.cogsProd)],
     ['  Institutional COGS', ...sumP(m=>m.cogsInst)],
+    ['  Commercial COGS', ...sumP(m=>m.cogsComm)],
     ['  Consulting COGS', ...sumP(m=>m.cogsCons)],
     ['Total COGS', ...sumP(m=>m.totalCogs)],
     ['Gross Profit', ...sumP(m=>m.grossProfit)],
@@ -2195,6 +2321,7 @@ function exportPF(format) {
     ['Cash Balance (EOP)', ...endP(m=>m.cash)],
     ['Paying Users (EOP)', ...endP(m=>m.users)],
     ['Institutions (cumulative)', ...endP(m=>m.instOnboarded)],
+    ['Commercial Contracts (cumulative)', ...endP(m=>m.commOnboarded)],
   ];
 
   if (format === 'csv') {
@@ -2280,6 +2407,10 @@ function captureCurrentInputs() {
       'cons-y1': GETN('cons-y1'), 'cons-y2': GETN('cons-y2'), 'cons-y3': GETN('cons-y3'),
       'cons-y4': GETN('cons-y4'), 'cons-y5': GETN('cons-y5'),
       'cons-val': GETN('cons-val'), 'cons-gm': GETN('cons-gm'),
+      'comm-y1': GETN('comm-y1'), 'comm-y2': GETN('comm-y2'), 'comm-y3': GETN('comm-y3'),
+      'comm-y4': GETN('comm-y4'), 'comm-y5': GETN('comm-y5'),
+      'comm-acv': GETN('comm-acv'), 'comm-ramp': GETN('comm-ramp'),
+      'comm-comm': GETN('comm-comm'), 'comm-vc': GETN('comm-vc'),
     },
   };
 }
@@ -2344,6 +2475,15 @@ function applySavedState(s) {
     if (el && (s.inputs[id] === undefined)) {
       const y3 = s.inputs['cons-y3']; if (y3 !== undefined) el.value = y3;
     }
+  });
+  // Pre-v11 saves predate the JIE Commercial vertical — keep default values
+  const commDefaults = {
+    'comm-y1':2,'comm-y2':6,'comm-y3':12,'comm-y4':18,'comm-y5':22,
+    'comm-acv':200000,'comm-ramp':4,'comm-comm':10,'comm-vc':15,
+  };
+  Object.entries(commDefaults).forEach(([id, defaultVal]) => {
+    const el = document.getElementById(id);
+    if (el && (s.inputs[id] === undefined)) el.value = defaultVal;
   });
   document.getElementById('raise-amt').value = state.raise;
   document.getElementById('raise-slider').value = state.raise;
@@ -2478,6 +2618,615 @@ document.querySelectorAll('.ptab').forEach(b => {
 document.querySelectorAll('.sc-pill').forEach(b => {
   b.addEventListener('click', () => setScenario(b.dataset.sc));
 });
+
+// ====================================================================
+// REPORT GENERATION — Investor + Internal PDFs
+// ====================================================================
+
+// State for the modal
+let reportMode = 'investor';  // 'investor' or 'internal'
+let uploadedSummaryText = '';
+
+function openReportModal(mode) {
+  reportMode = mode;
+  const isInvestor = mode === 'investor';
+  document.getElementById('report-modal-title').textContent =
+    isInvestor ? 'Generate Investor Report' : 'Generate Internal & Confidential Report';
+  document.getElementById('report-modal-sub').textContent =
+    isInvestor
+      ? 'Polished, public-grade financial package. Equity details excluded.'
+      : 'Full strategy package with cap table and founder economics. Watermarked CONFIDENTIAL.';
+  // Reset state
+  uploadedSummaryText = '';
+  document.querySelector('input[name="rpt-src"][value="auto"]').checked = true;
+  document.getElementById('rpt-upload-zone').style.display = 'none';
+  document.getElementById('rpt-upload-preview').value = '';
+  document.getElementById('rpt-file-status').textContent = '';
+  document.getElementById('report-modal').classList.add('on');
+}
+
+function onReportSourceChange() {
+  const src = document.querySelector('input[name="rpt-src"]:checked').value;
+  document.getElementById('rpt-upload-zone').style.display = src === 'upload' ? 'block' : 'none';
+}
+
+async function onReportFileChosen(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const status = document.getElementById('rpt-file-status');
+  const preview = document.getElementById('rpt-upload-preview');
+  status.textContent = `Parsing ${file.name}…`;
+  preview.value = '';
+
+  try {
+    let text = '';
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (ext === 'txt' || ext === 'md') {
+      text = await file.text();
+    } else if (ext === 'docx') {
+      const arrayBuffer = await file.arrayBuffer();
+      const result = await window.mammoth.extractRawText({ arrayBuffer });
+      text = result.value;
+    } else if (ext === 'pdf') {
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      const pageTexts = [];
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        pageTexts.push(content.items.map(it => it.str).join(' '));
+      }
+      text = pageTexts.join('\n\n');
+    } else {
+      status.textContent = `Unsupported file type: .${ext}`;
+      return;
+    }
+    uploadedSummaryText = text.trim();
+    preview.value = uploadedSummaryText;
+    status.textContent = `✓ Loaded ${file.name} — ${text.length.toLocaleString()} characters. Edit below if needed.`;
+  } catch (err) {
+    console.error('File parse error:', err);
+    status.textContent = `Error: ${err.message}`;
+  }
+}
+
+// Auto-generate executive summary text from current model state
+function buildAutoExecutiveSummary() {
+  const r = compute();
+  const months = r.months;
+  const m12 = months[11], m36 = months[35], m60 = months[59];
+
+  const tot5y = months.reduce((s,m) => s+m.totalRev, 0);
+  const totEB = months.reduce((s,m) => s+m.ebitda, 0);
+  const arr60 = m60.totalRev * 12;
+  const arrCAGR = m12.totalRev * 12 > 0 ? Math.pow(arr60 / (m12.totalRev * 12), 1/4) - 1 : 0;
+  const y2Rev = months.slice(12, 24).reduce((s,m) => s + m.totalRev, 0);
+  const y2GP = months.slice(12, 24).reduce((s,m) => s + m.grossProfit, 0);
+  const y2GM = y2Rev > 0 ? y2GP / y2Rev : 0;
+  const enabled = state.tranches.filter(t => t.enabled);
+  const totalTranche = enabled.reduce((s,t) => s+t.amount, 0);
+
+  return [
+    `JIE Mastery is raising ${fmtUSDK(state.raise)} to fund the build-out of an AI-powered voice tutoring platform across four revenue streams: consumer subscriptions (JIE Production), institutional white-label (Schools & Universities), corporate L&D (JIE Commercial), and AI consulting services.`,
+    ``,
+    `The capital is structured across ${enabled.length} milestone-based tranche${enabled.length === 1 ? '' : 's'}, totaling ${fmtUSDK(totalTranche)}, with the first close at Month 1 and final close at Month ${r.lastTrancheCloseMonth}. This staged approach aligns capital deployment with operational milestones and protects investor capital against execution risk.`,
+    ``,
+    `Under the ${SCEN[state.scenario].label} scenario, the business reaches EBITDA-positive status in ${r.firstProfitMonth ? 'Month ' + r.firstProfitMonth : 'beyond the 60-month projection window'}. By the end of Year 5, projected ARR reaches ${fmtUSDK(arr60)}, representing a ${(arrCAGR * 100).toFixed(0)}% compound annual growth rate from end-of-Year-1 ARR. Year 2 gross margin is projected at ${(y2GM * 100).toFixed(0)}%, consistent with healthy SaaS benchmarks for AI-heavy products.`,
+    ``,
+    `Cumulative 5-year revenue is projected at ${fmtUSDK(tot5y)} with cumulative EBITDA of ${fmtUSDK(totEB)}. Minimum cash balance between tranches is ${fmtUSDK(r.minCashBetweenTranches)}, providing adequate operating cushion through the funding ladder. The model assumes ${enabled.length} institutional contracts, ${m60.commOnboarded} commercial deployments, and ${fmtNum(m60.users)} paying consumer users by Month 60.`,
+    ``,
+    `This package documents the underlying assumptions, source-and-use of investor capital, multi-year operational forecast, cash flow trajectory, and unit economics supporting the raise.`,
+  ].join('\n');
+}
+
+// Header on each page
+function reportHeader(doc, mode, pageNum, totalPages) {
+  const W = doc.internal.pageSize.getWidth();
+  const H = doc.internal.pageSize.getHeight();
+  const isInternal = mode === 'internal';
+
+  // Top bar with title + branding
+  doc.setFillColor(200, 28, 28);
+  doc.rect(0, 0, W, 26, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(255, 255, 255);
+  doc.text('JIE Mastery', 32, 17);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.text(isInternal ? 'Internal Strategy Package' : 'Investor Financial Package', W - 32, 17, { align: 'right' });
+
+  // Internal watermark band on second-and-after pages
+  if (isInternal && pageNum > 1) {
+    doc.setFillColor(255, 235, 235);
+    doc.rect(0, H - 22, W, 22, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(150, 30, 30);
+    doc.text('🔒 INTERNAL & CONFIDENTIAL — DO NOT DISTRIBUTE', W / 2, H - 8, { align: 'center' });
+  }
+
+  // Page number
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(120, 120, 120);
+  doc.text(`Page ${pageNum}`, W - 32, H - (isInternal ? 28 : 12), { align: 'right' });
+}
+
+// Add header to all pages of the doc once finalized
+function paginateAndHeader(doc, mode) {
+  const total = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= total; i++) {
+    doc.setPage(i);
+    reportHeader(doc, mode, i, total);
+  }
+}
+
+// Helper to add a new section heading on the current page (or break to new page if low)
+function addSectionHeading(doc, title, yMin) {
+  const H = doc.internal.pageSize.getHeight();
+  const currentY = doc.lastAutoTable ? doc.lastAutoTable.finalY : 50;
+  let y = Math.max(currentY + 26, yMin || 60);
+  if (y > H - 100) { doc.addPage(); y = 60; }
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.setTextColor(200, 28, 28);
+  doc.text(title, 32, y);
+  doc.setDrawColor(200, 28, 28);
+  doc.setLineWidth(0.7);
+  doc.line(32, y + 3, doc.internal.pageSize.getWidth() - 32, y + 3);
+  doc.setTextColor(50);
+  return y + 14;
+}
+
+// Wrap and write paragraph text
+function writeParagraph(doc, text, y, maxWidth, fontSize) {
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(fontSize || 10);
+  doc.setTextColor(50, 50, 50);
+  const lines = doc.splitTextToSize(text, maxWidth);
+  doc.text(lines, 32, y);
+  return y + lines.length * (fontSize === 11 ? 14 : 12);
+}
+
+async function generateReport() {
+  const src = document.querySelector('input[name="rpt-src"]:checked').value;
+  let summaryText = '';
+  if (src === 'upload') {
+    summaryText = (document.getElementById('rpt-upload-preview').value || uploadedSummaryText || '').trim();
+    if (!summaryText) {
+      alert('Please choose a file or type a summary before generating.');
+      return;
+    }
+  } else {
+    summaryText = buildAutoExecutiveSummary();
+  }
+
+  // Disable button while generating
+  const btn = document.getElementById('rpt-generate-btn');
+  const origText = btn.textContent;
+  btn.textContent = 'Generating…';
+  btn.disabled = true;
+
+  try {
+    await renderReportPDF(reportMode, summaryText);
+    closeModal('report-modal');
+  } catch (err) {
+    console.error('Report generation error:', err);
+    alert('Error generating report: ' + err.message);
+  } finally {
+    btn.textContent = origText;
+    btn.disabled = false;
+  }
+}
+
+async function renderReportPDF(mode, summaryText) {
+  const { jsPDF } = window.jspdf;
+  const isInternal = mode === 'internal';
+  const doc = new jsPDF({ unit: 'pt', format: 'letter', orientation: 'p' });
+  const W = doc.internal.pageSize.getWidth();
+  const H = doc.internal.pageSize.getHeight();
+  const r = compute();
+
+  // ============= COVER PAGE =============
+  // Big red header band
+  doc.setFillColor(200, 28, 28);
+  doc.rect(0, 0, W, 180, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(36);
+  doc.setTextColor(255, 255, 255);
+  doc.text('JIE Mastery', 32, 86);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(14);
+  doc.text(isInternal ? 'Internal Strategy Package' : 'Investor Financial Package', 32, 116);
+  doc.setFontSize(11);
+  doc.setTextColor(255, 220, 220);
+  doc.text(isInternal ? 'Confidential — Founder Use Only' : 'Confidential — For Investor Review', 32, 138);
+
+  // Cover stats card
+  doc.setFillColor(247, 247, 248);
+  doc.rect(32, 220, W - 64, 320, 'F');
+  doc.setDrawColor(226, 226, 230);
+  doc.setLineWidth(1);
+  doc.rect(32, 220, W - 64, 320);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(154, 154, 168);
+  doc.text('SCENARIO', 56, 256);
+  doc.setFontSize(20);
+  doc.setTextColor(15, 15, 16);
+  doc.text(SCEN[state.scenario].label, 56, 282);
+
+  doc.setFontSize(11);
+  doc.setTextColor(154, 154, 168);
+  doc.text('TARGET RAISE', 56, 322);
+  doc.setFontSize(20);
+  doc.setTextColor(200, 28, 28);
+  doc.text(fmtUSDK(state.raise), 56, 348);
+
+  doc.setFontSize(11);
+  doc.setTextColor(154, 154, 168);
+  doc.text('PROJECTED 5-YR REVENUE', 56, 388);
+  doc.setFontSize(20);
+  doc.setTextColor(15, 15, 16);
+  const tot5y = r.months.reduce((s,m) => s+m.totalRev, 0);
+  doc.text(fmtUSDK(tot5y), 56, 414);
+
+  doc.setFontSize(11);
+  doc.setTextColor(154, 154, 168);
+  doc.text('FIRST EBITDA POSITIVE', 56, 454);
+  doc.setFontSize(20);
+  doc.setTextColor(15, 15, 16);
+  doc.text(r.firstProfitMonth ? 'Month ' + r.firstProfitMonth : 'Beyond Y5', 56, 480);
+
+  doc.setFontSize(11);
+  doc.setTextColor(154, 154, 168);
+  doc.text('GENERATED', 56, 510);
+  doc.setFontSize(11);
+  doc.setTextColor(15, 15, 16);
+  doc.setFont('helvetica', 'normal');
+  doc.text(new Date().toLocaleString(), 56, 528);
+
+  // Footer line on cover
+  doc.setDrawColor(200, 28, 28);
+  doc.setLineWidth(2);
+  doc.line(32, H - 60, W - 32, H - 60);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(120, 120, 120);
+  doc.text(isInternal
+    ? 'This document contains confidential cap-table and founder economics data. Do not redistribute.'
+    : 'This document is provided in confidence for the purpose of evaluating an investment in JIE Mastery.',
+    32, H - 42);
+
+  // ============= EXECUTIVE SUMMARY =============
+  doc.addPage();
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(20);
+  doc.setTextColor(200, 28, 28);
+  doc.text('Executive Summary', 32, 70);
+  doc.setDrawColor(200, 28, 28);
+  doc.setLineWidth(0.7);
+  doc.line(32, 76, W - 32, 76);
+
+  let y = writeParagraph(doc, summaryText, 100, W - 64, 11);
+
+  // ============= SOURCES & USES (page 3) =============
+  doc.addPage();
+  y = addSectionHeading(doc, 'Sources & Uses (Year 1)', 70);
+
+  doc.autoTable({
+    startY: y,
+    head: [['Sources', 'Amount']],
+    body: [
+      ['Investor Raise', fmtUSD(state.raise)],
+      ['Founder Contribution', fmtUSD(state.founder)],
+    ],
+    foot: [['Total Sources', fmtUSD(state.raise + state.founder)]],
+    headStyles: { fillColor: [200,28,28], textColor:255 },
+    footStyles: { fillColor: [242,242,244], textColor:[15,15,16], fontStyle:'bold' },
+    columnStyles: { 1: { halign: 'right' } },
+    margin: { left: 32, right: 32 },
+  });
+
+  // Tranche schedule (no equity column for investor; with equity for internal)
+  const enabled = state.tranches.filter(t => t.enabled);
+  const totalTranche = enabled.reduce((s,t) => s+t.amount, 0);
+  const totalEquity = enabled.reduce((s,t) => s+(t.equity||0), 0);
+
+  if (isInternal) {
+    doc.autoTable({
+      startY: doc.lastAutoTable.finalY + 18,
+      head: [['Tranche Schedule','Amount','Close Mo','Equity %','Trigger / Milestone','On?']],
+      body: state.tranches.map(t => [
+        t.name, fmtUSD(t.amount), 'Mo ' + t.month, (t.equity||0).toFixed(1)+'%', t.trigger||'—', t.enabled ? '✓' : '—'
+      ]),
+      foot: [['Total Committed (Enabled)', fmtUSD(totalTranche), '', totalEquity.toFixed(1)+'%', '', '']],
+      headStyles: { fillColor: [200,28,28], textColor:255 },
+      footStyles: { fillColor: [242,242,244], textColor:[15,15,16], fontStyle:'bold' },
+      columnStyles: { 1: { halign:'right' }, 2: { halign:'right' }, 3: { halign:'right' }, 5: { halign:'center' } },
+      margin: { left: 32, right: 32 },
+    });
+  } else {
+    doc.autoTable({
+      startY: doc.lastAutoTable.finalY + 18,
+      head: [['Tranche Schedule','Amount','Close Mo','Trigger / Milestone','On?']],
+      body: state.tranches.map(t => [
+        t.name, fmtUSD(t.amount), 'Mo ' + t.month, t.trigger||'—', t.enabled ? '✓' : '—'
+      ]),
+      foot: [['Total Committed (Enabled)', fmtUSD(totalTranche), '', '', '']],
+      headStyles: { fillColor: [200,28,28], textColor:255 },
+      footStyles: { fillColor: [242,242,244], textColor:[15,15,16], fontStyle:'bold' },
+      columnStyles: { 1: { halign:'right' }, 2: { halign:'right' }, 4: { halign:'center' } },
+      margin: { left: 32, right: 32 },
+    });
+  }
+
+  const totY1 = state.uses.reduce((s,u) => s + (u.y1 || 0), 0);
+  doc.autoTable({
+    startY: doc.lastAutoTable.finalY + 18,
+    head: [['Year 1 Use of Funds','Category','Year 1','% Raise','Notes']],
+    body: state.uses.map(u => [
+      u.label, CAT_LABEL[u.cat], fmtUSD(u.y1 || 0),
+      state.raise > 0 ? (((u.y1||0)/state.raise)*100).toFixed(1)+'%' : '—', u.note||''
+    ]),
+    foot: [['Total Year 1 Uses','', fmtUSD(totY1), state.raise > 0 ? ((totY1/state.raise)*100).toFixed(0)+'%' : '—', '']],
+    headStyles: { fillColor: [200,28,28], textColor:255 },
+    footStyles: { fillColor: [242,242,244], textColor:[15,15,16], fontStyle:'bold' },
+    columnStyles: { 2: { halign:'right' }, 3: { halign:'right' } },
+    margin: { left: 32, right: 32 },
+  });
+
+  // Owner Salary Ladder
+  const fired = r.stepFiredAt;
+  const L = state.ownerLadder;
+  y = addSectionHeading(doc, 'Owner Salary Ladder');
+  doc.autoTable({
+    startY: y,
+    head: [['Step','Compensation','Trigger Condition','Status (' + SCEN[state.scenario].label + ')']],
+    body: [
+      ['Step 1', fmtUSD(L.base) + '/yr', 'Year 1 baseline (raise close)', 'Active (Mo 1)'],
+      ['Step 2', fmtUSD(L.step2) + '/yr', `Monthly revenue \u2265 ${fmtUSD(L.step2Trigger)}`, fired[2] ? 'Fires Mo ' + fired[2] : 'Not yet'],
+      ['Step 3', fmtUSD(L.step3) + '/yr', `Monthly rev \u2265 ${fmtUSD(L.step3Trigger)} & GP > 0`, fired[3] ? 'Fires Mo ' + fired[3] : 'Not yet'],
+      ['Step 4', fmtUSD(L.step4) + '/yr', `EBITDA breakeven (${L.step4Months} consec. months)`, fired[4] ? 'Fires Mo ' + fired[4] : 'Not yet'],
+    ],
+    headStyles: { fillColor: [200,28,28], textColor:255 },
+    columnStyles: { 1: { halign:'right' }, 3: { halign:'right' } },
+    margin: { left: 32, right: 32 },
+  });
+
+  // ============= 5-YEAR PRO FORMA P&L =============
+  doc.addPage('letter', 'l');
+  const Wl = doc.internal.pageSize.getWidth();
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(20);
+  doc.setTextColor(200, 28, 28);
+  doc.text('5-Year Pro Forma P&L', 32, 70);
+  doc.setDrawColor(200, 28, 28);
+  doc.setLineWidth(0.7);
+  doc.line(32, 76, Wl - 32, 76);
+
+  const periods = ANNUAL_PERIODS;
+  const colNames = ['Year 1','Year 2','Year 3','Year 4','Year 5','5-Yr Total'];
+  const sumP = fn => periods.map(([s,e]) => r.months.filter(m=>m.m>=s&&m.m<=e).reduce((a,m)=>a+fn(m),0));
+  const endP = fn => periods.map(([s,e]) => {
+    const last = r.months.filter(m=>m.m>=s&&m.m<=e).pop();
+    return last ? fn(last) : 0;
+  });
+  const pfRows = [
+    ['REVENUE'],
+    ['  Production', ...sumP(m=>m.revProd)],
+    ['  Schools & Universities (net)', ...sumP(m=>m.revInst)],
+    ['  JIE Commercial (net)', ...sumP(m=>m.revComm)],
+    ['  AI Consulting', ...sumP(m=>m.revCons)],
+    ['Total Revenue', ...sumP(m=>m.totalRev)],
+    ['COGS'],
+    ['  Production COGS', ...sumP(m=>m.cogsProd)],
+    ['  Institutional COGS', ...sumP(m=>m.cogsInst)],
+    ['  Commercial COGS', ...sumP(m=>m.cogsComm)],
+    ['  Consulting COGS', ...sumP(m=>m.cogsCons)],
+    ['Total COGS', ...sumP(m=>m.totalCogs)],
+    ['Gross Profit', ...sumP(m=>m.grossProfit)],
+    ['OPERATING EXPENSES'],
+    ['  Owner Salary', ...sumP(m=>m.ownerSalary)],
+    ['  Other OpEx', ...sumP(m=>m.fixedOpEx)],
+    ['Total OpEx', ...sumP(m=>m.opEx)],
+    ['EBITDA', ...sumP(m=>m.ebitda)],
+    ['Cash Balance (EOP)', ...endP(m=>m.cash)],
+  ];
+  doc.autoTable({
+    startY: 90,
+    head: [['Line Item', ...colNames]],
+    body: pfRows.map(row => row.map((v,i) => i === 0 ? v : (typeof v === 'number' ? fmtUSD(v) : ''))),
+    headStyles: { fillColor:[200,28,28], textColor:255, fontSize:9 },
+    bodyStyles: { fontSize:9 },
+    columnStyles: Object.fromEntries(colNames.map((_,i)=>[i+1,{halign:'right'}])),
+    margin: { left: 32, right: 32 },
+  });
+
+  // ============= 5-YEAR CASH FLOW =============
+  doc.addPage('letter', 'l');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(20);
+  doc.setTextColor(200, 28, 28);
+  doc.text('5-Year Cash Flow Statement', 32, 70);
+  doc.setDrawColor(200, 28, 28);
+  doc.setLineWidth(0.7);
+  doc.line(32, 76, Wl - 32, 76);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(120);
+  doc.text('Direct method — operating cash vs financing cash', 32, 90);
+
+  const cfRows = buildCashFlowRows(r.months, r);
+  const cfFlat = cfRows.map(row => {
+    if (row.group) return [row.label];
+    return [(row.indent ? '  ' : '') + row.label, ...row.values.map(v => row.fmt ? row.fmt(v) : fmtUSD(v))];
+  });
+  doc.autoTable({
+    startY: 105,
+    head: [['Line Item', ...colNames]],
+    body: cfFlat,
+    headStyles: { fillColor:[200,28,28], textColor:255, fontSize:9 },
+    bodyStyles: { fontSize:9 },
+    columnStyles: Object.fromEntries(colNames.map((_,i)=>[i+1,{halign:'right'}])),
+    margin: { left: 32, right: 32 },
+  });
+
+  // ============= UNIT ECONOMICS + KPIs =============
+  doc.addPage();
+  y = addSectionHeading(doc, 'Unit Economics & KPI Dashboard', 70);
+
+  // Compute the same metrics the Unit Econ card shows
+  const arpu = GETN('prod-arpu');
+  const churn = GETN('prod-churn') / 100;
+  const vc = GETN('prod-vc');
+  const grossPerUser = arpu - vc;
+  const grossMarginPct = arpu > 0 ? grossPerUser / arpu : 0;
+  const avgLifetimeMonths = churn > 0 ? 1 / churn : 36;
+  const ltv = grossPerUser * avgLifetimeMonths;
+  const y1MarketingSales = state.uses.reduce((s,u) => {
+    if (['marketing','sales','commissions'].includes(u.cat)) return s + (u.y1 || 0);
+    return s;
+  }, 0);
+  const y1NetNew = r.months.slice(0,12).reduce((s,m,i,arr) => {
+    if (i === 0) return s + Math.max(0, m.users - GETN('prod-start'));
+    return s + Math.max(0, m.users - arr[i-1].users);
+  }, 0);
+  const cac = y1NetNew > 0 ? y1MarketingSales / y1NetNew : 0;
+  const ltvCac = cac > 0 ? ltv / cac : 0;
+  const paybackMo = grossPerUser > 0 ? cac / grossPerUser : 0;
+  const m12 = r.months[11], m60 = r.months[59];
+  const arr12 = m12.totalRev * 12, arr60 = m60.totalRev * 12;
+  const arrCAGR = arr12 > 0 ? Math.pow(arr60 / arr12, 1/4) - 1 : 0;
+  const y2Rev = r.months.slice(12,24).reduce((s,m)=>s+m.totalRev,0);
+  const y2GP = r.months.slice(12,24).reduce((s,m)=>s+m.grossProfit,0);
+  const y2EB = r.months.slice(12,24).reduce((s,m)=>s+m.ebitda,0);
+  const y2EBM = y2Rev > 0 ? y2EB/y2Rev : 0;
+  const ruleOf40 = (arr24 => (arr24 - arr12)/Math.max(1,arr12) + y2EBM)(r.months[23].totalRev * 12);
+
+  doc.autoTable({
+    startY: y,
+    head: [['Metric','Value','Benchmark / Notes']],
+    body: [
+      ['LTV (Consumer)', fmtUSD(ltv), `${avgLifetimeMonths.toFixed(0)}-mo lifetime × $${grossPerUser.toFixed(0)} GP/mo`],
+      ['CAC (Year 1 blended)', fmtUSD(cac), 'Marketing+Sales+Commissions ÷ net new users'],
+      ['LTV : CAC Ratio', ltvCac.toFixed(1) + ':1', ltvCac >= 5 ? 'Strong (≥5:1)' : ltvCac >= 3 ? 'Healthy (≥3:1)' : 'Below 3:1 threshold'],
+      ['CAC Payback', paybackMo.toFixed(1) + ' mo', paybackMo <= 12 ? 'Fast (≤12 mo)' : paybackMo <= 18 ? 'Healthy' : 'Slow'],
+      ['Gross Margin (Consumer)', fmtPct(grossMarginPct), 'Revenue minus per-user variable cost'],
+      ['Year 2 Gross Margin', fmtPct(y2Rev > 0 ? y2GP / y2Rev : 0), 'Blended across all four streams'],
+      ['ARR @ Year 1', fmtUSDK(arr12), 'End-of-Y1 monthly run rate × 12'],
+      ['ARR @ Year 5', fmtUSDK(arr60), 'End-of-Y5 monthly run rate × 12'],
+      ['ARR CAGR Y1→Y5', fmtPct(arrCAGR), 'Compound annual growth in run-rate revenue'],
+      ['Rule of 40 (Y2)', fmtPct(ruleOf40), ruleOf40 >= 0.4 ? 'Above 40% threshold' : 'Below 40% threshold'],
+    ],
+    headStyles: { fillColor:[200,28,28], textColor:255 },
+    columnStyles: { 1: { halign:'right' } },
+    margin: { left: 32, right: 32 },
+  });
+
+  // ============= INTERNAL-ONLY: CAP TABLE + FOUNDER ECONOMICS =============
+  if (isInternal) {
+    doc.addPage();
+    y = addSectionHeading(doc, 'Cap Table Evolution', 70);
+    doc.setFontSize(9.5);
+    doc.setTextColor(80);
+    doc.text('Founder ownership at each capital event, computed from tranche equity %.', 32, y);
+    y += 14;
+
+    let founderPct = 1.0;
+    const stages = [{ stage: 'Pre-Raise (Founder Only)', equityIssued: 0, founderPct, postMoney: null }];
+    const sortedT = [...enabled].sort((a,b) => a.month - b.month);
+    for (const t of sortedT) {
+      const eq = (t.equity || 0) / 100;
+      if (eq <= 0 || eq >= 1) continue;
+      founderPct = founderPct * (1 - eq);
+      stages.push({
+        stage: `After ${t.name} (Mo ${t.month}, $${(t.amount/1e6).toFixed(2)}M for ${(eq*100).toFixed(1)}%)`,
+        equityIssued: eq, founderPct, postMoney: t.amount / eq,
+      });
+    }
+    const frAmount = GETN('fr-amount');
+    const frEquity = GETN('fr-equity') / 100;
+    const frName = (document.getElementById('fr-name') || {}).value || 'Series A';
+    let postSeriesA = founderPct;
+    if (frAmount > 0 && frEquity > 0 && frEquity < 1) {
+      postSeriesA = founderPct * (1 - frEquity);
+      stages.push({
+        stage: `After ${frName} ($${(frAmount/1e6).toFixed(2)}M for ${(frEquity*100).toFixed(1)}%)`,
+        equityIssued: frEquity, founderPct: postSeriesA, postMoney: frAmount / frEquity,
+      });
+    }
+
+    doc.autoTable({
+      startY: y,
+      head: [['Stage','Equity Issued','Founder %','Investors %','Implied Post-$ Valuation']],
+      body: stages.map(s => [
+        s.stage,
+        s.equityIssued > 0 ? (s.equityIssued * 100).toFixed(1) + '%' : '—',
+        (s.founderPct * 100).toFixed(2) + '%',
+        ((1 - s.founderPct) * 100).toFixed(2) + '%',
+        s.postMoney ? fmtUSD(s.postMoney) : '—',
+      ]),
+      headStyles: { fillColor:[200,28,28], textColor:255 },
+      columnStyles: { 1:{halign:'right'}, 2:{halign:'right'}, 3:{halign:'right'}, 4:{halign:'right'} },
+      margin: { left: 32, right: 32 },
+    });
+
+    // Founder Take-Home
+    y = addSectionHeading(doc, 'Founder Take-Home at Exit');
+    const totalSalary5y = r.months.reduce((s,m) => s+m.ownerSalary, 0);
+    const exitVals = [50000000, 100000000, 250000000, 500000000, 1000000000];
+    doc.autoTable({
+      startY: y,
+      head: [['Exit Valuation','Pre-A Founder %','Pre-A Take','Post-A Founder %','Post-A Take','Total (incl. 5-Yr Salary)']],
+      body: exitVals.map(ev => [
+        fmtUSDK(ev),
+        (founderPct*100).toFixed(1)+'%',
+        fmtUSDK(ev * founderPct),
+        (postSeriesA*100).toFixed(1)+'%',
+        fmtUSDK(ev * postSeriesA),
+        fmtUSDK(ev * postSeriesA + totalSalary5y),
+      ]),
+      headStyles: { fillColor:[200,28,28], textColor:255 },
+      columnStyles: { 1:{halign:'right'}, 2:{halign:'right'}, 3:{halign:'right'}, 4:{halign:'right'}, 5:{halign:'right'} },
+      margin: { left: 32, right: 32 },
+    });
+    doc.setFont('helvetica','italic');
+    doc.setFontSize(8.5);
+    doc.setTextColor(140);
+    const noteY = doc.lastAutoTable.finalY + 16;
+    const noteLines = doc.splitTextToSize('Note: Assumes common shares with no liquidation preference. Real-world preferred-share preferences would reduce founder take-home; consult counsel before relying on these numbers for negotiation.', W - 64);
+    doc.text(noteLines, 32, noteY);
+  }
+
+  // ============= ASSUMPTIONS / FOOTNOTES =============
+  doc.addPage();
+  y = addSectionHeading(doc, 'Key Assumptions & Notes', 70);
+  const notes = [
+    `• Scenario applied: ${SCEN[state.scenario].label} (${state.scenario === 'base' ? '100% growth, 100% costs' : state.scenario === 'conservative' ? '70% growth, 110% costs' : '140% growth, 90% costs'}).`,
+    `• Consumer ARPU: $${GETN('prod-arpu')}/mo blended across Starter/Standard/Pro/Elite tiers; monthly churn ${GETN('prod-churn')}%; variable cost $${GETN('prod-vc')}/user/mo.`,
+    `• Schools & Universities: Avg ACV $${(GETN('inst-acv')/1000).toFixed(0)}K, ${GETN('inst-ramp')}-month ramp, ${GETN('inst-comm')}% sales commission on revenue.`,
+    `• JIE Commercial: Avg ACV $${(GETN('comm-acv')/1000).toFixed(0)}K, ${GETN('comm-ramp')}-month ramp, ${GETN('comm-comm')}% sales commission on revenue.`,
+    `• AI Consulting: Blended engagement value $${(GETN('cons-val')/1000).toFixed(0)}K, ${GETN('cons-gm')}% gross margin.`,
+    `• Year 1 OpEx is auto-pulled from the Capital Uses allocation. Years 2-5 OpEx are independent inputs that fall back to prior-year value when blank.`,
+    `• Owner salary auto-steps via a revenue/EBITDA-triggered ladder (4 steps).`,
+    `• Cash trajectory reflects ${enabled.length} milestone-based tranche close${enabled.length === 1 ? '' : 's'}, not a single Day-1 deposit of the full raise.`,
+    `• All figures are projections based on stated assumptions and do not constitute a guarantee of future results.`,
+  ];
+  for (const n of notes) {
+    y = writeParagraph(doc, n, y, W - 64, 10);
+    y += 6;
+  }
+
+  // ============= APPLY HEADER + PAGE NUMBERS TO ALL PAGES =============
+  paginateAndHeader(doc, mode);
+
+  // Save
+  const filename = isInternal ? 'jie-mastery-internal-package.pdf' : 'jie-mastery-investor-package.pdf';
+  doc.save(filename);
+}
 
 // Init
 recalc();
