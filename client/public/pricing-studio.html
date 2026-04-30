@@ -173,7 +173,16 @@ tr:last-child td{border-bottom:none;font-weight:700}
 <div class="fhint" id="cap-hint">&#10003; <strong>Matched to usage</strong> — margin shown is what you'll actually earn. Uncheck to model overage scenarios.</div>
 </div>
 <div class="f"><div class="fl">Pre-purchase Rate ($/min)</div><div class="pfx"><span>$</span><input type="number" id="rate" value="0.10" min="0.01" step="0.01" placeholder="0.10"></div></div>
-<div class="f"><div class="fl">Overage Rate ($/min)</div><div class="pfx"><span>$</span><input type="number" id="overage" value="0.14" min="0.01" step="0.01" placeholder="0.14"></div></div>
+<div class="f" id="overagefield">
+<div class="fl" style="align-items:center">
+  Overage Rate ($/min) <span style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— above included pool</span>
+  <label style="display:flex;align-items:center;gap:4px;font-size:10px;font-weight:700;cursor:pointer;margin-left:auto;color:var(--red)">
+    <input type="checkbox" id="overage-sync" checked style="accent-color:var(--red);cursor:pointer"> Sync to rate (25%)
+  </label>
+</div>
+<div class="pfx"><span>$</span><input type="number" id="overage" value="0.125" min="0.001" step="0.001" placeholder="0.125"></div>
+<div class="fhint" id="overage-hint">&#10003; <strong>25% industry-standard premium</strong> &mdash; overage tracks rate. Uncheck to set a custom rate.</div>
+</div>
 </div>
 <div class="card"><div class="ch"><span class="chdot"></span>API Cost Assumptions <span style="font-size:9px;font-weight:500;text-transform:none;letter-spacing:0;color:var(--tx3);margin-left:4px">(editable — update if vendor rates change)</span></div>
 <div class="g2mb">
@@ -194,7 +203,7 @@ tr:last-child td{border-bottom:none;font-weight:700}
 <div class="f"><div class="fl">Target Gross Margin (%)</div><input type="number" id="margin" value="70" min="1" max="99" step="0.1" placeholder="e.g. 72"></div>
 <div class="f"><div class="fl">Annual Platform / License Fee</div><div class="pfx"><span>$</span><input type="number" id="platform" value="10000" min="0" step="100" placeholder="e.g. 25000"></div><div class="fhint">Flat fee regardless of usage. Covers infra, LSIS reporting, onboarding.</div></div>
 <div class="f"><div class="fl">Traditional Tutor Rate ($/hr) <span style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— for value comparison</span></div><div class="pfx"><span>$</span><input type="number" id="tutor-rate" value="25" min="1" step="1" placeholder="25"></div><div class="fhint">D1 athletic tutors avg $15–$35/hr. Adjust to match what the institution actually pays.</div></div>
-<div class="f"><div class="fl">Commission (% of Profit)</div><div class="pfx"><span>%</span><input type="number" id="commission-pct" value="25" min="0" max="100" step="1" placeholder="25"></div><div class="fhint">Sales commission as a percentage of gross profit. Payable monthly (30-day cancellation).</div></div>
+<div class="f"><div class="fl">Commission (% of Sales)</div><div class="pfx"><span>%</span><input type="number" id="commission-pct" value="10" min="0" max="100" step="1" placeholder="10"></div><div class="fhint">Sales commission as a percentage of annual revenue. Payable monthly (30-day cancellation). Adjustable per deal.</div></div>
 <div class="f"><div class="fl">Other Fixed Costs ($/month) <span style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— optional</span></div><div class="pfx"><span>$</span><input type="number" id="other-fixed" value="0" min="0" step="50" placeholder="0"></div><div class="fhint">Wages, marketing, insurance, or other monthly overhead not captured in API costs.</div></div>
 <div class="div"></div>
 <div class="f"><div class="fl">Suggested List Price (auto-calculated)</div><div style="font-family:DM Serif Display,serif;font-size:26px;color:var(--red);font-weight:400;letter-spacing:-.02em" id="suggest-price">-</div><div class="fhint" id="suggest-note">Calculated to hit your target margin at current usage.</div></div>
@@ -246,6 +255,15 @@ tr:last-child td{border-bottom:none;font-weight:700}
 <div class="card"><div class="ch"><span class="chdot"></span>Annual Cost &amp; Revenue Breakdown</div>
 <table><thead><tr><th>Line Item</th><th style="text-align:right">Monthly</th><th style="text-align:right">Annual</th></tr></thead>
 <tbody id="breakdown"></tbody></table></div>
+<div class="card" style="margin-top:14px"><div class="ch"><span class="chdot"></span>Tiered Pricing for Customer Quote <span style="text-transform:none;letter-spacing:0;color:var(--tx3);font-weight:500;margin-left:8px">— Optional. Show 1, 2 or 3 tiers side-by-side in the proposal PDF.</span></div>
+<div style="display:flex;gap:6px;margin-bottom:12px">
+<button type="button" class="chip sc-btn on" data-n="1" onclick="setScenarioCount(1)" style="padding:7px 16px;font-size:12px">1 Tier</button>
+<button type="button" class="chip sc-btn" data-n="2" onclick="setScenarioCount(2)" style="padding:7px 16px;font-size:12px">2 Tiers</button>
+<button type="button" class="chip sc-btn" data-n="3" onclick="setScenarioCount(3)" style="padding:7px 16px;font-size:12px">3 Tiers</button>
+</div>
+<div style="font-size:11px;color:var(--tx3);margin-bottom:10px;line-height:1.55"><strong style="color:var(--tx2)">Tier 1</strong> always uses your Estimator inputs above and drives the real cost / margin / commission numbers in the internal report. <strong style="color:var(--tx2)">Tier 2 and Tier 3</strong> are customer-facing only — set just the seat count and pre-purchase rate; annual investment computes automatically. Per-user usage and cap inherit from Tier 1.</div>
+<div id="scenario-rows-host"></div>
+</div>
 <div class="btnrow"><button class="btn bprim" onclick="showTab('q')">&#9998; Build Quote</button><button class="btn bsec" onclick="dlInternal()">&#8595; Download Internal Report</button></div>
 </div>
 <div class="tab-s" id="ts-q">
@@ -271,6 +289,7 @@ tr:last-child td{border-bottom:none;font-weight:700}
 <div style="font-size:12px;color:var(--tx2);line-height:2">
 <div style="display:flex;align-items:center;gap:8px"><span style="color:var(--red);font-size:14px">&#10003;</span>Voice-first AI tutoring — available 24/7</div>
 <div style="display:flex;align-items:center;gap:8px"><span style="color:var(--red);font-size:14px">&#10003;</span>Longitudinal Student Intelligence System (LSIS)</div>
+<div style="display:flex;align-items:center;gap:8px"><span style="color:var(--red);font-size:14px">&#10003;</span>Student Relationship Manager (SRM) — syllabi, deadlines, study plans, advisor alerts</div>
 <div style="display:flex;align-items:center;gap:8px"><span style="color:var(--red);font-size:14px">&#10003;</span>Multi-subject coverage (college level)</div>
 <div style="display:flex;align-items:center;gap:8px"><span style="color:var(--red);font-size:14px">&#10003;</span>Academic progress tracking and reporting</div>
 <div style="display:flex;align-items:center;gap:8px"><span style="color:var(--red);font-size:14px">&#10003;</span>Dedicated admin dashboard</div>
@@ -357,6 +376,12 @@ function cfOverage(ratePerMin){
   if(displayUnit==='hr') return '$'+(ratePerMin*60).toFixed(2)+'/hr';
   return '$'+ratePerMin.toFixed(2)+'/min';
 }
+// Effective tutor cost per hour for the customer (annual investment ÷ included annual hours)
+function cfRateHr(annualRev,inclAnnualMin){
+  if(inclAnnualMin<=0) return '—';
+  const perHr=annualRev/(inclAnnualMin/60);
+  return '$'+perHr.toFixed(2)+'/hr';
+}
 function cfTotalHrs(totalMin){
   if(displayUnit==='hr'){const mo=Math.round(totalMin/60);const yr=mo*12;return mo.toLocaleString()+' hrs/month ('+yr.toLocaleString()+' hrs/year)';}
   return fmtMin(totalMin)+'/month ('+fmtMin(totalMin*12)+'/year)';
@@ -387,7 +412,141 @@ function setUnit(u){
   g('unit-toggle').checked=(u==='hr');
   g('lbl-min').className=(u==='min'?'active':'');
   g('lbl-hr').className=(u==='hr'?'active':'');
+  renderScenarioRows();
   updateQPrev();
+}
+
+// ── Tiered Pricing (Tier 1 = Estimator. Tier 2 & 3 = customer-facing pricing only.) ──
+let scenarioCount=1;
+// scenarios[0] is unused — Tier 1 always reads from Estimator state.
+// scenarios[1] / scenarios[2] hold customer-facing overrides for Tier 2 / Tier 3.
+// Each tier sets its own pre-purchase rate ($/min); annual investment is computed.
+let scenarios=[
+  {label:'Tier 1'},
+  {label:'Tier 2',students:null,rate:null,over:null},
+  {label:'Tier 3',students:null,rate:null,over:null},
+];
+function setScenarioCount(n){
+  scenarioCount=n;
+  document.querySelectorAll('.sc-btn').forEach(b=>{
+    b.classList.toggle('on', +b.dataset.n===n);
+  });
+  renderScenarioRows();
+  updateQPrev();
+}
+function renderScenarioRows(){
+  const host=g('scenario-rows-host'); if(!host)return;
+  if(scenarioCount===1){host.innerHTML='<div style="font-size:11.5px;color:var(--tx3);font-style:italic;padding:6px 2px">Single-tier mode — the proposal PDF will use only your Estimator values above.</div>';return;}
+  const baseStudents=+g('students').value||0;
+  const baseUsage=+g('usage').value||0; // minutes
+  const baseRate=+g('rate').value||0.10;
+  const baseOver=+g('overage').value||0.125;
+  const basePlat=+g('platform').value||0;
+  // Tier 1 reference aRev (read-only display)
+  const baseMonthlyMin=baseStudents*baseUsage;
+  const baseARev=calcRev(baseStudents,baseMonthlyMin,baseUsage,baseRate,baseOver,basePlat);
+  let h='';
+  // Tier 1 reference row (read-only summary)
+  h+='<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 14px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">';
+  h+='<div style="font-size:12px;font-weight:700;color:#15803d">&#10003; Tier 1 (from Estimator)</div>';
+  h+='<div style="font-size:11.5px;color:var(--tx2);font-weight:500">'+baseStudents.toLocaleString()+' users &middot; '+cfUsageShort(baseUsage)+'/mo &middot; '+fmt(baseARev)+'/yr &middot; '+cfOverage(baseOver)+' overage</div>';
+  h+='</div>';
+  // Tier 2 / Tier 3 editable rows
+  for(let i=1;i<scenarioCount;i++){
+    const sc=scenarios[i];
+    // Defaults: progressively larger seat counts; rate defaults to Tier 1's rate
+    const stuDefault=Math.max(1,Math.round(baseStudents*[1,2,4][i]));
+    const stuVal=sc.students!=null?sc.students:stuDefault;
+    const rateVal=sc.rate!=null?sc.rate:baseRate;
+    const overVal=sc.over!=null?sc.over:baseOver;
+    // Computed annual investment at this tier's rate × usage × students
+    const monthlyMin=stuVal*baseUsage;
+    const aRevVal=calcRev(stuVal,monthlyMin,baseUsage,rateVal,overVal,basePlat);
+    // Effective $/hr at the entered price
+    const inclAnnualHrs=(stuVal*baseUsage*12)/60;
+    const effHr=inclAnnualHrs>0?(aRevVal/inclAnnualHrs):0;
+    // Overage display in current unit
+    const overDisp=displayUnit==='hr'?(overVal*60).toFixed(2):overVal.toFixed(4);
+    const overUnit=displayUnit==='hr'?'$/hr':'$/min';
+    h+='<div style="background:var(--sf2);border:1px solid var(--bo);border-radius:8px;padding:12px 14px;margin-bottom:8px">';
+    h+='<div style="display:grid;grid-template-columns:1.1fr 1fr 1.2fr 1fr;gap:10px;align-items:end">';
+    h+='<div class="f" style="margin:0"><div class="fl">Tier Label</div><input type="text" value="'+(sc.label||('Tier '+(i+1)))+'" oninput="scenarios['+i+'].label=this.value;updateScenarioReadout('+i+');updateQPrev()"></div>';
+    h+='<div class="f" style="margin:0"><div class="fl">Users / Seats</div><input type="number" min="1" step="1" value="'+stuVal+'" oninput="scenarios['+i+'].students=+this.value||0;renderScenarioRows();updateQPrev()"></div>';
+    h+='<div class="f" style="margin:0"><div class="fl">Pre-purchase Rate ($/min) <span style="color:var(--tx3);font-weight:500;font-size:10.5px;margin-left:4px">Tier 1 rate: $'+baseRate.toFixed(4)+'/min</span></div><div class="pfx"><span>$</span><input type="number" min="0.001" step="0.001" value="'+rateVal.toFixed(4)+'" oninput="scenarios['+i+'].rate=+this.value||0;updateScenarioReadout('+i+');updateQPrev()"></div></div>';
+    h+='<div class="f" style="margin:0"><div class="fl">Overage ('+overUnit+')</div><input type="number" min="0" step="0.01" value="'+overDisp+'" oninput="scenarios['+i+'].over='+(displayUnit==='hr'?'(+this.value||0)/60':'+this.value||0')+';updateScenarioReadout('+i+');updateQPrev()"></div>';
+    h+='</div>';
+    // Live readout
+    h+='<div id="sc-readout-'+i+'" style="margin-top:8px;padding:8px 12px;background:#fff;border:1px solid var(--bo);border-radius:6px;font-size:11px;color:var(--tx2);display:flex;gap:14px;flex-wrap:wrap">';
+    h+='<span><strong style="color:var(--tx)">Annual:</strong> '+fmt(aRevVal)+'</span>';
+    h+='<span><strong style="color:var(--tx)">Monthly:</strong> '+fmt(aRevVal/12)+'</span>';
+    h+='<span><strong style="color:#15803d">Effective rate:</strong> $'+effHr.toFixed(2)+'/hr</span>';
+    h+='<span><strong style="color:var(--tx)">Total tutor hours:</strong> '+(inclAnnualHrs).toLocaleString(undefined,{maximumFractionDigits:0})+' hrs/year</span>';
+    h+='</div></div>';
+  }
+  host.innerHTML=h;
+}
+// Lightweight readout updater (avoids full re-render on every keystroke)
+function updateScenarioReadout(i){
+  const el=g('sc-readout-'+i); if(!el)return;
+  const sc=scenarios[i];
+  const baseStudents=+g('students').value||0;
+  const baseUsage=+g('usage').value||0;
+  const baseRate=+g('rate').value||0.10;
+  const baseOver=+g('overage').value||0.125;
+  const basePlat=+g('platform').value||0;
+  const stuVal=sc.students!=null?sc.students:Math.max(1,Math.round(baseStudents*[1,2,4][i]));
+  const rateVal=sc.rate!=null?sc.rate:baseRate;
+  const overVal=sc.over!=null?sc.over:baseOver;
+  const monthlyMin=stuVal*baseUsage;
+  const aRevVal=calcRev(stuVal,monthlyMin,baseUsage,rateVal,overVal,basePlat);
+  const inclAnnualHrs=(stuVal*baseUsage*12)/60;
+  const effHr=inclAnnualHrs>0?(aRevVal/inclAnnualHrs):0;
+  el.innerHTML=
+    '<span><strong style="color:var(--tx)">Annual:</strong> '+fmt(aRevVal)+'</span>'+
+    '<span><strong style="color:var(--tx)">Monthly:</strong> '+fmt(aRevVal/12)+'</span>'+
+    '<span><strong style="color:#15803d">Effective rate:</strong> $'+effHr.toFixed(2)+'/hr</span>'+
+    '<span><strong style="color:var(--tx)">Total tutor hours:</strong> '+(inclAnnualHrs).toLocaleString(undefined,{maximumFractionDigits:0})+' hrs/year</span>';
+}
+// Compute one tier's PDF-facing values
+function computeScenario(i,baseS){
+  if(i===0){
+    // Tier 1 always = Estimator state
+    const inclAnnualMin=baseS.students*baseS.cap*12;
+    return {
+      label:scenarios[0].label||'Tier 1',
+      students:baseS.students,usage:baseS.usage,cap:baseS.cap,
+      monthlyMin:baseS.students*baseS.usage,
+      annualMin:baseS.students*baseS.usage*12,
+      inclMonthlyMin:baseS.students*baseS.cap,
+      inclAnnualMin,
+      inclAnnualHrs:inclAnnualMin/60,
+      aRev:baseS.aRev,
+      over:baseS.over,
+      plat:baseS.plat,
+    };
+  }
+  const sc=scenarios[i];
+  const students=sc.students!=null?sc.students:Math.max(1,Math.round(baseS.students*[1,2,4][i]));
+  const usage=baseS.usage; // inherits from Tier 1
+  const cap=baseS.cap;     // inherits from Tier 1
+  const rate=sc.rate!=null?sc.rate:baseS.rate;
+  const over=sc.over!=null?sc.over:baseS.over;
+  const monthlyMin=students*usage;
+  const inclMonthlyMin=students*cap;
+  const inclAnnualMin=inclMonthlyMin*12;
+  // Annual investment computed at this tier's rate × usage × students
+  const aRev=calcRev(students,monthlyMin,cap,rate,over,baseS.plat);
+  return {
+    label:sc.label||('Tier '+(i+1)),
+    students,usage,cap,monthlyMin,
+    annualMin:monthlyMin*12,
+    inclMonthlyMin,
+    inclAnnualMin,
+    inclAnnualHrs:inclAnnualMin/60,
+    aRev,
+    over,
+    plat:baseS.plat,
+  };
 }
 const MDESC = {
   h: 'Annual platform fee covers infrastructure and LSIS reporting. Students draw from a pre-purchased minute pool. Overage billed quarterly at a premium.',
@@ -400,7 +559,7 @@ function showTab(t){
     g('ts-'+x).classList.toggle('on',x===t);
     g('pt-'+x).classList.toggle('on',x===t);
   });
-  if(t==='q')updateQPrev();
+  if(t==='q'){renderScenarioRows();updateQPrev();}
   if(t==='s')renderSavedQuotes();
 }
 
@@ -441,6 +600,45 @@ g('usage').addEventListener('input', function(){
   update();
 });
 g('cap-sync').addEventListener('change', syncCap);
+
+// 25%-premium overage sync (industry standard)
+function syncOverage(){
+  const synced = g('overage-sync').checked;
+  const hint = g('overage-hint');
+  const rate = +g('rate').value || 0.10;
+  if(synced){
+    g('overage').value = (rate * 1.25).toFixed(4);
+    hint.innerHTML='&#10003; <strong>25% industry-standard premium</strong> &mdash; overage tracks rate. Uncheck to set a custom rate.';
+    hint.style.color='var(--gr)';
+  } else {
+    const over = +g('overage').value || 0;
+    const pct = rate > 0 ? Math.round((over/rate - 1) * 100) : 0;
+    hint.innerHTML='&#9888; <strong>Custom rate</strong> &mdash; overage is ' + pct + '% over the pre-purchase rate.';
+    hint.style.color='var(--am)';
+  }
+  update();
+}
+// When rate changes and sync is on, update overage to track at 25% premium
+g('rate').addEventListener('input', function(){
+  if(g('overage-sync').checked){
+    const r = +this.value || 0;
+    g('overage').value = (r * 1.25).toFixed(4);
+    update();
+  }
+});
+// When user manually edits overage, auto-uncheck sync and refresh hint
+g('overage').addEventListener('input', function(){
+  if(g('overage-sync').checked){
+    g('overage-sync').checked = false;
+  }
+  const rate = +g('rate').value || 0.10;
+  const over = +this.value || 0;
+  const pct = rate > 0 ? Math.round((over/rate - 1) * 100) : 0;
+  const hint = g('overage-hint');
+  hint.innerHTML='&#9888; <strong>Custom rate</strong> &mdash; overage is ' + pct + '% over the pre-purchase rate.';
+  hint.style.color='var(--am)';
+});
+g('overage-sync').addEventListener('change', syncOverage);
 
 
 function calcRev(students,monthlyMin,cap,rate,over,plat){
@@ -493,7 +691,7 @@ function buildRows(students,monthlyMin,cap,rate,over,plat){
 
 function update(){
   const students=+g('students').value||0, usage=+g('usage').value||0;
-  const cap=+g('cap').value||60, rate=+g('rate').value||0.10, over=+g('overage').value||0.14;
+  const cap=+g('cap').value||60, rate=+g('rate').value||0.10, over=+g('overage').value||0.125;
   const plat=+g('platform').value||0;
   const targetMargin=+g('margin').value||70;
   const VCOST=getCOST(), VFIXED=getFIXED();
@@ -525,11 +723,11 @@ function update(){
   g('macost2').textContent=fmt(mCost)+' / month';
   g('msug').textContent=fmt(suggested);
 
-  // Commission & Net Revenue
+  // Commission & Net Revenue (% of annual sales/revenue)
   const commPct = (+g('commission-pct').value||0)/100;
   const otherFixed = +g('other-fixed').value||0;
   const otherFixedAnnual = otherFixed*12;
-  const commissionAnnual = profit * commPct;
+  const commissionAnnual = aRev * commPct;
   const commissionMonthly = commissionAnnual/12;
   const netRevenue = aRev - commissionAnnual;
   const netProfit = aRev - aCost - commissionAnnual - otherFixedAnnual;
@@ -655,6 +853,8 @@ function update(){
   }).join('');
 
   updateQPrev();
+  // Re-render scenario rows so defaults (Scenario 1 = estimator) stay in sync
+  renderScenarioRows();
 }
 
 function qn(){
@@ -707,7 +907,7 @@ function getState(){
   const commPct=(+g('commission-pct').value||0)/100;
   const otherFixed=+g('other-fixed').value||0;
   const otherFixedAnnual=otherFixed*12;
-  const commissionAnnual=profit*commPct;
+  const commissionAnnual=aRev*commPct;
   const commissionMonthly=commissionAnnual/12;
   const netRevenue=aRev-commissionAnnual;
   const netProfit=aRev-aCost-commissionAnnual-otherFixedAnnual;
@@ -724,43 +924,48 @@ function getState(){
 }
 
 function addLetterhead(doc,s,isClient){
-  const RED=[200,28,28],DARKRED=[139,16,16],GRAY=[74,74,85],LIGHTGRAY=[235,235,237];
+  const RED=[200,28,28],DARKRED=[139,16,16],GRAY=[74,74,85],LIGHTGRAY=[235,235,237],TEXT=[15,15,16],SUB=[100,100,110];
   const W=210,M=18;
-  // Red header bar
-  doc.setFillColor(...RED);
+  // White header bar (logo readable)
+  doc.setFillColor(255,255,255);
   doc.rect(0,0,W,28,'F');
-  // Logo
-  try{doc.addImage(LOGO_B64,'PNG',M,4,20,20);}catch(e){}
-  // Company name
+  // Logo (full color on white)
+  try{doc.addImage(LOGO_B64,'PNG',M,3.5,21,21);}catch(e){}
+  // Company name (red on white)
   doc.setFont('helvetica','bold');
-  doc.setFontSize(14);
-  doc.setTextColor(255,255,255);
-  doc.text('JIE Mastery',M+24,13);
+  doc.setFontSize(15);
+  doc.setTextColor(...RED);
+  doc.text('JIE Mastery',M+25,13);
   doc.setFontSize(7.5);
   doc.setFont('helvetica','normal');
-  doc.setTextColor(255,200,200);
-  doc.text('Longitudinal AI Tutoring Platform',M+24,18.5);
-  // Right side of header
+  doc.setTextColor(...SUB);
+  doc.text('Longitudinal AI Tutoring Platform',M+25,18.5);
+  // Right side of header (dark text on white)
   doc.setFont('helvetica','normal');
   doc.setFontSize(7.5);
-  doc.setTextColor(255,255,255);
+  doc.setTextColor(...TEXT);
   const rightX=W-M;
   doc.text(s.coName,rightX,10,{align:'right'});
+  doc.setTextColor(...SUB);
   if(s.coAddr)doc.text(s.coAddr,rightX,14.5,{align:'right'});
+  doc.setTextColor(...RED);
   doc.text(s.coContact,rightX,19,{align:'right'});
-  // Document type strip
+  // Thin divider line under header
+  doc.setDrawColor(...RED);doc.setLineWidth(.6);
+  doc.line(M,26,W-M,26);
+  // Document type strip (still red for visibility)
   doc.setFillColor(...DARKRED);
-  doc.rect(0,28,W,8,'F');
+  doc.rect(0,28,W,9,'F');
   doc.setFont('helvetica','bold');
   doc.setFontSize(8);
   doc.setTextColor(255,255,255);
-  doc.text(isClient?'PROPOSAL & SERVICE AGREEMENT':'INTERNAL MARGIN REPORT — CONFIDENTIAL',M,33.5);
+  doc.text(isClient?'PROPOSAL & SERVICE AGREEMENT':'INTERNAL MARGIN REPORT — CONFIDENTIAL',M,34);
   doc.setFont('helvetica','normal');
   doc.setFontSize(7.5);
-  doc.text('Quote # '+s.qn,rightX,33.5,{align:'right'});
+  doc.text('Quote # '+s.qn,rightX,34,{align:'right'});
   // Reset
   doc.setTextColor(0,0,0);
-  return 42; // y after header
+  return 44; // y after header
 }
 
 function addFooter(doc,isClient){
@@ -848,61 +1053,158 @@ function dlQuote(){
   const introLines=doc.splitTextToSize(intro,W-M*2);
   doc.text(introLines,M,y);y+=introLines.length*4.5+4;
 
-  // Scope box
-  const totalMonthlyMin=s.students*s.usage;
-  const totalAnnualMin=totalMonthlyMin*12;
-  doc.setFillColor(...LIGHT);doc.rect(M,y,W-M*2,34,'F');
-  doc.setDrawColor(...RED);doc.setLineWidth(.4);doc.rect(M,y,W-M*2,34);
+  // Build computed scenarios (1, 2, or 3) — Tier 1 always uses the base estimator state.
+  // Tier 2 / Tier 3 are customer-facing overrides (Users, Annual Investment, Overage).
+  const sc1Base={students:s.students,usage:s.usage,cap:s.cap,rate:s.rate,over:s.over,plat:s.plat,aRev:s.aRev};
+  const computed=[];
+  for(let i=0;i<scenarioCount;i++){ computed.push(computeScenario(i,sc1Base)); }
+  const multi=scenarioCount>1;
+
+  // Scope box — single scenario: existing 6-field layout. Multi: side-by-side comparison.
+  const scopeH = multi ? (10 + 5.5*5 + 4) : 34;
+  doc.setFillColor(...LIGHT);doc.rect(M,y,W-M*2,scopeH,'F');
+  doc.setDrawColor(...RED);doc.setLineWidth(.4);doc.rect(M,y,W-M*2,scopeH);
   doc.setFont('helvetica','bold');doc.setFontSize(8.5);doc.setTextColor(...RED);
   doc.text('ENGAGEMENT SCOPE',M+4,y+5.5);
-  doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(0,0,0);
-  const scopeItems=[
-    ['Users / Seats:', s.students.toLocaleString()+' students or users'],
-    ['Avg Usage / User:', cfUsage(s.usage)],
-    ['Institution Type:', s.instType],
-    ['Pricing Structure:', cfModelName()],
-    ['Contract Term:', 'Annual (12 months)'],
-    ['Total Tutor '+(displayUnit==='hr'?'Hours':'Minutes')+':', cfTotalHrs(totalMonthlyMin)],
-  ];
-  let sx=M+4,sy=y+10;
-  scopeItems.forEach(([lbl,val],i)=>{
-    const col=i%2===0?sx:sx+(W-M*2)/2;
-    const row=Math.floor(i/2)*5.5+sy;
-    doc.setFont('helvetica','bold');doc.setFontSize(7.5);doc.setTextColor(...GRAY);
-    doc.text(lbl,col,row);
-    doc.setFont('helvetica','normal');doc.setTextColor(0,0,0);
-    doc.text(val,col+28,row);
-  });
-  y+=39;
+
+  if(!multi){
+    doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(0,0,0);
+    const scopeItems=[
+      ['Users / Seats:', s.students.toLocaleString()+' students or users'],
+      ['Avg Usage / User:', cfUsage(s.usage)],
+      ['Institution Type:', s.instType],
+      ['Pricing Structure:', cfModelName()],
+      ['Contract Term:', 'Annual (12 months)'],
+      ['Total Tutor '+(displayUnit==='hr'?'Hours':'Minutes')+':', cfTotalHrs(s.students*s.usage)],
+    ];
+    let sx=M+4,sy=y+10;
+    scopeItems.forEach(([lbl,val],i)=>{
+      const col=i%2===0?sx:sx+(W-M*2)/2;
+      const row=Math.floor(i/2)*5.5+sy;
+      doc.setFont('helvetica','bold');doc.setFontSize(7.5);doc.setTextColor(...GRAY);
+      doc.text(lbl,col,row);
+      doc.setFont('helvetica','normal');doc.setTextColor(0,0,0);
+      doc.text(val,col+28,row);
+    });
+    y+=39;
+  } else {
+    // Multi-scenario scope: row labels on left, scenario columns on right
+    doc.setFont('helvetica','normal');doc.setFontSize(7.5);doc.setTextColor(...GRAY);
+    doc.text('Institution Type: '+s.instType+'    |    Contract Term: Annual (12 months)    |    Pricing Structure: '+cfModelName(),M+4,y+11);
+    // Column headers
+    const labelW=46;
+    const remW=W-M*2-labelW-8;
+    const colW=remW/scenarioCount;
+    const tableTop=y+15;
+    // Header row
+    doc.setFillColor(...RED);doc.rect(M+4+labelW,tableTop,remW,6,'F');
+    doc.setFont('helvetica','bold');doc.setFontSize(7.5);doc.setTextColor(255,255,255);
+    computed.forEach((c,i)=>{
+      doc.text(c.label,M+4+labelW+colW*i+colW/2,tableTop+4,{align:'center'});
+    });
+    // Body rows
+    const rows=[
+      ['Users / Seats', c=>c.students.toLocaleString()],
+      ['Usage / User', c=>cfUsageShort(c.usage)+'/mo'],
+      ['Total Tutor '+(displayUnit==='hr'?'Hours':'Minutes'), c=>cfTotalHrs(c.monthlyMin)],
+    ];
+    let ry=tableTop+6;
+    rows.forEach((row,ri)=>{
+      if(ri%2===0){doc.setFillColor(255,255,255);doc.rect(M+4+labelW,ry,remW,5.5,'F');}
+      doc.setFont('helvetica','bold');doc.setFontSize(7.5);doc.setTextColor(...GRAY);
+      doc.text(row[0]+':',M+4,ry+3.8);
+      doc.setFont('helvetica','normal');doc.setTextColor(0,0,0);doc.setFontSize(7.5);
+      computed.forEach((c,i)=>{
+        doc.text(row[1](c),M+4+labelW+colW*i+colW/2,ry+3.8,{align:'center'});
+      });
+      ry+=5.5;
+    });
+    y=tableTop+6+rows.length*5.5+5;
+  }
 
   // Investment table (client-facing — NO cost info)
   doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor(0,0,0);
-  doc.text('Annual Investment Summary',M,y);y+=4;
+  doc.text('Annual Investment Proposal Summary',M,y);y+=4;
 
-  const clientRows=[];
+  // Rows builder — same components for every scenario; values vary
+  // Component label, description, row-type ('plat'|'pool'|'effective'|'overage'|'commit'|'addl'|'total')
+  const componentDefs=[];
   if(model!=='m'){
-    if(s.plat>0)clientRows.push(['Annual Platform License','',fmt(s.plat)]);
-    const monthlyMin=s.students*s.usage;
-    const inc=s.students*s.cap;
-    clientRows.push([cfPoolLabel(inc),cfPoolDesc(inc*12),'Included']);
-    clientRows.push(['Overage Rate','Above included pool',cfOverage(s.over)]);
+    if(s.plat>0) componentDefs.push({lbl:'Annual Platform License',desc:'',type:'plat'});
+    componentDefs.push({lbl:'',desc:'',type:'pool'}); // label & desc set per-scenario
+    componentDefs.push({lbl:'Tutor Cost Per Hour',desc:'Effective rate per included hour',type:'effective'});
+    componentDefs.push({lbl:'Overage Rate',desc:'Above included pool',type:'overage'});
   }else{
-    const mc=Math.max(s.plat,s.monthlyMin*3*s.over);
-    clientRows.push(['Annual Minimum Commitment','Pre-paid usage pool',fmt(mc)]);
-    clientRows.push([displayUnit==='hr'?'Additional Hours':'Additional Minutes','Beyond commitment pool',cfOverage(s.over)]);
+    componentDefs.push({lbl:'Annual Minimum Commitment',desc:'Pre-paid usage pool',type:'commit'});
+    componentDefs.push({lbl:displayUnit==='hr'?'Additional Hours':'Additional Minutes',desc:'Beyond commitment pool',type:'addl'});
+    componentDefs.push({lbl:'Tutor Cost Per Hour',desc:'Effective rate per committed hour',type:'effective'});
   }
-  clientRows.push(['Annual Total Investment','12-month term',fmt(s.aRev)]);
+  componentDefs.push({lbl:'Annual Total Investment',desc:'12-month term',type:'total'});
+
+  // Cell value helper
+  function cellFor(def,c){
+    switch(def.type){
+      case 'plat': return fmt(c.plat);
+      case 'pool': return 'Included';
+      case 'effective': return cfRateHr(c.aRev,c.inclAnnualMin);
+      case 'overage': return cfOverage(c.over);
+      case 'commit': { const mc=Math.max(c.plat,c.monthlyMin*3*c.over); return fmt(mc); }
+      case 'addl': return cfOverage(c.over);
+      case 'total': return fmt(c.aRev);
+      default: return '';
+    }
+  }
+  // Build rows array (description column varies for pool row)
+  const head=[multi
+    ? ['Service Component','Description', ...computed.map(c=>c.label)]
+    : ['Service Component','Description','Price']];
+  const body=componentDefs.map(def=>{
+    let lbl=def.lbl,desc=def.desc;
+    if(def.type==='pool'){
+      // Pool label uses scenario 1's monthly minutes; description uses scenario 1's annual minutes
+      lbl=cfPoolLabel(computed[0].inclMonthlyMin);
+      desc=cfPoolDesc(computed[0].inclAnnualMin);
+    }
+    const row=[lbl,desc];
+    computed.forEach(c=>row.push(cellFor(def,c)));
+    return row;
+  });
+
+  const colStyles={};
+  if(multi){
+    colStyles[0]={cellWidth:48,fontStyle:'bold'};
+    colStyles[1]={cellWidth:52,textColor:[100,100,110],fontSize:7.5};
+    const dataColW=(W-M*2-100)/scenarioCount;
+    for(let i=0;i<scenarioCount;i++) colStyles[2+i]={halign:'center',fontStyle:'bold',cellWidth:dataColW};
+  } else {
+    colStyles[2]={halign:'right',fontStyle:'bold'};
+  }
 
   doc.autoTable({
     startY:y,
-    head:[['Service Component','Description','Price']],
-    body:clientRows,
+    head:head,
+    body:body,
     margin:{left:M,right:M},
-    headStyles:{fillColor:RED,textColor:[255,255,255],fontSize:8,fontStyle:'bold'},
-    bodyStyles:{fontSize:8,cellPadding:3},
+    headStyles:{fillColor:RED,textColor:[255,255,255],fontSize:multi?7.5:8,fontStyle:'bold',halign:multi?'center':'left'},
+    bodyStyles:{fontSize:multi?7.5:8,cellPadding:multi?2.5:3},
     alternateRowStyles:{fillColor:LIGHT},
-    columnStyles:{2:{halign:'right',fontStyle:'bold'}},
+    columnStyles:colStyles,
     styles:{lineColor:[220,220,222],lineWidth:.3},
+    didParseCell:function(data){
+      // Bold the total row
+      if(data.section==='body'&&data.row.index===body.length-1){
+        data.cell.styles.fontStyle='bold';
+        data.cell.styles.fillColor=[240,240,242];
+      }
+      // Highlight the Tutor Cost Per Hour row in green tint to draw attention
+      const def=componentDefs[data.row.index];
+      if(data.section==='body'&&def&&def.type==='effective'){
+        data.cell.styles.fillColor=[240,253,244];
+        if(data.column.index>=2 || (!multi&&data.column.index===2)){
+          data.cell.styles.textColor=[21,128,61];
+        }
+      }
+    },
     foot:[],
   });
   y=doc.lastAutoTable.finalY+8;
@@ -913,6 +1215,7 @@ function dlQuote(){
   const includes=[
     'Voice-first Socratic AI tutoring, available 24 hours a day, 7 days a week',
     'Longitudinal Student Intelligence System (LSIS) — persistent, adaptive learning profiles',
+    'Student Relationship Manager (SRM) — syllabus intake, deadline calendar, AI-generated study plans, advisor alerts',
     'Multi-subject academic support at the collegiate level',
     'Academic progress tracking, session analytics, and outcome reporting',
     'Dedicated administrator dashboard with user management',
@@ -952,52 +1255,6 @@ function dlQuote(){
   const introVLines=doc.splitTextToSize(introV,W-M*2);
   doc.text(introVLines,M,y);y+=introVLines.length*4.5+6;
 
-  // ── "Our Proposal" box with itemized pricing table ──
-  {
-    const boxW=W-M*2;
-    // Box header
-    doc.setFillColor(200,28,28);doc.rect(M,y,boxW,9,'F');
-    doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(255,255,255);
-    doc.text('Our Proposal',M+5,y+6.2);
-    y+=12;
-
-    // Build pricing rows from the same data used on page 1
-    const proposalRows=[];
-    const poolMin=s.students*s.usage;
-    if(s.model==='h'||s.model==='t'){
-      proposalRows.push(['Annual Platform License','',fmt(s.plat||49900)]);
-      proposalRows.push([cfPoolLabel(poolMin),cfPoolDesc(poolMin*12),'Included']);
-      proposalRows.push(['Overage Rate','Above included pool',cfOverage(s.over||0.13)]);
-    } else {
-      proposalRows.push(['Metered Usage',''+s.students.toLocaleString()+' users × '+cfUsageShort(s.usage)+'/mo',fmt(s.aRev)]);
-    }
-    proposalRows.push(['Annual Total Investment','12-month term',fmt(s.aRev)]);
-
-    doc.autoTable({
-      startY:y,
-      head:[['Service Component','Description','Price']],
-      body:proposalRows,
-      margin:{left:M,right:M},
-      headStyles:{fillColor:[55,65,81],textColor:[255,255,255],fontSize:7.5,fontStyle:'bold'},
-      bodyStyles:{fontSize:8,cellPadding:3},
-      alternateRowStyles:{fillColor:[249,250,251]},
-      columnStyles:{
-        0:{cellWidth:70},
-        1:{cellWidth:55,textColor:[100,100,110]},
-        2:{halign:'right',fontStyle:'bold',cellWidth:35}
-      },
-      styles:{lineColor:[220,220,222],lineWidth:.25},
-      didParseCell:function(data){
-        // Bold the total row
-        if(data.section==='body'&&data.row.index===proposalRows.length-1){
-          data.cell.styles.fontStyle='bold';
-          data.cell.styles.fillColor=[240,240,242];
-        }
-      }
-    });
-    y=doc.lastAutoTable.finalY+8;
-  }
-
   // ── Comparison summary box (green) ──
   if(annualSavings>0){
     doc.setFillColor(240,253,244);doc.setDrawColor(187,247,208);doc.setLineWidth(.4);
@@ -1020,6 +1277,58 @@ function dlQuote(){
     y+=vsBoxH+8;
   }
 
+  // ── Student Relationship Manager (SRM) — feature highlight ──
+  // Page-break check: SRM section needs ~70mm; if not enough room, new page
+  if(y>180){doc.addPage();y=addLetterhead(doc,s,true);}
+
+  doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(...RED);
+  doc.text('More Than a Tutor — A Complete Student Relationship Manager (SRM)',M,y);y+=5;
+  doc.setFont('helvetica','normal');doc.setFontSize(8.5);doc.setTextColor(...GRAY);
+  const srmIntro='JIE Mastery is the only AI tutor with a built-in Student Relationship Manager. The SRM links every syllabus, deadline, exam, and study task into one persistent profile — so the tutor knows what each student is preparing for, when, and how ready they are. Advisors and faculty get the same picture in real time, before grades start to slip.';
+  const srmIntroLines=doc.splitTextToSize(srmIntro,W-M*2);
+  doc.text(srmIntroLines,M,y);y+=srmIntroLines.length*4.5+5;
+
+  // Two-column SRM benefits grid
+  const srmRows=[
+    ['Syllabus Intake','Upload or paste a syllabus — AI extracts every exam, project, and deadline into the calendar automatically.'],
+    ['Deadline Intelligence','Every due date from every course consolidated in one calendar — no more scattered PDFs.'],
+    ['Adaptive Study Plans','Study tasks generated 7, 5, 3, and 1 days before each exam, scaled to course difficulty and student profile.'],
+    ['Tutor Context Awareness','Sessions open with: "You have an Orgo exam Friday — let\'s review reaction mechanisms." The tutor already knows.'],
+    ['Engagement Scoring','Per-course engagement score tells advisors which students are at risk this week — not next semester.'],
+    ['Early Intervention Alerts','Advisors get automated alerts when engagement drops, missed deadlines stack up, or mastery stalls. Intervention happens before the failing grade — not after.'],
+    ['Persistent Learner Profile','LSIS tracks mastery, learning style, and pace across every session, every term — improving recommendations the longer a student uses it.'],
+    ['Outcome Reporting','Annual usage summary, retention impact, course-level outcomes — ready for accreditation, NCAA APR, and Title III reporting.'],
+  ];
+  const colW=(W-M*2-4)/2;
+  const rowH=11;
+  for(let i=0;i<srmRows.length;i+=2){
+    if(y+rowH>275){doc.addPage();y=addLetterhead(doc,s,true);}
+    [0,1].forEach(j=>{
+      const idx=i+j; if(idx>=srmRows.length) return;
+      const x=M+(colW+4)*j;
+      doc.setFillColor(252,243,243);doc.setDrawColor(...RED);doc.setLineWidth(.3);
+      doc.rect(x,y,colW,rowH,'FD');
+      doc.setFillColor(...RED);doc.rect(x,y,2.5,rowH,'F');
+      doc.setFont('helvetica','bold');doc.setFontSize(8);doc.setTextColor(...RED);
+      doc.text(srmRows[idx][0],x+5,y+3.8);
+      doc.setFont('helvetica','normal');doc.setFontSize(7.2);doc.setTextColor(...GRAY);
+      const txt=doc.splitTextToSize(srmRows[idx][1],colW-7);
+      doc.text(txt.slice(0,2),x+5,y+7.4);
+    });
+    y+=rowH+2;
+  }
+  y+=3;
+  // Bottom-line SRM statement
+  doc.setFillColor(21,128,61);doc.rect(M,y,W-M*2,11,'F');
+  doc.setFont('helvetica','bold');doc.setFontSize(8.5);doc.setTextColor(255,255,255);
+  const srmKicker='With SRM, '+s.inst+' gets every syllabus, every deadline, every student\'s readiness — connected to a tutor that already knows what each student is preparing for. That is what no other AI tutor delivers.';
+  const srmKickLines=doc.splitTextToSize(srmKicker,W-M*2-10);
+  doc.text(srmKickLines,M+5,y+4.3);
+  y+=14;
+
+  // Page-break before Capability Comparison table if room is tight
+  if(y>200){doc.addPage();y=addLetterhead(doc,s,true);}
+
   // Feature comparison table
   doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor(0,0,0);
   doc.text('Capability Comparison',M,y);y+=4;
@@ -1030,6 +1339,7 @@ function dlQuote(){
     ['Availability','24/7, instant on-demand','Scheduled only — limited evenings & weekends','Text chat only'],
     ['Teaching Style','Socratic voice dialogue — guides to understanding','Varies by tutor skill and engagement','Provides answers directly; no pedagogy'],
     ['Student Memory','LSIS: remembers every session, tracks mastery over time','Notes-dependent; lost when tutor changes','No memory between sessions'],
+    ['SRM / Deadline Intelligence','Built-in: syllabi, exams, study plans, advisor alerts','Not included','Not included'],
     ['Consistency','Identical quality every session, every student','Varies by tutor, day, and fatigue','Inconsistent; prompt-dependent'],
     ['Simultaneous Sessions','Unlimited — all students served at once','One student per tutor at a time','Unlimited but no academic oversight'],
     ['Eligibility & APR Tracking','Automated session logs; APR-ready reporting','Manual; coordinator-dependent','None'],
@@ -1088,7 +1398,7 @@ function dlQuote(){
   const terms=g('terms-edit').value;
   const termLines=doc.splitTextToSize(terms,W-M*2);
   termLines.forEach(line=>{
-    if(y>270){doc.addPage();addLetterhead(doc,s,true);y=48;}
+    if(y>270){doc.addPage();addLetterhead(doc,s,true);y=50;}
     doc.text(line,M,y);y+=4.2;
   });
 
@@ -1140,7 +1450,7 @@ function dlInternal(){
     ['Client:',s.inst||'—'],['Contact:',s.contact||'—'],
     ['Students:',s.students.toLocaleString()],['Avg Usage:',s.usage+' min/user/mo'],
     ['Model:',s.modelName],['Target Margin:',s.targetMargin+'%'],
-    ['Commission:',Math.round(s.commPct*100)+'% of profit'],['Other Fixed:',s.otherFixed>0?fmt(s.otherFixed)+'/mo':'None'],
+    ['Commission:',Math.round(s.commPct*100)+'% of sales'],['Other Fixed:',s.otherFixed>0?fmt(s.otherFixed)+'/mo':'None'],
   ];
   let sx=M+4,sy=y+10;
   sumItems.forEach(([lbl,val],i)=>{
@@ -1243,7 +1553,7 @@ function dlInternal(){
   doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(...GRAY);
 
   const commAnalysis=[
-    'Sales commission rate: '+Math.round(s.commPct*100)+'% of gross profit ('+fmt(s.profit)+').',
+    'Sales commission rate: '+Math.round(s.commPct*100)+'% of annual revenue ('+fmt(s.aRev)+').',
     'Commission payable: '+fmt(s.commissionAnnual)+'/yr — '+fmt(s.commissionMonthly)+'/month (payable monthly, 30-day cancellation).',
   ];
   if(s.otherFixed>0){
