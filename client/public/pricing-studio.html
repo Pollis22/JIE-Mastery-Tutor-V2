@@ -476,10 +476,10 @@ function renderScenarioRows(){
     h+='<div style="background:var(--sf2);border:1px solid var(--bo);border-radius:8px;padding:12px 14px;margin-bottom:8px">';
     h+='<div style="display:grid;grid-template-columns:1.1fr 1fr 1.2fr 1fr;gap:10px;align-items:end">';
     h+='<div class="f" style="margin:0"><div class="fl">Tier Label</div><input type="text" value="'+(sc.label||('Tier '+(i+1)))+'" oninput="scenarios['+i+'].label=this.value;updateScenarioReadout('+i+');updateQPrev()"></div>';
-    h+='<div class="f" style="margin:0"><div class="fl">Users / Seats</div><input type="number" min="1" step="1" value="'+stuVal+'" oninput="scenarios['+i+'].students=+this.value||0;renderScenarioRows();updateQPrev()"></div>';
-    h+='<div class="f" style="margin:0"><div class="fl">Pre-purchase Rate ($/min) <span style="color:var(--tx3);font-weight:500;font-size:10.5px;margin-left:4px">Tier 1 rate: $'+baseRate.toFixed(4)+'/min</span></div><div class="pfx"><span>$</span><input type="number" min="0.001" step="0.001" value="'+rateVal.toFixed(4)+'" oninput="onTierRateChange('+i+',+this.value||0)"></div></div>';
+    h+='<div class="f" style="margin:0"><div class="fl">Users / Seats</div><input type="number" min="1" step="1" value="'+stuVal+'" oninput="onTierSeatsChange('+i+',+this.value||0)"></div>';
+    h+='<div class="f" style="margin:0"><div class="fl">Pre-purchase Rate ($/min) <span style="color:var(--tx3);font-weight:500;font-size:10.5px;margin-left:4px">Tier 1 rate: $'+baseRate.toFixed(2)+'/min</span></div><div class="pfx"><span>$</span><input type="number" min="0.01" step="0.01" value="'+rateVal.toFixed(2)+'" oninput="onTierRateChange('+i+',+this.value||0)"></div></div>';
     // Overage column with sync checkbox — mirrors Estimator's overage-sync UX
-    h+='<div class="f" style="margin:0"><div class="fl" style="align-items:center;display:flex">Overage ('+overUnit+')<label style="display:flex;align-items:center;gap:3px;font-size:9.5px;font-weight:700;cursor:pointer;margin-left:auto;color:var(--red)"><input type="checkbox" '+(overSync?'checked':'')+' style="accent-color:var(--red);cursor:pointer" onchange="onTierOverageSyncChange('+i+',this.checked)">25%</label></div><input type="number" min="0" step="0.01" value="'+overDisp+'" oninput="onTierOverageInput('+i+',+this.value||0)"></div>';
+    h+='<div class="f" style="margin:0"><div class="fl" style="align-items:center;display:flex">Overage ('+overUnit+')<label style="display:flex;align-items:center;gap:3px;font-size:9.5px;font-weight:700;cursor:pointer;margin-left:auto;color:var(--red)"><input type="checkbox" id="sc-oversync-'+i+'" '+(overSync?'checked':'')+' style="accent-color:var(--red);cursor:pointer" onchange="onTierOverageSyncChange('+i+',this.checked)">25%</label></div><input type="number" id="sc-over-'+i+'" min="0" step="0.01" value="'+overDisp+'" oninput="onTierOverageInput('+i+',+this.value||0)"></div>';
     h+='</div>';
     // Live readout
     h+='<div id="sc-readout-'+i+'" style="margin-top:8px;padding:8px 12px;background:#fff;border:1px solid var(--bo);border-radius:6px;font-size:11px;color:var(--tx2);display:flex;gap:14px;flex-wrap:wrap">';
@@ -492,18 +492,32 @@ function renderScenarioRows(){
   host.innerHTML=h;
 }
 // Lightweight readout updater (avoids full re-render on every keystroke)
+// Seats change: just update state and refresh the live readout.
+// Do NOT re-render the row — that would stomp the cursor in the seats input.
+function onTierSeatsChange(i,newSeats){
+  scenarios[i].students=newSeats;
+  updateScenarioReadout(i);
+  updateQPrev();
+}
+
 // When a tier's rate changes:
-//  - If overage is in sync mode (overSync true), re-render so the overage field
-//    redraws at 25% above the new rate.
-//  - If overage was manually set (overSync false), leave the overage value alone
-//    and just refresh the live readout.
+//  - If overage is in sync mode (overSync true), update ONLY the overage field
+//    in place (do NOT re-render — that would destroy the rate input mid-typing
+//    and stomp the user's cursor position).
+//  - If overage was manually set (overSync false), leave the overage value alone.
+//  - Always refresh the live readout.
 function onTierRateChange(i,newRate){
   scenarios[i].rate=newRate;
   if(scenarios[i].overSync!==false){
-    renderScenarioRows();
-  } else {
-    updateScenarioReadout(i);
+    // Surgical update: write the new 25%-premium value directly into the overage input
+    const overEl=g('sc-over-'+i);
+    if(overEl){
+      const overPerMin=newRate*1.25;
+      const overDisp=displayUnit==='hr'?(overPerMin*60).toFixed(2):overPerMin.toFixed(4);
+      overEl.value=overDisp;
+    }
   }
+  updateScenarioReadout(i);
   updateQPrev();
 }
 
@@ -514,16 +528,21 @@ function onTierOverageInput(i,typedNumeric){
   const overPerMin=(displayUnit==='hr')?(typedNumeric/60):typedNumeric;
   scenarios[i].over=overPerMin;
   scenarios[i].overSync=false;
-  // Refresh the row so the sync checkbox visually unticks
-  renderScenarioRows();
+  // Surgical: untick the sync checkbox without destroying the input the user is typing in
+  const cb=g('sc-oversync-'+i);
+  if(cb)cb.checked=false;
+  updateScenarioReadout(i);
   updateQPrev();
 }
 
 // User toggles the per-tier "25%" sync checkbox.
+// Sync ON: snap overage to 25% above rate, clear manual value.
+// Sync OFF: leave the overage at its current displayed value; user just clicked.
+// In either case, the checkbox itself is the active element — re-rendering is fine here
+// because the user clicked the checkbox and is no longer typing in any input.
 function onTierOverageSyncChange(i,checked){
   scenarios[i].overSync=checked;
   if(checked){
-    // Snap back to 25% above this tier's rate; clear any stale manual value
     scenarios[i].over=null;
   }
   renderScenarioRows();
