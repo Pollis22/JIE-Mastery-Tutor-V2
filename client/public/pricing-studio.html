@@ -458,7 +458,9 @@ function renderScenarioRows(){
     const stuDefault=Math.max(1,Math.round(baseStudents*[1,2,4][i]));
     const stuVal=sc.students!=null?sc.students:stuDefault;
     const rateVal=sc.rate!=null?sc.rate:baseRate;
-    const overVal=sc.over!=null?sc.over:baseOver;
+    // Tier overage defaults to 25% premium on this tier's own rate (industry standard).
+    // Only uses an explicitly stored override if the user manually edited the field.
+    const overVal=sc.over!=null?sc.over:(rateVal*1.25);
     // Computed annual investment at this tier's rate × usage × students
     const monthlyMin=stuVal*baseUsage;
     const aRevVal=calcRev(stuVal,monthlyMin,baseUsage,rateVal,overVal,basePlat);
@@ -472,7 +474,7 @@ function renderScenarioRows(){
     h+='<div style="display:grid;grid-template-columns:1.1fr 1fr 1.2fr 1fr;gap:10px;align-items:end">';
     h+='<div class="f" style="margin:0"><div class="fl">Tier Label</div><input type="text" value="'+(sc.label||('Tier '+(i+1)))+'" oninput="scenarios['+i+'].label=this.value;updateScenarioReadout('+i+');updateQPrev()"></div>';
     h+='<div class="f" style="margin:0"><div class="fl">Users / Seats</div><input type="number" min="1" step="1" value="'+stuVal+'" oninput="scenarios['+i+'].students=+this.value||0;renderScenarioRows();updateQPrev()"></div>';
-    h+='<div class="f" style="margin:0"><div class="fl">Pre-purchase Rate ($/min) <span style="color:var(--tx3);font-weight:500;font-size:10.5px;margin-left:4px">Tier 1 rate: $'+baseRate.toFixed(4)+'/min</span></div><div class="pfx"><span>$</span><input type="number" min="0.001" step="0.001" value="'+rateVal.toFixed(4)+'" oninput="scenarios['+i+'].rate=+this.value||0;updateScenarioReadout('+i+');updateQPrev()"></div></div>';
+    h+='<div class="f" style="margin:0"><div class="fl">Pre-purchase Rate ($/min) <span style="color:var(--tx3);font-weight:500;font-size:10.5px;margin-left:4px">Tier 1 rate: $'+baseRate.toFixed(4)+'/min</span></div><div class="pfx"><span>$</span><input type="number" min="0.001" step="0.001" value="'+rateVal.toFixed(4)+'" oninput="onTierRateChange('+i+',+this.value||0)"></div></div>';
     h+='<div class="f" style="margin:0"><div class="fl">Overage ('+overUnit+')</div><input type="number" min="0" step="0.01" value="'+overDisp+'" oninput="scenarios['+i+'].over='+(displayUnit==='hr'?'(+this.value||0)/60':'+this.value||0')+';updateScenarioReadout('+i+');updateQPrev()"></div>';
     h+='</div>';
     // Live readout
@@ -486,6 +488,21 @@ function renderScenarioRows(){
   host.innerHTML=h;
 }
 // Lightweight readout updater (avoids full re-render on every keystroke)
+// When a tier's rate changes, update the rate value AND refresh the overage field
+// if the user hasn't manually overridden it (sc.over === null). This keeps overage
+// tracking 25% above each tier's own rate by default.
+function onTierRateChange(i,newRate){
+  scenarios[i].rate=newRate;
+  if(scenarios[i].over==null){
+    // Still in sync mode — re-render the row so the overage field shows the new 25%-premium value
+    renderScenarioRows();
+  } else {
+    // User has manually set overage — leave it alone, just refresh the readout
+    updateScenarioReadout(i);
+  }
+  updateQPrev();
+}
+
 function updateScenarioReadout(i){
   const el=g('sc-readout-'+i); if(!el)return;
   const sc=scenarios[i];
@@ -496,7 +513,8 @@ function updateScenarioReadout(i){
   const basePlat=+g('platform').value||0;
   const stuVal=sc.students!=null?sc.students:Math.max(1,Math.round(baseStudents*[1,2,4][i]));
   const rateVal=sc.rate!=null?sc.rate:baseRate;
-  const overVal=sc.over!=null?sc.over:baseOver;
+  // Tier overage defaults to 25% premium on this tier's own rate.
+  const overVal=sc.over!=null?sc.over:(rateVal*1.25);
   const monthlyMin=stuVal*baseUsage;
   const aRevVal=calcRev(stuVal,monthlyMin,baseUsage,rateVal,overVal,basePlat);
   const inclAnnualHrs=(stuVal*baseUsage*12)/60;
@@ -530,7 +548,8 @@ function computeScenario(i,baseS){
   const usage=baseS.usage; // inherits from Tier 1
   const cap=baseS.cap;     // inherits from Tier 1
   const rate=sc.rate!=null?sc.rate:baseS.rate;
-  const over=sc.over!=null?sc.over:baseS.over;
+  // Tier overage defaults to 25% premium on this tier's own rate (industry standard).
+  const over=sc.over!=null?sc.over:(rate*1.25);
   const monthlyMin=students*usage;
   const inclMonthlyMin=students*cap;
   const inclAnnualMin=inclMonthlyMin*12;
