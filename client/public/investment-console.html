@@ -959,6 +959,7 @@ const PRESETS = {
     ownerLadder: {
       base: 150000, step2: 175000, step3: 200000, step4: 225000,
       step2Trigger: 50000, step3Trigger: 100000, step4Months: 3,
+      step2Mo: 4, step3Mo: 8, step4Mo: 14,
     },
     uses: [
       { id: 'owner',       label: 'Owner Salary (auto from ladder)',      cat: 'salaries',    y1: 0,      note: 'Auto-computed', locked: true },
@@ -1009,6 +1010,7 @@ const PRESETS = {
     ownerLadder: {
       base: 150000, step2: 175000, step3: 200000, step4: 225000,
       step2Trigger: 50000, step3Trigger: 100000, step4Months: 3,
+      step2Mo: 6, step3Mo: 12, step4Mo: 24,
     },
     uses: null,  // null = use base preset's uses unchanged
     tranches: [
@@ -1039,6 +1041,7 @@ const PRESETS = {
     ownerLadder: {
       base: 150000, step2: 175000, step3: 200000, step4: 225000,
       step2Trigger: 50000, step3Trigger: 100000, step4Months: 3,
+      step2Mo: 3, step3Mo: 6, step4Mo: 10,
     },
     uses: null,  // same uses as base
     tranches: [
@@ -1106,9 +1109,12 @@ let state = {
   tranches: JSON.parse(JSON.stringify(DEFAULT_TRANCHES)),
   ownerLadder: {
     base: 150000, step2: 175000, step3: 200000, step4: 225000,
-    step2Trigger: 50000,   // monthly revenue
-    step3Trigger: 100000,
-    step4Months: 3,        // EBITDA breakeven for N consecutive months
+    step2Trigger: 50000,   // monthly revenue (descriptive label)
+    step3Trigger: 100000,  // (descriptive label)
+    step4Months: 3,        // (descriptive label)
+    step2Mo: 4,            // override: month when Step 2 fires
+    step3Mo: 8,            // override: month when Step 3 fires
+    step4Mo: 14,           // override: month when Step 4 fires
   },
 };
 
@@ -1284,27 +1290,30 @@ function compute() {
     const totalCogs = cogsProd + cogsInst + cogsCons + cogsComm;
     const grossProfit = totalRev - totalCogs;
 
-    // OWNER LADDER — check triggers monthly
+    // OWNER LADDER — fire at manually-set months (state.ownerLadder.stepNMo)
+    // These are 1-indexed (Mo 1 = first month). m is 0-indexed in the loop.
     const monthlyOwner = ownerCurrent / 12;
-    if (totalRev >= state.ownerLadder.step2Trigger && stepFiredAt[2] == null) {
+    const curMonth = m + 1;
+    if (state.ownerLadder.step2Mo && curMonth >= state.ownerLadder.step2Mo && stepFiredAt[2] == null) {
       ownerCurrent = state.ownerLadder.step2;
-      stepFiredAt[2] = m + 1;
+      stepFiredAt[2] = curMonth;
     }
-    if (totalRev >= state.ownerLadder.step3Trigger && grossProfit > 0 && stepFiredAt[3] == null) {
+    if (state.ownerLadder.step3Mo && curMonth >= state.ownerLadder.step3Mo && stepFiredAt[3] == null) {
       ownerCurrent = state.ownerLadder.step3;
-      stepFiredAt[3] = m + 1;
+      stepFiredAt[3] = curMonth;
+    }
+    if (state.ownerLadder.step4Mo && curMonth >= state.ownerLadder.step4Mo && stepFiredAt[4] == null) {
+      ownerCurrent = state.ownerLadder.step4;
+      stepFiredAt[4] = curMonth;
     }
 
     const monthlyFixedOpEx = monthlyOpExByYear[yr] * sc.cost;
     const opEx = monthlyFixedOpEx + monthlyOwner;
     const ebitda = grossProfit - opEx;
 
+    // Track consecutive EBITDA+ months for descriptive purposes
     if (ebitda > 0) {
       consecBreakeven++;
-      if (consecBreakeven >= state.ownerLadder.step4Months && stepFiredAt[4] == null) {
-        ownerCurrent = state.ownerLadder.step4;
-        stepFiredAt[4] = m + 1;
-      }
     } else {
       consecBreakeven = 0;
     }
@@ -1656,36 +1665,45 @@ function renderLadder() {
   const L = state.ownerLadder;
   const steps = [
     {
-      n: 1, salaryField: 'base', salary: L.base, fired: true, mo: 1,
+      n: 1, salaryField: 'base', salary: L.base, fired: true, mo: 1, moField: null,
       trigHtml: `Year 1 baseline (raise close)`,
     },
     {
-      n: 2, salaryField: 'step2', salary: L.step2, fired: !!fired[2], mo: fired[2],
-      trigHtml: `Monthly revenue ≥ <span class="ladder-pfx"><span>$</span><input type="number" class="ladder-input trig" value="${L.step2Trigger}" step="5000" onchange="updateLadder('step2Trigger', this.value)"></span>`,
+      n: 2, salaryField: 'step2', salary: L.step2, fired: !!fired[2], mo: L.step2Mo, moField: 'step2Mo',
+      trigHtml: `Monthly revenue ≥ <span class="ladder-pfx"><span>$</span><input type="number" class="ladder-input trig" value="${L.step2Trigger}" step="5000" onchange="updateLadder('step2Trigger', this.value)"></span> <span style="font-size:10.5px;color:var(--tx3);font-style:italic">(narrative only — month set on right)</span>`,
     },
     {
-      n: 3, salaryField: 'step3', salary: L.step3, fired: !!fired[3], mo: fired[3],
-      trigHtml: `Monthly rev ≥ <span class="ladder-pfx"><span>$</span><input type="number" class="ladder-input trig" value="${L.step3Trigger}" step="5000" onchange="updateLadder('step3Trigger', this.value)"></span> &amp; GP &gt; 0`,
+      n: 3, salaryField: 'step3', salary: L.step3, fired: !!fired[3], mo: L.step3Mo, moField: 'step3Mo',
+      trigHtml: `Monthly rev ≥ <span class="ladder-pfx"><span>$</span><input type="number" class="ladder-input trig" value="${L.step3Trigger}" step="5000" onchange="updateLadder('step3Trigger', this.value)"></span> &amp; GP &gt; 0 <span style="font-size:10.5px;color:var(--tx3);font-style:italic">(narrative only)</span>`,
     },
     {
-      n: 4, salaryField: 'step4', salary: L.step4, fired: !!fired[4], mo: fired[4],
-      trigHtml: `EBITDA breakeven (<input type="number" class="ladder-input tiny" value="${L.step4Months}" min="1" max="12" onchange="updateLadder('step4Months', this.value)"> consec. months)`,
+      n: 4, salaryField: 'step4', salary: L.step4, fired: !!fired[4], mo: L.step4Mo, moField: 'step4Mo',
+      trigHtml: `EBITDA breakeven (<input type="number" class="ladder-input tiny" value="${L.step4Months}" min="1" max="12" onchange="updateLadder('step4Months', this.value)"> consec. months) <span style="font-size:10.5px;color:var(--tx3);font-style:italic">(narrative only)</span>`,
     },
   ];
 
-  document.getElementById('ladder').innerHTML = steps.map(s => `
-    <div class="ladder-step ${s.fired ? 'fired' : ''}">
-      <div class="ladder-num">${s.n}</div>
-      <div style="flex:1;min-width:0">
-        <div class="ladder-comp">
-          <span class="ladder-pfx"><span>$</span><input type="number" class="ladder-input" value="${s.salary}" step="5000" onchange="updateLadder('${s.salaryField}', this.value)"></span>
-          <span style="font-size:11px;color:var(--tx3);font-weight:600">/yr</span>
+  document.getElementById('ladder').innerHTML = steps.map(s => {
+    // Step 1 is locked at Mo 1; others have an editable month input
+    const moHtml = s.n === 1
+      ? `<div class="ladder-mo">Active</div>`
+      : `<div class="ladder-mo" style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">
+           <span style="font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--tx3)">Fires Mo</span>
+           <input type="number" class="ladder-input" min="2" max="60" value="${s.mo || ''}" onchange="updateLadder('${s.moField}', this.value)" style="width:62px;text-align:center;font-size:13px;font-weight:700">
+         </div>`;
+    return `
+      <div class="ladder-step ${s.fired ? 'fired' : ''}">
+        <div class="ladder-num">${s.n}</div>
+        <div style="flex:1;min-width:0">
+          <div class="ladder-comp">
+            <span class="ladder-pfx"><span>$</span><input type="number" class="ladder-input" value="${s.salary}" step="5000" onchange="updateLadder('${s.salaryField}', this.value)"></span>
+            <span style="font-size:11px;color:var(--tx3);font-weight:600">/yr</span>
+          </div>
+          <div class="ladder-trig">${s.trigHtml}</div>
         </div>
-        <div class="ladder-trig">${s.trigHtml}</div>
+        ${moHtml}
       </div>
-      <div class="ladder-mo">${s.fired ? (s.mo === 1 ? 'Active' : 'Mo ' + s.mo) : 'Not yet'}</div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 }
 
 function updateLadder(field, value) {
@@ -2626,6 +2644,10 @@ function applySavedState(s) {
   });
   if (s.ownerLadder) {
     state.ownerLadder = JSON.parse(JSON.stringify(s.ownerLadder));
+    // Pre-v12.2 saves had no step2Mo/step3Mo/step4Mo. Backfill with sensible defaults.
+    if (state.ownerLadder.step2Mo == null) state.ownerLadder.step2Mo = 4;
+    if (state.ownerLadder.step3Mo == null) state.ownerLadder.step3Mo = 8;
+    if (state.ownerLadder.step4Mo == null) state.ownerLadder.step4Mo = 14;
   }
   if (s.tranches) {
     state.tranches = JSON.parse(JSON.stringify(s.tranches));
