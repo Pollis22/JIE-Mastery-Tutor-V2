@@ -277,6 +277,15 @@ input:focus,select:focus{border-color:var(--red);background:#fff;box-shadow:0 0 
       <button class="sc-pill on" data-sc="base">Base</button>
       <button class="sc-pill" data-sc="aggressive">Aggressive</button>
     </div>
+    <div style="display:flex;align-items:center;gap:8px;padding-left:14px;border-left:1px solid var(--bo)">
+      <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--tx3)">Defensible Preset</span>
+      <select id="preset-picker" onchange="if(this.value){applyPreset(this.value);this.value='';}" style="padding:6px 10px;border:1px solid var(--bo);border-radius:6px;background:#fff;font-size:11.5px;font-weight:600;color:var(--tx2);cursor:pointer">
+        <option value="">Load…</option>
+        <option value="conservative">Defensible Conservative</option>
+        <option value="base">Defensible Base</option>
+        <option value="aggressive">Defensible Aggressive</option>
+      </select>
+    </div>
     <div class="sc-actions">
       <button class="btn btn-pri btn-sm" onclick="openReportModal('investor')" title="Generate Investor-Facing Report (PDF)">📄 Investor PDF</button>
       <button class="btn btn-out btn-sm" onclick="openReportModal('internal')" title="Generate Internal &amp; Confidential Report (PDF)">🔒 Internal PDF</button>
@@ -298,6 +307,24 @@ input:focus,select:focus{border-color:var(--red);background:#fff;box-shadow:0 0 
   <!-- =================== TAB: SOURCES & USES =================== -->
   <div class="tab-s on" id="tab-su">
 
+    <!-- Defensible Presets info card -->
+    <div class="card" style="background:linear-gradient(135deg, rgba(200,28,28,0.04), rgba(200,28,28,0.01));border:1.5px dashed var(--bo2);margin-bottom:16px">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+        <div style="flex:1;min-width:300px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <div style="font-size:9.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--red);background:#fff;padding:3px 9px;border-radius:10px;border:1px solid rgba(200,28,28,0.3)">📊 Defensible Presets</div>
+          </div>
+          <div style="font-size:13px;color:var(--tx2);line-height:1.55">
+            Three pre-configured scenarios designed to produce projections that hold up to investor scrutiny. Each preset replaces the current S&amp;U, tranches, owner ladder, revenue inputs, and OpEx assumptions. Use the dropdown in the top bar to load one, then refine to match your actual pipeline.
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;font-size:11.5px;min-width:280px">
+          <div style="padding:6px 10px;background:#fff;border:1px solid var(--bo);border-radius:6px"><strong style="color:var(--tx)">Conservative:</strong> <span style="color:var(--tx2)">Y5 ARR ~$11M, EBITDA+ Mo 30</span></div>
+          <div style="padding:6px 10px;background:#fff;border:1px solid var(--bo);border-radius:6px"><strong style="color:var(--tx)">Base:</strong> <span style="color:var(--tx2)">Y5 ARR ~$15M, EBITDA+ Mo 23</span></div>
+          <div style="padding:6px 10px;background:#fff;border:1px solid var(--bo);border-radius:6px"><strong style="color:var(--tx)">Aggressive:</strong> <span style="color:var(--tx2)">Y5 ARR ~$21M, EBITDA+ Mo 16</span></div>
+        </div>
+      </div>
+    </div>
     <div class="g21">
       <div class="card">
         <div class="ch"><span class="chdot"></span>Capital Sources</div>
@@ -430,23 +457,23 @@ input:focus,select:focus{border-color:var(--red);background:#fff;box-shadow:0 0 
         </div>
         <div class="f">
           <div class="fl">Net new users / mo — Yr 1</div>
-          <input type="number" id="prod-nn1" value="50" oninput="recalc()">
+          <input type="number" id="prod-nn1" value="30" oninput="recalc()">
         </div>
         <div class="f">
           <div class="fl">Net new users / mo — Yr 2</div>
-          <input type="number" id="prod-nn2" value="120" oninput="recalc()">
+          <input type="number" id="prod-nn2" value="80" oninput="recalc()">
         </div>
         <div class="f">
           <div class="fl">Net new users / mo — Yr 3</div>
-          <input type="number" id="prod-nn3" value="200" oninput="recalc()">
+          <input type="number" id="prod-nn3" value="120" oninput="recalc()">
         </div>
         <div class="f">
           <div class="fl">Net new users / mo — Yr 4</div>
-          <input type="number" id="prod-nn4" value="200" oninput="recalc()">
+          <input type="number" id="prod-nn4" value="150" oninput="recalc()">
         </div>
         <div class="f">
           <div class="fl">Net new users / mo — Yr 5</div>
-          <input type="number" id="prod-nn5" value="200" oninput="recalc()">
+          <input type="number" id="prod-nn5" value="180" oninput="recalc()">
         </div>
         <div class="f">
           <div class="fl">Blended ARPU / mo</div>
@@ -468,27 +495,27 @@ input:focus,select:focus{border-color:var(--red);background:#fff;box-shadow:0 0 
         <div class="card-sub">Institutional white-label deployments (UW model)</div>
         <div class="f">
           <div class="fl">Institutions — Yr 1</div>
-          <input type="number" id="inst-y1" value="3" oninput="recalc()">
+          <input type="number" id="inst-y1" value="1" oninput="recalc()">
         </div>
         <div class="f">
           <div class="fl">Institutions — Yr 2</div>
-          <input type="number" id="inst-y2" value="8" oninput="recalc()">
+          <input type="number" id="inst-y2" value="4" oninput="recalc()">
         </div>
         <div class="f">
           <div class="fl">Institutions — Yr 3</div>
-          <input type="number" id="inst-y3" value="18" oninput="recalc()">
+          <input type="number" id="inst-y3" value="7" oninput="recalc()">
         </div>
         <div class="f">
           <div class="fl">Institutions — Yr 4</div>
-          <input type="number" id="inst-y4" value="18" oninput="recalc()">
+          <input type="number" id="inst-y4" value="10" oninput="recalc()">
         </div>
         <div class="f">
           <div class="fl">Institutions — Yr 5</div>
-          <input type="number" id="inst-y5" value="18" oninput="recalc()">
+          <input type="number" id="inst-y5" value="12" oninput="recalc()">
         </div>
         <div class="f">
           <div class="fl">Avg ACV / institution</div>
-          <div class="pfx"><span>$</span><input type="number" id="inst-acv" value="410000" step="10000" oninput="recalc()"></div>
+          <div class="pfx"><span>$</span><input type="number" id="inst-acv" value="250000" step="10000" oninput="recalc()"></div>
         </div>
         <div class="f">
           <div class="fl">Ramp to full ACV (months)</div>
@@ -511,23 +538,23 @@ input:focus,select:focus{border-color:var(--red);background:#fff;box-shadow:0 0 
         <div class="card-sub">Software design &amp; AI consulting engagements</div>
         <div class="f">
           <div class="fl">Engagements — Yr 1</div>
-          <input type="number" id="cons-y1" value="6" oninput="recalc()">
+          <input type="number" id="cons-y1" value="4" oninput="recalc()">
         </div>
         <div class="f">
           <div class="fl">Engagements — Yr 2</div>
-          <input type="number" id="cons-y2" value="14" oninput="recalc()">
+          <input type="number" id="cons-y2" value="8" oninput="recalc()">
         </div>
         <div class="f">
           <div class="fl">Engagements — Yr 3</div>
-          <input type="number" id="cons-y3" value="24" oninput="recalc()">
+          <input type="number" id="cons-y3" value="14" oninput="recalc()">
         </div>
         <div class="f">
           <div class="fl">Engagements — Yr 4</div>
-          <input type="number" id="cons-y4" value="24" oninput="recalc()">
+          <input type="number" id="cons-y4" value="18" oninput="recalc()">
         </div>
         <div class="f">
           <div class="fl">Engagements — Yr 5</div>
-          <input type="number" id="cons-y5" value="24" oninput="recalc()">
+          <input type="number" id="cons-y5" value="20" oninput="recalc()">
         </div>
         <div class="f">
           <div class="fl">Blended engagement value</div>
@@ -546,27 +573,27 @@ input:focus,select:focus{border-color:var(--red);background:#fff;box-shadow:0 0 
         <div class="card-sub">Corporate L&amp;D + AI companion product deployments</div>
         <div class="f">
           <div class="fl">Contracts — Yr 1</div>
-          <input type="number" id="comm-y1" value="2" oninput="recalc()">
+          <input type="number" id="comm-y1" value="1" oninput="recalc()">
         </div>
         <div class="f">
           <div class="fl">Contracts — Yr 2</div>
-          <input type="number" id="comm-y2" value="6" oninput="recalc()">
+          <input type="number" id="comm-y2" value="3" oninput="recalc()">
         </div>
         <div class="f">
           <div class="fl">Contracts — Yr 3</div>
-          <input type="number" id="comm-y3" value="12" oninput="recalc()">
+          <input type="number" id="comm-y3" value="6" oninput="recalc()">
         </div>
         <div class="f">
           <div class="fl">Contracts — Yr 4</div>
-          <input type="number" id="comm-y4" value="18" oninput="recalc()">
+          <input type="number" id="comm-y4" value="10" oninput="recalc()">
         </div>
         <div class="f">
           <div class="fl">Contracts — Yr 5</div>
-          <input type="number" id="comm-y5" value="22" oninput="recalc()">
+          <input type="number" id="comm-y5" value="14" oninput="recalc()">
         </div>
         <div class="f">
           <div class="fl">Avg ACV / contract</div>
-          <div class="pfx"><span>$</span><input type="number" id="comm-acv" value="200000" step="10000" oninput="recalc()"></div>
+          <div class="pfx"><span>$</span><input type="number" id="comm-acv" value="150000" step="10000" oninput="recalc()"></div>
         </div>
         <div class="f">
           <div class="fl">Ramp to full ACV (months)</div>
@@ -594,7 +621,7 @@ input:focus,select:focus{border-color:var(--red);background:#fff;box-shadow:0 0 
         <div style="display:flex;align-items:center;gap:8px">
           <div style="display:flex;align-items:center;gap:6px">
             <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--tx3)">Growth Multiplier</span>
-            <div class="sfx" style="display:inline-block;width:80px"><input type="number" id="opex-mult" value="1.4" step="0.05" min="0.5" max="3" onchange="recalc()" style="text-align:right;padding-right:24px"><span>×</span></div>
+            <div class="sfx" style="display:inline-block;width:80px"><input type="number" id="opex-mult" value="1.3" step="0.05" min="0.5" max="3" onchange="recalc()" style="text-align:right;padding-right:24px"><span>×</span></div>
           </div>
           <button class="btn btn-sec btn-sm" onclick="autoFillOpEx()" title="Apply multiplier Y1→Y2→Y3→Y4→Y5">⤴ Auto-fill Y2–Y5</button>
         </div>
@@ -608,22 +635,22 @@ input:focus,select:focus{border-color:var(--red);background:#fff;box-shadow:0 0 
         </div>
         <div class="f" style="margin-bottom:0">
           <div class="fl">Year 2</div>
-          <div class="pfx"><span>$</span><input type="number" id="opex-y2" value="" step="10000" placeholder="—" oninput="recalc()"></div>
+          <div class="pfx"><span>$</span><input type="number" id="opex-y2" value="1700000" step="10000" placeholder="—" oninput="recalc()"></div>
           <div class="fhint">Blank → Year 1</div>
         </div>
         <div class="f" style="margin-bottom:0">
           <div class="fl">Year 3</div>
-          <div class="pfx"><span>$</span><input type="number" id="opex-y3" value="" step="10000" placeholder="—" oninput="recalc()"></div>
+          <div class="pfx"><span>$</span><input type="number" id="opex-y3" value="2300000" step="10000" placeholder="—" oninput="recalc()"></div>
           <div class="fhint">Blank → Year 2</div>
         </div>
         <div class="f" style="margin-bottom:0">
           <div class="fl">Year 4</div>
-          <div class="pfx"><span>$</span><input type="number" id="opex-y4" value="" step="10000" placeholder="—" oninput="recalc()"></div>
+          <div class="pfx"><span>$</span><input type="number" id="opex-y4" value="2700000" step="10000" placeholder="—" oninput="recalc()"></div>
           <div class="fhint">Blank → Year 3</div>
         </div>
         <div class="f" style="margin-bottom:0">
           <div class="fl">Year 5</div>
-          <div class="pfx"><span>$</span><input type="number" id="opex-y5" value="" step="10000" placeholder="—" oninput="recalc()"></div>
+          <div class="pfx"><span>$</span><input type="number" id="opex-y5" value="2950000" step="10000" placeholder="—" oninput="recalc()"></div>
           <div class="fhint">Blank → Year 4</div>
         </div>
       </div>
@@ -880,27 +907,33 @@ const fmtUSDK = v => Math.abs(v) >= 1e6 ? '$' + (v/1e6).toFixed(2) + 'M' : '$' +
 const fmtPct = v => (v*100).toFixed(1) + '%';
 const fmtNum = v => Math.round(v).toLocaleString('en-US');
 
-// ----- DEFAULT USES (Year 1 only — funded by the raise) -----
+// ----- DEFAULT USES (Year 1 — Defensible Base allocation) -----
+// Total: $2.01M of $3M raise (67%); remainder funded by Tranches 2+3 milestone-gated
 const DEFAULT_USES = [
-  { id: 'owner', label: 'Owner Salary (auto from ladder)', cat: 'salaries', y1: 0, note: 'Auto-computed from Owner Salary Ladder', locked: true },
-  { id: 'devTeam', label: 'Dev Team', cat: 'salaries', y1: 240000, note: '2 devs avg $120K loaded' },
-  { id: 'marketing', label: 'Marketing & Advertising', cat: 'marketing', y1: 160000, note: 'Digital + content + events' },
-  { id: 'sales', label: 'Sales (BDR/AE)', cat: 'salaries', y1: 120000, note: '1 BDR + 1 AE for institutional' },
-  { id: 'infra', label: 'Infrastructure (Fixed)', cat: 'cogs', y1: 12000, note: 'Hosting, base APIs, monitoring' },
-  { id: 'legal', label: 'Legal / Accounting / Insurance', cat: 'ga', y1: 30000, note: 'Blended annual' },
-  { id: 'office', label: 'Office / Admin', cat: 'ga', y1: 12000, note: 'Remote-first' },
-  { id: 'tools', label: 'Software & SaaS Tools', cat: 'ga', y1: 15000, note: 'Stripe, Resend, dev tools, CRM' },
-  { id: 'contingency', label: 'Contingency Reserve', cat: 'reserve', y1: 100000, note: 'Year 1 buffer' },
+  { id: 'owner',       label: 'Owner Salary (auto from ladder)',      cat: 'salaries',    y1: 0,      note: 'Auto-computed from Owner Salary Ladder', locked: true },
+  { id: 'devTeam',     label: 'Dev Team (2 senior + 1 mid)',          cat: 'salaries',    y1: 480000, note: '2 senior @ $160K + 1 mid @ $130K, hired Mo 1-3' },
+  { id: 'csm',         label: 'Customer Success Manager',             cat: 'salaries',    y1: 110000, note: 'Institutional onboarding + UW' },
+  { id: 'sales',       label: 'Sales Team (VP Sales + AE + BDR)',     cat: 'salaries',    y1: 350000, note: 'VP Mo 3, AE Mo 6, BDR Mo 4' },
+  { id: 'commissions', label: 'Sales Commissions',                    cat: 'commissions', y1: 80000,  note: 'Variable comp on closed contracts' },
+  { id: 'marketing',   label: 'Marketing — Paid + Content + Brand',   cat: 'marketing',   y1: 480000, note: '$30K/mo paid + $10K/mo content/SEO' },
+  { id: 'events',      label: 'Events / Conferences',                 cat: 'sales',       y1: 60000,  note: 'EdTech + corporate L&D events' },
+  { id: 'te',          label: 'Travel & Entertainment',               cat: 'te',          y1: 80000,  note: 'Sales travel + investor relations' },
+  { id: 'infra',       label: 'Infrastructure (Hosting + APIs)',      cat: 'cogs',        y1: 36000,  note: '$3K/mo fixed' },
+  { id: 'legal',       label: 'Legal / Accounting / Insurance',       cat: 'ga',          y1: 50000,  note: 'Equity-issuance legal + audit + D&O' },
+  { id: 'office',      label: 'Office / Admin',                       cat: 'ga',          y1: 18000,  note: 'Remote-first' },
+  { id: 'tools',       label: 'Software & SaaS Tools',                cat: 'ga',          y1: 30000,  note: 'CRM, dev tools, security, productivity' },
+  { id: 'rd',          label: 'R&D / Product Tools (AI compute)',     cat: 'cogs',        y1: 36000,  note: 'New model testing, voice eval' },
+  { id: 'contingency', label: 'Contingency Reserve',                  cat: 'reserve',     y1: 200000, note: '~7% buffer' },
 ];
 
 const CATEGORIES = ['salaries','commissions','marketing','sales','te','cogs','ga','reserve','other'];
 const CAT_LABEL = {salaries:'Salaries',commissions:'Commissions',marketing:'Marketing',sales:'Sales',te:'T & E Expenses',cogs:'COGS/Infra',ga:'G&A',reserve:'Reserve',other:'Other'};
 
-// ----- DEFAULT TRANCHES -----
+// ----- DEFAULT TRANCHES (Defensible Base — front-loaded with milestone-gated follow-ons) -----
 const DEFAULT_TRANCHES = [
-  { id: 't1', name: 'Tranche 1 — Seed Close', amount: 1500000, month: 1, equity: 12, trigger: 'Raise event / closing', enabled: true },
-  { id: 't2', name: 'Tranche 2 — Pilot Validation', amount: 1000000, month: 9, equity: 6, trigger: '3 institutions signed OR 500 paying users', enabled: true },
-  { id: 't3', name: 'Tranche 3 — Growth Milestone', amount: 500000, month: 18, equity: 3, trigger: '$50K MRR sustained 3 months', enabled: true },
+  { id: 't1', name: 'Tranche 1 — Seed Close',         amount: 2000000, month: 1,  equity: 12, trigger: 'Raise event / closing',                                       enabled: true },
+  { id: 't2', name: 'Tranche 2 — Pilot Validation',   amount: 700000,  month: 9,  equity: 5,  trigger: '3 new institutions signed AND $30K MRR',                       enabled: true },
+  { id: 't3', name: 'Tranche 3 — Growth Milestone',   amount: 300000,  month: 18, equity: 2,  trigger: '$200K MRR sustained 3 months AND CAC payback < 18 mo',         enabled: true },
 ];
 
 // ----- SCENARIO MODIFIERS -----
@@ -909,6 +942,160 @@ const SCEN = {
   base: { growth: 1.00, cost: 1.00, label: 'Base' },
   aggressive: { growth: 1.40, cost: 0.90, label: 'Aggressive' },
 };
+
+// ====================================================================
+// DEFENSIBLE PRESETS — Conservative / Base / Aggressive
+// Inputs designed to produce defensible projections that hold up to investor scrutiny.
+// Each preset includes a full snapshot: scenario, raise structure, uses, ladder, OpEx by year,
+// revenue inputs for all four streams, and tranche schedule with realistic milestones.
+// ====================================================================
+const PRESETS = {
+  base: {
+    label: 'Defensible Base',
+    description: 'Plan executes as expected. UW + 5 institutions Y1, steady consumer growth, EBITDA+ Y2-Y3.',
+    scenario: 'base',
+    raise: 3000000,
+    founder: 0,
+    ownerLadder: {
+      base: 150000, step2: 175000, step3: 200000, step4: 225000,
+      step2Trigger: 50000, step3Trigger: 100000, step4Months: 3,
+    },
+    uses: [
+      { id: 'owner',       label: 'Owner Salary (auto from ladder)',      cat: 'salaries',    y1: 0,      note: 'Auto-computed', locked: true },
+      { id: 'devTeam',     label: 'Dev Team (2 senior + 1 mid)',          cat: 'salaries',    y1: 480000, note: '2 senior @ $160K + 1 mid @ $130K, hired Mo 1-3' },
+      { id: 'csm',         label: 'Customer Success Manager',             cat: 'salaries',    y1: 110000, note: 'Institutional onboarding + UW' },
+      { id: 'sales',       label: 'Sales Team (VP Sales + AE + BDR)',     cat: 'salaries',    y1: 350000, note: 'VP Mo 3, AE Mo 6, BDR Mo 4' },
+      { id: 'commissions', label: 'Sales Commissions',                    cat: 'commissions', y1: 80000,  note: 'Variable comp on closed contracts' },
+      { id: 'marketing',   label: 'Marketing — Paid + Content + Brand',   cat: 'marketing',   y1: 480000, note: '$30K/mo paid + $10K/mo content/SEO' },
+      { id: 'events',      label: 'Events / Conferences',                 cat: 'sales',       y1: 60000,  note: 'EdTech + corporate L&D events' },
+      { id: 'te',          label: 'Travel & Entertainment',               cat: 'te',          y1: 80000,  note: 'Sales travel + investor relations' },
+      { id: 'infra',       label: 'Infrastructure (Hosting + APIs)',      cat: 'cogs',        y1: 36000,  note: '$3K/mo fixed' },
+      { id: 'legal',       label: 'Legal / Accounting / Insurance',       cat: 'ga',          y1: 50000,  note: 'Equity-issuance legal + audit + D&O' },
+      { id: 'office',      label: 'Office / Admin',                       cat: 'ga',          y1: 18000,  note: 'Remote-first' },
+      { id: 'tools',       label: 'Software & SaaS Tools',                cat: 'ga',          y1: 30000,  note: 'CRM, dev tools, security, productivity' },
+      { id: 'rd',          label: 'R&D / Product Tools (AI compute)',     cat: 'cogs',        y1: 36000,  note: 'New model testing, voice eval' },
+      { id: 'contingency', label: 'Contingency Reserve',                  cat: 'reserve',     y1: 200000, note: '~7% buffer' },
+    ],
+    tranches: [
+      { id: 't1', name: 'Tranche 1 — Seed Close',         amount: 2000000, month: 1,  equity: 12, trigger: 'Raise event / closing',                                          enabled: true },
+      { id: 't2', name: 'Tranche 2 — Pilot Validation',   amount: 700000,  month: 9,  equity: 5,  trigger: '3 new institutions signed AND $30K MRR',                          enabled: true },
+      { id: 't3', name: 'Tranche 3 — Growth Milestone',   amount: 300000,  month: 18, equity: 2,  trigger: '$200K MRR sustained 3 months AND CAC payback < 18 mo',            enabled: true },
+    ],
+    inputs: {
+      // Production: steady consumer growth, no hockey stick
+      'prod-start': 250, 'prod-nn1': 30, 'prod-nn2': 80, 'prod-nn3': 120, 'prod-nn4': 150, 'prod-nn5': 180,
+      'prod-arpu': 60, 'prod-churn': 5, 'prod-vc': 8,
+      // Institutional: realistic close rate from UW + named pipeline
+      'inst-y1': 1, 'inst-y2': 4, 'inst-y3': 7, 'inst-y4': 10, 'inst-y5': 12,
+      'inst-acv': 250000, 'inst-ramp': 6, 'inst-comm': 10, 'inst-vc': 15,
+      // Consulting: blended professional services
+      'cons-y1': 4, 'cons-y2': 8, 'cons-y3': 14, 'cons-y4': 18, 'cons-y5': 20,
+      'cons-val': 66000, 'cons-gm': 60,
+      // Commercial: corporate L&D rolling out slowly
+      'comm-y1': 1, 'comm-y2': 3, 'comm-y3': 6, 'comm-y4': 10, 'comm-y5': 14,
+      'comm-acv': 150000, 'comm-ramp': 4, 'comm-comm': 10, 'comm-vc': 15,
+    },
+    // OpEx by year — front-loaded hiring then declining growth
+    opex: { y2: 1700000, y3: 2300000, y4: 2700000, y5: 2950000, mult: '1.3' },
+  },
+
+  conservative: {
+    label: 'Defensible Conservative',
+    description: 'Slower than expected. UW renewals + 2-3 new institutions, modest consumer growth, EBITDA+ later.',
+    scenario: 'conservative',
+    raise: 3000000,
+    founder: 0,
+    // Same ladder + uses + tranches as base; the scenario modifier (70% growth, 110% costs) handles variance
+    ownerLadder: {
+      base: 150000, step2: 175000, step3: 200000, step4: 225000,
+      step2Trigger: 50000, step3Trigger: 100000, step4Months: 3,
+    },
+    uses: null,  // null = use base preset's uses unchanged
+    tranches: [
+      // Same tranche structure as base — milestone triggers protect investor capital
+      { id: 't1', name: 'Tranche 1 — Seed Close',         amount: 2000000, month: 1,  equity: 12, trigger: 'Raise event / closing',                                          enabled: true },
+      { id: 't2', name: 'Tranche 2 — Pilot Validation',   amount: 700000,  month: 9,  equity: 5,  trigger: '3 new institutions signed AND $30K MRR',                          enabled: true },
+      { id: 't3', name: 'Tranche 3 — Growth Milestone',   amount: 300000,  month: 18, equity: 2,  trigger: '$200K MRR sustained 3 months AND CAC payback < 18 mo',            enabled: true },
+    ],
+    inputs: {
+      'prod-start': 250, 'prod-nn1': 30, 'prod-nn2': 80, 'prod-nn3': 120, 'prod-nn4': 150, 'prod-nn5': 180,
+      'prod-arpu': 60, 'prod-churn': 5, 'prod-vc': 8,
+      'inst-y1': 1, 'inst-y2': 4, 'inst-y3': 7, 'inst-y4': 10, 'inst-y5': 12,
+      'inst-acv': 250000, 'inst-ramp': 6, 'inst-comm': 10, 'inst-vc': 15,
+      'cons-y1': 4, 'cons-y2': 8, 'cons-y3': 14, 'cons-y4': 18, 'cons-y5': 20,
+      'cons-val': 66000, 'cons-gm': 60,
+      'comm-y1': 1, 'comm-y2': 3, 'comm-y3': 6, 'comm-y4': 10, 'comm-y5': 14,
+      'comm-acv': 150000, 'comm-ramp': 4, 'comm-comm': 10, 'comm-vc': 15,
+    },
+    opex: { y2: 1500000, y3: 2000000, y4: 2400000, y5: 2700000, mult: '1.3' },
+  },
+
+  aggressive: {
+    label: 'Defensible Aggressive',
+    description: 'Strong execution. Faster institutional close + ARPU expansion. EBITDA+ Y2.',
+    scenario: 'aggressive',
+    raise: 3000000,
+    founder: 0,
+    ownerLadder: {
+      base: 150000, step2: 175000, step3: 200000, step4: 225000,
+      step2Trigger: 50000, step3Trigger: 100000, step4Months: 3,
+    },
+    uses: null,  // same uses as base
+    tranches: [
+      { id: 't1', name: 'Tranche 1 — Seed Close',         amount: 2000000, month: 1,  equity: 12, trigger: 'Raise event / closing',                                          enabled: true },
+      { id: 't2', name: 'Tranche 2 — Pilot Validation',   amount: 700000,  month: 9,  equity: 5,  trigger: '3 new institutions signed AND $30K MRR',                          enabled: true },
+      { id: 't3', name: 'Tranche 3 — Growth Milestone',   amount: 300000,  month: 18, equity: 2,  trigger: '$200K MRR sustained 3 months AND CAC payback < 18 mo',            enabled: true },
+    ],
+    inputs: {
+      'prod-start': 250, 'prod-nn1': 30, 'prod-nn2': 80, 'prod-nn3': 120, 'prod-nn4': 150, 'prod-nn5': 180,
+      'prod-arpu': 60, 'prod-churn': 5, 'prod-vc': 8,
+      'inst-y1': 1, 'inst-y2': 4, 'inst-y3': 7, 'inst-y4': 10, 'inst-y5': 12,
+      'inst-acv': 250000, 'inst-ramp': 6, 'inst-comm': 10, 'inst-vc': 15,
+      'cons-y1': 4, 'cons-y2': 8, 'cons-y3': 14, 'cons-y4': 18, 'cons-y5': 20,
+      'cons-val': 66000, 'cons-gm': 60,
+      'comm-y1': 1, 'comm-y2': 3, 'comm-y3': 6, 'comm-y4': 10, 'comm-y5': 14,
+      'comm-acv': 150000, 'comm-ramp': 4, 'comm-comm': 10, 'comm-vc': 15,
+    },
+    opex: { y2: 1700000, y3: 2300000, y4: 2700000, y5: 2950000, mult: '1.3' },
+  },
+};
+
+// Apply a preset to the live state and re-render everything
+function applyPreset(presetKey) {
+  const p = PRESETS[presetKey];
+  if (!p) return;
+  if (!confirm(`Load "${p.label}"?\n\nThis will replace your current assumptions. Saved scenarios are preserved.`)) return;
+
+  state.scenario = p.scenario;
+  state.raise = p.raise;
+  state.founder = p.founder;
+  state.ownerLadder = JSON.parse(JSON.stringify(p.ownerLadder));
+  // Use base preset's uses if this preset says null
+  const usesSource = p.uses || PRESETS.base.uses;
+  state.uses = JSON.parse(JSON.stringify(usesSource));
+  state.tranches = JSON.parse(JSON.stringify(p.tranches));
+
+  // Apply input fields
+  Object.entries(p.inputs).forEach(([id, val]) => {
+    const el = document.getElementById(id);
+    if (el) el.value = val;
+  });
+  // Apply OpEx fields
+  ['y2','y3','y4','y5'].forEach(yr => {
+    const el = document.getElementById('opex-' + yr);
+    if (el) el.value = p.opex[yr] || '';
+  });
+  const multEl = document.getElementById('opex-mult');
+  if (multEl) multEl.value = p.opex.mult || '1.3';
+
+  // Sync raise UI
+  document.getElementById('raise-amt').value = state.raise;
+  document.getElementById('raise-slider').value = state.raise;
+  document.getElementById('rw-slider').value = state.raise;
+  document.getElementById('founder-amt').value = state.founder;
+  document.querySelectorAll('.sc-pill').forEach(b => b.classList.toggle('on', b.dataset.sc === state.scenario));
+  recalc();
+}
 
 // ----- STATE -----
 let state = {
@@ -2517,29 +2704,33 @@ function deleteSaved(i) {
 }
 
 function resetDefaults() {
-  if (!confirm('Reset all assumptions to defaults? Saved scenarios are preserved.')) return;
-  state.uses = JSON.parse(JSON.stringify(DEFAULT_USES));
-  state.tranches = JSON.parse(JSON.stringify(DEFAULT_TRANCHES));
-  const opexY2 = document.getElementById('opex-y2'); if (opexY2) opexY2.value = '';
-  const opexY3 = document.getElementById('opex-y3'); if (opexY3) opexY3.value = '';
-  const opexMult = document.getElementById('opex-mult'); if (opexMult) opexMult.value = '1.4';
-  state.ownerLadder = {
-    base: 150000, step2: 175000, step3: 200000, step4: 225000,
-    step2Trigger: 50000, step3Trigger: 100000, step4Months: 3,
-  };
-  state.raise = 3000000; state.founder = 0; state.scenario = 'base';
-  document.getElementById('raise-amt').value = 3000000;
-  document.getElementById('raise-slider').value = 3000000;
-  document.getElementById('rw-slider').value = 3000000;
-  document.getElementById('founder-amt').value = 0;
-  const defaults = {
-    'prod-start':250,'prod-nn1':50,'prod-nn2':120,'prod-nn3':200,
-    'prod-arpu':60,'prod-churn':5,'prod-vc':8,
-    'inst-y1':3,'inst-y2':8,'inst-y3':18,'inst-acv':410000,'inst-ramp':6,'inst-comm':25,'inst-vc':15,
-    'cons-y1':6,'cons-y2':14,'cons-y3':24,'cons-val':66000,'cons-gm':60,
-  };
-  Object.entries(defaults).forEach(([id,v]) => { const el = document.getElementById(id); if (el) el.value = v; });
-  document.querySelectorAll('.sc-pill').forEach(b => b.classList.toggle('on', b.dataset.sc === 'base'));
+  // Reset reapplies the Base preset (the page's default state).
+  // Saved scenarios are preserved (they live in localStorage, not in state).
+  if (!confirm('Reset all assumptions to Defensible Base defaults? Saved scenarios are preserved.')) return;
+  // Use the same path as the preset picker so logic stays in one place.
+  // Bypass applyPreset's own confirm (we already confirmed once).
+  const p = PRESETS.base;
+  state.scenario = p.scenario;
+  state.raise = p.raise;
+  state.founder = p.founder;
+  state.ownerLadder = JSON.parse(JSON.stringify(p.ownerLadder));
+  const usesSource = p.uses || PRESETS.base.uses;
+  state.uses = JSON.parse(JSON.stringify(usesSource));
+  state.tranches = JSON.parse(JSON.stringify(p.tranches));
+  Object.entries(p.inputs).forEach(([id, val]) => {
+    const el = document.getElementById(id); if (el) el.value = val;
+  });
+  ['y2','y3','y4','y5'].forEach(yr => {
+    const el = document.getElementById('opex-' + yr);
+    if (el) el.value = p.opex[yr] || '';
+  });
+  const multEl = document.getElementById('opex-mult');
+  if (multEl) multEl.value = p.opex.mult || '1.3';
+  document.getElementById('raise-amt').value = state.raise;
+  document.getElementById('raise-slider').value = state.raise;
+  document.getElementById('rw-slider').value = state.raise;
+  document.getElementById('founder-amt').value = state.founder;
+  document.querySelectorAll('.sc-pill').forEach(b => b.classList.toggle('on', b.dataset.sc === state.scenario));
   recalc();
 }
 
