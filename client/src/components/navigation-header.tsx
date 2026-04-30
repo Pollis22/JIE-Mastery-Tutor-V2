@@ -122,7 +122,7 @@ export function NavigationHeader() {
                   variant="ghost"
                   size="sm"
                   onClick={() => setLocation("/support")}
-                  className={`px-2 lg:px-3 text-sm whitespace-nowrap ${isActive("/support") ? "text-primary font-medium" : "text-muted-foreground"}`}
+                  className={`hidden xl:inline-flex px-2 lg:px-3 text-sm whitespace-nowrap ${isActive("/support") ? "text-primary font-medium" : "text-muted-foreground"}`}
                   data-testid="nav-support"
                 >
                   Live Support
@@ -132,7 +132,7 @@ export function NavigationHeader() {
                     variant="ghost"
                     size="sm"
                     onClick={() => setLocation("/admin")}
-                    className={`px-2 lg:px-3 text-sm whitespace-nowrap ${isActive("/admin") ? "text-primary font-medium" : "text-muted-foreground"}`}
+                    className={`hidden xl:inline-flex px-2 lg:px-3 text-sm whitespace-nowrap ${isActive("/admin") ? "text-primary font-medium" : "text-muted-foreground"}`}
                     data-testid="nav-admin"
                   >
                     Admin
@@ -212,7 +212,21 @@ export function NavigationHeader() {
                   </svg>
                   Live Support
                 </DropdownMenuItem>
-                
+
+                {/* Admin link in dropdown — visible to admins on viewports where the inline button is hidden (below xl) */}
+                {user?.isAdmin && (
+                  <DropdownMenuItem
+                    onClick={() => setLocation("/admin")}
+                    className="xl:hidden"
+                    data-testid="menu-admin"
+                  >
+                    <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clipRule="evenodd"/>
+                    </svg>
+                    Admin
+                  </DropdownMenuItem>
+                )}
+
                 <DropdownMenuItem onClick={() => setLocation("/subscribe")} data-testid="menu-billing">
                   <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
                     <path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4zM18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM4 13a1 1 0 011-1h1a1 1 0 110 2H5a1 1 0 01-1-1zm5-1a1 1 0 100 2h1a1 1 0 100-2H9z"/>
