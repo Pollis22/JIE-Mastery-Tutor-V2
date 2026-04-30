@@ -3,6 +3,10 @@ import { AdminLayout } from "@/components/admin-layout";
 import { Maximize2, Minimize2, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
+// Cache-buster: changes on every build/deploy so the iframe reloads
+// the latest pricing-studio.html instead of serving a cached version.
+const STUDIO_VERSION = `v=${Date.now()}`;
+
 export default function AdminPricingStudio() {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [fullscreen, setFullscreen] = useState(false);
@@ -17,7 +21,7 @@ export default function AdminPricingStudio() {
   }, []);
 
   const openInNewTab = () => {
-    window.open("/pricing-studio.html", "_blank");
+    window.open(`/pricing-studio.html?${STUDIO_VERSION}`, "_blank");
   };
 
   return (
@@ -58,7 +62,7 @@ export default function AdminPricingStudio() {
         {/* iframe — runs in real browser context, no sandbox restrictions */}
         <iframe
           ref={iframeRef}
-          src="/pricing-studio.html"
+          src={`/pricing-studio.html?${STUDIO_VERSION}`}
           className="flex-1 w-full border-0"
           title="JIE Mastery Quote & Pricing Studio"
           // No sandbox attribute — full browser context, PDF downloads work
