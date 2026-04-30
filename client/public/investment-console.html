@@ -2925,6 +2925,11 @@ function buildAutoExecutiveSummary() {
   const y2Rev = months.slice(12, 24).reduce((s,m) => s + m.totalRev, 0);
   const y2GP = months.slice(12, 24).reduce((s,m) => s + m.grossProfit, 0);
   const y2GM = y2Rev > 0 ? y2GP / y2Rev : 0;
+  // Y5 revenue by stream (months 49-60) — paired with cumulative onboarded counts
+  // to avoid the "55 contracts × $250K ACV ≠ $9.4M Y5 revenue?" naive-math confusion.
+  // Y5 revenue reflects average ramp state across the cohort, not steady-state run rate.
+  const y5InstRev = months.slice(48, 60).reduce((s,m) => s + (m.revInst || 0), 0);
+  const y5CommRev = months.slice(48, 60).reduce((s,m) => s + (m.revComm || 0), 0);
   const enabled = state.tranches.filter(t => t.enabled);
   const totalTranche = enabled.reduce((s,t) => s+t.amount, 0);
 
@@ -2935,7 +2940,7 @@ function buildAutoExecutiveSummary() {
     ``,
     `Under the ${SCEN[state.scenario].label} scenario, the business reaches EBITDA-positive status in ${r.firstProfitMonth ? 'Month ' + r.firstProfitMonth : 'beyond the 60-month projection window'}. By the end of Year 5, projected ARR reaches ${fmtUSDK(arr60)}, representing a ${(arrCAGR * 100).toFixed(0)}% compound annual growth rate from end-of-Year-1 ARR. Year 2 gross margin is projected at ${(y2GM * 100).toFixed(0)}%, consistent with healthy SaaS benchmarks for AI-heavy products.`,
     ``,
-    `Cumulative 5-year revenue is projected at ${fmtUSDK(tot5y)} with cumulative EBITDA of ${fmtUSDK(totEB)}. Minimum cash balance between tranches is ${fmtUSDK(r.minCashBetweenTranches)}, providing adequate operating cushion through the funding ladder. The model assumes ${m60.instOnboarded} institutional contracts, ${m60.commOnboarded} commercial deployments, and ${fmtNum(m60.users)} paying consumer users by Month 60.`,
+    `Cumulative 5-year revenue is projected at ${fmtUSDK(tot5y)} with cumulative EBITDA of ${fmtUSDK(totEB)}. Minimum cash balance between tranches is ${fmtUSDK(r.minCashBetweenTranches)}, providing adequate operating cushion through the funding ladder. The model projects onboarding ${m60.instOnboarded} institutional contracts cumulatively (generating ${fmtUSDK(y5InstRev)} in Year 5 institutional revenue at average ramp state) and ${m60.commOnboarded} commercial deployments (generating ${fmtUSDK(y5CommRev)} in Year 5 commercial revenue), alongside ${fmtNum(m60.users)} paying consumer users by Month 60.`,
     ``,
     `This package documents the underlying assumptions, source-and-use of investor capital, multi-year operational forecast, cash flow trajectory, and unit economics supporting the raise.`,
   ].join('\n');
