@@ -1209,37 +1209,58 @@ function dlQuote(){
     y+=39;
   } else {
     // Multi-scenario scope: row labels on left, scenario columns on right
+    // Layout constants — these match the scopeH formula used earlier (10 + 5.5*5 + 4 = 41.5mm)
+    const labelW = 38;        // Label column width (left side, holds "Total Tutor Hours:" etc.)
+    const headerH = 6;        // Tier-name header row height
+    const rowH = 5.5;         // Each data row height
+    const numRows = 3;        // Users, Usage, Total Tutor Hours
+    const tablePadTop = 15;   // Distance from box top (y) to where the column-header band starts
+
     doc.setFont('helvetica','normal');doc.setFontSize(7.5);doc.setTextColor(...GRAY);
     doc.text('Institution Type: '+s.instType+'    |    Contract Term: Annual (12 months)    |    Pricing Structure: '+cfModelName(),M+4,y+11);
-    // Column headers
-    const labelW=46;
-    const remW=W-M*2-labelW-8;
-    const colW=remW/scenarioCount;
-    const tableTop=y+15;
-    // Header row
-    doc.setFillColor(...RED);doc.rect(M+4+labelW,tableTop,remW,6,'F');
+
+    // Column geometry
+    const remW = W - M*2 - labelW - 8;
+    const colW = remW / scenarioCount;
+    const tableTop = y + tablePadTop;
+
+    // Header row (tier names)
+    doc.setFillColor(...RED);doc.rect(M+4+labelW,tableTop,remW,headerH,'F');
     doc.setFont('helvetica','bold');doc.setFontSize(7.5);doc.setTextColor(255,255,255);
     computed.forEach((c,i)=>{
       doc.text(c.label,M+4+labelW+colW*i+colW/2,tableTop+4,{align:'center'});
     });
-    // Body rows
+
+    // Compact value formatter for the Total Tutor Hours row — fits any column width
+    function tutorHrsCompact(c){
+      if(displayUnit==='hr'){
+        const monMin=c.monthlyMin, yrMin=monMin*12;
+        return (monMin/60).toLocaleString(undefined,{maximumFractionDigits:0})+' hrs/mo  ·  '
+              +(yrMin/60).toLocaleString(undefined,{maximumFractionDigits:0})+' hrs/yr';
+      } else {
+        const monMin=c.monthlyMin, yrMin=monMin*12;
+        return monMin.toLocaleString()+' min/mo  ·  '+yrMin.toLocaleString()+' min/yr';
+      }
+    }
     const rows=[
       ['Users / Seats', c=>c.students.toLocaleString()],
       ['Usage / User', c=>cfUsageShort(c.usage)+'/mo'],
-      ['Total Tutor '+(displayUnit==='hr'?'Hours':'Minutes'), c=>cfTotalHrs(c.monthlyMin)],
+      ['Total Tutor '+(displayUnit==='hr'?'Hours':'Minutes'), tutorHrsCompact],
     ];
-    let ry=tableTop+6;
+    let ry=tableTop+headerH;
     rows.forEach((row,ri)=>{
-      if(ri%2===0){doc.setFillColor(255,255,255);doc.rect(M+4+labelW,ry,remW,5.5,'F');}
+      if(ri%2===0){doc.setFillColor(255,255,255);doc.rect(M+4+labelW,ry,remW,rowH,'F');}
       doc.setFont('helvetica','bold');doc.setFontSize(7.5);doc.setTextColor(...GRAY);
       doc.text(row[0]+':',M+4,ry+3.8);
-      doc.setFont('helvetica','normal');doc.setTextColor(0,0,0);doc.setFontSize(7.5);
+      doc.setFont('helvetica','normal');doc.setTextColor(0,0,0);doc.setFontSize(7);
       computed.forEach((c,i)=>{
         doc.text(row[1](c),M+4+labelW+colW*i+colW/2,ry+3.8,{align:'center'});
       });
-      ry+=5.5;
+      ry+=rowH;
     });
-    y=tableTop+6+rows.length*5.5+5;
+
+    // Advance y past the scope box (height is scopeH = 41.5mm) + 8mm breathing room before next section
+    y = y + scopeH + 8;
   }
 
   // Investment table (client-facing — NO cost info)
