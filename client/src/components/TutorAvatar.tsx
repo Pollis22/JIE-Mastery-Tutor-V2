@@ -1,7 +1,13 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAgeTheme } from '@/contexts/ThemeContext';
 import { AIOrb, OrbState } from './AIOrb';
+import { AvatarPanel } from './AvatarPanel';
+import {
+  normalizePersona,
+  readClientAvatarConfig,
+  shouldRenderAvatar,
+} from '@/lib/avatar/avatar-config-client';
 
 export type TutorState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'celebrating' | 'encouraging';
 
@@ -34,6 +40,30 @@ export function TutorAvatar({ state, amplitude = 0, size = 'medium' }: TutorAvat
     if (typeof window === 'undefined') return false;
     return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   }, []);
+
+  // ── Avatar pilot gate (dev-avatar branch only) ─────────────────────────
+  // When master flag, persona flag, faceId, and network all line up, render
+  // the Simli avatar in place of orb/emoji. Any failure path falls through
+  // to the original orb/emoji branches below — voice session is unaffected.
+  // User can also collapse mid-session via the "Voice only" toggle.
+  const persona = useMemo(() => normalizePersona(ageGroup as string | undefined), [ageGroup]);
+  const avatarGate = useMemo(() => shouldRenderAvatar(readClientAvatarConfig(), persona), [persona]);
+  const [voiceOnlyOverride, setVoiceOnlyOverride] = useState(false);
+
+  if (avatarGate.ok && !voiceOnlyOverride) {
+    const orbAge: '6-8' | '9-12' | 'College' =
+      persona === '9-12' ? '9-12' : persona === 'college' ? 'College' : '6-8';
+    return (
+      <AvatarPanel
+        persona={persona}
+        gate={avatarGate}
+        state={state}
+        size={size === 'small' ? 240 : size === 'medium' ? 320 : 400}
+        ageGroupForOrb={orbAge}
+        onVoiceOnlyClick={() => setVoiceOnlyOverride(true)}
+      />
+    );
+  }
 
   // Young learners (K-2, G3-5) get the emoji avatar — older bands get AIOrb
   if (!isYoungLearner) {

@@ -2,6 +2,9 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { VOICE_TIMING, VOICE_THRESHOLDS, VOICE_MESSAGES, EXCLUDED_DEVICE_PATTERNS, ADAPTIVE_BARGE_IN, SILERO_BARGE_IN, GradeBandType, TURN_TAKING_FLAGS, FILLER_WORDS, OLDER_STUDENTS_PROFILE, CONTINUATION_PHRASES, VALID_INTERRUPTION_REASONS, isOlderStudentsBand } from "@/config/voice-constants";
 import { voiceLogger } from "@/utils/voice-logger";
 import type { MicVAD } from "@ricky0123/vad-web";
+// Avatar pilot (dev-avatar branch): publish PCM audio chunks to the avatar bus.
+// No-op when no AvatarPanel is subscribed — see client/src/lib/avatar/avatar-audio-bus.ts.
+import { dispatchAvatarAudio, base64PcmToInt16 } from "@/lib/avatar/avatar-audio-bus";
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // ADAPTIVE BARGE-IN: Duck-then-confirm flow for quiet/nervous speakers
@@ -1040,6 +1043,12 @@ export function useCustomVoice() {
             console.log(`[Custom Voice] 🛑 BARGE-IN: genId=${message.genId} reason=${message.reason}`);
             activeGenIdRef.current = message.genId as number;
             stopAudio();
+            // Avatar pilot: also drain Simli's pending lipsync buffer so the
+            // avatar mouth stops as fast as the speakers do. No-op when avatar
+            // is not mounted.
+            try {
+              dispatchAvatarAudio({ kind: 'cancel', reason: 'barge_in' });
+            } catch { /* never break voice on avatar errors */ }
             setIsTutorSpeaking(false);
             isTutorSpeakingRef.current = false;
             sileroBargeInConfirmedRef.current = false;
@@ -1072,7 +1081,26 @@ export function useCustomVoice() {
               console.log("[Custom Voice] 🛑 Audio dropped — session no longer active");
               break;
             }
-            
+
+            // ── Avatar audio tap (dev-avatar branch only) ──────────────────────
+            // No-op when no AvatarPanel is mounted. Read-only — publishes a copy
+            // of the PCM16 chunk to the avatar bus so Simli can lip-sync to the
+            // same audio that's about to play through the speakers. Wrapped in
+            // try so a buggy subscriber can never break audio playback.
+            try {
+              const pcm16 = base64PcmToInt16(message.data);
+              if (pcm16) {
+                dispatchAvatarAudio({
+                  kind: 'chunk',
+                  pcm16,
+                  chunkIndex: chunkIdx,
+                  genId: msgGenId,
+                });
+              }
+            } catch (avatarTapErr) {
+              console.warn('[AvatarTap] dispatch failed (non-fatal):', avatarTapErr);
+            }
+
             if (audioEnabledRef.current) {
               console.log("[Custom Voice] 🔊 Playing audio chunk");
               lastAudioPlaybackStartRef.current = Date.now();
