@@ -173,7 +173,16 @@ tr:last-child td{border-bottom:none;font-weight:700}
 <div class="fhint" id="cap-hint">&#10003; <strong>Matched to usage</strong> — margin shown is what you'll actually earn. Uncheck to model overage scenarios.</div>
 </div>
 <div class="f"><div class="fl">Pre-purchase Rate ($/min)</div><div class="pfx"><span>$</span><input type="number" id="rate" value="0.10" min="0.01" step="0.01" placeholder="0.10"></div></div>
-<div class="f"><div class="fl">Overage Rate ($/min)</div><div class="pfx"><span>$</span><input type="number" id="overage" value="0.14" min="0.01" step="0.01" placeholder="0.14"></div></div>
+<div class="f" id="overagefield">
+<div class="fl" style="align-items:center">
+  Overage Rate ($/min) <span style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— above included pool</span>
+  <label style="display:flex;align-items:center;gap:4px;font-size:10px;font-weight:700;cursor:pointer;margin-left:auto;color:var(--red)">
+    <input type="checkbox" id="overage-sync" checked style="accent-color:var(--red);cursor:pointer"> Sync to rate (25%)
+  </label>
+</div>
+<div class="pfx"><span>$</span><input type="number" id="overage" value="0.125" min="0.001" step="0.001" placeholder="0.125"></div>
+<div class="fhint" id="overage-hint">&#10003; <strong>25% industry-standard premium</strong> &mdash; overage tracks rate. Uncheck to set a custom rate.</div>
+</div>
 </div>
 <div class="card"><div class="ch"><span class="chdot"></span>API Cost Assumptions <span style="font-size:9px;font-weight:500;text-transform:none;letter-spacing:0;color:var(--tx3);margin-left:4px">(editable — update if vendor rates change)</span></div>
 <div class="g2mb">
@@ -431,7 +440,7 @@ function renderScenarioRows(){
   const baseStudents=+g('students').value||0;
   const baseUsage=+g('usage').value||0; // minutes
   const baseRate=+g('rate').value||0.10;
-  const baseOver=+g('overage').value||0.14;
+  const baseOver=+g('overage').value||0.125;
   const basePlat=+g('platform').value||0;
   // Tier 1 reference aRev (read-only display)
   const baseMonthlyMin=baseStudents*baseUsage;
@@ -483,7 +492,7 @@ function updateScenarioReadout(i){
   const baseStudents=+g('students').value||0;
   const baseUsage=+g('usage').value||0;
   const baseRate=+g('rate').value||0.10;
-  const baseOver=+g('overage').value||0.14;
+  const baseOver=+g('overage').value||0.125;
   const basePlat=+g('platform').value||0;
   const stuVal=sc.students!=null?sc.students:Math.max(1,Math.round(baseStudents*[1,2,4][i]));
   const rateVal=sc.rate!=null?sc.rate:baseRate;
@@ -592,6 +601,45 @@ g('usage').addEventListener('input', function(){
 });
 g('cap-sync').addEventListener('change', syncCap);
 
+// 25%-premium overage sync (industry standard)
+function syncOverage(){
+  const synced = g('overage-sync').checked;
+  const hint = g('overage-hint');
+  const rate = +g('rate').value || 0.10;
+  if(synced){
+    g('overage').value = (rate * 1.25).toFixed(4);
+    hint.innerHTML='&#10003; <strong>25% industry-standard premium</strong> &mdash; overage tracks rate. Uncheck to set a custom rate.';
+    hint.style.color='var(--gr)';
+  } else {
+    const over = +g('overage').value || 0;
+    const pct = rate > 0 ? Math.round((over/rate - 1) * 100) : 0;
+    hint.innerHTML='&#9888; <strong>Custom rate</strong> &mdash; overage is ' + pct + '% over the pre-purchase rate.';
+    hint.style.color='var(--am)';
+  }
+  update();
+}
+// When rate changes and sync is on, update overage to track at 25% premium
+g('rate').addEventListener('input', function(){
+  if(g('overage-sync').checked){
+    const r = +this.value || 0;
+    g('overage').value = (r * 1.25).toFixed(4);
+    update();
+  }
+});
+// When user manually edits overage, auto-uncheck sync and refresh hint
+g('overage').addEventListener('input', function(){
+  if(g('overage-sync').checked){
+    g('overage-sync').checked = false;
+  }
+  const rate = +g('rate').value || 0.10;
+  const over = +this.value || 0;
+  const pct = rate > 0 ? Math.round((over/rate - 1) * 100) : 0;
+  const hint = g('overage-hint');
+  hint.innerHTML='&#9888; <strong>Custom rate</strong> &mdash; overage is ' + pct + '% over the pre-purchase rate.';
+  hint.style.color='var(--am)';
+});
+g('overage-sync').addEventListener('change', syncOverage);
+
 
 function calcRev(students,monthlyMin,cap,rate,over,plat){
   if(model==='m'){
@@ -643,7 +691,7 @@ function buildRows(students,monthlyMin,cap,rate,over,plat){
 
 function update(){
   const students=+g('students').value||0, usage=+g('usage').value||0;
-  const cap=+g('cap').value||60, rate=+g('rate').value||0.10, over=+g('overage').value||0.14;
+  const cap=+g('cap').value||60, rate=+g('rate').value||0.10, over=+g('overage').value||0.125;
   const plat=+g('platform').value||0;
   const targetMargin=+g('margin').value||70;
   const VCOST=getCOST(), VFIXED=getFIXED();
