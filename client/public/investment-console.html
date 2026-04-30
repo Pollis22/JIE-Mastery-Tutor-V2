@@ -289,9 +289,24 @@ input:focus,select:focus{border-color:var(--red);background:#fff;box-shadow:0 0 
     <div class="sc-actions">
       <button class="btn btn-pri btn-sm" onclick="openReportModal('investor')" title="Generate Investor-Facing Report (PDF)">📄 Investor PDF</button>
       <button class="btn btn-out btn-sm" onclick="openReportModal('internal')" title="Generate Internal &amp; Confidential Report (PDF)">🔒 Internal PDF</button>
-      <button class="btn btn-sec btn-sm" onclick="openSaveModal()">💾 Save Scenario</button>
-      <button class="btn btn-sec btn-sm" onclick="openLoadModal()">📂 Load</button>
+      <button class="btn btn-sec btn-sm" onclick="openSaveModal()" title="Save current scenario to this browser's storage">💾 Save</button>
+      <button class="btn btn-sec btn-sm" onclick="openLoadModal()" title="Load a scenario from this browser's storage">📂 Load</button>
+      <button class="btn btn-sec btn-sm" onclick="exportScenarioFile()" title="Download scenario as a .json file you can use on any device or environment">📥 Export</button>
+      <button class="btn btn-sec btn-sm" onclick="document.getElementById('import-file-input').click()" title="Load a scenario from a .json file">📤 Import</button>
+      <input type="file" id="import-file-input" accept="application/json,.json" style="display:none" onchange="importScenarioFile(event)">
       <button class="btn btn-sec btn-sm" onclick="resetDefaults()">↻ Reset</button>
+    </div>
+  </div>
+
+  <!-- Recovery banner — appears on page load if we detect an unsaved-work auto-save -->
+  <div id="recovery-banner" style="display:none;background:linear-gradient(135deg, rgba(245,158,11,0.08), rgba(245,158,11,0.02));border:1.5px solid rgba(245,158,11,0.4);border-radius:10px;padding:14px 18px;margin:12px 24px 0;display:none;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap">
+    <div style="flex:1;min-width:280px">
+      <div style="font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#92400e;margin-bottom:3px">⏱ Restore Last Session?</div>
+      <div id="recovery-banner-msg" style="font-size:13px;color:var(--tx2);line-height:1.5">We detected unsaved changes from your last session.</div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-pri btn-sm" onclick="restoreAutoSave()">Restore</button>
+      <button class="btn btn-sec btn-sm" onclick="discardAutoSave()">Discard</button>
     </div>
   </div>
 
@@ -2734,6 +2749,172 @@ function deleteSaved(i) {
   renderSavedList();
 }
 
+// ====================================================================
+// v12.5: FILE EXPORT / IMPORT
+// Scenarios as portable JSON files — work across devices, environments, and
+// remain stable as the schema evolves (versioned).
+// ====================================================================
+const SCENARIO_FILE_SCHEMA_VERSION = 1;
+
+function exportScenarioFile() {
+  const stateSnapshot = captureCurrentInputs();
+  const fileObj = {
+    schemaVersion: SCENARIO_FILE_SCHEMA_VERSION,
+    appVersion: 'v12.5',
+    exportedAt: new Date().toISOString(),
+    name: '',  // user can fill in if they want; not required
+    state: stateSnapshot,
+  };
+  // Optional name prompt for filename
+  const promptedName = prompt('Name for this scenario (used in filename, optional):', '');
+  if (promptedName === null) return;  // user cancelled
+  fileObj.name = (promptedName || '').trim();
+
+  const safeName = (fileObj.name || 'untitled').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || 'untitled';
+  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const filename = `jie-scenario-${safeName}-${dateStr}.json`;
+
+  const blob = new Blob([JSON.stringify(fileObj, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 100);
+}
+
+function importScenarioFile(ev) {
+  const file = ev.target.files && ev.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const text = e.target.result;
+      const obj = JSON.parse(text);
+      // Validate top-level shape
+      if (!obj || typeof obj !== 'object') throw new Error('File is not a valid scenario object.');
+      if (!obj.state || typeof obj.state !== 'object') throw new Error('Missing required field: state.');
+      // Schema version check — for now we accept v1 and any future versions get a warning
+      if (typeof obj.schemaVersion !== 'number') {
+        if (!confirm('This file does not have a schema version. It may be corrupt or from a custom export. Load anyway?')) return;
+      } else if (obj.schemaVersion > SCENARIO_FILE_SCHEMA_VERSION) {
+        if (!confirm(`This file was exported from a newer version of the console (schema v${obj.schemaVersion}). Some fields may not load correctly. Load anyway?`)) return;
+      }
+      // Validate required fields on state
+      const s = obj.state;
+      const required = ['raise', 'scenario', 'uses', 'tranches', 'inputs'];
+      for (const f of required) {
+        if (s[f] === undefined) throw new Error(`Missing required field: state.${f}`);
+      }
+      // Confirm before overwriting current work
+      const fileLabel = obj.name ? `"${obj.name}"` : 'this scenario';
+      const exportedLabel = obj.exportedAt ? new Date(obj.exportedAt).toLocaleString() : 'unknown date';
+      if (!confirm(`Load ${fileLabel}?\n\nExported: ${exportedLabel}\n\nThis will replace your current assumptions. Saved scenarios in this browser are preserved.`)) return;
+      // Apply via the same path as localStorage loads (handles all migrations)
+      applySavedState(s);
+      // Reset the file input so re-importing the same file fires the change event again
+      ev.target.value = '';
+    } catch (err) {
+      alert('Could not import this file.\n\n' + (err.message || err));
+      ev.target.value = '';
+    }
+  };
+  reader.onerror = () => {
+    alert('Could not read the file. It may be corrupted or unreadable.');
+    ev.target.value = '';
+  };
+  reader.readAsText(file);
+}
+
+// ====================================================================
+// v12.5: AUTO-SAVE & SESSION RECOVERY
+// Continuous auto-save to a dedicated recovery slot in localStorage.
+// On page load, if the recovery state differs from the page defaults
+// AND is recent enough, prompt the user to restore.
+// ====================================================================
+const RECOVERY_KEY = 'jie-inv-autosave-recovery';
+const RECOVERY_MAX_AGE_DAYS = 7;
+let _autoSaveTimer = null;
+
+function autoSaveRecovery() {
+  // Debounced — last call within the window wins
+  if (_autoSaveTimer) clearTimeout(_autoSaveTimer);
+  _autoSaveTimer = setTimeout(() => {
+    try {
+      const snap = captureCurrentInputs();
+      const wrapped = {
+        savedAt: new Date().toISOString(),
+        state: snap,
+      };
+      localStorage.setItem(RECOVERY_KEY, JSON.stringify(wrapped));
+    } catch (err) {
+      // Silently fail — auto-save shouldn't disrupt the user
+      console.warn('Auto-save failed:', err);
+    }
+  }, 2000);  // 2s debounce
+}
+
+function checkRecoveryOnLoad() {
+  // Called once after recalc has run with page defaults
+  let raw;
+  try { raw = localStorage.getItem(RECOVERY_KEY); } catch (e) { return; }
+  if (!raw) return;
+  let wrapped;
+  try { wrapped = JSON.parse(raw); } catch (e) { return; }
+  if (!wrapped || !wrapped.state || !wrapped.savedAt) return;
+
+  // Discard if too old
+  const ageMs = Date.now() - new Date(wrapped.savedAt).getTime();
+  const ageDays = ageMs / (1000 * 60 * 60 * 24);
+  if (ageDays > RECOVERY_MAX_AGE_DAYS) {
+    try { localStorage.removeItem(RECOVERY_KEY); } catch (e) {}
+    return;
+  }
+
+  // Discard if it matches current defaults (no actual unsaved work)
+  const currentSnap = captureCurrentInputs();
+  if (JSON.stringify(currentSnap) === JSON.stringify(wrapped.state)) {
+    return;  // Identical to fresh defaults — no recovery needed
+  }
+
+  // Show banner
+  const banner = document.getElementById('recovery-banner');
+  if (!banner) return;
+  const msg = document.getElementById('recovery-banner-msg');
+  const when = new Date(wrapped.savedAt);
+  const minsAgo = Math.round(ageMs / 60000);
+  const timeText = minsAgo < 1 ? 'just now' :
+                   minsAgo < 60 ? `${minsAgo} minute${minsAgo === 1 ? '' : 's'} ago` :
+                   minsAgo < 1440 ? `${Math.round(minsAgo/60)} hour${Math.round(minsAgo/60) === 1 ? '' : 's'} ago` :
+                   when.toLocaleString();
+  if (msg) msg.textContent = `We detected unsaved changes from ${timeText}. Restore them, or discard to continue with the default scenario.`;
+  banner.style.display = 'flex';
+}
+
+function restoreAutoSave() {
+  let raw;
+  try { raw = localStorage.getItem(RECOVERY_KEY); } catch (e) { return; }
+  if (!raw) return;
+  try {
+    const wrapped = JSON.parse(raw);
+    if (wrapped && wrapped.state) {
+      applySavedState(wrapped.state);
+    }
+  } catch (err) {
+    alert('Could not restore session. The recovery data appears corrupted.');
+  }
+  const banner = document.getElementById('recovery-banner');
+  if (banner) banner.style.display = 'none';
+}
+
+function discardAutoSave() {
+  try { localStorage.removeItem(RECOVERY_KEY); } catch (e) {}
+  const banner = document.getElementById('recovery-banner');
+  if (banner) banner.style.display = 'none';
+}
+
 function resetDefaults() {
   // Reset reapplies the Base preset (the page's default state).
   // Saved scenarios are preserved (they live in localStorage, not in state).
@@ -2810,6 +2991,13 @@ function recalc() {
   if (y1Locked) {
     const y1Total = state.uses.reduce((s, u) => s + (u.id === 'owner' ? 0 : (u.y1 || 0)), 0);
     y1Locked.textContent = fmtUSD(y1Total);
+  }
+  // v12.5: trigger debounced auto-save to recovery slot.
+  // Skipped on the very first recalc during page load (recoveryCheckDone flag) so we
+  // don't immediately overwrite recovery state with fresh defaults before the user
+  // has had a chance to see the restore banner.
+  if (window.__recoveryCheckDone) {
+    autoSaveRecovery();
   }
 }
 
@@ -3471,6 +3659,12 @@ async function renderReportPDF(mode, summaryText) {
 
 // Init
 recalc();
+
+// v12.5: Check for an unsaved-work auto-save and prompt to restore.
+// Done AFTER first recalc so the recovery banner appears once defaults are rendered.
+// Setting __recoveryCheckDone = true unlocks autoSaveRecovery() in subsequent recalc calls.
+checkRecoveryOnLoad();
+window.__recoveryCheckDone = true;
 </script>
 
 </body>
