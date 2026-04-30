@@ -280,6 +280,22 @@ tr:last-child td{border-bottom:none;font-weight:700}
 <div class="g2mb"><div class="f"><div class="fl">Contact Title</div><input type="text" id="q-title" placeholder="Director of Academic Support"></div><div class="f"><div class="fl">Contact Email</div><input type="email" id="q-email" placeholder="jsmith@university.edu"></div></div>
 <div class="g2mb"><div class="f"><div class="fl">Department</div><input type="text" id="q-dept" placeholder="Athletic Academic Affairs"></div><div class="f"><div class="fl">Quote Valid For</div><select id="q-valid"><option value="30">30 Days</option><option value="60">60 Days</option><option value="90" selected>90 Days</option></select></div></div>
 <div class="f"><div class="fl">Custom Notes / Message to Client</div><textarea id="q-notes" placeholder="Thank you for the opportunity to present this proposal. We are excited to partner with your institution..."></textarea></div>
+<div class="div" style="margin-top:14px"></div>
+<div class="ch" style="margin-top:8px"><span class="chdot"></span>Payment Terms <span style="text-transform:none;letter-spacing:0;color:var(--tx3);font-weight:500;margin-left:8px">— Discounts apply to the Annual Investment shown in the proposal PDF</span></div>
+<div class="g2mb" style="margin-top:8px">
+<div class="f"><div class="fl">Contract Term</div><select id="q-term" onchange="updateQPrev()">
+<option value="1" selected>1 Year (annual)</option>
+<option value="2">2 Years (5% multi-year discount)</option>
+<option value="3">3 Years (8% multi-year discount)</option>
+</select></div>
+<div class="f"><div class="fl">Annual Upfront Prepay</div>
+<label style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--sf2);border:1px solid var(--bo);border-radius:6px;cursor:pointer;font-size:12px;color:var(--tx2);font-weight:500">
+<input type="checkbox" id="q-prepay" style="accent-color:var(--red);cursor:pointer" onchange="updateQPrev()">
+Apply 10% upfront-prepay discount
+</label>
+</div>
+</div>
+<div id="q-discount-summary" style="font-size:11px;color:var(--tx3);line-height:1.6;padding:8px 12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;display:none"></div>
 </div>
 <div class="card"><div class="ch"><span class="chdot"></span>Quote Summary</div>
 <div class="qnum" id="qnum-display"></div>
@@ -949,6 +965,29 @@ function updateQPrev(){
   const qnNum=getQN();
   g('qnum-display').textContent='Quote # '+qnNum;
   g('qprev').innerHTML='<strong>Prepared for:</strong> '+inst+' — '+contact+'<br><strong>Institution Type:</strong> '+instType+'<br><strong>Users:</strong> '+students.toLocaleString()+' | <strong>Avg Usage:</strong> '+cfUsageShort(usage)+'/user/month<br><strong>Total Tutor '+( displayUnit==='hr'?'Hours':'Minutes')+':</strong> '+cfTotalHrs(monthlyMin)+'<br><strong>Pricing Model:</strong> '+cfModelName()+'<br><strong>Annual Investment:</strong> '+fmt(aRev)+'<br><strong>Quote Valid:</strong> '+valid+' days from issue';
+
+  // Payment-terms live discount summary
+  const termYears=+(g('q-term')?.value||1);
+  const prepayChecked=!!(g('q-prepay')?.checked);
+  const multiYearPct=termYears===2?0.05:(termYears===3?0.08:0);
+  const prepayPct=prepayChecked?0.10:0;
+  const totalDiscPct=multiYearPct+prepayPct;
+  const ds=g('q-discount-summary');
+  if(ds){
+    if(totalDiscPct>0){
+      const discAmt=aRev*totalDiscPct;
+      const netAmt=aRev-discAmt;
+      let parts=[];
+      if(multiYearPct>0)parts.push((multiYearPct*100).toFixed(0)+'% multi-year ('+termYears+'yr)');
+      if(prepayPct>0)parts.push((prepayPct*100).toFixed(0)+'% upfront prepay');
+      ds.style.display='block';
+      ds.innerHTML='<div style="color:#15803d;font-weight:700;font-size:12px;margin-bottom:3px">&#10003; Discount applied: '+parts.join(' + ')+' = '+(totalDiscPct*100).toFixed(0)+'% off</div>'+
+        '<div>List price: <strong>'+fmt(aRev)+'/yr</strong> &nbsp;&middot;&nbsp; Discount: <strong style="color:#15803d">−'+fmt(discAmt)+'</strong> &nbsp;&middot;&nbsp; Net: <strong style="color:#15803d">'+fmt(netAmt)+'/yr</strong>'+
+        (termYears>1?'<br><span style="color:var(--tx3)">Over '+termYears+'-year term: total commitment '+fmt(netAmt*termYears)+' ('+fmt(discAmt*termYears)+' saved vs. list).</span>':'')+'</div>';
+    } else {
+      ds.style.display='none';
+    }
+  }
 }
 
 // ─── PDF GENERATION ───────────────────────────────────────────────────────────
@@ -979,8 +1018,22 @@ function getState(){
   const netRevenue=aRev-commissionAnnual;
   const netProfit=aRev-aCost-commissionAnnual-otherFixedAnnual;
   const netMargin=aRev>0?(netProfit/aRev*100):0;
+
+  // Payment terms — term length and upfront-prepay discount
+  const termYears=+(g('q-term')?.value||1);
+  const prepayChecked=!!(g('q-prepay')?.checked);
+  // Multi-year discount: 0% for 1yr, 5% for 2yr, 8% for 3yr
+  const multiYearPct=termYears===2?0.05:(termYears===3?0.08:0);
+  // Stack with 10% upfront-prepay discount when checked
+  const prepayPct=prepayChecked?0.10:0;
+  // Total discount: stacks additively (i.e. 8% multi + 10% prepay = 18% total off list)
+  const totalDiscountPct=multiYearPct+prepayPct;
+  const annualDiscountAmt=aRev*totalDiscountPct;
+  const annualNetAfterDiscount=aRev-annualDiscountAmt;
+
   return{students,usage,cap,rate,over,plat,targetMargin,monthlyMin,mCost,aCost,aRev,profit,gm,suggested,instType,modelName,model,rows,vcost:VCOST,vfixed:VFIXED,tutorRate:getTutorRate(),
     commPct,otherFixed,otherFixedAnnual,commissionAnnual,commissionMonthly,netRevenue,netProfit,netMargin,
+    termYears,prepayChecked,multiYearPct,prepayPct,totalDiscountPct,annualDiscountAmt,annualNetAfterDiscount,
     inst:g('q-inst').value||'',contact:g('q-contact').value||'',title:g('q-title').value||'',
     email:g('q-email').value||'',dept:g('q-dept').value||'',notes:g('q-notes').value||'',
     valid:g('q-valid').value,qn:getQN(),
@@ -1193,8 +1246,11 @@ function dlQuote(){
   doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor(0,0,0);
   doc.text('Annual Investment Proposal Summary',M,y);y+=4;
 
+  // Resolve payment-terms discounts (read from state object)
+  const hasDisc = (s.totalDiscountPct||0) > 0;
+
   // Rows builder — same components for every scenario; values vary
-  // Component label, description, row-type ('plat'|'pool'|'effective'|'overage'|'commit'|'addl'|'total')
+  // Component label, description, row-type ('plat'|'pool'|'effective'|'overage'|'commit'|'addl'|'subtotal'|'multiyear'|'prepay'|'total')
   const componentDefs=[];
   if(model!=='m'){
     if(s.plat>0) componentDefs.push({lbl:'Annual Platform License',desc:'',type:'plat'});
@@ -1206,18 +1262,36 @@ function dlQuote(){
     componentDefs.push({lbl:displayUnit==='hr'?'Additional Hours':'Additional Minutes',desc:'Beyond commitment pool',type:'addl'});
     componentDefs.push({lbl:'Tutor Cost Per Hour',desc:'Effective rate per committed hour',type:'effective'});
   }
-  componentDefs.push({lbl:'Annual Total Investment',desc:'12-month term',type:'total'});
+  if(hasDisc){
+    // Show list price as a subtotal, then the discounts as separate rows, then the net total
+    componentDefs.push({lbl:'Annual List Price',desc:'Before discounts',type:'subtotal'});
+    if((s.multiYearPct||0) > 0){
+      componentDefs.push({lbl:'Multi-Year Discount',desc:s.termYears+'-year commitment ('+(s.multiYearPct*100).toFixed(0)+'% off)',type:'multiyear'});
+    }
+    if((s.prepayPct||0) > 0){
+      componentDefs.push({lbl:'Annual Upfront Prepay Discount',desc:'Paid in full Net 30 ('+(s.prepayPct*100).toFixed(0)+'% off)',type:'prepay'});
+    }
+    componentDefs.push({lbl:'Annual Net Investment',desc:s.termYears>1?(s.termYears+'-year term, billed annually'):'12-month term',type:'total'});
+  } else {
+    componentDefs.push({lbl:'Annual Total Investment',desc:'12-month term',type:'total'});
+  }
 
   // Cell value helper
   function cellFor(def,c){
+    const discPct=s.totalDiscountPct||0;
+    const myPct=s.multiYearPct||0;
+    const ppPct=s.prepayPct||0;
     switch(def.type){
       case 'plat': return fmt(c.plat);
       case 'pool': return 'Included';
-      case 'effective': return cfRateHr(c.aRev,c.inclAnnualMin);
+      case 'effective': return cfRateHr(c.aRev*(1-discPct),c.inclAnnualMin); // effective $/hr reflects net price
       case 'overage': return cfOverage(c.over);
       case 'commit': { const mc=Math.max(c.plat,c.monthlyMin*3*c.over); return fmt(mc); }
       case 'addl': return cfOverage(c.over);
-      case 'total': return fmt(c.aRev);
+      case 'subtotal': return fmt(c.aRev);
+      case 'multiyear': return '−'+fmt(c.aRev*myPct);
+      case 'prepay': return '−'+fmt(c.aRev*ppPct);
+      case 'total': return fmt(c.aRev*(1-discPct));
       default: return '';
     }
   }
@@ -1258,21 +1332,84 @@ function dlQuote(){
     columnStyles:colStyles,
     styles:{lineColor:[220,220,222],lineWidth:.3},
     didParseCell:function(data){
-      // Bold the total row
+      // Bold the total row (last row)
       if(data.section==='body'&&data.row.index===body.length-1){
         data.cell.styles.fontStyle='bold';
         data.cell.styles.fillColor=[240,240,242];
       }
-      // Highlight the Tutor Cost Per Hour row in green tint to draw attention
       const def=componentDefs[data.row.index];
+      // Highlight the Tutor Cost Per Hour row in green tint to draw attention
       if(data.section==='body'&&def&&def.type==='effective'){
         data.cell.styles.fillColor=[240,253,244];
         if(data.column.index>=2 || (!multi&&data.column.index===2)){
           data.cell.styles.textColor=[21,128,61];
         }
       }
+      // Subtotal row: light gray separator
+      if(data.section==='body'&&def&&def.type==='subtotal'){
+        data.cell.styles.fillColor=[245,245,247];
+        data.cell.styles.fontStyle='italic';
+      }
+      // Discount rows: green tint with green text on amount columns
+      if(data.section==='body'&&def&&(def.type==='multiyear'||def.type==='prepay')){
+        data.cell.styles.fillColor=[240,253,244];
+        if(data.column.index>=2 || (!multi&&data.column.index===2)){
+          data.cell.styles.textColor=[21,128,61];
+          data.cell.styles.fontStyle='bold';
+        }
+      }
     },
     foot:[],
+  });
+  y=doc.lastAutoTable.finalY+8;
+
+  // ── Payment Terms ──
+  // Page-break safety: terms section needs ~50mm; if not enough room, push to a new page
+  if(y>235){doc.addPage();y=addLetterhead(doc,s,true);}
+
+  doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor(0,0,0);
+  doc.text('Payment Terms',M,y);y+=4;
+
+  // Build a 2-column terms block
+  const termsLines=[];
+  // Billing cadence — adapt copy based on prepay selection
+  if(s.prepayChecked){
+    termsLines.push(['Billing Cadence','Annual upfront. Full annual amount invoiced upon contract execution, Net 30 from invoice date.']);
+  } else {
+    termsLines.push(['Billing Cadence','Quarterly in advance. Four equal invoices issued at the start of each quarter, Net 30 from invoice date.']);
+  }
+  // Discount summary — only when discounts apply
+  if((s.totalDiscountPct||0) > 0){
+    let discParts=[];
+    if((s.multiYearPct||0) > 0) discParts.push((s.multiYearPct*100).toFixed(0)+'% multi-year ('+s.termYears+'-year commitment)');
+    if((s.prepayPct||0) > 0) discParts.push((s.prepayPct*100).toFixed(0)+'% upfront annual prepay');
+    termsLines.push(['Applied Discounts',discParts.join(' + ')+' = '+(s.totalDiscountPct*100).toFixed(0)+'% off list. Stacks per annual invoice.']);
+  }
+  // Contract term
+  termsLines.push(['Contract Term',s.termYears===1
+    ? '12 months. Auto-renews for successive 12-month terms unless either party gives 60 days written notice.'
+    : s.termYears+'-year commitment, billed annually. Auto-renews after term unless either party gives 60 days written notice.']);
+  // Overage true-up
+  termsLines.push(['Overage True-Up','Calculated quarterly in arrears at the contract overage rate. Notification at 80% pool consumption; invoiced Net 30.']);
+  // Late payment
+  termsLines.push(['Late Payment','1.5% per month on past-due balances. Service may be suspended after 60 days past due.']);
+  // Annual escalation
+  termsLines.push(['Annual Escalation','Lesser of (a) U.S. CPI 12-month change or (b) 7%, applied at renewal with 60 days written notice.']);
+  // Cancellation
+  termsLines.push(['Cancellation','Non-cancelable during initial term except for material breach. 30-day satisfaction guarantee on initial contract only.']);
+
+  // Render as a clean two-column key/value table
+  doc.autoTable({
+    startY:y,
+    body:termsLines,
+    margin:{left:M,right:M},
+    theme:'plain',
+    bodyStyles:{fontSize:7.5,cellPadding:2.5,lineColor:[230,230,232],lineWidth:.2},
+    columnStyles:{
+      0:{cellWidth:42,fontStyle:'bold',textColor:[200,28,28]},
+      1:{textColor:[60,60,70]}
+    },
+    styles:{lineColor:[230,230,232],lineWidth:.2}
   });
   y=doc.lastAutoTable.finalY+8;
 
@@ -1682,7 +1819,7 @@ function resetTerms(){g('terms-edit').value=DEFAULT_TERMS;}
   const el=document.getElementById(id);
   if(el)el.addEventListener('input',update);
 });
-['q-inst','q-contact','q-title','q-email','q-dept','q-valid','q-notes','insttype'].forEach(id=>{
+['q-inst','q-contact','q-title','q-email','q-dept','q-valid','q-notes','insttype','q-term','q-prepay'].forEach(id=>{
   const el=document.getElementById(id);
   if(el)el.addEventListener('input',updateQPrev);
 });
