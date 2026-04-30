@@ -421,10 +421,12 @@ let scenarioCount=1;
 // scenarios[0] is unused — Tier 1 always reads from Estimator state.
 // scenarios[1] / scenarios[2] hold customer-facing overrides for Tier 2 / Tier 3.
 // Each tier sets its own pre-purchase rate ($/min); annual investment is computed.
+// overSync defaults to true: overage = rate × 1.25 (25% premium). When user
+// edits the overage field, overSync is set to false and the typed value sticks.
 let scenarios=[
   {label:'Tier 1'},
-  {label:'Tier 2',students:null,rate:null,over:null},
-  {label:'Tier 3',students:null,rate:null,over:null},
+  {label:'Tier 2',students:null,rate:null,over:null,overSync:true},
+  {label:'Tier 3',students:null,rate:null,over:null,overSync:true},
 ];
 function setScenarioCount(n){
   scenarioCount=n;
@@ -458,7 +460,10 @@ function renderScenarioRows(){
     const stuDefault=Math.max(1,Math.round(baseStudents*[1,2,4][i]));
     const stuVal=sc.students!=null?sc.students:stuDefault;
     const rateVal=sc.rate!=null?sc.rate:baseRate;
-    const overVal=sc.over!=null?sc.over:baseOver;
+    // Overage display rule: if overSync is true (default), always show 25% above THIS tier's rate.
+    // Only when user explicitly unchecks sync do we honor sc.over as a manual override.
+    const overSync=(sc.overSync!==false);
+    const overVal=overSync?(rateVal*1.25):(sc.over!=null?sc.over:(rateVal*1.25));
     // Computed annual investment at this tier's rate × usage × students
     const monthlyMin=stuVal*baseUsage;
     const aRevVal=calcRev(stuVal,monthlyMin,baseUsage,rateVal,overVal,basePlat);
@@ -472,8 +477,9 @@ function renderScenarioRows(){
     h+='<div style="display:grid;grid-template-columns:1.1fr 1fr 1.2fr 1fr;gap:10px;align-items:end">';
     h+='<div class="f" style="margin:0"><div class="fl">Tier Label</div><input type="text" value="'+(sc.label||('Tier '+(i+1)))+'" oninput="scenarios['+i+'].label=this.value;updateScenarioReadout('+i+');updateQPrev()"></div>';
     h+='<div class="f" style="margin:0"><div class="fl">Users / Seats</div><input type="number" min="1" step="1" value="'+stuVal+'" oninput="scenarios['+i+'].students=+this.value||0;renderScenarioRows();updateQPrev()"></div>';
-    h+='<div class="f" style="margin:0"><div class="fl">Pre-purchase Rate ($/min) <span style="color:var(--tx3);font-weight:500;font-size:10.5px;margin-left:4px">Tier 1 rate: $'+baseRate.toFixed(4)+'/min</span></div><div class="pfx"><span>$</span><input type="number" min="0.001" step="0.001" value="'+rateVal.toFixed(4)+'" oninput="scenarios['+i+'].rate=+this.value||0;updateScenarioReadout('+i+');updateQPrev()"></div></div>';
-    h+='<div class="f" style="margin:0"><div class="fl">Overage ('+overUnit+')</div><input type="number" min="0" step="0.01" value="'+overDisp+'" oninput="scenarios['+i+'].over='+(displayUnit==='hr'?'(+this.value||0)/60':'+this.value||0')+';updateScenarioReadout('+i+');updateQPrev()"></div>';
+    h+='<div class="f" style="margin:0"><div class="fl">Pre-purchase Rate ($/min) <span style="color:var(--tx3);font-weight:500;font-size:10.5px;margin-left:4px">Tier 1 rate: $'+baseRate.toFixed(4)+'/min</span></div><div class="pfx"><span>$</span><input type="number" min="0.001" step="0.001" value="'+rateVal.toFixed(4)+'" oninput="onTierRateChange('+i+',+this.value||0)"></div></div>';
+    // Overage column with sync checkbox — mirrors Estimator's overage-sync UX
+    h+='<div class="f" style="margin:0"><div class="fl" style="align-items:center;display:flex">Overage ('+overUnit+')<label style="display:flex;align-items:center;gap:3px;font-size:9.5px;font-weight:700;cursor:pointer;margin-left:auto;color:var(--red)"><input type="checkbox" '+(overSync?'checked':'')+' style="accent-color:var(--red);cursor:pointer" onchange="onTierOverageSyncChange('+i+',this.checked)">25%</label></div><input type="number" min="0" step="0.01" value="'+overDisp+'" oninput="onTierOverageInput('+i+',+this.value||0)"></div>';
     h+='</div>';
     // Live readout
     h+='<div id="sc-readout-'+i+'" style="margin-top:8px;padding:8px 12px;background:#fff;border:1px solid var(--bo);border-radius:6px;font-size:11px;color:var(--tx2);display:flex;gap:14px;flex-wrap:wrap">';
@@ -486,6 +492,44 @@ function renderScenarioRows(){
   host.innerHTML=h;
 }
 // Lightweight readout updater (avoids full re-render on every keystroke)
+// When a tier's rate changes:
+//  - If overage is in sync mode (overSync true), re-render so the overage field
+//    redraws at 25% above the new rate.
+//  - If overage was manually set (overSync false), leave the overage value alone
+//    and just refresh the live readout.
+function onTierRateChange(i,newRate){
+  scenarios[i].rate=newRate;
+  if(scenarios[i].overSync!==false){
+    renderScenarioRows();
+  } else {
+    updateScenarioReadout(i);
+  }
+  updateQPrev();
+}
+
+// User types directly into a tier's overage field — this becomes a manual override.
+// We flip overSync off so subsequent rate changes don't overwrite the typed value.
+function onTierOverageInput(i,typedNumeric){
+  // Convert from displayed unit ($/hr or $/min) to the canonical $/min storage
+  const overPerMin=(displayUnit==='hr')?(typedNumeric/60):typedNumeric;
+  scenarios[i].over=overPerMin;
+  scenarios[i].overSync=false;
+  // Refresh the row so the sync checkbox visually unticks
+  renderScenarioRows();
+  updateQPrev();
+}
+
+// User toggles the per-tier "25%" sync checkbox.
+function onTierOverageSyncChange(i,checked){
+  scenarios[i].overSync=checked;
+  if(checked){
+    // Snap back to 25% above this tier's rate; clear any stale manual value
+    scenarios[i].over=null;
+  }
+  renderScenarioRows();
+  updateQPrev();
+}
+
 function updateScenarioReadout(i){
   const el=g('sc-readout-'+i); if(!el)return;
   const sc=scenarios[i];
@@ -496,7 +540,9 @@ function updateScenarioReadout(i){
   const basePlat=+g('platform').value||0;
   const stuVal=sc.students!=null?sc.students:Math.max(1,Math.round(baseStudents*[1,2,4][i]));
   const rateVal=sc.rate!=null?sc.rate:baseRate;
-  const overVal=sc.over!=null?sc.over:baseOver;
+  // Honor explicit overSync flag — true means always 25% above this tier's own rate.
+  const overSync=(sc.overSync!==false);
+  const overVal=overSync?(rateVal*1.25):(sc.over!=null?sc.over:(rateVal*1.25));
   const monthlyMin=stuVal*baseUsage;
   const aRevVal=calcRev(stuVal,monthlyMin,baseUsage,rateVal,overVal,basePlat);
   const inclAnnualHrs=(stuVal*baseUsage*12)/60;
@@ -530,7 +576,9 @@ function computeScenario(i,baseS){
   const usage=baseS.usage; // inherits from Tier 1
   const cap=baseS.cap;     // inherits from Tier 1
   const rate=sc.rate!=null?sc.rate:baseS.rate;
-  const over=sc.over!=null?sc.over:baseS.over;
+  // Honor explicit overSync flag — true means always 25% above this tier's own rate.
+  const overSync=(sc.overSync!==false);
+  const over=overSync?(rate*1.25):(sc.over!=null?sc.over:(rate*1.25));
   const monthlyMin=students*usage;
   const inclMonthlyMin=students*cap;
   const inclAnnualMin=inclMonthlyMin*12;
