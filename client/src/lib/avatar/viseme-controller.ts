@@ -64,6 +64,11 @@ export class VisemeController {
   private destroyed = false;
   private opts: Required<VisemeControllerOptions>;
   private suspendedForResume = false;
+  // Silent sink: keeps the audio graph "live" so the analyser actually receives
+  // frequency data. Without this, Chrome optimizes away source→analyser chains
+  // that don't terminate at destination, and getByteFrequencyData() returns all
+  // zeros (which maps to VISEMES.sil → 'rest' forever). gain=0 keeps it silent.
+  private silentSink: GainNode | null = null;
 
   constructor(opts: VisemeControllerOptions = {}) {
     this.opts = {
@@ -75,6 +80,24 @@ export class VisemeController {
     // Reach in for the private fields so we can feed PCM directly into the
     // analyser without ever connecting to destination.
     this.internal = this.lipsync as unknown as InternalLipsync;
+
+    // Wire the analyser to a muted sink that DOES reach destination. This
+    // keeps Chrome's audio graph from optimizing the disconnected branch
+    // away. The analyser still taps the PCM upstream; gain=0 ensures zero
+    // audible output. The brief's "one audible path" rule is preserved
+    // because this branch contributes nothing audible.
+    try {
+      const ctx = this.internal.audioContext;
+      if (ctx) {
+        this.silentSink = ctx.createGain();
+        this.silentSink.gain.value = 0;
+        this.silentSink.connect(ctx.destination);
+        this.internal.analyser.connect(this.silentSink);
+      }
+    } catch {
+      // Best-effort. If wiring fails the analyser may still produce data on
+      // some browsers; we fall back to whatever we get rather than crashing.
+    }
   }
 
   subscribe(fn: VisemeListener): () => void {
@@ -155,6 +178,17 @@ export class VisemeController {
     this.destroyed = true;
     this.stop();
     this.listeners.clear();
+    try {
+      this.internal.analyser?.disconnect();
+    } catch {
+      // best-effort
+    }
+    try {
+      this.silentSink?.disconnect();
+    } catch {
+      // best-effort
+    }
+    this.silentSink = null;
     try {
       void this.internal.audioContext?.close();
     } catch {
