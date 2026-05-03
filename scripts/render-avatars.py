@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Render the 8 viseme PNGs (A-H) per persona via fal.ai's
-fal-ai/wan/v2.7/image-to-image endpoint, plus copy each base portrait to
+fal-ai/wan/v2.7/edit endpoint, plus copy each base portrait to
 viseme-I (silent rest state).
 
 This is a standalone tooling script. It is NOT part of the runtime build.
@@ -18,6 +18,20 @@ Requires:
 
 The script is idempotent: existing target PNGs are skipped unless --force is
 passed. A hard cost cap of $5.00 aborts the run if exceeded.
+
+Endpoint notes:
+    Previously this script targeted `fal-ai/wan/v2.7/image-to-image`, which
+    fal.ai retired ("Path /v2.7/image-to-image not found"). The current
+    image-edit endpoint is `fal-ai/wan/v2.7/edit` ($0.03/image). Its accepted
+    arguments are: prompt (str, required), image_urls (list[str], 1-4 URLs,
+    required), image_size, num_images, enable_prompt_expansion, seed,
+    enable_safety_checker, output_format. The legacy `image-to-image` knobs
+    (strength, guidance_scale, num_inference_steps) are NOT supported here
+    and are intentionally omitted from the request payload.
+
+    `enable_prompt_expansion` is set to False so the model receives the exact
+    viseme/mouth-shape prompts without LLM rewriting — character identity and
+    precise mouth shapes matter more than richer scene descriptions.
 """
 
 from __future__ import annotations
@@ -38,19 +52,20 @@ from typing import Iterable
 REPO_ROOT = Path(__file__).resolve().parent.parent
 AVATARS_ROOT = REPO_ROOT / "client" / "src" / "assets" / "avatars"
 
-FAL_MODEL = "fal-ai/wan/v2.7/image-to-image"
+FAL_MODEL = "fal-ai/wan/v2.7/edit"
 
-# Per the brief: $0.03/render expected, hard fail at $5.00.
+# Per fal.ai docs: $0.03/image, hard fail at $5.00.
 PER_RENDER_COST_USD = 0.03
 COST_CAP_USD = 5.00
 
-# Image-to-image render parameters (Section 4 of the brief).
-STRENGTH = 0.35
-NUM_INFERENCE_STEPS = 30
-GUIDANCE_SCALE = 7.0
+# Render parameters supported by fal-ai/wan/v2.7/edit.
+# Note: strength / guidance_scale / num_inference_steps are not parameters of
+# this endpoint and were removed when migrating from /image-to-image.
 IMAGE_SIZE = {"width": 1024, "height": 1024}
 NUM_IMAGES = 1
 ENABLE_SAFETY_CHECKER = True
+ENABLE_PROMPT_EXPANSION = False  # keep exact viseme prompts; do not let the model rewrite them
+OUTPUT_FORMAT = "png"
 
 MAX_RETRIES = 3
 RETRY_BACKOFF_SECONDS = (1, 2, 4)
@@ -229,15 +244,17 @@ def render_one_viseme(
     target = persona.viseme_path(letter)
     prompt = VISEME_PROMPTS[letter].format(character=persona.character)
 
+    # fal-ai/wan/v2.7/edit takes `image_urls` (list of 1-4 URLs), `prompt`,
+    # plus the optional knobs below. Legacy strength/guidance/inference_steps
+    # are not part of this endpoint's schema and are intentionally omitted.
     arguments = {
-        "image_url": image_url,
         "prompt": prompt,
-        "strength": STRENGTH,
-        "num_inference_steps": NUM_INFERENCE_STEPS,
-        "guidance_scale": GUIDANCE_SCALE,
+        "image_urls": [image_url],
         "image_size": IMAGE_SIZE,
         "num_images": NUM_IMAGES,
         "enable_safety_checker": ENABLE_SAFETY_CHECKER,
+        "enable_prompt_expansion": ENABLE_PROMPT_EXPANSION,
+        "output_format": OUTPUT_FORMAT,
         "seed": persona.seed,
     }
 
