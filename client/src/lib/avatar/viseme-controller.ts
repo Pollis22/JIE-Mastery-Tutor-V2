@@ -81,6 +81,17 @@ export class VisemeController {
     // analyser without ever connecting to destination.
     this.internal = this.lipsync as unknown as InternalLipsync;
 
+    // Diagnostic: confirm we got the private fields the rest of this class assumes.
+    console.log('[VisemeDiag] VisemeController constructed:', {
+      hasAudioContext: !!this.internal.audioContext,
+      ctxState: this.internal.audioContext?.state,
+      ctxSampleRate: this.internal.audioContext?.sampleRate,
+      hasAnalyser: !!this.internal.analyser,
+      analyserFftSize: this.internal.analyser?.fftSize,
+      analyserFreqBinCount: this.internal.analyser?.frequencyBinCount,
+      lipsyncKeys: Object.keys(this.lipsync as unknown as Record<string, unknown>),
+    });
+
     // Wire the analyser to a muted sink that DOES reach destination. This
     // keeps Chrome's audio graph from optimizing the disconnected branch
     // away. The analyser still taps the PCM upstream; gain=0 ensures zero
@@ -131,16 +142,38 @@ export class VisemeController {
   pushPcm16(pcm: Int16Array): void {
     if (this.destroyed) return;
     const ctx = this.internal.audioContext;
-    if (!ctx) return;
+    if (!ctx) {
+      // Diagnostic: should never happen if Lipsync constructed
+      if (!(this as any)._loggedNoCtx) {
+        (this as any)._loggedNoCtx = true;
+        console.warn('[VisemeDiag] pushPcm16: no audioContext on Lipsync');
+      }
+      return;
+    }
+
+    // Diagnostic: log the very first push so we know the bus → controller bridge works
+    if (!(this as any)._loggedFirstPush) {
+      (this as any)._loggedFirstPush = true;
+      console.log('[VisemeDiag] FIRST pushPcm16:', {
+        pcmLength: pcm.length,
+        ctxState: ctx.state,
+        ctxSampleRate: ctx.sampleRate,
+        sourceSampleRate: this.opts.sourceSampleRate,
+        analyserFftSize: this.internal.analyser?.fftSize,
+        hasSilentSink: !!this.silentSink,
+      });
+    }
 
     // Some browsers boot the AudioContext suspended until a user gesture.
     // We resume on first push — the user has already interacted with the
     // page to start a tutor session, so this won't be blocked.
     if (ctx.state === 'suspended' && !this.suspendedForResume) {
       this.suspendedForResume = true;
-      void ctx.resume().catch(() => {
-        /* no-op — falls back to rest viseme */
-      });
+      console.log('[VisemeDiag] AudioContext was suspended, resuming...');
+      void ctx.resume().then(
+        () => console.log('[VisemeDiag] AudioContext resumed, state:', ctx.state),
+        (err) => console.warn('[VisemeDiag] AudioContext resume failed:', err)
+      );
     }
 
     let buffer: AudioBuffer;
@@ -202,13 +235,47 @@ export class VisemeController {
 
   private tick(): void {
     if (this.destroyed) return;
+    let processError: unknown = null;
     try {
       this.lipsync.processAudio();
-    } catch {
-      // Library threw — emit rest and stay running.
+    } catch (err) {
+      processError = err;
       this.emit('rest');
-      return;
     }
+
+    // Diagnostic: sample 1 in 20 ticks (~once per second at 50ms interval) to
+    // see what wawa is actually reporting. Logs frequency-domain proof of life
+    // by reading the analyser directly, plus the viseme symbol wawa picked.
+    const tickCount = ((this as any)._tickCount ?? 0) + 1;
+    (this as any)._tickCount = tickCount;
+    if (tickCount % 20 === 0 && this.lastChunkAt > 0) {
+      const an = this.internal.analyser;
+      let energy = 0;
+      let nonZero = 0;
+      try {
+        if (an) {
+          const data = new Uint8Array(an.frequencyBinCount);
+          an.getByteFrequencyData(data);
+          for (let i = 0; i < data.length; i++) {
+            energy += data[i];
+            if (data[i] > 0) nonZero++;
+          }
+        }
+      } catch {
+        // best-effort diag
+      }
+      console.log('[VisemeDiag] tick', tickCount, {
+        wawaViseme: this.internal.viseme,
+        analyserEnergy: energy,
+        nonZeroBins: nonZero,
+        ctxState: this.internal.audioContext?.state,
+        msSinceLastChunk: Math.round(performance.now() - this.lastChunkAt),
+        processError: processError ? String(processError) : null,
+      });
+    }
+
+    if (processError) return;
+
     const sinceChunk = performance.now() - this.lastChunkAt;
     if (sinceChunk > this.opts.restHoldMs) {
       this.emit('rest');

@@ -45,6 +45,7 @@ export class VisemeClient {
   connect(): boolean {
     if (this.status === 'ready') return true;
     try {
+      console.log('[VisemeDiag] VisemeClient.connect() starting...');
       this.controller = new VisemeController({
         intervalMs: this.opts.intervalMs,
         restHoldMs: this.opts.restHoldMs,
@@ -53,9 +54,11 @@ export class VisemeClient {
         this.handleBusEvent(e);
       });
       this.setStatus('ready');
+      console.log('[VisemeDiag] VisemeClient.connect() succeeded, bus subscribed');
       return true;
     } catch (err) {
       console.warn('[VisemeClient] connect failed:', err);
+      console.warn('[VisemeDiag] VisemeClient.connect() FAILED:', err);
       this.setStatus('failed');
       this.opts.onFailed?.(err);
       return false;
@@ -98,7 +101,23 @@ export class VisemeClient {
 
   private handleBusEvent(e: AvatarAudioEvent): void {
     const c = this.controller;
-    if (!c) return;
+    if (!c) {
+      if (!(this as any)._loggedNoController) {
+        (this as any)._loggedNoController = true;
+        console.warn('[VisemeDiag] handleBusEvent: no controller, dropping event:', e.kind);
+      }
+      return;
+    }
+
+    // Diagnostic: log first event of each kind so we know the bus is wired up
+    const seen = ((this as any)._seenKinds ?? new Set<string>()) as Set<string>;
+    if (!seen.has(e.kind)) {
+      seen.add(e.kind);
+      (this as any)._seenKinds = seen;
+      console.log('[VisemeDiag] FIRST bus event of kind:', e.kind,
+        e.kind === 'chunk' ? { pcmLength: (e as { pcm16: Int16Array }).pcm16.length } : {});
+    }
+
     switch (e.kind) {
       case 'chunk':
         c.pushPcm16(e.pcm16);
