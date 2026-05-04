@@ -69,6 +69,19 @@ export class VisemeController {
   // that don't terminate at destination, and getByteFrequencyData() returns all
   // zeros (which maps to VISEMES.sil → 'rest' forever). gain=0 keeps it silent.
   private silentSink: GainNode | null = null;
+  // Analyser-side playback queue tail. When ElevenLabs sends a long audio chunk
+  // (e.g. 7s) and we play it through the analyser source-node-style, the source
+  // node finishes its 7s of "playback" and then the analyser goes silent for
+  // the rest of the time the user is hearing audio. We need to schedule each
+  // analyser source so it ENDS when the previous one ends + its duration —
+  // mirroring the way use-custom-voice.ts schedules speaker chunks. Otherwise
+  // the analyser blasts through the entire queued audio in real-time-of-arrival
+  // (a few hundred ms) and the rest of the speech plays with no visemes.
+  private analyserQueueEndTime = 0;
+  // Wall-clock ms timestamp until which we know analyser-side audio is still
+  // playing. Used by tick() to suppress the rest-hold timeout when chunks are
+  // queued ahead of real time.
+  private lastChunkUntil = 0;
 
   constructor(opts: VisemeControllerOptions = {}) {
     this.opts = {
@@ -192,18 +205,39 @@ export class VisemeController {
     source.buffer = buffer;
     source.connect(this.internal.analyser);
     // CRITICAL: do NOT connect to ctx.destination — analyser must stay silent.
+
+    // Schedule sequentially. If the previous queued source has already ended
+    // (or we have no queue), start at "now". Otherwise, start exactly when the
+    // previous source ends — the analyser thus gets a contiguous stream of
+    // samples that mirrors the speaker's playback timeline. This is what makes
+    // visemes track the audible speech instead of stopping after a fraction of
+    // a second.
+    const now = ctx.currentTime;
+    const startAt = Math.max(now, this.analyserQueueEndTime);
+    const duration = buffer.duration;
+    this.analyserQueueEndTime = startAt + duration;
+
     try {
-      source.start();
+      source.start(startAt);
     } catch {
       // best-effort — duplicate start() throws but we always create new nodes
     }
     this.lastChunkAt = performance.now();
+    // Extend the rest-hold window so tick() doesn't force 'rest' before this
+    // chunk finishes playing through the analyser. Without this, a short
+    // gap of <120ms between source-end and the next chunk arrival would
+    // collapse to rest mid-utterance.
+    this.lastChunkUntil = performance.now() + duration * 1000;
     if (this.timer === null) this.start();
   }
 
   /** Force the controller back to the rest pose (used on barge-in / cancel). */
   reset(): void {
     this.lastChunkAt = 0;
+    this.lastChunkUntil = 0;
+    // Drop the queue. Future arrivals will start at "now" instead of waiting
+    // for stale future-scheduled chunks the user just bargein'd over.
+    this.analyserQueueEndTime = 0;
     this.emit('rest');
   }
 
@@ -276,8 +310,16 @@ export class VisemeController {
 
     if (processError) return;
 
-    const sinceChunk = performance.now() - this.lastChunkAt;
-    if (sinceChunk > this.opts.restHoldMs) {
+    // We're still in active playback if either:
+    //   (a) a chunk is queued to keep playing in the future (lastChunkUntil),
+    //   (b) the most recent chunk arrived less than restHoldMs ago.
+    // Without (a), big chunks stop animating mid-sentence because
+    // performance.now() - lastChunkAt exceeds restHoldMs while the source
+    // node is still actively pushing samples through the analyser.
+    const nowMs = performance.now();
+    const stillPlayingQueue = nowMs < this.lastChunkUntil;
+    const sinceChunk = nowMs - this.lastChunkAt;
+    if (!stillPlayingQueue && sinceChunk > this.opts.restHoldMs) {
       this.emit('rest');
       return;
     }
