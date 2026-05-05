@@ -8,7 +8,7 @@
  */
 
 import { lazy } from "react";
-import { Switch, Route } from "wouter";
+import { Switch, Route, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -64,11 +64,9 @@ const RegistrationSuccessPage = lazy(() => import("@/pages/registration-success-
 const PersonalityTestPage = lazy(() => import("@/pages/PersonalityTestPage").then(m => ({ default: m.PersonalityTestPage })));
 const ProfilePage = lazy(() => import("@/pages/profile-page"));
 const PracticeLessonsPage = lazy(() => import("@/pages/practice-lessons-page"));
-const TrialVerifyPage = lazy(() => import("@/pages/trial-verify-page"));
-const TrialEndedPage = lazy(() => import("@/pages/trial-ended-page"));
-const TrialTutorPage = lazy(() => import("@/pages/trial-tutor-page"));
+// Trial pages disabled May 2026 — free trial removed.
+// Page files retained on disk for easy revert; routes now redirect to /pricing.
 const MagicLinkPage = lazy(() => import("@/pages/magic-link-page"));
-const StartTrialPage = lazy(() => import("@/pages/start-trial-page"));
 const FamilyDashboardPage = lazy(() => import("@/pages/family-dashboard"));
 const AboutStudyTrackerPage = lazy(() => import("@/pages/about-study-tracker"));
 const AboutLSISPage = lazy(() => import("@/pages/about-lsis"));
@@ -139,10 +137,11 @@ function Router() {
         <LazyRoute path="/privacy" component={PrivacyPage} />
         <LazyRoute path="/trust-safety" component={TrustSafetyPage} />
         <LazyRoute path="/unsubscribe" component={UnsubscribePage} />
-        <LazyRoute path="/trial/verify" component={TrialVerifyPage} />
-        <LazyRoute path="/trial/ended" component={TrialEndedPage} />
-        <LazyRoute path="/trial/tutor" component={TrialTutorPage} />
-        <LazyRoute path="/start-trial" component={StartTrialPage} />
+        {/* Trial routes redirected to /pricing — free trial removed May 2026 */}
+        <Route path="/trial/verify">{() => <Redirect to="/pricing" />}</Route>
+        <Route path="/trial/ended">{() => <Redirect to="/pricing" />}</Route>
+        <Route path="/trial/tutor">{() => <Redirect to="/pricing" />}</Route>
+        <Route path="/start-trial">{() => <Redirect to="/pricing" />}</Route>
         <LazyRoute component={NotFound} />
       </Switch>
     </>

@@ -1,8 +1,11 @@
 import { useLocation } from 'wouter';
 import { Button } from '@/components/ui/button';
-import { Play } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { trackEvent } from '@/hooks/use-tracking';
 
+// NOTE: Component name preserved for backward compatibility with existing
+// imports across offer-page, pricing-page, auth-page, etc. The component
+// now drives users directly to the pricing page (free trial removed May 2026).
 interface StartTrialButtonProps {
   variant?: 'primary' | 'secondary' | 'outline';
   size?: 'sm' | 'md' | 'lg';
@@ -10,17 +13,17 @@ interface StartTrialButtonProps {
   showSubtext?: boolean;
 }
 
-export function StartTrialButton({ 
-  variant = 'primary', 
-  size = 'md', 
+export function StartTrialButton({
+  variant = 'primary',
+  size = 'md',
   className = '',
-  showSubtext = false 
+  showSubtext = false
 }: StartTrialButtonProps) {
   const [, setLocation] = useLocation();
 
   const handleClick = () => {
-    trackEvent('start_free_trial_click');
-    setLocation('/start-trial');
+    trackEvent('view_pricing_click');
+    setLocation('/pricing');
   };
 
   const buttonClasses = {
@@ -40,14 +43,14 @@ export function StartTrialButton({
       <Button
         onClick={handleClick}
         className={`${buttonClasses[variant]} ${sizeClasses[size]} ${className}`}
-        data-testid="button-start-free-trial"
+        data-testid="button-view-pricing"
       >
-        <Play className="w-4 h-4 mr-2" />
-        Start Free Trial
+        View Pricing
+        <ArrowRight className="w-4 h-4 ml-2" />
       </Button>
       {showSubtext && (
         <p className="text-xs text-gray-500 text-center">
-          30-minute free trial in the real app. No credit card required.
+          Plans start at $19.99/month. Cancel anytime.
         </p>
       )}
     </div>
