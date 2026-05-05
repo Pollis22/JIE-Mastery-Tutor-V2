@@ -1437,16 +1437,10 @@ function dlQuote(){
   termsLines.push(['Contract Term',s.termYears===1
     ? '12 months. Auto-renews for successive 12-month terms unless either party gives 60 days written notice.'
     : s.termYears+'-year commitment, billed annually. Auto-renews after term unless either party gives 60 days written notice.']);
-  // Multi-year discount option (only shown when single-year is selected, to surface the upgrade path)
-  if(s.termYears===1){
-    termsLines.push(['Multi-Year Option','2-year commitment: 5% additional discount on each annual invoice. 3-year commitment: 8% additional discount. Stacks with the 10% upfront prepay discount.']);
-  }
   // Overage true-up
   termsLines.push(['Overage True-Up','Calculated quarterly in arrears at the contract overage rate. Notification at 80% pool consumption; invoiced Net 30.']);
   // Late payment
   termsLines.push(['Late Payment','1.5% per month on past-due balances. Service may be suspended after 60 days past due.']);
-  // Annual escalation
-  termsLines.push(['Annual Escalation','Lesser of (a) U.S. CPI 12-month change or (b) 7%, applied at renewal with 60 days written notice.']);
   // Cancellation
   termsLines.push(['Cancellation','Non-cancelable during initial term except for material breach. 30-day satisfaction guarantee on initial contract only.']);
 
@@ -1996,8 +1990,8 @@ The Company complies with applicable federal and state data privacy laws includi
 5. INTELLECTUAL PROPERTY
 All platform software, AI models, LSIS and SRM architecture, and related technology remain the exclusive intellectual property of JIE Mastery, LLC. Client data and student profiles remain the property of the Client institution. The Company is granted a limited license to process Client data solely for service delivery.
 
-6. TERM, RENEWAL, AND PRICE ADJUSTMENT
-This agreement commences on the contract start date and continues for the contract term specified in this proposal (12, 24, or 36 months). Upon expiration of the initial term, the agreement renews automatically for successive 12-month terms unless either party provides written notice of non-renewal at least 60 days prior to the end of the then-current term. Fees may be adjusted at each renewal by the lesser of (a) the percentage change in the U.S. Consumer Price Index over the prior 12 months, or (b) 7%, with at least 60 days written notice prior to the renewal term.
+6. TERM AND RENEWAL
+This agreement commences on the contract start date and continues for the contract term specified in this proposal. Upon expiration of the initial term, the agreement renews automatically for successive 12-month terms unless either party provides written notice of non-renewal at least 60 days prior to the end of the then-current term. Fees for any renewal term will be communicated by the Company in writing at least 60 days prior to the renewal date and require the Client's acceptance to take effect for that renewal term.
 
 7. CANCELLATION AND SATISFACTION GUARANTEE
 The agreement is non-cancelable during the initial term except for material breach by either party that is not cured within 30 days of written notice. As an exception, on the initial contract only (not on renewals), the Client may cancel within 30 days of contract execution for a pro-rated refund. The Company may suspend or terminate service immediately for non-payment of undisputed invoices more than 60 days overdue, and may charge a reinstatement fee plus all past-due amounts to restore service.
