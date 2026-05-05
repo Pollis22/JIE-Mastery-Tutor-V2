@@ -1,9 +1,25 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { trialService, hashEmail, normalizeEmail, TrialResolutionResult } from '../services/trial-service';
 import { createHash, randomUUID } from 'crypto';
 import { z } from 'zod';
 
 const router = Router();
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// FREE TRIAL DISABLED (May 2026)
+// All /api/trial/* endpoints return 410 Gone. Existing trial users still
+// have their minutes honored via the in-session enforcement timer in
+// custom-voice-ws.ts; only NEW trial creation and trial-specific routes
+// are blocked here. Code below is preserved for revertability — to
+// re-enable, remove or comment out this middleware block.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+router.use((_req: Request, res: Response, _next: NextFunction) => {
+  return res.status(410).json({
+    error: 'gone',
+    message: 'The free trial has been discontinued. Please subscribe to continue.',
+    redirect: '/pricing',
+  });
+});
 
 const TRIAL_COOKIE_NAME = 'trial_device_id';
 const TRIAL_EMAIL_HASH_COOKIE = 'trial_email_hash';
