@@ -153,7 +153,27 @@ tr:last-child td{border-bottom:none;font-weight:700}
 <div class="g2">
 <div class="card"><div class="ch"><span class="chdot"></span>Institution Parameters</div>
 <div class="f"><div class="fl">Students / Users</div><input type="number" id="students" value="500" min="1" step="1" placeholder="e.g. 10000"></div>
-<div class="f"><div class="fl">Avg Monthly Usage / User (min) <span style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— expected actual use</span></div><input type="number" id="usage" value="60" min="1" step="1" placeholder="e.g. 90"><div class="fhint">How many minutes per month you expect one student to actually use.</div></div>
+<div class="f"><div class="fl">Academic Calendar <span style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— drives active weeks & seasonality</span></div>
+<select id="calendar" onchange="onCalendarChange()">
+  <option value="semester" selected>Semester (Fall + Spring, ~30 active weeks)</option>
+  <option value="semester-fall">Semester — Fall Only (~15 weeks)</option>
+  <option value="semester-spring">Semester — Spring Only (~15 weeks)</option>
+  <option value="trimester">Trimester (Fall + Winter + Spring, ~30 weeks)</option>
+  <option value="trimester-one">Trimester — Single Term (~10 weeks)</option>
+  <option value="quarter">Quarter (3 + summer optional, ~30 weeks)</option>
+  <option value="k12-standard">K-12 Standard School Year (~36 weeks)</option>
+  <option value="k12-yearround">K-12 Year-Round (~45 weeks)</option>
+  <option value="summer-only">Summer School Only (~8 weeks)</option>
+  <option value="annual-with-summer">Full Year + Summer (~38 weeks)</option>
+  <option value="custom">Custom</option>
+</select>
+<div class="fhint" id="cal-hint">Selecting a preset auto-fills active weeks. Override below if your institution differs.</div></div>
+<div class="g2mb">
+<div class="f"><div class="fl">Active Weeks <span style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— editable</span></div><input type="number" id="activeweeks" value="30" min="1" max="52" step="1" onchange="recomputeUsage()"><div class="fhint">Total weeks of active instruction.</div></div>
+<div class="f"><div class="fl">Hours / Active User / Week <span style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— per-deal</span></div><input type="number" id="hoursperweek" value="2" min="0.25" step="0.25" onchange="recomputeUsage()"><div class="fhint">Light=1, Standard=2, Heavy=4, Power=6+</div></div>
+</div>
+<div class="f"><div class="fl">Active User Adoption (% of enrollment) <span style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— how many actually engage</span></div><div class="pfx"><span>%</span><input type="number" id="adoption" value="50" min="1" max="100" step="1" onchange="recomputeUsage()"></div><div class="fhint">Year-1 deployments typically 30–50%, mature 50–70%.</div></div>
+<div class="f"><div class="fl">Avg Monthly Usage / User (min) <span style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— auto-calculated, override OK</span></div><input type="number" id="usage" value="25" min="1" step="1" placeholder="auto"><div class="fhint" id="usage-hint">Computed: <strong id="usage-derive">50% × 30 wks × 2 hr/wk × 60 min ÷ 12 mo = 25 min/mo</strong>. Edit to override.</div></div>
 <div class="f"><div class="fl">Institution Type</div><select id="insttype"><option value="d1">D1 Athletic Department</option><option value="uni">University Student Success</option><option value="cc">Community College</option><option value="k12">K-12 School District</option></select></div>
 <div class="div"></div>
 <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--tx3);margin-bottom:8px">Quick Scenarios</div>
@@ -186,16 +206,16 @@ tr:last-child td{border-bottom:none;font-weight:700}
 </div>
 <div class="card"><div class="ch"><span class="chdot"></span>API Cost Assumptions <span style="font-size:9px;font-weight:500;text-transform:none;letter-spacing:0;color:var(--tx3);margin-left:4px">(editable — update if vendor rates change)</span></div>
 <div class="g2mb">
-<div class="f"><div class="fl">STT Cost ($/min) <span style="font-size:10px;color:var(--tx3);font-weight:500">AssemblyAI</span></div><div class="pfx"><span>$</span><input type="number" id="api-stt" value="0.0064" min="0" step="0.0001" placeholder="0.0064"></div><div class="fhint">Per minute of audio transcribed</div></div>
-<div class="f"><div class="fl">LLM Cost ($/min) <span style="font-size:10px;color:var(--tx3);font-weight:500">Claude Sonnet</span></div><div class="pfx"><span>$</span><input type="number" id="api-llm" value="0.009" min="0" step="0.0001" placeholder="0.009"></div><div class="fhint">Avg tokens per voice minute</div></div>
-<div class="f"><div class="fl">TTS Cost ($/min) <span style="font-size:10px;color:var(--tx3);font-weight:500">ElevenLabs</span></div><div class="pfx"><span>$</span><input type="number" id="api-tts" value="0.0036" min="0" step="0.0001" placeholder="0.0036"></div><div class="fhint">Per minute of audio generated</div></div>
-<div class="f"><div class="fl">Other / Buffer ($/min)</div><div class="pfx"><span>$</span><input type="number" id="api-other" value="0.001" min="0" step="0.0001" placeholder="0.001"></div><div class="fhint">Railway hosting, misc overhead</div></div>
+<div class="f"><div class="fl">STT Cost ($/min) <span style="font-size:10px;color:var(--tx3);font-weight:500">Deepgram Nova-3 (Growth)</span></div><div class="pfx"><span>$</span><input type="number" id="api-stt" value="0.0042" min="0" step="0.0001" placeholder="0.0042"></div><div class="fhint">Verified May 2026 — Growth tier prepaid</div></div>
+<div class="f"><div class="fl">LLM Cost ($/min) <span style="font-size:10px;color:var(--tx3);font-weight:500">Sonnet 4.6 + caching ✓</span></div><div class="pfx"><span>$</span><input type="number" id="api-llm" value="0.013" min="0" step="0.0001" placeholder="0.013"></div><div class="fhint">Verified post-caching (90% cache discount on system prompt)</div></div>
+<div class="f"><div class="fl">TTS Cost ($/min) <span style="font-size:10px;color:var(--tx3);font-weight:500">ElevenLabs Turbo v2.5</span></div><div class="pfx"><span>$</span><input type="number" id="api-tts" value="0.027" min="0" step="0.0001" placeholder="0.027"></div><div class="fhint">PAYG @ $0.05/1K chars × ~540 chars/call-min (60% tutor talk)</div></div>
+<div class="f"><div class="fl">Other / Buffer ($/min)</div><div class="pfx"><span>$</span><input type="number" id="api-other" value="0.004" min="0" step="0.0001" placeholder="0.004"></div><div class="fhint">~10% buffer for variability + misc overhead</div></div>
 </div>
 <div class="div"></div>
-<div class="f"><div class="fl">Fixed Monthly Infra ($/mo)</div><div class="pfx"><span>$</span><input type="number" id="api-fixed" value="50" min="0" step="5" placeholder="50"></div><div class="fhint">Base Railway / DB costs regardless of usage</div></div>
+<div class="f"><div class="fl">Fixed Monthly Infra ($/mo)</div><div class="pfx"><span>$</span><input type="number" id="api-fixed" value="93" min="0" step="5" placeholder="93"></div><div class="fhint">Railway PRO + 6 services + Postgres (verified May 2026)</div></div>
 <div style="margin-top:12px;background:var(--r10);border:1px solid rgba(200,28,28,.2);border-radius:8px;padding:10px 14px">
 <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--tx3);margin-bottom:4px">Blended Variable Cost</div>
-<div style="font-size:18px;font-weight:800;color:var(--red);letter-spacing:-.02em" id="blended-rate">$0.0190/min</div>
+<div style="font-size:18px;font-weight:800;color:var(--red);letter-spacing:-.02em" id="blended-rate">$0.0482/min</div>
 <div style="font-size:10.5px;color:var(--tx2);margin-top:2px">STT + LLM + TTS + Other — used in all calculations below</div>
 </div>
 </div>
@@ -571,9 +591,55 @@ function setM(m){
   update();
 }
 
+// v16: Academic Calendar — drives usage from calendar/weeks/hours/adoption
+const CALENDAR_PRESETS = {
+  'semester': 30,
+  'semester-fall': 15,
+  'semester-spring': 15,
+  'trimester': 30,
+  'trimester-one': 10,
+  'quarter': 30,
+  'k12-standard': 36,
+  'k12-yearround': 45,
+  'summer-only': 8,
+  'annual-with-summer': 38,
+  'custom': null
+};
+function onCalendarChange() {
+  const cal = g('calendar').value;
+  const wks = CALENDAR_PRESETS[cal];
+  if (wks !== null && wks !== undefined) {
+    g('activeweeks').value = wks;
+  }
+  recomputeUsage();
+}
+function recomputeUsage() {
+  const wks = +g('activeweeks').value || 0;
+  const hpw = +g('hoursperweek').value || 0;
+  const adopt = (+g('adoption').value || 0) / 100;
+  // Avg monthly minutes per ENROLLED student (so existing `usage`-based math stays correct)
+  const monthlyMin = Math.round(adopt * wks * hpw * 60 / 12);
+  if (monthlyMin > 0) {
+    g('usage').value = monthlyMin;
+    const hint = document.getElementById('usage-derive');
+    if (hint) hint.textContent = 
+      Math.round(adopt*100) + '% × ' + wks + ' wks × ' + hpw + ' hr/wk × 60 min ÷ 12 mo = ' + monthlyMin + ' min/mo';
+  }
+  if (typeof recompute === 'function') recompute();
+}
+
 function setS(s,u){
   g('students').value=s;
   g('usage').value=u;
+  // v16: when scenario chip sets a usage, derive equivalent hours/week so calendar UI reflects the choice
+  try {
+    const wks = +g('activeweeks').value || 30;
+    const adopt = (+g('adoption').value || 50) / 100;
+    if (wks > 0 && adopt > 0) {
+      const derivedHours = (u * 12) / (60 * adopt * wks);
+      g('hoursperweek').value = (Math.round(derivedHours * 4) / 4).toFixed(2);
+    }
+  } catch(e) { /* non-blocking */ }
   if(g('cap-sync').checked) g('cap').value=u;
   update();
 }
@@ -599,7 +665,9 @@ g('usage').addEventListener('input', function(){
   if(g('cap-sync').checked){ g('cap').value=this.value; }
   update();
 });
-g('cap-sync').addEventListener('change', syncCap);
+// v16: initial calendar→usage compute
+  try { recomputeUsage(); } catch(e) {}
+  g('cap-sync').addEventListener('change', syncCap);
 
 // 25%-premium overage sync (industry standard)
 function syncOverage(){
