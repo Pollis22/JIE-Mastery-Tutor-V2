@@ -354,7 +354,13 @@ async function _streamFromClaude(
   const stream = anthropicClient.messages.stream({
     model: DEFAULT_MODEL_STR,
     max_tokens: maxTokens,
-    system: systemPrompt,
+    system: [
+      {
+        type: "text",
+        text: systemPrompt,
+        cache_control: { type: "ephemeral" }
+      }
+    ],
     messages: [
       ...filteredHistory,
       { role: "user", content: currentTranscript }
@@ -362,6 +368,20 @@ async function _streamFromClaude(
   });
 
   await _processStream('claude', stream, streamStart, callbacks, gradeLevel, abortSignal);
+
+  // Cache telemetry — non-blocking, never throws
+  try {
+    const finalMessage = await stream.finalMessage();
+    const u: any = finalMessage.usage || {};
+    const cacheReads = u.cache_read_input_tokens ?? 0;
+    const cacheWrites = u.cache_creation_input_tokens ?? 0;
+    const regularInput = u.input_tokens ?? 0;
+    const output = u.output_tokens ?? 0;
+    const status = cacheReads > 0 ? '✅ HIT' : (cacheWrites > 0 ? '🔵 WRITE' : '⚠️ MISS');
+    console.log(`[AI Service] 💾 Cache ${status} | reads:${cacheReads} writes:${cacheWrites} input:${regularInput} output:${output}`);
+  } catch (telemetryErr: any) {
+    console.warn(`[AI Service] Cache telemetry unavailable: ${telemetryErr?.message || telemetryErr}`);
+  }
 }
 
 // ─── OPENAI STREAMING (internal) ─────────────────────────────────
@@ -640,12 +660,29 @@ export async function generateTutorResponse(
       const response = await anthropicClient.messages.create({
         model: DEFAULT_MODEL_STR,
         max_tokens: maxTokens,
-        system: systemPrompt,
+        system: [
+          {
+            type: "text",
+            text: systemPrompt,
+            cache_control: { type: "ephemeral" }
+          }
+        ],
         messages,
       });
 
       const apiMs = Date.now() - apiStart;
       console.log(`[AI Service] ⏱️ Claude API completed in ${apiMs}ms`);
+
+      // Cache telemetry
+      try {
+        const u: any = response.usage || {};
+        const cacheReads = u.cache_read_input_tokens ?? 0;
+        const cacheWrites = u.cache_creation_input_tokens ?? 0;
+        const regularInput = u.input_tokens ?? 0;
+        const output = u.output_tokens ?? 0;
+        const status = cacheReads > 0 ? '✅ HIT' : (cacheWrites > 0 ? '🔵 WRITE' : '⚠️ MISS');
+        console.log(`[AI Service] 💾 Cache ${status} (non-stream) | reads:${cacheReads} writes:${cacheWrites} input:${regularInput} output:${output}`);
+      } catch (_) { /* never block on telemetry */ }
 
       const textContent = response.content.find(block => block.type === 'text');
       return textContent && 'text' in textContent ? textContent.text : "I'm sorry, I didn't catch that. Could you repeat?";
