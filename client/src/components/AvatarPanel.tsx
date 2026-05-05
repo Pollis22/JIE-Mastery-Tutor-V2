@@ -30,8 +30,6 @@ interface AvatarPanelProps {
   size?: number;
   /** Render the orb fallback when things go wrong. */
   ageGroupForOrb: '6-8' | '9-12' | 'College';
-  /** Optional voice-only toggle handler (parent collapses panel back to orb). */
-  onVoiceOnlyClick?: () => void;
 }
 
 function toOrbState(state: TutorState): OrbState {
@@ -48,9 +46,8 @@ export function AvatarPanel({
   state,
   size = 320,
   ageGroupForOrb,
-  onVoiceOnlyClick,
 }: AvatarPanelProps) {
-  const { enabled: userPref, setEnabled } = useAvatarPreference();
+  const { enabled: userPref } = useAvatarPreference();
   const assetsPresent = hasPersonaAssets(persona);
 
   // Effective visibility (caller has already cleared the master+persona+network
@@ -78,16 +75,5 @@ export function AvatarPanel({
     );
   }
 
-  return (
-    <VisemeAvatar
-      persona={persona}
-      size={size}
-      onVoiceOnlyClick={() => {
-        // Two paths: persist preference (so reload keeps it) AND let the
-        // parent collapse the panel if it owns its own override state.
-        setEnabled(false);
-        onVoiceOnlyClick?.();
-      }}
-    />
-  );
+  return <VisemeAvatar persona={persona} size={size} />;
 }

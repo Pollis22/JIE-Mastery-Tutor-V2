@@ -22,13 +22,12 @@ import {
 } from '@/lib/avatar/persona-asset-registry';
 import { VisemeClient } from '@/lib/avatar/viseme-client';
 import { VisemeSymbol } from '@/lib/avatar/viseme-controller';
+import { AvatarToggle } from './AvatarToggle';
 
 interface VisemeAvatarProps {
   persona: CanonicalPersona;
   /** Container size in px. Square. */
   size?: number;
-  /** Show the voice-only ("Focus View") toggle in the corner. */
-  onVoiceOnlyClick?: () => void;
   /** Hide idle motion (used for prefers-reduced-motion). */
   reducedMotion?: boolean;
 }
@@ -54,7 +53,6 @@ function readEnvFlag(key: string, fallback: boolean): boolean {
 export function VisemeAvatar({
   persona,
   size = 320,
-  onVoiceOnlyClick,
   reducedMotion = false,
 }: VisemeAvatarProps) {
   const [assets, setAssets] = useState<PersonaAssets | null>(() => getPersonaAssets(persona));
@@ -176,17 +174,14 @@ export function VisemeAvatar({
         )}
       </div>
 
-      {onVoiceOnlyClick && (
-        <button
-          type="button"
-          onClick={onVoiceOnlyClick}
-          className="absolute top-2 right-2 rounded-full bg-black/50 hover:bg-black/70 text-white text-xs px-2 py-1 backdrop-blur-sm transition"
-          aria-label="Switch to Focus View (orb only)"
-          data-testid="viseme-avatar-voice-only-toggle"
-        >
-          Focus View
-        </button>
-      )}
+      {/* The AvatarToggle handles its own state via useAvatarPreference; in
+          this branch (avatar mounted) it renders as "Focus View" and flips
+          the user pref to false on click, which causes AvatarPanel to
+          re-render the orb-with-toggle path. No parent callback needed. */}
+      <AvatarToggle
+        variant="compact"
+        className="absolute top-2 right-2"
+      />
     </div>
   );
 }

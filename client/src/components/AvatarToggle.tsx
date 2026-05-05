@@ -19,13 +19,13 @@ const STORAGE_KEY = 'jie:avatar:enabled';
 const EVENT_NAME = 'jie:avatar:enabled-changed';
 
 function readPref(): boolean {
-  if (typeof window === 'undefined') return true;
+  if (typeof window === 'undefined') return false;
   try {
     const v = window.localStorage.getItem(STORAGE_KEY);
-    if (v === null) return true; // default ON
+    if (v === null) return false; // default OFF — Tutor View is opt-in beta
     return v === '1' || v === 'true';
   } catch {
-    return true;
+    return false;
   }
 }
 
@@ -130,7 +130,7 @@ export function AvatarToggle({ variant = 'compact', className = '' }: AvatarTogg
       data-testid="avatar-toggle-compact"
       className={`rounded-full bg-black/50 hover:bg-black/70 text-white text-xs px-2 py-1 backdrop-blur-sm transition ${className}`}
     >
-      {enabled ? 'Focus View' : 'Tutor View'}
+      {enabled ? 'Focus View' : 'Tutor View — Beta'}
     </button>
   );
 }

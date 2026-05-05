@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { useAgeTheme } from '@/contexts/ThemeContext';
 import { AIOrb, OrbState } from './AIOrb';
@@ -42,15 +42,19 @@ export function TutorAvatar({ state, amplitude = 0, size = 'medium' }: TutorAvat
   }, []);
 
   // ── Avatar pilot gate (dev-avatar branch only) ─────────────────────────
-  // When master flag, persona flag, faceId, and network all line up, render
-  // the Simli avatar in place of orb/emoji. Any failure path falls through
-  // to the original orb/emoji branches below — voice session is unaffected.
-  // User can also collapse mid-session via the "Voice only" toggle.
+  // When master flag, persona flag, and network all line up, render the
+  // viseme avatar in place of orb/emoji. AvatarPanel handles its own
+  // user-preference layer internally (orb-with-toggle when off, animated
+  // avatar when on), so a single gate here is enough — no parent override
+  // state needed. Earlier code kept a `voiceOnlyOverride` state that became
+  // a one-way trap: clicking Focus View flipped it true, but nothing ever
+  // flipped it back, so users couldn't return to Tutor View without a full
+  // page reload. AvatarPanel's own orb-with-toggle path covers both
+  // directions natively.
   const persona = useMemo(() => normalizePersona(ageGroup as string | undefined), [ageGroup]);
   const avatarGate = useMemo(() => shouldRenderAvatar(readClientAvatarConfig(), persona), [persona]);
-  const [voiceOnlyOverride, setVoiceOnlyOverride] = useState(false);
 
-  if (avatarGate.ok && !voiceOnlyOverride) {
+  if (avatarGate.ok) {
     const orbAge: '6-8' | '9-12' | 'College' =
       persona === '9-12' ? '9-12' : persona === 'college' ? 'College' : '6-8';
     return (
@@ -60,7 +64,6 @@ export function TutorAvatar({ state, amplitude = 0, size = 'medium' }: TutorAvat
         state={state}
         size={size === 'small' ? 240 : size === 'medium' ? 320 : 400}
         ageGroupForOrb={orbAge}
-        onVoiceOnlyClick={() => setVoiceOnlyOverride(true)}
       />
     );
   }

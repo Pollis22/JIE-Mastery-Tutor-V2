@@ -223,11 +223,17 @@ export class VisemeController {
       // best-effort — duplicate start() throws but we always create new nodes
     }
     this.lastChunkAt = performance.now();
-    // Extend the rest-hold window so tick() doesn't force 'rest' before this
-    // chunk finishes playing through the analyser. Without this, a short
-    // gap of <120ms between source-end and the next chunk arrival would
-    // collapse to rest mid-utterance.
-    this.lastChunkUntil = performance.now() + duration * 1000;
+    // Extend the rest-hold window to the actual analyser queue end, in
+    // wall-clock time. The previous version only added `duration` from the
+    // arrival timestamp — wrong when the chunk is scheduled to start in the
+    // future (which happens whenever ElevenLabs streams chunks faster than
+    // they play, common on long responses). In that case the analyser is
+    // still actively pushing samples while lastChunkUntil has long since
+    // expired, so tick()'s rest-hold guard incorrectly forces 'rest' mid-
+    // utterance. Computing the wall-clock end of the analyser queue keeps
+    // the guard aligned with reality regardless of arrival pacing.
+    this.lastChunkUntil =
+      performance.now() + (this.analyserQueueEndTime - now) * 1000;
     if (this.timer === null) this.start();
   }
 
