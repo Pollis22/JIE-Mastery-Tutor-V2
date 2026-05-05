@@ -41,7 +41,7 @@ export default function OfferPage() {
     if (isHomepage) {
       document.title = "JIE Mastery - AI Homework Help That Teaches Kids to Think | Online Tutor for K-12";
     } else {
-      document.title = "Free Trial + 50% Off | JIE Mastery AI Tutor";
+      document.title = "50% Off Your First Month | JIE Mastery AI Tutor";
       
       const meta = document.createElement('meta');
       meta.name = 'robots';
@@ -171,7 +171,7 @@ export default function OfferPage() {
           <div className="max-w-3xl mx-auto text-center space-y-6">
             <div className="inline-flex items-center gap-2 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 px-4 py-2 rounded-full text-sm font-semibold" data-testid="badge-offer">
               <Sparkles className="h-4 w-4" />
-              Free Trial + 50% Off Your First Month
+              50% Off Your First Month with code WELCOME50
             </div>
 
 {/* LCP element (mobile): Hero heading - renders immediately with system fonts while webfonts load */}
@@ -284,7 +284,7 @@ export default function OfferPage() {
 
       <section className="py-10 bg-primary text-primary-foreground">
         <div className="container mx-auto px-4 text-center space-y-4">
-          <h2 className="text-xl md:text-2xl font-bold">Start your free trial today</h2>
+          <h2 className="text-xl md:text-2xl font-bold">Get started today</h2>
           <p className="text-lg opacity-90">
             Use code <span className="font-bold bg-white/20 px-2 py-1 rounded">WELCOME50</span> — 50% off your first month
           </p>
@@ -300,7 +300,7 @@ export default function OfferPage() {
           <div className="max-w-2xl mx-auto">
             <Accordion type="single" collapsible className="space-y-2">
               {[
-                { q: "Is there a free trial?", a: "Yes! You get 30 minutes of free AI tutoring in the real app—no credit card required. Just create an account to start." },
+                { q: "Can I cancel anytime?", a: "Yes. Cancel any subscription with one click from your dashboard — no questions asked, no cancellation fee. You'll keep access until the end of your billing period." },
                 { q: "What does the family plan include?", a: "All plans include unlimited student profiles. One subscription covers your whole family—perfect for homeschool tutoring or after-school help." },
                 { q: "Does it give answers or teach?", a: "JIE Mastery uses the Socratic method to guide students through problems step-by-step. It's real homework help for students—teaching thinking, not just answers." },
                 { q: "What subjects are included?", a: "Math, English, Science, and Spanish are all included. Our AI tutor for students supports K-12 and college-level content." },
@@ -322,7 +322,7 @@ export default function OfferPage() {
 
       <section className="py-16 bg-gradient-to-b from-muted/30 to-background">
         <div className="container mx-auto px-4 text-center space-y-6">
-          <h2 className="text-2xl md:text-3xl font-bold">Try JIE Mastery AI Tutor Risk-Free</h2>
+          <h2 className="text-2xl md:text-3xl font-bold">Subscribe to JIE Mastery — Cancel Anytime</h2>
           <StartTrialButton size="lg" className="text-lg h-14 px-8" showSubtext />
           <p className="text-muted-foreground">
             Code: <span className="font-bold text-primary">WELCOME50</span> (50% off first month)

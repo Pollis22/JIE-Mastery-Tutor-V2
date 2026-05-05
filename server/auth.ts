@@ -639,8 +639,19 @@ export function setupAuth(app: Express) {
     }
   });
 
-  // POST /api/auth/trial-signup - Create trial account and start 30-minute trial
-  app.post("/api/auth/trial-signup", async (req, res, next) => {
+  // POST /api/auth/trial-signup - DISABLED (May 2026): free trial removed
+  // Existing handler retained below for revertability; gated to return 410.
+  app.post("/api/auth/trial-signup", async (req, res, _next) => {
+    console.log('[Trial Signup] 🚫 Trial signup attempt rejected — free trial discontinued');
+    return res.status(410).json({
+      error: 'gone',
+      message: 'The free trial has been discontinued. Please subscribe to continue.',
+      redirect: '/pricing',
+    });
+  });
+
+  // Original trial-signup handler preserved below (unreachable) for revert.
+  app.post("/api/auth/trial-signup-legacy-disabled", async (req, res, next) => {
     try {
       const { createHash } = await import('crypto');
       
