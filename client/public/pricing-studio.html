@@ -1781,6 +1781,141 @@ function dlInternal(){
   });
   y=doc.lastAutoTable.finalY+8;
 
+  // ── Per-Tier Financial Summary (only when 2 or 3 tiers selected) ──
+  if(scenarioCount > 1){
+    if(y>200){doc.addPage();y=addLetterhead(doc,s,false);}
+
+    doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor(...RED);
+    doc.text('Per-Tier Financial Summary',M,y);y+=4;
+    doc.setFont('helvetica','normal');doc.setFontSize(7.5);doc.setTextColor(...GRAY);
+    doc.text('Side-by-side internal economics for each tier offered in the customer proposal.',M,y);y+=5;
+
+    // Build per-tier financials. Tier 1 inherits all Estimator state. Tiers 2/3 use scenario overrides.
+    const tierFins=[];
+    for(let i=0;i<scenarioCount;i++){
+      const sc=scenarios[i] || {};
+      const tStudents = (i===0) ? s.students : (sc.students!=null?sc.students:Math.max(1,Math.round(s.students*[1,2,4][i])));
+      const tUsage   = s.usage; // usage inherited from Tier 1 / Estimator
+      const tCap     = s.cap;
+      const tRate    = (i===0) ? s.rate : (sc.rate!=null?sc.rate:s.rate);
+      const tOverSync= sc.overSync!==false; // Tier 1 has no overSync flag (always uses Estimator's overage)
+      const tOver    = (i===0) ? s.over : (tOverSync ? tRate*1.25 : (sc.over!=null?sc.over:tRate*1.25));
+      const tPlat    = s.plat;
+      const tMonthlyMin = tStudents*tUsage;
+      const tARev = calcRev(tStudents,tMonthlyMin,tCap,tRate,tOver,tPlat);
+      const tMCost = tMonthlyMin*s.vcost + s.vfixed;
+      const tACost = tMCost*12;
+      const tProfit = tARev - tACost;
+      const tGM = tARev>0 ? (tProfit/tARev*100) : 0;
+      const tCommA = tARev * s.commPct;
+      const tCommM = tCommA/12;
+      const tNetRev = tARev - tCommA;
+      const tNetProfit = tARev - tACost - tCommA - s.otherFixedAnnual;
+      const tNetMargin = tARev>0 ? (tNetProfit/tARev*100) : 0;
+      const tInclMin = tStudents*tCap;
+      const tInclHrs = tInclMin*12/60;
+      const tEffHr  = tInclHrs>0 ? (tARev/tInclHrs) : 0;
+      tierFins.push({
+        label: (scenarios[i] && scenarios[i].label) || ('Tier '+(i+1)),
+        students:tStudents,
+        rate:tRate,
+        over:tOver,
+        monthlyMin:tMonthlyMin,
+        aRev:tARev,
+        mCost:tMCost,
+        aCost:tACost,
+        profit:tProfit,
+        gm:tGM,
+        commA:tCommA,
+        commM:tCommM,
+        netRev:tNetRev,
+        netProfit:tNetProfit,
+        netMargin:tNetMargin,
+        effHr:tEffHr,
+      });
+    }
+
+    // Build the comparison table
+    const tierRows = [
+      ['Users / Seats',                t => t.students.toLocaleString()],
+      ['Pre-purchase Rate ($/min)',    t => '$'+t.rate.toFixed(4)],
+      ['Overage Rate ($/min)',         t => '$'+t.over.toFixed(4)],
+      ['Effective Tutor Cost / Hour',  t => '$'+t.effHr.toFixed(2)+'/hr'],
+      ['── Revenue ──',                () => ''],
+      ['Annual Revenue',               t => fmt(t.aRev)],
+      ['Monthly Revenue',              t => fmt(t.aRev/12)],
+      ['── Costs ──',                  () => ''],
+      ['Annual API + Infra Cost',      t => fmt(t.aCost)],
+      ['Annual Commission ('+Math.round(s.commPct*100)+'% of sales)', t => fmt(t.commA)],
+      ['Other Fixed (Annual)',         () => fmt(s.otherFixedAnnual)],
+      ['── Profitability ──',          () => ''],
+      ['Gross Profit',                 t => fmt(t.profit)],
+      ['Gross Margin',                 t => t.gm.toFixed(1)+'%'],
+      ['Net Profit (after all costs)', t => fmt(t.netProfit)],
+      ['Net Margin',                   t => t.netMargin.toFixed(1)+'%'],
+      ['── Prepay Scenario (10%) ──',  () => ''],
+      ['Net Revenue if Prepay Elected',t => fmt(t.aRev*0.90)],
+      ['Net Profit if Prepay Elected', t => fmt(t.aRev*0.90 - t.aCost - t.aRev*0.90*s.commPct - s.otherFixedAnnual)],
+    ];
+
+    const tierHead = [['Metric', ...tierFins.map(t=>t.label)]];
+    const tierBody = tierRows.map(([label, fn]) => [label, ...tierFins.map(t=>fn(t))]);
+
+    const labelColW = 56;
+    const dataColW = (W - M*2 - labelColW) / scenarioCount;
+    const tierColStyles = {0:{cellWidth:labelColW,fontStyle:'bold'}};
+    for(let i=0;i<scenarioCount;i++){
+      tierColStyles[i+1] = {halign:'right',cellWidth:dataColW};
+    }
+
+    doc.autoTable({
+      startY:y,
+      head:tierHead,
+      body:tierBody,
+      margin:{left:M,right:M},
+      headStyles:{fillColor:RED,textColor:[255,255,255],fontSize:7.5,fontStyle:'bold',halign:'center'},
+      bodyStyles:{fontSize:7.5,cellPadding:2.2},
+      alternateRowStyles:{fillColor:LIGHT},
+      columnStyles:tierColStyles,
+      styles:{lineColor:[220,220,222],lineWidth:.25},
+      didParseCell:function(data){
+        if(data.section!=='body') return;
+        const labelText = (tierBody[data.row.index] && tierBody[data.row.index][0]) || '';
+        // Section divider rows ("── ... ──")
+        if(labelText.startsWith('──')){
+          data.cell.styles.fillColor=[245,245,247];
+          data.cell.styles.fontStyle='italic';
+          data.cell.styles.textColor=GRAY;
+          return;
+        }
+        // Bold the totals
+        if(labelText==='Annual Revenue' || labelText==='Net Profit (after all costs)' || labelText==='Net Margin' || labelText==='Gross Margin'){
+          if(data.column.index>0){data.cell.styles.fontStyle='bold';}
+        }
+        // Color margin %s based on health
+        if(labelText==='Gross Margin' && data.column.index>0){
+          const t = tierFins[data.column.index-1];
+          data.cell.styles.textColor = t.gm>=70?GRN:t.gm>=50?ORG:DNG;
+        }
+        if(labelText==='Net Margin' && data.column.index>0){
+          const t = tierFins[data.column.index-1];
+          data.cell.styles.textColor = t.netMargin>=60?BLUE:t.netMargin>=40?ORG:DNG;
+        }
+        // Cost rows in red (negatives implied)
+        if((labelText==='Annual API + Infra Cost' || labelText==='Annual Commission ('+Math.round(s.commPct*100)+'% of sales)' || labelText==='Other Fixed (Annual)') && data.column.index>0){
+          data.cell.styles.textColor=DNG;
+        }
+        // Prepay-scenario rows in green to match client PDF treatment
+        if((labelText==='Net Revenue if Prepay Elected' || labelText==='Net Profit if Prepay Elected') && data.column.index>0){
+          data.cell.styles.fillColor=[240,253,244];
+          data.cell.styles.textColor=GRN;
+          data.cell.styles.fontStyle='bold';
+        }
+      }
+    });
+    y=doc.lastAutoTable.finalY+8;
+  }
+
   // Check if we need a page break before analysis
   if(y>220){doc.addPage();y=addLetterhead(doc,s,false);}
 
@@ -1796,6 +1931,18 @@ function dlInternal(){
     'To achieve '+s.targetMargin+'% target margin, minimum annual price = '+fmt(s.suggested)+'.',
     'If usage doubles ('+fmtMin(s.monthlyMin*2)+'/mo), API cost = '+fmt(s.mCost*2)+'/mo. Overage at $'+s.over.toFixed(2)+'/min protects margin.',
   ];
+  // Multi-tier narrative
+  if(scenarioCount > 1){
+    const tierLabels = [];
+    for(let i=0;i<scenarioCount;i++){
+      const sc=scenarios[i] || {};
+      const tStu = (i===0) ? s.students : (sc.students!=null?sc.students:Math.max(1,Math.round(s.students*[1,2,4][i])));
+      const tRate = (i===0) ? s.rate : (sc.rate!=null?sc.rate:s.rate);
+      tierLabels.push(((scenarios[i]&&scenarios[i].label)||('Tier '+(i+1)))+': '+tStu.toLocaleString()+' seats @ $'+tRate.toFixed(4)+'/min');
+    }
+    analysis.push('Tiered offer presented to client: '+tierLabels.join('; ')+'.');
+    analysis.push('See Per-Tier Financial Summary above for revenue, margin, and prepay-scenario economics for each tier.');
+  }
   analysis.forEach(line=>{
     const wrapped=doc.splitTextToSize('• '+line,W-M*2);
     doc.text(wrapped,M,y);
