@@ -1294,7 +1294,10 @@ function dlQuote(){
     }
     componentDefs.push({lbl:'Annual Net Investment',desc:s.termYears>1?(s.termYears+'-year term, billed annually'):'12-month term',type:'total'});
   } else {
-    componentDefs.push({lbl:'Annual Total Investment',desc:'12-month term',type:'total'});
+    componentDefs.push({lbl:'Annual Total Investment',desc:'12-month term — quarterly billing',type:'total'});
+    // Always surface the 10% upfront-prepay option as a savings row, even when toggle is off
+    componentDefs.push({lbl:'Annual Upfront Prepay Option',desc:'Pay annual amount in full, Net 30 — save 10%',type:'prepayInfo'});
+    componentDefs.push({lbl:'Net Annual Investment (with Prepay)',desc:'If 10% upfront prepay elected',type:'totalAfterPrepay'});
   }
 
   // Cell value helper
@@ -1312,6 +1315,8 @@ function dlQuote(){
       case 'subtotal': return fmt(c.aRev);
       case 'multiyear': return '-'+fmt(c.aRev*myPct);
       case 'prepay': return '-'+fmt(c.aRev*ppPct);
+      case 'prepayInfo': return '-'+fmt(c.aRev*0.10)+' (save 10%)';
+      case 'totalAfterPrepay': return fmt(c.aRev*0.90);
       case 'total': return fmt(c.aRev*(1-discPct));
       default: return '';
     }
@@ -1353,12 +1358,12 @@ function dlQuote(){
     columnStyles:colStyles,
     styles:{lineColor:[220,220,222],lineWidth:.3},
     didParseCell:function(data){
-      // Bold the total row (last row)
-      if(data.section==='body'&&data.row.index===body.length-1){
+      const def=componentDefs[data.row.index];
+      // Bold the 'Annual Total Investment' / 'Annual Net Investment' row (look up by type, not index)
+      if(data.section==='body'&&def&&def.type==='total'){
         data.cell.styles.fontStyle='bold';
         data.cell.styles.fillColor=[240,240,242];
       }
-      const def=componentDefs[data.row.index];
       // Highlight the Tutor Cost Per Hour row in green tint to draw attention
       if(data.section==='body'&&def&&def.type==='effective'){
         data.cell.styles.fillColor=[240,253,244];
@@ -1371,12 +1376,33 @@ function dlQuote(){
         data.cell.styles.fillColor=[245,245,247];
         data.cell.styles.fontStyle='italic';
       }
-      // Discount rows: green tint with green text on amount columns
+      // Applied-discount rows: green tint with green text on amount columns
       if(data.section==='body'&&def&&(def.type==='multiyear'||def.type==='prepay')){
         data.cell.styles.fillColor=[240,253,244];
         if(data.column.index>=2 || (!multi&&data.column.index===2)){
           data.cell.styles.textColor=[21,128,61];
           data.cell.styles.fontStyle='bold';
+        }
+      }
+      // Informational prepay savings row (when toggle is off) — soft green so customer SEES the option
+      if(data.section==='body'&&def&&def.type==='prepayInfo'){
+        data.cell.styles.fillColor=[240,253,244];
+        if(data.column.index>=2 || (!multi&&data.column.index===2)){
+          data.cell.styles.textColor=[21,128,61];
+          data.cell.styles.fontStyle='bold';
+        }
+        // Italic in label/desc columns to signal "optional / informational"
+        if(data.column.index<2){
+          data.cell.styles.fontStyle='italic';
+          data.cell.styles.textColor=[100,100,110];
+        }
+      }
+      // Net-with-prepay row: bold green text, light fill — the "if you prepay, you pay this" line
+      if(data.section==='body'&&def&&def.type==='totalAfterPrepay'){
+        data.cell.styles.fillColor=[220,252,231];
+        data.cell.styles.fontStyle='bold';
+        if(data.column.index>=2 || (!multi&&data.column.index===2)){
+          data.cell.styles.textColor=[21,128,61];
         }
       }
     },
@@ -1393,11 +1419,12 @@ function dlQuote(){
 
   // Build a 2-column terms block
   const termsLines=[];
-  // Billing cadence — adapt copy based on prepay selection
+  // Billing cadence — always mentions both options so the prepay discount is visible
   if(s.prepayChecked){
-    termsLines.push(['Billing Cadence','Annual upfront. Full annual amount invoiced upon contract execution, Net 30 from invoice date.']);
+    termsLines.push(['Billing Cadence','Annual upfront elected. Full annual amount invoiced upon contract execution, Net 30 from invoice date. 10% upfront-prepay discount applied (see Annual Investment Proposal Summary above).']);
   } else {
     termsLines.push(['Billing Cadence','Quarterly in advance. Four equal invoices issued at the start of each quarter, Net 30 from invoice date.']);
+    termsLines.push(['Prepay Discount Option','Client may elect annual upfront payment (full amount due Net 30 of contract execution) and receive a 10% discount on the annual invoice. See savings per tier in the Annual Investment Proposal Summary above.']);
   }
   // Discount summary — only when discounts apply
   if((s.totalDiscountPct||0) > 0){
@@ -1410,6 +1437,10 @@ function dlQuote(){
   termsLines.push(['Contract Term',s.termYears===1
     ? '12 months. Auto-renews for successive 12-month terms unless either party gives 60 days written notice.'
     : s.termYears+'-year commitment, billed annually. Auto-renews after term unless either party gives 60 days written notice.']);
+  // Multi-year discount option (only shown when single-year is selected, to surface the upgrade path)
+  if(s.termYears===1){
+    termsLines.push(['Multi-Year Option','2-year commitment: 5% additional discount on each annual invoice. 3-year commitment: 8% additional discount. Stacks with the 10% upfront prepay discount.']);
+  }
   // Overage true-up
   termsLines.push(['Overage True-Up','Calculated quarterly in arrears at the contract overage rate. Notification at 80% pool consumption; invoiced Net 30.']);
   // Late payment
