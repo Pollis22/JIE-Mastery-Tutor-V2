@@ -101,6 +101,10 @@ JIE Mastery AI is a production-grade voice-first AI tutoring platform serving K-
 | Max Tokens | 1024 | Response limit |
 | Temperature | default | Controlled randomness |
 | System Prompt | ~7728 chars | Adaptive Socratic Method |
+| **Prompt Caching** | **Enabled** | `cache_control: { type: "ephemeral" }` on system block — both streaming and non-streaming paths in `server/services/ai-service.ts` (verified May 5, 2026) |
+| Cache TTL | 5 min ephemeral | Refreshed on each cache hit; survives idle gaps within active sessions |
+| Cache telemetry | Enabled | Post-stream log line: `[AI Service] 💾 Cache <state> \| reads:N writes:M input:I output:O` (states: 🔵 WRITE / ✅ HIT / ⚠️ MISS) |
+| Cache effectiveness | ~80% input cost reduction | At observed 1.83 turns/min, 11,500-token cached system prompt → $0.30/1M reads vs $3/1M uncached. See Section 11 for detailed cost model. |
 
 ### 2.5 Voice Activity Detection (VAD) Settings
 
@@ -458,6 +462,80 @@ Server startup performs comprehensive checks:
 - Billing Questions: Contact Stripe support
 - AI Tutor Customization: Refer to system prompt in `server/llm/systemPrompt.ts`
 - Voice Configuration: Refer to `server/routes/custom-voice-ws.ts`
+
+## 11. COST MODEL & PRICING BASIS
+
+**Last verified:** May 5, 2026 (post-prompt-caching deployment)
+
+### 11.1 Blended Variable Cost Per Voice-Minute
+
+| Component | Vendor / Plan | Rate | Per voice-min |
+|-----------|--------------|------|---------------|
+| **STT** | Deepgram Nova-3 (Growth tier prepaid) | $0.0042/audio-min | $0.00126 |
+| **LLM** | Claude Sonnet 4.6 + prompt caching ✓ | $0.30/1M cache reads, $3.75/1M writes | $0.013 |
+| **TTS** | ElevenLabs Turbo v2.5 (PAYG) | $0.05/1K chars | $0.027 |
+| **Buffer** | 10% variability + retries | — | $0.004 |
+| **Blended variable cost** | | | **$0.0482/voice-min** |
+
+### 11.2 Fixed Infrastructure Cost
+
+| Service | Allocation | Monthly |
+|---------|-----------|---------|
+| Railway PRO base | platform | $20 |
+| 6 services (CPU + RAM mid-case) | per-service avg ~$10 | $52.50 |
+| Postgres + storage | $6 | $6 |
+| Egress + misc | $12.50 | $12.50 |
+| **Fixed monthly infrastructure** | | **$93/mo** |
+
+### 11.3 Calculation Assumptions
+
+- **Conversation cadence:** 3 turns/min sustained academic dialog (range 1.8–4)
+- **Student talk-time:** ~30% of voice-minutes (drives STT billing)
+- **Tutor talk-time:** ~60% of voice-minutes (drives TTS billing at ~540 chars/min output)
+- **Cached system prompt:** ~11,500 tokens, refreshed on every turn within session
+- **Output:** ~40 tokens/turn average
+
+### 11.4 Cache Strategy & Effectiveness
+
+System prompt is wrapped in `cache_control: { type: "ephemeral" }` content block on **both** streaming (`_streamFromClaude`) and non-streaming (`generateTutorResponse`) Anthropic API call sites in `server/services/ai-service.ts`.
+
+**Verified May 5, 2026:** 12 consecutive turns in test session — 11/11 turns post-write showed `✅ HIT` with 11,467→12,135 cache-read tokens at 90% discount vs uncached input.
+
+**Pre-cache LLM cost (would-be):** ~$0.108/voice-min at 3 turns/min × 12,000 input tokens × $3/1M
+**Post-cache LLM cost (verified):** ~$0.013/voice-min — **88% reduction on LLM component**
+
+### 11.5 Retail Pricing Targets
+
+| Margin Target | Required Retail | Per-Hour Equivalent | vs Traditional D1 Tutor ($25/hr) |
+|---------------|----------------|---------------------|----------------------------------|
+| 60% | $0.121/min | $7.25/hr | 71% below |
+| **70%** (default) | **$0.161/min** | **$9.65/hr** | **61% below** |
+| 75% | $0.193/min | $11.55/hr | 54% below |
+| 80% | $0.241/min | $14.45/hr | 42% below |
+
+### 11.6 Institutional Quoting Defaults (Pricing Studio v16+)
+
+| Parameter | Default | Rationale |
+|-----------|---------|-----------|
+| Adoption rate | 50% | Y2 typical institutional deployment |
+| Hours per active user per week | (per-deal) | No fixed default — calibrate to use case |
+| Active weeks (Semester) | 30 | Fall + Spring (~15 wks each) |
+| Active weeks (Trimester) | 30 | 3 terms × ~10 wks |
+| Active weeks (K-12 Standard) | 36 | Aug–June |
+| Active weeks (Summer Only) | 8 | Compressed term |
+| Pre-purchase rate | $0.10/min retail | Hybrid pool tier base |
+| Overage rate | $0.125/min | 25% premium on pre-purchase |
+| Annual platform fee | $10,000 | Covers infra, LSIS reporting, onboarding |
+| Recommended pricing structure | **Hybrid** | Platform fee + included pool + overage — best fit for institutional procurement |
+
+### 11.7 Cost Model Maintenance
+
+The Pricing Studio (`client/public/pricing-studio.html`) hardcodes these defaults in API cost input fields. When vendor rates change, update both:
+
+1. `client/public/pricing-studio.html` — input default values + vendor labels
+2. This document (Section 11) — verified rates table
+
+Verify changes by running a test session and inspecting `[AI Service] 💾 Cache` log lines for cache-read token counts before promoting cost basis updates.
 
 ---
 
