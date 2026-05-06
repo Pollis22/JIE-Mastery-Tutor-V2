@@ -169,11 +169,10 @@ tr:last-child td{border-bottom:none;font-weight:700}
 </select>
 <div class="fhint" id="cal-hint">Selecting a preset auto-fills active weeks. Override below if your institution differs.</div></div>
 <div class="g2mb">
-<div class="f"><div class="fl">Active Weeks <span style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— editable</span></div><input type="number" id="activeweeks" value="30" min="1" max="52" step="1" onchange="recomputeUsage()"><div class="fhint">Total weeks of active instruction.</div></div>
-<div class="f"><div class="fl">Hours / Active User / Week <span style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— per-deal</span></div><input type="number" id="hoursperweek" value="2" min="0.25" step="0.25" onchange="recomputeUsage()"><div class="fhint">Light=1, Standard=2, Heavy=4, Power=6+</div></div>
+<div class="f"><div class="fl">Active Weeks <span style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— locked by calendar</span></div><input type="number" id="activeweeks" value="30" min="1" max="52" step="1" readonly style="background:var(--bg2,#f5f5f5);color:var(--tx2,#666);cursor:not-allowed"><div class="fhint">Auto-set from Academic Calendar above.</div></div>
+<div class="f"><div class="fl">Hours Per Week <span style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— per student</span></div><input type="number" id="hoursperweek" value="2" min="0.25" step="0.25" onchange="recomputeUsage()"><div class="fhint">Light=1, Standard=2, Heavy=4, Power=6+</div></div>
 </div>
-<div class="f"><div class="fl">Active User Adoption (% of enrollment) <span style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— how many actually engage</span></div><div class="pfx"><span>%</span><input type="number" id="adoption" value="50" min="1" max="100" step="1" onchange="recomputeUsage()"></div><div class="fhint">Year-1 deployments typically 30–50%, mature 50–70%.</div></div>
-<div class="f"><div class="fl">Avg Monthly Usage / User (min) <span style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— auto-calculated, override OK</span></div><input type="number" id="usage" value="25" min="1" step="1" placeholder="auto"><div class="fhint" id="usage-hint">Computed: <strong id="usage-derive">50% × 30 wks × 2 hr/wk × 60 min ÷ 12 mo = 25 min/mo</strong>. Edit to override.</div></div>
+<div class="f"><div class="fl">Avg Monthly Usage / User (min) <span style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— auto-calculated, override OK</span></div><input type="number" id="usage" value="300" min="1" step="1" placeholder="auto"><div class="fhint" id="usage-hint">Computed: <strong id="usage-derive">30 wks × 2 hr/wk × 60 min ÷ 12 mo = 300 min/mo per student</strong>. Edit to override.</div></div>
 <div class="f"><div class="fl">Institution Type</div><select id="insttype"><option value="d1">D1 Athletic Department</option><option value="uni">University Student Success</option><option value="cc">Community College</option><option value="k12">K-12 School District</option></select></div>
 <div class="div"></div>
 <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--tx3);margin-bottom:8px">Quick Scenarios</div>
@@ -300,6 +299,22 @@ tr:last-child td{border-bottom:none;font-weight:700}
 <div class="g2mb"><div class="f"><div class="fl">Contact Title</div><input type="text" id="q-title" placeholder="Director of Academic Support"></div><div class="f"><div class="fl">Contact Email</div><input type="email" id="q-email" placeholder="jsmith@university.edu"></div></div>
 <div class="g2mb"><div class="f"><div class="fl">Department</div><input type="text" id="q-dept" placeholder="Athletic Academic Affairs"></div><div class="f"><div class="fl">Quote Valid For</div><select id="q-valid"><option value="30">30 Days</option><option value="60">60 Days</option><option value="90" selected>90 Days</option></select></div></div>
 <div class="f"><div class="fl">Custom Notes / Message to Client</div><textarea id="q-notes" placeholder="Thank you for the opportunity to present this proposal. We are excited to partner with your institution..."></textarea></div>
+<div class="div" style="margin-top:14px"></div>
+<div class="ch" style="margin-top:8px"><span class="chdot"></span>Payment Terms <span style="text-transform:none;letter-spacing:0;color:var(--tx3);font-weight:500;margin-left:8px">— Discounts apply to the Annual Investment shown in the proposal PDF</span></div>
+<div class="g2mb" style="margin-top:8px">
+<div class="f"><div class="fl">Contract Term</div><select id="q-term" onchange="updateQPrev()">
+<option value="1" selected>1 Year (annual)</option>
+<option value="2">2 Years (5% multi-year discount)</option>
+<option value="3">3 Years (8% multi-year discount)</option>
+</select></div>
+<div class="f"><div class="fl">Annual Upfront Prepay</div>
+<label style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--sf2);border:1px solid var(--bo);border-radius:6px;cursor:pointer;font-size:12px;color:var(--tx2);font-weight:500">
+<input type="checkbox" id="q-prepay" style="accent-color:var(--red);cursor:pointer" onchange="updateQPrev()">
+Apply 10% upfront-prepay discount
+</label>
+</div>
+</div>
+<div id="q-discount-summary" style="font-size:11px;color:var(--tx3);line-height:1.6;padding:8px 12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;display:none"></div>
 </div>
 <div class="card"><div class="ch"><span class="chdot"></span>Quote Summary</div>
 <div class="qnum" id="qnum-display"></div>
@@ -441,10 +456,12 @@ let scenarioCount=1;
 // scenarios[0] is unused — Tier 1 always reads from Estimator state.
 // scenarios[1] / scenarios[2] hold customer-facing overrides for Tier 2 / Tier 3.
 // Each tier sets its own pre-purchase rate ($/min); annual investment is computed.
+// overSync defaults to true: overage = rate × 1.25 (25% premium). When user
+// edits the overage field, overSync is set to false and the typed value sticks.
 let scenarios=[
   {label:'Tier 1'},
-  {label:'Tier 2',students:null,rate:null,over:null},
-  {label:'Tier 3',students:null,rate:null,over:null},
+  {label:'Tier 2',students:null,rate:null,over:null,overSync:true},
+  {label:'Tier 3',students:null,rate:null,over:null,overSync:true},
 ];
 function setScenarioCount(n){
   scenarioCount=n;
@@ -478,7 +495,10 @@ function renderScenarioRows(){
     const stuDefault=Math.max(1,Math.round(baseStudents*[1,2,4][i]));
     const stuVal=sc.students!=null?sc.students:stuDefault;
     const rateVal=sc.rate!=null?sc.rate:baseRate;
-    const overVal=sc.over!=null?sc.over:baseOver;
+    // Overage display rule: if overSync is true (default), always show 25% above THIS tier's rate.
+    // Only when user explicitly unchecks sync do we honor sc.over as a manual override.
+    const overSync=(sc.overSync!==false);
+    const overVal=overSync?(rateVal*1.25):(sc.over!=null?sc.over:(rateVal*1.25));
     // Computed annual investment at this tier's rate × usage × students
     const monthlyMin=stuVal*baseUsage;
     const aRevVal=calcRev(stuVal,monthlyMin,baseUsage,rateVal,overVal,basePlat);
@@ -491,9 +511,10 @@ function renderScenarioRows(){
     h+='<div style="background:var(--sf2);border:1px solid var(--bo);border-radius:8px;padding:12px 14px;margin-bottom:8px">';
     h+='<div style="display:grid;grid-template-columns:1.1fr 1fr 1.2fr 1fr;gap:10px;align-items:end">';
     h+='<div class="f" style="margin:0"><div class="fl">Tier Label</div><input type="text" value="'+(sc.label||('Tier '+(i+1)))+'" oninput="scenarios['+i+'].label=this.value;updateScenarioReadout('+i+');updateQPrev()"></div>';
-    h+='<div class="f" style="margin:0"><div class="fl">Users / Seats</div><input type="number" min="1" step="1" value="'+stuVal+'" oninput="scenarios['+i+'].students=+this.value||0;renderScenarioRows();updateQPrev()"></div>';
-    h+='<div class="f" style="margin:0"><div class="fl">Pre-purchase Rate ($/min) <span style="color:var(--tx3);font-weight:500;font-size:10.5px;margin-left:4px">Tier 1 rate: $'+baseRate.toFixed(4)+'/min</span></div><div class="pfx"><span>$</span><input type="number" min="0.001" step="0.001" value="'+rateVal.toFixed(4)+'" oninput="scenarios['+i+'].rate=+this.value||0;updateScenarioReadout('+i+');updateQPrev()"></div></div>';
-    h+='<div class="f" style="margin:0"><div class="fl">Overage ('+overUnit+')</div><input type="number" min="0" step="0.01" value="'+overDisp+'" oninput="scenarios['+i+'].over='+(displayUnit==='hr'?'(+this.value||0)/60':'+this.value||0')+';updateScenarioReadout('+i+');updateQPrev()"></div>';
+    h+='<div class="f" style="margin:0"><div class="fl">Users / Seats</div><input type="number" min="1" step="1" value="'+stuVal+'" oninput="onTierSeatsChange('+i+',+this.value||0)"></div>';
+    h+='<div class="f" style="margin:0"><div class="fl">Pre-purchase Rate ($/min) <span style="color:var(--tx3);font-weight:500;font-size:10.5px;margin-left:4px">Tier 1 rate: $'+baseRate.toFixed(2)+'/min</span></div><div class="pfx"><span>$</span><input type="number" min="0.01" step="0.01" value="'+rateVal.toFixed(2)+'" oninput="onTierRateChange('+i+',+this.value||0)"></div></div>';
+    // Overage column with sync checkbox — mirrors Estimator's overage-sync UX
+    h+='<div class="f" style="margin:0"><div class="fl" style="align-items:center;display:flex">Overage ('+overUnit+')<label style="display:flex;align-items:center;gap:3px;font-size:9.5px;font-weight:700;cursor:pointer;margin-left:auto;color:var(--red)"><input type="checkbox" id="sc-oversync-'+i+'" '+(overSync?'checked':'')+' style="accent-color:var(--red);cursor:pointer" onchange="onTierOverageSyncChange('+i+',this.checked)">25%</label></div><input type="number" id="sc-over-'+i+'" min="0" step="0.01" value="'+overDisp+'" oninput="onTierOverageInput('+i+',+this.value||0)"></div>';
     h+='</div>';
     // Live readout
     h+='<div id="sc-readout-'+i+'" style="margin-top:8px;padding:8px 12px;background:#fff;border:1px solid var(--bo);border-radius:6px;font-size:11px;color:var(--tx2);display:flex;gap:14px;flex-wrap:wrap">';
@@ -506,6 +527,63 @@ function renderScenarioRows(){
   host.innerHTML=h;
 }
 // Lightweight readout updater (avoids full re-render on every keystroke)
+// Seats change: just update state and refresh the live readout.
+// Do NOT re-render the row — that would stomp the cursor in the seats input.
+function onTierSeatsChange(i,newSeats){
+  scenarios[i].students=newSeats;
+  updateScenarioReadout(i);
+  updateQPrev();
+}
+
+// When a tier's rate changes:
+//  - If overage is in sync mode (overSync true), update ONLY the overage field
+//    in place (do NOT re-render — that would destroy the rate input mid-typing
+//    and stomp the user's cursor position).
+//  - If overage was manually set (overSync false), leave the overage value alone.
+//  - Always refresh the live readout.
+function onTierRateChange(i,newRate){
+  scenarios[i].rate=newRate;
+  if(scenarios[i].overSync!==false){
+    // Surgical update: write the new 25%-premium value directly into the overage input
+    const overEl=g('sc-over-'+i);
+    if(overEl){
+      const overPerMin=newRate*1.25;
+      const overDisp=displayUnit==='hr'?(overPerMin*60).toFixed(2):overPerMin.toFixed(4);
+      overEl.value=overDisp;
+    }
+  }
+  updateScenarioReadout(i);
+  updateQPrev();
+}
+
+// User types directly into a tier's overage field — this becomes a manual override.
+// We flip overSync off so subsequent rate changes don't overwrite the typed value.
+function onTierOverageInput(i,typedNumeric){
+  // Convert from displayed unit ($/hr or $/min) to the canonical $/min storage
+  const overPerMin=(displayUnit==='hr')?(typedNumeric/60):typedNumeric;
+  scenarios[i].over=overPerMin;
+  scenarios[i].overSync=false;
+  // Surgical: untick the sync checkbox without destroying the input the user is typing in
+  const cb=g('sc-oversync-'+i);
+  if(cb)cb.checked=false;
+  updateScenarioReadout(i);
+  updateQPrev();
+}
+
+// User toggles the per-tier "25%" sync checkbox.
+// Sync ON: snap overage to 25% above rate, clear manual value.
+// Sync OFF: leave the overage at its current displayed value; user just clicked.
+// In either case, the checkbox itself is the active element — re-rendering is fine here
+// because the user clicked the checkbox and is no longer typing in any input.
+function onTierOverageSyncChange(i,checked){
+  scenarios[i].overSync=checked;
+  if(checked){
+    scenarios[i].over=null;
+  }
+  renderScenarioRows();
+  updateQPrev();
+}
+
 function updateScenarioReadout(i){
   const el=g('sc-readout-'+i); if(!el)return;
   const sc=scenarios[i];
@@ -516,7 +594,9 @@ function updateScenarioReadout(i){
   const basePlat=+g('platform').value||0;
   const stuVal=sc.students!=null?sc.students:Math.max(1,Math.round(baseStudents*[1,2,4][i]));
   const rateVal=sc.rate!=null?sc.rate:baseRate;
-  const overVal=sc.over!=null?sc.over:baseOver;
+  // Honor explicit overSync flag — true means always 25% above this tier's own rate.
+  const overSync=(sc.overSync!==false);
+  const overVal=overSync?(rateVal*1.25):(sc.over!=null?sc.over:(rateVal*1.25));
   const monthlyMin=stuVal*baseUsage;
   const aRevVal=calcRev(stuVal,monthlyMin,baseUsage,rateVal,overVal,basePlat);
   const inclAnnualHrs=(stuVal*baseUsage*12)/60;
@@ -550,7 +630,9 @@ function computeScenario(i,baseS){
   const usage=baseS.usage; // inherits from Tier 1
   const cap=baseS.cap;     // inherits from Tier 1
   const rate=sc.rate!=null?sc.rate:baseS.rate;
-  const over=sc.over!=null?sc.over:baseS.over;
+  // Honor explicit overSync flag — true means always 25% above this tier's own rate.
+  const overSync=(sc.overSync!==false);
+  const over=overSync?(rate*1.25):(sc.over!=null?sc.over:(rate*1.25));
   const monthlyMin=students*usage;
   const inclMonthlyMin=students*cap;
   const inclAnnualMin=inclMonthlyMin*12;
@@ -616,14 +698,13 @@ function onCalendarChange() {
 function recomputeUsage() {
   const wks = +g('activeweeks').value || 0;
   const hpw = +g('hoursperweek').value || 0;
-  const adopt = (+g('adoption').value || 0) / 100;
-  // Avg monthly minutes per ENROLLED student (so existing `usage`-based math stays correct)
-  const monthlyMin = Math.round(adopt * wks * hpw * 60 / 12);
+  // Avg monthly minutes per student = active weeks × hours/week × 60 min ÷ 12 months
+  const monthlyMin = Math.round(wks * hpw * 60 / 12);
   if (monthlyMin > 0) {
     g('usage').value = monthlyMin;
     const hint = document.getElementById('usage-derive');
-    if (hint) hint.textContent = 
-      Math.round(adopt*100) + '% × ' + wks + ' wks × ' + hpw + ' hr/wk × 60 min ÷ 12 mo = ' + monthlyMin + ' min/mo';
+    if (hint) hint.textContent =
+      wks + ' wks × ' + hpw + ' hr/wk × 60 min ÷ 12 mo = ' + monthlyMin + ' min/mo per student';
   }
   if (typeof recompute === 'function') recompute();
 }
@@ -631,12 +712,11 @@ function recomputeUsage() {
 function setS(s,u){
   g('students').value=s;
   g('usage').value=u;
-  // v16: when scenario chip sets a usage, derive equivalent hours/week so calendar UI reflects the choice
+  // v17: when scenario chip sets a usage, derive equivalent hours/week so calendar UI reflects the choice
   try {
     const wks = +g('activeweeks').value || 30;
-    const adopt = (+g('adoption').value || 50) / 100;
-    if (wks > 0 && adopt > 0) {
-      const derivedHours = (u * 12) / (60 * adopt * wks);
+    if (wks > 0) {
+      const derivedHours = (u * 12) / (60 * wks);
       g('hoursperweek').value = (Math.round(derivedHours * 4) / 4).toFixed(2);
     }
   } catch(e) { /* non-blocking */ }
@@ -950,6 +1030,29 @@ function updateQPrev(){
   const qnNum=getQN();
   g('qnum-display').textContent='Quote # '+qnNum;
   g('qprev').innerHTML='<strong>Prepared for:</strong> '+inst+' — '+contact+'<br><strong>Institution Type:</strong> '+instType+'<br><strong>Users:</strong> '+students.toLocaleString()+' | <strong>Avg Usage:</strong> '+cfUsageShort(usage)+'/user/month<br><strong>Total Tutor '+( displayUnit==='hr'?'Hours':'Minutes')+':</strong> '+cfTotalHrs(monthlyMin)+'<br><strong>Pricing Model:</strong> '+cfModelName()+'<br><strong>Annual Investment:</strong> '+fmt(aRev)+'<br><strong>Quote Valid:</strong> '+valid+' days from issue';
+
+  // Payment-terms live discount summary
+  const termYears=+(g('q-term')?.value||1);
+  const prepayChecked=!!(g('q-prepay')?.checked);
+  const multiYearPct=termYears===2?0.05:(termYears===3?0.08:0);
+  const prepayPct=prepayChecked?0.10:0;
+  const totalDiscPct=multiYearPct+prepayPct;
+  const ds=g('q-discount-summary');
+  if(ds){
+    if(totalDiscPct>0){
+      const discAmt=aRev*totalDiscPct;
+      const netAmt=aRev-discAmt;
+      let parts=[];
+      if(multiYearPct>0)parts.push((multiYearPct*100).toFixed(0)+'% multi-year ('+termYears+'yr)');
+      if(prepayPct>0)parts.push((prepayPct*100).toFixed(0)+'% upfront prepay');
+      ds.style.display='block';
+      ds.innerHTML='<div style="color:#15803d;font-weight:700;font-size:12px;margin-bottom:3px">&#10003; Discount applied: '+parts.join(' + ')+' = '+(totalDiscPct*100).toFixed(0)+'% off</div>'+
+        '<div>List price: <strong>'+fmt(aRev)+'/yr</strong> &nbsp;&middot;&nbsp; Discount: <strong style="color:#15803d">−'+fmt(discAmt)+'</strong> &nbsp;&middot;&nbsp; Net: <strong style="color:#15803d">'+fmt(netAmt)+'/yr</strong>'+
+        (termYears>1?'<br><span style="color:var(--tx3)">Over '+termYears+'-year term: total commitment '+fmt(netAmt*termYears)+' ('+fmt(discAmt*termYears)+' saved vs. list).</span>':'')+'</div>';
+    } else {
+      ds.style.display='none';
+    }
+  }
 }
 
 // ─── PDF GENERATION ───────────────────────────────────────────────────────────
@@ -980,8 +1083,22 @@ function getState(){
   const netRevenue=aRev-commissionAnnual;
   const netProfit=aRev-aCost-commissionAnnual-otherFixedAnnual;
   const netMargin=aRev>0?(netProfit/aRev*100):0;
+
+  // Payment terms — term length and upfront-prepay discount
+  const termYears=+(g('q-term')?.value||1);
+  const prepayChecked=!!(g('q-prepay')?.checked);
+  // Multi-year discount: 0% for 1yr, 5% for 2yr, 8% for 3yr
+  const multiYearPct=termYears===2?0.05:(termYears===3?0.08:0);
+  // Stack with 10% upfront-prepay discount when checked
+  const prepayPct=prepayChecked?0.10:0;
+  // Total discount: stacks additively (i.e. 8% multi + 10% prepay = 18% total off list)
+  const totalDiscountPct=multiYearPct+prepayPct;
+  const annualDiscountAmt=aRev*totalDiscountPct;
+  const annualNetAfterDiscount=aRev-annualDiscountAmt;
+
   return{students,usage,cap,rate,over,plat,targetMargin,monthlyMin,mCost,aCost,aRev,profit,gm,suggested,instType,modelName,model,rows,vcost:VCOST,vfixed:VFIXED,tutorRate:getTutorRate(),
     commPct,otherFixed,otherFixedAnnual,commissionAnnual,commissionMonthly,netRevenue,netProfit,netMargin,
+    termYears,prepayChecked,multiYearPct,prepayPct,totalDiscountPct,annualDiscountAmt,annualNetAfterDiscount,
     inst:g('q-inst').value||'',contact:g('q-contact').value||'',title:g('q-title').value||'',
     email:g('q-email').value||'',dept:g('q-dept').value||'',notes:g('q-notes').value||'',
     valid:g('q-valid').value,qn:getQN(),
@@ -1157,45 +1274,69 @@ function dlQuote(){
     y+=39;
   } else {
     // Multi-scenario scope: row labels on left, scenario columns on right
+    // Layout constants — these match the scopeH formula used earlier (10 + 5.5*5 + 4 = 41.5mm)
+    const labelW = 38;        // Label column width (left side, holds "Total Tutor Hours:" etc.)
+    const headerH = 6;        // Tier-name header row height
+    const rowH = 5.5;         // Each data row height
+    const numRows = 3;        // Users, Usage, Total Tutor Hours
+    const tablePadTop = 15;   // Distance from box top (y) to where the column-header band starts
+
     doc.setFont('helvetica','normal');doc.setFontSize(7.5);doc.setTextColor(...GRAY);
     doc.text('Institution Type: '+s.instType+'    |    Contract Term: Annual (12 months)    |    Pricing Structure: '+cfModelName(),M+4,y+11);
-    // Column headers
-    const labelW=46;
-    const remW=W-M*2-labelW-8;
-    const colW=remW/scenarioCount;
-    const tableTop=y+15;
-    // Header row
-    doc.setFillColor(...RED);doc.rect(M+4+labelW,tableTop,remW,6,'F');
+
+    // Column geometry
+    const remW = W - M*2 - labelW - 8;
+    const colW = remW / scenarioCount;
+    const tableTop = y + tablePadTop;
+
+    // Header row (tier names)
+    doc.setFillColor(...RED);doc.rect(M+4+labelW,tableTop,remW,headerH,'F');
     doc.setFont('helvetica','bold');doc.setFontSize(7.5);doc.setTextColor(255,255,255);
     computed.forEach((c,i)=>{
       doc.text(c.label,M+4+labelW+colW*i+colW/2,tableTop+4,{align:'center'});
     });
-    // Body rows
+
+    // Compact value formatter for the Total Tutor Hours row — fits any column width
+    function tutorHrsCompact(c){
+      if(displayUnit==='hr'){
+        const monMin=c.monthlyMin, yrMin=monMin*12;
+        return (monMin/60).toLocaleString(undefined,{maximumFractionDigits:0})+' hrs/mo  |  '
+              +(yrMin/60).toLocaleString(undefined,{maximumFractionDigits:0})+' hrs/yr';
+      } else {
+        const monMin=c.monthlyMin, yrMin=monMin*12;
+        return monMin.toLocaleString()+' min/mo  |  '+yrMin.toLocaleString()+' min/yr';
+      }
+    }
     const rows=[
       ['Users / Seats', c=>c.students.toLocaleString()],
       ['Usage / User', c=>cfUsageShort(c.usage)+'/mo'],
-      ['Total Tutor '+(displayUnit==='hr'?'Hours':'Minutes'), c=>cfTotalHrs(c.monthlyMin)],
+      ['Total Tutor '+(displayUnit==='hr'?'Hours':'Minutes'), tutorHrsCompact],
     ];
-    let ry=tableTop+6;
+    let ry=tableTop+headerH;
     rows.forEach((row,ri)=>{
-      if(ri%2===0){doc.setFillColor(255,255,255);doc.rect(M+4+labelW,ry,remW,5.5,'F');}
+      if(ri%2===0){doc.setFillColor(255,255,255);doc.rect(M+4+labelW,ry,remW,rowH,'F');}
       doc.setFont('helvetica','bold');doc.setFontSize(7.5);doc.setTextColor(...GRAY);
       doc.text(row[0]+':',M+4,ry+3.8);
-      doc.setFont('helvetica','normal');doc.setTextColor(0,0,0);doc.setFontSize(7.5);
+      doc.setFont('helvetica','normal');doc.setTextColor(0,0,0);doc.setFontSize(7);
       computed.forEach((c,i)=>{
         doc.text(row[1](c),M+4+labelW+colW*i+colW/2,ry+3.8,{align:'center'});
       });
-      ry+=5.5;
+      ry+=rowH;
     });
-    y=tableTop+6+rows.length*5.5+5;
+
+    // Advance y past the scope box (height is scopeH = 41.5mm) + 8mm breathing room before next section
+    y = y + scopeH + 8;
   }
 
   // Investment table (client-facing — NO cost info)
   doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor(0,0,0);
   doc.text('Annual Investment Proposal Summary',M,y);y+=4;
 
+  // Resolve payment-terms discounts (read from state object)
+  const hasDisc = (s.totalDiscountPct||0) > 0;
+
   // Rows builder — same components for every scenario; values vary
-  // Component label, description, row-type ('plat'|'pool'|'effective'|'overage'|'commit'|'addl'|'total')
+  // Component label, description, row-type ('plat'|'pool'|'effective'|'overage'|'commit'|'addl'|'subtotal'|'multiyear'|'prepay'|'total')
   const componentDefs=[];
   if(model!=='m'){
     if(s.plat>0) componentDefs.push({lbl:'Annual Platform License',desc:'',type:'plat'});
@@ -1207,18 +1348,41 @@ function dlQuote(){
     componentDefs.push({lbl:displayUnit==='hr'?'Additional Hours':'Additional Minutes',desc:'Beyond commitment pool',type:'addl'});
     componentDefs.push({lbl:'Tutor Cost Per Hour',desc:'Effective rate per committed hour',type:'effective'});
   }
-  componentDefs.push({lbl:'Annual Total Investment',desc:'12-month term',type:'total'});
+  if(hasDisc){
+    // Show list price as a subtotal, then the discounts as separate rows, then the net total
+    componentDefs.push({lbl:'Annual List Price',desc:'Before discounts',type:'subtotal'});
+    if((s.multiYearPct||0) > 0){
+      componentDefs.push({lbl:'Multi-Year Discount',desc:s.termYears+'-year commitment ('+(s.multiYearPct*100).toFixed(0)+'% off)',type:'multiyear'});
+    }
+    if((s.prepayPct||0) > 0){
+      componentDefs.push({lbl:'Annual Upfront Prepay Discount',desc:'Paid in full Net 30 ('+(s.prepayPct*100).toFixed(0)+'% off)',type:'prepay'});
+    }
+    componentDefs.push({lbl:'Annual Net Investment',desc:s.termYears>1?(s.termYears+'-year term, billed annually'):'12-month term',type:'total'});
+  } else {
+    componentDefs.push({lbl:'Annual Total Investment',desc:'12-month term — quarterly billing',type:'total'});
+    // Always surface the 10% upfront-prepay option as a savings row, even when toggle is off
+    componentDefs.push({lbl:'Annual Upfront Prepay Option',desc:'Pay annual amount in full, Net 30 — save 10%',type:'prepayInfo'});
+    componentDefs.push({lbl:'Net Annual Investment (with Prepay)',desc:'If 10% upfront prepay elected',type:'totalAfterPrepay'});
+  }
 
   // Cell value helper
   function cellFor(def,c){
+    const discPct=s.totalDiscountPct||0;
+    const myPct=s.multiYearPct||0;
+    const ppPct=s.prepayPct||0;
     switch(def.type){
       case 'plat': return fmt(c.plat);
       case 'pool': return 'Included';
-      case 'effective': return cfRateHr(c.aRev,c.inclAnnualMin);
+      case 'effective': return cfRateHr(c.aRev*(1-discPct),c.inclAnnualMin); // effective $/hr reflects net price
       case 'overage': return cfOverage(c.over);
       case 'commit': { const mc=Math.max(c.plat,c.monthlyMin*3*c.over); return fmt(mc); }
       case 'addl': return cfOverage(c.over);
-      case 'total': return fmt(c.aRev);
+      case 'subtotal': return fmt(c.aRev);
+      case 'multiyear': return '-'+fmt(c.aRev*myPct);
+      case 'prepay': return '-'+fmt(c.aRev*ppPct);
+      case 'prepayInfo': return '-'+fmt(c.aRev*0.10)+' (save 10%)';
+      case 'totalAfterPrepay': return fmt(c.aRev*0.90);
+      case 'total': return fmt(c.aRev*(1-discPct));
       default: return '';
     }
   }
@@ -1259,21 +1423,104 @@ function dlQuote(){
     columnStyles:colStyles,
     styles:{lineColor:[220,220,222],lineWidth:.3},
     didParseCell:function(data){
-      // Bold the total row
-      if(data.section==='body'&&data.row.index===body.length-1){
+      const def=componentDefs[data.row.index];
+      // Bold the 'Annual Total Investment' / 'Annual Net Investment' row (look up by type, not index)
+      if(data.section==='body'&&def&&def.type==='total'){
         data.cell.styles.fontStyle='bold';
         data.cell.styles.fillColor=[240,240,242];
       }
       // Highlight the Tutor Cost Per Hour row in green tint to draw attention
-      const def=componentDefs[data.row.index];
       if(data.section==='body'&&def&&def.type==='effective'){
         data.cell.styles.fillColor=[240,253,244];
         if(data.column.index>=2 || (!multi&&data.column.index===2)){
           data.cell.styles.textColor=[21,128,61];
         }
       }
+      // Subtotal row: light gray separator
+      if(data.section==='body'&&def&&def.type==='subtotal'){
+        data.cell.styles.fillColor=[245,245,247];
+        data.cell.styles.fontStyle='italic';
+      }
+      // Applied-discount rows: green tint with green text on amount columns
+      if(data.section==='body'&&def&&(def.type==='multiyear'||def.type==='prepay')){
+        data.cell.styles.fillColor=[240,253,244];
+        if(data.column.index>=2 || (!multi&&data.column.index===2)){
+          data.cell.styles.textColor=[21,128,61];
+          data.cell.styles.fontStyle='bold';
+        }
+      }
+      // Informational prepay savings row (when toggle is off) — soft green so customer SEES the option
+      if(data.section==='body'&&def&&def.type==='prepayInfo'){
+        data.cell.styles.fillColor=[240,253,244];
+        if(data.column.index>=2 || (!multi&&data.column.index===2)){
+          data.cell.styles.textColor=[21,128,61];
+          data.cell.styles.fontStyle='bold';
+        }
+        // Italic in label/desc columns to signal "optional / informational"
+        if(data.column.index<2){
+          data.cell.styles.fontStyle='italic';
+          data.cell.styles.textColor=[100,100,110];
+        }
+      }
+      // Net-with-prepay row: bold green text, light fill — the "if you prepay, you pay this" line
+      if(data.section==='body'&&def&&def.type==='totalAfterPrepay'){
+        data.cell.styles.fillColor=[220,252,231];
+        data.cell.styles.fontStyle='bold';
+        if(data.column.index>=2 || (!multi&&data.column.index===2)){
+          data.cell.styles.textColor=[21,128,61];
+        }
+      }
     },
     foot:[],
+  });
+  y=doc.lastAutoTable.finalY+8;
+
+  // ── Payment Terms ──
+  // Page-break safety: terms section needs ~50mm; if not enough room, push to a new page
+  if(y>235){doc.addPage();y=addLetterhead(doc,s,true);}
+
+  doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor(0,0,0);
+  doc.text('Payment Terms',M,y);y+=4;
+
+  // Build a 2-column terms block
+  const termsLines=[];
+  // Billing cadence — always mentions both options so the prepay discount is visible
+  if(s.prepayChecked){
+    termsLines.push(['Billing Cadence','Annual upfront elected. Full annual amount invoiced upon contract execution, Net 30 from invoice date. 10% upfront-prepay discount applied (see Annual Investment Proposal Summary above).']);
+  } else {
+    termsLines.push(['Billing Cadence','Quarterly in advance. Four equal invoices issued at the start of each quarter, Net 30 from invoice date.']);
+    termsLines.push(['Prepay Discount Option','Client may elect annual upfront payment (full amount due Net 30 of contract execution) and receive a 10% discount on the annual invoice. See savings per tier in the Annual Investment Proposal Summary above.']);
+  }
+  // Discount summary — only when discounts apply
+  if((s.totalDiscountPct||0) > 0){
+    let discParts=[];
+    if((s.multiYearPct||0) > 0) discParts.push((s.multiYearPct*100).toFixed(0)+'% multi-year ('+s.termYears+'-year commitment)');
+    if((s.prepayPct||0) > 0) discParts.push((s.prepayPct*100).toFixed(0)+'% upfront annual prepay');
+    termsLines.push(['Applied Discounts',discParts.join(' + ')+' = '+(s.totalDiscountPct*100).toFixed(0)+'% off list. Stacks per annual invoice.']);
+  }
+  // Contract term
+  termsLines.push(['Contract Term',s.termYears===1
+    ? '12 months. Auto-renews for successive 12-month terms unless either party gives 60 days written notice.'
+    : s.termYears+'-year commitment, billed annually. Auto-renews after term unless either party gives 60 days written notice.']);
+  // Overage true-up
+  termsLines.push(['Overage True-Up','Calculated quarterly in arrears at the contract overage rate. Notification at 80% pool consumption; invoiced Net 30.']);
+  // Late payment
+  termsLines.push(['Late Payment','1.5% per month on past-due balances. Service may be suspended after 60 days past due.']);
+  // Cancellation
+  termsLines.push(['Cancellation','Non-cancelable during initial term except for material breach. 30-day satisfaction guarantee on initial contract only.']);
+
+  // Render as a clean two-column key/value table
+  doc.autoTable({
+    startY:y,
+    body:termsLines,
+    margin:{left:M,right:M},
+    theme:'plain',
+    bodyStyles:{fontSize:7.5,cellPadding:2.5,lineColor:[230,230,232],lineWidth:.2},
+    columnStyles:{
+      0:{cellWidth:42,fontStyle:'bold',textColor:[200,28,28]},
+      1:{textColor:[60,60,70]}
+    },
+    styles:{lineColor:[230,230,232],lineWidth:.2}
   });
   y=doc.lastAutoTable.finalY+8;
 
@@ -1593,6 +1840,141 @@ function dlInternal(){
   });
   y=doc.lastAutoTable.finalY+8;
 
+  // ── Per-Tier Financial Summary (only when 2 or 3 tiers selected) ──
+  if(scenarioCount > 1){
+    if(y>200){doc.addPage();y=addLetterhead(doc,s,false);}
+
+    doc.setFont('helvetica','bold');doc.setFontSize(9.5);doc.setTextColor(...RED);
+    doc.text('Per-Tier Financial Summary',M,y);y+=4;
+    doc.setFont('helvetica','normal');doc.setFontSize(7.5);doc.setTextColor(...GRAY);
+    doc.text('Side-by-side internal economics for each tier offered in the customer proposal.',M,y);y+=5;
+
+    // Build per-tier financials. Tier 1 inherits all Estimator state. Tiers 2/3 use scenario overrides.
+    const tierFins=[];
+    for(let i=0;i<scenarioCount;i++){
+      const sc=scenarios[i] || {};
+      const tStudents = (i===0) ? s.students : (sc.students!=null?sc.students:Math.max(1,Math.round(s.students*[1,2,4][i])));
+      const tUsage   = s.usage; // usage inherited from Tier 1 / Estimator
+      const tCap     = s.cap;
+      const tRate    = (i===0) ? s.rate : (sc.rate!=null?sc.rate:s.rate);
+      const tOverSync= sc.overSync!==false; // Tier 1 has no overSync flag (always uses Estimator's overage)
+      const tOver    = (i===0) ? s.over : (tOverSync ? tRate*1.25 : (sc.over!=null?sc.over:tRate*1.25));
+      const tPlat    = s.plat;
+      const tMonthlyMin = tStudents*tUsage;
+      const tARev = calcRev(tStudents,tMonthlyMin,tCap,tRate,tOver,tPlat);
+      const tMCost = tMonthlyMin*s.vcost + s.vfixed;
+      const tACost = tMCost*12;
+      const tProfit = tARev - tACost;
+      const tGM = tARev>0 ? (tProfit/tARev*100) : 0;
+      const tCommA = tARev * s.commPct;
+      const tCommM = tCommA/12;
+      const tNetRev = tARev - tCommA;
+      const tNetProfit = tARev - tACost - tCommA - s.otherFixedAnnual;
+      const tNetMargin = tARev>0 ? (tNetProfit/tARev*100) : 0;
+      const tInclMin = tStudents*tCap;
+      const tInclHrs = tInclMin*12/60;
+      const tEffHr  = tInclHrs>0 ? (tARev/tInclHrs) : 0;
+      tierFins.push({
+        label: (scenarios[i] && scenarios[i].label) || ('Tier '+(i+1)),
+        students:tStudents,
+        rate:tRate,
+        over:tOver,
+        monthlyMin:tMonthlyMin,
+        aRev:tARev,
+        mCost:tMCost,
+        aCost:tACost,
+        profit:tProfit,
+        gm:tGM,
+        commA:tCommA,
+        commM:tCommM,
+        netRev:tNetRev,
+        netProfit:tNetProfit,
+        netMargin:tNetMargin,
+        effHr:tEffHr,
+      });
+    }
+
+    // Build the comparison table
+    const tierRows = [
+      ['Users / Seats',                t => t.students.toLocaleString()],
+      ['Pre-purchase Rate ($/min)',    t => '$'+t.rate.toFixed(4)],
+      ['Overage Rate ($/min)',         t => '$'+t.over.toFixed(4)],
+      ['Effective Tutor Cost / Hour',  t => '$'+t.effHr.toFixed(2)+'/hr'],
+      ['── Revenue ──',                () => ''],
+      ['Annual Revenue',               t => fmt(t.aRev)],
+      ['Monthly Revenue',              t => fmt(t.aRev/12)],
+      ['── Costs ──',                  () => ''],
+      ['Annual API + Infra Cost',      t => fmt(t.aCost)],
+      ['Annual Commission ('+Math.round(s.commPct*100)+'% of sales)', t => fmt(t.commA)],
+      ['Other Fixed (Annual)',         () => fmt(s.otherFixedAnnual)],
+      ['── Profitability ──',          () => ''],
+      ['Gross Profit',                 t => fmt(t.profit)],
+      ['Gross Margin',                 t => t.gm.toFixed(1)+'%'],
+      ['Net Profit (after all costs)', t => fmt(t.netProfit)],
+      ['Net Margin',                   t => t.netMargin.toFixed(1)+'%'],
+      ['── Prepay Scenario (10%) ──',  () => ''],
+      ['Net Revenue if Prepay Elected',t => fmt(t.aRev*0.90)],
+      ['Net Profit if Prepay Elected', t => fmt(t.aRev*0.90 - t.aCost - t.aRev*0.90*s.commPct - s.otherFixedAnnual)],
+    ];
+
+    const tierHead = [['Metric', ...tierFins.map(t=>t.label)]];
+    const tierBody = tierRows.map(([label, fn]) => [label, ...tierFins.map(t=>fn(t))]);
+
+    const labelColW = 56;
+    const dataColW = (W - M*2 - labelColW) / scenarioCount;
+    const tierColStyles = {0:{cellWidth:labelColW,fontStyle:'bold'}};
+    for(let i=0;i<scenarioCount;i++){
+      tierColStyles[i+1] = {halign:'right',cellWidth:dataColW};
+    }
+
+    doc.autoTable({
+      startY:y,
+      head:tierHead,
+      body:tierBody,
+      margin:{left:M,right:M},
+      headStyles:{fillColor:RED,textColor:[255,255,255],fontSize:7.5,fontStyle:'bold',halign:'center'},
+      bodyStyles:{fontSize:7.5,cellPadding:2.2},
+      alternateRowStyles:{fillColor:LIGHT},
+      columnStyles:tierColStyles,
+      styles:{lineColor:[220,220,222],lineWidth:.25},
+      didParseCell:function(data){
+        if(data.section!=='body') return;
+        const labelText = (tierBody[data.row.index] && tierBody[data.row.index][0]) || '';
+        // Section divider rows ("── ... ──")
+        if(labelText.startsWith('──')){
+          data.cell.styles.fillColor=[245,245,247];
+          data.cell.styles.fontStyle='italic';
+          data.cell.styles.textColor=GRAY;
+          return;
+        }
+        // Bold the totals
+        if(labelText==='Annual Revenue' || labelText==='Net Profit (after all costs)' || labelText==='Net Margin' || labelText==='Gross Margin'){
+          if(data.column.index>0){data.cell.styles.fontStyle='bold';}
+        }
+        // Color margin %s based on health
+        if(labelText==='Gross Margin' && data.column.index>0){
+          const t = tierFins[data.column.index-1];
+          data.cell.styles.textColor = t.gm>=70?GRN:t.gm>=50?ORG:DNG;
+        }
+        if(labelText==='Net Margin' && data.column.index>0){
+          const t = tierFins[data.column.index-1];
+          data.cell.styles.textColor = t.netMargin>=60?BLUE:t.netMargin>=40?ORG:DNG;
+        }
+        // Cost rows in red (negatives implied)
+        if((labelText==='Annual API + Infra Cost' || labelText==='Annual Commission ('+Math.round(s.commPct*100)+'% of sales)' || labelText==='Other Fixed (Annual)') && data.column.index>0){
+          data.cell.styles.textColor=DNG;
+        }
+        // Prepay-scenario rows in green to match client PDF treatment
+        if((labelText==='Net Revenue if Prepay Elected' || labelText==='Net Profit if Prepay Elected') && data.column.index>0){
+          data.cell.styles.fillColor=[240,253,244];
+          data.cell.styles.textColor=GRN;
+          data.cell.styles.fontStyle='bold';
+        }
+      }
+    });
+    y=doc.lastAutoTable.finalY+8;
+  }
+
   // Check if we need a page break before analysis
   if(y>220){doc.addPage();y=addLetterhead(doc,s,false);}
 
@@ -1608,6 +1990,18 @@ function dlInternal(){
     'To achieve '+s.targetMargin+'% target margin, minimum annual price = '+fmt(s.suggested)+'.',
     'If usage doubles ('+fmtMin(s.monthlyMin*2)+'/mo), API cost = '+fmt(s.mCost*2)+'/mo. Overage at $'+s.over.toFixed(2)+'/min protects margin.',
   ];
+  // Multi-tier narrative
+  if(scenarioCount > 1){
+    const tierLabels = [];
+    for(let i=0;i<scenarioCount;i++){
+      const sc=scenarios[i] || {};
+      const tStu = (i===0) ? s.students : (sc.students!=null?sc.students:Math.max(1,Math.round(s.students*[1,2,4][i])));
+      const tRate = (i===0) ? s.rate : (sc.rate!=null?sc.rate:s.rate);
+      tierLabels.push(((scenarios[i]&&scenarios[i].label)||('Tier '+(i+1)))+': '+tStu.toLocaleString()+' seats @ $'+tRate.toFixed(4)+'/min');
+    }
+    analysis.push('Tiered offer presented to client: '+tierLabels.join('; ')+'.');
+    analysis.push('See Per-Tier Financial Summary above for revenue, margin, and prepay-scenario economics for each tier.');
+  }
   analysis.forEach(line=>{
     const wrapped=doc.splitTextToSize('• '+line,W-M*2);
     doc.text(wrapped,M,y);
@@ -1647,33 +2041,36 @@ function dlInternal(){
 
 // DEFAULT TERMS
 const DEFAULT_TERMS = `1. SCOPE OF SERVICES
-JIE Mastery, LLC ("Company") agrees to provide voice-first AI tutoring services, including platform access, Longitudinal Student Intelligence System (LSIS) features, administrative dashboard, and associated reporting as described in this proposal.
+JIE Mastery, LLC ("Company") agrees to provide voice-first AI tutoring services, including platform access, Longitudinal Student Intelligence System (LSIS) features, Student Relationship Manager (SRM) functionality, administrative dashboard, and associated reporting as described in this proposal.
 
-2. PAYMENT TERMS
-The annual platform license fee and any pre-purchased minute pools are due within 30 days of contract execution. Overage usage fees are calculated quarterly and invoiced within 15 days of each quarter-end. All invoices are payable within 30 days of receipt. Late payments accrue interest at 1.5% per month.
+2. PAYMENT TERMS AND BILLING
+The default billing cadence is quarterly in advance, with four equal invoices issued at the start of each contract quarter, payable Net 30 from invoice date. The Client may elect annual upfront payment in lieu of quarterly billing; when elected, the full annual amount is invoiced upon contract execution and is payable Net 30, in exchange for a 10% discount applied to that annual invoice. Multi-year commitments receive an additional discount of 5% (2-year term) or 8% (3-year term), applied to each annual invoice. Discounts stack and are reflected in the Annual Investment Proposal Summary in this proposal. Late payments accrue interest at 1.5% per month on past-due balances. Service may be suspended for accounts more than 60 days past due.
 
-3. USAGE AND MINUTE POOLS
-Included minute pools are non-transferable and expire at the end of each contract year unless otherwise agreed in writing. Overage minutes are billed at the rate specified in this proposal. The Company will provide monthly usage reports to the Client's designated administrator.
+3. USAGE POOLS AND OVERAGE
+Included tutor-hour pools are non-transferable and expire at the end of each contract year unless otherwise agreed in writing. Usage above the included pool is billed at the contract overage rate, which is 25% above the per-hour pre-purchase rate (the industry-standard premium). Overages are calculated and invoiced quarterly in arrears, payable Net 30. The Company will notify the Client when usage reaches 80% and 100% of the contracted pool.
 
 4. DATA PRIVACY AND SECURITY
 The Company complies with applicable federal and state data privacy laws including FERPA, COPPA, and applicable state regulations. Student data is used solely to deliver and improve the tutoring service. The Company maintains industry-standard encryption and security practices and will execute a Data Processing Agreement upon request.
 
 5. INTELLECTUAL PROPERTY
-All platform software, AI models, LSIS architecture, and related technology remain the exclusive intellectual property of JIE Mastery, LLC. Client data and student profiles remain the property of the Client institution. The Company is granted a limited license to process Client data solely for service delivery.
+All platform software, AI models, LSIS and SRM architecture, and related technology remain the exclusive intellectual property of JIE Mastery, LLC. Client data and student profiles remain the property of the Client institution. The Company is granted a limited license to process Client data solely for service delivery.
 
-6. TERM AND TERMINATION
-This agreement commences on the contract start date and continues for twelve (12) months. Either party may terminate for material breach with 30 days written notice if the breach is not cured. The Company may suspend service immediately for non-payment of undisputed invoices more than 60 days overdue.
+6. TERM AND RENEWAL
+This agreement commences on the contract start date and continues for the contract term specified in this proposal. Upon expiration of the initial term, the agreement renews automatically for successive 12-month terms unless either party provides written notice of non-renewal at least 60 days prior to the end of the then-current term. Fees for any renewal term will be communicated by the Company in writing at least 60 days prior to the renewal date and require the Client's acceptance to take effect for that renewal term.
 
-7. LIMITATION OF LIABILITY
+7. CANCELLATION AND SATISFACTION GUARANTEE
+The agreement is non-cancelable during the initial term except for material breach by either party that is not cured within 30 days of written notice. As an exception, on the initial contract only (not on renewals), the Client may cancel within 30 days of contract execution for a pro-rated refund. The Company may suspend or terminate service immediately for non-payment of undisputed invoices more than 60 days overdue, and may charge a reinstatement fee plus all past-due amounts to restore service.
+
+8. LIMITATION OF LIABILITY
 In no event shall either party be liable for indirect, incidental, or consequential damages. The Company's total cumulative liability shall not exceed the total fees paid by Client in the twelve months preceding the claim.
 
-8. CONFIDENTIALITY
+9. CONFIDENTIALITY
 Both parties agree to keep the terms of this agreement and any proprietary technical or financial information confidential. This proposal is intended solely for the named recipient and may not be shared without written consent.
 
-9. GOVERNING LAW
+10. GOVERNING LAW
 This agreement shall be governed by and construed in accordance with the laws of the State of Wisconsin, without regard to conflict-of-law provisions. Any disputes shall be resolved in the state or federal courts of Dane County, Wisconsin.
 
-10. ENTIRE AGREEMENT
+11. ENTIRE AGREEMENT
 This proposal, upon acceptance, constitutes the entire agreement between the parties regarding the subject matter herein and supersedes all prior negotiations and understandings.`;
 
 function resetTerms(){g('terms-edit').value=DEFAULT_TERMS;}
@@ -1683,7 +2080,7 @@ function resetTerms(){g('terms-edit').value=DEFAULT_TERMS;}
   const el=document.getElementById(id);
   if(el)el.addEventListener('input',update);
 });
-['q-inst','q-contact','q-title','q-email','q-dept','q-valid','q-notes','insttype'].forEach(id=>{
+['q-inst','q-contact','q-title','q-email','q-dept','q-valid','q-notes','insttype','q-term','q-prepay'].forEach(id=>{
   const el=document.getElementById(id);
   if(el)el.addEventListener('input',updateQPrev);
 });
@@ -1749,13 +2146,34 @@ function saveQuote(){
   const quote={
     id:Date.now(),
     qn:s.qn,
+    // Client fields
     inst:s.inst,
     contact:s.contact,
+    title:s.title,
+    email:s.email,
     dept:s.dept,
+    notes:s.notes,
+    valid:s.valid,
+    instType:s.instType,
+    // Estimator inputs (the source of truth for reload)
     students:s.students,
     usage:s.usage,
+    cap:s.cap,
+    rate:s.rate,
+    over:s.over,
+    plat:s.plat,
+    targetMargin:s.targetMargin,
     model:s.model,
     modelName:s.modelName,
+    // Payment terms
+    termYears:s.termYears,
+    prepayChecked:s.prepayChecked,
+    // Tier scenarios (for side-by-side proposals)
+    scenarioCount:scenarioCount,
+    scenarios:JSON.parse(JSON.stringify(scenarios)),
+    // Display unit
+    displayUnit:displayUnit,
+    // Computed economics for the saved-quotes table display
     aRev:s.aRev,
     aCost:s.aCost,
     profit:s.profit,
@@ -1767,10 +2185,6 @@ function saveQuote(){
     netProfit:s.netProfit,
     netMargin:s.netMargin,
     otherFixed:s.otherFixed,
-    plat:s.plat,
-    rate:s.rate,
-    over:s.over,
-    cap:s.cap,
     tutorRate:s.tutorRate,
     savedAt:new Date().toISOString(),
   };
@@ -1828,31 +2242,80 @@ function deleteQuote(i){
   setSavedQuotes(quotes);
   renderSavedQuotes();
 }
+// Helper: set form field by id if it exists and the value is defined
+function setVal(id,v){const el=g(id);if(el&&v!==undefined&&v!==null)el.value=v;}
+function setChk(id,v){const el=g(id);if(el)el.checked=!!v;}
+
 function loadQuote(i){
   const quotes=getSavedQuotes();
   const q=quotes[i];
   if(!q)return;
-  // Show detail panel
-  const gmColor=q.gm>=70?'#15803d':q.gm>=50?'#b45309':'#b91c1c';
-  const netColor=q.netMargin>=60?'#0369a1':q.netMargin>=40?'#b45309':'#b91c1c';
-  const d=new Date(q.savedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
-  alert(
-    'Quote: '+q.qn+'\n'
-    +'Institution: '+q.inst+'\n'
-    +'Contact: '+(q.contact||'—')+'\n'
-    +'Students: '+q.students.toLocaleString()+'\n'
-    +'Model: '+q.modelName+'\n'
-    +'───────────────────\n'
-    +'Annual Revenue: '+fmt(q.aRev)+'\n'
-    +'Annual Cost: '+fmt(q.aCost)+'\n'
-    +'Gross Profit: '+fmt(q.profit)+' ('+q.gm.toFixed(1)+'%)\n'
-    +'Commission ('+Math.round(q.commPct*100)+'%): '+fmt(q.commissionAnnual)+'/yr ('+fmt(q.commissionMonthly)+'/mo)\n'
-    +(q.otherFixed>0?'Other Fixed: '+fmt(q.otherFixed)+'/mo ('+fmt(q.otherFixed*12)+'/yr)\n':'')
-    +'Net Revenue: '+fmt(q.netRevenue)+'\n'
-    +'Net Margin: '+q.netMargin.toFixed(1)+'%\n'
-    +'───────────────────\n'
-    +'Saved: '+d
-  );
+
+  // 1) Restore Estimator numeric inputs
+  setVal('students',q.students);
+  setVal('usage',q.usage);
+  setVal('cap',q.cap);
+  setVal('rate',q.rate);
+  setVal('overage',q.over);
+  setVal('platform',q.plat);
+  if(q.targetMargin!==undefined) setVal('margin',q.targetMargin);
+
+  // 2) Restore pricing model (Hybrid / Tiered / Metered)
+  if(q.model){ setM(q.model); }
+
+  // 3) Restore display unit (min vs hrs)
+  if(q.displayUnit){ setUnit(q.displayUnit); }
+
+  // 4) Restore institution type — match by visible text since stored value is the option text
+  if(q.instType){
+    const sel=g('insttype');
+    if(sel){
+      for(let j=0;j<sel.options.length;j++){
+        if(sel.options[j].text===q.instType){sel.selectedIndex=j;break;}
+      }
+    }
+  }
+
+  // 5) Restore Quote Builder client fields
+  setVal('q-inst',q.inst||'');
+  setVal('q-contact',q.contact||'');
+  setVal('q-title',q.title||'');
+  setVal('q-email',q.email||'');
+  setVal('q-dept',q.dept||'');
+  setVal('q-notes',q.notes||'');
+  if(q.valid) setVal('q-valid',q.valid);
+
+  // 6) Restore Payment Terms
+  if(q.termYears) setVal('q-term',String(q.termYears));
+  setChk('q-prepay',q.prepayChecked);
+
+  // 7) Restore tier scenarios
+  if(q.scenarioCount && q.scenarios && Array.isArray(q.scenarios)){
+    scenarios=JSON.parse(JSON.stringify(q.scenarios));
+    setScenarioCount(q.scenarioCount);
+  } else {
+    // Older saved quotes without tier data — reset to single tier
+    scenarios=[
+      {label:'Tier 1'},
+      {label:'Tier 2',students:null,rate:null,over:null,overSync:true},
+      {label:'Tier 3',students:null,rate:null,over:null,overSync:true},
+    ];
+    setScenarioCount(1);
+  }
+
+  // 8) Pin the original quote number (don't generate a new one)
+  if(q.qn){ quoteNum=q.qn; }
+
+  // 9) Re-run all live calculations
+  update();
+  updateQPrev();
+
+  // 10) Jump to Quote Builder tab so the user sees the loaded client info
+  showTab('q');
+
+  // 11) Status feedback in Saved Quotes status bar
+  const sq=g('genstatus');
+  if(sq){sq.className='gst on';sq.textContent='✓ Loaded quote '+q.qn+' — '+q.inst+'. Switched to Quote Builder.';setTimeout(()=>{sq.className='gst';},4000);}
 }
 function clearAllQuotes(){
   if(!confirm('Delete ALL saved quotes? This cannot be undone.'))return;
