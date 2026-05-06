@@ -720,11 +720,14 @@ function recomputeUsage() {
   const monthlyMin = Math.round(wks * hpw * 60 / 12);
   if (monthlyMin > 0) {
     g('usage').value = monthlyMin;
+    // v20: sync cap when usage changes programmatically (input event doesn't fire on JS value-set)
+    if (g('cap-sync').checked) g('cap').value = monthlyMin;
     const hint = document.getElementById('usage-derive');
     if (hint) hint.textContent =
       wks + ' wks × ' + hpw + ' hr/wk × 60 min ÷ 12 mo = ' + monthlyMin + ' min/mo per student';
   }
-  if (typeof recompute === 'function') recompute();
+  // v20: main recalc function in this codebase is update(), not recompute()
+  if (typeof update === 'function') update();
 }
 
 function setS(s,u){
