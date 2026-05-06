@@ -169,7 +169,7 @@ tr:last-child td{border-bottom:none;font-weight:700}
 </select>
 <div class="fhint" id="cal-hint">Selecting a preset auto-fills active weeks. Override below if your institution differs.</div></div>
 <div class="g2mb">
-<div class="f"><div class="fl">Active Weeks <span style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— locked by calendar</span></div><input type="number" id="activeweeks" value="30" min="1" max="52" step="1" readonly style="background:var(--bg2,#f5f5f5);color:var(--tx2,#666);cursor:not-allowed"><div class="fhint">Auto-set from Academic Calendar above.</div></div>
+<div class="f"><div class="fl">Active Weeks <span id="aw-label-suffix" style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— locked by calendar</span></div><input type="number" id="activeweeks" value="30" min="1" max="52" step="1" readonly onchange="recomputeUsage()" style="background:var(--bg2,#f5f5f5);color:var(--tx2,#666);cursor:not-allowed"><div class="fhint" id="aw-hint">Auto-set from Academic Calendar above.</div></div>
 <div class="f"><div class="fl">Hours Per Week <span style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— per student</span></div><input type="number" id="hoursperweek" value="2" min="0.25" step="0.25" onchange="recomputeUsage()"><div class="fhint">Light=1, Standard=2, Heavy=4, Power=6+</div></div>
 </div>
 <div class="f"><div class="fl">Avg Monthly Usage / User (min) <span style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— auto-calculated, override OK</span></div><input type="number" id="usage" value="300" min="1" step="1" placeholder="auto"><div class="fhint" id="usage-hint">Computed: <strong id="usage-derive">30 wks × 2 hr/wk × 60 min ÷ 12 mo = 300 min/mo per student</strong>. Edit to override.</div></div>
@@ -688,8 +688,28 @@ const CALENDAR_PRESETS = {
 function onCalendarChange() {
   const cal = g('calendar').value;
   const wks = CALENDAR_PRESETS[cal];
-  if (wks !== null && wks !== undefined) {
-    g('activeweeks').value = wks;
+  const aw = g('activeweeks');
+  const lblSfx = document.getElementById('aw-label-suffix');
+  const hint = document.getElementById('aw-hint');
+  if (cal === 'custom') {
+    // Unlock for manual entry — supports 52-week year-round and other custom calendars
+    aw.removeAttribute('readonly');
+    aw.style.background = '';
+    aw.style.color = '';
+    aw.style.cursor = '';
+    if (lblSfx) lblSfx.textContent = '— editable (Custom)';
+    if (hint) hint.textContent = 'Custom calendar — enter your active weeks (1\u201352). Year-round = 52.';
+  } else {
+    // Lock to preset value
+    aw.setAttribute('readonly', '');
+    aw.style.background = 'var(--bg2,#f5f5f5)';
+    aw.style.color = 'var(--tx2,#666)';
+    aw.style.cursor = 'not-allowed';
+    if (lblSfx) lblSfx.textContent = '— locked by calendar';
+    if (hint) hint.textContent = 'Auto-set from Academic Calendar above.';
+    if (wks !== null && wks !== undefined) {
+      aw.value = wks;
+    }
   }
   recomputeUsage();
 }
