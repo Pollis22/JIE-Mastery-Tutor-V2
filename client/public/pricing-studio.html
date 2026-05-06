@@ -183,13 +183,11 @@ tr:last-child td{border-bottom:none;font-weight:700}
 <div class="mdesc" id="mdesc"></div>
 <div class="f" id="capfield">
 <div class="fl" style="align-items:center">
-  Included Min / Seat / Month <span style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— what you sell</span>
-  <label style="display:flex;align-items:center;gap:4px;font-size:10px;font-weight:700;cursor:pointer;margin-left:auto;color:var(--red)">
-    <input type="checkbox" id="cap-sync" checked style="accent-color:var(--red);cursor:pointer"> Sync to usage
-  </label>
+  Included Min / Seat / Month <span style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— auto-calculated, locked</span>
+  <input type="checkbox" id="cap-sync" checked style="display:none">
 </div>
-<input type="number" id="cap" value="60" min="1" step="1" placeholder="e.g. 60">
-<div class="fhint" id="cap-hint">&#10003; <strong>Matched to usage</strong> — margin shown is what you'll actually earn. Uncheck to model overage scenarios.</div>
+<input type="number" id="cap" value="60" min="1" step="1" readonly style="background:var(--bg2,#f5f5f5);color:var(--tx2,#666);cursor:not-allowed">
+<div class="fhint" id="cap-hint">&#128274; <strong>Locked to Avg Monthly Usage / User.</strong> Drives the pricing formulas — to change, adjust the Estimator inputs above.</div>
 </div>
 <div class="f"><div class="fl">Pre-purchase Rate ($/min)</div><div class="pfx"><span>$</span><input type="number" id="rate" value="0.10" min="0.01" step="0.01" placeholder="0.10"></div></div>
 <div class="f" id="overagefield">
@@ -730,7 +728,7 @@ function syncCap(){
   if(synced){
     g('cap').value=g('usage').value;
     g('cap').style.background='';
-    hint.innerHTML='&#10003; <strong>Matched to usage</strong> — margin shown is what you\'ll actually earn. Uncheck to model overage scenarios.';
+    hint.innerHTML='&#128274; <strong>Locked to Avg Monthly Usage / User.</strong> Drives the pricing formulas — to change, adjust the Estimator inputs above.';
     hint.style.color='var(--gr)';
   } else {
     g('cap').style.background='';
