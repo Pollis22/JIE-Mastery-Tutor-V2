@@ -132,6 +132,9 @@ export default function OfferPage() {
               <button onClick={() => navigateTo("/faq")} className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-nav-faq">
                 FAQ
               </button>
+              <button onClick={() => navigateTo("/support")} className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-nav-support">
+                Live Support
+              </button>
               <button onClick={() => navigateTo("/auth?action=login")} className="text-sm text-muted-foreground hover:text-foreground transition-colors" data-testid="link-nav-login">
                 Login
               </button>
@@ -157,6 +160,7 @@ export default function OfferPage() {
               <button onClick={() => navigateTo("/pricing")} className="block w-full text-left py-2 text-muted-foreground hover:text-foreground">Pricing</button>
               <button onClick={() => navigateTo("/demo")} className="block w-full text-left py-2 text-muted-foreground hover:text-foreground">How It Works</button>
               <button onClick={() => navigateTo("/faq")} className="block w-full text-left py-2 text-muted-foreground hover:text-foreground">FAQ</button>
+              <button onClick={() => navigateTo("/support")} className="block w-full text-left py-2 text-muted-foreground hover:text-foreground">Live Support</button>
               <button onClick={() => navigateTo("/auth?action=login")} className="block w-full text-left py-2 text-muted-foreground hover:text-foreground">Login</button>
               <div className="mt-2">
                 <StartTrialButton size="md" className="w-full" />

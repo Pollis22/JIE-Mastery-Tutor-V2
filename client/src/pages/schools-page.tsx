@@ -66,6 +66,14 @@ export default function SchoolsPage() {
               <Button 
                 variant="ghost" 
                 size="sm"
+                onClick={() => setLocation("/support")} 
+                data-testid="button-nav-support"
+              >
+                Live Support
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="sm"
                 onClick={() => setLocation("/contact")} 
                 data-testid="button-nav-contact"
               >
