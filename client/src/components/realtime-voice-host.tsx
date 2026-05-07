@@ -17,6 +17,22 @@ import { isYoungLearner as checkYoungLearner } from '@/styles/themes';
 import { VisualPanel } from './VisualPanel';
 import type { VisualTag } from './VisualPanel';
 
+// ─── Module-level singleton lock ───────────────────────────────────────────
+// Prevents concurrent voice sessions when the tutor page re-mounts mid-session.
+// Symptom this fixes: user has Session 1 active → uploads a doc → some piece of
+// state changes (course list, doc list, etc.) → parent re-renders → VoiceHost
+// re-mounts → autoConnect useEffect fires on the FRESH instance → Session 2
+// starts while Session 1's WebSocket is still alive on the server.
+//
+// Component state (`sessionState`, `autoConnectFired` ref) all reset on remount,
+// so we need a survival mechanism that persists across remounts within the same
+// browser tab. window-level flag does that.
+declare global {
+  interface Window {
+    __jieVoiceSessionActive?: boolean;
+  }
+}
+
 // Session Timer Component - UI only, no billing logic
 function SessionTimer({ isActive }: { isActive: boolean }) {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -812,7 +828,16 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
   const autoConnectFired = useRef(false);
   useEffect(() => {
     if (autoConnect && !autoConnectFired.current && !customVoice.isConnected && user?.id) {
+      // Concurrent-session guard: bail if another session is already active in
+      // this tab. This catches the remount-mid-session case the per-component
+      // refs/state can't.
+      if (typeof window !== 'undefined' && window.__jieVoiceSessionActive) {
+        console.warn('[VoiceHost] 🚫 Auto-connect blocked — another session is already active in this tab (window.__jieVoiceSessionActive)');
+        autoConnectFired.current = true; // don't keep retrying
+        return;
+      }
       autoConnectFired.current = true;
+      if (typeof window !== 'undefined') window.__jieVoiceSessionActive = true;
       startSession();
     }
   }, [autoConnect, user?.id]);
@@ -821,6 +846,8 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
   const wasConnectedForParent = useRef(false);
   useEffect(() => {
     if (wasConnectedForParent.current && !customVoice.isConnected) {
+      // Release the window-level session lock — disconnect detected.
+      if (typeof window !== 'undefined') window.__jieVoiceSessionActive = false;
       onDisconnected?.();
     }
     wasConnectedForParent.current = customVoice.isConnected;
@@ -832,6 +859,10 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
       if (customVoice.isConnected) {
         customVoice.disconnect();
       }
+      // Always release the window-level lock on unmount, regardless of state.
+      // If a NEW VoiceHost mounts after this unmount completes, the new
+      // instance's auto-connect should be free to fire (it'll re-set the lock).
+      if (typeof window !== 'undefined') window.__jieVoiceSessionActive = false;
     };
   }, []);
 
