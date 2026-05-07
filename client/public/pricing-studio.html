@@ -189,7 +189,7 @@ tr:last-child td{border-bottom:none;font-weight:700}
 <input type="number" id="cap" value="60" min="1" step="1" readonly style="background:var(--bg2,#f5f5f5);color:var(--tx2,#666);cursor:not-allowed">
 <div class="fhint" id="cap-hint">&#128274; <strong>Locked to Avg Monthly Usage / User.</strong> Drives the pricing formulas — to change, adjust the Estimator inputs above.</div>
 </div>
-<div class="f"><div class="fl">Pre-purchase Rate ($/min)</div><div class="pfx"><span>$</span><input type="number" id="rate" value="0.10" min="0.01" step="0.01" placeholder="0.10"></div></div>
+<div class="f"><div class="fl">Pre-purchase Rate ($/min)</div><div class="pfx"><span>$</span><input type="number" id="rate" value="0.16" min="0.01" step="0.01" placeholder="0.16"></div></div>
 <div class="f" id="overagefield">
 <div class="fl" style="align-items:center">
   Overage Rate ($/min) <span style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— above included pool</span>
@@ -197,7 +197,7 @@ tr:last-child td{border-bottom:none;font-weight:700}
     <input type="checkbox" id="overage-sync" checked style="accent-color:var(--red);cursor:pointer"> Sync to rate (25%)
   </label>
 </div>
-<div class="pfx"><span>$</span><input type="number" id="overage" value="0.125" min="0.001" step="0.001" placeholder="0.125"></div>
+<div class="pfx"><span>$</span><input type="number" id="overage" value="0.200" min="0.001" step="0.001" placeholder="0.200"></div>
 <div class="fhint" id="overage-hint">&#10003; <strong>25% industry-standard premium</strong> &mdash; overage tracks rate. Uncheck to set a custom rate.</div>
 </div>
 </div>
@@ -474,8 +474,8 @@ function renderScenarioRows(){
   if(scenarioCount===1){host.innerHTML='<div style="font-size:11.5px;color:var(--tx3);font-style:italic;padding:6px 2px">Single-tier mode — the proposal PDF will use only your Estimator values above.</div>';return;}
   const baseStudents=+g('students').value||0;
   const baseUsage=+g('usage').value||0; // minutes
-  const baseRate=+g('rate').value||0.10;
-  const baseOver=+g('overage').value||0.125;
+  const baseRate=+g('rate').value||0.16;
+  const baseOver=+g('overage').value||0.20;
   const basePlat=+g('platform').value||0;
   // Tier 1 reference aRev (read-only display)
   const baseMonthlyMin=baseStudents*baseUsage;
@@ -587,8 +587,8 @@ function updateScenarioReadout(i){
   const sc=scenarios[i];
   const baseStudents=+g('students').value||0;
   const baseUsage=+g('usage').value||0;
-  const baseRate=+g('rate').value||0.10;
-  const baseOver=+g('overage').value||0.125;
+  const baseRate=+g('rate').value||0.16;
+  const baseOver=+g('overage').value||0.20;
   const basePlat=+g('platform').value||0;
   const stuVal=sc.students!=null?sc.students:Math.max(1,Math.round(baseStudents*[1,2,4][i]));
   const rateVal=sc.rate!=null?sc.rate:baseRate;
@@ -716,15 +716,16 @@ function onCalendarChange() {
 function recomputeUsage() {
   const wks = +g('activeweeks').value || 0;
   const hpw = +g('hoursperweek').value || 0;
-  // Avg monthly minutes per student = active weeks × hours/week × 60 min ÷ 12 months
-  const monthlyMin = Math.round(wks * hpw * 60 / 12);
+  // Monthly minutes per student = hours/week × 4 weeks/month × 60 min/hr (assume 4 weeks/mo).
+  // Active weeks remains a contract/engagement-window descriptor but does not enter the monthly figure.
+  const monthlyMin = Math.round(hpw * 4 * 60);
   if (monthlyMin > 0) {
     g('usage').value = monthlyMin;
     // v20: sync cap when usage changes programmatically (input event doesn't fire on JS value-set)
     if (g('cap-sync').checked) g('cap').value = monthlyMin;
     const hint = document.getElementById('usage-derive');
     if (hint) hint.textContent =
-      wks + ' wks × ' + hpw + ' hr/wk × 60 min ÷ 12 mo = ' + monthlyMin + ' min/mo per student';
+      hpw + ' hr/wk × 4 wks/mo × 60 min = ' + monthlyMin + ' min/mo per student';
   }
   // v20: main recalc function in this codebase is update(), not recompute()
   if (typeof update === 'function') update();
@@ -733,13 +734,11 @@ function recomputeUsage() {
 function setS(s,u){
   g('students').value=s;
   g('usage').value=u;
-  // v17: when scenario chip sets a usage, derive equivalent hours/week so calendar UI reflects the choice
+  // v17: when scenario chip sets a usage, derive equivalent hours/week so calendar UI reflects the choice.
+  // With 4-weeks/mo convention: hpw = monthly_min / (4 × 60) = monthly_min / 240
   try {
-    const wks = +g('activeweeks').value || 30;
-    if (wks > 0) {
-      const derivedHours = (u * 12) / (60 * wks);
-      g('hoursperweek').value = (Math.round(derivedHours * 4) / 4).toFixed(2);
-    }
+    const derivedHours = u / 240;
+    g('hoursperweek').value = (Math.round(derivedHours * 4) / 4).toFixed(2);
   } catch(e) { /* non-blocking */ }
   if(g('cap-sync').checked) g('cap').value=u;
   update();
@@ -860,7 +859,7 @@ function buildRows(students,monthlyMin,cap,rate,over,plat){
 
 function update(){
   const students=+g('students').value||0, usage=+g('usage').value||0;
-  const cap=+g('cap').value||60, rate=+g('rate').value||0.10, over=+g('overage').value||0.125;
+  const cap=+g('cap').value||60, rate=+g('rate').value||0.16, over=+g('overage').value||0.20;
   const plat=+g('platform').value||0;
   const targetMargin=+g('margin').value||70;
   const VCOST=getCOST(), VFIXED=getFIXED();
