@@ -340,6 +340,14 @@ export default function AuthPage() {
               <Button 
                 variant="ghost" 
                 size="sm"
+                onClick={() => setLocation("/support")} 
+                data-testid="button-nav-support"
+              >
+                Live Support
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="sm"
                 onClick={() => setLocation("/schools")} 
                 data-testid="button-nav-schools"
               >
