@@ -155,21 +155,21 @@ tr:last-child td{border-bottom:none;font-weight:700}
 <div class="f"><div class="fl">Students / Users</div><input type="number" id="students" value="500" min="1" step="1" placeholder="e.g. 10000"></div>
 <div class="f"><div class="fl">Academic Calendar <span style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— drives active weeks & seasonality</span></div>
 <select id="calendar" onchange="onCalendarChange()">
-  <option value="semester" selected>Semester (Fall + Spring, ~30 active weeks)</option>
-  <option value="semester-fall">Semester — Fall Only (~15 weeks)</option>
-  <option value="semester-spring">Semester — Spring Only (~15 weeks)</option>
+  <option value="semester" selected>Semester (Fall + Spring, ~32 active weeks)</option>
+  <option value="semester-fall">Semester — Fall Only (~16 weeks)</option>
+  <option value="semester-spring">Semester — Spring Only (~16 weeks)</option>
   <option value="trimester">Trimester (Fall + Winter + Spring, ~30 weeks)</option>
   <option value="trimester-one">Trimester — Single Term (~10 weeks)</option>
   <option value="quarter">Quarter (3 + summer optional, ~30 weeks)</option>
   <option value="k12-standard">K-12 Standard School Year (~36 weeks)</option>
   <option value="k12-yearround">K-12 Year-Round (~45 weeks)</option>
   <option value="summer-only">Summer School Only (~8 weeks)</option>
-  <option value="annual-with-summer">Full Year + Summer (~38 weeks)</option>
+  <option value="annual-with-summer">Full Year + Summer (~44 weeks)</option>
   <option value="custom">Custom</option>
 </select>
 <div class="fhint" id="cal-hint">Selecting a preset auto-fills active weeks. Override below if your institution differs.</div></div>
 <div class="g2mb">
-<div class="f"><div class="fl">Active Weeks <span id="aw-label-suffix" style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— locked by calendar</span></div><input type="number" id="activeweeks" value="30" min="1" max="52" step="1" readonly onchange="recomputeUsage()" style="background:var(--bg2,#f5f5f5);color:var(--tx2,#666);cursor:not-allowed"><div class="fhint" id="aw-hint">Auto-set from Academic Calendar above.</div></div>
+<div class="f"><div class="fl">Active Weeks <span id="aw-label-suffix" style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— locked by calendar</span></div><input type="number" id="activeweeks" value="32" min="1" max="52" step="1" readonly onchange="recomputeUsage()" style="background:var(--bg2,#f5f5f5);color:var(--tx2,#666);cursor:not-allowed"><div class="fhint" id="aw-hint">Auto-set from Academic Calendar above.</div></div>
 <div class="f"><div class="fl">Hours Per Week <span style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— per student</span></div><input type="number" id="hoursperweek" value="2" min="0.25" step="0.25" onchange="recomputeUsage()"><div class="fhint">Light=1, Standard=2, Heavy=4, Power=6+</div></div>
 </div>
 <div class="f"><div class="fl">Avg Monthly Usage / User (min) <span style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— auto-calculated, override OK</span></div><input type="number" id="usage" value="300" min="1" step="1" placeholder="auto"><div class="fhint" id="usage-hint">Computed: <strong id="usage-derive">30 wks × 2 hr/wk × 60 min ÷ 12 mo = 300 min/mo per student</strong>. Edit to override.</div></div>
@@ -673,16 +673,16 @@ function setM(m){
 
 // v16: Academic Calendar — drives usage from calendar/weeks/hours/adoption
 const CALENDAR_PRESETS = {
-  'semester': 30,
-  'semester-fall': 15,
-  'semester-spring': 15,
+  'semester': 32,
+  'semester-fall': 16,
+  'semester-spring': 16,
   'trimester': 30,
   'trimester-one': 10,
   'quarter': 30,
   'k12-standard': 36,
   'k12-yearround': 45,
   'summer-only': 8,
-  'annual-with-summer': 38,
+  'annual-with-summer': 44,
   'custom': null
 };
 function onCalendarChange() {
