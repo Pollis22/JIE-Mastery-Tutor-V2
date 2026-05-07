@@ -296,6 +296,7 @@ export const contentViolations = pgTable("content_violations", {
   reviewedBy: varchar("reviewed_by").references(() => users.id),
   reviewedAt: timestamp("reviewed_at"),
   reviewNotes: text("review_notes"),
+  matchedTerms: text("matched_terms").array(), // Terms that triggered the moderation match (for auditing)
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => [
   index("idx_violations_user").on(table.userId),
