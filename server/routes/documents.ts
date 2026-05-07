@@ -371,45 +371,59 @@ async function extractTextFromPowerPoint(filePath: string): Promise<string> {
 
 // Chunk text into manageable pieces
 function chunkText(text: string, maxChunkSize: number = 1000): string[] {
+  // Bulletproof chunker (May 6 2026): the previous version used a sentence-end
+  // regex /[^.!?]+[.!?]+/g that silently dropped content not ending in
+  // punctuation — fatal for syllabi, bullet-point lists, table-style content,
+  // or anything without formal sentences. This version preserves ALL text by
+  // preferring semantic boundaries when possible and falling back to hard
+  // character cuts as a last resort.
+  if (!text || !text.trim()) return [];
+  let remaining = text.trim();
+  if (remaining.length <= maxChunkSize) return [remaining];
+
   const chunks: string[] = [];
-  const paragraphs = text.split(/\n\n+/);
-  
-  let currentChunk = '';
-  
-  for (const paragraph of paragraphs) {
-    const trimmed = paragraph.trim();
-    if (!trimmed) continue;
-    
-    if (currentChunk.length + trimmed.length > maxChunkSize) {
-      if (currentChunk) {
-        chunks.push(currentChunk.trim());
-        currentChunk = '';
-      }
-      
-      // If single paragraph is too long, split by sentences
-      if (trimmed.length > maxChunkSize) {
-        const sentences = trimmed.match(/[^.!?]+[.!?]+/g) || [trimmed];
-        for (const sentence of sentences) {
-          if (currentChunk.length + sentence.length > maxChunkSize) {
-            if (currentChunk) chunks.push(currentChunk.trim());
-            currentChunk = sentence;
-          } else {
-            currentChunk += ' ' + sentence;
-          }
-        }
-      } else {
-        currentChunk = trimmed;
-      }
-    } else {
-      currentChunk += (currentChunk ? '\n\n' : '') + trimmed;
+  while (remaining.length > maxChunkSize) {
+    // Look for a break point in the upper portion of the chunk window
+    const minBreak = Math.floor(maxChunkSize * 0.6);
+    const window = remaining.slice(0, maxChunkSize);
+
+    let breakAt = -1;
+
+    // 1. Paragraph break (\n\n) in upper window
+    const paraIdx = window.lastIndexOf('\n\n');
+    if (paraIdx >= minBreak) breakAt = paraIdx + 2;
+
+    // 2. Line break (\n) in upper window
+    if (breakAt < 0) {
+      const lineIdx = window.lastIndexOf('\n');
+      if (lineIdx >= minBreak) breakAt = lineIdx + 1;
     }
+
+    // 3. Sentence end in upper window
+    if (breakAt < 0) {
+      const sentIdx = Math.max(
+        window.lastIndexOf('. '),
+        window.lastIndexOf('! '),
+        window.lastIndexOf('? ')
+      );
+      if (sentIdx >= minBreak) breakAt = sentIdx + 2;
+    }
+
+    // 4. Any whitespace in upper window
+    if (breakAt < 0) {
+      const spaceIdx = window.lastIndexOf(' ');
+      if (spaceIdx >= minBreak) breakAt = spaceIdx + 1;
+    }
+
+    // 5. Hard cut at maxChunkSize as absolute fallback
+    if (breakAt < 0) breakAt = maxChunkSize;
+
+    chunks.push(remaining.slice(0, breakAt).trim());
+    remaining = remaining.slice(breakAt).trim();
   }
-  
-  if (currentChunk.trim()) {
-    chunks.push(currentChunk.trim());
-  }
-  
-  return chunks.filter(chunk => chunk.length > 0);
+
+  if (remaining) chunks.push(remaining);
+  return chunks.filter(c => c.length > 0);
 }
 
 // Estimate token count
