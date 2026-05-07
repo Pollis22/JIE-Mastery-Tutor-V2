@@ -2112,6 +2112,11 @@ export const voiceQuizQuestions = pgTable("voice_quiz_questions", {
   optionB: text("option_b").notNull(),
   optionC: text("option_c").notNull(),
   optionD: text("option_d").notNull(),
+  optionE: text("option_e"),
+    // nullable — present only for 5-option formats (ACT, SAT, MCAT, etc.)
+    // POC + on-demand 10Q quizzes leave this null and use option_count = 4
+  optionCount: integer("option_count").notNull().default(4),
+    // 4 (default, A-D) | 5 (A-E for standardized test prep)
   correctOption: varchar("correct_option", { length: 1 }).$type<'A' | 'B' | 'C' | 'D'>().notNull(),
   explanation: text("explanation"),
   // topic_tag: lowercase-hyphenated, ≤30 chars. Will FK to lsis_concepts.concept_key in v2.
