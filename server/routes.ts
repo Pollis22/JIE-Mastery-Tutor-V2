@@ -638,6 +638,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const { default: notificationsRouter } = await import('./routes/notifications');
   app.use("/api/notifications", notificationsRouter);
 
+  // Quiz Mode (POC) — on-demand 10-question MCQ quizzes
+  const { default: quizRoutes } = await import('./routes/quiz');
+  app.use("/api/quiz", quizRoutes);
+
   // External cron trigger for upcoming-digest (for Railway autoscale safety)
   app.post("/api/cron/upcoming-digest", async (req, res) => {
     const secret = process.env.CRON_SECRET;
