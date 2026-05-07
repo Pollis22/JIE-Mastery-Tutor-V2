@@ -169,11 +169,10 @@ tr:last-child td{border-bottom:none;font-weight:700}
 </select>
 <div class="fhint" id="cal-hint">Selecting a preset auto-fills active weeks. Override below if your institution differs.</div></div>
 <div class="g2mb">
-<div class="f"><div class="fl">Active Weeks <span style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— editable</span></div><input type="number" id="activeweeks" value="32" min="1" max="52" step="1" onchange="recomputeUsage()"><div class="fhint">Total weeks of active instruction.</div></div>
-<div class="f"><div class="fl">Hours / Active User / Week <span style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— per-deal</span></div><input type="number" id="hoursperweek" value="2" min="0.25" step="0.25" onchange="recomputeUsage()"><div class="fhint">Light=1, Standard=2, Heavy=4, Power=6+</div></div>
+<div class="f"><div class="fl">Active Weeks <span id="aw-label-suffix" style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— locked by calendar</span></div><input type="number" id="activeweeks" value="32" min="1" max="52" step="1" readonly onchange="recomputeUsage()" style="background:var(--bg2,#f5f5f5);color:var(--tx2,#666);cursor:not-allowed"><div class="fhint" id="aw-hint">Auto-set from Academic Calendar above.</div></div>
+<div class="f"><div class="fl">Hours Per Week <span style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— per student</span></div><input type="number" id="hoursperweek" value="2" min="0.25" step="0.25" onchange="recomputeUsage()"><div class="fhint">Light=1, Standard=2, Heavy=4, Power=6+</div></div>
 </div>
-<div class="f"><div class="fl">Active User Adoption (% of enrollment) <span style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— how many actually engage</span></div><div class="pfx"><span>%</span><input type="number" id="adoption" value="50" min="1" max="100" step="1" onchange="recomputeUsage()"></div><div class="fhint">Year-1 deployments typically 30–50%, mature 50–70%.</div></div>
-<div class="f"><div class="fl">Avg Monthly Usage / User (min) <span style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— auto-calculated, override OK</span></div><input type="number" id="usage" value="25" min="1" step="1" placeholder="auto"><div class="fhint" id="usage-hint">Computed: <strong id="usage-derive">50% × 30 wks × 2 hr/wk × 60 min ÷ 12 mo = 25 min/mo</strong>. Edit to override.</div></div>
+<div class="f"><div class="fl">Avg Monthly Usage / User (min) <span style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— auto-calculated, override OK</span></div><input type="number" id="usage" value="300" min="1" step="1" placeholder="auto"><div class="fhint" id="usage-hint">Computed: <strong id="usage-derive">30 wks × 2 hr/wk × 60 min ÷ 12 mo = 300 min/mo per student</strong>. Edit to override.</div></div>
 <div class="f"><div class="fl">Institution Type</div><select id="insttype"><option value="d1">D1 Athletic Department</option><option value="uni">University Student Success</option><option value="cc">Community College</option><option value="k12">K-12 School District</option></select></div>
 <div class="div"></div>
 <div style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--tx3);margin-bottom:8px">Quick Scenarios</div>
@@ -184,13 +183,11 @@ tr:last-child td{border-bottom:none;font-weight:700}
 <div class="mdesc" id="mdesc"></div>
 <div class="f" id="capfield">
 <div class="fl" style="align-items:center">
-  Included Min / Seat / Month <span style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— what you sell</span>
-  <label style="display:flex;align-items:center;gap:4px;font-size:10px;font-weight:700;cursor:pointer;margin-left:auto;color:var(--red)">
-    <input type="checkbox" id="cap-sync" checked style="accent-color:var(--red);cursor:pointer"> Sync to usage
-  </label>
+  Included Min / Seat / Month <span style="font-size:10px;color:var(--tx3);font-weight:400;font-style:italic">— auto-calculated, locked</span>
+  <input type="checkbox" id="cap-sync" checked style="display:none">
 </div>
-<input type="number" id="cap" value="60" min="1" step="1" placeholder="e.g. 60">
-<div class="fhint" id="cap-hint">&#10003; <strong>Matched to usage</strong> — margin shown is what you'll actually earn. Uncheck to model overage scenarios.</div>
+<input type="number" id="cap" value="60" min="1" step="1" readonly style="background:var(--bg2,#f5f5f5);color:var(--tx2,#666);cursor:not-allowed">
+<div class="fhint" id="cap-hint">&#128274; <strong>Locked to Avg Monthly Usage / User.</strong> Drives the pricing formulas — to change, adjust the Estimator inputs above.</div>
 </div>
 <div class="f"><div class="fl">Pre-purchase Rate ($/min)</div><div class="pfx"><span>$</span><input type="number" id="rate" value="0.10" min="0.01" step="0.01" placeholder="0.10"></div></div>
 <div class="f" id="overagefield">
@@ -691,35 +688,56 @@ const CALENDAR_PRESETS = {
 function onCalendarChange() {
   const cal = g('calendar').value;
   const wks = CALENDAR_PRESETS[cal];
-  if (wks !== null && wks !== undefined) {
-    g('activeweeks').value = wks;
+  const aw = g('activeweeks');
+  const lblSfx = document.getElementById('aw-label-suffix');
+  const hint = document.getElementById('aw-hint');
+  if (cal === 'custom') {
+    // Unlock for manual entry — supports 52-week year-round and other custom calendars
+    aw.removeAttribute('readonly');
+    aw.style.background = '';
+    aw.style.color = '';
+    aw.style.cursor = '';
+    if (lblSfx) lblSfx.textContent = '— editable (Custom)';
+    if (hint) hint.textContent = 'Custom calendar — enter your active weeks (1\u201352). Year-round = 52.';
+  } else {
+    // Lock to preset value
+    aw.setAttribute('readonly', '');
+    aw.style.background = 'var(--bg2,#f5f5f5)';
+    aw.style.color = 'var(--tx2,#666)';
+    aw.style.cursor = 'not-allowed';
+    if (lblSfx) lblSfx.textContent = '— locked by calendar';
+    if (hint) hint.textContent = 'Auto-set from Academic Calendar above.';
+    if (wks !== null && wks !== undefined) {
+      aw.value = wks;
+    }
   }
   recomputeUsage();
 }
 function recomputeUsage() {
   const wks = +g('activeweeks').value || 0;
   const hpw = +g('hoursperweek').value || 0;
-  const adopt = (+g('adoption').value || 0) / 100;
-  // Avg monthly minutes per ENROLLED student (so existing `usage`-based math stays correct)
-  const monthlyMin = Math.round(adopt * wks * hpw * 60 / 12);
+  // Avg monthly minutes per student = active weeks × hours/week × 60 min ÷ 12 months
+  const monthlyMin = Math.round(wks * hpw * 60 / 12);
   if (monthlyMin > 0) {
     g('usage').value = monthlyMin;
+    // v20: sync cap when usage changes programmatically (input event doesn't fire on JS value-set)
+    if (g('cap-sync').checked) g('cap').value = monthlyMin;
     const hint = document.getElementById('usage-derive');
-    if (hint) hint.textContent = 
-      Math.round(adopt*100) + '% × ' + wks + ' wks × ' + hpw + ' hr/wk × 60 min ÷ 12 mo = ' + monthlyMin + ' min/mo';
+    if (hint) hint.textContent =
+      wks + ' wks × ' + hpw + ' hr/wk × 60 min ÷ 12 mo = ' + monthlyMin + ' min/mo per student';
   }
-  if (typeof recompute === 'function') recompute();
+  // v20: main recalc function in this codebase is update(), not recompute()
+  if (typeof update === 'function') update();
 }
 
 function setS(s,u){
   g('students').value=s;
   g('usage').value=u;
-  // v16: when scenario chip sets a usage, derive equivalent hours/week so calendar UI reflects the choice
+  // v17: when scenario chip sets a usage, derive equivalent hours/week so calendar UI reflects the choice
   try {
     const wks = +g('activeweeks').value || 30;
-    const adopt = (+g('adoption').value || 50) / 100;
-    if (wks > 0 && adopt > 0) {
-      const derivedHours = (u * 12) / (60 * adopt * wks);
+    if (wks > 0) {
+      const derivedHours = (u * 12) / (60 * wks);
       g('hoursperweek').value = (Math.round(derivedHours * 4) / 4).toFixed(2);
     }
   } catch(e) { /* non-blocking */ }
@@ -733,7 +751,7 @@ function syncCap(){
   if(synced){
     g('cap').value=g('usage').value;
     g('cap').style.background='';
-    hint.innerHTML='&#10003; <strong>Matched to usage</strong> — margin shown is what you\'ll actually earn. Uncheck to model overage scenarios.';
+    hint.innerHTML='&#128274; <strong>Locked to Avg Monthly Usage / User.</strong> Drives the pricing formulas — to change, adjust the Estimator inputs above.';
     hint.style.color='var(--gr)';
   } else {
     g('cap').style.background='';
