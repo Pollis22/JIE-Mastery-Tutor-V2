@@ -161,6 +161,9 @@ export default function PricingPage() {
               <span className="ml-3 text-xl font-bold text-foreground">AI Tutor</span>
             </div>
             <div className="hidden md:flex items-center space-x-4">
+              <Button variant="ghost" onClick={() => setLocation("/support")} data-testid="button-nav-support">
+                Live Support
+              </Button>
               <Button variant="ghost" onClick={() => setLocation("/contact")} data-testid="button-nav-contact">
                 Contact
               </Button>

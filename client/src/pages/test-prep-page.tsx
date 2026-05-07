@@ -140,6 +140,7 @@ export default function TestPrepPage() {
                 { label: "Benefits", path: "/benefits" },
                 { label: "Test Prep", path: "/test-prep" },
                 { label: "FAQ", path: "/faq" },
+                { label: "Live Support", path: "/support" },
                 { label: "Contact", path: "/contact" },
                 { label: "Pricing", path: "/pricing" },
               ].map((item) => (
