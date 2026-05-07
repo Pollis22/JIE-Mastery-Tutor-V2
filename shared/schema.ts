@@ -2067,3 +2067,108 @@ export const notificationPreferences = pgTable("notification_preferences", {
 
 export type NotificationPreference = typeof notificationPreferences.$inferSelect;
 export type NewNotificationPreference = typeof notificationPreferences.$inferInsert;
+// ============================================================================
+// Voice Quiz Mode — POC tables (v2)
+// Append to end of shared/schema.ts (after notificationPreferences exports).
+// Schema version: v2 / May 7, 2026
+//
+// ⚠️  Run quiz-mode-poc-schema.sql (v2) in Beekeeper FIRST.
+//     drizzle-kit push hangs in Railway non-TTY (per project memory).
+//
+// ⚠️  RENAMED from v1: tables are voice_quiz_* (not quiz_*) to avoid collision
+//     with existing archived lesson-quiz schema (quizAttempts/quiz_attempts).
+// ============================================================================
+
+export const voiceQuizSessions = pgTable("voice_quiz_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()::text`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  topic: text("topic").notNull(),
+  gradeBand: text("grade_band").$type<'kindergarten-2' | 'grades-3-5' | 'grades-6-8' | 'grades-9-12' | 'college-adult'>().notNull(),
+  mode: text("mode").$type<'practice' | 'exam'>().notNull().default('practice'),
+  questionCount: integer("question_count").notNull().default(10),
+  questionsAnswered: integer("questions_answered").notNull().default(0),
+  questionsCorrect: integer("questions_correct").notNull().default(0),
+  scorePct: decimal("score_pct"),
+  // Timer config — set at quiz creation per band
+  timerEnabled: boolean("timer_enabled").notNull().default(false),
+  perQuestionSeconds: integer("per_question_seconds"),
+  timeLimitSeconds: integer("time_limit_seconds"),
+  status: text("status").$type<'in_progress' | 'completed' | 'abandoned' | 'timed_out'>().notNull().default('in_progress'),
+  startedAt: timestamp("started_at").notNull().defaultNow(),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => [
+  index("idx_voice_quiz_sessions_user_id").on(table.userId),
+  index("idx_voice_quiz_sessions_status").on(table.status),
+  index("idx_voice_quiz_sessions_started_at").on(table.startedAt),
+]);
+
+export const voiceQuizQuestions = pgTable("voice_quiz_questions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()::text`),
+  quizId: varchar("quiz_id").notNull().references(() => voiceQuizSessions.id, { onDelete: "cascade" }),
+  position: integer("position").notNull(),
+  questionText: text("question_text").notNull(),
+  optionA: text("option_a").notNull(),
+  optionB: text("option_b").notNull(),
+  optionC: text("option_c").notNull(),
+  optionD: text("option_d").notNull(),
+  correctOption: varchar("correct_option", { length: 1 }).$type<'A' | 'B' | 'C' | 'D'>().notNull(),
+  explanation: text("explanation"),
+  // topic_tag: lowercase-hyphenated, ≤30 chars. Will FK to lsis_concepts.concept_key in v2.
+  topicTag: text("topic_tag"),
+  difficulty: text("difficulty").$type<'easy' | 'medium' | 'hard'>(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => [
+  index("idx_voice_quiz_questions_quiz_id").on(table.quizId),
+  index("idx_voice_quiz_questions_topic_tag").on(table.topicTag),
+  uniqueIndex("uq_voice_quiz_questions_position").on(table.quizId, table.position),
+]);
+
+export const voiceQuizAttempts = pgTable("voice_quiz_attempts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()::text`),
+  questionId: varchar("question_id").notNull().references(() => voiceQuizQuestions.id, { onDelete: "cascade" }),
+  quizId: varchar("quiz_id").notNull().references(() => voiceQuizSessions.id, { onDelete: "cascade" }),
+  rawTranscript: text("raw_transcript").notNull(),
+  parsedOption: varchar("parsed_option", { length: 1 }).$type<'A' | 'B' | 'C' | 'D'>(),
+  isCorrect: boolean("is_correct").notNull(),
+  parseConfidence: decimal("parse_confidence"),
+  parseMethod: text("parse_method").$type<'regex' | 'claude_fallback' | 'ambiguous' | 'timeout' | 'skip'>(),
+  elapsedMs: integer("elapsed_ms"),
+  timedOut: boolean("timed_out").notNull().default(false),
+  attemptedAt: timestamp("attempted_at").notNull().defaultNow(),
+}, (table) => [
+  index("idx_voice_quiz_attempts_quiz_id").on(table.quizId),
+  index("idx_voice_quiz_attempts_question_id").on(table.questionId),
+  index("idx_voice_quiz_attempts_parse_method").on(table.parseMethod),
+]);
+
+// ── Insert schemas ──
+// (Note: insertQuizAttemptSchema name already used by legacy quiz_attempts table,
+//  so the voice variants use Voice-prefixed names.)
+export const insertVoiceQuizSessionSchema = createInsertSchema(voiceQuizSessions).omit({
+  id: true,
+  questionsAnswered: true,
+  questionsCorrect: true,
+  scorePct: true,
+  status: true,
+  completedAt: true,
+  createdAt: true,
+});
+
+export const insertVoiceQuizQuestionSchema = createInsertSchema(voiceQuizQuestions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertVoiceQuizAttemptSchema = createInsertSchema(voiceQuizAttempts).omit({
+  id: true,
+  attemptedAt: true,
+});
+
+// ── Type exports ──
+export type VoiceQuizSession = typeof voiceQuizSessions.$inferSelect;
+export type InsertVoiceQuizSession = z.infer<typeof insertVoiceQuizSessionSchema>;
+export type VoiceQuizQuestion = typeof voiceQuizQuestions.$inferSelect;
+export type InsertVoiceQuizQuestion = z.infer<typeof insertVoiceQuizQuestionSchema>;
+export type VoiceQuizAttempt = typeof voiceQuizAttempts.$inferSelect;
+export type InsertVoiceQuizAttempt = z.infer<typeof insertVoiceQuizAttemptSchema>;
