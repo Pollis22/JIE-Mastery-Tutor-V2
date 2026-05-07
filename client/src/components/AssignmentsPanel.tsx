@@ -310,6 +310,9 @@ export function AssignmentsPanel({
               <Upload className="w-4 h-4" />
               {isUploading ? 'Uploading...' : 'Upload Document'}
             </button>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 italic">
+              💡 Tip: If you upload during an active tutor session, refresh the page so your tutor can see the new document.
+            </p>
           </div>
         </div>
       </div>
