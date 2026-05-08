@@ -251,7 +251,36 @@ export function useCustomVoice() {
   const noiseEventsRef = useRef<number[]>([]); // Timestamps of noise_ignored events
   const lastNoiseCoachingRef = useRef<number>(0); // Last time coaching was shown
   const [showNoiseCoachingHint, setShowNoiseCoachingHint] = useState(false);
-  
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // VOICE QUIZ MODE (Phase 4) — frontend state for the on-demand
+  // MCQ quiz feature. Server-side controller in
+  // server/services/quiz-voice-controller.ts emits events:
+  //   quiz_starting, quiz_started, quiz_question_announced,
+  //   quiz_listening, quiz_answer_graded, quiz_complete,
+  //   quiz_abandoned, quiz_error
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  const [quizPhase, setQuizPhase] = useState<
+    'idle' | 'starting' | 'asking' | 'listening' | 'grading' | 'feedback' | 'summary' | 'done'
+  >('idle');
+  const [quizQuizId, setQuizQuizId] = useState<string | null>(null);
+  const [quizTotalQuestions, setQuizTotalQuestions] = useState<number>(10);
+  const [quizCurrentQuestion, setQuizCurrentQuestion] = useState<{
+    position: number;
+    questionText: string;
+    options: { A: string; B: string; C: string; D: string };
+    topicTag: string;
+    difficulty: string;
+  } | null>(null);
+  const [quizQuestionsAnswered, setQuizQuestionsAnswered] = useState<number>(0);
+  const [quizQuestionsCorrect, setQuizQuestionsCorrect] = useState<number>(0);
+  const [quizLastAnswerCorrect, setQuizLastAnswerCorrect] = useState<boolean | null>(null);
+  const [quizTimerEnabled, setQuizTimerEnabled] = useState<boolean>(false);
+  const [quizPerQuestionSeconds, setQuizPerQuestionSeconds] = useState<number | null>(null);
+  const [quizListeningStartedAt, setQuizListeningStartedAt] = useState<number | null>(null);
+  const [quizSummary, setQuizSummary] = useState<any | null>(null);
+  const [quizError, setQuizError] = useState<string | null>(null);
+
   // THINKING INDICATOR: Track current turn for matching events
   const thinkingTurnIdRef = useRef<string | null>(null);
   
@@ -1058,6 +1087,80 @@ export function useCustomVoice() {
               sileroConfirmTimerRef.current = null;
             }
             updateMicStatus('listening');
+            break;
+
+          // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          // VOICE QUIZ MODE (Phase 4) event handlers — payloads
+          // emitted by server/services/quiz-voice-controller.ts.
+          // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+          case "quiz_starting":
+            console.log(`[Quiz] 🎯 Starting: topic="${message.topic}" band=${message.gradeBand}`);
+            setQuizPhase('starting');
+            setQuizError(null);
+            setQuizSummary(null);
+            setQuizQuestionsAnswered(0);
+            setQuizQuestionsCorrect(0);
+            setQuizLastAnswerCorrect(null);
+            setQuizCurrentQuestion(null);
+            break;
+
+          case "quiz_started":
+            console.log(`[Quiz] ✅ Started: quizId=${message.quizId} timer=${message.timerEnabled}`);
+            setQuizQuizId(message.quizId);
+            setQuizTotalQuestions(message.totalQuestions ?? 10);
+            setQuizTimerEnabled(!!message.timerEnabled);
+            setQuizPerQuestionSeconds(message.perQuestionSeconds ?? null);
+            break;
+
+          case "quiz_question_announced":
+            console.log(`[Quiz] 📋 Q${message.position}: ${message.questionText?.substring(0, 60)}...`);
+            setQuizCurrentQuestion({
+              position: message.position,
+              questionText: message.questionText,
+              options: message.options,
+              topicTag: message.topicTag,
+              difficulty: message.difficulty,
+            });
+            setQuizPhase('asking');
+            setQuizLastAnswerCorrect(null);
+            break;
+
+          case "quiz_listening":
+            console.log(`[Quiz] 👂 Listening for answer (timer=${message.timerEnabled})`);
+            setQuizPhase('listening');
+            setQuizListeningStartedAt(Date.now());
+            break;
+
+          case "quiz_answer_graded":
+            console.log(`[Quiz] ✓ Graded: parsed=${message.parsedOption} correct=${message.correctOption} isCorrect=${message.isCorrect}`);
+            setQuizPhase('feedback');
+            setQuizLastAnswerCorrect(!!message.isCorrect);
+            setQuizQuestionsAnswered(prev => prev + 1);
+            if (message.isCorrect) {
+              setQuizQuestionsCorrect(prev => prev + 1);
+            }
+            break;
+
+          case "quiz_complete":
+            console.log(`[Quiz] 🏁 Complete: score=${message.summary?.scorePct}%`);
+            setQuizPhase('summary');
+            setQuizSummary(message.summary);
+            // Phase will transition to 'done' after the user closes the score modal
+            break;
+
+          case "quiz_abandoned":
+            console.log(`[Quiz] 🚪 Abandoned: quizId=${message.quizId}`);
+            setQuizPhase('done');
+            setQuizCurrentQuestion(null);
+            setQuizQuizId(null);
+            break;
+
+          case "quiz_error":
+            console.error(`[Quiz] ❌ Error: ${message.message}`, message.detail);
+            setQuizError(message.message || 'Quiz error');
+            setQuizPhase('done');
+            setQuizCurrentQuestion(null);
+            setQuizQuizId(null);
             break;
 
           case "audio":
@@ -3298,6 +3401,49 @@ registerProcessor('audio-processor', AudioProcessor);
     }));
   }, []);
 
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // VOICE QUIZ MODE (Phase 4) — frontend control surface
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  const startQuiz = useCallback((params: {
+    topic: string;
+    gradeBand: 'kindergarten-2' | 'grades-3-5' | 'grades-6-8' | 'grades-9-12' | 'college-adult';
+    mode?: 'practice' | 'exam';
+  }) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      console.error("[Quiz] Cannot start: WebSocket not connected");
+      return;
+    }
+    console.log(`[Quiz] 🚀 Sending start_quiz: topic="${params.topic}" band=${params.gradeBand} mode=${params.mode ?? 'practice'}`);
+    wsRef.current.send(JSON.stringify({
+      type: "start_quiz",
+      topic: params.topic,
+      gradeBand: params.gradeBand,
+      mode: params.mode ?? 'practice',
+    }));
+  }, []);
+
+  const abandonQuiz = useCallback(() => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      console.error("[Quiz] Cannot abandon: WebSocket not connected");
+      return;
+    }
+    console.log(`[Quiz] 🚪 Sending abandon_quiz`);
+    wsRef.current.send(JSON.stringify({ type: "abandon_quiz" }));
+  }, []);
+
+  /** Clear quiz UI state after the user dismisses the score modal. */
+  const resetQuizState = useCallback(() => {
+    setQuizPhase('idle');
+    setQuizQuizId(null);
+    setQuizCurrentQuestion(null);
+    setQuizQuestionsAnswered(0);
+    setQuizQuestionsCorrect(0);
+    setQuizLastAnswerCorrect(null);
+    setQuizSummary(null);
+    setQuizError(null);
+    setQuizListeningStartedAt(null);
+  }, []);
+
   const updateMode = useCallback(async (tutorAudio: boolean, studentMic: boolean) => {
     console.log("[Custom Voice] 🔄 Updating mode:", { tutorAudio, studentMic });
 
@@ -3516,5 +3662,21 @@ registerProcessor('audio-processor', AudioProcessor);
     micStatus,
     showNoiseCoachingHint,
     sttStatus,
+    // ── Voice Quiz Mode (Phase 4) ──
+    startQuiz,
+    abandonQuiz,
+    resetQuizState,
+    quizPhase,
+    quizQuizId,
+    quizTotalQuestions,
+    quizCurrentQuestion,
+    quizQuestionsAnswered,
+    quizQuestionsCorrect,
+    quizLastAnswerCorrect,
+    quizTimerEnabled,
+    quizPerQuestionSeconds,
+    quizListeningStartedAt,
+    quizSummary,
+    quizError,
   };
 }
