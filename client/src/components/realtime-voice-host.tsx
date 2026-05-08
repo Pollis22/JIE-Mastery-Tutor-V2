@@ -8,7 +8,7 @@ import { AnimatedBackground } from './AnimatedBackground';
 import { SessionProgress } from './SessionProgress';
 import { useSimulatedAmplitude } from '@/hooks/use-audio-amplitude';
 import { Button } from '@/components/ui/button';
-import { Mic, MicOff, Volume2, VolumeX, AlertTriangle, FileText, Type, Headphones, Timer, Square } from 'lucide-react';
+import { Mic, MicOff, Volume2, VolumeX, AlertTriangle, FileText, Type, Headphones, Timer, Square, Sparkles } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
 import { useLocation } from 'wouter';
@@ -17,6 +17,9 @@ import { isYoungLearner as checkYoungLearner } from '@/styles/themes';
 import { VisualPanel } from './VisualPanel';
 import type { VisualTag } from './VisualPanel';
 import { getLanguageName } from '@shared/languages';
+import { QuizStartModal, ageGroupToGradeBand } from './QuizStartModal';
+import { QuizProgressBadge } from './QuizProgressBadge';
+import { QuizScoreModal } from './QuizScoreModal';
 
 // ─── Module-level singleton lock ───────────────────────────────────────────
 // Prevents concurrent voice sessions when the tutor page re-mounts mid-session.
@@ -203,6 +206,10 @@ export const RealtimeVoiceHost = forwardRef<RealtimeVoiceHostHandle, RealtimeVoi
   const sessionIdRef = useRef<string | null>(null); // Ref to track current sessionId
   const [isMuted, setIsMuted] = useState(false);
   const previouslyConnectedRef = useRef(false); // Track if we were previously connected
+
+  // ── Voice Quiz Mode (Phase 4) — modal open state ──
+  const [quizStartModalOpen, setQuizStartModalOpen] = useState(false);
+  const [quizScoreModalOpen, setQuizScoreModalOpen] = useState(false);
   
   // Debug mode - only show debug info when ?debug=true is in URL
   const isDebugMode = useMemo(() => {
@@ -661,6 +668,27 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
     endSession,
   }), [endSession]);
 
+  // ── Voice Quiz Mode (Phase 4) — auto-open the score modal when the
+  //    server signals `quiz_complete` and the controller transitions
+  //    into the `summary` phase. The user dismissing the modal triggers
+  //    `customVoice.resetQuizState()` to clear quiz state cleanly.
+  useEffect(() => {
+    if (customVoice.quizPhase === 'summary' && customVoice.quizSummary) {
+      setQuizScoreModalOpen(true);
+    }
+  }, [customVoice.quizPhase, customVoice.quizSummary]);
+
+  // ── Surface quiz_error events as a toast so the user knows what happened ──
+  useEffect(() => {
+    if (customVoice.quizError) {
+      toast({
+        title: 'Quiz error',
+        description: customVoice.quizError,
+        variant: 'destructive',
+      });
+    }
+  }, [customVoice.quizError, toast]);
+
   const toggleMute = () => {
     setIsMuted(prev => !prev);
     console.log('[VoiceHost]', isMuted ? 'Unmuted' : 'Muted');
@@ -908,7 +936,36 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
                   </>
                 )}
               </Button>
-              
+
+              {/* Voice Quiz Mode (Phase 4) — Start Quiz trigger.
+                  Hidden while a quiz is already active; the progress badge
+                  takes its place during ASKING / LISTENING / GRADING / FEEDBACK. */}
+              {customVoice.quizPhase === 'idle' || customVoice.quizPhase === 'done' ? (
+                <Button
+                  onClick={() => setQuizStartModalOpen(true)}
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  data-testid="button-start-quiz"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  Start Quiz
+                </Button>
+              ) : (
+                <QuizProgressBadge
+                  phase={customVoice.quizPhase}
+                  questionNumber={customVoice.quizCurrentQuestion?.position ?? 1}
+                  totalQuestions={customVoice.quizTotalQuestions}
+                  questionsAnswered={customVoice.quizQuestionsAnswered}
+                  questionsCorrect={customVoice.quizQuestionsCorrect}
+                  lastAnswerCorrect={customVoice.quizLastAnswerCorrect}
+                  timerEnabled={customVoice.quizTimerEnabled}
+                  perQuestionSeconds={customVoice.quizPerQuestionSeconds}
+                  listeningStartedAt={customVoice.quizListeningStartedAt}
+                  onAbandon={() => customVoice.abandonQuiz()}
+                />
+              )}
+
               <SessionTimer isActive={customVoice.isConnected} />
               <MinutesRemainingBadge />
             </>
@@ -1124,6 +1181,33 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
         </div>
       )}
       </div>
+
+      {/* ─── Voice Quiz Mode (Phase 4) modals ─── */}
+      <QuizStartModal
+        open={quizStartModalOpen}
+        onOpenChange={setQuizStartModalOpen}
+        defaultGradeBand={ageGroupToGradeBand(ageGroup as any)}
+        onStart={({ topic, gradeBand, mode }) => {
+          customVoice.startQuiz({ topic, gradeBand, mode });
+        }}
+      />
+
+      <QuizScoreModal
+        open={quizScoreModalOpen}
+        onOpenChange={(open) => {
+          setQuizScoreModalOpen(open);
+          // When user dismisses the score modal, clear quiz state so the
+          // Start Quiz button reappears and the badge disappears.
+          if (!open) {
+            customVoice.resetQuizState();
+          }
+        }}
+        summary={customVoice.quizSummary}
+        onStartAnother={() => {
+          customVoice.resetQuizState();
+          setQuizStartModalOpen(true);
+        }}
+      />
     </AgeThemeProvider>
   );
 });
