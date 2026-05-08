@@ -5,6 +5,8 @@ import { Socket } from 'net';
 import { startDeepgramStream, DeepgramConnection } from "../services/deepgram-service";
 import { generateTutorResponse, generateTutorResponseStreaming, StreamingCallbacks } from "../services/ai-service";
 import { generateSpeech, prewarmTTS } from "../services/tts-service";
+import { QuizVoiceController, type QuizVoiceRuntime } from "../services/quiz-voice-controller";
+import type { GradeBand as QuizGradeBand } from "../services/quiz-question-generator";
 import { db } from "../db";
 import { realtimeSessions, contentViolations, userSuspensions, documentChunks } from "@shared/schema";
 import { eq, and, or, gte } from "drizzle-orm";
@@ -1598,6 +1600,10 @@ interface SessionState {
   // NOISE COACHING: Track dropped turns to detect persistently noisy sessions
   droppedTurnTimestamps: number[]; // Rolling timestamps of noise-dropped turns
   lastNoiseCoachingAtMs: number;  // Last time tutor gave noise coaching message
+  // QUIZ MODE: Voice quiz controller (active when student is taking an MCQ quiz).
+  // When set and active, processTranscriptQueue routes transcripts here instead
+  // of to the tutor LLM. See server/services/quiz-voice-controller.ts.
+  quizController: QuizVoiceController | null;
 }
 
 // Helper to send typed WebSocket events
@@ -2943,6 +2949,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
       trialMinuteWarned: false,
       droppedTurnTimestamps: [],
       lastNoiseCoachingAtMs: 0,
+      quizController: null,
     };
 
     // FIX #3: Auto-persist every 10 seconds
@@ -3490,6 +3497,24 @@ export function setupCustomVoiceWebSocket(server: Server) {
       if (state.isProcessing || state.transcriptQueue.length === 0 || state.isSessionEnded) {
         if (state.isProcessing && state.transcriptQueue.length > 0) {
           console.log(`[Pipeline] 📋 Queue has ${state.transcriptQueue.length} items waiting (isProcessing=true)`);
+        }
+        return;
+      }
+
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      // QUIZ MODE: route transcript to quiz controller instead of LLM
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      if (state.quizController?.isActive()) {
+        const transcript = state.transcriptQueue.shift()!;
+        state.isProcessing = true;
+        state.processingSinceMs = Date.now();
+        try {
+          await state.quizController.handleTranscript(transcript);
+        } catch (err: any) {
+          console.error(`[QuizVoice] handleTranscript error:`, err?.message ?? err);
+        } finally {
+          state.isProcessing = false;
+          state.processingSinceMs = null;
         }
         return;
       }
@@ -8416,6 +8441,100 @@ DOCUMENT ACKNOWLEDGMENT RULE:
             state.lastHeartbeatAt = new Date();
             break;
           
+          case "start_quiz": {
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            // Quiz Mode (POC) — frontend triggers a 10Q MCQ voice quiz.
+            // Body: { topic: string, gradeBand: GradeBand, mode?: 'practice'|'exam' }
+            // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            console.log(`[QuizVoice] 🎯 start_quiz received: topic="${message.topic}" gradeBand="${message.gradeBand}"`);
+
+            if (state.quizController?.isActive()) {
+              console.warn(`[QuizVoice] start_quiz ignored — quiz already active (phase=${state.quizController.getPhase()})`);
+              ws.send(JSON.stringify({ type: "quiz_error", message: "Quiz already in progress" }));
+              break;
+            }
+
+            if (!message.topic || typeof message.topic !== "string" || !message.gradeBand) {
+              ws.send(JSON.stringify({ type: "quiz_error", message: "Missing topic or gradeBand" }));
+              break;
+            }
+
+            // Hard-interrupt any in-flight tutor turn so the quiz starts cleanly
+            if (state.isTutorSpeaking || state.isTutorThinking || state.llmInFlight) {
+              console.log(`[QuizVoice] interrupting tutor before quiz start`);
+              hardInterruptTutor(ws, state, "quiz_starting");
+            }
+
+            // Build runtime adapter — bridges controller to existing voice plumbing
+            const echoConfig = (state as any).echoConfig ?? undefined;
+            const runtime: QuizVoiceRuntime = {
+              speak: async (text: string) => {
+                if (!state.tutorAudioEnabled) return;
+                state.playbackGenId = (state.playbackGenId ?? 0) + 1;
+                const audioBuffer = await generateSpeech(text, state.ageGroup, state.speechSpeed);
+                if (ws.readyState !== WebSocket.OPEN) return;
+                state.tutorAudioPlaying = true;
+                state.tutorAudioStartMs = Date.now();
+                ws.send(JSON.stringify({
+                  type: "audio",
+                  data: audioBuffer.toString("base64"),
+                  mimeType: "audio/pcm;rate=16000",
+                  isChunk: false,
+                  genId: state.playbackGenId,
+                }));
+              },
+              recordEcho: (text: string) => {
+                if (text && text.length > 0) {
+                  recordTutorUtterance(state.echoGuardState, text, echoConfig);
+                }
+              },
+              teardownStt: (reason: string) => {
+                teardownSttConnection(state, reason);
+              },
+              sendEvent: (type: string, payload: Record<string, unknown>) => {
+                sendWsEvent(ws, type, payload);
+              },
+              sendTranscript: (speaker, text) => {
+                state.transcript.push({
+                  speaker,
+                  text,
+                  timestamp: new Date().toISOString(),
+                } as TranscriptEntry);
+                ws.send(JSON.stringify({ type: "transcript", speaker, text }));
+              },
+              markProgress: () => {
+                markProgress(state);
+              },
+            };
+
+            state.quizController = new QuizVoiceController({
+              userId: state.userId,
+              runtime,
+            });
+
+            // Fire-and-forget — controller drives the rest of the flow
+            void state.quizController.start({
+              topic: message.topic,
+              gradeBand: message.gradeBand as QuizGradeBand,
+              mode: message.mode === "exam" ? "exam" : "practice",
+            }).catch((err) => {
+              console.error(`[QuizVoice] ❌ start failed: ${err?.message ?? err}`);
+              ws.send(JSON.stringify({ type: "quiz_error", message: "Quiz failed to start" }));
+              state.quizController = null;
+            });
+
+            break;
+          }
+
+          case "quiz_abandon": {
+            console.log(`[QuizVoice] 🛑 quiz_abandon received`);
+            if (state.quizController?.isActive()) {
+              await state.quizController.abandon();
+            }
+            state.quizController = null;
+            break;
+          }
+
           case "client_end_intent":
             // Client announces end intent before WS closes (used for telemetry)
             const intent = message.intent || 'user_end';
