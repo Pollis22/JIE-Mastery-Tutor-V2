@@ -191,6 +191,77 @@ interface TopUsageData {
   totalPages: number;
 }
 
+
+interface TranscriptRow {
+  id: string;
+  userId: string;
+  studentName?: string | null;
+  subject?: string | null;
+  ageGroup?: string | null;
+  language?: string | null;
+  startedAt: string;
+  endedAt?: string | null;
+  minutesUsed: number;
+  status?: string | null;
+  totalMessages?: number | null;
+  strikeCount?: number | null;
+  terminatedForSafety?: boolean | null;
+  safetyFlagCount?: number | null;
+  userEmail?: string | null;
+  userFirstName?: string | null;
+  userLastName?: string | null;
+  parentEmail?: string | null;
+  durationMinutes?: number | null;
+  flagged: boolean;
+}
+
+interface TranscriptsListData {
+  transcripts: TranscriptRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+interface TranscriptMessage {
+  speaker: 'tutor' | 'student';
+  text: string;
+  timestamp: string;
+  messageId: string;
+}
+
+interface SafetyFlag {
+  type: string;
+  timestamp: string;
+  messageIndex?: number;
+  triggerText?: string;
+  tutorResponse?: string;
+  severity: 'info' | 'warning' | 'alert' | 'critical';
+}
+
+interface TranscriptDetail {
+  id: string;
+  userId: string;
+  studentName?: string | null;
+  subject?: string | null;
+  ageGroup?: string | null;
+  language?: string | null;
+  startedAt: string;
+  endedAt?: string | null;
+  minutesUsed: number;
+  status?: string | null;
+  transcript: TranscriptMessage[];
+  summary?: string | null;
+  safetyFlags?: SafetyFlag[] | null;
+  strikeCount?: number | null;
+  terminatedForSafety?: boolean | null;
+  closeReason?: string | null;
+  userEmail?: string | null;
+  userFirstName?: string | null;
+  userLastName?: string | null;
+  parentEmail?: string | null;
+}
+
 export default function AdminPageEnhanced() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -203,6 +274,16 @@ export default function AdminPageEnhanced() {
   const [sessionsPage, setSessionsPage] = useState(1);
   const [usagePage, setUsagePage] = useState(1);
   const [activeTab, setActiveTab] = useState("overview");
+
+  // ---- Transcripts tab state ----
+  const [transcriptsPage, setTranscriptsPage] = useState(1);
+  const [transcriptsSearch, setTranscriptsSearch] = useState("");
+  const [transcriptsSearchInput, setTranscriptsSearchInput] = useState("");
+  const [transcriptsFlaggedOnly, setTranscriptsFlaggedOnly] = useState(false);
+  const [transcriptsFrom, setTranscriptsFrom] = useState("");
+  const [transcriptsTo, setTranscriptsTo] = useState("");
+  const [selectedTranscriptId, setSelectedTranscriptId] = useState<string | null>(null);
+
 
   // Check admin access
   if (!user?.isAdmin) {
@@ -298,6 +379,37 @@ export default function AdminPageEnhanced() {
     enabled: !!user?.isAdmin && activeTab === 'sessions',
   });
 
+  // ---- Transcripts list query ----
+  const { data: transcriptsData, isLoading: transcriptsLoading } = useQuery<TranscriptsListData>({
+    queryKey: ["/api/admin/transcripts", transcriptsPage, transcriptsSearch, transcriptsFlaggedOnly, transcriptsFrom, transcriptsTo],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        page: transcriptsPage.toString(),
+        limit: '25',
+      });
+      if (transcriptsSearch) params.set('search', transcriptsSearch);
+      if (transcriptsFlaggedOnly) params.set('flaggedOnly', 'true');
+      if (transcriptsFrom) params.set('from', transcriptsFrom);
+      if (transcriptsTo) params.set('to', transcriptsTo);
+      const response = await fetch(`/api/admin/transcripts?${params}`, { credentials: 'include' });
+      if (!response.ok) throw new Error(`Failed to fetch transcripts: ${response.status}`);
+      return response.json();
+    },
+    enabled: !!user?.isAdmin && activeTab === 'transcripts',
+  });
+
+  // ---- Single transcript detail query (lazy on dialog open) ----
+  const { data: transcriptDetail, isLoading: transcriptDetailLoading } = useQuery<TranscriptDetail>({
+    queryKey: ["/api/admin/transcripts", selectedTranscriptId],
+    queryFn: async () => {
+      const response = await fetch(`/api/admin/transcripts/${selectedTranscriptId}`, { credentials: 'include' });
+      if (!response.ok) throw new Error(`Failed to fetch transcript: ${response.status}`);
+      return response.json();
+    },
+    enabled: !!user?.isAdmin && !!selectedTranscriptId,
+  });
+
+
   const { data: topUsageData, isLoading: topUsageLoading } = useQuery<TopUsageData>({
     queryKey: ["/api/admin/usage/top-users", usagePage],
     queryFn: async () => {
@@ -325,6 +437,158 @@ export default function AdminPageEnhanced() {
     // Use window.location for direct download - this ensures cookies are sent
     window.location.href = endpoint;
   };
+
+  // Generate a transcript PDF client-side from already-loaded detail data.
+  // Pings the server first so the export is recorded in the admin audit log,
+  // then renders the PDF locally via jsPDF (already a direct dep).
+  const generateTranscriptPDF = async (detail: TranscriptDetail) => {
+    try {
+      // Audit-log ping (non-blocking — proceed with PDF either way)
+      try {
+        await fetch(`/api/admin/transcripts/${detail.id}/export?format=pdf-audit`, { credentials: 'include' });
+      } catch { /* audit failure shouldn't block the export */ }
+
+      const { jsPDF } = await import('jspdf');
+      const doc = new jsPDF({ unit: 'pt', format: 'letter' });
+
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 48;
+      const contentWidth = pageWidth - margin * 2;
+      let y = margin;
+
+      const newPageIfNeeded = (needed: number) => {
+        if (y + needed > pageHeight - margin) {
+          doc.addPage();
+          y = margin;
+        }
+      };
+
+      const writeWrapped = (text: string, size: number, style: 'normal' | 'bold' = 'normal', leading = 1.35) => {
+        doc.setFont('helvetica', style);
+        doc.setFontSize(size);
+        const lines = doc.splitTextToSize(text || '', contentWidth);
+        const lineHeight = size * leading;
+        lines.forEach((line: string) => {
+          newPageIfNeeded(lineHeight);
+          doc.text(line, margin, y);
+          y += lineHeight;
+        });
+      };
+
+      // ---- Header ----
+      writeWrapped('JIE Tutor — Session Transcript', 18, 'bold');
+      y += 6;
+
+      doc.setDrawColor(180);
+      doc.line(margin, y, pageWidth - margin, y);
+      y += 14;
+
+      const flagged = !!detail.terminatedForSafety || (detail.safetyFlags?.length || 0) > 0 || (detail.strikeCount || 0) > 0;
+
+      const metaLines: Array<[string, string]> = [
+        ['Student', `${detail.studentName || 'Unknown'} (${detail.ageGroup || 'N/A'})`],
+        ['Subject', detail.subject || 'general'],
+        ['Language', detail.language || 'en'],
+        ['Started', formatChicagoDateTime(detail.startedAt)],
+        ['Ended', detail.endedAt ? formatChicagoDateTime(detail.endedAt) : 'N/A'],
+        ['Duration', `${detail.minutesUsed || 0} min`],
+        ['Messages', String(detail.transcript?.length || 0)],
+      ];
+      if (detail.userEmail) {
+        const userName = `${detail.userFirstName || ''} ${detail.userLastName || ''}`.trim();
+        metaLines.push(['Account', userName ? `${userName} <${detail.userEmail}>` : detail.userEmail]);
+      }
+      if (detail.parentEmail) metaLines.push(['Transcript Email', detail.parentEmail]);
+      if (flagged) metaLines.push(['Status', '⚠ FLAGGED']);
+
+      doc.setFontSize(10);
+      metaLines.forEach(([k, v]) => {
+        newPageIfNeeded(14);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`${k}:`, margin, y);
+        doc.setFont('helvetica', 'normal');
+        const valLines = doc.splitTextToSize(v, contentWidth - 100);
+        valLines.forEach((vl: string, idx: number) => {
+          if (idx > 0) { newPageIfNeeded(14); y += 14; }
+          doc.text(vl, margin + 100, y);
+        });
+        y += 14;
+      });
+
+      // ---- Safety flags block ----
+      if (detail.safetyFlags && detail.safetyFlags.length > 0) {
+        y += 8;
+        writeWrapped('Safety Flags', 12, 'bold');
+        detail.safetyFlags.forEach(f => {
+          const line = `• [${f.severity}] ${f.type}${f.triggerText ? ` — "${f.triggerText}"` : ''}`;
+          writeWrapped(line, 10);
+        });
+      }
+
+      // ---- Summary block ----
+      if (detail.summary) {
+        y += 8;
+        writeWrapped('Session Summary', 12, 'bold');
+        writeWrapped(detail.summary, 10);
+      }
+
+      // ---- Conversation ----
+      y += 12;
+      newPageIfNeeded(40);
+      doc.setDrawColor(180);
+      doc.line(margin, y, pageWidth - margin, y);
+      y += 14;
+      writeWrapped('Conversation', 13, 'bold');
+      y += 4;
+
+      if (!detail.transcript || detail.transcript.length === 0) {
+        writeWrapped('(No messages recorded for this session.)', 10);
+      } else {
+        detail.transcript.forEach((msg, i) => {
+          const speaker = (msg.speaker || '').toUpperCase();
+          const t = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString() : '';
+          newPageIfNeeded(28);
+          writeWrapped(`[${i + 1}] ${speaker}  ${t}`, 9, 'bold');
+          writeWrapped(msg.text || '', 10);
+          y += 4;
+        });
+      }
+
+      y += 10;
+      newPageIfNeeded(20);
+      doc.setDrawColor(180);
+      doc.line(margin, y, pageWidth - margin, y);
+      y += 14;
+      writeWrapped(`End of transcript — ${detail.transcript?.length || 0} messages`, 9, 'bold');
+
+      doc.save(`transcript-${detail.id}.pdf`);
+    } catch (err: any) {
+      console.error('PDF export error:', err);
+      toast({
+        title: 'PDF export failed',
+        description: err?.message || 'Unknown error',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  // Lightweight variant for list-row exports — fetches detail first, then renders PDF.
+  const exportTranscriptRowAsPDF = async (sessionId: string) => {
+    try {
+      const response = await fetch(`/api/admin/transcripts/${sessionId}`, { credentials: 'include' });
+      if (!response.ok) throw new Error(`Failed to fetch transcript: ${response.status}`);
+      const detail: TranscriptDetail = await response.json();
+      await generateTranscriptPDF(detail);
+    } catch (err: any) {
+      toast({
+        title: 'PDF export failed',
+        description: err?.message || 'Unknown error',
+        variant: 'destructive',
+      });
+    }
+  };
+
 
   // Keep mutation for backwards compatibility but use direct approach
   const exportMutation = useMutation({
@@ -405,7 +669,7 @@ export default function AdminPageEnhanced() {
 
           {/* Tab Navigation */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="grid w-full grid-cols-11">
+            <TabsList className="grid w-full grid-cols-12">
               <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
               <TabsTrigger value="users" data-testid="tab-users">Users</TabsTrigger>
               <TabsTrigger value="sessions" data-testid="tab-sessions">Sessions</TabsTrigger>
@@ -417,6 +681,7 @@ export default function AdminPageEnhanced() {
               <TabsTrigger value="capital-crm" data-testid="tab-capital-crm">Capital CRM</TabsTrigger>
               <TabsTrigger value="sales-crm" data-testid="tab-sales-crm">Sales CRM</TabsTrigger>
               <TabsTrigger value="family-tracker" data-testid="tab-family-tracker">Study Tracker</TabsTrigger>
+                          <TabsTrigger value="transcripts" data-testid="tab-transcripts">Transcripts</TabsTrigger>
             </TabsList>
 
             {/* Overview Tab */}
@@ -1073,6 +1338,324 @@ export default function AdminPageEnhanced() {
                   )}
                 </CardContent>
               </Card>
+            </TabsContent>
+
+
+            {/* Transcripts Tab — quality control & safety incident review */}
+            <TabsContent value="transcripts" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <FileText className="h-5 w-5" />
+                    Session Transcripts
+                  </CardTitle>
+                  <CardDescription>
+                    Full conversation logs from every voice tutoring session. Use for quality control, incident review, and forensic verification. Every view and export is recorded in the admin audit log.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {/* Filter bar */}
+                  <div className="flex flex-wrap gap-3 mb-4 items-end">
+                    <div className="flex-1 min-w-[220px]">
+                      <label className="text-xs text-muted-foreground block mb-1">Search (student, email, subject)</label>
+                      <Input
+                        placeholder="Search..."
+                        value={transcriptsSearchInput}
+                        onChange={(e) => setTranscriptsSearchInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            setTranscriptsSearch(transcriptsSearchInput);
+                            setTranscriptsPage(1);
+                          }
+                        }}
+                        data-testid="input-transcripts-search"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground block mb-1">From</label>
+                      <Input
+                        type="date"
+                        value={transcriptsFrom}
+                        onChange={(e) => { setTranscriptsFrom(e.target.value); setTranscriptsPage(1); }}
+                        data-testid="input-transcripts-from"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground block mb-1">To</label>
+                      <Input
+                        type="date"
+                        value={transcriptsTo}
+                        onChange={(e) => { setTranscriptsTo(e.target.value); setTranscriptsPage(1); }}
+                        data-testid="input-transcripts-to"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2 pb-2">
+                      <input
+                        type="checkbox"
+                        id="transcripts-flagged-only"
+                        checked={transcriptsFlaggedOnly}
+                        onChange={(e) => { setTranscriptsFlaggedOnly(e.target.checked); setTranscriptsPage(1); }}
+                        data-testid="checkbox-transcripts-flagged"
+                      />
+                      <label htmlFor="transcripts-flagged-only" className="text-sm cursor-pointer">Flagged only</label>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setTranscriptsSearchInput("");
+                        setTranscriptsSearch("");
+                        setTranscriptsFlaggedOnly(false);
+                        setTranscriptsFrom("");
+                        setTranscriptsTo("");
+                        setTranscriptsPage(1);
+                      }}
+                      data-testid="button-transcripts-reset"
+                    >
+                      Reset
+                    </Button>
+                  </div>
+
+                  {transcriptsLoading ? (
+                    <div className="flex justify-center py-8">
+                      <div className="animate-spin w-6 h-6 border-4 border-primary border-t-transparent rounded-full" />
+                    </div>
+                  ) : transcriptsData?.transcripts && transcriptsData.transcripts.length > 0 ? (
+                    <div className="space-y-4">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Student</TableHead>
+                            <TableHead>User Email</TableHead>
+                            <TableHead>Subject</TableHead>
+                            <TableHead>Age</TableHead>
+                            <TableHead>Duration</TableHead>
+                            <TableHead>Messages</TableHead>
+                            <TableHead>Started</TableHead>
+                            <TableHead>Flags</TableHead>
+                            <TableHead className="text-right">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {transcriptsData.transcripts.map((row) => (
+                            <TableRow
+                              key={row.id}
+                              className={row.flagged ? 'bg-red-50/40 dark:bg-red-950/20' : ''}
+                              data-testid={`transcript-row-${row.id}`}
+                            >
+                              <TableCell className="font-medium">{row.studentName || 'Unknown'}</TableCell>
+                              <TableCell className="text-sm">{row.userEmail || '—'}</TableCell>
+                              <TableCell>{row.subject || 'N/A'}</TableCell>
+                              <TableCell>
+                                <Badge variant="outline">{row.ageGroup || 'N/A'}</Badge>
+                              </TableCell>
+                              <TableCell>{row.durationMinutes !== null ? `${row.durationMinutes} min` : 'N/A'}</TableCell>
+                              <TableCell>{row.totalMessages ?? 0}</TableCell>
+                              <TableCell className="text-sm text-muted-foreground">
+                                {formatChicagoDate(row.startedAt)}
+                              </TableCell>
+                              <TableCell>
+                                {row.flagged ? (
+                                  <Badge variant="destructive" className="gap-1">
+                                    <AlertTriangle className="h-3 w-3" />
+                                    {(row.safetyFlagCount || 0) + (row.terminatedForSafety ? 1 : 0)}
+                                  </Badge>
+                                ) : (
+                                  <span className="text-muted-foreground text-xs">—</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex gap-1 justify-end">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setSelectedTranscriptId(row.id)}
+                                    data-testid={`button-view-transcript-${row.id}`}
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => exportTranscriptRowAsPDF(row.id)}
+                                    title="Download as PDF"
+                                    data-testid={`button-export-transcript-${row.id}`}
+                                  >
+                                    <Download className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+
+                      <div className="flex justify-between items-center mt-4">
+                        <p className="text-sm text-muted-foreground">
+                          Showing {((transcriptsPage - 1) * 25) + 1} - {Math.min(transcriptsPage * 25, transcriptsData.total)} of {transcriptsData.total} transcripts
+                        </p>
+                        {transcriptsData.totalPages > 1 && (
+                          <div className="flex gap-2 items-center">
+                            <span className="text-sm text-muted-foreground">
+                              Page {transcriptsData.page} of {transcriptsData.totalPages}
+                            </span>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setTranscriptsPage(p => Math.max(1, p - 1))}
+                              disabled={transcriptsPage === 1}
+                              data-testid="button-transcripts-prev"
+                            >
+                              Previous
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setTranscriptsPage(p => Math.min(transcriptsData.totalPages, p + 1))}
+                              disabled={transcriptsPage >= transcriptsData.totalPages}
+                              data-testid="button-transcripts-next"
+                            >
+                              Next
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-muted-foreground">
+                      No transcripts found for the current filters.
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Transcript Detail Dialog */}
+              <Dialog open={!!selectedTranscriptId} onOpenChange={(open) => !open && setSelectedTranscriptId(null)}>
+                <DialogContent className="max-w-5xl w-[95vw] h-[90vh] sm:h-[85vh] overflow-hidden flex flex-col">
+                  <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2">
+                      <FileText className="h-5 w-5" />
+                      Transcript Detail
+                      {transcriptDetail && (
+                        <Badge variant="secondary" className="ml-2">
+                          {transcriptDetail.transcript?.length || 0} {((transcriptDetail.transcript?.length || 0) === 1) ? 'message' : 'messages'}
+                        </Badge>
+                      )}
+                      {transcriptDetail && (transcriptDetail.terminatedForSafety || (transcriptDetail.safetyFlags?.length || 0) > 0) && (
+                        <Badge variant="destructive" className="gap-1">
+                          <AlertTriangle className="h-3 w-3" />
+                          Flagged
+                        </Badge>
+                      )}
+                    </DialogTitle>
+                    <DialogDescription>
+                      {transcriptDetail ? (
+                        <span>
+                          {transcriptDetail.studentName} ({transcriptDetail.ageGroup || 'N/A'}) · {transcriptDetail.subject || 'No subject'} · {formatChicagoDateTime(transcriptDetail.startedAt)}
+                          {transcriptDetail.userEmail && <span> · {transcriptDetail.userEmail}</span>}
+                          {transcriptDetail.minutesUsed !== undefined && <span> · {transcriptDetail.minutesUsed} min</span>}
+                        </span>
+                      ) : 'Loading…'}
+                    </DialogDescription>
+                  </DialogHeader>
+
+                  {transcriptDetailLoading ? (
+                    <div className="flex justify-center py-12">
+                      <div className="animate-spin w-6 h-6 border-4 border-primary border-t-transparent rounded-full" />
+                    </div>
+                  ) : transcriptDetail ? (
+                    <>
+                      {/* Summary + safety flags */}
+                      {(transcriptDetail.summary || (transcriptDetail.safetyFlags && transcriptDetail.safetyFlags.length > 0)) && (
+                        <div className="space-y-3 border-b pb-3">
+                          {transcriptDetail.summary && (
+                            <div>
+                              <p className="text-xs font-semibold uppercase text-muted-foreground mb-1">Session Summary</p>
+                              <p className="text-sm">{transcriptDetail.summary}</p>
+                            </div>
+                          )}
+                          {transcriptDetail.safetyFlags && transcriptDetail.safetyFlags.length > 0 && (
+                            <div>
+                              <p className="text-xs font-semibold uppercase text-muted-foreground mb-1">Safety Flags</p>
+                              <div className="space-y-1">
+                                {transcriptDetail.safetyFlags.map((flag, i) => (
+                                  <div key={i} className="text-xs bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 rounded px-2 py-1">
+                                    <Badge variant={flag.severity === 'critical' || flag.severity === 'alert' ? 'destructive' : 'secondary'} className="mr-2">
+                                      {flag.severity}
+                                    </Badge>
+                                    <span className="font-medium">{flag.type}</span>
+                                    {flag.triggerText && <span className="text-muted-foreground"> — "{flag.triggerText}"</span>}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Message log — fills available height, always scrollable */}
+                      <ScrollArea className="flex-1 min-h-[300px] pr-3 border rounded-md">
+                        <div className="space-y-2 p-3">
+                          {transcriptDetail.transcript && transcriptDetail.transcript.length > 0 ? (
+                            <>
+                              {transcriptDetail.transcript.map((msg, i) => (
+                                <div
+                                  key={msg.messageId || i}
+                                  className={`flex ${msg.speaker === 'tutor' ? 'justify-start' : 'justify-end'}`}
+                                >
+                                  <div
+                                    className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
+                                      msg.speaker === 'tutor'
+                                        ? 'bg-muted'
+                                        : 'bg-primary text-primary-foreground'
+                                    }`}
+                                  >
+                                    <div className="flex items-baseline gap-2 mb-1">
+                                      <span className="text-xs font-semibold uppercase opacity-70">
+                                        [{i + 1}] {msg.speaker}
+                                      </span>
+                                      <span className="text-xs opacity-50">
+                                        {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString() : ''}
+                                      </span>
+                                    </div>
+                                    <div className="whitespace-pre-wrap">{msg.text}</div>
+                                  </div>
+                                </div>
+                              ))}
+                              <div className="text-center text-xs text-muted-foreground py-3 border-t mt-3">
+                                — End of transcript ({transcriptDetail.transcript.length} {transcriptDetail.transcript.length === 1 ? 'message' : 'messages'}) —
+                              </div>
+                            </>
+                          ) : (
+                            <p className="text-center text-muted-foreground py-8">
+                              No transcript content available (session may have ended before any exchange, or transcript may have been purged).
+                            </p>
+                          )}
+                        </div>
+                      </ScrollArea>
+
+                      <div className="flex justify-end gap-2 border-t pt-3">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => window.open(`/api/admin/transcripts/${transcriptDetail.id}/export?format=text`, '_blank')}
+                          data-testid="button-detail-export-text"
+                        >
+                          <Download className="h-4 w-4 mr-1" /> Export Text
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => generateTranscriptPDF(transcriptDetail)}
+                          data-testid="button-detail-export-pdf"
+                        >
+                          <Download className="h-4 w-4 mr-1" /> Export PDF
+                        </Button>
+                      </div>
+                    </>
+                  ) : null}
+                </DialogContent>
+              </Dialog>
             </TabsContent>
 
             {/* Safety Incidents Tab */}

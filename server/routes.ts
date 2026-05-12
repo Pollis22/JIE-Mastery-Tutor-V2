@@ -12,7 +12,7 @@ import { setupSecurityHeaders, setupCORS } from "./middleware/security";
 import { requireAdmin } from "./middleware/admin-auth";
 import { auditActions } from "./middleware/audit-log";
 import { convertUsersToCSV, generateFilename } from "./utils/csv-export";
-import { sql, desc, eq } from "drizzle-orm";
+import { sql, desc, eq, and, or, ilike, gte, lte, isNotNull } from "drizzle-orm";
 import { db } from "./db";
 import { realtimeSessions, trialSessions, safetyIncidents, users, students, userDocuments, documentChunks, documentEmbeddings, learningSessions } from "@shared/schema";
 import Stripe from "stripe";
@@ -3832,6 +3832,304 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error('[Admin] Safety incidents error:', error);
       res.status(500).json({ message: "Error fetching safety incidents: " + error.message });
+    }
+  });
+
+  // ========================================================================
+  // ADMIN TRANSCRIPTS — Quality control & safety incident response
+  //
+  // These endpoints expose conversation transcripts already stored in
+  // realtime_sessions.transcript (JSONB). They exist for two reasons:
+  //   1. Quality control (verify tutor is teaching, not giving direct answers)
+  //   2. Safety incident response (forensic review if a student claims the
+  //      AI encouraged harmful behavior, etc.)
+  //
+  // Every read and export is recorded in admin_logs via auditActions so we
+  // have a defensible trail under FERPA/COPPA review. Transcripts older than
+  // the retention window (default 90 days) can be purged via the purge
+  // endpoint, leaving only the LSIS-distilled session summaries long-term.
+  // ========================================================================
+
+  // List transcripts (paginated, filterable). Returns metadata only — the
+  // transcript payload is fetched separately to keep this endpoint fast.
+  app.get("/api/admin/transcripts", requireAdmin, auditActions.viewTranscriptList, async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = Math.min(parseInt(req.query.limit as string) || 25, 100);
+      const offset = (page - 1) * limit;
+
+      const search = (req.query.search as string || '').trim();
+      const flaggedOnly = req.query.flaggedOnly === 'true';
+      const from = req.query.from as string | undefined;
+      const to = req.query.to as string | undefined;
+      const subject = (req.query.subject as string || '').trim();
+      const ageGroup = (req.query.ageGroup as string || '').trim();
+
+      // Build WHERE conditions
+      const conditions: any[] = [];
+
+      if (search) {
+        const term = `%${search}%`;
+        conditions.push(
+          or(
+            ilike(realtimeSessions.studentName, term),
+            ilike(users.email, term),
+            ilike(users.firstName, term),
+            ilike(users.lastName, term),
+            ilike(realtimeSessions.subject, term),
+          )
+        );
+      }
+
+      if (flaggedOnly) {
+        // safety_flags is JSONB defaulting to '[]'. Non-empty array OR strike_count > 0 OR terminated_for_safety.
+        conditions.push(
+          or(
+            sql`jsonb_array_length(${realtimeSessions.safetyFlags}) > 0`,
+            sql`${realtimeSessions.strikeCount} > 0`,
+            eq(realtimeSessions.terminatedForSafety, true),
+          )
+        );
+      }
+
+      if (from) {
+        conditions.push(gte(realtimeSessions.startedAt, new Date(from)));
+      }
+      if (to) {
+        // Add one day so "to" is inclusive
+        const toDate = new Date(to);
+        toDate.setDate(toDate.getDate() + 1);
+        conditions.push(lte(realtimeSessions.startedAt, toDate));
+      }
+      if (subject) {
+        conditions.push(eq(realtimeSessions.subject, subject));
+      }
+      if (ageGroup) {
+        conditions.push(eq(realtimeSessions.ageGroup, ageGroup as any));
+      }
+
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+      const rows = await db.select({
+        id: realtimeSessions.id,
+        userId: realtimeSessions.userId,
+        studentName: realtimeSessions.studentName,
+        subject: realtimeSessions.subject,
+        ageGroup: realtimeSessions.ageGroup,
+        language: realtimeSessions.language,
+        startedAt: realtimeSessions.startedAt,
+        endedAt: realtimeSessions.endedAt,
+        minutesUsed: realtimeSessions.minutesUsed,
+        status: realtimeSessions.status,
+        totalMessages: realtimeSessions.totalMessages,
+        strikeCount: realtimeSessions.strikeCount,
+        terminatedForSafety: realtimeSessions.terminatedForSafety,
+        safetyFlagCount: sql<number>`jsonb_array_length(${realtimeSessions.safetyFlags})`,
+        userEmail: users.email,
+        userFirstName: users.firstName,
+        userLastName: users.lastName,
+        parentEmail: users.transcriptEmail,
+      })
+        .from(realtimeSessions)
+        .leftJoin(users, eq(realtimeSessions.userId, users.id))
+        .where(whereClause)
+        .orderBy(desc(realtimeSessions.startedAt))
+        .limit(limit)
+        .offset(offset);
+
+      const countResult = await db.select({ count: sql<number>`count(*)` })
+        .from(realtimeSessions)
+        .leftJoin(users, eq(realtimeSessions.userId, users.id))
+        .where(whereClause);
+      const total = Number(countResult[0]?.count || 0);
+
+      const transcripts = rows.map(r => ({
+        ...r,
+        durationMinutes: r.startedAt && r.endedAt
+          ? Math.round((new Date(r.endedAt).getTime() - new Date(r.startedAt).getTime()) / 60000)
+          : null,
+        flagged: Number(r.safetyFlagCount || 0) > 0 || (r.strikeCount || 0) > 0 || r.terminatedForSafety === true,
+      }));
+
+      res.json({
+        transcripts,
+        total,
+        page,
+        pageSize: limit,
+        totalPages: Math.ceil(total / limit),
+      });
+    } catch (error: any) {
+      console.error('[Admin] Transcripts list error:', error);
+      res.status(500).json({ message: "Error fetching transcripts: " + error.message });
+    }
+  });
+
+  // Fetch a single transcript with full message log and safety flags.
+  app.get("/api/admin/transcripts/:sessionId", requireAdmin, auditActions.viewTranscript, async (req, res) => {
+    try {
+      const { sessionId } = req.params;
+
+      const rows = await db.select({
+        id: realtimeSessions.id,
+        userId: realtimeSessions.userId,
+        studentName: realtimeSessions.studentName,
+        subject: realtimeSessions.subject,
+        ageGroup: realtimeSessions.ageGroup,
+        language: realtimeSessions.language,
+        startedAt: realtimeSessions.startedAt,
+        endedAt: realtimeSessions.endedAt,
+        minutesUsed: realtimeSessions.minutesUsed,
+        status: realtimeSessions.status,
+        transcript: realtimeSessions.transcript,
+        summary: realtimeSessions.summary,
+        safetyFlags: realtimeSessions.safetyFlags,
+        strikeCount: realtimeSessions.strikeCount,
+        terminatedForSafety: realtimeSessions.terminatedForSafety,
+        closeReason: realtimeSessions.closeReason,
+        userEmail: users.email,
+        userFirstName: users.firstName,
+        userLastName: users.lastName,
+        parentEmail: users.transcriptEmail,
+      })
+        .from(realtimeSessions)
+        .leftJoin(users, eq(realtimeSessions.userId, users.id))
+        .where(eq(realtimeSessions.id, sessionId))
+        .limit(1);
+
+      if (rows.length === 0) {
+        return res.status(404).json({ message: "Transcript not found" });
+      }
+
+      res.json(rows[0]);
+    } catch (error: any) {
+      console.error('[Admin] Transcript detail error:', error);
+      res.status(500).json({ message: "Error fetching transcript: " + error.message });
+    }
+  });
+
+  // Export a single transcript. Supported formats:
+  //   - 'text' (default): readable plain-text conversation log for QC / incident review
+  //   - 'pdf-audit': no body returned; this is the audit-log ping the client makes
+  //                  right before generating a PDF client-side via jsPDF. The actual
+  //                  PDF is rendered in the browser so we don't need a server-side
+  //                  PDF library across all 6 deployments.
+  app.get("/api/admin/transcripts/:sessionId/export", requireAdmin, auditActions.exportTranscript, async (req, res) => {
+    try {
+      const { sessionId } = req.params;
+      const format = (req.query.format as string) || 'text';
+
+      const rows = await db.select()
+        .from(realtimeSessions)
+        .leftJoin(users, eq(realtimeSessions.userId, users.id))
+        .where(eq(realtimeSessions.id, sessionId))
+        .limit(1);
+
+      if (rows.length === 0) {
+        return res.status(404).json({ message: "Transcript not found" });
+      }
+
+      const session = rows[0].realtime_sessions;
+      const user = rows[0].users;
+      const transcript = (session.transcript || []) as Array<{ speaker: string; text: string; timestamp: string; messageId: string }>;
+
+      // PDF-audit ping: just record the export in admin_logs (via middleware) and return ok.
+      // The client does the actual PDF generation from data already loaded in the dialog.
+      if (format === 'pdf-audit') {
+        return res.json({ ok: true });
+      }
+
+      // Plain-text export — readable conversation log with full session metadata.
+      const userName = user ? `${user.firstName || ''} ${user.lastName || ''}`.trim() : '';
+      const fmtTime = (iso: string | null | undefined) => {
+        if (!iso) return 'N/A';
+        try { return new Date(iso).toLocaleString('en-US', { timeZone: 'America/Chicago' }); } catch { return iso; }
+      };
+
+      const lines: string[] = [];
+      lines.push('═══════════════════════════════════════════════════════════════');
+      lines.push('  JIE TUTOR SESSION TRANSCRIPT');
+      lines.push('═══════════════════════════════════════════════════════════════');
+      lines.push('');
+      lines.push(`Session ID:       ${session.id}`);
+      lines.push(`Student:          ${session.studentName || 'Unknown'} (${session.ageGroup || 'N/A'})`);
+      lines.push(`Subject:          ${session.subject || 'general'}`);
+      lines.push(`Language:         ${session.language || 'en'}`);
+      lines.push(`Started:          ${fmtTime(session.startedAt as any)}`);
+      lines.push(`Ended:            ${fmtTime(session.endedAt as any)}`);
+      lines.push(`Duration:         ${session.minutesUsed || 0} min`);
+      lines.push(`Messages:         ${transcript.length}`);
+      if (user) {
+        lines.push(`Account Holder:   ${userName || '(no name)'} <${user.email || ''}>`);
+        if (user.transcriptEmail) lines.push(`Transcript Email: ${user.transcriptEmail}`);
+      }
+      if (session.terminatedForSafety) lines.push(`⚠ TERMINATED FOR SAFETY`);
+      if ((session.strikeCount || 0) > 0) lines.push(`⚠ Strike count: ${session.strikeCount}`);
+      const flags = (session.safetyFlags || []) as Array<{ type: string; severity: string; triggerText?: string; timestamp: string }>;
+      if (flags.length > 0) {
+        lines.push('');
+        lines.push('SAFETY FLAGS:');
+        flags.forEach(f => {
+          lines.push(`  - [${f.severity}] ${f.type}${f.triggerText ? ` — "${f.triggerText}"` : ''} @ ${fmtTime(f.timestamp)}`);
+        });
+      }
+      if (session.summary) {
+        lines.push('');
+        lines.push('SESSION SUMMARY:');
+        lines.push(session.summary);
+      }
+      lines.push('');
+      lines.push('───────────────────────────────────────────────────────────────');
+      lines.push('  CONVERSATION');
+      lines.push('───────────────────────────────────────────────────────────────');
+      lines.push('');
+      if (transcript.length === 0) {
+        lines.push('(No messages recorded for this session.)');
+      } else {
+        transcript.forEach((m, i) => {
+          const speaker = (m.speaker || '').toUpperCase().padEnd(7);
+          const t = fmtTime(m.timestamp);
+          lines.push(`[${i + 1}] ${speaker} ${t}`);
+          lines.push(m.text || '');
+          lines.push('');
+        });
+      }
+      lines.push('───────────────────────────────────────────────────────────────');
+      lines.push(`  End of transcript — ${transcript.length} messages`);
+      lines.push('───────────────────────────────────────────────────────────────');
+
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="transcript-${sessionId}.txt"`);
+      return res.send(lines.join('\n'));
+    } catch (error: any) {
+      console.error('[Admin] Transcript export error:', error);
+      res.status(500).json({ message: "Error exporting transcript: " + error.message });
+    }
+  });
+
+  // Purge transcripts older than N days. Clears only the transcript JSONB
+  // and audio_url — preserves session metadata (minutes, summary, safety
+  // flags) so reporting and LSIS continue to work.
+  app.post("/api/admin/transcripts/purge", requireAdmin, auditActions.purgeTranscripts, async (req, res) => {
+    try {
+      const olderThanDays = parseInt(req.body.olderThanDays) || 90;
+      if (olderThanDays < 30) {
+        return res.status(400).json({ message: "Minimum retention is 30 days." });
+      }
+
+      const result = await db.execute(sql`
+        UPDATE realtime_sessions
+        SET transcript = '[]'::jsonb, audio_url = NULL
+        WHERE started_at < NOW() - INTERVAL '1 day' * ${olderThanDays}
+          AND jsonb_array_length(transcript) > 0
+      `);
+
+      res.json({
+        message: `Purged transcripts older than ${olderThanDays} days.`,
+        rowsAffected: (result as any).rowCount ?? null,
+      });
+    } catch (error: any) {
+      console.error('[Admin] Transcript purge error:', error);
+      res.status(500).json({ message: "Error purging transcripts: " + error.message });
     }
   });
 
