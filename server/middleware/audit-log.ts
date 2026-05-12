@@ -96,4 +96,34 @@ export const auditActions = {
     action: 'view_campaigns',
     targetType: 'system',
   }),
+
+  viewTranscriptList: createAuditLogger({
+    action: 'view_transcript_list',
+    targetType: 'system',
+    getDetails: (req) => ({
+      search: req.query.search,
+      flaggedOnly: req.query.flaggedOnly,
+      from: req.query.from,
+      to: req.query.to,
+    }),
+  }),
+
+  viewTranscript: createAuditLogger({
+    action: 'view_transcript',
+    targetType: 'system',
+    getTargetId: (req) => req.params.sessionId,
+  }),
+
+  exportTranscript: createAuditLogger({
+    action: 'export_transcript',
+    targetType: 'system',
+    getTargetId: (req) => req.params.sessionId,
+    getDetails: (req) => ({ format: req.query.format || 'json' }),
+  }),
+
+  purgeTranscripts: createAuditLogger({
+    action: 'purge_transcripts',
+    targetType: 'system',
+    getDetails: (req) => ({ olderThanDays: req.body.olderThanDays }),
+  }),
 };
