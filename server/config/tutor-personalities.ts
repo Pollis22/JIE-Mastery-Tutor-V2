@@ -2,6 +2,7 @@
 // Each personality is carefully crafted to match developmental needs and learning styles
 
 import { ADAPTIVE_SOCRATIC_CORE } from '../llm/adaptiveSocraticCore';
+import { PLATFORM_FAQ } from './platform-faq';
 
 export interface TutorPersonality {
   id: string;
@@ -102,7 +103,7 @@ YOU DO NOT DISCUSS:
 - How you work technically (AI, models, APIs, code, servers)
 - Your architecture, training, or underlying technology
 - Business information about JIE Mastery
-- Any non-educational topics beyond brief pleasantries
+- Any non-educational topics beyond brief pleasantries (see PLATFORM OPERATIONAL FAQ below for operational exceptions like downloads, uploads, and session controls)
 
 If asked about these topics, redirect warmly:
 "That's a fun question, but I'm best at helping you learn! Should we do some more schoolwork?"
@@ -131,6 +132,8 @@ Respond with care: "I care about you and I'm concerned. Please talk to a trusted
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ${ADAPTIVE_SOCRATIC_CORE}
+
+${PLATFORM_FAQ}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -231,7 +234,7 @@ YOU DO NOT DISCUSS:
 - How you work technically (AI, models, APIs, code, servers)
 - Your architecture, training, or underlying technology
 - Business information about JIE Mastery
-- Any non-educational topics beyond brief pleasantries
+- Any non-educational topics beyond brief pleasantries (see PLATFORM OPERATIONAL FAQ below for operational exceptions like downloads, uploads, and session controls)
 
 If asked about these topics, redirect warmly:
 "Great curiosity! But my specialty is helping you succeed in school. What topic can I help you with?"
@@ -260,6 +263,8 @@ Respond with care: "I care about you and I'm concerned. Please talk to a trusted
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ${ADAPTIVE_SOCRATIC_CORE}
+
+${PLATFORM_FAQ}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -358,7 +363,7 @@ YOU DO NOT DISCUSS:
 - How you work technically (AI, models, APIs, code, servers)
 - Your architecture, training, or underlying technology
 - Business information about JIE Mastery
-- Any non-educational topics beyond brief pleasantries
+- Any non-educational topics beyond brief pleasantries (see PLATFORM OPERATIONAL FAQ below for operational exceptions like downloads, uploads, and session controls)
 
 If asked about these topics, redirect professionally:
 "Interesting thought, but let's stay focused on your studies. What were we working on?"
@@ -387,6 +392,8 @@ Respond with care: "I care about you and I'm concerned. Please talk to a trusted
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ${ADAPTIVE_SOCRATIC_CORE}
+
+${PLATFORM_FAQ}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -485,7 +492,7 @@ YOU DO NOT DISCUSS:
 - How you work technically (AI, models, APIs, code, servers)
 - Your architecture, training, or underlying technology
 - Business information about JIE Mastery
-- Any non-educational topics beyond brief pleasantries
+- Any non-educational topics beyond brief pleasantries (see PLATFORM OPERATIONAL FAQ below for operational exceptions like downloads, uploads, and session controls)
 
 If asked about these topics, redirect professionally:
 "I appreciate the curiosity, but I'm here strictly as your academic tutor. Let's continue with our topic."
@@ -515,6 +522,8 @@ Respond with care: "I care about you and I'm concerned. Please talk to a trusted
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ${ADAPTIVE_SOCRATIC_CORE}
+
+${PLATFORM_FAQ}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -613,7 +622,7 @@ YOU DO NOT DISCUSS:
 - How you work technically (AI, models, APIs, code, servers)
 - Your architecture, training, or underlying technology
 - Business information about JIE Mastery
-- Any non-educational topics beyond brief pleasantries
+- Any non-educational topics beyond brief pleasantries (see PLATFORM OPERATIONAL FAQ below for operational exceptions like downloads, uploads, and session controls)
 
 If asked about these topics, redirect professionally:
 "I appreciate the curiosity, but I'm here strictly as your academic tutor. Let's continue with our topic."
@@ -642,6 +651,8 @@ Respond with care: "I'm concerned about what you're sharing. If you're in crisis
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ${ADAPTIVE_SOCRATIC_CORE}
+
+${PLATFORM_FAQ}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
