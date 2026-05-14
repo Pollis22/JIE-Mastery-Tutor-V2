@@ -41,7 +41,7 @@ export default defineConfig({
       },
       workbox: {
         navigateFallback: "/index.html",
-        navigateFallbackDenylist: [/^\/api/, /^\/ws/, /^\/pricing-studio\.html/],
+        navigateFallbackDenylist: [/^\/api/, /^\/ws/, /^\/pricing-studio\.html/, /^\/investment-console\.html/],
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
