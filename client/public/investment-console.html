@@ -292,11 +292,16 @@ input:focus,select:focus{border-color:var(--red);background:#fff;box-shadow:0 0 
       <button class="btn btn-sec btn-sm" onclick="openSaveModal()" title="Save current scenario to this browser's storage">💾 Save</button>
       <button class="btn btn-sec btn-sm" onclick="openLoadModal()" title="Load a scenario from this browser's storage">📂 Load</button>
       <button class="btn btn-sec btn-sm" onclick="exportScenarioFile()" title="Download scenario as a .json file you can use on any device or environment">📥 Export</button>
-      <button class="btn btn-sec btn-sm" onclick="document.getElementById('import-file-input').click()" title="Load a scenario from a .json file">📤 Import</button>
-      <input type="file" id="import-file-input" accept="application/json,.json" style="display:none" onchange="importScenarioFile(event)">
+      <label class="btn btn-sec btn-sm" title="Load a scenario from a .json file" style="cursor:pointer;display:inline-flex;align-items:center;margin:0">
+        📤 Import
+        <input type="file" id="import-file-input" accept="application/json,.json" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0" onchange="importScenarioFile(event)">
+      </label>
       <button class="btn btn-sec btn-sm" onclick="resetDefaults()">↻ Reset</button>
     </div>
   </div>
+
+  <!-- v12.6: Toast notification (success/error feedback for import & other silent ops) -->
+  <div id="toast" style="display:none;position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1f2937;color:#fff;padding:12px 22px;border-radius:8px;font-size:13.5px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,0.25);z-index:9999;max-width:480px;text-align:center"></div>
 
   <!-- Recovery banner — appears on page load if we detect an unsaved-work auto-save -->
   <div id="recovery-banner" style="display:none;background:linear-gradient(135deg, rgba(245,158,11,0.08), rgba(245,158,11,0.02));border:1.5px solid rgba(245,158,11,0.4);border-radius:10px;padding:14px 18px;margin:12px 24px 0;display:none;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap">
@@ -2785,6 +2790,19 @@ function exportScenarioFile() {
   setTimeout(() => URL.revokeObjectURL(url), 100);
 }
 
+// v12.6: Toast helper — shows a brief notification at bottom of screen.
+// Used for silent operations (import success) where the user has no visible
+// signal that something happened. Auto-dismisses after 3.5 seconds.
+function showToast(msg, kind = 'success') {
+  const el = document.getElementById('toast');
+  if (!el) return;
+  el.textContent = msg;
+  el.style.background = kind === 'error' ? '#991b1b' : kind === 'warn' ? '#92400e' : '#1f2937';
+  el.style.display = 'block';
+  clearTimeout(window.__toastTimer);
+  window.__toastTimer = setTimeout(() => { el.style.display = 'none'; }, 3500);
+}
+
 function importScenarioFile(ev) {
   const file = ev.target.files && ev.target.files[0];
   if (!file) return;
@@ -2814,6 +2832,11 @@ function importScenarioFile(ev) {
       if (!confirm(`Load ${fileLabel}?\n\nExported: ${exportedLabel}\n\nThis will replace your current assumptions. Saved scenarios in this browser are preserved.`)) return;
       // Apply via the same path as localStorage loads (handles all migrations)
       applySavedState(s);
+      // v12.6: success toast — silent imports leave users wondering if anything happened
+      const toastMsg = obj.name
+        ? `✓ Imported "${obj.name}"`
+        : '✓ Scenario imported successfully';
+      showToast(toastMsg);
       // Reset the file input so re-importing the same file fires the change event again
       ev.target.value = '';
     } catch (err) {
