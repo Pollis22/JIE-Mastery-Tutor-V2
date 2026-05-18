@@ -2,6 +2,7 @@ import { db } from '../db';
 import { sessionSummaries, memoryJobs, realtimeSessions } from '@shared/schema';
 import { eq, and, desc, sql, lt, isNotNull } from 'drizzle-orm';
 import Anthropic from '@anthropic-ai/sdk';
+import { getLanguageName } from '@shared/languages';
 
 const MAX_SUMMARIES = 5;
 const MAX_SUMMARY_CHARS = 400;
@@ -145,7 +146,15 @@ function sanitizeArrayField(arr: string[] | undefined | null, maxItems: number, 
 async function generateSessionSummary(
   transcript: Array<{ speaker: string; text: string; timestamp: string }>,
   subject?: string | null,
-  gradeBand?: string | null
+  gradeBand?: string | null,
+  // Session language pulled from realtime_sessions.language. The
+  // transcript is captured natively in this language by Deepgram STT,
+  // so the user reading the summary on the parent/advisor dashboard
+  // expects it back in the same language. JSON keys + the "subject"
+  // and "grade_band" enum values stay English (column constraints
+  // and downstream filters rely on them); only the human-readable
+  // free-text fields are localized.
+  language?: string | null
 ): Promise<SummaryResult | null> {
   try {
     const anthropic = new Anthropic();
@@ -167,12 +176,25 @@ async function generateSessionSummary(
       return null;
     }
     
+    // Language preamble — prepended only when the session was non-English,
+    // so summaries for English sessions are byte-identical to pre-change
+    // output. Anchoring as the first paragraph carries heavy LLM
+    // attention weight, which matters because the rest of the prompt
+    // is in English and could otherwise pull the model toward English
+    // output. Strings only get localized; JSON keys + the "subject" /
+    // "grade_band" enum values stay English to keep parser + downstream
+    // filters working.
+    const langCode = language ?? 'en';
+    const langPreamble = langCode === 'en'
+      ? ''
+      : `OUTPUT LANGUAGE — read this first. The tutoring session was conducted in ${getLanguageName(langCode)}. Write every free-text string in your JSON response in ${getLanguageName(langCode)}: "summary_text", each entry of "topics_covered", "concepts_mastered", "concepts_struggled", and "student_insights". KEEP all JSON keys in English exactly as specified. KEEP the "subject" and "grade_band" values exactly as I provide them below (do not translate). Only the free-text fields are localized.\n\n`;
+
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 500,
       messages: [{
         role: 'user',
-        content: `Analyze this tutoring session transcript and produce a structured JSON summary. Be concise.
+        content: `${langPreamble}Analyze this tutoring session transcript and produce a structured JSON summary. Be concise.
 
 Subject: ${subject || 'Unknown'}
 Grade Band: ${gradeBand || 'Unknown'}
@@ -270,7 +292,11 @@ export async function processPendingMemoryJobs(limit = 5): Promise<{
         const summary = await generateSessionSummary(
           transcript,
           session[0].subject,
-          session[0].ageGroup
+          session[0].ageGroup,
+          // Session language — Deepgram captured the transcript in this
+          // language, so we generate the summary in the same language
+          // for the parent/advisor reader. NULL falls back to 'en'.
+          session[0].language
         );
         
         if (!summary) {
