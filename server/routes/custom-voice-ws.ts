@@ -5699,7 +5699,7 @@ HONESTY INSTRUCTIONS:
             }
             
             // LANGUAGE: Generate greetings in the selected language
-            const getLocalizedGreeting = (lang: string, name: string, tutorName: string, ageGroup: string, docTitles: string[], priorExists: boolean, topic: string | null, lastTopic: string | null = null, multiTopic: boolean = false): string => {
+            const getLocalizedGreeting = (lang: string, name: string, tutorName: string, ageGroup: string, docTitles: string[], priorExists: boolean, topic: string | null, lastTopic: string | null = null, multiTopic: boolean = false, topicReason: 'subject' | 'topic' | 'fallback' | 'none' = 'none'): string => {
               // Language-specific greeting templates
               const greetings: Record<string, { intro: string; docAck: (count: number, titles: string) => string; closing: Record<string, string> }> = {
                 en: {
@@ -5865,6 +5865,29 @@ HONESTY INSTRUCTIONS:
               
               // (2) CONTINUITY GREETING: If prior sessions exist and no active docs, use welcome back greeting
               if (priorExists && topic) {
+                // (2a) FALLBACK BRANCH (May 18 2026): no specific topic available
+                // from prior summary (pickContinuationTopic returned the English
+                // placeholder string with reason='fallback'). Greet as a returning
+                // student WITHOUT referencing a specific topic — otherwise the
+                // English template produces the tautological "Last time we were
+                // exploring what we worked on last time." and the non-English
+                // LLM path embeds the English literal in target-language text.
+                if (topicReason === 'fallback') {
+                  const fallbackContinuityGreetings: Record<string, (name: string, tutorName: string) => string> = {
+                    en: (n, t) => `Welcome back, ${n}! I'm ${t}, your tutor. What would you like to work on today?`,
+                    it: (n, t) => `Bentornato, ${n}! Sono ${t}, il tuo tutor. Su cosa vorresti lavorare oggi?`,
+                    es: (n, t) => `¡Bienvenido de nuevo, ${n}! Soy ${t}, tu tutor. ¿En qué te gustaría trabajar hoy?`,
+                    fr: (n, t) => `Content de te revoir, ${n}! Je suis ${t}, ton tuteur. Sur quoi voudrais-tu travailler aujourd'hui?`,
+                    de: (n, t) => `Willkommen zurück, ${n}! Ich bin ${t}, dein Tutor. Woran möchtest du heute arbeiten?`,
+                    pt: (n, t) => `Bem-vindo de volta, ${n}! Sou ${t}, seu tutor. No que você gostaria de trabalhar hoje?`,
+                    zh: (n, t) => `欢迎回来，${n}！我是${t}，你的导师。今天你想学习什么？`,
+                    ar: (n, t) => `أهلاً بعودتك، ${n}! أنا ${t}، معلمك. على ماذا تود أن تعمل اليوم؟`,
+                    sw: (n, t) => `Karibu tena, ${n}! Mimi ni ${t}, mwalimu wako. Ungependa kufanyia kazi nini leo?`,
+                  };
+                  const fallbackFn = fallbackContinuityGreetings[lang] || fallbackContinuityGreetings['en'];
+                  return fallbackFn(name, tutorName);
+                }
+
                 if (multiTopic && lastTopic) {
                   // Multi-topic greeting: "Last time we covered X, then Y, and ended with Z. Want to pick up where we left off with Z, or start something new?"
                   const multiGreetings: Record<string, (n: string, t: string, tp: string, lt: string) => string> = {
@@ -5904,7 +5927,7 @@ HONESTY INSTRUCTIONS:
             if (!shouldSkipGreeting) {
               const greetingMode = greetingDocTitles.length > 0 ? 'ACTIVE_DOCS' : (hasPriorSessions && continuityTopic ? 'CONTINUITY' : 'GENERIC');
               console.log(`[GREETING_PRIORITY] mode=${greetingMode}, activeDocTitles=${greetingDocTitles.length}, hasPrior=${hasPriorSessions}, topic=${continuityTopic || 'none'}`);
-              greeting = getLocalizedGreeting(state.language, state.studentName, personality.name, state.ageGroup, greetingDocTitles, hasPriorSessions, continuityTopic, continuityLastTopic, continuityMultiTopic);
+              greeting = getLocalizedGreeting(state.language, state.studentName, personality.name, state.ageGroup, greetingDocTitles, hasPriorSessions, continuityTopic, continuityLastTopic, continuityMultiTopic, topicReason);
               console.log(`[Custom Voice] 🌍 Generated greeting in language: ${state.language}`);
               
               console.log(`[Custom Voice] 👋 Greeting: "${greeting}"`);
