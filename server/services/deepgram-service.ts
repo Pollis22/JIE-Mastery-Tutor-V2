@@ -161,7 +161,6 @@ export async function startDeepgramStream(
     endpointing: timing.endpointing,
     utterance_end_ms: timing.utterance_end_ms,
     vad_events: true,           // Enable voice activity detection events
-    vad_threshold: 0.15,        // VERY LOW threshold for quiet speech detection (was 0.3)
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // ACCURACY ENHANCEMENTS
