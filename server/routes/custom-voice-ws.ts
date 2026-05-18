@@ -62,6 +62,12 @@ import {
   getCoherenceClarifyMessage,
 } from "../services/coherence-gate";
 import {
+  getLanguageRules,
+  isNonLatinScript,
+  escapeRegexLiteral,
+  type LanguageRules,
+} from "../services/language-rules";
+import {
   DOCS_FALLBACK_TO_ALL_IF_NONE_ACTIVE,
   logRagRetrieval,
   logRagError,
@@ -329,7 +335,10 @@ function isLanguagePracticeSession(subject?: string): boolean {
 
 // P0: Centralized transcript drop decision — replaces ALL raw char-length gates
 // Allows legitimate short lexical answers like "no", "ok", "I", "2", "5", "a", "y"
-function shouldDropTranscript(text: string, state: { isSessionEnded: boolean; sessionFinalizing: boolean; subject?: string }): { drop: boolean; reason: string } {
+// LANGUAGE-AWARE (May 18 2026): non-lexical filler regex resolved per-session
+// from state.language via server/services/language-rules.ts. English defaults
+// preserve original behavior verbatim for sessions without a language set.
+function shouldDropTranscript(text: string, state: { isSessionEnded: boolean; sessionFinalizing: boolean; subject?: string; language?: string }): { drop: boolean; reason: string } {
   if (!text || !text.trim()) {
     return { drop: true, reason: 'empty' };
   }
@@ -341,9 +350,13 @@ function shouldDropTranscript(text: string, state: { isSessionEnded: boolean; se
   // LANGUAGE PRACTICE: In language-learning sessions, sounds like "ah", "oh", "er"
   // are valid pronunciation practice and should not be filtered as non-lexical.
   const isLanguageSession = isLanguagePracticeSession(state.subject);
-  
+
+  // LANGUAGE-AWARE: pick filler regex from the session language registry.
+  // English default mirrors the original NON_LEXICAL_DROP regex exactly.
+  const rules = getLanguageRules(state.language);
+
   const NON_LEXICAL_DROP = [
-    /^(um+|uh+|hmm+|hm+|ah+|oh+|er+|erm+)$/i,
+    rules.nonLexicalNoiseRegex,
     /^\[.*\]$/,
     /^[\s.,!?]*$/,
   ];
@@ -2006,145 +2019,89 @@ async function processSafetyCheck(
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// GOODBYE DETECTION v1 (Apr 22, 2026): Gracefully end session
-// on user goodbye. Works for both voice and text modes.
+// GOODBYE DETECTION v2 (May 18, 2026): Language-aware.
+// Per-language phrase lists, greeting prefixes, and single-token
+// goodbye sets live in server/services/language-rules.ts. The
+// detector resolves rules from the session's selected language and
+// uses Unicode-aware word boundaries so CJK / Cyrillic / Arabic /
+// Devanagari / Thai farewells fire correctly. English behavior is
+// preserved verbatim by the EN rule set.
 //
 // Fix history:
-//   - Previous version used .includes() substring match with no word
-//     boundaries. The phrase "see you" in GOODBYE_PHRASES would match
-//     inside "Good to see you again" (a greeting!), ending the session
-//     prematurely.
-//   - v1 adds: word-boundary regex matching, a greeting guard (phrases
-//     that START with a greeting token like "hi", "hello", "good to",
-//     "nice to" are never goodbyes regardless of other content), and
-//     a tighter length cap so long sentences that happen to contain a
-//     goodbye-like token are ignored.
+//   v1 (Apr 22 2026): English-only flat phrase list, ASCII `\b`
+//     boundaries with non-Latin substring fallback. Did not catch
+//     non-English greetings like "buenos días" via greeting-prefix
+//     guard. Did not have per-language filler patterns.
+//   v2 (May 18 2026): Per-language registry, Unicode word boundary
+//     regex `(?:^|\P{L})...(?:\P{L}|$)` with /u flag. Ported from
+//     jarvis-rehearsal commit bfc19c0.
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-// Phrases that end the session if they appear as the primary content of
-// a short utterance. Ordered by specificity — longer, less-ambiguous
-// phrases are matched first so that "see you later" commits before a
-// bare "see you" would be considered.
-const GOODBYE_PHRASES = [
-  // English goodbye variants — MULTI-WORD (most specific first)
-  'see you later', 'talk to you later', 'catch you later',
-  'thank you goodbye', 'thanks goodbye', 'thank you bye', 'thanks bye',
-  'end the session', 'stop the session', 'end session', 'stop tutoring',
-  'i have to leave', 'i need to leave', 'leaving now',
-  'gotta go', 'got to go', 'have to go', 'need to go', 'talk later',
-  "i'm done", 'im done', 'i am done', 'we are done', "we're done",
-  "that's all", 'thats all', "that's it", 'thats it',
-  'good night', 'goodnight', 'night night', 'nighty night',
-  'good bye', 'bye bye',
-  // English goodbye — SINGLE TOKEN (must be the whole utterance, see detectGoodbye)
-  'goodbye', 'bye', 'see ya',
-  // Multilingual goodbye phrases (platform supports 25 languages)
-  'hasta la vista', 'hasta luego', 'au revoir', 'auf wiedersehen',
-  'arrivederci', 'tot ziens', 'do widzenia', 'até logo',
-  'sayonara', 'sayōnara', 'zài jiàn',
-  'adios', 'adiós', 'ciao', 'tschüss', 'tchüss',
-  'dag', 'farvel', 'ha det', 'hej då', 'näkemiin', 'tchau',
-  '再见', 'annyeong', '안녕', 'สวัสดี', 'ลาก่อน'
-];
-
-// Phrases that are NEVER goodbyes, even if they contain goodbye-ish
-// tokens. If the utterance starts with any of these, we bail out early.
-// This is the primary defense against "Good to see you" → goodbye.
-const GREETING_PREFIXES = [
-  'hi ', 'hi,', 'hi.', 'hi!',
-  'hello ', 'hello,', 'hello.', 'hello!',
-  'hey ', 'hey,', 'hey.', 'hey!',
-  'good to ',       // "good to see you", "good to meet you"
-  'nice to ',       // "nice to see you", "nice to meet you"
-  'great to ',      // "great to see you"
-  'pleased to ',    // "pleased to see you"
-  'happy to ',      // "happy to see you"
-  'glad to ',       // "glad to see you"
-  'welcome ',       // "welcome back"
-  'good morning',   // greetings, not goodbyes
-  'good afternoon',
-  'good evening',
-  "how are you",
-  "how's it going",
-  "what's up",
-  'whats up',
-];
-
-// Escape regex metacharacters so phrases like "that's all" can be
-// compiled into a \b-anchored pattern safely.
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
+const MAX_GOODBYE_UTTERANCE_LEN = 40;
 
 /**
- * Detect whether a user utterance is primarily a goodbye.
+ * Detect whether a user utterance is primarily a goodbye, using the
+ * rule set for the session's selected language.
  *
  * Rules (all must pass):
  *   1. Utterance is short (<= 40 chars after trim). Real goodbyes are
  *      almost always brief; anything longer is likely a substantive
  *      response that happens to mention a goodbye-ish word.
- *   2. Utterance does NOT start with a greeting prefix (see list).
- *      "Good to see you again" starts with "good to " and is rejected.
- *   3. At least one GOODBYE_PHRASES entry matches with word boundaries.
- *      Single-token phrases (goodbye, bye, see ya) additionally require
- *      the utterance to be primarily that token — not a sentence that
- *      happens to contain it.
+ *   2. Utterance does NOT start with a language-appropriate greeting
+ *      prefix. "Good to see you again" → 'good to ' → rejected.
+ *      "Buenos días" in a Spanish session → rejected.
+ *   3. At least one goodbye phrase from the language's rule set matches
+ *      with Unicode-aware word boundaries. Single-token phrases like
+ *      "bye" / "adiós" / "再见" additionally require the utterance to
+ *      be ≤3 words total so "tell her I said goodbye" doesn't fire.
+ *
+ * Word boundaries use `(?:^|\P{L})...(?:\P{L}|$)` with the /u flag
+ * instead of ASCII `\b`. This correctly handles every script supported
+ * by the platform — Latin, Cyrillic, CJK ideographs, Hangul, Hiragana/
+ * Katakana, Devanagari, Arabic, Thai, etc. `\b` is ASCII-only in JS
+ * and would never fire for "再见" or "안녕히 가세요".
  */
-function detectGoodbye(text: string): boolean {
+function detectGoodbye(text: string, language?: string): boolean {
   const normalized = text.toLowerCase().trim().replace(/\s+/g, ' ');
   if (!normalized) return false;
 
   // Gate 1: length cap. Tightened from 50 to 40 chars. Real goodbyes
   // are short; "Good to see you again." is 22, "Goodbye, thanks!" is 16.
-  if (normalized.length > 40) return false;
+  if (normalized.length > MAX_GOODBYE_UTTERANCE_LEN) return false;
+
+  const rules: LanguageRules = getLanguageRules(language);
 
   // Gate 2: greeting prefix guard. If the utterance opens with a
-  // greeting, it's never a goodbye — even if it contains "see you" or
-  // "bye" later on.
-  for (const prefix of GREETING_PREFIXES) {
+  // greeting (in the session's language), it's never a goodbye — even
+  // if it contains "see you" or "bye" later on.
+  for (const prefix of rules.greetingPrefixes) {
     if (normalized.startsWith(prefix)) {
       return false;
     }
   }
 
-  // Strip trailing punctuation and common filler words so that
-  // "goodbye." or "bye bye!" match cleanly as single-token goodbyes.
-  const stripped = normalized.replace(/[.!?,;:]+$/g, '').trim();
-
-  // Gate 3a: for short single-token goodbyes, require that the entire
-  // utterance IS essentially that phrase. A one- or two-word utterance
-  // of "goodbye" / "bye" / "see ya" counts; "it was nice to see ya at
-  // the store" does NOT.
-  const SINGLE_TOKEN_GOODBYES = new Set([
-    'goodbye', 'bye', 'see ya', 'later', 'adios', 'adiós', 'ciao',
-    'sayonara', 'sayōnara', 'tchau', 'tschüss', 'tchüss',
-    'farvel', 'dag', '再见', 'annyeong', '안녕', 'ลาก่อน',
-  ]);
+  // Strip trailing Unicode punctuation so "goodbye." / "bye!" / "再见。"
+  // match cleanly. \p{P} catches CJK fullwidth marks as well as ASCII.
+  const stripped = normalized.replace(new RegExp('[\\p{P}]+$', 'gu'), '').trim();
   const wordCount = stripped.split(/\s+/).length;
 
-  // Gate 3b: multi-word goodbye phrases match via word-boundary regex.
-  for (const phrase of GOODBYE_PHRASES) {
+  // Gate 3: match any goodbye phrase from the language rule set, using
+  // Unicode-aware word boundaries.
+  for (const phrase of rules.goodbyePhrases) {
     const phraseWordCount = phrase.split(/\s+/).length;
 
     // Single-token goodbyes: only fire if the utterance is 1-3 words
-    // total. "bye" alone fires; "bye for now" fires; "tell her I said
-    // bye" (5 words) does not.
-    if (phraseWordCount === 1 && SINGLE_TOKEN_GOODBYES.has(phrase)) {
+    // total. "bye" alone fires; "bye for now" fires (3 words);
+    // "tell her I said bye" (5 words) does not.
+    if (phraseWordCount === 1 && rules.singleTokenGoodbyes.has(phrase)) {
       if (wordCount > 3) continue;
     }
 
-    // Build a word-boundary-anchored regex. Unicode-aware word
-    // boundaries don't work well for CJK scripts, so for those we fall
-    // back to plain substring — acceptable because the gate-1 length
-    // cap and gate-2 greeting guard already filter noise.
-    const hasLatin = /[a-zA-Z]/.test(phrase);
-    if (hasLatin) {
-      const re = new RegExp(`\\b${escapeRegex(phrase)}\\b`, 'i');
-      if (re.test(stripped)) return true;
-    } else {
-      // Non-Latin script — substring match is fine at this length.
-      if (stripped.includes(phrase)) return true;
-    }
+    const re = new RegExp(
+      `(?:^|\\P{L})${escapeRegexLiteral(phrase)}(?:\\P{L}|$)`,
+      'iu',
+    );
+    if (re.test(stripped)) return true;
   }
 
   return false;
@@ -3821,7 +3778,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
           console.log(`[VOICE] 🔄 Recovery phrase detected during stall: "${transcript}" - treating as normal input`);
         }
         
-        if (detectGoodbye(transcript) && !(isRecovery && isStalled)) {
+        if (detectGoodbye(transcript, state.language) && !(isRecovery && isStalled)) {
           const hardStopEnabled = isGoodbyeHardStopEnabled();
           console.log(`[Goodbye] 👋 User said goodbye (voice), hard_stop=${hardStopEnabled}`);
           isGoodbyeInProgress = true;
@@ -6079,76 +6036,50 @@ HONESTY INSTRUCTIONS:
                 // Skip this gate for language practice (single words can be valid responses).
                 // EXCEPTION: Valid short answers like "yes", "no", "gravity", "correct" etc.
                 // should always pass — only drop filler noise and low-confidence fragments.
+                //
+                // LANGUAGE-AWARE (May 18 2026): the short-answer whitelist and non-lexical
+                // filler regex are resolved from the session's selected language via
+                // server/services/language-rules.ts. English defaults preserve the original
+                // VALID_SHORT_ANSWERS list verbatim. Non-Latin-script sessions (CJK, Hangul,
+                // Devanagari, Thai, Arabic, etc.) additionally bypass the word-count
+                // threshold because those scripts don't use spaces between morphemes the
+                // way Latin scripts do — a complete Japanese or Thai sentence often parses
+                // as wordCount=1 by `\s+` split, so MIN_WORDS_TO_COMMIT_TURN is meaningless.
                 if (!isLanguageSession && !stallPrompt && fragmentWords.length < 3) {
                   const lastConf = state.lastAccumulatedConfidence || 0;
-                  
-                  // Non-lexical filler sounds — always drop regardless of confidence
-                  const isNonLexicalNoise = /^(um+|uh+|hmm+|hm+|er+|erm+|mhm+)$/i.test(fragmentCheck);
+                  const langRules = getLanguageRules(state.language);
+                  const isNonLatin = isNonLatinScript(transcript);
+
+                  // Non-lexical filler sounds — always drop regardless of confidence.
+                  // Per-language filler patterns catch "ähm" / "えーと" / "嗯" too.
+                  const isNonLexicalNoise = langRules.nonLexicalNoiseRegex.test(fragmentCheck);
                   if (isNonLexicalNoise) {
-                    console.log(`[TurnPolicy] 🔇 Min-word gate: "${transcript.trim()}" (non-lexical noise) — dropping`);
+                    console.log(`[TurnPolicy] 🔇 Min-word gate: "${transcript.trim()}" (non-lexical noise, lang=${state.language}) — dropping`);
                     trackDroppedTurnForNoiseCoaching(ws, state);
                     return;
                   }
-                  
-                  // Common valid short answers — always pass through at any confidence
-                  const VALID_SHORT_ANSWERS = new Set([
-                    // Affirmations & negations
-                    'yes', 'no', 'yeah', 'yep', 'yup', 'nah', 'nope',
-                    'sure', 'ok', 'okay', 'correct', 'right', 'wrong',
-                    'true', 'false', 'maybe', 'probably', 'definitely',
-                    'absolutely', 'exactly', 'indeed', 'certainly',
-                    // Frequency & quantity
-                    'always', 'never', 'sometimes', 'both', 'neither',
-                    'all', 'none', 'some', 'many', 'few', 'most',
-                    'less', 'more', 'each', 'every', 'enough',
-                    // Pronouns & determiners as answers
-                    'nothing', 'everything', 'something', 'anything',
-                    'everyone', 'nobody', 'somebody', 'anybody',
-                    'here', 'there', 'this', 'that', 'those', 'these',
-                    'me', 'him', 'her', 'them', 'us', 'it', 'mine',
-                    // Question words (student repeating/confirming)
-                    'what', 'who', 'why', 'how', 'when', 'where', 'which',
-                    // Session control
-                    'stop', 'wait', 'continue', 'repeat', 'again', 'next',
-                    'help', 'skip', 'harder', 'easier', 'slower', 'faster',
-                    'done', 'ready', 'start', 'finish', 'quit', 'back',
-                    // Greetings & politeness
-                    'hello', 'hi', 'hey', 'bye', 'goodbye', 'thanks',
-                    'please', 'sorry', 'welcome',
-                    // Reactions & feelings
-                    'wow', 'cool', 'nice', 'great', 'awesome', 'perfect',
-                    'good', 'bad', 'fine', 'amazing', 'interesting',
-                    'confused', 'lost', 'stuck', 'unsure', 'understand',
-                    // Academic responses
-                    'agree', 'disagree', 'forgot', 'remember', 'know',
-                    'think', 'guess', 'believe', 'depends', 'different',
-                    'same', 'similar', 'opposite', 'equal', 'zero',
-                    // Ordinals & comparisons
-                    'first', 'second', 'third', 'last',
-                    'bigger', 'smaller', 'higher', 'lower',
-                    // Common single-word subject answers
-                    'water', 'earth', 'sun', 'moon', 'gravity',
-                    'energy', 'light', 'sound', 'heat', 'oxygen',
-                    'north', 'south', 'east', 'west',
-                    'addition', 'subtraction', 'multiplication', 'division',
-                    // Numbers as words
-                    'one', 'two', 'three', 'four', 'five',
-                    'six', 'seven', 'eight', 'nine', 'ten',
-                    'hundred', 'thousand', 'million', 'half', 'double',
-                  ]);
-                  const isValidShortAnswer = fragmentWords.length === 1 && VALID_SHORT_ANSWERS.has(fragmentWords[0]);
-                  
-                  if (isValidShortAnswer) {
-                    console.log(`[TurnPolicy] ✅ Min-word gate BYPASSED: "${transcript.trim()}" — recognized short answer`);
-                  } else if (lastConf >= 0.20 || (lastConf >= 0.20 && fragmentWords.length === 2)) {
-                    // Any real word with any meaningful confidence passes (e.g. "gravity", "everything")
-                    // AssemblyAI turn confidence for single words is typically 0.20-0.50
-                    // Filler noise (um, uh, hmm) is already caught by the non-lexical filter above
-                    console.log(`[TurnPolicy] ✅ Min-word gate BYPASSED: "${transcript.trim()}" (${fragmentWords.length} word${fragmentWords.length > 1 ? 's' : ''}, conf=${lastConf.toFixed(2)}) — high-confidence short answer`);
+
+                  // Non-Latin-script bypass — trust the transcript directly (Deepgram's
+                  // language-tuned confidence filters noise for those scripts; word-count
+                  // thresholds are meaningless without space-delimited words).
+                  if (isNonLatin) {
+                    console.log(`[TurnPolicy] ✅ Min-word gate BYPASSED: "${transcript.trim()}" (lang=${state.language}, non-Latin script) — script-aware bypass`);
                   } else {
-                    console.log(`[TurnPolicy] 🔇 Min-word gate: "${transcript.trim()}" (${fragmentWords.length} word${fragmentWords.length > 1 ? 's' : ''} < 3, conf=${lastConf.toFixed(2)}) — dropping as likely noise fragment`);
-                    trackDroppedTurnForNoiseCoaching(ws, state);
-                    return;
+                    const isValidShortAnswer = fragmentWords.length === 1 && langRules.validShortAnswers.has(fragmentWords[0]);
+
+                    if (isValidShortAnswer) {
+                      console.log(`[TurnPolicy] ✅ Min-word gate BYPASSED: "${transcript.trim()}" (lang=${state.language}) — recognized short answer`);
+                    } else if (lastConf >= 0.20 || (lastConf >= 0.20 && fragmentWords.length === 2)) {
+                      // DEFENSE IN DEPTH: Any real word with any meaningful confidence
+                      // passes (e.g. "gravity", "everything", or a non-English word not
+                      // in the language whitelist). Deepgram turn confidence for single
+                      // words is typically 0.20-0.50. Filler noise is already caught above.
+                      console.log(`[TurnPolicy] ✅ Min-word gate BYPASSED: "${transcript.trim()}" (${fragmentWords.length} word${fragmentWords.length > 1 ? 's' : ''}, conf=${lastConf.toFixed(2)}, lang=${state.language}) — high-confidence short answer`);
+                    } else {
+                      console.log(`[TurnPolicy] 🔇 Min-word gate: "${transcript.trim()}" (${fragmentWords.length} word${fragmentWords.length > 1 ? 's' : ''} < 3, conf=${lastConf.toFixed(2)}, lang=${state.language}) — dropping as likely noise fragment`);
+                      trackDroppedTurnForNoiseCoaching(ws, state);
+                      return;
+                    }
                   }
                 }
 
@@ -7816,7 +7747,7 @@ HONESTY INSTRUCTIONS:
               console.log(`[VOICE] 🔄 Recovery phrase detected during stall (text): "${message.message}" - treating as normal input`);
             }
             
-            if (detectGoodbye(message.message) && !(textIsRecovery && textIsStalled)) {
+            if (detectGoodbye(message.message, state.language) && !(textIsRecovery && textIsStalled)) {
               console.log('[Goodbye] 👋 User said goodbye (text), ending session gracefully');
               
               const goodbyeMessage = "Goodbye! Great learning with you today. Come back anytime you want to continue learning!";
