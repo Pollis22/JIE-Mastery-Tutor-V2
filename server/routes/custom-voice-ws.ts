@@ -2,6 +2,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { Server } from 'http';
 import { IncomingMessage } from 'http';
 import { Socket } from 'net';
+import Anthropic from "@anthropic-ai/sdk";
 import { startDeepgramStream, DeepgramConnection } from "../services/deepgram-service";
 import { generateTutorResponse, generateTutorResponseStreaming, StreamingCallbacks } from "../services/ai-service";
 import { generateSpeech, prewarmTTS } from "../services/tts-service";
@@ -5756,8 +5757,65 @@ HONESTY INSTRUCTIONS:
               }
             }
             
-            // LANGUAGE: Generate greetings in the selected language
-            const getLocalizedGreeting = (lang: string, name: string, tutorName: string, ageGroup: string, docTitles: string[], priorExists: boolean, topic: string | null, lastTopic: string | null = null, multiTopic: boolean = false): string => {
+            // LANGUAGE: Generate greetings in the selected language.
+            //
+            // For NON-English sessions WITH continuity from prior sessions,
+            // we route through Claude end-to-end so the topic names (which
+            // are stored in English in session_summaries from pre-localize
+            // history) get translated inline. Without this path, the
+            // template produces mixed-language text like "L'ultima volta
+            // abbiamo trattato Course deadlines and scheduling" — ElevenLabs
+            // Turbo v2.5 auto-detects language per-phrase and switches its
+            // voice from Italian to English mid-utterance. Bad UX. The
+            // LLM path returns fully-Italian text so TTS stays Italian.
+            //
+            // English path is unchanged (template, fast, zero latency).
+            // Docs-only and generic greetings continue to use templates too;
+            // only the continuity-with-topic path needs LLM because that's
+            // where stored English content gets embedded.
+            const getLocalizedGreeting = async (lang: string, name: string, tutorName: string, ageGroup: string, docTitles: string[], priorExists: boolean, topic: string | null, lastTopic: string | null = null, multiTopic: boolean = false): Promise<string> => {
+              // ── LLM path: non-English + has prior-session continuity ───
+              // We DON'T await on English (no translation needed) or on
+              // empty-topic generic/docs greetings (templates carry no
+              // English data to leak).
+              if (lang !== 'en' && priorExists && topic) {
+                try {
+                  const anthropic = new Anthropic();
+                  const langNames: Record<string, string> = {
+                    es: 'Spanish', fr: 'French', de: 'German', it: 'Italian',
+                    pt: 'Portuguese', zh: 'Mandarin Chinese', ja: 'Japanese',
+                    ko: 'Korean', ar: 'Arabic', hi: 'Hindi', ru: 'Russian',
+                    nl: 'Dutch', pl: 'Polish', tr: 'Turkish', vi: 'Vietnamese',
+                    th: 'Thai', id: 'Indonesian', sv: 'Swedish', da: 'Danish',
+                    no: 'Norwegian', fi: 'Finnish', sw: 'Swahili',
+                    yo: 'Yoruba', ha: 'Hausa',
+                  };
+                  const langName = langNames[lang] || lang;
+                  const continuationLine = multiTopic && lastTopic
+                    ? `Last session covered: "${topic}". The final sub-topic was: "${lastTopic}". Ask if they want to continue with "${lastTopic}" or start something new.`
+                    : `Last session was about: "${topic}". Ask if they want to continue where you left off, or start something new.`;
+                  const promptText = `You are ${tutorName}, an AI tutor greeting ${name} at the start of a new session. Write the greeting entirely in ${langName} — natural, warm, voice-friendly, 2–3 sentences total. TRANSLATE the topic names into ${langName} as part of the sentence (do not leave any phrase in English). ${continuationLine}\n\nOutput ONLY the greeting text. No preamble. No surrounding quotes.`;
+                  const res = await anthropic.messages.create({
+                    model: 'claude-sonnet-4-6',
+                    max_tokens: 300,
+                    messages: [{ role: 'user', content: promptText }],
+                  });
+                  const block = res.content[0];
+                  const text = block && block.type === 'text' ? block.text.trim() : '';
+                  // Strip stray surrounding quotes that Claude sometimes adds
+                  const cleaned = text.replace(/^["'`]+|["'`]+$/g, '').trim();
+                  if (cleaned.length >= 10) {
+                    console.log(`[GREETING] 🌍 LLM-generated greeting (${lang}): "${cleaned}"`);
+                    return cleaned;
+                  }
+                  // Empty/very short response — fall through to template
+                  console.warn(`[GREETING] LLM returned empty/short for ${lang}, falling back to template`);
+                } catch (err) {
+                  console.error(`[GREETING] LLM generation error for ${lang}, falling back to template:`, err);
+                }
+              }
+
+              // ── Template path: English OR no continuity OR LLM failed ──
               // Language-specific greeting templates
               const greetings: Record<string, { intro: string; docAck: (count: number, titles: string) => string; closing: Record<string, string> }> = {
                 en: {
@@ -5769,6 +5827,17 @@ HONESTY INSTRUCTIONS:
                     '6-8': docTitles.length > 0 ? " I'm ready to help you master this material! What would you like to work on?" : " I'm here to help you succeed! What subject would you like to focus on today?",
                     '9-12': docTitles.length > 0 ? " Let's dive into this material together. What concepts would you like to explore?" : " I'm here to help you excel! What topic would you like to work on today?",
                     'College/Adult': docTitles.length > 0 ? " I'm ready to help you analyze this material. What aspects would you like to focus on?" : " I'm here to support your learning goals. What subject can I help you with today?",
+                  }
+                },
+                it: {
+                  intro: `Ciao ${name}! Sono ${tutorName}, il tuo tutor.`,
+                  docAck: (count, titles) => count === 1 ? ` Vedo che hai caricato "${titles}" - ottimo!` : ` Ho caricato ${count} documenti per la nostra sessione.`,
+                  closing: {
+                    'K-2': docTitles.length > 0 ? " Diamo un'occhiata insieme! Cosa vuoi imparare?" : " Sono entusiasta di imparare con te oggi! Cosa vorresti esplorare?",
+                    '3-5': docTitles.length > 0 ? " Sono qui per aiutarti a capire! Da dove iniziamo?" : " Sono qui per aiutarti a imparare qualcosa di nuovo! Quale materia ti interessa oggi?",
+                    '6-8': docTitles.length > 0 ? " Sono pronto ad aiutarti a padroneggiare questo materiale! Su cosa vuoi lavorare?" : " Sono qui per aiutarti a riuscire! Su quale materia vuoi concentrarti oggi?",
+                    '9-12': docTitles.length > 0 ? " Esploriamo insieme questo materiale. Quali concetti vorresti approfondire?" : " Sono qui per aiutarti ad eccellere! Su quale argomento vorresti lavorare oggi?",
+                    'College/Adult': docTitles.length > 0 ? " Sono pronto ad aiutarti ad analizzare questo materiale. Su quali aspetti vorresti concentrarti?" : " Sono qui per supportare i tuoi obiettivi di apprendimento. Su quale materia posso aiutarti oggi?",
                   }
                 },
                 fr: {
@@ -5909,6 +5978,7 @@ HONESTY INSTRUCTIONS:
                   // 4+ active docs: don't list filenames
                   const manyDocsAck: Record<string, string> = {
                     en: ` You have multiple Active documents selected for this session.`,
+                    it: ` Hai più documenti attivi selezionati per questa sessione.`,
                     es: ` Tienes múltiples documentos activos seleccionados para esta sesión.`,
                     fr: ` Tu as plusieurs documents actifs sélectionnés pour cette session.`,
                     de: ` Du hast mehrere aktive Dokumente für diese Sitzung ausgewählt.`,
@@ -5927,6 +5997,7 @@ HONESTY INSTRUCTIONS:
                   // Multi-topic greeting: "Last time we covered X, then Y, and ended with Z. Want to pick up where we left off with Z, or start something new?"
                   const multiGreetings: Record<string, (n: string, t: string, tp: string, lt: string) => string> = {
                     en: (n, t, tp, lt) => `Welcome back, ${n}! I'm ${t}, your tutor. Last time we covered ${tp}. Want to pick up where we left off with ${lt}, or start something new?`,
+                    it: (n, t, tp, lt) => `Bentornato, ${n}! Sono ${t}, il tuo tutor. L'ultima volta abbiamo trattato ${tp}. Vuoi continuare con ${lt} o iniziare qualcosa di nuovo?`,
                     es: (n, t, tp, lt) => `¡Bienvenido de nuevo, ${n}! Soy ${t}, tu tutor. La última vez cubrimos ${tp}. ¿Quieres continuar con ${lt} o empezar algo nuevo?`,
                     fr: (n, t, tp, lt) => `Content de te revoir, ${n}! Je suis ${t}, ton tuteur. La dernière fois, on a couvert ${tp}. Tu veux reprendre avec ${lt} ou commencer quelque chose de nouveau?`,
                     de: (n, t, tp, lt) => `Willkommen zurück, ${n}! Ich bin ${t}, dein Tutor. Letztes Mal haben wir ${tp} behandelt. Möchtest du mit ${lt} weitermachen oder etwas Neues anfangen?`,
@@ -5941,6 +6012,7 @@ HONESTY INSTRUCTIONS:
                 // Single-topic greeting
                 const continuityGreetings: Record<string, (name: string, tutorName: string, topic: string) => string> = {
                   en: (n, t, tp) => `Welcome back, ${n}! I'm ${t}, your tutor. Last time we were exploring ${tp}. Want to pick up where we left off, or start something new?`,
+                  it: (n, t, tp) => `Bentornato, ${n}! Sono ${t}, il tuo tutor. L'ultima volta stavamo esplorando ${tp}. Vuoi continuare da dove eravamo rimasti o iniziare qualcosa di nuovo?`,
                   es: (n, t, tp) => `¡Bienvenido de nuevo, ${n}! Soy ${t}, tu tutor. La última vez estábamos explorando ${tp}. ¿Quieres continuar donde lo dejamos o empezar algo nuevo?`,
                   fr: (n, t, tp) => `Content de te revoir, ${n}! Je suis ${t}, ton tuteur. La dernière fois, on explorait ${tp}. Tu veux reprendre là où on s'est arrêtés ou commencer quelque chose de nouveau?`,
                   de: (n, t, tp) => `Willkommen zurück, ${n}! Ich bin ${t}, dein Tutor. Letztes Mal haben wir ${tp} erkundet. Möchtest du dort weitermachen oder etwas Neues anfangen?`,
@@ -5962,7 +6034,7 @@ HONESTY INSTRUCTIONS:
             if (!shouldSkipGreeting) {
               const greetingMode = greetingDocTitles.length > 0 ? 'ACTIVE_DOCS' : (hasPriorSessions && continuityTopic ? 'CONTINUITY' : 'GENERIC');
               console.log(`[GREETING_PRIORITY] mode=${greetingMode}, activeDocTitles=${greetingDocTitles.length}, hasPrior=${hasPriorSessions}, topic=${continuityTopic || 'none'}`);
-              greeting = getLocalizedGreeting(state.language, state.studentName, personality.name, state.ageGroup, greetingDocTitles, hasPriorSessions, continuityTopic, continuityLastTopic, continuityMultiTopic);
+              greeting = await getLocalizedGreeting(state.language, state.studentName, personality.name, state.ageGroup, greetingDocTitles, hasPriorSessions, continuityTopic, continuityLastTopic, continuityMultiTopic);
               console.log(`[Custom Voice] 🌍 Generated greeting in language: ${state.language}`);
               
               console.log(`[Custom Voice] 👋 Greeting: "${greeting}"`);
