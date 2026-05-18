@@ -19,6 +19,7 @@ import type { VisualTag } from './VisualPanel';
 import { QuizStartModal, ageGroupToGradeBand } from './QuizStartModal';
 import { QuizProgressBadge } from './QuizProgressBadge';
 import { QuizScoreModal } from './QuizScoreModal';
+import { getLanguageName } from '@shared/languages';
 
 // ─── Module-level singleton lock ───────────────────────────────────────────
 // Prevents concurrent voice sessions when the tutor page re-mounts mid-session.
@@ -387,7 +388,7 @@ export const RealtimeVoiceHost = forwardRef<RealtimeVoiceHostHandle, RealtimeVoi
     let baseInstruction = `You are an AI tutor helping ${studentName || 'a student'} (${ageGroup} level) with ${subject || 'their studies'}. 
     ${ageSpecificInstructions[ageGroup]}
     Keep responses concise (2-3 sentences) suitable for voice conversation.
-    Speak in ${language === 'es' ? 'Spanish' : language === 'hi' ? 'Hindi' : language === 'zh' ? 'Chinese' : 'English'}.`;
+    Speak in ${getLanguageName(language || 'en')}.`;
 
     // Add practice lesson context if available
     if (activeLesson) {
