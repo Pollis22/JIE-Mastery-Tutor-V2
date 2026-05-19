@@ -1426,16 +1426,16 @@ function ReadingTextStructure() {
 
 function ScienceCellDiagram() {
   return (
-    <div className="flex flex-col items-center gap-3 p-2">
+    <div className="flex flex-col items-center gap-3 p-2 w-full">
       <p className="text-sm font-semibold text-muted-foreground">Plant vs Animal Cell</p>
-      <div className="grid grid-cols-2 gap-3 w-full">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
         {[
           {title:'Animal Cell',parts:['Cell Membrane','Nucleus','Cytoplasm','Mitochondria','Ribosomes'],color:'border-blue-400 bg-blue-50 dark:bg-blue-950/30'},
           {title:'Plant Cell',parts:['Cell Wall','Cell Membrane','Nucleus','Chloroplasts','Vacuole (large)'],color:'border-green-400 bg-green-50 dark:bg-green-950/30'},
         ].map(({title,parts,color})=>(
-          <div key={title} className={`border-2 ${color} rounded-lg p-2`}>
+          <div key={title} className={`border-2 ${color} rounded-lg p-2 min-w-0`}>
             <div className="text-xs font-bold text-center mb-1">{title}</div>
-            {parts.map(p=><div key={p} className="text-xs text-muted-foreground">• {p}</div>)}
+            {parts.map(p=><div key={p} className="text-xs text-muted-foreground break-words">• {p}</div>)}
           </div>
         ))}
       </div>

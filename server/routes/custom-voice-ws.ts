@@ -1589,6 +1589,7 @@ interface SessionState {
   lastConfirmedSpeechTime: number; // BARGE-IN: When last confirmed speech was detected
   lastMeasuredRms: number; // NOISE FLOOR: Last measured RMS for logging
   lastSpeechNotificationSent: boolean; // MIC STATUS: Track if speech_detected was sent (avoid spam)
+  lastNoiseIgnoredEmitMs: number; // MIC STATUS: Throttle noise_ignored events (every 2s max during sustained silence)
   postUtteranceGraceUntil: number; // GHOST TURN: Grace period for transcript merging
   safetyStrikeCount: number; // SAFETY: Track strikes for session termination
   safetyFlags: Array<{
@@ -2919,6 +2920,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
       lastConfirmedSpeechTime: 0, // BARGE-IN: No confirmed speech yet
       lastMeasuredRms: 0, // NOISE FLOOR: No RMS measured yet
       lastSpeechNotificationSent: false, // MIC STATUS: No speech notification sent yet
+      lastNoiseIgnoredEmitMs: 0, // MIC STATUS: Throttle noise_ignored events
       postUtteranceGraceUntil: 0, // GHOST TURN: No grace period active
       safetyStrikeCount: 0, // SAFETY: Initialize strike count
       safetyFlags: [], // SAFETY: Initialize safety flags array
@@ -7944,8 +7946,17 @@ HONESTY INSTRUCTIONS:
                 // Log noise floor gating when speech is ignored (potential but not confirmed)
                 if (!speechDetection.isSpeech && speechDetection.isPotentialSpeech) {
                   logNoiseFloorGating(state.sessionId || 'unknown', speechDetection, true);
-                  // MIC STATUS EVENT: Notify client that background noise is being filtered
-                  ws.send(JSON.stringify({ type: "noise_ignored" }));
+                  // MIC STATUS EVENT: Notify client that background noise is being filtered.
+                  // Throttle: emit at most once every 2s during sustained silence (May 19 2026).
+                  // Previously emitted on every audio frame (~50/sec) which spammed both the
+                  // client log and the noise-coaching heuristic, causing false coaching triggers
+                  // after legitimate student utterances. Throttling preserves the signal (UI
+                  // still gets a "noise being filtered" indicator) without the spam.
+                  const nowMs = Date.now();
+                  if (nowMs - state.lastNoiseIgnoredEmitMs >= 2000) {
+                    ws.send(JSON.stringify({ type: "noise_ignored" }));
+                    state.lastNoiseIgnoredEmitMs = nowMs;
+                  }
                 }
                 
                 // MIC STATUS EVENT: Notify client when confirmed speech is detected
