@@ -63,6 +63,12 @@ import {
   getCoherenceClarifyMessage,
 } from "../services/coherence-gate";
 import {
+  getLanguageRules,
+  isNonLatinScript,
+  escapeRegexLiteral,
+  type LanguageRules,
+} from "../services/language-rules";
+import {
   DOCS_FALLBACK_TO_ALL_IF_NONE_ACTIVE,
   logRagRetrieval,
   logRagError,
@@ -328,9 +334,100 @@ function isLanguagePracticeSession(subject?: string): boolean {
   return languageSubjects.some(lang => subject.toLowerCase().includes(lang.toLowerCase()));
 }
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// LANGUAGE SWITCH GUARD (May 18 2026)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Background: Deepgram emits a per-transcript `detected_language` but no
+// confidence score for it. The original logic flipped `state.detectedLanguage`
+// on the FIRST utterance with a non-matching language, which caused real-world
+// breakage: a student picked Japanese, mispronounced "Konnichiwa" as
+// "Kenichiwa", Deepgram phonetically classified it as Italian, and the tutor
+// switched to Italian for the rest of the session.
+//
+// This helper enforces persistence: require N consecutive utterances in the
+// candidate language (each at least MIN_LANG_SWITCH_TRANSCRIPT_LEN chars) before
+// flipping. A single matching-language utterance resets the candidate, so drift
+// is self-correcting. Returns the new value `state.detectedLanguage` should
+// take (or the existing value if no switch is warranted).
+
+const LANG_SWITCH_VOTES_REQUIRED = 2;
+const MIN_LANG_SWITCH_TRANSCRIPT_LEN = 4;
+
+function normalizeLangCode(lang: string | undefined | null): string {
+  if (!lang) return '';
+  return lang.toLowerCase().split('-')[0].split('_')[0];
+}
+
+function evaluateLanguageSwitch(
+  state: {
+    language: string;
+    detectedLanguage: string;
+    languageSwitchCandidate?: string;
+    languageSwitchVotes: number;
+  },
+  spokenLang: string | undefined,
+  transcript: string,
+): string {
+  // No spoken-language signal — keep current.
+  if (!spokenLang) return state.detectedLanguage;
+
+  const sessionLang = normalizeLangCode(state.language);
+  const spokenNorm = normalizeLangCode(spokenLang);
+  const currentDetected = normalizeLangCode(state.detectedLanguage);
+
+  if (!spokenNorm) return state.detectedLanguage;
+
+  // Case 1: Spoken matches the user's session language. Reset votes and lock
+  // detectedLanguage to that. Self-corrects any in-flight switch attempts.
+  if (spokenNorm === sessionLang) {
+    if (state.languageSwitchVotes > 0 || state.languageSwitchCandidate) {
+      console.log(`[Lang] 🔙 Session-language utterance — clearing switch candidate (was ${state.languageSwitchCandidate})`);
+    }
+    state.languageSwitchVotes = 0;
+    state.languageSwitchCandidate = undefined;
+    return spokenLang;
+  }
+
+  // Case 2: We've already switched to this non-session language — stay there.
+  if (spokenNorm === currentDetected) {
+    state.languageSwitchVotes = 0;
+    state.languageSwitchCandidate = undefined;
+    return state.detectedLanguage;
+  }
+
+  // Case 3: Different language. Apply persistence guard.
+  const transcriptLen = (transcript || '').trim().length;
+  if (transcriptLen < MIN_LANG_SWITCH_TRANSCRIPT_LEN) {
+    // Too short to base a switch on (e.g., "ok", "si", "no" are unreliable).
+    return state.detectedLanguage;
+  }
+
+  if (state.languageSwitchCandidate === spokenNorm) {
+    state.languageSwitchVotes += 1;
+    console.log(`[Lang] 🗳️ Switch vote ${state.languageSwitchVotes}/${LANG_SWITCH_VOTES_REQUIRED} for ${sessionLang || '?'} → ${spokenNorm}`);
+
+    if (state.languageSwitchVotes >= LANG_SWITCH_VOTES_REQUIRED) {
+      console.log(`[Custom Voice] 🌍 Language switch CONFIRMED after ${LANG_SWITCH_VOTES_REQUIRED} consecutive votes: ${state.detectedLanguage || sessionLang} → ${spokenLang}`);
+      state.languageSwitchVotes = 0;
+      state.languageSwitchCandidate = undefined;
+      return spokenLang;
+    }
+    return state.detectedLanguage; // not enough votes yet
+  } else {
+    // New candidate — start fresh vote count
+    state.languageSwitchCandidate = spokenNorm;
+    state.languageSwitchVotes = 1;
+    console.log(`[Lang] 🗳️ Switch vote 1/${LANG_SWITCH_VOTES_REQUIRED} for ${sessionLang || '?'} → ${spokenNorm} ("${transcript.substring(0, 30)}")`);
+    return state.detectedLanguage; // wait for confirmation
+  }
+}
+
 // P0: Centralized transcript drop decision — replaces ALL raw char-length gates
 // Allows legitimate short lexical answers like "no", "ok", "I", "2", "5", "a", "y"
-function shouldDropTranscript(text: string, state: { isSessionEnded: boolean; sessionFinalizing: boolean; subject?: string }): { drop: boolean; reason: string } {
+// LANGUAGE-AWARE (May 18 2026): non-lexical filler regex resolved per-session
+// from state.language via server/services/language-rules.ts. English defaults
+// preserve original behavior verbatim for sessions without a language set.
+function shouldDropTranscript(text: string, state: { isSessionEnded: boolean; sessionFinalizing: boolean; subject?: string; language?: string }): { drop: boolean; reason: string } {
   if (!text || !text.trim()) {
     return { drop: true, reason: 'empty' };
   }
@@ -342,9 +439,13 @@ function shouldDropTranscript(text: string, state: { isSessionEnded: boolean; se
   // LANGUAGE PRACTICE: In language-learning sessions, sounds like "ah", "oh", "er"
   // are valid pronunciation practice and should not be filtered as non-lexical.
   const isLanguageSession = isLanguagePracticeSession(state.subject);
-  
+
+  // LANGUAGE-AWARE: pick filler regex from the session language registry.
+  // English default mirrors the original NON_LEXICAL_DROP regex exactly.
+  const rules = getLanguageRules(state.language);
+
   const NON_LEXICAL_DROP = [
-    /^(um+|uh+|hmm+|hm+|ah+|oh+|er+|erm+)$/i,
+    rules.nonLexicalNoiseRegex,
     /^\[.*\]$/,
     /^[\s.,!?]*$/,
   ];
@@ -1436,11 +1537,22 @@ interface SessionState {
   practiceMode: boolean; // SESSION: Whether practice drill mode is active
   language: string; // LANGUAGE: Tutoring language code (e.g., 'en', 'es', 'fr')
   detectedLanguage: string; // LANGUAGE: Auto-detected spoken language from Deepgram
+  // LANGUAGE SWITCH GUARD (May 18 2026): Persistence-based switch to prevent
+  // single-utterance language flips (e.g., garbled "Konnichiwa" → Italian phonemes
+  // → tutor switches to Italian). Requires N consecutive utterances in the
+  // candidate language before state.detectedLanguage flips.
+  languageSwitchCandidate?: string; // Normalized lang code currently accumulating votes
+  languageSwitchVotes: number; // Consecutive utterances voting for the candidate
   speechSpeed: number; // User's speech speed preference from settings
   systemInstruction: string;
   conversationHistory: Array<{ role: "user" | "assistant"; content: string }>;
   transcript: TranscriptEntry[];
   uploadedDocuments: string[];
+  // Per-doc metadata for the greeting acknowledgment filter (May 6 2026).
+  // Only populated when docs are loaded from the DB by ID (not for pre-formatted
+  // client-injected content). The greeting only verbally acknowledges docs whose
+  // `acknowledgedAt` is null; after greeting, those docs are marked acknowledged.
+  activeDocs?: Array<{ id: string; title: string; acknowledgedAt: Date | null }>;
   deepgramConnection: DeepgramConnection | null;
   assemblyAIWs: WebSocket | null; // AssemblyAI WebSocket connection
   assemblyAIState: AssemblyAIState | null; // AssemblyAI merge guard state
@@ -2007,145 +2119,89 @@ async function processSafetyCheck(
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// GOODBYE DETECTION v1 (Apr 22, 2026): Gracefully end session
-// on user goodbye. Works for both voice and text modes.
+// GOODBYE DETECTION v2 (May 18, 2026): Language-aware.
+// Per-language phrase lists, greeting prefixes, and single-token
+// goodbye sets live in server/services/language-rules.ts. The
+// detector resolves rules from the session's selected language and
+// uses Unicode-aware word boundaries so CJK / Cyrillic / Arabic /
+// Devanagari / Thai farewells fire correctly. English behavior is
+// preserved verbatim by the EN rule set.
 //
 // Fix history:
-//   - Previous version used .includes() substring match with no word
-//     boundaries. The phrase "see you" in GOODBYE_PHRASES would match
-//     inside "Good to see you again" (a greeting!), ending the session
-//     prematurely.
-//   - v1 adds: word-boundary regex matching, a greeting guard (phrases
-//     that START with a greeting token like "hi", "hello", "good to",
-//     "nice to" are never goodbyes regardless of other content), and
-//     a tighter length cap so long sentences that happen to contain a
-//     goodbye-like token are ignored.
+//   v1 (Apr 22 2026): English-only flat phrase list, ASCII `\b`
+//     boundaries with non-Latin substring fallback. Did not catch
+//     non-English greetings like "buenos días" via greeting-prefix
+//     guard. Did not have per-language filler patterns.
+//   v2 (May 18 2026): Per-language registry, Unicode word boundary
+//     regex `(?:^|\P{L})...(?:\P{L}|$)` with /u flag. Ported from
+//     jarvis-rehearsal commit bfc19c0.
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-// Phrases that end the session if they appear as the primary content of
-// a short utterance. Ordered by specificity — longer, less-ambiguous
-// phrases are matched first so that "see you later" commits before a
-// bare "see you" would be considered.
-const GOODBYE_PHRASES = [
-  // English goodbye variants — MULTI-WORD (most specific first)
-  'see you later', 'talk to you later', 'catch you later',
-  'thank you goodbye', 'thanks goodbye', 'thank you bye', 'thanks bye',
-  'end the session', 'stop the session', 'end session', 'stop tutoring',
-  'i have to leave', 'i need to leave', 'leaving now',
-  'gotta go', 'got to go', 'have to go', 'need to go', 'talk later',
-  "i'm done", 'im done', 'i am done', 'we are done', "we're done",
-  "that's all", 'thats all', "that's it", 'thats it',
-  'good night', 'goodnight', 'night night', 'nighty night',
-  'good bye', 'bye bye',
-  // English goodbye — SINGLE TOKEN (must be the whole utterance, see detectGoodbye)
-  'goodbye', 'bye', 'see ya',
-  // Multilingual goodbye phrases (platform supports 25 languages)
-  'hasta la vista', 'hasta luego', 'au revoir', 'auf wiedersehen',
-  'arrivederci', 'tot ziens', 'do widzenia', 'até logo',
-  'sayonara', 'sayōnara', 'zài jiàn',
-  'adios', 'adiós', 'ciao', 'tschüss', 'tchüss',
-  'dag', 'farvel', 'ha det', 'hej då', 'näkemiin', 'tchau',
-  '再见', 'annyeong', '안녕', 'สวัสดี', 'ลาก่อน'
-];
-
-// Phrases that are NEVER goodbyes, even if they contain goodbye-ish
-// tokens. If the utterance starts with any of these, we bail out early.
-// This is the primary defense against "Good to see you" → goodbye.
-const GREETING_PREFIXES = [
-  'hi ', 'hi,', 'hi.', 'hi!',
-  'hello ', 'hello,', 'hello.', 'hello!',
-  'hey ', 'hey,', 'hey.', 'hey!',
-  'good to ',       // "good to see you", "good to meet you"
-  'nice to ',       // "nice to see you", "nice to meet you"
-  'great to ',      // "great to see you"
-  'pleased to ',    // "pleased to see you"
-  'happy to ',      // "happy to see you"
-  'glad to ',       // "glad to see you"
-  'welcome ',       // "welcome back"
-  'good morning',   // greetings, not goodbyes
-  'good afternoon',
-  'good evening',
-  "how are you",
-  "how's it going",
-  "what's up",
-  'whats up',
-];
-
-// Escape regex metacharacters so phrases like "that's all" can be
-// compiled into a \b-anchored pattern safely.
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
+const MAX_GOODBYE_UTTERANCE_LEN = 40;
 
 /**
- * Detect whether a user utterance is primarily a goodbye.
+ * Detect whether a user utterance is primarily a goodbye, using the
+ * rule set for the session's selected language.
  *
  * Rules (all must pass):
  *   1. Utterance is short (<= 40 chars after trim). Real goodbyes are
  *      almost always brief; anything longer is likely a substantive
  *      response that happens to mention a goodbye-ish word.
- *   2. Utterance does NOT start with a greeting prefix (see list).
- *      "Good to see you again" starts with "good to " and is rejected.
- *   3. At least one GOODBYE_PHRASES entry matches with word boundaries.
- *      Single-token phrases (goodbye, bye, see ya) additionally require
- *      the utterance to be primarily that token — not a sentence that
- *      happens to contain it.
+ *   2. Utterance does NOT start with a language-appropriate greeting
+ *      prefix. "Good to see you again" → 'good to ' → rejected.
+ *      "Buenos días" in a Spanish session → rejected.
+ *   3. At least one goodbye phrase from the language's rule set matches
+ *      with Unicode-aware word boundaries. Single-token phrases like
+ *      "bye" / "adiós" / "再见" additionally require the utterance to
+ *      be ≤3 words total so "tell her I said goodbye" doesn't fire.
+ *
+ * Word boundaries use `(?:^|\P{L})...(?:\P{L}|$)` with the /u flag
+ * instead of ASCII `\b`. This correctly handles every script supported
+ * by the platform — Latin, Cyrillic, CJK ideographs, Hangul, Hiragana/
+ * Katakana, Devanagari, Arabic, Thai, etc. `\b` is ASCII-only in JS
+ * and would never fire for "再见" or "안녕히 가세요".
  */
-function detectGoodbye(text: string): boolean {
+function detectGoodbye(text: string, language?: string): boolean {
   const normalized = text.toLowerCase().trim().replace(/\s+/g, ' ');
   if (!normalized) return false;
 
   // Gate 1: length cap. Tightened from 50 to 40 chars. Real goodbyes
   // are short; "Good to see you again." is 22, "Goodbye, thanks!" is 16.
-  if (normalized.length > 40) return false;
+  if (normalized.length > MAX_GOODBYE_UTTERANCE_LEN) return false;
+
+  const rules: LanguageRules = getLanguageRules(language);
 
   // Gate 2: greeting prefix guard. If the utterance opens with a
-  // greeting, it's never a goodbye — even if it contains "see you" or
-  // "bye" later on.
-  for (const prefix of GREETING_PREFIXES) {
+  // greeting (in the session's language), it's never a goodbye — even
+  // if it contains "see you" or "bye" later on.
+  for (const prefix of rules.greetingPrefixes) {
     if (normalized.startsWith(prefix)) {
       return false;
     }
   }
 
-  // Strip trailing punctuation and common filler words so that
-  // "goodbye." or "bye bye!" match cleanly as single-token goodbyes.
-  const stripped = normalized.replace(/[.!?,;:]+$/g, '').trim();
-
-  // Gate 3a: for short single-token goodbyes, require that the entire
-  // utterance IS essentially that phrase. A one- or two-word utterance
-  // of "goodbye" / "bye" / "see ya" counts; "it was nice to see ya at
-  // the store" does NOT.
-  const SINGLE_TOKEN_GOODBYES = new Set([
-    'goodbye', 'bye', 'see ya', 'later', 'adios', 'adiós', 'ciao',
-    'sayonara', 'sayōnara', 'tchau', 'tschüss', 'tchüss',
-    'farvel', 'dag', '再见', 'annyeong', '안녕', 'ลาก่อน',
-  ]);
+  // Strip trailing Unicode punctuation so "goodbye." / "bye!" / "再见。"
+  // match cleanly. \p{P} catches CJK fullwidth marks as well as ASCII.
+  const stripped = normalized.replace(new RegExp('[\\p{P}]+$', 'gu'), '').trim();
   const wordCount = stripped.split(/\s+/).length;
 
-  // Gate 3b: multi-word goodbye phrases match via word-boundary regex.
-  for (const phrase of GOODBYE_PHRASES) {
+  // Gate 3: match any goodbye phrase from the language rule set, using
+  // Unicode-aware word boundaries.
+  for (const phrase of rules.goodbyePhrases) {
     const phraseWordCount = phrase.split(/\s+/).length;
 
     // Single-token goodbyes: only fire if the utterance is 1-3 words
-    // total. "bye" alone fires; "bye for now" fires; "tell her I said
-    // bye" (5 words) does not.
-    if (phraseWordCount === 1 && SINGLE_TOKEN_GOODBYES.has(phrase)) {
+    // total. "bye" alone fires; "bye for now" fires (3 words);
+    // "tell her I said bye" (5 words) does not.
+    if (phraseWordCount === 1 && rules.singleTokenGoodbyes.has(phrase)) {
       if (wordCount > 3) continue;
     }
 
-    // Build a word-boundary-anchored regex. Unicode-aware word
-    // boundaries don't work well for CJK scripts, so for those we fall
-    // back to plain substring — acceptable because the gate-1 length
-    // cap and gate-2 greeting guard already filter noise.
-    const hasLatin = /[a-zA-Z]/.test(phrase);
-    if (hasLatin) {
-      const re = new RegExp(`\\b${escapeRegex(phrase)}\\b`, 'i');
-      if (re.test(stripped)) return true;
-    } else {
-      // Non-Latin script — substring match is fine at this length.
-      if (stripped.includes(phrase)) return true;
-    }
+    const re = new RegExp(
+      `(?:^|\\P{L})${escapeRegexLiteral(phrase)}(?:\\P{L}|$)`,
+      'iu',
+    );
+    if (re.test(stripped)) return true;
   }
 
   return false;
@@ -2820,6 +2876,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
       subject: "General", // SESSION: Default subject, will be set from session
       language: "en", // LANGUAGE: Default to English, will be set from session
       detectedLanguage: "", // LANGUAGE: Auto-detected spoken language from Deepgram
+      languageSwitchCandidate: undefined, // LANGUAGE SWITCH GUARD: candidate accumulating votes
+      languageSwitchVotes: 0, // LANGUAGE SWITCH GUARD: consecutive votes for candidate
       speechSpeed: 1.0, // Default speech speed (normal), will be overridden by user preference
       systemInstruction: "",
       conversationHistory: [],
@@ -3822,7 +3880,7 @@ export function setupCustomVoiceWebSocket(server: Server) {
           console.log(`[VOICE] 🔄 Recovery phrase detected during stall: "${transcript}" - treating as normal input`);
         }
         
-        if (detectGoodbye(transcript) && !(isRecovery && isStalled)) {
+        if (detectGoodbye(transcript, state.language) && !(isRecovery && isStalled)) {
           const hardStopEnabled = isGoodbyeHardStopEnabled();
           console.log(`[Goodbye] 👋 User said goodbye (voice), hard_stop=${hardStopEnabled}`);
           isGoodbyeInProgress = true;
@@ -4756,7 +4814,8 @@ export function setupCustomVoiceWebSocket(server: Server) {
 
           if (state.lastTranscript === transcript) return;
           state.lastTranscript = transcript;
-          if (spokenLang) state.detectedLanguage = spokenLang;
+          // LANGUAGE SWITCH GUARD: same persistence-based switch as main path.
+          state.detectedLanguage = evaluateLanguageSwitch(state, spokenLang, transcript);
           
           pendingTranscript = (pendingTranscript + ' ' + transcript).trim();
           console.log(`[TurnDetect] 📝 Accumulated (reconnected): "${pendingTranscript}"`);
@@ -5133,6 +5192,12 @@ export function setupCustomVoiceWebSocket(server: Server) {
                     }
                     
                     state.uploadedDocuments = documentContents;
+                    // Track per-doc IDs + acknowledgment state for the greeting filter
+                    state.activeDocs = documents.map((d: any) => ({
+                      id: d.id,
+                      title: d.originalName || d.title || 'unknown',
+                      acknowledgedAt: d.acknowledgedAt || null,
+                    }));
                     console.log(`[Custom Voice] 📚 Document context prepared: ${documentContents.length} documents, total length: ${documentContents.join('').length} chars`);
                   }
                 }
@@ -5548,6 +5613,68 @@ Therefore:
             } catch (lsisError) {
               console.warn('[LSIS] ⚠️ Profile injection failed (non-blocking):', lsisError);
             }
+
+            // Academic events: pull upcoming assignments/exams/quizzes from the
+            // SRM so the tutor can answer "what do I have coming up?" with real
+            // structured data, not just whatever the syllabus RAG happens to surface.
+            // Window: today through +30 days. Failure is non-blocking.
+            let academicEventsBlock = '';
+            try {
+              const { db: dbConn } = await import('../db');
+              const { studentCalendarEvents, studentCourses } = await import('@shared/schema');
+              const { and: andOp, eq: eqOp, gte: gteOp, lte: lteOp } = await import('drizzle-orm');
+              const today = new Date();
+              const todayStr = today.toISOString().slice(0, 10); // YYYY-MM-DD
+              const horizon = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
+              const horizonStr = horizon.toISOString().slice(0, 10);
+
+              const upcomingEvents = await dbConn
+                .select({
+                  id: studentCalendarEvents.id,
+                  title: studentCalendarEvents.title,
+                  eventType: studentCalendarEvents.eventType,
+                  startDate: studentCalendarEvents.startDate,
+                  priority: studentCalendarEvents.priority,
+                  description: studentCalendarEvents.description,
+                  courseName: studentCourses.courseName,
+                  courseCode: studentCourses.courseCode,
+                })
+                .from(studentCalendarEvents)
+                .leftJoin(studentCourses, eqOp(studentCalendarEvents.courseId, studentCourses.id))
+                .where(andOp(
+                  eqOp(studentCalendarEvents.userId, authenticatedUserId),
+                  gteOp(studentCalendarEvents.startDate, todayStr),
+                  lteOp(studentCalendarEvents.startDate, horizonStr)
+                ))
+                .orderBy(studentCalendarEvents.startDate);
+
+              if (upcomingEvents.length > 0) {
+                const lines = upcomingEvents.map((e: any) => {
+                  const courseLabel = e.courseCode || e.courseName || 'Course';
+                  const priorityTag = e.priority === 'high' ? ' [HIGH PRIORITY]' : '';
+                  return `- ${e.startDate}: ${e.title} (${e.eventType}, ${courseLabel})${priorityTag}`;
+                }).join('\n');
+                academicEventsBlock = `
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📅 STUDENT'S UPCOMING ACADEMIC EVENTS (next 30 days):
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${lines}
+
+USE THIS DATA WHEN:
+- Student asks "what do I have coming up?" / "what's due this week?" / "when is my next exam?"
+- Student asks for help studying — proactively note what's relevant ("Your Week 2 Exam is on June 14, want to review?")
+- Student mentions a topic — connect it to upcoming events when relevant ("Cellular respiration is on the Week 2 Exam — let's drill that")
+
+Do NOT recite the full list unprompted in greetings. Reference items naturally as they become relevant in the conversation.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+                console.log(`[AcademicEvents] 📅 Injected ${upcomingEvents.length} upcoming events into system prompt`);
+              } else {
+                console.log(`[AcademicEvents] ℹ️ No upcoming events for user in next 30 days`);
+              }
+            } catch (eventsErr) {
+              console.warn('[AcademicEvents] ⚠️ Events injection failed (non-blocking):', eventsErr);
+            }
             
             // Build system instruction with personality and document context
             // NO-GHOSTING FIX: Calculate actual content length before claiming doc access
@@ -5568,7 +5695,7 @@ Therefore:
               });
               
               // Create enhanced system instruction - NO-GHOSTING: Only claim access when content exists
-              state.systemInstruction = `${personality.systemPrompt}${VOICE_CONVERSATION_CONSTRAINTS}${VISUAL_SYSTEM_INSTRUCTION}${K2_CONSTRAINTS}${SPECIALIZATION_BLOCK}${PRACTICE_MODE_BLOCK}${continuityBlock}${lsisProfileBlock}
+              state.systemInstruction = `${personality.systemPrompt}${VOICE_CONVERSATION_CONSTRAINTS}${VISUAL_SYSTEM_INSTRUCTION}${K2_CONSTRAINTS}${SPECIALIZATION_BLOCK}${PRACTICE_MODE_BLOCK}${continuityBlock}${lsisProfileBlock}${academicEventsBlock}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📚 DOCUMENTS LOADED FOR THIS SESSION (${ragChars} chars):
@@ -5602,7 +5729,7 @@ DOCUMENT ACKNOWLEDGMENT RULE:
                 return titleMatch ? titleMatch[1] : `file ${i + 1}`;
               });
               
-              state.systemInstruction = `${personality.systemPrompt}${VOICE_CONVERSATION_CONSTRAINTS}${VISUAL_SYSTEM_INSTRUCTION}${K2_CONSTRAINTS}${SPECIALIZATION_BLOCK}${PRACTICE_MODE_BLOCK}${continuityBlock}${lsisProfileBlock}
+              state.systemInstruction = `${personality.systemPrompt}${VOICE_CONVERSATION_CONSTRAINTS}${VISUAL_SYSTEM_INSTRUCTION}${K2_CONSTRAINTS}${SPECIALIZATION_BLOCK}${PRACTICE_MODE_BLOCK}${continuityBlock}${lsisProfileBlock}${academicEventsBlock}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ⚠️ DOCUMENT UPLOAD ISSUE:
@@ -5624,19 +5751,10 @@ HONESTY INSTRUCTIONS:
               console.log(`[Custom Voice] No documents uploaded - using standard prompt`);
             }
             
-            // Family Academic Context injection (non-blocking)
-            try {
-              if (state.userId && state.studentId) {
-                const { getFamilyAcademicContextForVoice } = await import('./family-academic');
-                const familyContext = await getFamilyAcademicContextForVoice(state.userId, state.studentId);
-                if (familyContext) {
-                  state.systemInstruction += familyContext;
-                  console.log(`[Family Academic] Injected voice context for child ${state.studentId} (${familyContext.length} chars)`);
-                }
-              }
-            } catch (familyErr) {
-              console.warn('[Family Academic] Voice context injection failed (non-blocking):', familyErr);
-            }
+            // Family Academic Context injection: REMOVED — Notre Dame is College/Adult only.
+            // The Family Academic Tracker is a K-12 parent-managing-children feature and is
+            // not used on college-only sites. Removing the dynamic import eliminates the
+            // ERR_MODULE_NOT_FOUND warning that would otherwise log on every session start.
 
             // Generate enhanced personalized greeting with LANGUAGE SUPPORT
             let greeting: string = '';
@@ -5654,14 +5772,32 @@ HONESTY INSTRUCTIONS:
             // Extract document titles from Active documents only (checkbox-checked)
             // NO-GHOSTING: Use hasActualDocContent calculated above
             // CAP: Show at most 3 filenames in greeting to avoid rambling
+            // FIRST-TIME-ACK (May 6 2026): Only verbally acknowledge docs whose
+            //   acknowledgedAt is null. Doc content is still injected for RAG every
+            //   session — only the spoken greeting goes silent on subsequent sessions.
+            //   When activeDocs metadata is unavailable (e.g. pre-formatted client
+            //   docs without IDs), fall back to legacy behavior of acknowledging.
             const greetingDocTitles: string[] = [];
+            const docsToMarkAcknowledged: string[] = []; // doc IDs to UPDATE acknowledged_at after greeting commits
             if (!shouldSkipGreeting && hasActualDocContent && state.uploadedDocuments && state.uploadedDocuments.length > 0) {
-              state.uploadedDocuments.forEach((doc) => {
-                const titleMatch = doc.match(/^\[Document: ([^\]]+)\]/);
-                if (titleMatch && greetingDocTitles.length < 3) {
-                  greetingDocTitles.push(titleMatch[1]);
+              if (state.activeDocs && state.activeDocs.length > 0) {
+                // DB-tracked path: filter by acknowledgedAt
+                const unacknowledged = state.activeDocs.filter(d => !d.acknowledgedAt);
+                console.log(`[Custom Voice][DocAck] activeDocs=${state.activeDocs.length}, unacknowledged=${unacknowledged.length}`);
+                for (const d of unacknowledged) {
+                  if (greetingDocTitles.length >= 3) break;
+                  greetingDocTitles.push(d.title);
+                  docsToMarkAcknowledged.push(d.id);
                 }
-              });
+              } else {
+                // Legacy path: pre-formatted client docs without IDs — always acknowledge
+                state.uploadedDocuments.forEach((doc) => {
+                  const titleMatch = doc.match(/^\[Document: ([^\]]+)\]/);
+                  if (titleMatch && greetingDocTitles.length < 3) {
+                    greetingDocTitles.push(titleMatch[1]);
+                  }
+                });
+              }
             }
             // Count of Active docs vs total uploaded (Active + Inactive)
             const activeDocCount = greetingDocTitles.length;
@@ -5773,7 +5909,7 @@ HONESTY INSTRUCTIONS:
             // Docs-only and generic greetings continue to use templates too;
             // only the continuity-with-topic path needs LLM because that's
             // where stored English content gets embedded.
-            const getLocalizedGreeting = async (lang: string, name: string, tutorName: string, ageGroup: string, docTitles: string[], priorExists: boolean, topic: string | null, lastTopic: string | null = null, multiTopic: boolean = false): Promise<string> => {
+            const getLocalizedGreeting = async (lang: string, name: string, tutorName: string, ageGroup: string, docTitles: string[], priorExists: boolean, topic: string | null, lastTopic: string | null = null, multiTopic: boolean = false, topicReason: 'subject' | 'topic' | 'fallback' | 'none' = 'none'): Promise<string> => {
               // ── LLM path: non-English + has prior-session continuity ───
               // We DON'T await on English (no translation needed) or on
               // empty-topic generic/docs greetings (templates carry no
@@ -5791,10 +5927,27 @@ HONESTY INSTRUCTIONS:
                     yo: 'Yoruba', ha: 'Hausa',
                   };
                   const langName = langNames[lang] || lang;
-                  const continuationLine = multiTopic && lastTopic
-                    ? `Last session covered: "${topic}". The final sub-topic was: "${lastTopic}". Ask if they want to continue with "${lastTopic}" or start something new.`
-                    : `Last session was about: "${topic}". Ask if they want to continue where you left off, or start something new.`;
-                  const promptText = `You are ${tutorName}, an AI tutor greeting ${name} at the start of a new session. Write the greeting entirely in ${langName} — natural, warm, voice-friendly, 2–3 sentences total. TRANSLATE the topic names into ${langName} as part of the sentence (do not leave any phrase in English). ${continuationLine}\n\nOutput ONLY the greeting text. No preamble. No surrounding quotes.`;
+                  // FALLBACK CASE (May 18 2026): when the prior summary had no
+                  // usable topicsCovered or subject, `topic` is the English
+                  // placeholder string 'what we worked on last time' — a filler
+                  // that reads OK in an English template but breaks the LLM
+                  // path because Claude treats the quoted English phrase as a
+                  // proper name not to be translated, embeds it verbatim in
+                  // the target-language greeting, and adds a meta-comment in
+                  // English asking for the real topic. Reported by Pollis on
+                  // Japanese session, screenshot in chat log. Fix: detect the
+                  // fallback case and use a no-topic prompt that greets the
+                  // student warmly as returning without inventing a topic.
+                  const isFallback = topicReason === 'fallback';
+                  const continuationLine = isFallback
+                    ? `The student has had prior sessions with you but you do NOT know what specific topic was covered. Greet them warmly as a returning student. Do NOT invent or mention any specific topic — instead, ask what they would like to work on today.`
+                    : (multiTopic && lastTopic
+                       ? `Last session covered: "${topic}". The final sub-topic was: "${lastTopic}". Ask if they want to continue with "${lastTopic}" or start something new.`
+                       : `Last session was about: "${topic}". Ask if they want to continue where you left off, or start something new.`);
+                  const translateInstruction = isFallback
+                    ? ''
+                    : `TRANSLATE the topic names into ${langName} as part of the sentence (do not leave any phrase in English). `;
+                  const promptText = `You are ${tutorName}, an AI tutor greeting ${name} at the start of a new session. Write the greeting entirely in ${langName} — natural, warm, voice-friendly, 2–3 sentences total. ${translateInstruction}${continuationLine}\n\nOutput ONLY the greeting text. No preamble. No surrounding quotes. Do NOT add any English meta-commentary, parenthetical asides, translation notes, or requests for clarification.`;
                   const res = await anthropic.messages.create({
                     model: 'claude-sonnet-4-6',
                     max_tokens: 300,
@@ -5805,7 +5958,7 @@ HONESTY INSTRUCTIONS:
                   // Strip stray surrounding quotes that Claude sometimes adds
                   const cleaned = text.replace(/^["'`]+|["'`]+$/g, '').trim();
                   if (cleaned.length >= 10) {
-                    console.log(`[GREETING] 🌍 LLM-generated greeting (${lang}): "${cleaned}"`);
+                    console.log(`[GREETING] 🌍 LLM-generated greeting (${lang}, reason=${topicReason}): "${cleaned}"`);
                     return cleaned;
                   }
                   // Empty/very short response — fall through to template
@@ -5993,6 +6146,29 @@ HONESTY INSTRUCTIONS:
               
               // (2) CONTINUITY GREETING: If prior sessions exist and no active docs, use welcome back greeting
               if (priorExists && topic) {
+                // (2a) FALLBACK BRANCH (May 18 2026): no specific topic available
+                // from prior summary (pickContinuationTopic returned the English
+                // placeholder string with reason='fallback'). Greet as a returning
+                // student WITHOUT referencing a specific topic — otherwise the
+                // English template produces the tautological "Last time we were
+                // exploring what we worked on last time." and the non-English
+                // LLM path embeds the English literal in target-language text.
+                if (topicReason === 'fallback') {
+                  const fallbackContinuityGreetings: Record<string, (name: string, tutorName: string) => string> = {
+                    en: (n, t) => `Welcome back, ${n}! I'm ${t}, your tutor. What would you like to work on today?`,
+                    it: (n, t) => `Bentornato, ${n}! Sono ${t}, il tuo tutor. Su cosa vorresti lavorare oggi?`,
+                    es: (n, t) => `¡Bienvenido de nuevo, ${n}! Soy ${t}, tu tutor. ¿En qué te gustaría trabajar hoy?`,
+                    fr: (n, t) => `Content de te revoir, ${n}! Je suis ${t}, ton tuteur. Sur quoi voudrais-tu travailler aujourd'hui?`,
+                    de: (n, t) => `Willkommen zurück, ${n}! Ich bin ${t}, dein Tutor. Woran möchtest du heute arbeiten?`,
+                    pt: (n, t) => `Bem-vindo de volta, ${n}! Sou ${t}, seu tutor. No que você gostaria de trabalhar hoje?`,
+                    zh: (n, t) => `欢迎回来，${n}！我是${t}，你的导师。今天你想学习什么？`,
+                    ar: (n, t) => `أهلاً بعودتك، ${n}! أنا ${t}، معلمك. على ماذا تود أن تعمل اليوم؟`,
+                    sw: (n, t) => `Karibu tena, ${n}! Mimi ni ${t}, mwalimu wako. Ungependa kufanyia kazi nini leo?`,
+                  };
+                  const fallbackFn = fallbackContinuityGreetings[lang] || fallbackContinuityGreetings['en'];
+                  return fallbackFn(name, tutorName);
+                }
+
                 if (multiTopic && lastTopic) {
                   // Multi-topic greeting: "Last time we covered X, then Y, and ended with Z. Want to pick up where we left off with Z, or start something new?"
                   const multiGreetings: Record<string, (n: string, t: string, tp: string, lt: string) => string> = {
@@ -6034,7 +6210,7 @@ HONESTY INSTRUCTIONS:
             if (!shouldSkipGreeting) {
               const greetingMode = greetingDocTitles.length > 0 ? 'ACTIVE_DOCS' : (hasPriorSessions && continuityTopic ? 'CONTINUITY' : 'GENERIC');
               console.log(`[GREETING_PRIORITY] mode=${greetingMode}, activeDocTitles=${greetingDocTitles.length}, hasPrior=${hasPriorSessions}, topic=${continuityTopic || 'none'}`);
-              greeting = await getLocalizedGreeting(state.language, state.studentName, personality.name, state.ageGroup, greetingDocTitles, hasPriorSessions, continuityTopic, continuityLastTopic, continuityMultiTopic);
+              greeting = await getLocalizedGreeting(state.language, state.studentName, personality.name, state.ageGroup, greetingDocTitles, hasPriorSessions, continuityTopic, continuityLastTopic, continuityMultiTopic, topicReason);
               console.log(`[Custom Voice] 🌍 Generated greeting in language: ${state.language}`);
               
               console.log(`[Custom Voice] 👋 Greeting: "${greeting}"`);
@@ -6059,6 +6235,25 @@ HONESTY INSTRUCTIONS:
               // DOCS: Mark docs as acknowledged so tutor never re-lists them later
               if (greetingDocTitles.length > 0) {
                 state.hasAcknowledgedDocs = true;
+              }
+              // FIRST-TIME-ACK PERSISTENCE (May 6 2026): write acknowledged_at timestamp
+              // to user_documents so the next session's greeting filter knows to skip
+              // these docs. Non-blocking — a write failure here doesn't break the session.
+              if (docsToMarkAcknowledged.length > 0) {
+                (async () => {
+                  try {
+                    const { db } = await import('../db');
+                    const { userDocuments } = await import('@shared/schema');
+                    const { inArray } = await import('drizzle-orm');
+                    const result = await db.update(userDocuments)
+                      .set({ acknowledgedAt: new Date(), updatedAt: new Date() })
+                      .where(inArray(userDocuments.id, docsToMarkAcknowledged))
+                      .returning({ id: userDocuments.id });
+                    console.log(`[Custom Voice][DocAck] ✅ Marked ${result.length} docs as acknowledged: ${docsToMarkAcknowledged.join(', ')}`);
+                  } catch (ackErr) {
+                    console.warn('[Custom Voice][DocAck] ⚠️ Failed to persist acknowledgment (non-blocking):', ackErr);
+                  }
+                })();
               }
             }
 
@@ -6166,76 +6361,50 @@ HONESTY INSTRUCTIONS:
                 // Skip this gate for language practice (single words can be valid responses).
                 // EXCEPTION: Valid short answers like "yes", "no", "gravity", "correct" etc.
                 // should always pass — only drop filler noise and low-confidence fragments.
+                //
+                // LANGUAGE-AWARE (May 18 2026): the short-answer whitelist and non-lexical
+                // filler regex are resolved from the session's selected language via
+                // server/services/language-rules.ts. English defaults preserve the original
+                // VALID_SHORT_ANSWERS list verbatim. Non-Latin-script sessions (CJK, Hangul,
+                // Devanagari, Thai, Arabic, etc.) additionally bypass the word-count
+                // threshold because those scripts don't use spaces between morphemes the
+                // way Latin scripts do — a complete Japanese or Thai sentence often parses
+                // as wordCount=1 by `\s+` split, so MIN_WORDS_TO_COMMIT_TURN is meaningless.
                 if (!isLanguageSession && !stallPrompt && fragmentWords.length < 3) {
                   const lastConf = state.lastAccumulatedConfidence || 0;
-                  
-                  // Non-lexical filler sounds — always drop regardless of confidence
-                  const isNonLexicalNoise = /^(um+|uh+|hmm+|hm+|er+|erm+|mhm+)$/i.test(fragmentCheck);
+                  const langRules = getLanguageRules(state.language);
+                  const isNonLatin = isNonLatinScript(transcript);
+
+                  // Non-lexical filler sounds — always drop regardless of confidence.
+                  // Per-language filler patterns catch "ähm" / "えーと" / "嗯" too.
+                  const isNonLexicalNoise = langRules.nonLexicalNoiseRegex.test(fragmentCheck);
                   if (isNonLexicalNoise) {
-                    console.log(`[TurnPolicy] 🔇 Min-word gate: "${transcript.trim()}" (non-lexical noise) — dropping`);
+                    console.log(`[TurnPolicy] 🔇 Min-word gate: "${transcript.trim()}" (non-lexical noise, lang=${state.language}) — dropping`);
                     trackDroppedTurnForNoiseCoaching(ws, state);
                     return;
                   }
-                  
-                  // Common valid short answers — always pass through at any confidence
-                  const VALID_SHORT_ANSWERS = new Set([
-                    // Affirmations & negations
-                    'yes', 'no', 'yeah', 'yep', 'yup', 'nah', 'nope',
-                    'sure', 'ok', 'okay', 'correct', 'right', 'wrong',
-                    'true', 'false', 'maybe', 'probably', 'definitely',
-                    'absolutely', 'exactly', 'indeed', 'certainly',
-                    // Frequency & quantity
-                    'always', 'never', 'sometimes', 'both', 'neither',
-                    'all', 'none', 'some', 'many', 'few', 'most',
-                    'less', 'more', 'each', 'every', 'enough',
-                    // Pronouns & determiners as answers
-                    'nothing', 'everything', 'something', 'anything',
-                    'everyone', 'nobody', 'somebody', 'anybody',
-                    'here', 'there', 'this', 'that', 'those', 'these',
-                    'me', 'him', 'her', 'them', 'us', 'it', 'mine',
-                    // Question words (student repeating/confirming)
-                    'what', 'who', 'why', 'how', 'when', 'where', 'which',
-                    // Session control
-                    'stop', 'wait', 'continue', 'repeat', 'again', 'next',
-                    'help', 'skip', 'harder', 'easier', 'slower', 'faster',
-                    'done', 'ready', 'start', 'finish', 'quit', 'back',
-                    // Greetings & politeness
-                    'hello', 'hi', 'hey', 'bye', 'goodbye', 'thanks',
-                    'please', 'sorry', 'welcome',
-                    // Reactions & feelings
-                    'wow', 'cool', 'nice', 'great', 'awesome', 'perfect',
-                    'good', 'bad', 'fine', 'amazing', 'interesting',
-                    'confused', 'lost', 'stuck', 'unsure', 'understand',
-                    // Academic responses
-                    'agree', 'disagree', 'forgot', 'remember', 'know',
-                    'think', 'guess', 'believe', 'depends', 'different',
-                    'same', 'similar', 'opposite', 'equal', 'zero',
-                    // Ordinals & comparisons
-                    'first', 'second', 'third', 'last',
-                    'bigger', 'smaller', 'higher', 'lower',
-                    // Common single-word subject answers
-                    'water', 'earth', 'sun', 'moon', 'gravity',
-                    'energy', 'light', 'sound', 'heat', 'oxygen',
-                    'north', 'south', 'east', 'west',
-                    'addition', 'subtraction', 'multiplication', 'division',
-                    // Numbers as words
-                    'one', 'two', 'three', 'four', 'five',
-                    'six', 'seven', 'eight', 'nine', 'ten',
-                    'hundred', 'thousand', 'million', 'half', 'double',
-                  ]);
-                  const isValidShortAnswer = fragmentWords.length === 1 && VALID_SHORT_ANSWERS.has(fragmentWords[0]);
-                  
-                  if (isValidShortAnswer) {
-                    console.log(`[TurnPolicy] ✅ Min-word gate BYPASSED: "${transcript.trim()}" — recognized short answer`);
-                  } else if (lastConf >= 0.20 || (lastConf >= 0.20 && fragmentWords.length === 2)) {
-                    // Any real word with any meaningful confidence passes (e.g. "gravity", "everything")
-                    // AssemblyAI turn confidence for single words is typically 0.20-0.50
-                    // Filler noise (um, uh, hmm) is already caught by the non-lexical filter above
-                    console.log(`[TurnPolicy] ✅ Min-word gate BYPASSED: "${transcript.trim()}" (${fragmentWords.length} word${fragmentWords.length > 1 ? 's' : ''}, conf=${lastConf.toFixed(2)}) — high-confidence short answer`);
+
+                  // Non-Latin-script bypass — trust the transcript directly (Deepgram's
+                  // language-tuned confidence filters noise for those scripts; word-count
+                  // thresholds are meaningless without space-delimited words).
+                  if (isNonLatin) {
+                    console.log(`[TurnPolicy] ✅ Min-word gate BYPASSED: "${transcript.trim()}" (lang=${state.language}, non-Latin script) — script-aware bypass`);
                   } else {
-                    console.log(`[TurnPolicy] 🔇 Min-word gate: "${transcript.trim()}" (${fragmentWords.length} word${fragmentWords.length > 1 ? 's' : ''} < 3, conf=${lastConf.toFixed(2)}) — dropping as likely noise fragment`);
-                    trackDroppedTurnForNoiseCoaching(ws, state);
-                    return;
+                    const isValidShortAnswer = fragmentWords.length === 1 && langRules.validShortAnswers.has(fragmentWords[0]);
+
+                    if (isValidShortAnswer) {
+                      console.log(`[TurnPolicy] ✅ Min-word gate BYPASSED: "${transcript.trim()}" (lang=${state.language}) — recognized short answer`);
+                    } else if (lastConf >= 0.20 || (lastConf >= 0.20 && fragmentWords.length === 2)) {
+                      // DEFENSE IN DEPTH: Any real word with any meaningful confidence
+                      // passes (e.g. "gravity", "everything", or a non-English word not
+                      // in the language whitelist). Deepgram turn confidence for single
+                      // words is typically 0.20-0.50. Filler noise is already caught above.
+                      console.log(`[TurnPolicy] ✅ Min-word gate BYPASSED: "${transcript.trim()}" (${fragmentWords.length} word${fragmentWords.length > 1 ? 's' : ''}, conf=${lastConf.toFixed(2)}, lang=${state.language}) — high-confidence short answer`);
+                    } else {
+                      console.log(`[TurnPolicy] 🔇 Min-word gate: "${transcript.trim()}" (${fragmentWords.length} word${fragmentWords.length > 1 ? 's' : ''} < 3, conf=${lastConf.toFixed(2)}, lang=${state.language}) — dropping as likely noise fragment`);
+                      trackDroppedTurnForNoiseCoaching(ws, state);
+                      return;
+                    }
                   }
                 }
 
@@ -7207,13 +7376,9 @@ HONESTY INSTRUCTIONS:
                   }
                   state.lastTranscript = transcript;
 
-                  // Language auto-detect
-                  if (spokenLang && spokenLang !== state.language) {
-                    console.log(`[Custom Voice] 🌍 Language switch detected: ${state.language} → ${spokenLang}`);
-                    state.detectedLanguage = spokenLang;
-                  } else if (spokenLang) {
-                    state.detectedLanguage = spokenLang;
-                  }
+                  // LANGUAGE SWITCH GUARD: require N consecutive utterances in
+                  // the candidate language before flipping. See evaluateLanguageSwitch().
+                  state.detectedLanguage = evaluateLanguageSwitch(state, spokenLang, transcript);
 
                   // SIGNAL 2: is_final = accumulate text into pending buffer
                   pendingTranscript = (pendingTranscript + ' ' + transcript).trim();
@@ -7903,7 +8068,7 @@ HONESTY INSTRUCTIONS:
               console.log(`[VOICE] 🔄 Recovery phrase detected during stall (text): "${message.message}" - treating as normal input`);
             }
             
-            if (detectGoodbye(message.message) && !(textIsRecovery && textIsStalled)) {
+            if (detectGoodbye(message.message, state.language) && !(textIsRecovery && textIsStalled)) {
               console.log('[Goodbye] 👋 User said goodbye (text), ending session gracefully');
               
               const goodbyeMessage = "Goodbye! Great learning with you today. Come back anytime you want to continue learning!";
