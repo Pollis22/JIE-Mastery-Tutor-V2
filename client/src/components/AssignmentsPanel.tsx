@@ -330,7 +330,7 @@ export function AssignmentsPanel({
         ) : (
           <>
             <div className="overflow-x-auto">
-              <table className="w-full border-collapse table-fixed">
+              <table className="w-full border-collapse table-fixed responsive-table">
                 <thead>
                   <tr className="bg-gray-50 dark:bg-gray-700">
                     {onDocumentSelectionChange && (
@@ -346,7 +346,7 @@ export function AssignmentsPanel({
                   {documents.map((document) => (
                     <tr key={document.id} className="border-b border-gray-200 dark:border-gray-700" data-testid={`document-row-${document.id}`}>
                       {onDocumentSelectionChange && (
-                        <td className="p-2 text-center">
+                        <td className="p-2 text-center" data-label="Active">
                           <input
                             type="checkbox"
                             checked={selectedDocumentIds.includes(document.id)}
@@ -357,7 +357,7 @@ export function AssignmentsPanel({
                           />
                         </td>
                       )}
-                      <td className="p-2">
+                      <td className="p-2" data-label="Document">
                         <div className="flex items-center gap-2 min-w-0">
                           <FileText className="w-4 h-4 text-gray-500 flex-shrink-0" />
                           <div className="min-w-0">
@@ -371,15 +371,15 @@ export function AssignmentsPanel({
                           </div>
                         </div>
                       </td>
-                      <td className="p-2 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">{formatFileSize(document.fileSize)}</td>
-                      <td className="p-2">
+                      <td className="p-2 text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap" data-label="Size">{formatFileSize(document.fileSize)}</td>
+                      <td className="p-2" data-label="Status">
                         <StatusPill 
                           status={document.processingStatus} 
                           error={document.processingError}
                           retryCount={document.retryCount}
                         />
                       </td>
-                      <td className="p-2 text-center">
+                      <td className="p-2 text-center" data-label="Delete">
                         <button
                           onClick={() => deleteMutation.mutate(document.id)}
                           className="p-1.5 text-gray-500 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400 transition-colors hover:bg-red-50 dark:hover:bg-red-900/20 rounded"

@@ -417,7 +417,7 @@ async function runConceptExtraction(job: any): Promise<ExtractionResult> {
   );
 
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
+    model: 'claude-opus-4-7',
     max_tokens: 4000,
     messages: [{ role: 'user', content: prompt }],
   });

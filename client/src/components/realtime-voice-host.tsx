@@ -1128,7 +1128,7 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
       
       {/* Sticky Chat Input + End Session - Always visible at bottom */}
       {customVoice.isConnected && (
-        <div className={`flex-shrink-0 sticky bottom-0 bg-background/95 backdrop-blur-sm border-t shadow-[0_-4px_20px_rgba(0,0,0,0.1)] pt-3 pb-4 z-50 ${customVoice.microphoneError || !studentMicEnabled ? 'text-mode-emphasis' : ''}`}>
+        <div className={`voice-session-controls flex-shrink-0 sticky bottom-0 bg-background/95 backdrop-blur-sm border-t shadow-[0_-4px_20px_rgba(0,0,0,0.1)] pt-3 pb-4 z-50 ${customVoice.microphoneError || !studentMicEnabled ? 'text-mode-emphasis' : ''}`}>
           {(customVoice.microphoneError || !studentMicEnabled) && (
             <div className="text-center mb-3 px-4 py-2 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 border-2 border-blue-300 dark:border-blue-700 rounded-lg shadow-sm mx-1">
               <div className="flex items-center justify-center gap-2">
