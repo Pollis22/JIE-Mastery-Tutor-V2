@@ -998,59 +998,80 @@ IMPORTANT: Start the session by reading the opening introduction naturally. Then
           </div>
         )}
         
-        {/* Minimal Audio Controls - Only shown during active session */}
+        {/* Session Mode Controls - prominent button row, only shown during active session */}
         {customVoice.isConnected && (
-          <div className="bg-muted/30 border border-border/50 rounded-lg py-1.5 px-2">
-            <div className="flex flex-wrap items-center justify-center gap-2">
-            {Object.entries(MODES).map(([key, config]) => {
-              const ModeIcon = config.icon;
-              const isActive = communicationMode === key;
-              return (
-                <Button
-                  key={key}
-                  onClick={() => switchMode(key as 'voice' | 'hybrid' | 'text')}
-                  variant={isActive ? 'secondary' : 'ghost'}
-                  size="sm"
-                  className={`gap-1.5 ${isActive ? 'bg-secondary' : 'opacity-60 hover:opacity-100'}`}
-                  data-testid={`button-mode-${key}`}
-                >
-                  <ModeIcon className="h-3.5 w-3.5" />
-                  <span className="text-xs">{config.label}</span>
-                </Button>
-              );
-            })}
-            
-            <div className="h-4 w-px bg-border/50 mx-1" />
-            
-            <Button
-              onClick={toggleTutorAudio}
-              variant="ghost"
-              size="sm"
-              className="gap-1.5 opacity-70 hover:opacity-100"
-              data-testid="button-toggle-tutor-audio"
-              title={tutorAudioEnabled ? 'Mute tutor' : 'Unmute tutor'}
-            >
-              {tutorAudioEnabled ? (
-                <Volume2 className="h-3.5 w-3.5" />
-              ) : (
-                <VolumeX className="h-3.5 w-3.5 text-muted-foreground" />
-              )}
-            </Button>
-            
-            <Button
-              onClick={toggleStudentMic}
-              variant="ghost"
-              size="sm"
-              className="gap-1.5 opacity-70 hover:opacity-100"
-              data-testid="button-toggle-student-mic"
-              title={studentMicEnabled ? 'Mute mic' : 'Unmute mic'}
-            >
-              {studentMicEnabled ? (
-                <Mic className="h-3.5 w-3.5" />
-              ) : (
-                <MicOff className="h-3.5 w-3.5 text-muted-foreground" />
-              )}
-            </Button>
+          <div className="bg-muted/30 border border-border/50 rounded-xl p-2 sm:p-2.5">
+            <div className="flex flex-wrap items-center justify-center gap-2 sm:gap-3">
+              {/* Three mode buttons */}
+              <div className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2">
+                {Object.entries(MODES).map(([key, config]) => {
+                  const ModeIcon = config.icon;
+                  const isActive = communicationMode === key;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => switchMode(key as 'voice' | 'hybrid' | 'text')}
+                      data-testid={`button-mode-${key}`}
+                      aria-pressed={isActive}
+                      title={config.description}
+                      className={`inline-flex items-center gap-1.5 sm:gap-2 h-9 sm:h-10 px-3 sm:px-4 rounded-lg text-xs sm:text-sm font-medium border-2 transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 disabled:opacity-50 disabled:pointer-events-none ${
+                        isActive
+                          ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                          : 'bg-card text-foreground border-border hover:bg-muted hover:border-primary/40'
+                      }`}
+                    >
+                      <ModeIcon className="h-4 w-4 flex-shrink-0" />
+                      <span className="whitespace-nowrap">{config.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Vertical separator */}
+              <div className="h-7 w-px bg-border/70" aria-hidden="true" />
+
+              {/* Tutor audio toggle */}
+              <button
+                type="button"
+                onClick={toggleTutorAudio}
+                data-testid="button-toggle-tutor-audio"
+                aria-pressed={tutorAudioEnabled}
+                aria-label={tutorAudioEnabled ? 'Mute tutor audio' : 'Unmute tutor audio'}
+                title={tutorAudioEnabled ? 'Mute tutor' : 'Unmute tutor'}
+                className={`inline-flex items-center justify-center h-9 w-9 sm:h-10 sm:w-10 rounded-lg border-2 transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${
+                  tutorAudioEnabled
+                    ? 'bg-card text-foreground border-border hover:bg-muted hover:border-primary/40'
+                    : 'bg-destructive/10 text-destructive border-destructive/40 hover:bg-destructive/15'
+                }`}
+              >
+                {tutorAudioEnabled ? (
+                  <Volume2 className="h-4 w-4" />
+                ) : (
+                  <VolumeX className="h-4 w-4" />
+                )}
+              </button>
+
+              {/* Student mic toggle */}
+              <button
+                type="button"
+                onClick={toggleStudentMic}
+                data-testid="button-toggle-student-mic"
+                aria-pressed={studentMicEnabled}
+                aria-label={studentMicEnabled ? 'Mute microphone' : 'Unmute microphone'}
+                title={studentMicEnabled ? 'Mute mic' : 'Unmute mic'}
+                className={`inline-flex items-center justify-center h-9 w-9 sm:h-10 sm:w-10 rounded-lg border-2 transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 ${
+                  studentMicEnabled
+                    ? 'bg-card text-foreground border-border hover:bg-muted hover:border-primary/40'
+                    : 'bg-destructive/10 text-destructive border-destructive/40 hover:bg-destructive/15'
+                }`}
+              >
+                {studentMicEnabled ? (
+                  <Mic className="h-4 w-4" />
+                ) : (
+                  <MicOff className="h-4 w-4" />
+                )}
+              </button>
             </div>
           </div>
         )}
