@@ -166,6 +166,7 @@ export function AIOrb({ state, size = 100, ageGroup = 'College' }: AIOrbProps) {
           <clipPath id={`${orbId}-clip`}>
             <motion.path
               d={morphPath}
+              initial={false}
               animate={{ d: morphPath }}
               transition={{ duration: 0.55, ease: [0.4, 0, 0.2, 1] }}
             />
@@ -185,6 +186,7 @@ export function AIOrb({ state, size = 100, ageGroup = 'College' }: AIOrbProps) {
         {/* Main orb shape — morphing */}
         <motion.path
           d={morphPath}
+          initial={false}
           animate={{ d: morphPath }}
           transition={{ duration: 0.55, ease: [0.4, 0, 0.2, 1] }}
           fill={`url(#${orbId}-core)`}
@@ -194,6 +196,7 @@ export function AIOrb({ state, size = 100, ageGroup = 'College' }: AIOrbProps) {
         {/* Plasma secondary layer */}
         <motion.path
           d={morphPath}
+          initial={false}
           animate={{ d: morphPath }}
           transition={{ duration: 0.55, ease: [0.4, 0, 0.2, 1] }}
           fill={`url(#${orbId}-plasma)`}
@@ -203,6 +206,7 @@ export function AIOrb({ state, size = 100, ageGroup = 'College' }: AIOrbProps) {
         {/* Glass shine */}
         <motion.path
           d={morphPath}
+          initial={false}
           animate={{ d: morphPath }}
           transition={{ duration: 0.55, ease: [0.4, 0, 0.2, 1] }}
           fill={`url(#${orbId}-shine)`}
@@ -235,6 +239,7 @@ export function AIOrb({ state, size = 100, ageGroup = 'College' }: AIOrbProps) {
                 stroke="white"
                 strokeWidth={size * 0.015}
                 opacity={0}
+                initial={{ r: r * scale, opacity: 0 }}
                 animate={{ r: [r * scale, r * 0.85], opacity: [0.4, 0] }}
                 transition={{ duration: 1.0, repeat: Infinity, delay: i * 0.4, ease: 'easeOut' }}
               />
@@ -254,6 +259,7 @@ export function AIOrb({ state, size = 100, ageGroup = 'College' }: AIOrbProps) {
                 fill="none"
                 stroke={pal.ring}
                 strokeWidth={size * 0.02}
+                initial={{ opacity: 0.7, scale: 1 }}
                 animate={{ opacity: [0.7, 0], scale: [1, 1.3] }}
                 transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.25, ease: 'easeOut' }}
               />
