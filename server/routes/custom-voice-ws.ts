@@ -2137,7 +2137,7 @@ async function processSafetyCheck(
 //     jarvis-rehearsal commit bfc19c0.
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-const MAX_GOODBYE_UTTERANCE_LEN = 40;
+const MAX_GOODBYE_UTTERANCE_LEN = 80;
 
 /**
  * Detect whether a user utterance is primarily a goodbye, using the

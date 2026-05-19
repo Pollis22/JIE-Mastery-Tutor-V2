@@ -148,8 +148,18 @@ const EN: LanguageRules = {
     'good night', 'goodnight', 'night night', 'nighty night',
     'good bye', 'bye bye',
     'goodbye', 'bye', 'see ya',
+    // Cross-language farewells used colloquially by English speakers (May 18 2026):
+    // English speakers frequently use these as goodbyes regardless of session
+    // language. Required so "That's all I needed. Adios." fires even when the
+    // session language is set to English.
+    'adios', 'adiós', 'ciao', 'sayonara', 'au revoir', 'hasta luego', 'hasta la vista',
+    // Explicit session-end commands (May 18 2026): users sometimes give a
+    // direct instruction to disconnect rather than a conventional farewell.
+    'please disconnect', 'you should disconnect', 'you should be disconnecting',
+    'time to disconnect', 'disconnect now', 'please end the session',
+    'you can disconnect', 'you can hang up', 'hang up now',
   ],
-  singleTokenGoodbyes: new Set(['goodbye', 'bye', 'see ya', 'later']),
+  singleTokenGoodbyes: new Set(['goodbye', 'bye', 'see ya', 'later', 'adios', 'adiós', 'ciao', 'sayonara', 'disconnect']),
   greetingPrefixes: [
     'hi ', 'hi,', 'hi.', 'hi!',
     'hello ', 'hello,', 'hello.', 'hello!',
