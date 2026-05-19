@@ -12,6 +12,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { getMaxTokensForGrade, LLM_CONFIG } from "../llm/systemPrompt";
 import { sanitizeTtsText, isOlderGradeBand } from "../utils/tts-sanitizer";
+import { getOrgKnowledgeBlock } from "../config/orgKnowledge";
 
 /*
 <important_code_snippet_instructions>
@@ -235,7 +236,15 @@ GENERAL TUTORING INSTRUCTIONS:
 - ${inputModality === "voice" ? "You are having a VOICE conversation - the student can HEAR you" : "The student sent you a text message"}`;
     }
   }
-  
+
+  // Prepend org-wide shared knowledge (creed/principles/identity for this site).
+  // No-op when ORG_KNOWLEDGE_ENABLED != 'true' or the file is missing.
+  // Sits at the top of the cached system prompt so prompt caching covers it.
+  const orgKnowledge = getOrgKnowledgeBlock();
+  if (orgKnowledge) {
+    systemPrompt = `${orgKnowledge}\n\n${systemPrompt}`;
+  }
+
   return systemPrompt;
 }
 
