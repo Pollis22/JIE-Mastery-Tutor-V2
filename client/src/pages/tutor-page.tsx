@@ -1056,8 +1056,8 @@ export default function TutorPage() {
                 {sessionState === 'idle' && (
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mt-4">
                     <div>
-                      <p className="text-xs text-muted-foreground mb-1.5">Session Mode</p>
-                      <div className="flex items-center gap-1 border border-border rounded-lg p-1 bg-muted/30">
+                      <p className="text-sm font-semibold text-foreground mb-2">Select your session mode</p>
+                      <div className="inline-flex flex-wrap items-center gap-1.5 border-2 border-border rounded-xl p-1.5 bg-muted">
                         {([
                           { key: 'voice' as const, label: 'Voice', Icon: Mic, tip: 'Speak & hear your tutor' },
                           { key: 'hybrid' as const, label: 'Listen Only', Icon: Headphones, tip: 'Type to tutor, hear responses' },
@@ -1066,11 +1066,12 @@ export default function TutorPage() {
                           <button
                             key={key}
                             onClick={() => { setSessionMode(key); localStorage.setItem('preferred-communication-mode', key); }}
-                            className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-semibold border transition-all ${
                               sessionMode === key
-                                ? 'bg-background text-foreground shadow-sm border border-border'
-                                : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
+                                ? 'bg-primary text-primary-foreground border-primary shadow-md scale-[1.03]'
+                                : 'bg-background text-foreground border-border hover:border-primary/60 hover:text-primary hover:bg-primary/5'
                             }`}
+                            aria-pressed={sessionMode === key}
                             title={tip}
                           >
                             <Icon className="h-4 w-4" />
