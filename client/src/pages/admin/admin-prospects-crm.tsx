@@ -22,6 +22,7 @@ import {
   Flame, Plus, Search, ChevronRight, ChevronLeft, RefreshCw,
   Rocket, GraduationCap, Briefcase, X, Save, UserPlus,
   Phone, Mail, Globe, MapPin, Edit3, Trash2, MessageSquare,
+  ListChecks, Pencil, RotateCcw, ListPlus,
 } from "lucide-react";
 
 const API_BASE = "/api/admin/prospects";
@@ -118,13 +119,15 @@ function KPICard({ label, value, sub, icon, color }: { label: string; value: str
 function ProspectDetailPanel({ prospectId, onClose }: { prospectId: string; onClose: () => void }) {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const [activeSection, setActiveSection] = useState<"details" | "contacts" | "activity">("details");
+  const [activeSection, setActiveSection] = useState<"details" | "contacts" | "activity" | "tasks">("details");
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState<any>({});
   const [showAddContact, setShowAddContact] = useState(false);
   const [showAddActivity, setShowAddActivity] = useState(false);
+  const [showAddTask, setShowAddTask] = useState(false);
   const [newContact, setNewContact] = useState({ firstName: "", lastName: "", title: "", email: "", phone: "", buyingRole: "", notes: "" });
   const [newActivity, setNewActivity] = useState({ activityType: "Call", subject: "", notes: "", outcome: "" });
+  const [newTask, setNewTask] = useState({ title: "", priority: "Medium", dueDate: "", taskType: "Follow-Up", notes: "" });
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["sales-prospect-detail", prospectId],
@@ -185,7 +188,41 @@ function ProspectDetailPanel({ prospectId, onClose }: { prospectId: string; onCl
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
-  if (isLoading) return <div className="p-6 space-y-4">{[...Array(6)].map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}</div>;
+  const { data: prospectTasks = [], refetch: refetchTasks } = useQuery<any[]>({
+    queryKey: ["sales-prospect-tasks", prospectId],
+    queryFn: () => fetch(`${API_BASE}/tasks?prospectId=${prospectId}`).then(r => r.json()),
+    enabled: !!prospectId,
+  });
+
+  const addTask = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await fetch(`${API_BASE}/tasks`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...data, prospectId }) });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    onSuccess: () => { refetchTasks(); qc.invalidateQueries({ queryKey: ["sales-tasks"] }); qc.invalidateQueries({ queryKey: ["sales-today"] }); toast({ title: "Task added" }); setShowAddTask(false); setNewTask({ title: "", priority: "Medium", dueDate: "", taskType: "Follow-Up", notes: "" }); },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const updateTask = useMutation({
+    mutationFn: async ({ id, updates }: { id: string; updates: any }) => {
+      const res = await fetch(`${API_BASE}/tasks/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(updates) });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    onSuccess: () => { refetchTasks(); qc.invalidateQueries({ queryKey: ["sales-tasks"] }); qc.invalidateQueries({ queryKey: ["sales-today"] }); },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const deleteTask = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`${API_BASE}/tasks/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    onSuccess: () => { refetchTasks(); qc.invalidateQueries({ queryKey: ["sales-tasks"] }); qc.invalidateQueries({ queryKey: ["sales-today"] }); toast({ title: "Task deleted" }); },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
   if (!data?.prospect) return <div className="p-6 text-center text-sm text-muted-foreground">Prospect not found</div>;
 
   const p = data.prospect;
@@ -242,9 +279,9 @@ function ProspectDetailPanel({ prospectId, onClose }: { prospectId: string; onCl
 
       {/* Section tabs */}
       <div className="flex border-b border-border px-5">
-        {(["details", "contacts", "activity"] as const).map(s => (
+        {(["details", "contacts", "activity", "tasks"] as const).map(s => (
           <button key={s} onClick={() => setActiveSection(s)} className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors ${activeSection === s ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
-            {s === "details" ? "Details" : s === "contacts" ? `Contacts (${contacts.length})` : `Activity (${activities.length})`}
+            {s === "details" ? "Details" : s === "contacts" ? `Contacts (${contacts.length})` : s === "activity" ? `Activity (${activities.length})` : `Tasks (${prospectTasks.filter((t: any) => t.status !== "Completed").length})`}
           </button>
         ))}
       </div>
@@ -412,8 +449,128 @@ function ProspectDetailPanel({ prospectId, onClose }: { prospectId: string; onCl
             )}
           </div>
         )}
+
+        {/* TASKS */}
+        {activeSection === "tasks" && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Tasks for {p.institutionName}</h3>
+              <Button size="sm" className="h-7 text-xs" onClick={() => setShowAddTask(!showAddTask)}><ListPlus size={11} className="mr-1" /> Add Task</Button>
+            </div>
+            {showAddTask && (
+              <Card className="p-3 space-y-2 border-primary/30">
+                <Input value={newTask.title} onChange={e => setNewTask({ ...newTask, title: e.target.value })} placeholder="Task title *" className="h-7 text-xs" />
+                <div className="grid grid-cols-3 gap-2">
+                  <Select value={newTask.priority} onValueChange={v => setNewTask({ ...newTask, priority: v })}>
+                    <SelectTrigger className="h-7 text-[11px]"><SelectValue /></SelectTrigger>
+                    <SelectContent><SelectItem value="High">High</SelectItem><SelectItem value="Medium">Medium</SelectItem><SelectItem value="Low">Low</SelectItem></SelectContent>
+                  </Select>
+                  <Input type="date" value={newTask.dueDate} onChange={e => setNewTask({ ...newTask, dueDate: e.target.value })} className="h-7 text-[11px]" />
+                  <Select value={newTask.taskType} onValueChange={v => setNewTask({ ...newTask, taskType: v })}>
+                    <SelectTrigger className="h-7 text-[11px]"><SelectValue /></SelectTrigger>
+                    <SelectContent>{["General","Follow-Up","Demo","Proposal","Pilot Setup","Contract","Onboarding","Research","Outreach"].map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+                <Textarea value={newTask.notes} onChange={e => setNewTask({ ...newTask, notes: e.target.value })} placeholder="Notes (optional)" rows={2} className="text-xs" />
+                <div className="flex justify-end gap-2">
+                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setShowAddTask(false)}>Cancel</Button>
+                  <Button size="sm" className="h-7 text-xs" onClick={() => addTask.mutate(newTask)} disabled={!newTask.title || addTask.isPending}>{addTask.isPending ? "Adding..." : "Add Task"}</Button>
+                </div>
+              </Card>
+            )}
+            {prospectTasks.length === 0 ? (
+              <div className="text-center py-8 text-sm text-muted-foreground">No tasks yet. Add a follow-up, demo, or next step for this prospect.</div>
+            ) : (
+              <div className="space-y-1.5">
+                {prospectTasks.filter((t: any) => t.status !== "Completed").map((t: any) => (
+                  <ProspectTaskRow key={t.id} task={t} onUpdate={(updates) => updateTask.mutate({ id: t.id, updates })} onDelete={() => deleteTask.mutate(t.id)} />
+                ))}
+                {prospectTasks.filter((t: any) => t.status === "Completed").length > 0 && (
+                  <div className="pt-2">
+                    <span className="text-[10px] text-muted-foreground font-medium uppercase">Completed ({prospectTasks.filter((t: any) => t.status === "Completed").length})</span>
+                    {prospectTasks.filter((t: any) => t.status === "Completed").map((t: any) => (
+                      <ProspectTaskRow key={t.id} task={t} onUpdate={(updates) => updateTask.mutate({ id: t.id, updates })} onDelete={() => deleteTask.mutate(t.id)} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+// Per-prospect task row with inline edit dialog
+function ProspectTaskRow({ task, onUpdate, onDelete, prospectName }: { task: any; onUpdate: (updates: any) => void; onDelete: () => void; prospectName?: string | null }) {
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ title: task.title, priority: task.priority || "Medium", dueDate: task.dueDate || "", taskType: task.taskType || "General", status: task.status || "Pending", notes: task.notes || "" });
+  const done = task.status === "Completed";
+  return (
+    <>
+      <div className={`flex items-center gap-2.5 px-3 py-2 rounded-md border border-border hover:bg-muted/30 ${done ? "opacity-50" : ""}`}>
+        <button onClick={() => onUpdate({ status: done ? "Pending" : "Completed", completedDate: done ? null : new Date().toISOString().split("T")[0] })} className="flex-shrink-0">
+          {done ? <CheckCircle2 size={16} className="text-emerald-500" /> : <div className="w-4 h-4 rounded-full border-2 border-muted-foreground hover:border-primary" />}
+        </button>
+        <div className="flex-1 min-w-0 cursor-pointer" onClick={() => { setForm({ title: task.title, priority: task.priority || "Medium", dueDate: task.dueDate || "", taskType: task.taskType || "General", status: task.status || "Pending", notes: task.notes || "" }); setOpen(true); }}>
+          <div className={`text-xs font-medium truncate ${done ? "line-through" : ""}`}>{task.title}</div>
+          <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+            <span>{task.taskType}</span>
+            {prospectName && <span className="flex items-center gap-0.5 text-primary/70"><Building2 size={9} />{prospectName}</span>}
+            {task.status === "In Progress" && <Badge variant="outline" className="text-[8px] h-3.5 px-1 border-blue-300 text-blue-600">In Progress</Badge>}
+            {task.dueDate && <span className={isOverdue(task.dueDate) && !done ? "text-red-500 font-medium" : ""}>{fmtDateShort(task.dueDate)}</span>}
+          </div>
+        </div>
+        <Badge variant="outline" className={`text-[9px] ${task.priority === "High" ? "border-red-300 text-red-600" : ""}`}>{task.priority}</Badge>
+        <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setForm({ title: task.title, priority: task.priority || "Medium", dueDate: task.dueDate || "", taskType: task.taskType || "General", status: task.status || "Pending", notes: task.notes || "" }); setOpen(true); }}><Pencil size={11} className="text-muted-foreground" /></Button>
+      </div>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle className="text-base flex items-center gap-2"><Pencil size={14} /> Edit Task</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div><Label className="text-xs">Title</Label><Input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} className="h-8 text-xs" /></div>
+            <div className="grid grid-cols-2 gap-2">
+              <div><Label className="text-xs">Status</Label>
+                <Select value={form.status} onValueChange={v => setForm({ ...form, status: v })}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="Pending">Pending</SelectItem><SelectItem value="In Progress">In Progress</SelectItem><SelectItem value="Completed">Completed</SelectItem></SelectContent>
+                </Select>
+              </div>
+              <div><Label className="text-xs">Priority</Label>
+                <Select value={form.priority} onValueChange={v => setForm({ ...form, priority: v })}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent><SelectItem value="High">High</SelectItem><SelectItem value="Medium">Medium</SelectItem><SelectItem value="Low">Low</SelectItem></SelectContent>
+                </Select>
+              </div>
+              <div><Label className="text-xs">Due Date</Label><Input type="date" value={form.dueDate} onChange={e => setForm({ ...form, dueDate: e.target.value })} className="h-8 text-xs" /></div>
+              <div><Label className="text-xs">Type</Label>
+                <Select value={form.taskType} onValueChange={v => setForm({ ...form, taskType: v })}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>{["General","Follow-Up","Demo","Proposal","Pilot Setup","Contract","Onboarding","Research","Outreach"].map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div><Label className="text-xs">Notes</Label><Textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={3} className="text-xs" placeholder="Context, next steps..." /></div>
+            <div className="flex items-center justify-between pt-1">
+              <Button size="sm" variant="ghost" className="h-7 text-xs text-red-600 hover:text-red-700" onClick={() => { onDelete(); setOpen(false); }}><Trash2 size={12} className="mr-1" /> Delete</Button>
+              <div className="flex gap-2">
+                {form.status === "Completed"
+                  ? <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setForm({ ...form, status: "Pending" })}><RotateCcw size={12} className="mr-1" /> Reopen</Button>
+                  : <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setForm({ ...form, status: "Completed" })}><CheckCircle2 size={12} className="mr-1" /> Complete</Button>}
+                <Button size="sm" className="h-7 text-xs" disabled={!form.title} onClick={() => {
+                  const updates: any = { ...form };
+                  if (form.status === "Completed" && task.status !== "Completed") updates.completedDate = new Date().toISOString().split("T")[0];
+                  if (form.status !== "Completed") updates.completedDate = null;
+                  if (!updates.dueDate) updates.dueDate = null;
+                  onUpdate(updates); setOpen(false);
+                }}><Save size={12} className="mr-1" /> Save</Button>
+              </div>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -615,33 +772,60 @@ function TasksTab() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const { data: tasks = [], isLoading } = useQuery<any[]>({ queryKey: ["sales-tasks"], queryFn: () => fetch(`${API_BASE}/tasks`).then(r => r.json()) });
+  const { data: prospects = [] } = useQuery<any[]>({ queryKey: ["sales-prospects"], queryFn: () => fetch(`${API_BASE}/prospects`).then(r => r.json()) });
   const [showAdd, setShowAdd] = useState(false);
-  const [newTask, setNewTask] = useState({ title: "", priority: "Medium", dueDate: "", taskType: "General" });
+  const [newTask, setNewTask] = useState({ title: "", priority: "Medium", dueDate: "", taskType: "General", prospectId: "", notes: "" });
   const createTask = useMutation({
-    mutationFn: async (data: any) => { const res = await fetch(`${API_BASE}/tasks`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }); if (!res.ok) throw new Error(await res.text()); return res.json(); },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["sales-tasks"] }); toast({ title: "Task created" }); setShowAdd(false); setNewTask({ title: "", priority: "Medium", dueDate: "", taskType: "General" }); },
+    mutationFn: async (data: any) => { const payload = { ...data }; if (!payload.prospectId) delete payload.prospectId; const res = await fetch(`${API_BASE}/tasks`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }); if (!res.ok) throw new Error(await res.text()); return res.json(); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["sales-tasks"] }); qc.invalidateQueries({ queryKey: ["sales-today"] }); toast({ title: "Task created" }); setShowAdd(false); setNewTask({ title: "", priority: "Medium", dueDate: "", taskType: "General", prospectId: "", notes: "" }); },
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
-  const toggleTask = useMutation({
-    mutationFn: async (task: any) => { const res = await fetch(`${API_BASE}/tasks/${task.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: task.status === "Completed" ? "Pending" : "Completed" }) }); if (!res.ok) throw new Error(await res.text()); return res.json(); },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["sales-tasks"] }),
+  const updateTask = useMutation({
+    mutationFn: async ({ id, updates }: { id: string; updates: any }) => { const res = await fetch(`${API_BASE}/tasks/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(updates) }); if (!res.ok) throw new Error(await res.text()); return res.json(); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["sales-tasks"] }); qc.invalidateQueries({ queryKey: ["sales-today"] }); },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+  const deleteTask = useMutation({
+    mutationFn: async (id: string) => { const res = await fetch(`${API_BASE}/tasks/${id}`, { method: "DELETE" }); if (!res.ok) throw new Error(await res.text()); return res.json(); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["sales-tasks"] }); qc.invalidateQueries({ queryKey: ["sales-today"] }); toast({ title: "Task deleted" }); },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
   if (isLoading) return <div className="space-y-2">{[...Array(6)].map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}</div>;
   const pending = tasks.filter((t: any) => t.status !== "Completed");
   const completed = tasks.filter((t: any) => t.status === "Completed");
   const overdue = pending.filter((t: any) => isOverdue(t.dueDate));
+  const prospectName = (id: string | null) => id ? (prospects.find((p: any) => p.id === id)?.institutionName || null) : null;
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2"><h2 className="text-sm font-semibold">Tasks</h2><Badge variant="secondary" className="text-[10px]">{pending.length} pending</Badge>{overdue.length > 0 && <Badge variant="destructive" className="text-[10px]">{overdue.length} overdue</Badge>}</div>
         <Button size="sm" className="h-7 text-xs" onClick={() => setShowAdd(!showAdd)}><Plus size={12} className="mr-1" /> Add Task</Button>
       </div>
-      {showAdd && (<Card className="p-3 space-y-2"><Input value={newTask.title} onChange={e => setNewTask({ ...newTask, title: e.target.value })} placeholder="Task title *" className="h-7 text-xs" /><div className="grid grid-cols-4 gap-2"><Select value={newTask.priority} onValueChange={v => setNewTask({ ...newTask, priority: v })}><SelectTrigger className="h-7 text-[11px]"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="High">High</SelectItem><SelectItem value="Medium">Medium</SelectItem><SelectItem value="Low">Low</SelectItem></SelectContent></Select><Input type="date" value={newTask.dueDate} onChange={e => setNewTask({ ...newTask, dueDate: e.target.value })} className="h-7 text-[11px]" /><Select value={newTask.taskType} onValueChange={v => setNewTask({ ...newTask, taskType: v })}><SelectTrigger className="h-7 text-[11px]"><SelectValue /></SelectTrigger><SelectContent>{["General","Follow-Up","Demo","Proposal","Pilot Setup","Contract","Onboarding","Research","Outreach"].map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent></Select><Button size="sm" className="h-7 text-xs" onClick={() => createTask.mutate(newTask)} disabled={!newTask.title || createTask.isPending}>{createTask.isPending ? "..." : "Create"}</Button></div></Card>)}
-      <div className="border border-border rounded-lg divide-y divide-border">
-        {pending.length === 0 && completed.length === 0 ? <div className="px-4 py-8 text-center text-sm text-muted-foreground">No tasks yet</div> : <>
-          {pending.map((t: any) => (<div key={t.id} className="flex items-center gap-2.5 px-3 py-2 hover:bg-muted/30"><button onClick={() => toggleTask.mutate(t)} className="text-muted-foreground hover:text-primary flex-shrink-0"><div className="w-4 h-4 rounded-full border-2 border-current" /></button><div className="flex-1 min-w-0"><div className="text-xs font-medium truncate">{t.title}</div><div className="text-[10px] text-muted-foreground">{t.taskType}</div></div><Badge variant="outline" className={`text-[9px] ${t.priority === "High" ? "border-red-300 text-red-600" : ""}`}>{t.priority}</Badge>{t.dueDate && <span className={`text-[11px] ${isOverdue(t.dueDate) ? "text-red-500 font-medium" : "text-muted-foreground"}`}>{isOverdue(t.dueDate) && <AlertTriangle size={10} className="inline mr-0.5" />}{fmtDateShort(t.dueDate)}</span>}</div>))}
-          {completed.length > 0 && <div className="px-3 py-1.5 bg-muted/30"><span className="text-[10px] text-muted-foreground font-medium">Completed ({completed.length})</span></div>}
-          {completed.slice(0, 5).map((t: any) => (<div key={t.id} className="flex items-center gap-2.5 px-3 py-2 opacity-50"><button onClick={() => toggleTask.mutate(t)} className="text-emerald-500 flex-shrink-0"><CheckCircle2 size={16} /></button><span className="text-xs line-through truncate">{t.title}</span><span className="text-[10px] text-muted-foreground">{fmtDateShort(t.completedDate)}</span></div>))}
+      {showAdd && (
+        <Card className="p-3 space-y-2">
+          <Input value={newTask.title} onChange={e => setNewTask({ ...newTask, title: e.target.value })} placeholder="Task title *" className="h-7 text-xs" />
+          <div className="grid grid-cols-4 gap-2">
+            <Select value={newTask.priority} onValueChange={v => setNewTask({ ...newTask, priority: v })}><SelectTrigger className="h-7 text-[11px]"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="High">High</SelectItem><SelectItem value="Medium">Medium</SelectItem><SelectItem value="Low">Low</SelectItem></SelectContent></Select>
+            <Input type="date" value={newTask.dueDate} onChange={e => setNewTask({ ...newTask, dueDate: e.target.value })} className="h-7 text-[11px]" />
+            <Select value={newTask.taskType} onValueChange={v => setNewTask({ ...newTask, taskType: v })}><SelectTrigger className="h-7 text-[11px]"><SelectValue /></SelectTrigger><SelectContent>{["General","Follow-Up","Demo","Proposal","Pilot Setup","Contract","Onboarding","Research","Outreach"].map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent></Select>
+            <Select value={newTask.prospectId || "none"} onValueChange={v => setNewTask({ ...newTask, prospectId: v === "none" ? "" : v })}><SelectTrigger className="h-7 text-[11px]"><SelectValue placeholder="Link prospect" /></SelectTrigger><SelectContent className="max-h-60"><SelectItem value="none">No prospect</SelectItem>{prospects.map((p: any) => <SelectItem key={p.id} value={p.id}>{p.institutionName}</SelectItem>)}</SelectContent></Select>
+          </div>
+          <Textarea value={newTask.notes} onChange={e => setNewTask({ ...newTask, notes: e.target.value })} placeholder="Notes (optional)" rows={2} className="text-xs" />
+          <div className="flex justify-end gap-2">
+            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setShowAdd(false)}>Cancel</Button>
+            <Button size="sm" className="h-7 text-xs" onClick={() => createTask.mutate(newTask)} disabled={!newTask.title || createTask.isPending}>{createTask.isPending ? "..." : "Create"}</Button>
+          </div>
+        </Card>
+      )}
+      <div className="space-y-1.5">
+        {pending.length === 0 && completed.length === 0 ? <div className="px-4 py-8 text-center text-sm text-muted-foreground border border-border rounded-lg">No tasks yet. Click "Add Task" to create one.</div> : <>
+          {pending.map((t: any) => (
+            <ProspectTaskRow key={t.id} task={t} prospectName={prospectName(t.prospectId)} onUpdate={(updates) => updateTask.mutate({ id: t.id, updates })} onDelete={() => deleteTask.mutate(t.id)} />
+          ))}
+          {completed.length > 0 && <div className="pt-2"><span className="text-[10px] text-muted-foreground font-medium uppercase">Completed ({completed.length})</span></div>}
+          {completed.slice(0, 15).map((t: any) => (
+            <ProspectTaskRow key={t.id} task={t} prospectName={prospectName(t.prospectId)} onUpdate={(updates) => updateTask.mutate({ id: t.id, updates })} onDelete={() => deleteTask.mutate(t.id)} />
+          ))}
         </>}
       </div>
     </div>
