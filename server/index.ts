@@ -270,6 +270,12 @@ app.use((req, res, next) => {
     startTrialReminderJob();
     log('Trial reminder job started (every 6 hours)');
 
+    // Start CRM calendar reminder job (founder event reminders + Monday digest)
+    console.log('Starting CRM calendar reminder job...');
+    const { startCrmCalendarReminderJob } = await import('./jobs/crm-calendar-reminders');
+    startCrmCalendarReminderJob();
+    log('CRM calendar reminder job started (hourly tick, daily sends, Monday digest)');
+
     app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
       const status = err.status || err.statusCode || 500;
       const message = err.message || "Internal Server Error";

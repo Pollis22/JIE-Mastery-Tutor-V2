@@ -1596,6 +1596,56 @@ export const SALES_INSTITUTION_TYPES = [
   "Nonprofit", "Tutoring Company", "Other",
 ] as const;
 
+// Sales CRM Calendar — Conferences, Events & Deadlines (Admin Only)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+export const salesEvents = pgTable("sales_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: text("title").notNull(),
+  description: text("description"),
+  location: text("location"),
+  startDate: text("start_date").notNull(),  // YYYY-MM-DD
+  endDate: text("end_date"),                // YYYY-MM-DD (null = single day)
+  url: text("url"),
+  eventType: text("event_type").notNull().default("Conference"), // Conference | Meeting | Deadline | Travel | Task
+  audience: text("audience"),
+  relevance: text("relevance"),             // JIE, ACE, Prelo, Fundraise (comma-separated)
+  score: integer("score"),                  // 0-10 strategic value
+  priorityTier: text("priority_tier").default("Medium"), // Must Attend | High | Medium | Low
+  claudeComments: text("claude_comments"),  // AI assessment of strategic value
+  status: text("status").notNull().default("New"), // New | Researching | Registered | Attending | Skipped | Attended
+  ownerNotes: text("owner_notes"),
+  reminderDays: text("reminder_days").notNull().default("30,14,7,1"), // comma-separated day offsets
+  emailReminders: boolean("email_reminders").notNull().default(true),
+  prospectId: varchar("prospect_id").references(() => salesProspects.id, { onDelete: 'set null' }),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  index("idx_sales_events_start").on(table.startDate),
+  index("idx_sales_events_status").on(table.status),
+  index("idx_sales_events_tier").on(table.priorityTier),
+]);
+
+export const insertSalesEventSchema = createInsertSchema(salesEvents).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertSalesEvent = z.infer<typeof insertSalesEventSchema>;
+export type SalesEvent = typeof salesEvents.$inferSelect;
+
+// Dedupe log so reminder/digest emails are never double-sent (survives restarts/redeploys)
+export const salesReminderLog = pgTable("sales_reminder_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  kind: text("kind").notNull(),     // 'event_reminder' | 'weekly_digest'
+  ref: text("ref").notNull(),       // '<eventId>:<daysOut>' or 'crm'
+  sentOn: text("sent_on").notNull(),// YYYY-MM-DD local date
+  createdAt: text("created_at").notNull(),
+}, (table) => [
+  uniqueIndex("idx_sales_reminder_log_uq").on(table.kind, table.ref, table.sentOn),
+]);
+
+export type SalesReminderLogEntry = typeof salesReminderLog.$inferSelect;
+
+export const SALES_EVENT_STATUSES = ["New", "Researching", "Registered", "Attending", "Skipped", "Attended"] as const;
+export const SALES_EVENT_TIERS = ["Must Attend", "High", "Medium", "Low"] as const;
+
 export function calculateSalesWeightedScore(prospect: {
   urgencyScore?: number | null;
   engagementScore?: number | null;
