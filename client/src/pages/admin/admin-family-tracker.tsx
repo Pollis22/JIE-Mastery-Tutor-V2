@@ -101,7 +101,7 @@ export default function AdminFamilyTracker() {
               <div className="flex items-center gap-3">
                 <img src="/jie-logo-nav.png" alt="JIE Mastery" className="w-8 h-8 object-contain" />
                 <div>
-                  <h1 className="text-2xl font-bold text-foreground">Study Tracker — Admin</h1>
+                  <h1 className="text-2xl font-bold text-foreground">SRM — Admin</h1>
                   <p className="text-sm text-muted-foreground">Monitor student engagement, identify at-risk students, and track platform usage</p>
                 </div>
               </div>

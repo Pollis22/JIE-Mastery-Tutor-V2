@@ -144,7 +144,7 @@ export default function FamilyCalendarPage() {
               <p className="text-sm text-gray-500">Tests, homework, and events for all children</p>
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setLocation("/family")}>← Study Tracker</Button>
+              <Button variant="outline" onClick={() => setLocation("/family")}>← Academic SRM</Button>
               <Dialog open={showAddEvent} onOpenChange={setShowAddEvent}>
                 <DialogTrigger asChild>
                   <Button className="bg-primary hover:bg-primary/90">+ Add Event</Button>

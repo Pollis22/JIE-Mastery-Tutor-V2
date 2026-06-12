@@ -115,7 +115,7 @@ export default function FamilyDashboardPage() {
               <img src="/jie-logo-nav.png" alt="JIE Mastery" className="w-10 h-10 object-contain" />
               <div>
                 <h1 className="text-3xl font-bold text-foreground">
-                  {dashboard?.isSummerMode ? "☀️ Summer Learning Hub" : "Study Tracker"}
+                  {dashboard?.isSummerMode ? "☀️ Summer Learning Hub" : "Academic SRM"}
                 </h1>
                 <p className="text-muted-foreground mt-1">
                   {dashboard?.isSummerMode
@@ -301,7 +301,7 @@ export default function FamilyDashboardPage() {
                 <Card className="bg-white/80 backdrop-blur">
                   <CardContent className="p-12 text-center">
                     <div className="text-6xl mb-4">📚</div>
-                    <h3 className="text-xl font-semibold text-gray-700 mb-2">Welcome to Your Study Tracker!</h3>
+                    <h3 className="text-xl font-semibold text-gray-700 mb-2">Welcome to Your Academic SRM!</h3>
                     <p className="text-gray-500 mb-6">Add your students to start tracking their learning journey.</p>
                     <Button className="bg-primary hover:bg-primary/90" onClick={() => setShowAddChild(true)}>
                       + Add Your First Student

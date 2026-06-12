@@ -282,7 +282,7 @@ export default function FamilyChildDashboardPage() {
               </div>
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setLocation("/family")}>← Study Tracker</Button>
+              <Button variant="outline" onClick={() => setLocation("/family")}>← Academic SRM</Button>
               <Button className={theme.button} onClick={() => setLocation(child.studentId ? `/tutor?student=${child.studentId}` : "/tutor")}>
                 🎓 Study with JIE
               </Button>
