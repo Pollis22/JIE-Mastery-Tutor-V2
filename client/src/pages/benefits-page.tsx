@@ -45,7 +45,7 @@ const STATS = [
 const FEATURES = [
   {
     icon: <Calendar className="h-6 w-6" />,
-    title: "Study Tracker — Academic Command Center",
+    title: "SRM — Academic Command Center",
     description:
       "Add every child, their courses, and key dates. Auto-generated study tasks, engagement scoring, streaks, XP, and weekly progress reports — all connected to the AI tutor.",
     highlight: true,
@@ -185,7 +185,7 @@ export default function BenefitsPage() {
             <div className="hidden md:flex items-center space-x-6">
               {[
                 { label: "Why JIE Mastery AI Tutors", path: "#benefits" },
-                { label: "Study Tracker", path: "/study-tracker" },
+                { label: "Academic SRM", path: "/study-tracker" },
                 { label: "Tutor Demo", path: "/demo" },
                 { label: "FAQ", path: "/faq" },
                 { label: "Live Support", path: "/support" },
@@ -351,7 +351,7 @@ export default function BenefitsPage() {
               Why JIE Mastery Works
             </span>
             <h2 className="text-3xl md:text-4xl font-bold tracking-tight mt-5 mb-4">
-              Not Just a Tutor — A Complete Academic System
+              Student Relationship Management that Tutors
             </h2>
             <p className="text-lg text-muted-foreground">
               Built for families who want their kids to actually understand — not just finish assignments.
