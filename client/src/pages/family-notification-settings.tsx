@@ -196,7 +196,7 @@ export default function FamilyNotificationSettings() {
       <div className="container mx-auto px-4 py-8 max-w-4xl">
         <div className="mb-6">
           <Button variant="ghost" onClick={() => setLocation("/family")}>
-            ← Back to Study Tracker
+            ← Back to Academic SRM
           </Button>
         </div>
 
@@ -216,7 +216,7 @@ export default function FamilyNotificationSettings() {
         {!isLoading && children.length === 0 && (
           <Card>
             <CardContent className="pt-6 text-center text-muted-foreground">
-              Add a child in the Study Tracker before configuring notifications.
+              Add a child in the SRM before configuring notifications.
             </CardContent>
           </Card>
         )}

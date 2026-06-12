@@ -329,12 +329,12 @@ function renderDigestEmail(params: {
       <div style="margin-top:24px;text-align:center;">
         <a href="${settingsUrl}"
            style="display:inline-block;background:#C5050C;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:600;font-size:14px;">
-          Open Study Tracker
+          Open the Academic SRM
         </a>
       </div>
     </div>
     <div style="text-align:center;color:#888;font-size:11px;padding:12px 0;">
-      You're receiving this because notifications are enabled in your Study Tracker.<br/>
+      You're receiving this because notifications are enabled in your Academic SRM.<br/>
       <a href="${settingsUrl}" style="color:#888;">Change frequency</a>
       &nbsp;·&nbsp;
       <a href="${unsubUrl}" style="color:#888;">Unsubscribe</a>
@@ -368,12 +368,12 @@ function renderAtRiskEmail(params: {
         ${reasons.map(r => `<li>${escapeHtml(r)}</li>`).join('')}
       </ul>
       <p style="color:#444;">
-        A few minutes in the Study Tracker today can get things back on track.
+        A few minutes in the SRM today can get things back on track.
       </p>
       <div style="margin-top:20px;text-align:center;">
         <a href="${settingsUrl}"
            style="display:inline-block;background:#b00020;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:600;font-size:14px;">
-          Open Study Tracker
+          Open the Academic SRM
         </a>
       </div>
     </div>
