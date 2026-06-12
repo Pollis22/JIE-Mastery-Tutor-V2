@@ -188,7 +188,7 @@ export default function AboutLSISPage() {
               {
                 icon: <MessageCircle className="h-5 w-5" />,
                 title: "Emotional Patterns",
-                desc: "Does the student get frustrated after three wrong answers? What recovery strategies work? When does engagement peak? LSIS notices patterns no human tutor could track across 20 sessions."
+                desc: "Does the student get frustrated after three wrong answers? What recovery strategies work? When does engagement peak? LSIS notices patterns no traditional tutor could track across 20 sessions."
               },
               {
                 icon: <LineChart className="h-5 w-5" />,
@@ -368,7 +368,7 @@ export default function AboutLSISPage() {
                     Start a Session <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
                   <Button size="lg" variant="outline" onClick={() => setLocation("/family")}>
-                    <BookOpen className="mr-2 h-4 w-4" /> Explore Study Tracker
+                    <BookOpen className="mr-2 h-4 w-4" /> Explore the SRM
                   </Button>
                 </div>
               </div>

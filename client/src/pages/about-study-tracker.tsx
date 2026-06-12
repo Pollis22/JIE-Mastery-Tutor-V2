@@ -23,7 +23,7 @@ export default function AboutStudyTrackerPage() {
             <img src="/jie-logo-nav.png" alt="JIE Mastery" className="w-10 h-10 object-contain" />
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-3xl font-bold text-foreground">About Study Tracker</h1>
+                <h1 className="text-3xl font-bold text-foreground">About SRM — Student Relationship Management</h1>
                 <span className="text-xs font-bold text-primary-foreground bg-primary px-2 py-0.5 rounded-full uppercase tracking-wider">AI Tutor + SRM</span>
               </div>
               <p className="text-muted-foreground mt-1">How it works and what each feature does.</p>
@@ -31,7 +31,7 @@ export default function AboutStudyTrackerPage() {
           </div>
           <div className="flex gap-3">
             <Button onClick={() => setLocation("/family")}>
-              Open Study Tracker <ArrowRight className="ml-2 h-4 w-4" />
+              Open SRM <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
             <Button variant="outline" onClick={() => setLocation("/family/calendar")}>
               <Calendar className="mr-2 h-4 w-4" /> Calendar
@@ -39,11 +39,11 @@ export default function AboutStudyTrackerPage() {
           </div>
         </div>
 
-        {/* What Is Study Tracker */}
+        {/* What Is SRM */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-foreground mb-4">What Is Study Tracker?</h2>
+          <h2 className="text-2xl font-bold text-foreground mb-4">What Is SRM?</h2>
           <p className="text-muted-foreground leading-relaxed mb-4">
-            Study Tracker turns JIE Mastery from a tutoring app into a complete academic management system.
+            SRM turns JIE Mastery from a tutoring app into a complete academic management system.
             It combines your AI tutor with course tracking, academic calendars, automated study tasks,
             engagement scoring, and progress reports — all in one place.
           </p>
@@ -151,9 +151,9 @@ export default function AboutStudyTrackerPage() {
           </div>
         </section>
 
-        {/* How the Tutor Uses Study Tracker */}
+        {/* How the Tutor Uses SRM */}
         <section className="mb-12">
-          <h2 className="text-2xl font-bold text-foreground mb-6">How the AI Tutor Uses Study Tracker</h2>
+          <h2 className="text-2xl font-bold text-foreground mb-6">How the AI Tutor Uses SRM</h2>
           <Card className="border-primary/30">
             <CardContent className="p-6">
               <p className="text-muted-foreground mb-6">
@@ -161,7 +161,7 @@ export default function AboutStudyTrackerPage() {
               </p>
               <div className="grid md:grid-cols-2 gap-6">
                 <div>
-                  <h3 className="font-bold text-muted-foreground mb-3 text-sm uppercase tracking-wider">Without Study Tracker</h3>
+                  <h3 className="font-bold text-muted-foreground mb-3 text-sm uppercase tracking-wider">Without SRM</h3>
                   <div className="space-y-2">
                     {[
                       "\"Hi! What would you like to study today?\"",
@@ -177,7 +177,7 @@ export default function AboutStudyTrackerPage() {
                   </div>
                 </div>
                 <div>
-                  <h3 className="font-bold text-primary mb-3 text-sm uppercase tracking-wider">With Study Tracker Active</h3>
+                  <h3 className="font-bold text-primary mb-3 text-sm uppercase tracking-wider">With SRM Active</h3>
                   <div className="space-y-2">
                     {[
                       "\"You have a chemistry test in 3 days — let's review reaction types!\"",
@@ -230,7 +230,7 @@ export default function AboutStudyTrackerPage() {
               <div>
                 <h3 className="text-xl font-bold text-foreground mb-2">Summer Learning Mode</h3>
                 <p className="text-muted-foreground leading-relaxed">
-                  When school's out, Study Tracker automatically shifts to summer goals with review topic suggestions pulled from the school year's data.
+                  When school's out, SRM automatically shifts to summer goals with review topic suggestions pulled from the school year's data.
                   Keep the momentum going with the Summer Scholar badge for consistent study habits all summer long.
                   The dashboard adapts to show summer-specific progress and goals.
                 </p>
@@ -247,8 +247,8 @@ export default function AboutStudyTrackerPage() {
               <div className="grid md:grid-cols-3 gap-6 text-center">
                 <div>
                   <div className="w-12 h-12 rounded-full bg-primary text-primary-foreground font-bold text-lg flex items-center justify-center mx-auto mb-3">1</div>
-                  <h3 className="font-bold text-foreground mb-1">Open Study Tracker</h3>
-                  <p className="text-sm text-muted-foreground">Click "Study Tracker" in the navigation bar at the top of any page.</p>
+                  <h3 className="font-bold text-foreground mb-1">Open SRM</h3>
+                  <p className="text-sm text-muted-foreground">Click "SRM" in the navigation bar at the top of any page.</p>
                 </div>
                 <div>
                   <div className="w-12 h-12 rounded-full bg-primary text-primary-foreground font-bold text-lg flex items-center justify-center mx-auto mb-3">2</div>
@@ -263,7 +263,7 @@ export default function AboutStudyTrackerPage() {
               </div>
               <div className="text-center mt-6">
                 <Button onClick={() => setLocation("/family")} size="lg">
-                  Open Study Tracker <ArrowRight className="ml-2 h-4 w-4" />
+                  Open SRM <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
               </div>
             </CardContent>

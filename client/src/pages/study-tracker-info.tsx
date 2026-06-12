@@ -50,7 +50,7 @@ export default function StudyTrackerInfoPage() {
               <span className="text-primary">A Complete Academic System.</span>
             </h1>
             <p className="text-xl text-muted-foreground max-w-2xl mx-auto mb-8 leading-relaxed">
-              Study Tracker transforms JIE Mastery from a tutoring app into a full academic command center.
+              SRM transforms JIE Mastery from a tutoring app into a full academic command center.
               Track every child, every subject, every deadline — with an AI tutor that knows exactly what's coming next.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -109,7 +109,7 @@ export default function StudyTrackerInfoPage() {
                 The Solution
               </span>
               <h2 className="text-3xl md:text-4xl font-bold text-foreground mt-5 mb-4">
-                Study Tracker: Your Family's Academic Command Center
+                SRM: Your Family's Academic Command Center
               </h2>
               <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
                 One dashboard for every child. Every subject. Every deadline. Every study session.
@@ -165,7 +165,7 @@ export default function StudyTrackerInfoPage() {
             </div>
 
             <div className="grid md:grid-cols-2 gap-8">
-              {/* Without Study Tracker */}
+              {/* Without SRM */}
               <Card className="border-muted-foreground/20">
                 <CardContent className="p-8">
                   <div className="text-center mb-6">
@@ -189,12 +189,12 @@ export default function StudyTrackerInfoPage() {
                 </CardContent>
               </Card>
 
-              {/* With Study Tracker */}
+              {/* With SRM */}
               <Card className="border-primary/40 bg-gradient-to-br from-primary/5 to-background shadow-lg">
                 <CardContent className="p-8">
                   <div className="text-center mb-6">
                     <div className="text-3xl mb-2">🎓</div>
-                    <h3 className="text-xl font-bold text-primary">JIE Mastery + Study Tracker</h3>
+                    <h3 className="text-xl font-bold text-primary">JIE Mastery + SRM</h3>
                   </div>
                   <div className="space-y-3">
                     {[

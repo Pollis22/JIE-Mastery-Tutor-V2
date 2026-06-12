@@ -89,7 +89,7 @@ export function NavigationHeader() {
                   className={`px-2 lg:px-3 text-sm whitespace-nowrap ${isActive("/family") ? "text-primary font-medium" : "text-muted-foreground"}`}
                   data-testid="nav-family"
                 >
-                  Study Tracker
+                  Academic SRM
                 </Button>
                 <Button
                   variant="ghost"
@@ -266,8 +266,8 @@ export function NavigationHeader() {
           <div className="px-4 py-3 space-y-1">
             {[
               { label: "Dashboard", path: "/dashboard" },
-              { label: "Study Tracker", path: "/family" },
-              { label: "About Study Tracker", path: "/about-study-tracker" },
+              { label: "Academic SRM", path: "/family" },
+              { label: "About SRM", path: "/about-study-tracker" },
               { label: "What is LSIS?", path: "/about-lsis" },
               { label: "College Test Prep", path: "/benefits#test-prep" },
               { label: "Settings", path: "/settings" },
