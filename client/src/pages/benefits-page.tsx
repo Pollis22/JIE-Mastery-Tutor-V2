@@ -394,7 +394,7 @@ export default function BenefitsPage() {
         </div>
       </section>
 
-      {/* ── Study Tracker — Game Changer ── */}
+      {/* ── SRM — Game Changer ── */}
       <section className="py-24 bg-gradient-to-br from-primary/5 via-background to-primary/10 border-y border-primary/20">
         <div className="container mx-auto px-4">
           <div className="max-w-5xl mx-auto">
@@ -403,7 +403,7 @@ export default function BenefitsPage() {
                 Game Changer
               </span>
               <h2 className="text-3xl md:text-4xl font-bold tracking-tight mt-5 mb-4">
-                Study Tracker: The Feature No Other AI Tutor Has
+                SRM: The System No Tutoring App Has
               </h2>
               <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
                 Every AI tutor answers questions. Only JIE Mastery manages your children's entire academic life
@@ -456,7 +456,7 @@ export default function BenefitsPage() {
 
             <div className="text-center">
               <Button size="lg" onClick={() => setLocation("/study-tracker")} className="text-lg h-12 px-8">
-                Learn More About Study Tracker
+                Learn More About the SRM
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
             </div>
