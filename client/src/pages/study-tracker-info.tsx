@@ -43,11 +43,11 @@ export default function StudyTrackerInfoPage() {
           <div className="max-w-4xl mx-auto text-center">
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 mb-6">
               <Sparkles className="h-4 w-4 text-primary" />
-              <span className="text-sm font-semibold text-primary uppercase tracking-wider">New Feature</span>
+              <span className="text-sm font-semibold text-primary uppercase tracking-wider">Student Relationship Management</span>
             </div>
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-foreground leading-tight mb-6">
-              Not Just a Tutor.{" "}
-              <span className="text-primary">A Complete Academic System.</span>
+              Student Relationship Management{" "}
+              <span className="text-primary">that Tutors</span>
             </h1>
             <p className="text-xl text-muted-foreground max-w-2xl mx-auto mb-8 leading-relaxed">
               SRM transforms JIE Mastery from a tutoring app into a full academic command center.
