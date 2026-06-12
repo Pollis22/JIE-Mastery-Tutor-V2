@@ -291,7 +291,7 @@ export default function AuthPage() {
                 onClick={() => setLocation("/study-tracker")} 
                 data-testid="button-nav-study-tracker"
               >
-                Study Tracker
+                SRM
               </Button>
               <Button 
                 variant="ghost" 
@@ -793,14 +793,15 @@ export default function AuthPage() {
             <div className="space-y-6 text-center lg:text-left order-2 lg:order-1">
               {/* Emotional Headline */}
               <h1 className="text-4xl md:text-5xl lg:text-5xl xl:text-6xl font-bold text-foreground leading-tight">
-                Not Just a Tutor.{' '}
-                <span className="text-primary">A Complete Academic System.</span>
+                Student Relationship Management{' '}
+                <span className="text-primary">that Tutors</span>
               </h1>
               
               {/* Clarifying Subheadline */}
               <p className="text-lg md:text-xl text-muted-foreground leading-relaxed">
-                Voice-powered AI tutoring <strong>plus</strong> academic calendars, study tasks, engagement tracking, 
-                and weekly progress reports — for every child in your family. One subscription.
+                <strong>SRM = Student Relationship Management</strong> — like a CRM, for students. One record per child 
+                holds calendars, study tasks, engagement scores, and weekly progress reports, with a live voice 
+                Socratic tutor working inside it. One subscription.
               </p>
 
               {/* Primary CTA */}
@@ -936,7 +937,7 @@ export default function AuthPage() {
                 </div>
                 <div className="flex flex-col sm:flex-row gap-3">
                   <Button onClick={() => setLocation("/study-tracker")} data-testid="button-study-tracker-learn">
-                    About Study Tracker
+                    About SRM
                   </Button>
                   <StartTrialButton size="default" className="h-10" />
                 </div>
@@ -1121,9 +1122,9 @@ export default function AuthPage() {
                 </div>
               ))}
 
-              {/* Section: Study Tracker (SRM) */}
+              {/* Section: SRM (SRM) */}
               <div className="grid grid-cols-4 border-b border-border bg-primary/10">
-                <div className="col-span-4 px-4 py-2 text-xs font-bold text-primary uppercase tracking-wider">Study Tracker — Academic Command Center</div>
+                <div className="col-span-4 px-4 py-2 text-xs font-bold text-primary uppercase tracking-wider">SRM — Academic Command Center</div>
               </div>
               {[
                 { feature: "Academic calendar & planning", trad: false, gpt: false, jieText: "Auto-built from syllabi or manual entry" },
@@ -1157,7 +1158,7 @@ export default function AuthPage() {
 
               {/* 2-in-1 Banner */}
               <div className="bg-primary text-primary-foreground p-4 text-center">
-                <p className="font-bold text-sm">AI Tutor + Study Tracker — Two Systems in One Platform</p>
+                <p className="font-bold text-sm">SRM + AI Voice Tutor — Two Systems, One Platform</p>
                 <p className="text-xs opacity-80 mt-1">No other AI tutor includes academic planning, engagement tracking, or proactive session prep.</p>
               </div>
             </div>

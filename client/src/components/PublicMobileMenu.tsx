@@ -30,7 +30,7 @@ export function PublicMobileMenu({ onSignIn }: PublicMobileMenuProps) {
 
   const menuItems = [
     { label: "Why JIE Mastery", path: "/benefits", icon: Sparkles },
-    { label: "Study Tracker", path: "/study-tracker", icon: GraduationCap },
+    { label: "Academic SRM", path: "/study-tracker", icon: GraduationCap },
     { label: "What is LSIS?", path: "/about-lsis", icon: Sparkles },
     { label: "College Test Prep", path: "/benefits#test-prep", icon: GraduationCap },
     { label: "Demo", path: "/demo", icon: Play },
