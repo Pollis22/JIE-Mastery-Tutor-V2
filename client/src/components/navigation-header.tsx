@@ -118,26 +118,8 @@ export function NavigationHeader() {
                 >
                   Settings
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setLocation("/support")}
-                  className={`hidden 2xl:inline-flex px-2 lg:px-3 text-sm whitespace-nowrap ${isActive("/support") ? "text-primary font-medium" : "text-muted-foreground"}`}
-                  data-testid="nav-support"
-                >
-                  Live Support
-                </Button>
-                {user?.isAdmin && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setLocation("/admin")}
-                    className={`hidden 2xl:inline-flex px-2 lg:px-3 text-sm whitespace-nowrap ${isActive("/admin") ? "text-primary font-medium" : "text-muted-foreground"}`}
-                    data-testid="nav-admin"
-                  >
-                    Admin
-                  </Button>
-                )}
+                {/* Live Support and Admin live in the user dropdown (account menu) to avoid
+                    overflowing the max-w-7xl nav container on wide viewports. */}
               </div>
             </div>
           </div>
@@ -217,7 +199,6 @@ export function NavigationHeader() {
                 {user?.isAdmin && (
                   <DropdownMenuItem
                     onClick={() => setLocation("/admin")}
-                    className="2xl:hidden"
                     data-testid="menu-admin"
                   >
                     <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
