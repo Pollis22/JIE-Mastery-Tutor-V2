@@ -5,18 +5,20 @@
  */
 import { Router, type Request, type Response } from "express";
 import { db } from "../db";
-import { eq, desc, asc, sql } from "drizzle-orm";
+import { eq, desc, asc, sql, and, gte, lte } from "drizzle-orm";
 import {
   salesProspects,
   salesContacts,
   salesActivities,
   salesTasks,
   salesDocuments,
+  salesEvents,
   insertSalesProspectSchema,
   insertSalesContactSchema,
   insertSalesActivitySchema,
   insertSalesTaskSchema,
   insertSalesDocumentSchema,
+  insertSalesEventSchema,
   calculateSalesWeightedScore,
   calculateSalesPriorityTier,
   calculateSalesHealthStatus,
@@ -433,5 +435,108 @@ function getForecastCategory(stage: string): string {
   if (["Procurement Review", "Pilot Active", "Pilot Review", "Proposal Sent"].includes(stage)) return "Best Case";
   return "Pipeline";
 }
+
+// ==================== CALENDAR EVENTS ====================
+
+// List events, optionally bounded: /events?from=YYYY-MM-DD&to=YYYY-MM-DD&status=...
+router.get("/events", async (req: Request, res: Response) => {
+  try {
+    const { from, to, status } = req.query as { from?: string; to?: string; status?: string };
+    const conditions = [];
+    if (from) conditions.push(gte(salesEvents.startDate, from));
+    if (to) conditions.push(lte(salesEvents.startDate, to));
+    if (status) conditions.push(eq(salesEvents.status, status));
+    const rows = conditions.length
+      ? await db.select().from(salesEvents).where(and(...conditions)).orderBy(asc(salesEvents.startDate))
+      : await db.select().from(salesEvents).orderBy(asc(salesEvents.startDate));
+    res.json(rows);
+  } catch (err: any) {
+    console.error("[Prospects] events list error:", err?.message || err);
+    res.status(500).json({ error: "Failed to fetch events" });
+  }
+});
+
+// Upcoming events for widgets: /events/upcoming?days=60
+router.get("/events/upcoming", async (req: Request, res: Response) => {
+  try {
+    const days = Math.min(parseInt(String(req.query.days || "60"), 10) || 60, 365);
+    const today = new Date().toISOString().split("T")[0];
+    const horizon = new Date(Date.now() + days * 86400000).toISOString().split("T")[0];
+    const rows = await db.select().from(salesEvents)
+      .where(and(gte(salesEvents.startDate, today), lte(salesEvents.startDate, horizon)))
+      .orderBy(asc(salesEvents.startDate));
+    res.json(rows.filter(r => r.status !== "Skipped" && r.status !== "Attended"));
+  } catch (err: any) {
+    console.error("[Prospects] events upcoming error:", err?.message || err);
+    res.status(500).json({ error: "Failed to fetch upcoming events" });
+  }
+});
+
+router.post("/events", async (req: Request, res: Response) => {
+  try {
+    const parsed = insertSalesEventSchema.parse(req.body);
+    const now = new Date().toISOString();
+    const [created] = await db.insert(salesEvents)
+      .values({ ...parsed, createdAt: now, updatedAt: now })
+      .returning();
+    res.status(201).json(created);
+  } catch (err: any) {
+    console.error("[Prospects] event create error:", err?.message || err);
+    res.status(400).json({ error: err?.message || "Failed to create event" });
+  }
+});
+
+router.patch("/events/:id", async (req: Request, res: Response) => {
+  try {
+    const updates: Record<string, any> = { ...req.body };
+    delete updates.id; delete updates.createdAt;
+    updates.updatedAt = new Date().toISOString();
+    const [updated] = await db.update(salesEvents)
+      .set(updates)
+      .where(eq(salesEvents.id, req.params.id))
+      .returning();
+    if (!updated) return res.status(404).json({ error: "Event not found" });
+    res.json(updated);
+  } catch (err: any) {
+    console.error("[Prospects] event update error:", err?.message || err);
+    res.status(400).json({ error: err?.message || "Failed to update event" });
+  }
+});
+
+router.delete("/events/:id", async (req: Request, res: Response) => {
+  try {
+    await db.delete(salesEvents).where(eq(salesEvents.id, req.params.id));
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Prospects] event delete error:", err?.message || err);
+    res.status(500).json({ error: "Failed to delete event" });
+  }
+});
+
+// Manually fire a reminder email for one event (test / nudge-now button)
+router.post("/events/:id/send-reminder", async (req: Request, res: Response) => {
+  try {
+    const [ev] = await db.select().from(salesEvents).where(eq(salesEvents.id, req.params.id));
+    if (!ev) return res.status(404).json({ error: "Event not found" });
+    const { emailService } = await import("../services/email-service");
+    const today = new Date().toISOString().split("T")[0];
+    const daysOut = Math.max(0, Math.round((Date.parse(ev.startDate) - Date.parse(today)) / 86400000));
+    await emailService.sendEmail({
+      to: process.env.CRM_NOTIFY_EMAIL || "pollis@jiemastery.ai",
+      subject: `⏰ [Manual] ${ev.title} — ${daysOut === 0 ? "starts today" : `${daysOut} days out`}`,
+      html: `<div style="font-family:Arial,sans-serif;font-size:14px;color:#111827;">
+        <h2 style="color:#CE2522;margin-bottom:4px;">${ev.title}</h2>
+        <p><b>${ev.startDate}${ev.endDate && ev.endDate !== ev.startDate ? ` – ${ev.endDate}` : ""}</b>${ev.location ? ` · ${ev.location}` : ""}</p>
+        ${ev.claudeComments ? `<p style="background:#F9FAFB;border-left:3px solid #CE2522;padding:8px 12px;">${ev.claudeComments}</p>` : ""}
+        ${ev.url ? `<p><a href="${ev.url}">Event site / registration</a></p>` : ""}
+        <p>Status: <b>${ev.status}</b> — manually triggered from the CRM calendar.</p>
+      </div>`,
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error("[Prospects] manual reminder error:", err?.message || err);
+    res.status(500).json({ error: err?.message || "Failed to send reminder" });
+  }
+});
 
 export default router;

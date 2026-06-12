@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { CalendarTab } from "./sales-calendar-tab";
 import {
   Target, DollarSign, AlertTriangle, Clock,
   Activity as ActivityIcon, Building2, Calendar, CheckCircle2,
@@ -864,11 +865,12 @@ export default function AdminProspectsCRM() {
         </div>
         <div className="flex-1 overflow-auto px-6 pb-6">
           <Tabs defaultValue="today" className="w-full">
-            <TabsList className="grid w-full grid-cols-4"><TabsTrigger value="today" className="text-xs">Today</TabsTrigger><TabsTrigger value="dashboard" className="text-xs">Dashboard</TabsTrigger><TabsTrigger value="pipeline" className="text-xs">Pipeline</TabsTrigger><TabsTrigger value="tasks" className="text-xs">Tasks</TabsTrigger></TabsList>
+            <TabsList className="grid w-full grid-cols-5"><TabsTrigger value="today" className="text-xs">Today</TabsTrigger><TabsTrigger value="dashboard" className="text-xs">Dashboard</TabsTrigger><TabsTrigger value="pipeline" className="text-xs">Pipeline</TabsTrigger><TabsTrigger value="tasks" className="text-xs">Tasks</TabsTrigger><TabsTrigger value="calendar" className="text-xs">Calendar</TabsTrigger></TabsList>
             <TabsContent value="today"><TodayTab onSelectProspect={setSelectedProspectId} /></TabsContent>
             <TabsContent value="dashboard"><DashboardTab /></TabsContent>
             <TabsContent value="pipeline"><PipelineTab onSelectProspect={setSelectedProspectId} /></TabsContent>
             <TabsContent value="tasks"><TasksTab /></TabsContent>
+            <TabsContent value="calendar"><CalendarTab /></TabsContent>
           </Tabs>
         </div>
       </div>

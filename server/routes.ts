@@ -660,6 +660,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // External cron trigger for CRM calendar reminders + weekly digest (Railway autoscale safety)
+  app.post("/api/cron/crm-calendar", async (req, res) => {
+    const secret = process.env.CRON_SECRET;
+    const provided = req.headers['x-cron-secret'] || req.query.secret;
+    if (secret && provided !== secret) {
+      console.warn('[Cron] Invalid secret provided for crm-calendar');
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    try {
+      const { runCrmCalendarReminders } = await import('./jobs/crm-calendar-reminders');
+      const force = req.query.force === 'true';
+      const result = await runCrmCalendarReminders(force);
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      console.error('[Cron] crm-calendar error', err?.message || err);
+      res.status(500).json({ error: 'Internal error' });
+    }
+  });
+
   // Legacy voice API routes (for compatibility)
   // Note: live-token endpoint is now handled in voiceRoutes
 
