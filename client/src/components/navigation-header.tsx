@@ -36,6 +36,19 @@ export function NavigationHeader() {
     logoutMutation.mutate();
   };
 
+  // Billing: active subscribers go straight to the Stripe Customer Portal
+  // (manage card, cancel, view invoices). Users without an active subscription
+  // go to /subscribe to start one. Routing both to /subscribe broke for active
+  // subscribers because get-or-create-subscription has no pending payment intent
+  // to return a clientSecret from → "No payment session created".
+  const handleBilling = () => {
+    if (user?.subscriptionStatus === 'active' || user?.subscriptionStatus === 'canceled') {
+      window.location.href = '/api/stripe/portal';
+    } else {
+      setLocation('/subscribe');
+    }
+  };
+
   const isActive = (path: string) => {
     const basePath = path.split("#")[0];
     return location === basePath;
@@ -208,7 +221,7 @@ export function NavigationHeader() {
                   </DropdownMenuItem>
                 )}
 
-                <DropdownMenuItem onClick={() => setLocation("/subscribe")} data-testid="menu-billing">
+                <DropdownMenuItem onClick={handleBilling} data-testid="menu-billing">
                   <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
                     <path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4zM18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM4 13a1 1 0 011-1h1a1 1 0 110 2H5a1 1 0 01-1-1zm5-1a1 1 0 100 2h1a1 1 0 100-2H9z"/>
                   </svg>
@@ -258,7 +271,14 @@ export function NavigationHeader() {
             ].map(item => (
               <button
                 key={item.path}
-                onClick={() => { navigateTo(item.path); setMobileMenuOpen(false); }}
+                onClick={() => {
+                  if (item.label === "Billing") {
+                    handleBilling();
+                  } else {
+                    navigateTo(item.path);
+                  }
+                  setMobileMenuOpen(false);
+                }}
                 className="block w-full text-left px-4 py-3 rounded-lg text-sm font-medium transition-colors"
                 style={{
                   color: isActive(item.path) ? "hsl(var(--primary))" : "hsl(var(--foreground))",
