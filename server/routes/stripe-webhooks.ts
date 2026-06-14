@@ -835,8 +835,17 @@ router.post(
               starter: 19, standard: 59, pro: 99, elite: 149, single: 99, all: 199,
             };
             const planPrice = planPriceMap[user.subscriptionPlan || ''] ?? 0;
-            // Hard-delete means the period already ended.
-            const accessEndDate = new Date().toLocaleDateString('en-US', {
+            // Access-end date = the date the customer is actually paid through.
+            // Do NOT assume "now" — an immediate mid-period cancel still leaves the
+            // customer paid through current_period_end. Prefer, in order:
+            //   1. the subscription's current_period_end (paid-through date)
+            //   2. any subscriptionEndsAt we already stored
+            //   3. now (true only if the period genuinely ended)
+            const periodEndUnix = (subscription as any).current_period_end as number | undefined;
+            const accessEndsAt = periodEndUnix
+              ? new Date(periodEndUnix * 1000)
+              : (user.subscriptionEndsAt ? new Date(user.subscriptionEndsAt) : new Date());
+            const accessEndDate = accessEndsAt.toLocaleDateString('en-US', {
               month: 'long', day: 'numeric', year: 'numeric',
             });
 
