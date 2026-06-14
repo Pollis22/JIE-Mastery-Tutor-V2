@@ -649,6 +649,42 @@ router.post(
               subscriptionStatus: 'canceled',
               subscriptionEndsAt: endsAt
             });
+
+            // Send cancellation emails only on the first cancellation event
+            // (guard against duplicate sends on webhook retries).
+            if (user.subscriptionStatus !== 'canceled') {
+              const firstName = user.firstName || user.parentName?.split(' ')[0] || 'there';
+              const planName = user.subscriptionPlan
+                ? user.subscriptionPlan.charAt(0).toUpperCase() + user.subscriptionPlan.slice(1)
+                : 'your plan';
+              const planPriceMap: Record<string, number> = {
+                starter: 19, standard: 59, pro: 99, elite: 149, single: 99, all: 199,
+              };
+              const planPrice = planPriceMap[user.subscriptionPlan || ''] ?? 0;
+              const accessEndDate = endsAt.toLocaleDateString('en-US', {
+                month: 'long', day: 'numeric', year: 'numeric',
+              });
+
+              emailService.sendCancellationEmailToUser({
+                email: user.email,
+                firstName,
+                planName,
+                accessEndDate,
+              }).catch((err) =>
+                console.error('[Stripe Webhook] sendCancellationEmailToUser failed:', err),
+              );
+
+              emailService.sendCancellationEmailToAdmin({
+                userEmail: user.email,
+                userName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email,
+                planName,
+                planPrice,
+                accessEndDate,
+              }).catch((err) =>
+                console.error('[Stripe Webhook] sendCancellationEmailToAdmin failed:', err),
+              );
+            }
+
             break;
           }
 
@@ -787,6 +823,43 @@ router.post(
           });
           
           console.log(`[Stripe Webhook] Subscription ended for user ${user.id} - status set to inactive`);
+
+          // Send cancellation emails if user wasn't already in a canceled state
+          // (the cancel_at_period_end path would have sent them earlier if so).
+          if (user.subscriptionStatus !== 'canceled' && user.subscriptionStatus !== 'inactive') {
+            const firstName = user.firstName || user.parentName?.split(' ')[0] || 'there';
+            const planName = user.subscriptionPlan
+              ? user.subscriptionPlan.charAt(0).toUpperCase() + user.subscriptionPlan.slice(1)
+              : 'your plan';
+            const planPriceMap: Record<string, number> = {
+              starter: 19, standard: 59, pro: 99, elite: 149, single: 99, all: 199,
+            };
+            const planPrice = planPriceMap[user.subscriptionPlan || ''] ?? 0;
+            // Hard-delete means the period already ended.
+            const accessEndDate = new Date().toLocaleDateString('en-US', {
+              month: 'long', day: 'numeric', year: 'numeric',
+            });
+
+            emailService.sendCancellationEmailToUser({
+              email: user.email,
+              firstName,
+              planName,
+              accessEndDate,
+            }).catch((err) =>
+              console.error('[Stripe Webhook] sendCancellationEmailToUser (deleted) failed:', err),
+            );
+
+            emailService.sendCancellationEmailToAdmin({
+              userEmail: user.email,
+              userName: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email,
+              planName,
+              planPrice,
+              accessEndDate,
+            }).catch((err) =>
+              console.error('[Stripe Webhook] sendCancellationEmailToAdmin (deleted) failed:', err),
+            );
+          }
+
           break;
         }
 
